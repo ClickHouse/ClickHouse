@@ -24,6 +24,7 @@ private:
     DB::Strings nsettings;
 
     void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
+    void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, const uint32_t ncols, SelectStatementCore * ssc);
 
 public:
     explicit QueryOracle(const FuzzConfig & ffc)

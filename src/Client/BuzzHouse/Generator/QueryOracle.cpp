@@ -133,6 +133,29 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
+void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, const uint32_t ncols, SelectStatementCore * ssc)
+{
+    const uint32_t noption = rg.nextSmallNumber();
+
+    if (noption < 3)
+    {
+        gen.setAllowNotDetermistic(false);
+        gen.enforceFinal(true);
+        gen.setAllowEngineUDF(false);
+        if (noption == 1)
+        {
+            gen.generateLimit(rg, ssc->has_orderby(), ncols, ssc->mutable_limit());
+        }
+        else
+        {
+            gen.generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
+        }
+        gen.setAllowNotDetermistic(true);
+        gen.enforceFinal(false);
+        gen.setAllowEngineUDF(true);
+    }
+}
+
 /// Dump and read table oracle
 void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1)
 {
@@ -145,7 +168,9 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
 
     t.setName(jtf->mutable_tof()->mutable_est(), false);
     jtf->set_final(t.supportsFinal());
+
     gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    const uint32_t ncols = static_cast<uint32_t>(gen.entries.size());
     for (const auto & entry : gen.entries)
     {
         ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
@@ -165,6 +190,8 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
         first = false;
     }
     gen.entries.clear();
+
+    addLimitOrOffset(rg, gen, ncols, sel);
     ts->set_format(rg.pickRandomly(outIn));
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
@@ -432,6 +459,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             ->mutable_select()
             ->set_allocated_sel(osel);
         nsel->mutable_orderby()->set_oall(true);
+        addLimitOrOffset(rg, gen, ncols, nsel);
     }
     else if (measure_performance)
     {
