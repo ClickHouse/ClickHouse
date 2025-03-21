@@ -2,6 +2,7 @@
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
@@ -42,7 +43,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     auto queue_settings = std::make_unique<ObjectStorageQueueSettings>();
     if (args.storage_def->settings)
     {
-        queue_settings->loadFromQuery(*args.storage_def);
+        const bool is_attach = args.mode > LoadingStrictnessLevel::CREATE;
+        queue_settings->loadFromQuery(*args.storage_def, is_attach, args.table_id);
 
         Settings settings = args.getContext()->getSettingsCopy();
         settings.applyChanges(args.storage_def->settings->changes);
@@ -79,6 +81,7 @@ void registerStorageS3Queue(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
+            .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
         });
 }
 #endif
@@ -96,6 +99,7 @@ void registerStorageAzureQueue(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::AZURE,
+            .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
         });
 }
 #endif

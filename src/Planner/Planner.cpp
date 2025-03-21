@@ -147,6 +147,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -244,7 +245,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 
     auto & result_query_plan = planner.getQueryPlan();
 
-    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(query_context);
+    QueryPlanOptimizationSettings optimization_settings(query_context);
     optimization_settings.build_sets = false; // no need to build sets to collect filters
     result_query_plan.optimize(optimization_settings);
 
@@ -706,7 +707,7 @@ void addSortingStep(QueryPlan & query_plan,
 {
     const auto & sort_description = query_analysis_result.sort_description;
     const auto & query_context = planner_context->getQueryContext();
-    SortingStep::Settings sort_settings(*query_context);
+    SortingStep::Settings sort_settings(query_context->getSettingsRef());
 
     auto sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentHeader(),
@@ -1035,7 +1036,7 @@ void addWindowSteps(QueryPlan & query_plan,
         }
         if (need_sort)
         {
-            SortingStep::Settings sort_settings(*query_context);
+            SortingStep::Settings sort_settings(query_context->getSettingsRef());
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
@@ -1294,10 +1295,19 @@ void Planner::buildQueryPlanIfNeeded()
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
 
-    if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
-        buildPlanForUnionNode();
-    else
-        buildPlanForQueryNode();
+    try
+    {
+        if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
+            buildPlanForUnionNode();
+        else
+            buildPlanForQueryNode();
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK && query_plan.isInitialized())
+            e.addMessage("while building query plan:\n{}", dumpQueryPlan(query_plan));
+        throw;
+    }
 
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }

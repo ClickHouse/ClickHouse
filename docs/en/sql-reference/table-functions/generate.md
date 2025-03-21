@@ -1,13 +1,16 @@
 ---
-slug: /en/sql-reference/table-functions/generate
+description: 'Generates random data with a given schema. Allows populating test tables
+  with that data. Not all types are supported.'
+sidebar_label: 'generateRandom'
 sidebar_position: 75
-sidebar_label: generateRandom
+slug: /sql-reference/table-functions/generate
+title: 'generateRandom'
 ---
 
-# generateRandom
+# generateRandom Table Function
 
-Generates random data with given schema.
-Allows to populate test tables with data.
+Generates random data with a given schema.
+Allows populating test tables with that data.
 Not all types are supported.
 
 ``` sql
@@ -26,7 +29,7 @@ generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_str
 
 A table object with requested schema.
 
-## Usage Example
+## Usage Example {#usage-example}
 
 ``` sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
@@ -97,5 +100,5 @@ SELECT * FROM generateRandom(11) LIMIT 3;
 
 **Note:** `generateRandom(generateRandomStructure(), [random seed], max_string_length, max_array_length)` with large enough `max_array_length` can generate really huge output due to possible big nesting depth (up to 16) of complex types (`Array`, `Tuple`, `Map`, `Nested`).
 
-## Related content
+## Related content {#related-content}
 - Blog: [Generating random data in ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)

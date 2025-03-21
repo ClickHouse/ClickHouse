@@ -65,9 +65,7 @@ namespace DB
                             num_streams);
                     if (plan.isInitialized())
                     {
-                        auto builder = plan.buildQueryPipeline(
-                                QueryPlanOptimizationSettings::fromContext(context),
-                                BuildQueryPipelineSettings::fromContext(context));
+                        auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
                         QueryPlanResourceHolder resources;
                         auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
                         query_pipeline = QueryPipeline(std::move(pipe));

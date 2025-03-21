@@ -1,7 +1,10 @@
 ---
-slug: /en/operations/system-tables/database_engines
+description: 'System table containing a list of database engines supported by the
+  server.'
+keywords: ['system table', 'database_engines']
+slug: /operations/system-tables/database_engines
+title: 'system.database_engines'
 ---
-# database_engines
 
 Contains the list of database engines supported by the server.
 

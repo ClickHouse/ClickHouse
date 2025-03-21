@@ -1,7 +1,9 @@
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 
-#include <Common/setThreadName.h>
+#include <Processors/Port.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
+
 
 namespace DB
 {
@@ -128,13 +130,7 @@ namespace DB
 
     void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupPtr & thread_group)
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-        setThreadName("Collector");
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, "Collector");
 
         try
         {
@@ -161,7 +157,7 @@ namespace DB
                 out.write(unit.segment.data(), unit.actual_memory_size);
 
                 if (need_flush.exchange(false) || auto_flush)
-                    IOutputFormat::flush();
+                    out.next();
 
                 ++collector_unit_number;
                 rows_collected += unit.rows_num;
@@ -199,13 +195,7 @@ namespace DB
 
     void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group)
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-        setThreadName("Formatter");
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, "Formatter");
 
         try
         {
@@ -263,7 +253,7 @@ namespace DB
                 }
             }
 
-            /// Flush all the data to handmade buffer.
+            /// Flush all the data to the handmade buffer.
             formatter->flush();
             formatter->finalizeBuffers();
             out_buffer.finalize();

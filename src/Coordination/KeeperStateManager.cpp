@@ -7,6 +7,7 @@
 #include <Common/SipHash.h>
 #include <Common/isLocalAddress.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
@@ -33,6 +34,7 @@ namespace ErrorCodes
 {
     extern const int RAFT_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -78,6 +80,44 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
             ports[config.getUInt64(config_port_name)] = config_port_name;
     }
     return ports;
+}
+
+
+std::optional<AuthenticationData> getClientPasswordAuthentication(const Poco::Util::AbstractConfiguration & config)
+{
+    static const std::unordered_map<std::string, AuthenticationType> AUTH_TYPE_MAP
+    {
+        {"client_password", AuthenticationType::PLAINTEXT_PASSWORD},
+        {"keeper_server.client_password", AuthenticationType::PLAINTEXT_PASSWORD},
+        {"client_password_sha256_hex", AuthenticationType::SHA256_PASSWORD},
+        {"keeper_server.client_password_sha256_hex", AuthenticationType::SHA256_PASSWORD},
+        {"client_password_double_sha1_hex", AuthenticationType::DOUBLE_SHA1_PASSWORD},
+        {"keeper_server.client_password_double_sha1_hex", AuthenticationType::DOUBLE_SHA1_PASSWORD},
+    };
+
+    std::optional<AuthenticationData> data;
+    for (const auto & [config_password_name, auth_type] : AUTH_TYPE_MAP)
+    {
+        if (config.has(config_password_name))
+        {
+            if (data.has_value())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one authentication type is allowed in config");
+
+            data.emplace(AuthenticationData(auth_type));
+            if (config_password_name.ends_with("client_password"))
+            {
+                auto password = config.getString(config_password_name);
+                if (password.length() > Coordination::PASSWORD_LENGTH)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password cannot be longer than {} characters, specified {}", Coordination::PASSWORD_LENGTH, password.size());
+
+                data->setPassword(password, true);
+            }
+            else
+                data->setPasswordHashHex(config.getString(config_password_name), true);
+        }
+    }
+
+    return data;
 }
 
 }
@@ -228,6 +268,8 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
         }
     }
 
+    result.auth_data = getClientPasswordAuthentication(config);
+
     return result;
 }
 
@@ -302,6 +344,12 @@ ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore() const
     if (entry_with_change)
         return ClusterConfig::deserialize(entry_with_change->get_buf());
     return nullptr;
+}
+
+std::optional<AuthenticationData> KeeperStateManager::getAuthenticationData() const
+{
+    std::lock_guard lock(configuration_wrapper_mutex);
+    return configuration_wrapper.auth_data;
 }
 
 void KeeperStateManager::flushAndShutDownLogStore()
@@ -486,7 +534,8 @@ ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
 {
     auto new_configuration_wrapper = parseServersConfiguration(config, true, coordination_settings[CoordinationSetting::async_replication]);
 
-    std::unordered_map<int, KeeperServerConfigPtr> new_ids, old_ids;
+    std::unordered_map<int, KeeperServerConfigPtr> new_ids;
+    std::unordered_map<int, KeeperServerConfigPtr> old_ids;
     for (const auto & new_server : new_configuration_wrapper.cluster_config->get_servers())
         new_ids[new_server->get_id()] = new_server;
 

@@ -8,7 +8,7 @@
 
 namespace DB
 {
-class ASTStorage;
+class ASTSetQuery;
 struct StorageObjectStorageSettingsImpl;
 struct MutableColumnsAndConstraints;
 class StorageObjectStorage;
@@ -54,12 +54,16 @@ struct StorageObjectStorageSettings
 
     STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES(StorageObjectStorageSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(ASTStorage & storage_def);
+    void loadFromQuery(ASTSetQuery & settings_ast);
 
     Field get(const std::string & name);
+
+    static bool hasBuiltin(std::string_view name);
 
 private:
     std::unique_ptr<StorageObjectStorageSettingsImpl> impl;
 };
+
+using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 
 }

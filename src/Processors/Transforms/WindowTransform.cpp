@@ -9,13 +9,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeString.h>
@@ -24,7 +23,6 @@
 #include <Common/logger_useful.h>
 
 #include <algorithm>
-#include <limits>
 
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
@@ -374,8 +372,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
                 window_description.frame.begin_offset,
                 *entry.type);
 
-            if (!applyVisitor(FieldVisitorAccurateLessOrEqual{}, Field(0),
-                window_description.frame.begin_offset))
+            if (!accurateLessOrEqual(Field{0}, window_description.frame.begin_offset))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Window frame start offset must be nonnegative, {} given",
@@ -389,8 +386,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
                 window_description.frame.end_offset,
                 *entry.type);
 
-            if (!applyVisitor(FieldVisitorAccurateLessOrEqual{}, Field(0),
-                window_description.frame.end_offset))
+            if (!accurateLessOrEqual(Field{0}, window_description.frame.end_offset))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Window frame start offset must be nonnegative, {} given",

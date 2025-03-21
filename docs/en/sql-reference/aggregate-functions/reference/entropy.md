@@ -1,11 +1,13 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/entropy
+description: 'Calculates Shannon entropy of for a column of values.'
 sidebar_position: 131
+slug: /sql-reference/aggregate-functions/reference/entropy
+title: 'entropy'
 ---
 
 # entropy
 
-Calculates [Shannon entropy](https://en.wikipedia.org/wiki/Entropy_(information_theory)) of a column of values.
+Calculates [Shannon entropy](https://en.wikipedia.org/wiki/Entropy_(information_theory)) for a column of values.
 
 **Syntax**
 

@@ -40,6 +40,9 @@ public:
 
     bool memoryBoundMergingWillBeUsed() const;
 
+    bool isGroupingSets() const { return !grouping_sets_params.empty(); }
+    const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
+
 private:
     void updateOutputHeader() override;
 

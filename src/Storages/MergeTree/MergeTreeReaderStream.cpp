@@ -258,6 +258,13 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
         right_mark = *it;
     }
 
+    /// Special case for streams with dynamic/object structure.
+    /// It consists of 2 parts of data - during the serialization the first part is written before the data and second - after the data.
+    /// But during deserialization we read both parts before the data, so we can't use the marks and need to always return the
+    /// whole file size.
+    if (settings.is_dynamic_or_object_structure)
+        return file_size;
+
     /// This is a good scenario. The compressed block is finished within the right mark,
     /// and previous mark was different.
     if (marks_getter->getMark(right_mark, 0).offset_in_decompressed_block == 0

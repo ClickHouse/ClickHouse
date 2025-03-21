@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-parallel
+# Tags: long, zookeeper, no-shared-merge-tree, no-parallel
+# no-shared-merge-tree -- replace with other test (this one checks queue)
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 

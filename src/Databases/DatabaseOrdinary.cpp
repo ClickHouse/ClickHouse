@@ -1,39 +1,40 @@
 #include <filesystem>
+#include <memory>
 
+#include <Core/Defines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
-#include <Databases/DDLDependencyVisitor.h>
-#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/TablesLoader.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
-#include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
-#include <Common/PoolId.h>
-#include <Common/escapeForFileName.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
-#include <Common/CurrentMetrics.h>
-#include <Core/Defines.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/PoolId.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -69,8 +70,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
 }
-
-static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_to_replicated";
 
@@ -152,23 +151,18 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, const StoragePolicyPtr storage_policy, bool tableStarted)
+String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, bool tableStarted)
 {
     fs::path data_path;
-    if (storage_policy->getDisks().empty())
-        data_path = getContext()->getPath();
-    else
-        data_path = storage_policy->getDisks()[0]->getPath();
-
     if (!tableStarted)
     {
         auto create_query = tryGetCreateTableQuery(name, getContext());
-        data_path = data_path / getTableDataPath(create_query->as<ASTCreateQuery &>());
+        data_path = getTableDataPath(create_query->as<ASTCreateQuery &>());
     }
     else
-        data_path = data_path / getTableDataPath(name);
+        data_path = getTableDataPath(name);
 
-    return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME).string();
+    return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME);
 }
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
@@ -189,9 +183,11 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
             policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, policy, false);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
 
-    if (!fs::exists(convert_to_replicated_flag_path))
+    auto storage_disks = policy->getDisks();
+    auto checking_disk = storage_disks.empty() ? db_disk : storage_disks[0];
+    if (!checking_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
     if (getUUID() == UUIDHelpers::Nil)
@@ -207,15 +203,13 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     String table_metadata_path = full_path;
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement = getObjectDefinitionFromCreateQuery(ast);
-    {
-        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(statement, out);
-        out.next();
-        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-            out.sync();
-        out.close();
-    }
-    fs::rename(table_metadata_tmp_path, table_metadata_path);
+    writeMetadataFile(
+        db_disk,
+        /*file_path=*/table_metadata_tmp_path,
+        /*content=*/statement,
+        /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
+
+    db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
 
     LOG_INFO(
         log,
@@ -264,7 +258,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     }
                 }
 
-                if (fs::exists(full_path.string() + detached_suffix))
+                if (db_disk->existsFile(full_path.string() + detached_suffix))
                 {
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
@@ -327,23 +321,46 @@ void DatabaseOrdinary::loadTableFromMetadata(
 
     LOG_TRACE(log, "Loading table {}", name.getFullName());
 
-    try
-    {
-        auto [table_name, table] = createTableFromAST(
-            query,
-            name.database,
-            getTableDataPath(query),
-            local_context,
-            mode);
+    constexpr size_t max_tries = 3;
+    size_t tries = 0;
+    time_t sleep_time = 1;
 
-        attachTable(local_context, table_name, table, getTableDataPath(query));
-    }
-    catch (Exception & e)
+    while (true)
     {
-        e.addMessage(
-            "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
-            + " from query " + serializeAST(query));
-        throw;
+        try
+        {
+            auto [table_name, table] = createTableFromAST(
+                query,
+                name.database,
+                getTableDataPath(query),
+                local_context,
+                mode);
+
+            attachTable(local_context, table_name, table, getTableDataPath(query));
+            return;
+        }
+        catch (Coordination::Exception & e)
+        {
+            e.addMessage(
+                "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
+                + " from query " + query.formatForErrorMessage());
+
+            if (!Coordination::isHardwareError(e.code))
+                throw;
+            tryLogCurrentException(log);
+            sleepForSeconds(sleep_time);
+            sleep_time *= 2;
+            ++tries;
+            if (tries > max_tries)
+                throw;
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
+                + " from query " + query.formatForErrorMessage());
+            throw;
+        }
     }
 }
 
@@ -375,11 +392,14 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!rmt)
         return;
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, table->getStoragePolicy(), true);
-    if (!fs::exists(convert_to_replicated_flag_path))
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
+
+    auto storage_disks = table->getStoragePolicy()->getDisks();
+    auto checking_disk = storage_disks.empty() ? db_disk : storage_disks[0];
+    if (!checking_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
-    (void)fs::remove(convert_to_replicated_flag_path);
+    checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
     LOG_INFO
     (
         log,
@@ -408,7 +428,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     }
     else
     {
-        rmt->restoreMetadataInZooKeeper();
+        rmt->restoreMetadataInZooKeeper(/* zookeeper_retries_info = */ {});
         LOG_INFO
         (
             log,
@@ -576,12 +596,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     /// Read the definition of the table and replace the necessary parts with new ones.
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
-    String statement;
-
-    {
-        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE);
-        readStringUntilEOF(statement, in);
-    }
+    String statement = readMetadataFile(db_disk, table_metadata_path);
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(
@@ -596,14 +611,11 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     applyMetadataChangesToCreateQuery(ast, metadata, local_context);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
-    {
-        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(statement, out);
-        out.next();
-        if (local_context->getSettingsRef()[Setting::fsync_metadata])
-            out.sync();
-        out.close();
-    }
+    writeMetadataFile(
+        db_disk,
+        /*file_path=*/table_metadata_tmp_path,
+        /*content=*/statement,
+        /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
@@ -618,11 +630,11 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     try
     {
         /// rename atomically replaces the old file with the new one.
-        fs::rename(table_metadata_tmp_path, table_metadata_path);
+        db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
     }
     catch (...)
     {
-        (void)fs::remove(table_metadata_tmp_path);
+        db_disk->removeFileIfExists(table_metadata_tmp_path);
         throw;
     }
 }

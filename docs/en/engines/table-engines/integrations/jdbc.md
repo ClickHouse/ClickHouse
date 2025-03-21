@@ -1,10 +1,16 @@
 ---
-slug: /en/engines/table-engines/integrations/jdbc
+description: 'Allows ClickHouse to connect to external databases via JDBC.'
+sidebar_label: 'JDBC'
 sidebar_position: 100
-sidebar_label: JDBC
+slug: /engines/table-engines/integrations/jdbc
+title: 'JDBC'
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # JDBC
+
+<CloudNotSupportedBadge/>
 
 :::note
 clickhouse-jdbc-bridge contains experimental codes and is no longer supported. It may contain reliability issues and security vulnerabilities. Use it at your own risk. 
@@ -41,7 +47,7 @@ ENGINE = JDBC(datasource_uri, external_database, external_table)
 
 ## Usage Example {#usage-example}
 
-Creating a table in MySQL server by connecting directly with it’s console client:
+Creating a table in MySQL server by connecting directly with it's console client:
 
 ``` text
 mysql> CREATE TABLE `test`.`test` (

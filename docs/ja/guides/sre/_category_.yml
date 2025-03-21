@@ -1,8 +1,0 @@
-position: 5
-label: 'SRE Guides'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: SRE Guides
-  slug: /ja/guides/sre

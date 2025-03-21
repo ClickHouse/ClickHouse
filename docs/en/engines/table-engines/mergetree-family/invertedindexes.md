@@ -1,14 +1,21 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/invertedindexes
-sidebar_label:  Full-text Indexes
-description: Quickly find search terms in text.
-keywords: [full-text search, text search, index, indices]
+description: 'Quickly find search terms in text.'
+keywords: ['full-text search', 'text search', 'index', 'indices']
+sidebar_label: 'Full-text Indexes'
+slug: /engines/table-engines/mergetree-family/invertedindexes
+title: 'Full-text Search using Full-text Indexes'
 ---
 
-# Full-text Search using Full-text Indexes [experimental]
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-Full-text indexes are an experimental type of [secondary indexes](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#available-types-of-indices) which provide fast text search
-capabilities for [String](/docs/en/sql-reference/data-types/string.md) or [FixedString](/docs/en/sql-reference/data-types/fixedstring.md)
+# Full-text Search using Full-text Indexes
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+Full-text indexes are an experimental type of [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#available-types-of-indices) which provide fast text search
+capabilities for [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md)
 columns. The main idea of a full-text index is to store a mapping from "terms" to the rows which contain these terms. "Terms" are
 tokenized cells of the string column. For example, the string cell "I will be a little late" is by default tokenized into six terms "I", "will",
 "be", "a", "little" and "late". Another kind of tokenizer is n-grams. For example, the result of 3-gram tokenization will be 21 terms "I w",
@@ -32,7 +39,7 @@ Full-text indexes are experimental and should not be used in production environm
 ways, for example with respect to their DDL/DQL syntax or performance/compression characteristics.
 :::
 
-## Usage
+## Usage {#usage}
 
 To use full-text indexes, first enable them in the configuration:
 
@@ -96,7 +103,7 @@ controls the amount of data read consumed from the underlying column before a ne
 intermediate memory consumption for index construction but also improves lookup performance since fewer segments need to be checked on
 average to evaluate a query.
 
-## Full-text search of the Hacker News dataset
+## Full-text search of the Hacker News dataset {#full-text-search-of-the-hacker-news-dataset}
 
 Let's look at the performance improvements of full-text indexes on a large dataset with lots of text. We will use 28.7M rows of comments on the popular Hacker News website. Here is the table without an full-text index:
 
@@ -126,7 +133,7 @@ The 28.7M rows are in a Parquet file in S3 - let's insert them into the `hackern
 
 ```sql
 INSERT INTO hackernews
-	SELECT * FROM s3Cluster(
+    SELECT * FROM s3Cluster(
         'default',
         'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
         'Parquet',
@@ -137,9 +144,9 @@ INSERT INTO hackernews
     by String,
     time DateTime,
     text String,
-	dead UInt8,
-	parent UInt64,
-	poll UInt64,
+    dead UInt8,
+    parent UInt64,
+    poll UInt64,
     kids Array(UInt32),
     url String,
     score UInt32,
@@ -214,6 +221,6 @@ is performance. In practice, users often search for multiple terms at once. For 
 means that the parameter `GRANULARITY` supplied to index creation has no meaning (it may be removed from the syntax in the future).
 :::
 
-## Related Content
+## Related Content {#related-content}
 
 - Blog: [Introducing Inverted Indices in ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)

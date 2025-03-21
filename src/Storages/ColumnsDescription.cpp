@@ -32,7 +32,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
@@ -108,7 +107,7 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noe
 
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
-    auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
+    auto ast_to_str = [](const ASTPtr & ast) { return ast ? ast->formatWithSecretsOneLine() : String{}; };
 
     return name == other.name
         && type->equals(*other.type)
@@ -123,7 +122,7 @@ String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(true, false);
-    ast.formatImpl(buf, settings, state, IAST::FormatStateStacked());
+    ast.format(buf, settings, state, IAST::FormatStateStacked());
     return buf.str();
 }
 
@@ -215,7 +214,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
@@ -386,7 +385,9 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
     };
 
     if (first)
+    {
         reorder_column([&]() { return columns.cbegin(); });
+    }
     else if (!after_column.empty() && column_name != after_column)
     {
         /// Checked first

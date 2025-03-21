@@ -1,6 +1,6 @@
 services:
     rabbitmq1:
-        image: rabbitmq:4.0.2-alpine
+        image: rabbitmq:4.0.4-alpine
         hostname: rabbitmq1
         environment:
             RABBITMQ_FEATURE_FLAGS: feature_flags_v2,message_containers

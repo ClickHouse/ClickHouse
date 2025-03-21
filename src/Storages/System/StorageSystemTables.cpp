@@ -120,7 +120,7 @@ ColumnPtr getFilteredTables(
         }
         else
         {
-            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
+            for (auto table_it = database->getLightweightTablesIterator(context); table_it->isValid(); table_it->next())
             {
                 database_column->insert(table_it->name());
                 if (engine_column)
@@ -179,13 +179,11 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
             "Total number of uncompressed bytes, if it's possible to quickly determine the exact number "
             "of bytes from the part checksums for the table on storage, otherwise NULL (does not take underlying storage (if any) into account)."
         },
-        {"total_bytes_with_inactive", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-         "Total number of bytes with inactive parts, if it is possible to quickly determine exact number "
-         "of bytes for the table on storage, otherwise NULL (does not includes any underlying storage). "
-        },
         {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of parts in this table."},
         {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of active parts in this table."},
         {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of marks in all parts in this table."},
+        {"active_on_fly_data_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active data mutations (UPDATEs and DELETEs) suitable for applying on the fly."},
+        {"active_on_fly_metadata_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active metadata mutations (RENAMEs) suitable for applying on the fly."},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows INSERTed since server start (only for Buffer tables)."
         },
@@ -349,18 +347,36 @@ protected:
                             // total_rows
                             if (src_index == 19 && columns_mask[src_index])
                             {
-                                if (auto total_rows = table.second->totalRows(settings))
-                                    res_columns[res_index++]->insert(*total_rows);
-                                else
+                                try
+                                {
+                                    if (auto total_rows = table.second->totalRows(settings))
+                                        res_columns[res_index++]->insert(*total_rows);
+                                    else
+                                        res_columns[res_index++]->insertDefault();
+                                }
+                                catch (const Exception &)
+                                {
+                                    /// Even if the method throws, it should not prevent querying system.tables.
+                                    tryLogCurrentException("StorageSystemTables");
                                     res_columns[res_index++]->insertDefault();
+                                }
                             }
                             // total_bytes
                             else if (src_index == 20 && columns_mask[src_index])
                             {
-                                if (auto total_bytes = table.second->totalBytes(settings))
-                                    res_columns[res_index++]->insert(*total_bytes);
-                                else
+                                try
+                                {
+                                    if (auto total_bytes = table.second->totalBytes(settings))
+                                        res_columns[res_index++]->insert(*total_bytes);
+                                    else
+                                        res_columns[res_index++]->insertDefault();
+                                }
+                                catch (const Exception &)
+                                {
+                                    /// Even if the method throws, it should not prevent querying system.tables.
+                                    tryLogCurrentException("StorageSystemTables");
                                     res_columns[res_index++]->insertDefault();
+                                }
                             }
                             /// Fill the rest columns with defaults
                             else if (columns_mask[src_index])
@@ -378,7 +394,7 @@ protected:
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getTablesIterator(context);
+                tables_it = database->getLightweightTablesIterator(context);
 
             const bool need_table = needTable(database, getPort().getHeader());
 
@@ -576,38 +592,56 @@ protected:
                 settings[Setting::select_sequential_consistency] = 0;
                 if (columns_mask[src_index++])
                 {
-                    auto total_rows = table ? table->totalRows(settings) : std::nullopt;
-                    if (total_rows)
-                        res_columns[res_index++]->insert(*total_rows);
-                    else
+                    try
+                    {
+                        auto total_rows = table ? table->totalRows(settings) : std::nullopt;
+                        if (total_rows)
+                            res_columns[res_index++]->insert(*total_rows);
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Even if the method throws, it should not prevent querying system.tables.
+                        tryLogCurrentException("StorageSystemTables");
                         res_columns[res_index++]->insertDefault();
+                    }
                 }
 
                 if (columns_mask[src_index++])
                 {
-                    auto total_bytes = table->totalBytes(settings);
-                    if (total_bytes)
-                        res_columns[res_index++]->insert(*total_bytes);
-                    else
+                    try
+                    {
+                        auto total_bytes = table->totalBytes(settings);
+                        if (total_bytes)
+                            res_columns[res_index++]->insert(*total_bytes);
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Even if the method throws, it should not prevent querying system.tables.
+                        tryLogCurrentException("StorageSystemTables");
                         res_columns[res_index++]->insertDefault();
+                    }
                 }
 
                 if (columns_mask[src_index++])
                 {
-                    auto total_bytes_uncompressed = table->totalBytesUncompressed(settings);
-                    if (total_bytes_uncompressed)
-                        res_columns[res_index++]->insert(*total_bytes_uncompressed);
-                    else
+                    try
+                    {
+                        auto total_bytes_uncompressed = table->totalBytesUncompressed(settings);
+                        if (total_bytes_uncompressed)
+                            res_columns[res_index++]->insert(*total_bytes_uncompressed);
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Even if the method throws, it should not prevent querying system.tables.
+                        tryLogCurrentException("StorageSystemTables");
                         res_columns[res_index++]->insertDefault();
-                }
-
-                if (columns_mask[src_index++])
-                {
-                    auto total_bytes_with_inactive = table->totalBytesWithInactive(settings);
-                    if (total_bytes_with_inactive)
-                        res_columns[res_index++]->insert(*total_bytes_with_inactive);
-                    else
-                        res_columns[res_index++]->insertDefault();
+                    }
                 }
 
                 auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
@@ -630,9 +664,23 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)
-                    {
                         res_columns[res_index++]->insert(table_merge_tree->getTotalMarksCount());
-                    }
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    if (table_merge_tree)
+                        res_columns[res_index++]->insert(table_merge_tree->getNumberOnFlyDataMutations());
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    if (table_merge_tree)
+                        res_columns[res_index++]->insert(table_merge_tree->getNumberOnFlyMetadataMutations());
                     else
                         res_columns[res_index++]->insertDefault();
                 }

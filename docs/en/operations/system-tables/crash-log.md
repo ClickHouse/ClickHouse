@@ -1,7 +1,13 @@
 ---
-slug: /en/operations/system-tables/crash-log
+description: 'System table containing information about stack traces for fatal errors.'
+keywords: ['system table', 'crash_log']
+slug: /operations/system-tables/crash-log
+title: 'system.crash_log'
 ---
-# crash_log
+
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+<SystemTableCloud/>
 
 Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.
 

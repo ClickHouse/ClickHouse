@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromEmptyFile.h>
+#include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Formats/NativeWriter.h>

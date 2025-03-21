@@ -12,6 +12,7 @@
 #include <Common/PoolId.h>
 #include <Common/parseAddress.h>
 #include <Common/parseRemoteDescription.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -23,10 +24,10 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/AlterCommands.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
@@ -159,7 +160,7 @@ LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & a
     auto job = makeLoadJob(
         base->goals(),
         TablesLoaderBackgroundStartupPoolId,
-        fmt::format("startup MaterializedMySQL database {}", getDatabaseName()),
+        fmt::format("startup MaterializedPostgreSQL database {}", getDatabaseName()),
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
             startup_task->activateAndSchedule();

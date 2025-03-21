@@ -67,7 +67,6 @@ add_subdirectory (Processors)
 add_subdirectory (Compression)
 add_subdirectory (Server)
 add_subdirectory (Coordination)
-add_subdirectory (Bridge)
 add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
@@ -95,6 +94,7 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
 endif()
 
 add_headers_and_sources(clickhouse_common_io Common)
+add_headers_and_sources(clickhouse_common_io Common/JSONParsers)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes)
@@ -129,6 +129,8 @@ add_headers_and_sources(dbms Storages/ObjectStorage/S3)
 add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
@@ -160,6 +162,8 @@ if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
 
+add_headers_and_sources(dbms Databases/DataLake)
+
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
 add_headers_and_sources(dbms Disks/ObjectStorages/Local)
 add_headers_and_sources(dbms Disks/ObjectStorages/Web)
@@ -167,6 +171,14 @@ add_headers_and_sources(dbms Disks/ObjectStorages/Web)
 add_headers_and_sources(dbms Storages/Cache)
 if (TARGET ch_contrib::hivemetastore)
     add_headers_and_sources(dbms Storages/Hive)
+endif()
+
+if (ENABLE_BUZZHOUSE)
+    add_subdirectory(Client/BuzzHouse/Proto)
+
+    add_headers_and_sources(dbms Client/BuzzHouse/AST)
+    add_headers_and_sources(dbms Client/BuzzHouse/Generator)
+    add_headers_and_sources(dbms Client/BuzzHouse/Utils)
 endif()
 
 if (OS_LINUX)
@@ -213,6 +225,9 @@ macro(add_object_library name common_path)
 endmacro()
 
 add_object_library(clickhouse_access Access)
+if (TARGET ch_contrib::ssh)
+    add_object_library(clickhouse_access_ssh Access/SSH)
+endif()
 add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
@@ -238,7 +253,11 @@ add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
-add_object_library(clickhouse_storages_mergetree_merge_selectors Storages/MergeTree/MergeSelectors)
+add_object_library(clickhouse_storages_mergetree_compaction Storages/MergeTree/Compaction)
+add_object_library(clickhouse_storages_mergetree_compaction_merge_predicates Storages/MergeTree/Compaction/MergePredicates)
+add_object_library(clickhouse_storages_mergetree_compaction_merge_selectors Storages/MergeTree/Compaction/MergeSelectors)
+add_object_library(clickhouse_storages_mergetree_compaction_parts_collectors Storages/MergeTree/Compaction/PartsCollectors)
+add_object_library(clickhouse_storages_mergetree_compaction_parts_finders Storages/MergeTree/Compaction/PartsFinders)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
@@ -252,6 +271,10 @@ set_source_files_properties(Client/ClientBaseOptimizedParts.cpp PROPERTIES COMPI
 add_object_library(clickhouse_bridge BridgeHelper)
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
+if (TARGET ch_contrib::ssh)
+    add_object_library(clickhouse_server_ssh Server/SSH)
+endif()
+add_object_library(clickhouse_server_embedded_client Server/ClientEmbedded)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
@@ -353,6 +376,12 @@ set_source_files_properties(
         Columns/ColumnString.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
+if (ENABLE_QPL)
+    set_source_files_properties(
+            Compression/CompressionCodecDeflateQpl.cpp
+            PROPERTIES COMPILE_FLAGS "-mwaitpkg")
+endif ()
+
 target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
@@ -427,6 +456,10 @@ dbms_target_link_libraries (
         clickhouse_common_io
         Poco::Redis
 )
+
+if (USE_MONGODB)
+    dbms_target_link_libraries (PUBLIC Poco::MongoDB)
+endif()
 
 if (TARGET ch_contrib::mongocxx)
     dbms_target_link_libraries(
@@ -577,8 +610,15 @@ endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
-if (TARGET ch_contrib::qatzstd_plugin)
+if (TARGET ch_contrib::qpl)
+    dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
+    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::qpl)
+    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::accel-config)
+endif ()
+
+if (TARGET ch_contrib::accel-config AND TARGET ch_contrib::qatzstd_plugin)
     dbms_target_link_libraries(PUBLIC ch_contrib::qatzstd_plugin)
+    dbms_target_link_libraries(PUBLIC ch_contrib::accel-config)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::qatzstd_plugin)
 endif ()
 
@@ -608,6 +648,7 @@ if (TARGET ch_contrib::minizip)
 endif ()
 
 if (TARGET ch_contrib::simdjson)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::simdjson)
     dbms_target_link_libraries(PRIVATE ch_contrib::simdjson)
 endif()
 
@@ -632,6 +673,18 @@ endif()
 
 if (TARGET ch_contrib::google_cloud_cpp)
     dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
+endif()
+
+if (TARGET ch_contrib::delta_kernel_rs)
+    target_link_libraries(dbms PRIVATE ch_contrib::delta_kernel_rs)
+endif ()
+
+if (TARGET ch_contrib::sha3iuf)
+    dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
+endif()
+
+if (ENABLE_BUZZHOUSE)
+    dbms_target_link_libraries(PRIVATE clickhouse_buzzhouse_proto)
 endif()
 
 if (ENABLE_TESTS)

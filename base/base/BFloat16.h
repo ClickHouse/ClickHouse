@@ -2,6 +2,7 @@
 
 #include <bit>
 #include <base/types.h>
+#include <base/defines.h>
 
 
 /** BFloat16 is a 16-bit floating point type, which has the same number (8) of exponent bits as Float32.
@@ -60,7 +61,7 @@ public:
     }
 
     template <typename T>
-    explicit constexpr operator T() const
+    explicit constexpr NO_SANITIZE_UNDEFINED operator T() const
     {
         return T(Float32(*this));
     }
@@ -89,12 +90,12 @@ public:
 
     constexpr bool operator==(const BFloat16 & other) const
     {
-        return x == other.x;
+        return Float32(*this) == Float32(other);
     }
 
     constexpr bool operator!=(const BFloat16 & other) const
     {
-        return x != other.x;
+        return Float32(*this) != Float32(other);
     }
 
     constexpr BFloat16 operator+(const BFloat16 & other) const

@@ -26,6 +26,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromMemory.h>
@@ -91,8 +92,7 @@ public:
         {
             Block compressed_block;
             for (const auto & elem : block)
-                compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
-
+                compressed_block.insert({elem.column->compress(/*force_compression=*/true), elem.type, elem.name});
             new_blocks.push_back(std::move(compressed_block));
         }
         else
@@ -259,7 +259,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     {
         if ((*memory_settings)[MemorySetting::compress])
             for (auto & elem : block)
-                elem.column = elem.column->compress();
+                elem.column = elem.column->compress(/*force_compression=*/true);
 
         out.push_back(block);
     }
@@ -574,7 +574,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             {
                 Block compressed_block;
                 for (const auto & elem : block)
-                    compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
+                    compressed_block.insert({elem.column->compress(/*force_compression=*/true), elem.type, elem.name});
 
                 new_blocks.push_back(std::move(compressed_block));
             }
@@ -645,6 +645,7 @@ void registerStorageMemory(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_parallel_insert = true,
+        .has_builtin_setting_fn = MemorySettings::hasBuiltin,
     });
 }
 

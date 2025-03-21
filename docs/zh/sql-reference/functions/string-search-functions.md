@@ -28,8 +28,8 @@ position(haystack, needle[, start_pos])
 
 **参数**
 
-- `haystack` — 被检索查询字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — 进行查询的子字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
+- `haystack` — 被检索查询字符串，类型为[String](/sql-reference/syntax#string).
+- `needle` — 进行查询的子字符串，类型为[String](/sql-reference/syntax#string).
 - `start_pos` – 在字符串`haystack` 中开始检索的位置(从1开始)，类型为[UInt](../../sql-reference/data-types/int-uint.md)，可选。
 
 **返回值**
@@ -43,7 +43,7 @@ position(haystack, needle[, start_pos])
 - 如果 `start_pos >= 1` 且 `start_pos <= length(haystack) + 1`，则返回 `start_pos` 
 - 否则返回 `0` 
 
-以上规则同样在这些函数中生效: [locate](#locate), [positionCaseInsensitive](#positionCaseInsensitive), [positionUTF8](#positionUTF8), [positionCaseInsensitiveUTF8](#positionCaseInsensitiveUTF8)
+以上规则同样在这些函数中生效: [locate](#locate), [positionCaseInsensitive](#positioncaseinsensitive), [positionUTF8](#positionutf8), [positionCaseInsensitiveUTF8](#positioncaseinsensitiveutf8)
 
 数据类型: `Integer`.
 
@@ -117,7 +117,7 @@ SELECT
 此函数的行为取决于 ClickHouse 版本：
 - 在 v24.3 以下的版本中，`locate` 是函数`position`的别名，参数为 `(haystack, needle[, start_pos])`。
 - 在 v24.3 及以上的版本中,, `locate` 是独立的函数 (以更好地兼容 MySQL) ,参数为 `(needle, haystack[, start_pos])`。 之前的行为
-  可以在设置中恢复 [function_locate_has_mysql_compatible_argument_order = false](../../operations/settings/settings.md#function-locate-has-mysql-compatible-argument-order);
+  可以在设置中恢复 [function_locate_has_mysql_compatible_argument_order = false](/operations/settings/settings#function_locate_has_mysql_compatible_argument_order);
 
 **语法**
 
@@ -170,7 +170,7 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needleN])
 
 **参数**
 
-- `haystack` — 被检索查询字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
+- `haystack` — 被检索查询字符串，类型为[String](/sql-reference/syntax#string).
 - `needle` — 子字符串数组, 类型为[Array](../../sql-reference/data-types/array.md)
 
 **返回值**
@@ -193,7 +193,7 @@ SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world']);
 
 ## multiSearchAllPositionsUTF8
 
-类似于 [multiSearchAllPositions](#multiSearchAllPositions) ,但假定 `haystack` 和 `needle`-s 是 UTF-8 编码的字符串。
+类似于 [multiSearchAllPositions](#multisearchallpositions) ,但假定 `haystack` 和 `needle`-s 是 UTF-8 编码的字符串。
 
 ## multiSearchFirstPosition
 
@@ -362,7 +362,7 @@ extractAll(haystack, pattern)
 
 返回一个元素为数组的数组，其中第一个数组包含与第一组匹配的所有片段，第二个数组包含与第二组匹配的所有片段，依此类推。
 
-这个函数相比 [extractAllGroupsVertical](#extractallgroups-vertical)更慢。
+这个函数相比 [extractAllGroupsVertical](#extractallgroupsvertical)更慢。
 
 **语法**
 
@@ -522,8 +522,8 @@ countSubstrings(haystack, needle[, start_pos])
 
 **参数**
 
-- `haystack` — 被搜索的字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — 用于搜索的模式子字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
+- `haystack` — 被搜索的字符串，类型为[String](/sql-reference/syntax#string).
+- `needle` — 用于搜索的模式子字符串，类型为[String](/sql-reference/syntax#string).
 - `start_pos` – 在字符串`haystack` 中开始检索的位置(从 1 开始)，类型为[UInt](../../sql-reference/data-types/int-uint.md)，可选。
 
 **返回值**
@@ -625,8 +625,8 @@ regexpExtract(haystack, pattern[, index])
 
 **参数**
 
-- `haystack` — 被匹配字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
-- `pattern` — 正则表达式，必须是常量。类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
+- `haystack` — 被匹配字符串，类型为[String](/sql-reference/syntax#string).
+- `pattern` — 正则表达式，必须是常量。类型为[String](/sql-reference/syntax#string).
 - `index` – 一个大于等于 0 的整数，默认为 1 ，它代表要提取哪个正则表达式组。 [UInt or Int](../../sql-reference/data-types/int-uint.md) 可选。
 
 **返回值**
@@ -666,8 +666,8 @@ hasSubsequence(haystack, needle)
 
 **参数**
 
-- `haystack` — 被搜索的字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — 搜索子序列，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
+- `haystack` — 被搜索的字符串，类型为[String](/sql-reference/syntax#string).
+- `needle` — 搜索子序列，类型为[String](/sql-reference/syntax#string).
 
 **返回值**
 
@@ -691,12 +691,12 @@ SELECT hasSubsequence('garbage', 'arg') ;
 ```
 
 ## hasSubsequenceCaseInsensitive
-类似于 [hasSubsequence](#hasSubsequence) 但是不区分大小写。
+类似于 [hasSubsequence](#hassubsequence) 但是不区分大小写。
 
 ## hasSubsequenceUTF8
 
-类似于 [hasSubsequence](#hasSubsequence) 但是假定 `haystack` 和 `needle` 是 UTF-8 编码的字符串。
+类似于 [hasSubsequence](#hassubsequence) 但是假定 `haystack` 和 `needle` 是 UTF-8 编码的字符串。
 
 ## hasSubsequenceCaseInsensitiveUTF8
 
-类似于 [hasSubsequenceUTF8](#hasSubsequenceUTF8) 但是不区分大小写。
+类似于 [hasSubsequenceUTF8](#hassubsequenceutf8) 但是不区分大小写。

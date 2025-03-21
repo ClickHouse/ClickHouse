@@ -2,24 +2,18 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnNullable.h>
 #include <Core/Defines.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/GinFilter.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <Interpreters/misc.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
-#include <Poco/Logger.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -635,7 +629,8 @@ bool MergeTreeConditionFullText::traverseASTEquals(
 
         auto & value = const_value.safeGet<String>();
         String required_substring;
-        bool dummy_is_trivial, dummy_required_substring_is_prefix;
+        bool dummy_is_trivial;
+        bool dummy_required_substring_is_prefix;
         std::vector<String> alternatives;
         OptimizedRegularExpression::analyze(value, required_substring, dummy_is_trivial, dummy_required_substring_is_prefix, alternatives);
 
@@ -749,7 +744,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
     /// have an old index.
     /// TODO: remove this at the end of 2024.
     if (index.type == INVERTED_INDEX_NAME)
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' are no longer supported. Please drop and recreate the index as type 'full-text'");
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' are no longer supported. Please drop and recreate the index as type 'full_text'");
     /// ------
 
     return std::make_shared<MergeTreeIndexGranuleFullText>(index.name, index.column_names.size(), params);

@@ -4,8 +4,17 @@
 #include "Core/Names.h"
 #include "Parsers/IAST_fwd.h"
 
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <Interpreters/evaluateConstantExpression.h>
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 class ColumnsDescription;
 class Context;
 
@@ -35,7 +44,41 @@ public:
 
     static size_t getMaxNumberOfArguments() { return max_number_of_arguments; }
 
-    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr &);
+    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr & context, bool with_structure)
+    {
+        if (args.empty() || args.size() > getMaxNumberOfArguments())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
+
+        auto format_literal = std::make_shared<ASTLiteral>(format);
+        auto structure_literal = std::make_shared<ASTLiteral>(structure);
+
+        for (auto & arg : args)
+            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+
+        /// f(filename)
+        if (args.size() == 1)
+        {
+            args.push_back(format_literal);
+            if (with_structure)
+                args.push_back(structure_literal);
+        }
+        /// f(filename, format)
+        else if (args.size() == 2)
+        {
+            if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
+                args.back() = format_literal;
+            if (with_structure)
+                args.push_back(structure_literal);
+        }
+        /// f(filename, format, structure) or f(filename, format, structure, compression) or f(filename, format, compression)
+        else if (args.size() >= 3)
+        {
+            if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
+                args[1] = format_literal;
+            if (with_structure && checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
+                args[2] = structure_literal;
+        }
+    }
 
 protected:
 
@@ -56,7 +99,7 @@ private:
 
     virtual StoragePtr getStorage(
         const String & source, const String & format, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const String & compression_method) const = 0;
+        const std::string & table_name, const String & compression_method, bool is_insert_query) const = 0;
 
     bool hasStaticStructure() const override { return structure != "auto"; }
 };

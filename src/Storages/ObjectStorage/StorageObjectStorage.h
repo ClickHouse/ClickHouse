@@ -4,12 +4,11 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
-#include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include "Interpreters/ActionsDAG.h"
-#include "Storages/ColumnsDescription.h"
+#include <Interpreters/ActionsDAG.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <memory>
 namespace DB
@@ -18,6 +17,8 @@ namespace DB
 class ReadBufferIterator;
 class SchemaCache;
 class NamedCollection;
+struct StorageObjectStorageSettings;
+using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 
 namespace ErrorCodes
 {
@@ -68,7 +69,8 @@ public:
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
-        ASTPtr partition_by_ = nullptr);
+        ASTPtr partition_by_ = nullptr,
+        bool lazy_init = false);
 
     String getName() const override;
 
@@ -131,6 +133,8 @@ public:
         std::string & sample_path,
         const ContextPtr & context);
 
+    void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
+
     bool hasExternalDynamicMetadata() const override;
 
     void updateExternalDynamicMetadata(ContextPtr) override;
@@ -165,11 +169,11 @@ public:
     using Paths = std::vector<Path>;
 
     static void initialize(
-        Configuration & configuration,
+        Configuration & configuration_to_initialize,
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        std::unique_ptr<StorageObjectStorageSettings> settings);
+        StorageObjectStorageSettingsPtr settings);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -180,6 +184,7 @@ public:
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual std::string getNamespaceType() const { return "namespace"; }
 
+    virtual Path getFullPath() const { return ""; }
     virtual Path getPath() const = 0;
     virtual void setPath(const Path & path) = 0;
 
@@ -193,7 +198,7 @@ public:
 
     /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
     virtual void addStructureAndFormatToArgsIfNeeded(
-        ASTs & args, const String & structure_, const String & format_, ContextPtr context) = 0;
+        ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;
 
     bool withPartitionWildcard() const;
     bool withGlobs() const { return isPathWithGlobs() || isNamespaceWithGlobs(); }
@@ -213,10 +218,9 @@ public:
     virtual ConfigurationPtr clone() = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
-    void setPartitionColumns(const DataLakePartitionColumns & columns) { partition_columns = columns; }
-    const DataLakePartitionColumns & getPartitionColumns() const { return partition_columns; }
-
     virtual bool isDataLakeConfiguration() const { return false; }
+
+    virtual void implementPartitionPruning(const ActionsDAG &) { }
 
     virtual bool hasExternalDynamicMetadata() { return false; }
 
@@ -238,24 +242,29 @@ public:
 
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
+    virtual bool supportsFileIterator() const { return false; }
+    virtual ObjectIterator iterate()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
+    }
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 
+    const StorageObjectStorageSettings & getSettingsRef() const;
 
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
 
-
     void assertInitialized() const;
 
     bool initialized = false;
-    DataLakePartitionColumns partition_columns;
 
-    bool allow_dynamic_metadata_for_data_lakes;
+    StorageObjectStorageSettingsPtr storage_settings;
 };
 
 }

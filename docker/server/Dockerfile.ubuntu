@@ -28,7 +28,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="24.11.1.2557"
+ARG VERSION="25.2.2.39"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 #docker-official-library:off
@@ -125,8 +125,8 @@ RUN clickhouse-local -q 'SELECT * FROM system.build_options' \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
 
 RUN locale-gen en_US.UTF-8
-ENV LANG en_US.UTF-8
-ENV TZ UTC
+ENV LANG=en_US.UTF-8
+ENV TZ=UTC
 
 RUN mkdir /docker-entrypoint-initdb.d
 
@@ -136,6 +136,6 @@ COPY entrypoint.sh /entrypoint.sh
 EXPOSE 9000 8123 9009
 VOLUME /var/lib/clickhouse
 
-ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
+ENV CLICKHOUSE_CONFIG=/etc/clickhouse-server/config.xml
 
 ENTRYPOINT ["/entrypoint.sh"]
