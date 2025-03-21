@@ -392,7 +392,8 @@ void RotatingFileSink::closeFile()
 
 void RotatingFileSink::recoverFiles()
 {
-    for (const auto & entry : std::filesystem::directory_iterator(std::filesystem::current_path() / this->_filename.parent_path()))
+    const auto log_directory = std::filesystem::current_path() / this->_filename.parent_path();
+    for (const auto & entry : std::filesystem::directory_iterator(log_directory))
     {
         if (entry.is_directory())
             continue;
@@ -414,16 +415,22 @@ void RotatingFileSink::recoverFiles()
             continue;
         }
 
+
         if (const size_t pos = entry.path().stem().string().find_last_of('.'); pos != std::string::npos)
         {
-            const std::string index = entry.path().stem().string().substr(pos + 1, entry.path().stem().string().length());
+            const auto stem = entry.path().stem();
+            const std::string index_str = stem.string().substr(pos + 1, stem.string().length());
             std::string current_filename = entry.path().filename().string().substr(0, pos) + extension;
-            std::filesystem::path current_file = entry.path().parent_path();
+            std::filesystem::path current_file = log_directory;
             current_file.append(current_filename);
 
             try
             {
-                created_files.emplace_front(current_file, static_cast<size_t>(DB::parseFromString<size_t>(index) + 1));
+                size_t index = 0;
+                if (!DB::tryParse<size_t>(index, index_str.data(), index_str.size()))
+                    continue;
+
+                created_files.emplace_front(current_file, index + 1);
             }
             catch (...) /// NOLINT(bugprone-empty-catch)
             {

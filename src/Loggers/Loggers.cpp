@@ -405,4 +405,6 @@ void Loggers::closeLogs()
         log_file->closeFile();
     if (error_log_file)
         error_log_file->closeFile();
+
+    getRootLogger()->flushLogs();
 }

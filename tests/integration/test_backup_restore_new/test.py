@@ -1974,37 +1974,34 @@ def test_tables_dependency():
     # Check logs.
     instance.query("SYSTEM FLUSH LOGS")
     expect_in_logs = [
-        f"Table {t1} has no dependencies (level 0)",
-        f"Table {t2} has no dependencies (level 0)",
-        (
+        [f"Table {t1} has no dependencies (level 0)"],
+        [f"Table {t2} has no dependencies (level 0)"],
+        [
             f"Table {t3} has 2 dependencies: {t1}, {t2} (level 1)",
             f"Table {t3} has 2 dependencies: {t2}, {t1} (level 1)",
-        ),
-        f"Table {t4} has 1 dependencies: {t1} (level 1)",
-        f"Table {t5} has 1 dependencies: {t4} (level 2)",
-        f"Table {t6} has 1 dependencies: {t4} (level 2)",
-        f"Table {t7} has 1 dependencies: {t6} (level 3)",
-        f"Table {t8} has 1 dependencies: {t1} (level 1)",
-        f"Table {t9} has no dependencies (level 0)",
-        (
+        ],
+        [f"Table {t4} has 1 dependencies: {t1} (level 1)"],
+        [f"Table {t5} has 1 dependencies: {t4} (level 2)"],
+        [f"Table {t6} has 1 dependencies: {t4} (level 2)"],
+        [f"Table {t7} has 1 dependencies: {t6} (level 3)"],
+        [f"Table {t8} has 1 dependencies: {t1} (level 1)"],
+        [f"Table {t9} has no dependencies (level 0)"],
+        [
             f"Table {t10} has 2 dependencies: {t1}, {t9} (level 1)",
             f"Table {t10} has 2 dependencies: {t9}, {t1} (level 1)",
-        ),
-        (
+        ],
+        [
             f"Table {t11} has 2 dependencies: {t2}, {t9} (level 1)",
             f"Table {t11} has 2 dependencies: {t9}, {t2} (level 1)",
-        ),
-        f"Table {t12} has 1 dependencies: {t2} (level 1)",
-        f"Table {t13} has 1 dependencies: {t2} (level 1)",
-        f"Table {t14} has 1 dependencies: {t2} (level 1)",
-        f"Table {t15} has no dependencies (level 0)",
+        ],
+        [f"Table {t12} has 1 dependencies: {t2} (level 1)"],
+        [f"Table {t13} has 1 dependencies: {t2} (level 1)"],
+        [f"Table {t14} has 1 dependencies: {t2} (level 1)"],
+        [f"Table {t15} has no dependencies (level 0)"],
     ]
     for expect in expect_in_logs:
         assert any(
-            [
-                instance.contains_in_log(f"RestorerFromBackup: {x}")
-                for x in tuple(expect)
-            ]
+            [instance.contains_in_log(f"RestorerFromBackup: {x}") for x in expect]
         )
 
     drop()

@@ -16,6 +16,28 @@ node = cluster.add_instance(
 )
 
 
+def change_logger_level(level):
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""echo "
+<clickhouse>
+    <logger>
+        <level>{level}</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog_level>error</errorlog_level>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>200M</size>
+        <count>10</count>
+    </logger>
+</clickhouse>
+            " > /etc/clickhouse-server/config.d/logger.xml
+            """,
+        ]
+    )
+
+
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -26,6 +48,9 @@ def start_cluster():
 
 
 def test_adjust_log_level(start_cluster):
+    change_logger_level("warning")
+    node.restart_clickhouse()
+
     assert (
         int(
             node.exec_in_container(
@@ -42,25 +67,7 @@ def test_adjust_log_level(start_cluster):
     )
 
     # Adjust log level.
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            """echo "
-<clickhouse>
-    <logger>
-        <level>trace</level>
-        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
-        <errorlog_level>error</errorlog_level>
-        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
-        <size>200M</size>
-        <count>10</count>
-    </logger>
-</clickhouse>
-            " > /etc/clickhouse-server/config.d/logger.xml
-            """,
-        ]
-    )
+    change_logger_level("trace")
     time.sleep(3)
     node.query(
         "SELECT * FROM system.zookeeper SETTINGS allow_unrestricted_reads_from_keeper = 'true'"

@@ -4054,7 +4054,7 @@ class ClickHouseInstance:
         filename="clickhouse-server.log",
         exclusion_substring="",
     ):
-        for i in range(10):
+        for _ in range(10):
             if from_host:
                 # We check first file exists but want to look for all rotated logs as well
                 result = subprocess_check_call(
@@ -4072,10 +4072,11 @@ class ClickHouseInstance:
                         f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{substring}" /var/log/clickhouse-server/{filename} | ( [ -z "{exclusion_substring}" ] && cat || grep -v "${exclusion_substring}" ) || true',
                     ]
                 )
+
             if len(result) > 0:
                 break
 
-            time.sleep(0.5)
+            time.sleep(0.2)
 
         return len(result) > 0
 
