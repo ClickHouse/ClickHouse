@@ -210,11 +210,11 @@ See [`max_bytes_in_set`](/operations/settings/settings#max_bytes_in_set)
 
 ## set_overflow_mode {#set-overflow-mode}
 
-What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.
+See [`set_overflow_mode`](/operations/settings/settings#max_bytes_in_set)
 
 ## max_rows_in_distinct {#max-rows-in-distinct}
 
-A maximum number of different rows when using DISTINCT.
+See [`max_rows_in_distinct`](/operations/settings/settings#max_rows_in_distinct)
 
 ## max_bytes_in_distinct {#max-bytes-in-distinct}
 
