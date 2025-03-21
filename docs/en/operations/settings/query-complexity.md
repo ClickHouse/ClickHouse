@@ -164,7 +164,7 @@ See [`timeout_before_checking_execution_speed`](/operations/settings/settings#ti
 
 ## max_estimated_execution_time {#max_estimated_execution_time}
 
-Maximum query estimate execution time in seconds. Checked on every data block when 'timeout_before_checking_execution_speed' expires.
+See [`max_estimated_execution_time`](/operations/settings/settings#max_estimated_execution_time)
 
 ## max_columns_to_read {#max-columns-to-read}
 

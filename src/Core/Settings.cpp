@@ -2690,7 +2690,9 @@ Checks that execution speed is not too slow (no less than `min_execution_speed`)
 after the specified time in seconds has expired.
 )", 0) \
     DECLARE(Seconds, max_estimated_execution_time, 0, R"(
-Maximum query estimate execution time in seconds.
+Maximum query estimate execution time in seconds. Checked on every data block
+when [`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires.
 )", 0) \
     \
     DECLARE(UInt64, max_columns_to_read, 0, R"(
