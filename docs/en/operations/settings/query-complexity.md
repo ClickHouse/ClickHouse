@@ -160,7 +160,7 @@ See [`max_execution_speed_bytes`](/operations/settings/settings#max_execution_sp
 
 ## timeout_before_checking_execution_speed {#timeout-before-checking-execution-speed}
 
-Checks that execution speed is not too slow (no less than 'min_execution_speed'), after the specified time in seconds has expired.
+See [`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
 
 ## max_estimated_execution_time {#max_estimated_execution_time}
 

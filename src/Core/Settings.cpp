@@ -2686,7 +2686,8 @@ The maximum number of execution bytes per second. Checked on every data block wh
 expires. If the execution speed is high, the execution speed will be reduced.
 )", 0) \
     DECLARE(Seconds, timeout_before_checking_execution_speed, 10, R"(
-Check that the speed is not too low after the specified time has elapsed.
+Checks that execution speed is not too slow (no less than `min_execution_speed`),
+after the specified time in seconds has expired.
 )", 0) \
     DECLARE(Seconds, max_estimated_execution_time, 0, R"(
 Maximum query estimate execution time in seconds.
