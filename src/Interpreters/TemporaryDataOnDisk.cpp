@@ -334,8 +334,9 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
 
 TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(const Block & header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size)
     : WrapperGuard(std::make_unique<TemporaryDataBuffer>(parent_, reserve_size), DBMS_TCP_PROTOCOL_VERSION, header_)
-    , header(header_)
-{}
+    , header(header_.cloneWithoutColumns()) /// header is copied without columns to exclude constant columns since they are not supported in (de/)serialization
+{
+}
 
 TemporaryDataBuffer::Stat TemporaryBlockStreamHolder::finishWriting() const
 {

@@ -25,7 +25,7 @@ Columns:
 **Example**
 
 You can use a query like this to export all the histogram metrics in the Prometheus format.
-``` sql
+```sql
 SELECT
   metric AS name,
   toFloat64(value) AS value,
