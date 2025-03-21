@@ -46,7 +46,7 @@ private:
     UInt64 cur_row_group_left_rows = 0;
     int next_row_group_idx = 0;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     void loadNextRowGroup();
     Int64 getTotalRows(const parquet::FileMetaData & meta_data);

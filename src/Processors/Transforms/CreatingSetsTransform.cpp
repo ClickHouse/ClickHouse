@@ -64,6 +64,7 @@ CreatingSetsTransform::CreatingSetsTransform(
     , external_table(std::move(external_table_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , prepared_sets_cache(std::move(prepared_sets_cache_))
+    , log(getLogger("CreatingSetsTransform"))
 {
 }
 

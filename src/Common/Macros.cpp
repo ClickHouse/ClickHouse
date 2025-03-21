@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
-Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key, Poco::Logger * log)
+Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key, LoggerPtr log)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(root_key, keys);
@@ -37,10 +37,6 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
         }
     }
 }
-
-Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key, LoggerPtr log)
-    : Macros(config, root_key, log.get())
-{}
 
 Macros::Macros(std::map<String, String> map)
 {

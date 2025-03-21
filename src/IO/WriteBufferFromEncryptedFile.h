@@ -40,7 +40,7 @@ private:
 
     FileEncryption::Encryptor encryptor;
 
-    LoggerPtr log = getLogger("WriteBufferFromEncryptedFile");
+    LoggerPtr log;
 };
 
 }

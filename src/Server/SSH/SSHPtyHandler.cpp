@@ -86,7 +86,7 @@ public:
     )
         : channel(std::move(channel_))
         , db_session(std::move(dbSession_))
-        , log(&Poco::Logger::get("SSHChannelCallback"))
+        , log(getLogger("SSHChannelCallback"))
         , enable_client_options_passing(options_.enable_client_options_passing)
     {
         channel_cb.userdata = this;
@@ -109,7 +109,7 @@ public:
     ::ssh::SSHChannel channel;
     std::unique_ptr<Session> db_session;
     std::optional<ClientEmbeddedRunner> client_runner;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// The functionality to pass options
     const bool enable_client_options_passing;
@@ -340,7 +340,7 @@ public:
     )
         : server_context(server.context())
         , peer_address(address_)
-        , log(&Poco::Logger::get("SSHSessionCallback"))
+        , log(getLogger("SSHSessionCallback"))
         , options(options_)
     {
         server_cb.userdata = this;
@@ -358,7 +358,7 @@ public:
     DB::ContextMutablePtr server_context;
     Poco::Net::SocketAddress peer_address;
     std::unique_ptr<ChannelCallback> channel_callback;
-    Poco::Logger * log;
+    LoggerPtr log;
     const SSHPtyHandler::Options options;
 
     ssh_channel channelOpen(ssh_session session) noexcept
@@ -443,7 +443,7 @@ SSHPtyHandler::SSHPtyHandler(
     const Options & options_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
-    , log(&Poco::Logger::get("SSHPtyHandler"))
+    , log(getLogger("SSHPtyHandler"))
     , session(std::move(session_))
     , options(options_)
 {

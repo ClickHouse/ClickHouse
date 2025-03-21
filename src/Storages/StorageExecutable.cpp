@@ -8,6 +8,7 @@
 #include <Columns/IColumn.h>
 
 #include <Common/filesystemHelpers.h>
+#include <Common/Logger.h>
 
 #include <Core/Block.h>
 #include <Core/Settings.h>

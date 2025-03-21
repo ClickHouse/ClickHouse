@@ -7,7 +7,7 @@
 #include <vector>
 #include <memory>
 
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/DOMParser.h>
@@ -160,7 +160,7 @@ private:
 #endif
 
     void hideRecursive(Poco::XML::Node * config_root);
-    XMLDocumentPtr hideElements(XMLDocumentPtr xml_tree);
+    XMLDocumentPtr hideElements(const XMLDocumentPtr & xml_tree);
 
     void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
 

@@ -1,6 +1,7 @@
 #include "LocalServer.h"
 
 #include <sys/resource.h>
+#include <Common/QuillLogger.h>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
@@ -52,6 +53,7 @@
 #include <Formats/registerFormats.h>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
+#include <quill/sinks/FileSink.h>
 #include <filesystem>
 
 #include "config.h"
@@ -305,7 +307,7 @@ void LocalServer::tryInitPath()
     {
         // The path is not provided explicitly - use a unique path in the system temporary directory
         // (or in the current dir if a temporary doesn't exist)
-        LoggerRawPtr log = &logger();
+        LoggerPtr log = getRootLogger();
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
 
@@ -390,7 +392,7 @@ void LocalServer::cleanup()
         // Delete the temporary directory if needed.
         if (temporary_directory_to_delete)
         {
-            LOG_DEBUG(&logger(), "Removing temporary directory: {}", temporary_directory_to_delete->string());
+            LOG_DEBUG(getRootLogger(), "Removing temporary directory: {}", temporary_directory_to_delete->string());
             fs::remove_all(*temporary_directory_to_delete);
             temporary_directory_to_delete.reset();
         }
@@ -595,7 +597,7 @@ try
     }
     catch (...)
     {
-        tryLogCurrentException(&logger(), "Caught exception while loading user defined executable functions.");
+        tryLogCurrentException(getRootLogger(), "Caught exception while loading user defined executable functions.");
         throw;
     }
 
@@ -652,7 +654,7 @@ catch (...)
 void LocalServer::updateLoggerLevel(const String & logs_level)
 {
     getClientConfiguration().setString("logger.level", logs_level);
-    updateLevels(getClientConfiguration(), logger());
+    updateLevels(getClientConfiguration());
 }
 
 void LocalServer::processConfig()
@@ -684,17 +686,15 @@ void LocalServer::processConfig()
 
     if (getClientConfiguration().has("server_logs_file"))
     {
-        auto poco_logs_level = Poco::Logger::parseLevel(level);
-        Poco::Logger::root().setLevel(poco_logs_level);
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
-        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::SimpleFileChannel(server_logs_file));
-        Poco::Logger::root().setChannel(log);
+        Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
+        auto logger = createRootLogger({quill::Frontend::create_or_get_sink<quill::FileSink>(server_logs_file)});
+        logger->setLogLevel(level);
     }
     else
     {
         getClientConfiguration().setString("logger", "logger");
         getClientConfiguration().setString("logger.level", logging ? level : "fatal");
-        buildLoggers(getClientConfiguration(), logger(), "clickhouse-local");
+        buildLoggers(getClientConfiguration(), "clickhouse-local");
     }
 
     shared_context = Context::createShared();
@@ -704,7 +704,7 @@ void LocalServer::processConfig()
 
     tryInitPath();
 
-    LoggerRawPtr log = &logger();
+    LoggerPtr log = getRootLogger();
 
     /// Maybe useless
     if (getClientConfiguration().has("macros"))

@@ -62,8 +62,7 @@ private:
     size_t rows_to_transfer = 0;
     size_t bytes_to_transfer = 0;
 
-    using Logger = Poco::Logger;
-    LoggerPtr log = getLogger("CreatingSetsTransform");
+    LoggerPtr log;
 
     bool is_initialized = false;
 

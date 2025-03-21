@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
+#include <Common/Logger.h>
 
 namespace DB
 {

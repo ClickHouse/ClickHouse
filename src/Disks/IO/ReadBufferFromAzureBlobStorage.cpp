@@ -55,6 +55,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
     , read_until_position(read_until_position_)
+    , log(getLogger("ReadBufferFromAzureBlobStorage"))
 {
     if (!use_external_buffer)
     {

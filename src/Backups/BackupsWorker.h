@@ -6,6 +6,8 @@
 #include <Core/UUID.h>
 #include <Parsers/IAST_fwd.h>
 #include <unordered_map>
+#include <mutex>
+#include <condition_variable>
 
 
 namespace Poco::Util { class AbstractConfiguration; }

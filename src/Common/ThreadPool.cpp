@@ -1,3 +1,4 @@
+#include "Common/QuillLogger_fwd.h"
 #include <Common/ThreadPool.h>
 
 #include <Common/CurrentThread.h>
@@ -14,6 +15,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/demangle.h>
 
+#include <Common/logger_useful.h>
 namespace DB
 {
     namespace ErrorCodes
@@ -769,6 +771,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     /// job can contain packaged_task which can set exception during destruction
                     job_data.reset();
                 }
+                DB::QuillLogger::reset_thread_context();
                 job_is_done = true;
                 continue;
             }
@@ -847,7 +850,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         }
 
         DB::Exception::clearThreadFramePointers();
-
+        DB::QuillLogger::reset_thread_context();
         job_is_done = true;
     }
 }

@@ -3,6 +3,7 @@
 #include <memory>
 #include <optional>
 #include <queue>
+#include <mutex>
 
 #include <Disks/IVolume.h>
 #include <base/defines.h>

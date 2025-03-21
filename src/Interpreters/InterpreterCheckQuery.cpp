@@ -380,6 +380,7 @@ private:
 InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, ContextPtr context_)
     : WithContext(context_)
     , query_ptr(query_ptr_)
+    , log(getLogger("InterpreterCheckQuery"))
 {
 }
 

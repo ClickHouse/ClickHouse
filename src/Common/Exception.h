@@ -4,6 +4,7 @@
 #include <base/errnoToString.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/StackTrace.h>
+#include <Common/Logger_fwd.h>
 #include <Core/LogsLevel.h>
 
 #include <cerrno>
@@ -12,17 +13,6 @@
 
 #include <fmt/format.h>
 #include <Poco/Exception.h>
-
-
-namespace Poco
-{
-class Channel;
-class Logger;
-using LoggerPtr = std::shared_ptr<Logger>;
-}
-
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
-using LoggerRawPtr = Poco::Logger *;
 
 namespace DB
 {
@@ -279,7 +269,6 @@ using Exceptions = std::vector<std::exception_ptr>;
   */
 /// TODO: Logger leak constexpr overload
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
-void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
 void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
 void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
 

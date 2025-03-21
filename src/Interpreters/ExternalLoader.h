@@ -3,13 +3,12 @@
 #include <chrono>
 #include <functional>
 #include <exception>
-#include <unordered_map>
 #include <base/types.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <base/scope_guard.h>
 #include <Common/ExternalLoaderStatus.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <Core/Types.h>
 
 namespace Poco { class Logger; }

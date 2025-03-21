@@ -3,7 +3,7 @@
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/BackupConcurrencyCheck.h>
 #include <Parsers/CreateQueryUUIDs.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <mutex>
 #include <set>
 #include <unordered_set>

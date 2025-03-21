@@ -76,6 +76,7 @@ RemoteCacheController::RemoteCacheController(
     , valid(true)
     , local_cache_bytes_read_before_flush(cache_bytes_before_flush_)
     , current_offset(0)
+    , log(getLogger("RemoteCacheController"))
 {
     // On recover, file_metadata_ptr is null, but it will be allocated after loading from metadata.txt
     // when we allocate a whole new file cache，file_metadata_ptr must not be null.

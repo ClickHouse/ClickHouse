@@ -6,7 +6,7 @@
 #include <aws/core/utils/logging/LogSystemInterface.h>
 #include <base/types.h>
 #include <unordered_map>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 
 namespace Poco { class Logger; }
 

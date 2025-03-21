@@ -16,6 +16,7 @@ WriteBufferFromEncryptedFile::WriteBufferFromEncryptedFile(
     , header(header_)
     , flush_header(!old_file_size)
     , encryptor(header.algorithm, key_, header.init_vector)
+    , log(getLogger("WriteBufferFromEncryptedFile"))
 {
     encryptor.setOffset(old_file_size);
 }

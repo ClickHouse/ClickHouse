@@ -22,6 +22,8 @@ public:
     std::unordered_map<std::string, FilesMetadataPtr> getAll();
 
 private:
+    ObjectStorageQueueMetadataFactory();
+
     struct MetadataWithRefCount
     {
         explicit MetadataWithRefCount(std::shared_ptr<ObjectStorageQueueMetadata> metadata_) : metadata(metadata_) {}
@@ -32,7 +34,7 @@ private:
 
     MetadataByPath metadata_by_path;
     std::mutex mutex;
-    LoggerPtr log = getLogger("QueueMetadataFactory");
+    LoggerPtr log;
 };
 
 }

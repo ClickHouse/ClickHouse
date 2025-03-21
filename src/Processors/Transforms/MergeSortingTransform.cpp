@@ -106,6 +106,7 @@ MergeSortingTransform::MergeSortingTransform(
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
     , max_block_bytes(max_block_bytes_)
+    , log(getLogger("MergeSortingTransform"))
 {
 }
 

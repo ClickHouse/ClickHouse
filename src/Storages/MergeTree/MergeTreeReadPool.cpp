@@ -61,6 +61,7 @@ MergeTreeReadPool::MergeTreeReadPool(
         context_)
     , backoff_settings{context_->getSettingsRef()}
     , backoff_state{pool_settings.threads}
+    , log(getLogger("MergeTreeReadPool"))
 {
     fillPerThreadInfo(pool_settings.threads, pool_settings.sum_marks);
 }

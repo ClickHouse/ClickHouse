@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
-#include <atomic>
 #include <barrier>
 #include <memory>
 #include <random>
 #include <functional>
+#include <thread>
 
 #include <Common/Exception.h>
 #include <Storages/MergeTree/IExecutableTask.h>

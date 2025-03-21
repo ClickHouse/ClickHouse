@@ -1,6 +1,7 @@
 #include "ICommand.h"
 #include "DisksClient.h"
 
+#include <Common/Logger.h>
 
 namespace DB
 {
@@ -20,6 +21,11 @@ CommandLineOptions ICommand::processCommandLineArguments(const Strings & argumen
     po::store(parsed, options);
 
     return options;
+}
+
+ICommand::ICommand(String logger_name)
+    : log(getLogger(logger_name))
+{
 }
 
 void ICommand::execute(const Strings & arguments, DisksClient & client)

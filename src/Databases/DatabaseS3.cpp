@@ -6,6 +6,7 @@
 #include <Databases/DatabaseS3.h>
 
 #include <Common/RemoteHostFilter.h>
+#include <Common/Logger.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>

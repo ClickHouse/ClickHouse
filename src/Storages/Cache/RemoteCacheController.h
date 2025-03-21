@@ -116,7 +116,7 @@ private:
     //std::shared_ptr<ReadBuffer> remote_read_buffer;
     std::unique_ptr<WriteBufferFromFileBase> data_file_writer;
 
-    LoggerPtr log = getLogger("RemoteCacheController");
+    LoggerPtr log;
 };
 using RemoteCacheControllerPtr = std::shared_ptr<RemoteCacheController>;
 

@@ -55,9 +55,7 @@ def test_log_levels_update(start_cluster):
 
     node.replace_config("/etc/clickhouse-server/config.d/log.xml", config)
     node.query("SYSTEM RELOAD CONFIG;")
-    node.exec_in_container(
-        ["bash", "-c", "> /var/log/clickhouse-server/clickhouse-server.log"]
-    )
+    node.rotate_logs()
 
     for _ in range(5):
         node.query("SELECT 1")

@@ -1,10 +1,18 @@
+#include <quill/sinks/ConsoleSink.h>
+#include "Loggers/OwnPatternFormatter.h"
+
 #include "config.h"
 
 #if USE_NURAFT
 #include <Coordination/tests/gtest_coordination_common.h>
 
+#include <Common/Logger.h>
+#include <Common/QuillLogger.h>
+
 #include <Coordination/KeeperLogStore.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+
+#include <quill/Frontend.h>
 
 template<typename TestType>
 class CoordinationChangelogTest : public ::testing::Test
@@ -18,9 +26,9 @@ public:
 
     void SetUp() override
     {
-        Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
-        Poco::Logger::root().setChannel(channel);
-        Poco::Logger::root().setLevel("trace");
+        Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
+        auto logger = createRootLogger({quill::Frontend::create_or_get_sink<DB::ConsoleSink>("ConsoleSink", DB::ConsoleSink::Stream::STDERR)});
+        logger->setLogLevel(quill::LogLevel::TraceL1);
 
         auto settings = std::make_shared<DB::CoordinationSettings>();
         keeper_context = std::make_shared<DB::KeeperContext>(true, settings);

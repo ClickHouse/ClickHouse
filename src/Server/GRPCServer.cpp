@@ -1,6 +1,7 @@
 #include "GRPCServer.h"
 #include <limits>
 #include <memory>
+#include <quill/core/LogLevel.h>
 #include <Poco/Net/SocketAddress.h>
 #if USE_GRPC
 
@@ -95,9 +96,9 @@ namespace
         static std::once_flag once_flag;
         std::call_once(once_flag, [&config]
         {
-            static LoggerRawPtr logger = getRawLogger("grpc");
             gpr_set_log_function([](gpr_log_func_args* args)
             {
+                auto logger = getLogger("grpc");
                 if (args->severity == GPR_LOG_SEVERITY_DEBUG)
                     LOG_DEBUG(logger, "{} ({}:{})", args->message, args->file, args->line);
                 else if (args->severity == GPR_LOG_SEVERITY_INFO)
@@ -106,18 +107,19 @@ namespace
                     LOG_ERROR(logger, "{} ({}:{})", args->message, args->file, args->line);
             });
 
+            auto * logger = getLogger("grpc")->getQuillLogger();
             if (config.getBool("grpc.verbose_logs", false))
             {
                 gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
                 grpc_tracer_set_enabled("all", true);
             }
-            else if (logger->is(Poco::Message::PRIO_DEBUG))
+            else if (logger->get_log_level() == quill::LogLevel::Debug)
             {
-                gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
+               gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
             }
-            else if (logger->is(Poco::Message::PRIO_INFORMATION))
+            else if (logger->get_log_level() == quill::LogLevel::Info)
             {
-                gpr_set_log_verbosity(GPR_LOG_SEVERITY_INFO);
+               gpr_set_log_verbosity(GPR_LOG_SEVERITY_INFO);
             }
         });
     }
@@ -659,7 +661,7 @@ namespace
     class Call // NOLINT(clang-analyzer-optin.performance.Padding)
     {
     public:
-        Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_);
+        Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerPtr log_);
         ~Call();
 
         void start(const std::function<void(void)> & on_finish_call_callback);
@@ -701,7 +703,7 @@ namespace
         const CallType call_type;
         std::unique_ptr<BaseResponder> responder;
         IServer & iserver;
-        LoggerRawPtr log = nullptr;
+        LoggerPtr log = nullptr;
 
         std::optional<Session> session;
         ContextMutablePtr query_context;
@@ -762,7 +764,7 @@ namespace
         ThreadFromGlobalPool call_thread;
     };
 
-    Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_)
+    Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerPtr log_)
         : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
     {
     }
@@ -1898,7 +1900,7 @@ private:
     }
 
     GRPCServer & owner;
-    LoggerRawPtr log;
+    LoggerPtr log;
     ThreadFromGlobalPool queue_thread;
     bool queue_is_shut_down = false;
     std::vector<std::unique_ptr<BaseResponder>> responders_for_new_calls;
@@ -1912,7 +1914,7 @@ private:
 GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_)
     : iserver(iserver_)
     , address_to_listen(address_to_listen_)
-    , log(getRawLogger("GRPCServer"))
+    , log(getLogger("GRPCServer"))
     , runner(std::make_unique<Runner>(*this))
 {}
 

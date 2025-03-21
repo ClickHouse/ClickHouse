@@ -37,7 +37,7 @@ private:
 
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> impl;
 
-    LoggerPtr log = getLogger("ReadBufferFromS3");
+    LoggerPtr log;
 
 public:
     ReadBufferFromS3(

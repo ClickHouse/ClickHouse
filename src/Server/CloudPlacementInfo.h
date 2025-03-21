@@ -3,7 +3,7 @@
 #include <string>
 #include <boost/core/noncopyable.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 
 namespace DB
 {
@@ -25,9 +25,9 @@ public:
     std::string getAvailabilityZone() const;
 
 private:
-    PlacementInfo() = default;
+    PlacementInfo();
 
-    LoggerPtr log = getLogger("CloudPlacementInfo");
+    LoggerPtr log;
 
     bool initialized;
 

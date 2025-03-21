@@ -90,7 +90,7 @@ public:
 
 private:
     Cache cache;
-    LoggerPtr logger = getLogger("QueryConditionCache");
+    LoggerPtr logger;
 
     friend class StorageSystemQueryConditionCache;
 };

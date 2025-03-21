@@ -3,7 +3,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Formats/NativeReader.h>
-#include <Poco/Logger.h>
+#include <Common/Logger.h>
 
 namespace DB
 {

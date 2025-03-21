@@ -599,6 +599,7 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     , superdigest(superdigest_)
     , storage_tick_time(storage_tick_time_)
     , keeper_context(keeper_context_)
+    , log(getLogger("KeeperSnapshotManager"))
 {
     std::unordered_set<DiskPtr> read_disks;
     const auto load_snapshot_from_disk = [&](const auto & disk)

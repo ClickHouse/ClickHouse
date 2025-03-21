@@ -56,7 +56,7 @@ private:
 
     JoinTableSide position;
 
-    LoggerPtr log = getLogger("CreateSetAndFilterOnTheFlyStep");
+    LoggerPtr log;
 };
 
 }

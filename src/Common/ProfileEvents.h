@@ -2,6 +2,7 @@
 
 #include <Common/VariableContext.h>
 #include <Common/Stopwatch.h>
+#include <Core/LogsLevel.h>
 #include <base/types.h>
 #include <base/strong_typedef.h>
 #include <Poco/Message.h>
@@ -172,6 +173,8 @@ namespace ProfileEvents
 
     /// Increment a counter for log messages.
     void incrementForLogMessage(Poco::Message::Priority priority);
+
+    void incrementForLogMessage(DB::LogsLevel log_level);
 
     /// Increment time consumed by logging.
     void incrementLoggerElapsedNanoseconds(UInt64 ns);

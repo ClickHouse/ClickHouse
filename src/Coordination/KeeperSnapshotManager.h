@@ -195,7 +195,7 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    LoggerPtr log = getLogger("KeeperSnapshotManager");
+    LoggerPtr log;
 };
 
 /// Keeper create snapshots in background thread. KeeperStateMachine just create

@@ -4,6 +4,7 @@
 #include <Backups/BackupImpl.h>
 #include <Common/Exception.h>
 #include <IO/NullWriteBuffer.h>
+#include <Common/Logger.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;

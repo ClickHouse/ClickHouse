@@ -2,6 +2,7 @@
 #include "Core/Block.h"
 #include "Columns/ColumnString.h"
 #include "Columns/ColumnsNumber.h"
+#include <Common/Logger.h>
 
 #include <Common/ProfileEvents.h>
 

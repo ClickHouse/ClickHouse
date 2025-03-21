@@ -99,7 +99,7 @@ namespace ErrorCodes
 
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
 {
-    auto address = makeSocketAddress(host, port, &logger());
+    auto address = makeSocketAddress(host, port, getRootLogger());
     socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config().getBool("listen_reuse_port", false));
     socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
 
@@ -121,7 +121,7 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
     {
         if (listen_try)
         {
-            LOG_WARNING(&logger(), "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
+            LOG_WARNING(getRootLogger(), "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
                 "then consider to "
                 "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
                 "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
@@ -137,7 +137,7 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
 
 void Keeper::uninitialize()
 {
-    logger().information("shutting down");
+    LOG_INFO(getRootLogger(), "shutting down");
     BaseDaemon::uninitialize();
 }
 
@@ -170,9 +170,9 @@ void Keeper::initialize(Poco::Util::Application & self)
     ConfigProcessor::registerEmbeddedConfig("keeper_config.xml", std::string_view(reinterpret_cast<const char *>(gkeeper_resource_embedded_xmlData), gkeeper_resource_embedded_xmlSize));
 
     BaseDaemon::initialize(self);
-    logger().information("starting up");
+    LOG_INFO(getRootLogger(), "starting up");
 
-    LOG_INFO(&logger(), "OS Name = {}, OS Version = {}, OS Architecture = {}",
+    LOG_INFO(getRootLogger(), "OS Name = {}, OS Version = {}, OS Architecture = {}",
         Poco::Environment::osName(),
         Poco::Environment::osVersion(),
         Poco::Environment::osArchitecture());
@@ -310,7 +310,7 @@ try
 #if USE_JEMALLOC
     setJemallocBackgroundThreads(true);
 #endif
-    Poco::Logger * log = &logger();
+    auto log = getRootLogger();
 
     UseSSL use_ssl;
 
@@ -583,7 +583,7 @@ try
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
-            updateLevels(*config, logger());
+            updateLevels(*config);
 
             updateMemorySoftLimitInConfig(*config);
 
@@ -638,7 +638,7 @@ try
     });
 
 
-    buildLoggers(config(), logger());
+    buildLoggers(config());
     main_config_reloader->start();
 
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
@@ -688,6 +688,5 @@ void Keeper::logRevision() const
         build_id.empty() ? "<unknown>" : build_id,
         getpid());
 }
-
 
 }

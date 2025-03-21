@@ -68,6 +68,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     , request_settings(request_settings_)
     , offset(offset_)
     , read_until_position(read_until_position_)
+    , log(getLogger("ReadBufferFromS3"))
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)

@@ -7,7 +7,6 @@
 #include <Poco/Logger.h>
 
 #include <memory>
-#include <string>
 
 
 namespace CurrentMetrics
@@ -24,11 +23,7 @@ class WriteBufferFromHTTPServerResponse;
 class InterserverIOHTTPHandler : public HTTPRequestHandler
 {
 public:
-    explicit InterserverIOHTTPHandler(IServer & server_)
-        : server(server_)
-        , log(getLogger("InterserverIOHTTPHandler"))
-    {
-    }
+    explicit InterserverIOHTTPHandler(IServer & server_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 

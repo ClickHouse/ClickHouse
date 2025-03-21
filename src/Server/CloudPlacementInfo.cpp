@@ -43,6 +43,10 @@ namespace
     }
 }
 
+PlacementInfo::PlacementInfo()
+    : log(getLogger("CloudPlacementInfo"))
+{
+}
 
 PlacementInfo & PlacementInfo::instance()
 {

@@ -8,6 +8,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+ObjectStorageQueueMetadataFactory::ObjectStorageQueueMetadataFactory()
+    : log(getLogger("QueueMetadataFactory"))
+{
+}
+
 ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance()
 {
     static ObjectStorageQueueMetadataFactory ret;

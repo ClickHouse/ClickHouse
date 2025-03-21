@@ -81,6 +81,11 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     }
 }
 
+InterserverIOHTTPHandler::InterserverIOHTTPHandler(IServer & server_)
+    : server(server_)
+    , log(getLogger("InterserverIOHTTPHandler"))
+{
+}
 
 void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {

@@ -1,18 +1,31 @@
 #pragma once
 
-/// Macros for convenient usage of Poco logger.
+#include <utility>
 #include <unistd.h>
 #include <fmt/args.h>
 #include <fmt/format.h>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <Common/AtomicLogger.h>
+#include <Common/Concepts.h>
 #include <Common/CurrentThreadHelpers.h>
 #include <Common/Logger.h>
+#include <Common/QuillLogger.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/SensitiveDataMasker.h>
+#include <Common/CurrentThread.h>
+#include <Core/LogsLevel.h>
+#include <Loggers/TextLogSink.h>
+#include <Loggers/OwnPatternFormatter.h>
 
+#define QUILL_DISABLE_NON_PREFIXED_MACROS 1
+
+#include <quill/Logger.h>
+#include <quill/Frontend.h>
+#include <quill/sinks/ConsoleSink.h>
+#include <quill/LogMacros.h>
 
 #define LogToStr(x, y) LogToStrImpl(x, y)
 #define LogFrequencyLimiter(x, y) LogFrequencyLimiterImpl(x, y)
@@ -21,13 +34,129 @@ using LogSeriesLimiterPtr = std::shared_ptr<LogSeriesLimiter>;
 
 namespace impl
 {
-    [[maybe_unused]] inline LoggerPtr getLoggerHelper(const LoggerPtr & logger) { return logger; }
-    [[maybe_unused]] inline const ::Poco::Logger * getLoggerHelper(const ::Poco::Logger * logger) { return logger; }
+    constexpr Poco::Message::Priority logLevelToPocoPriority(DB::LogsLevel log_level)
+    {
+        using enum DB::LogsLevel;
+        switch (log_level)
+        {
+            case fatal: return Poco::Message::PRIO_FATAL;
+            case error: return Poco::Message::PRIO_ERROR;
+            case warning: return Poco::Message::PRIO_WARNING;
+            case information: return Poco::Message::PRIO_INFORMATION;
+            case debug: return Poco::Message::PRIO_DEBUG;
+            case trace: return Poco::Message::PRIO_TRACE;
+            case test: return Poco::Message::PRIO_TEST;
+            case none: chassert(false, "Invalid log level 'none'");
+        }
+
+        std::unreachable();
+    }
+
+    constexpr quill::LogLevel logLevelToQuillLogLevel(DB::LogsLevel log_level)
+    {
+        using enum DB::LogsLevel;
+        switch (log_level)
+        {
+            case fatal: return quill::LogLevel::Critical;
+            case error: return quill::LogLevel::Error;
+            case warning: return quill::LogLevel::Warning;
+            case information: return quill::LogLevel::Info;
+            case debug: return quill::LogLevel::Debug;
+            case trace: return quill::LogLevel::TraceL1;
+            case test: return quill::LogLevel::TraceL2;
+            case none: return quill::LogLevel::None;
+        }
+    }
+
+    /////////////////// getLoggerHelper ///////////////////
     [[maybe_unused]] inline LoggerPtr getLoggerHelper(const DB::AtomicLogger & logger) { return logger.load(); }
-    [[maybe_unused]] inline LogToStrImpl getLoggerHelper(LogToStrImpl && logger) { return logger; }
-    [[maybe_unused]] inline LogFrequencyLimiterImpl getLoggerHelper(LogFrequencyLimiterImpl && logger) { return logger; }
-    [[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }
     [[maybe_unused]] inline LogSeriesLimiter * getLoggerHelper(LogSeriesLimiter & logger) { return &logger; }
+
+    template <typename TLogger>
+    requires (!DB::is_any_of<std::decay_t<TLogger>, DB::AtomicLogger>)
+    inline TLogger getLoggerHelper(TLogger && logger)
+    {
+        return std::forward<TLogger>(logger);
+    }
+    /////////////////// getLoggerHelper ///////////////////
+
+    /////////////////// getLoggerName ///////////////////
+    template <typename TLogger>
+    requires DB::is_any_of<TLogger, LoggerPtr, LoggerRawPtr, LogSeriesLimiter *, LogSeriesLimiterPtr>
+    inline std::string_view getLoggerName(const TLogger & logger)
+    {
+        return logger->getName();
+    }
+
+    template <typename TLogger>
+    requires DB::is_any_of<TLogger, LogToStrImpl, LogFrequencyLimiterImpl>
+    inline std::string_view getLoggerName(const TLogger & logger)
+    {
+        return logger.getName();
+    }
+
+    [[maybe_unused]] inline std::string_view getLoggerName(DB::QuillLoggerPtr logger)
+    {
+        return logger->get_logger_name();
+    }
+    /////////////////// getLoggerName ///////////////////
+
+    /////////////////// getQuillLogger ///////////////////
+    template <typename TLogger>
+    requires DB::is_any_of<TLogger, LoggerPtr, LoggerRawPtr>
+    inline DB::QuillLoggerPtr getQuillLogger(const TLogger & logger)
+    {
+        chassert(logger != nullptr);
+        return logger->getQuillLogger();
+    }
+
+    template <typename TLogger>
+    requires DB::is_any_of<TLogger, LogToStrImpl, LogFrequencyLimiterImpl>
+    inline DB::QuillLoggerPtr getQuillLogger(const TLogger & logger)
+    {
+        return getQuillLogger(logger.getLogger());
+    }
+
+    template <typename TLogger>
+    requires DB::is_any_of<TLogger, LogSeriesLimiter *, LogSeriesLimiterPtr>
+    inline DB::QuillLoggerPtr getQuillLogger(const TLogger & logger)
+    {
+        chassert(logger != nullptr);
+        return getQuillLogger(logger->getLogger());
+    }
+
+    [[maybe_unused]] inline DB::QuillLoggerPtr getQuillLogger(DB::QuillLoggerPtr logger)
+    {
+        return logger;
+    }
+    /////////////////// getQuillLogger ///////////////////
+
+    /////////////////// shouldLog ///////////////////
+    [[maybe_unused]] inline bool shouldLog(DB::QuillLoggerPtr quill_logger, DB::LogsLevel level)
+    {
+        return quill_logger && quill_logger->should_log_statement(::impl::logLevelToQuillLogLevel(level));
+    }
+
+    template <typename TLogger>
+    inline bool shouldLog(TLogger & logger, DB::LogsLevel level, Poco::Message * message)
+    {
+        if (!shouldLog(getQuillLogger(logger), level))
+            return false;
+
+        if constexpr (DB::is_any_of<TLogger, LogToStrImpl, LogFrequencyLimiterImpl>)
+        {
+            return !message || logger.shouldLogMessage(*message);
+        }
+        else if constexpr (DB::is_any_of<TLogger, LogSeriesLimiter *, LogSeriesLimiterPtr>)
+        {
+            return !message || logger->shouldLogMessage(*message);
+        }
+        else
+        {
+            return true;
+        }
+    }
+    /////////////////// shouldLog ///////////////////
 }
 
 #define LOG_IMPL_FIRST_ARG(X, ...) X
@@ -58,88 +187,113 @@ namespace impl
 #define LINE_NUM_AS_STRING LINE_NUM_AS_STRING_IMPL(__LINE__)
 #define MESSAGE_FOR_EXCEPTION_ON_LOGGING "Failed to write a log message: " __FILE__ ":" LINE_NUM_AS_STRING "\n"
 
-/// Logs a message to a specified logger with that level.
-/// If more than one argument is provided,
-///  the first argument is interpreted as a template with {}-substitutions
-///  and the latter arguments are treated as values to substitute.
-/// If only one argument is provided, it is treated as a message without substitutions.
-
 constexpr bool constexprContains(std::string_view haystack, std::string_view needle)
 {
     return haystack.find(needle) != std::string_view::npos;
 }
 
-#define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
-{                                                                                                                   \
-    static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsOneLine"), "Think twice!");                    \
-    static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsMultiLine"), "Think twice!");                  \
-    auto _logger = ::impl::getLoggerHelper(logger);                                                                 \
-    const bool _is_clients_log = DB::currentThreadHasGroup() && DB::currentThreadLogsLevel() >= (priority);         \
-    if (!_is_clients_log && !_logger->is((PRIORITY)))                                                               \
-        break;                                                                                                      \
-                                                                                                                    \
-    Stopwatch _logger_watch;                                                                                        \
-    try                                                                                                             \
-    {                                                                                                               \
-        ProfileEvents::incrementForLogMessage(PRIORITY);                                                            \
-        auto _channel = _logger->getChannel();                                                                      \
-        if (!_channel)                                                                                              \
-            break;                                                                                                  \
-                                                                                                                    \
-        constexpr size_t _nargs = CH_VA_ARGS_NARGS(__VA_ARGS__);                                                    \
-        using LogTypeInfo = FormatStringTypeInfo<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>;          \
-                                                                                                                    \
-        std::string_view _format_string;                                                                            \
-        std::string _formatted_message;                                                                             \
-        std::vector<std::string> _format_string_args;                                                               \
-                                                                                                                    \
-        if constexpr (LogTypeInfo::is_static)                                                                       \
-        {                                                                                                           \
-            formatStringCheckArgsNum(LOG_IMPL_FIRST_ARG(__VA_ARGS__), _nargs - 1);                                  \
-            _format_string = ConstexprIfsAreNotIfdefs<LogTypeInfo::is_static>::getStaticFormatString(LOG_IMPL_FIRST_ARG(__VA_ARGS__)); \
-        }                                                                                                           \
-                                                                                                                    \
-        constexpr bool is_preformatted_message = !LogTypeInfo::is_static && LogTypeInfo::has_format;                \
-        if constexpr (is_preformatted_message)                                                                      \
-        {                                                                                                           \
-            static_assert(_nargs == 1 || !is_preformatted_message);                                                 \
-            ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__)).apply(_formatted_message, _format_string, _format_string_args);  \
-        }                                                                                                           \
-        else                                                                                                        \
-        {                                                                                                           \
-             _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
-        }                                                                                                           \
-                                                                                                                    \
-        std::string _file_function = __FILE__ "; ";                                                                 \
-        _file_function += __PRETTY_FUNCTION__;                                                                      \
-        Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
-            (PRIORITY), _file_function.c_str(), __LINE__, _format_string, _format_string_args);                     \
-        _channel->log(_poco_message);                                                                               \
-    }                                                                                                               \
-    catch (const Poco::Exception & logger_exception)                                                                \
-    {                                                                                                               \
-        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
-        const std::string & logger_exception_message = logger_exception.message();                                  \
-        ::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
-    }                                                                                                               \
-    catch (const std::exception & logger_exception)                                                                 \
-    {                                                                                                               \
-        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
-        const char * logger_exception_message = logger_exception.what();                                            \
-        ::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
-    }                                                                                                               \
-    catch (...)                                                                                                     \
-    {                                                                                                               \
-        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
-    }                                                                                                               \
-    ProfileEvents::incrementLoggerElapsedNanoseconds(_logger_watch.elapsedNanoseconds());                           \
-} while (false)
+/// Logs a message to a specified logger with that level.
+/// If more than one argument is provided,
+///  the first argument is interpreted as a template with {}-substitutions
+///  and the latter arguments are treated as values to substitute.
+/// If only one argument is provided, it is treated as a message without substitutions.
+#define LOG_IMPL(logger, level, ...) do                                                                                                    \
+    {                                                                                                                                      \
+        static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsOneLine"), "Think twice!");                                       \
+        static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsMultiLine"), "Think twice!");                                     \
+        if (!isLoggingEnabled())                                                                                                           \
+            break;                                                                                                                         \
+        auto _logger = ::impl::getLoggerHelper(logger);                                                                                    \
+        const bool _is_clients_log = DB::currentThreadHasGroup() && DB::currentThreadLogsLevel() >= (level);                               \
+        if (!_is_clients_log && !::impl::shouldLog(_logger, level, nullptr))                                                               \
+            break;                                                                                                                         \
+                                                                                                                                           \
+        Stopwatch _logger_watch;                                                                                                           \
+        try                                                                                                                                \
+        {                                                                                                                                  \
+            ProfileEvents::incrementForLogMessage(level);                                                                                  \
+            constexpr size_t _nargs = CH_VA_ARGS_NARGS(__VA_ARGS__);                                                                       \
+            using LogTypeInfo = FormatStringTypeInfo<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>;                             \
+                                                                                                                                           \
+            std::string_view _format_string;                                                                                               \
+            std::string _formatted_message;                                                                                                \
+            std::vector<std::string> _format_string_args;                                                                                  \
+                                                                                                                                           \
+            if constexpr (LogTypeInfo::is_static)                                                                                          \
+            {                                                                                                                              \
+                formatStringCheckArgsNum(LOG_IMPL_FIRST_ARG(__VA_ARGS__), _nargs - 1);                                                     \
+                _format_string = ConstexprIfsAreNotIfdefs<LogTypeInfo::is_static>::getStaticFormatString(LOG_IMPL_FIRST_ARG(__VA_ARGS__)); \
+            }                                                                                                                              \
+                                                                                                                                           \
+            constexpr bool is_preformatted_message = !LogTypeInfo::is_static && LogTypeInfo::has_format;                                   \
+            if constexpr (is_preformatted_message)                                                                                         \
+            {                                                                                                                              \
+                static_assert(_nargs == 1 || !is_preformatted_message);                                                                    \
+                ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__))                        \
+                    .apply(_formatted_message, _format_string, _format_string_args);                                                       \
+            }                                                                                                                              \
+            else                                                                                                                           \
+            {                                                                                                                              \
+                _formatted_message = _nargs == 1                                                                                           \
+                    ? firstArg(__VA_ARGS__)                                                                                                \
+                    : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__);              \
+            }                                                                                                                              \
+                                                                                                                                           \
+            if (auto masker = DB::SensitiveDataMasker::getInstance())                                                                      \
+                masker->wipeSensitiveData(_formatted_message);                                                                             \
+                                                                                                                                           \
+            std::string _file_function = __FILE__ "; ";                                                                                    \
+            _file_function += __PRETTY_FUNCTION__;                                                                                         \
+            auto _poco_log_level = ::impl::logLevelToPocoPriority(level);                                                                  \
+            Poco::Message _poco_message(                                                                                                   \
+                std::string{::impl::getLoggerName(_logger)},                                                                               \
+                std::move(_formatted_message),                                                                                             \
+                _poco_log_level,                                                                                                           \
+                _file_function.c_str(),                                                                                                    \
+                __LINE__,                                                                                                                  \
+                _format_string,                                                                                                            \
+                _format_string_args);                                                                                                      \
+            DB::ExtendedLogMessage _msg_ext = DB::ExtendedLogMessage::getFrom(_poco_message);                                              \
+            auto _should_log = ::impl::shouldLog(_logger, level, &_poco_message);                                                          \
+            if (_should_log)                                                                                                               \
+            {                                                                                                                              \
+                std::string _text;                                                                                                         \
+                if (auto * _formatter = ::Logger::getFormatter(); _formatter)                                                              \
+                    _formatter->formatExtended(_msg_ext, _text);                                                                           \
+                                                                                                                                           \
+                QUILL_DEFINE_MACRO_METADATA(__PRETTY_FUNCTION__, "{}", nullptr, quill::LogLevel::Dynamic);                                 \
+                ::impl::getQuillLogger(_logger)->template log_statement<QUILL_IMMEDIATE_FLUSH, true>(                                      \
+                    ::impl::logLevelToQuillLogLevel(level), &macro_metadata, _text.empty() ? _msg_ext.base.getText() : _text);             \
+                                                                                                                                           \
+                if (::Logger::shouldSyncLog())                                                                                             \
+                    ::impl::getQuillLogger(_logger)->flush_log();                                                                          \
+            }                                                                                                                              \
+            ::Logger::getTextLogSink().log(_msg_ext, _should_log);                                                                         \
+        }                                                                                                                                  \
+        catch (const Poco::Exception & logger_exception)                                                                                   \
+        {                                                                                                                                  \
+            ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+            const std::string & logger_exception_message = logger_exception.message();                                                     \
+            ::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size());           \
+        }                                                                                                                                  \
+        catch (const std::exception & logger_exception)                                                                                    \
+        {                                                                                                                                  \
+            ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+            const char * logger_exception_message = logger_exception.what();                                                               \
+            ::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message));                 \
+        }                                                                                                                                  \
+        catch (...)                                                                                                                        \
+        {                                                                                                                                  \
+            ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        }                                                                                                                                  \
+        ProfileEvents::incrementLoggerElapsedNanoseconds(_logger_watch.elapsedNanoseconds());                                              \
+    } while (false)
 
 
-#define LOG_TEST(logger, ...)    LOG_IMPL(logger, DB::LogsLevel::test, Poco::Message::PRIO_TEST, __VA_ARGS__)
-#define LOG_TRACE(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::trace, Poco::Message::PRIO_TRACE, __VA_ARGS__)
-#define LOG_DEBUG(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG, __VA_ARGS__)
-#define LOG_INFO(logger, ...)    LOG_IMPL(logger, DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION, __VA_ARGS__)
-#define LOG_WARNING(logger, ...) LOG_IMPL(logger, DB::LogsLevel::warning, Poco::Message::PRIO_WARNING, __VA_ARGS__)
-#define LOG_ERROR(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::error, Poco::Message::PRIO_ERROR, __VA_ARGS__)
-#define LOG_FATAL(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::error, Poco::Message::PRIO_FATAL, __VA_ARGS__)
+#define LOG_TEST(logger, ...) LOG_IMPL(logger, DB::LogsLevel::test, __VA_ARGS__)
+#define LOG_TRACE(logger, ...) LOG_IMPL(logger, DB::LogsLevel::trace, __VA_ARGS__)
+#define LOG_DEBUG(logger, ...) LOG_IMPL(logger, DB::LogsLevel::debug, __VA_ARGS__)
+#define LOG_INFO(logger, ...) LOG_IMPL(logger, DB::LogsLevel::information, __VA_ARGS__)
+#define LOG_WARNING(logger, ...) LOG_IMPL(logger, DB::LogsLevel::warning, __VA_ARGS__)
+#define LOG_ERROR(logger, ...) LOG_IMPL(logger, DB::LogsLevel::error, __VA_ARGS__)
+#define LOG_FATAL(logger, ...) LOG_IMPL(logger, DB::LogsLevel::fatal, __VA_ARGS__)

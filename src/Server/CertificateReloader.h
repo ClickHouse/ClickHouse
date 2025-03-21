@@ -17,7 +17,7 @@
 #include <Poco/Crypto/RSAKey.h>
 #include <Poco/Crypto/X509Certificate.h>
 #include <Common/MultiVersion.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 
 
 namespace DB
@@ -90,7 +90,7 @@ public:
     int setCertificate(SSL * ssl, const MultiData * pdata);
 
 private:
-    CertificateReloader() = default;
+    CertificateReloader();
 
     /// Initialize the callback and perform the initial cert loading
     void init(MultiData * pdata) TSA_REQUIRES(data_mutex);
@@ -100,7 +100,7 @@ private:
 
     std::list<MultiData>::iterator findOrInsert(SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
 
-    LoggerPtr log = getLogger("CertificateReloader");
+    LoggerPtr log;
 
     std::list<MultiData> data TSA_GUARDED_BY(data_mutex);
     std::unordered_map<std::string, std::list<MultiData>::iterator> data_index TSA_GUARDED_BY(data_mutex);

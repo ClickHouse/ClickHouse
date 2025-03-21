@@ -1244,7 +1244,7 @@ void ExternalIntegrations::createPeerTable(
             next_calls_succeeded.emplace_back(sqlite->performCreatePeerTable(rg, false, t, ct, entries));
             break;
         case PeerTableDatabase::None:
-            chassert(0);
+            chassert(false);
             break;
     }
 }

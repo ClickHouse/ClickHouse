@@ -12,6 +12,8 @@
 #include <memory>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <Common/Logger.h>
+
 namespace DB
 {
 

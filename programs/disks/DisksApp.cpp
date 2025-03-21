@@ -2,6 +2,8 @@
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
 #include "Common/Exception.h"
+#include "Common/Logger.h"
+#include <Common/QuillLogger.h>
 #include "Common/filesystemHelpers.h"
 #include <Common/Config/ConfigProcessor.h>
 #include "DisksClient.h"
@@ -21,9 +23,11 @@
 #include <Common/TerminalSize.h>
 
 #include <Common/logger_useful.h>
-#include "Loggers/OwnFormattingChannel.h"
 #include "Loggers/OwnPatternFormatter.h"
 #include "config.h"
+
+#include <quill/sinks/FileSink.h>
+#include <quill/sinks/ConsoleSink.h>
 
 #include "Utils.h"
 #include <Server/CloudPlacementInfo.h>
@@ -246,7 +250,7 @@ bool DisksApp::processQueryText(const String & text)
         if (error_string.has_value())
         {
             std::cerr << "Error: " << error_string.value() << "\n";
-            LOG_ERROR(&Poco::Logger::root(), "{}", error_string.value());
+            LOG_ERROR(getLogger("DiskApp"), "{}", error_string.value());
         }
         command = nullptr;
     }
@@ -491,21 +495,22 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     config().keys(keys);
     initializeHistoryFile();
 
+    DB::startQuillBackend();
     if (config().has("save-logs"))
     {
         auto log_level = config().getString("log-level", "trace");
-        Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
 
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
-
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
-        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::FileChannel(log_path));
-        logger().setChannel(log);
+        auto logger = createRootLogger({quill::Frontend::create_or_get_sink<quill::FileSink>(log_path)});
+        logger->setLogLevel(log_level);
+        Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
     }
     else
     {
         auto log_level = config().getString("log-level", "none");
-        Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
+        auto logger = createRootLogger({quill::Frontend::create_or_get_sink<DB::ConsoleSink>("ConsoleSink", DB::ConsoleSink::Stream::STDERR)});
+        logger->setLogLevel(log_level);
+        Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
     }
 
     PlacementInfo::PlacementInfo::instance().initialize(config());

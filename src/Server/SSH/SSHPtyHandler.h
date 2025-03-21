@@ -38,7 +38,7 @@ public:
 
 private:
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
     ::ssh::SSHSession session;
     Options options;
 };

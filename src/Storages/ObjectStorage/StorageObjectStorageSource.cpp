@@ -92,6 +92,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
         1 /* max_threads */))
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
+    , log(getLogger("StorageObjectStorageSource"))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
 {
 }

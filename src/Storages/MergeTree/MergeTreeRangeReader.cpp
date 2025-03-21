@@ -810,6 +810,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     , prewhere_info(prewhere_info_)
     , performance_counters(performance_counters_)
     , main_reader(main_reader_)
+    , log(getLogger("MergeTreeRangeReader"))
 {
     result_sample_block = std::move(prev_reader_header_);
 
@@ -828,6 +829,11 @@ MergeTreeRangeReader::MergeTreeRangeReader(
         if (step.remove_filter_column)
             result_sample_block.erase(step.filter_column_name);
     }
+}
+
+MergeTreeRangeReader::MergeTreeRangeReader()
+    : log(getLogger("MergeTreeRangeReader"))
+{
 }
 
 size_t MergeTreeRangeReader::numReadRowsInCurrentGranule() const

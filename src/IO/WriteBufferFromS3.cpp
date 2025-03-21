@@ -118,6 +118,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
+    , log(getLogger("WriteBufferFromS3"))
     , buffer_allocation_policy(createBufferAllocationPolicy(request_settings))
     , task_tracker(
           std::make_unique<TaskTracker>(

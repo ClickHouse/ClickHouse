@@ -64,6 +64,7 @@ CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
     , num_streams(num_streams_)
     , set(set_)
+    , log(getLogger("CreatingSetsOnTheFlyTransform"))
 {
 }
 
@@ -137,6 +138,7 @@ FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(const Block & header_
     , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
     , set(set_)
+    , log(getLogger("FilterBySetOnTheFlyTransform"))
 {
     const auto & header = inputs.front().getHeader();
     for (size_t idx : key_column_indices)

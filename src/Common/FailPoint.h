@@ -14,6 +14,7 @@
 #pragma clang diagnostic pop
 
 #include <unordered_map>
+#include <mutex>
 
 
 namespace DB

@@ -6,9 +6,8 @@
 #include <Core/Names.h>
 #include <boost/noncopyable.hpp>
 #include <Common/LoggingFormatStringHelpers.h>
+#include <Common/Logger_fwd.h>
 
-
-namespace Poco { class Logger; }
 
 namespace DB
 {

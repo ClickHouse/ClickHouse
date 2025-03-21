@@ -22,7 +22,7 @@ public:
         std::unique_ptr<Session> && database_session_)
         : client_descriptors(std::move(client_descriptor_))
         , db_session(std::move(database_session_))
-        , log(&Poco::Logger::get("ClientEmbeddedRunner"))
+        , log(getLogger("ClientEmbeddedRunner"))
     {
     }
     ~ClientEmbeddedRunner();
@@ -47,7 +47,7 @@ private:
 
     ThreadFromGlobalPool client_thread;
     std::unique_ptr<Session> db_session;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     int exit_code = 1;
 };

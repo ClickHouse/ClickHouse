@@ -129,7 +129,7 @@ public:
         ReadStepPerformanceCountersPtr performance_counters_,
         bool main_reader_);
 
-    MergeTreeRangeReader() = default;
+    MergeTreeRangeReader();
 
     size_t numReadRowsInCurrentGranule() const;
     size_t numPendingRowsInCurrentGranule() const;
@@ -360,7 +360,7 @@ private:
     ReadStepPerformanceCountersPtr performance_counters;
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
 
-    LoggerPtr log = getLogger("MergeTreeRangeReader");
+    LoggerPtr log;
 };
 
 }

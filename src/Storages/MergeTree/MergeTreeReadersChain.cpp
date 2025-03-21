@@ -18,10 +18,15 @@ static size_t getTotalBytesInColumns(const Columns & columns)
             total_bytes += column->byteSize();
     return total_bytes;
 }
+MergeTreeReadersChain::MergeTreeReadersChain()
+    : log(getLogger("MergeTreeReadersChain"))
+{
+}
 
 MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_)
     : range_readers(std::move(range_readers_))
     , is_initialized(true)
+    , log(getLogger("MergeTreeReadersChain"))
 {
 }
 

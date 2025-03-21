@@ -4,7 +4,7 @@
 #include <cppkafka/cppkafka.h>
 #include <Core/Names.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 
 namespace DB
 {

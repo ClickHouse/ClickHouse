@@ -106,7 +106,7 @@ private:
     /// Should we add part level to produced chunk. Part level is useful for next steps if query has FINAL
     bool add_part_level = false;
 
-    LoggerPtr log = getLogger("MergeTreeSelectProcessor");
+    LoggerPtr log;
     std::atomic<bool> is_cancelled{false};
 };
 

@@ -97,7 +97,7 @@ private:
     std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
     std::atomic_bool cancelled_reading = false;
 
-    LoggerPtr log = getLogger("PipelineExecutor");
+    LoggerPtr log;
 
     /// Now it's used to check if query was killed.
     QueryStatusPtr process_list_element;

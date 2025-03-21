@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <Interpreters/Context.h>
+#include <Common/Logger.h>
 
 
 namespace DB

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/UUID.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -18,7 +18,7 @@ public:
     static UUID get();
 
     /// Loads server UUID from file or creates new one. Should be called on daemon startup.
-    static void load(const fs::path & server_uuid_file, Poco::Logger * log);
+    static void load(const fs::path & server_uuid_file, LoggerPtr log);
 
     /// Sets specific server UUID.
     static void set(UUID & uuid);
@@ -26,6 +26,6 @@ public:
     static void setRandomForUnitTests();
 };
 
-UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log);
+UUID loadServerUUID(const fs::path & server_uuid_file, LoggerPtr log);
 
 }

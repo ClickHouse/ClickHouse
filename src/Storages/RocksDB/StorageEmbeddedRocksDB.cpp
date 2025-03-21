@@ -29,6 +29,7 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include "Core/LogsLevel.h"
 #include <Core/Settings.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/RocksDB/RocksDBSettings.h>
@@ -370,19 +371,19 @@ bool StorageEmbeddedRocksDB::optimize(
 
 static_assert(rocksdb::DEBUG_LEVEL == 0);
 static_assert(rocksdb::HEADER_LEVEL == 5);
-static constexpr std::array<std::pair<DB::LogsLevel, Poco::Message::Priority>, 6> rocksdb_logger_map = {
-    std::make_pair(DB::LogsLevel::debug, Poco::Message::Priority::PRIO_DEBUG),
-    std::make_pair(DB::LogsLevel::information, Poco::Message::Priority::PRIO_INFORMATION),
-    std::make_pair(DB::LogsLevel::warning, Poco::Message::Priority::PRIO_WARNING),
-    std::make_pair(DB::LogsLevel::error, Poco::Message::Priority::PRIO_ERROR),
-    std::make_pair(DB::LogsLevel::fatal, Poco::Message::Priority::PRIO_FATAL),
-    /// Same as default logger does for HEADER_LEVEL
-    std::make_pair(DB::LogsLevel::information, Poco::Message::Priority::PRIO_INFORMATION),
-};
+static constexpr std::array rocksdb_log_level_index
+    = {DB::LogsLevel::debug,
+       DB::LogsLevel::information,
+       DB::LogsLevel::warning,
+       DB::LogsLevel::error,
+       DB::LogsLevel::fatal,
+       /// Same as default logger does for HEADER_LEVEL
+       DB::LogsLevel::information};
+
 class StorageEmbeddedRocksDBLogger : public rocksdb::Logger
 {
 public:
-    explicit StorageEmbeddedRocksDBLogger(const rocksdb::InfoLogLevel log_level, LoggerRawPtr log_)
+    explicit StorageEmbeddedRocksDBLogger(const rocksdb::InfoLogLevel log_level, LoggerPtr log_)
         : rocksdb::Logger(log_level)
         , log(log_)
     {}
@@ -399,7 +400,7 @@ public:
         if (log_level < GetInfoLogLevel())
             return;
 
-        auto level = rocksdb_logger_map[log_level];
+        auto level = rocksdb_log_level_index[log_level];
 
         /// stack buffer was enough
         {
@@ -409,7 +410,7 @@ public:
             if (vsnprintf(stack.data(), stack.size(), format, backup_ap) < static_cast<int>(stack.size()))
             {
                 va_end(backup_ap);
-                LOG_IMPL(log, level.first, level.second, "{}", stack.data());
+                //LOG_IMPL(log, level.first, level.second, "{}", stack.data());
                 return;
             }
             va_end(backup_ap);
@@ -426,12 +427,12 @@ public:
             if (vsnprintf(buffer.get(), buffer_size, format, backup_ap) >= buffer_size)
                 buffer[buffer_size - 1] = 0;
             va_end(backup_ap);
-            LOG_IMPL(log, level.first, level.second, "{}", buffer.get());
+            LOG_IMPL(log, level, "{}", buffer.get());
         }
     }
 
 private:
-    LoggerRawPtr log;
+    LoggerPtr log;
 };
 
 void StorageEmbeddedRocksDB::initDB()
@@ -531,7 +532,7 @@ void StorageEmbeddedRocksDB::initDB()
         }
     }
 
-    merged.info_log = std::make_shared<StorageEmbeddedRocksDBLogger>(merged.info_log_level, log.get());
+    merged.info_log = std::make_shared<StorageEmbeddedRocksDBLogger>(merged.info_log_level, log);
     merged.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
 
     if (ttl > 0)

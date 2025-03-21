@@ -70,6 +70,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
     GroupingSetsParamsList grouping_sets_params,
     size_t max_threads_)
     : IAccumulatingTransform(header_, appendGroupingIfNeeded(header_, params.getHeader(header_, final)))
+    , log(getLogger("MergingAggregatedTransform"))
     , max_threads(max_threads_)
 {
     if (!grouping_sets_params.empty())

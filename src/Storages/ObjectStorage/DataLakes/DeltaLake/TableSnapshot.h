@@ -6,7 +6,7 @@
 
 #include <Core/Types.h>
 #include <IO/S3/URI.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include "KernelPointerWrapper.h"

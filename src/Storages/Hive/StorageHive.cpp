@@ -452,6 +452,7 @@ StorageHive::StorageHive(
     , hive_table(hive_table_)
     , partition_by_ast(partition_by_ast_)
     , storage_settings(std::move(storage_settings_))
+    , log(getLogger("StorageHive"))
 {
     /// Check hive metastore url.
     getContext()->getRemoteHostFilter().checkURL(Poco::URI(hive_metastore_url));

@@ -7,6 +7,7 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/Logger.h>
 #include <Columns/ColumnDecimal.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
@@ -120,6 +121,14 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
     return types;
 }
 
+Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
+    : log(getLogger("Set"))
+    , limits(limits_)
+    , max_elements_to_fill(max_elements_to_fill_)
+    , transform_null_in(transform_null_in_)
+    , cast_cache(std::make_unique<InternalCastFunctionCache>())
+{
+}
 
 void Set::setHeader(const ColumnsWithTypeAndName & header)
 {

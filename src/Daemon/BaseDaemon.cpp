@@ -1,3 +1,4 @@
+#include "Common/Logger.h"
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #include <base/defines.h>
@@ -59,6 +60,7 @@
 #endif
 #include <ucontext.h>
 
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -93,7 +95,7 @@ static std::string createDirectory(const std::string & file)
 }
 
 
-static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path)
+static bool tryCreateDirectories(LoggerPtr logger, const std::string & path)
 {
     try
     {
@@ -142,7 +144,7 @@ BaseDaemon::~BaseDaemon()
     }
     catch (...)
     {
-        tryLogCurrentException(&logger());
+        tryLogCurrentException(getRootLogger());
     }
 
     disableLogging();
@@ -366,12 +368,11 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
 
-    /// sensitive data masking rules are not used here
-    buildLoggers(config(), logger(), self.commandName());
-
     /// After initialized loggers but before initialized signal handling.
     if (should_setup_watchdog)
         setupWatchdog();
+    else
+        buildLoggers(config(), self.commandName());
 
     /// Create pid file.
     if (config().has("pid"))
@@ -387,12 +388,12 @@ void BaseDaemon::initialize(Application & self)
         if (core_path.empty())
             core_path = getDefaultCorePath();
 
-        tryCreateDirectories(&logger(), core_path);
+        tryCreateDirectories(getRootLogger(), core_path);
 
         if (!(fs::exists(core_path) && fs::is_directory(core_path)))
         {
             core_path = !log_path.empty() ? log_path : "/opt/";
-            tryCreateDirectories(&logger(), core_path);
+            tryCreateDirectories(getRootLogger(), core_path);
         }
 
         if (0 != chdir(core_path.c_str()))
@@ -419,7 +420,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         /// In release builds send it to sentry (if it is configured)
         if (auto * sentry = SentryWriter::getInstance())
         {
-            LOG_DEBUG(&logger(), "Enable sending LOGICAL_ERRORs to sentry");
+            LOG_DEBUG(getRootLogger(), "Enable sending LOGICAL_ERRORs to sentry");
             Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
             {
                 if (!remote && code == ErrorCodes::LOGICAL_ERROR)
@@ -465,11 +466,11 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    logger().information("Starting " + std::string{VERSION_FULL}
+    LOG_INFO(getRootLogger(), fmt::runtime("Starting " + std::string{VERSION_FULL}
         + " (revision: " + std::to_string(ClickHouseRevision::getVersionRevision())
         + ", git hash: " + std::string(GIT_HASH)
         + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
-        + ", PID " + std::to_string(getpid()));
+        + ", PID " + std::to_string(getpid())));
 }
 
 void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
@@ -526,11 +527,13 @@ void BaseDaemon::handleSignal(int signal_id)
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+    auto root_logger = getRootLogger();
+    LOG_INFO(root_logger, "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 
     if (terminate_signals_counter >= 2)
     {
-        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
+        LOG_INFO(root_logger, "This is the second termination signal. Immediately terminate.");
+        root_logger->flushLogs();
         call_default_signal_handler(signal_id);
         /// If the above did not help.
         _exit(128 + signal_id);
@@ -579,11 +582,12 @@ void BaseDaemon::setupWatchdog()
 
         if (0 == pid)
         {
+            buildLoggers(config());
             updateCurrentThreadIdAfterFork();
-            logger().information("Forked a child process to watch");
+            LOG_INFO(getRootLogger(), "Forked a child process to watch");
 #if defined(OS_LINUX)
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
-                logger().warning("Cannot do prctl to ask termination with parent.");
+                LOG_WARNING(getRootLogger(),"Cannot do prctl to ask termination with parent.");
 #endif
 
             {
@@ -621,27 +625,11 @@ void BaseDaemon::setupWatchdog()
             memcpy(argv0, new_process_name, std::min(strlen(new_process_name), original_process_name.size()));
         }
 
-        /// If streaming compression of logs is used then we write watchdog logs to cerr
-        if (config().getRawString("logger.stream_compress", "false") == "true")
-        {
-            Poco::AutoPtr<OwnPatternFormatter> pf;
-            if (config().getString("logger.formatting.type", "") == "json")
-                pf = new OwnJSONPatternFormatter(config());
-            else
-                pf = new OwnPatternFormatter;
-            Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
-            logger().setChannel(log);
-        }
+        buildLoggers(config(), /*cmd_name=*/"", /*allow_console_only=*/true);
+        DB::startQuillBackend();
 
-        /// Concurrent writing logs to the same file from two threads is questionable on its own,
-        /// but rotating them from two threads is disastrous.
-        if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
-        {
-            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
-            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
-        }
-
-        logger().information(fmt::format("Will watch for the process with pid {}", pid));
+        auto root_logger = getRootLogger();
+        LOG_INFO(root_logger, "Will watch for the process with pid {}", pid);
 
         /// Forward signals to the child process.
         if (forward_signals)
@@ -681,14 +669,14 @@ void BaseDaemon::setupWatchdog()
         {
             // Close log files to prevent keeping descriptors of unlinked rotated files.
             // On next log write files will be reopened.
-            closeLogs(logger());
+            closeLogs();
 
             if (-1 != waitpid(pid, &status, WUNTRACED | WCONTINUED) || errno == ECHILD)
             {
                 if (WIFSTOPPED(status))
-                    logger().warning(fmt::format("Child process was stopped by signal {}.", WSTOPSIG(status)));
+                    LOG_WARNING(root_logger, "Child process was stopped by signal {}.", WSTOPSIG(status));
                 else if (WIFCONTINUED(status))
-                    logger().warning(fmt::format("Child process was continued."));
+                    LOG_WARNING(root_logger, "Child process was continued.");
                 else
                     break;
             }
@@ -698,13 +686,15 @@ void BaseDaemon::setupWatchdog()
 
         if (errno == ECHILD)
         {
-            logger().information("Child process no longer exists.");
+            LOG_INFO(root_logger, "Child process no longer exists.");
+            root_logger->flushLogs();
             _exit(WEXITSTATUS(status));
         }
 
         if (WIFEXITED(status))
         {
-            logger().information(fmt::format("Child process exited normally with code {}.", WEXITSTATUS(status)));
+            LOG_INFO(root_logger, "Child process exited normally with code {}.", WEXITSTATUS(status));
+            root_logger->flushLogs();
             _exit(WEXITSTATUS(status));
         }
 
@@ -718,33 +708,42 @@ void BaseDaemon::setupWatchdog()
 
             if (sig == SIGKILL)
             {
-                logger().fatal(fmt::format("Child process was terminated by signal {} (KILL)."
+                LOG_FATAL(
+                    root_logger,
+                    "Child process was terminated by signal {} (KILL)."
                     " If it is not done by 'forcestop' command or manually,"
-                    " the possible cause is OOM Killer (see 'dmesg' and look at the '/var/log/kern.log' for the details).", sig));
+                    " the possible cause is OOM Killer (see 'dmesg' and look at the '/var/log/kern.log' for the details).",
+                    sig);
             }
             else
             {
-                logger().fatal(fmt::format("Child process was terminated by signal {}.", sig));
+                LOG_FATAL(root_logger, "Child process was terminated by signal {}.", sig);
 
                 if (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT)
+                {
+                    root_logger->flushLogs();
                     _exit(exit_code);
+                }
             }
         }
         else
         {
             // According to POSIX, this should never happen.
-            logger().fatal("Child process was not exited normally by unknown reason.");
+            LOG_FATAL(root_logger, "Child process was not exited normally by unknown reason.");
             exit_code = 42;
         }
 
         if (restart)
         {
-            logger().information("Will restart.");
+            LOG_INFO(root_logger, "Will restart.");
             if (argv0)
                 memcpy(argv0, original_process_name.c_str(), original_process_name.size());
         }
         else
+        {
+            root_logger->flushLogs();
             _exit(exit_code);
+        }
     }
 }
 
