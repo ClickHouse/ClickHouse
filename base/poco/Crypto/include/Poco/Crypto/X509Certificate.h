@@ -168,6 +168,9 @@ namespace Crypto
         /// Reads and returns a list of certificates from
         /// the specified PEM file.
 
+        static List readPEM(std::istream &);
+        /// Reads and returns a list of certificates from a stream.
+
         static void writePEM(const std::string & pemFileName, const List & list);
         /// Writes the list of certificates to the specified PEM file.
 

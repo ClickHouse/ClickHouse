@@ -90,8 +90,8 @@ RSAKeyImpl::RSAKeyImpl(int keyLength, unsigned long exponent): KeyPairImpl("rsa"
 }
 
 
-RSAKeyImpl::RSAKeyImpl(const std::string& publicKeyFile, 
-	const std::string& privateKeyFile, 
+RSAKeyImpl::RSAKeyImpl(const std::string& publicKeyFile,
+	const std::string& privateKeyFile,
 	const std::string& privateKeyPassphrase): KeyPairImpl("rsa", KT_RSA_IMPL),
 		_pRSA(0)
 {
@@ -109,7 +109,7 @@ RSAKeyImpl::RSAKeyImpl(const std::string& publicKeyFile,
 			if (!pubKey)
 			{
 				int rc = BIO_reset(bio);
-				// BIO_reset() normally returns 1 for success and 0 or -1 for failure. 
+				// BIO_reset() normally returns 1 for success and 0 or -1 for failure.
 				// File BIOs are an exception, they return 0 for success and -1 for failure.
 				if (rc != 0) throw Poco::FileException("Failed to load public key", publicKeyFile);
 				pubKey = PEM_read_bio_RSA_PUBKEY(bio, &_pRSA, 0, 0);
@@ -174,7 +174,7 @@ RSAKeyImpl::RSAKeyImpl(std::istream* pPublicKeyStream,
 		if (!publicKey)
 		{
 			int rc = BIO_reset(bio);
-			// BIO_reset() normally returns 1 for success and 0 or -1 for failure. 
+			// BIO_reset() normally returns 1 for success and 0 or -1 for failure.
 			// File BIOs are an exception, they return 0 for success and -1 for failure.
 			if (rc != 1) throw Poco::FileException("Failed to load public key");
 			publicKey = PEM_read_bio_RSA_PUBKEY(bio, &_pRSA, 0, 0);
@@ -205,6 +205,32 @@ RSAKeyImpl::RSAKeyImpl(std::istream* pPublicKeyStream,
 			throw Poco::FileException("Failed to load private key");
 		}
 	}
+}
+
+std::string RSAKeyImpl::getPrivateInPEM() const
+{
+    EVP_PKEY *evp_key = EVP_PKEY_new();
+    if (EVP_PKEY_assign_RSA(evp_key, _pRSA) != 1)
+    {
+        EVP_PKEY_free(evp_key);
+        throw OpenSSLException("Error converting RSA key to an EVP_PKEY structure");
+    }
+
+    BIO * key_bio(BIO_new(BIO_s_mem()));
+    if (PEM_write_bio_PrivateKey(key_bio, evp_key, nullptr, nullptr, 0, nullptr, nullptr) != 1)
+    {
+        BIO_free(key_bio);
+        EVP_PKEY_free(evp_key);
+        throw OpenSSLException("Error writing private key to BIO");
+    }
+
+    char * data;
+    size_t data_len = BIO_get_mem_data(key_bio, &data);
+    std::string private_key(data, data_len);
+
+    BIO_free(key_bio);
+
+    return private_key;
 }
 
 

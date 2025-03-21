@@ -84,6 +84,9 @@ namespace Crypto
         const RSA * getRSA() const;
         /// Returns the OpenSSL RSA object.
 
+        std::string getPrivateInPEM() const;
+        /// Returns the RSA private key in PEM format.
+
         int size() const;
         /// Returns the RSA modulus size.
 
