@@ -72,17 +72,11 @@ See [`max_rows_to_read_leaf`](/operations/settings/settings#max_rows_to_read_lea
 
 ## max_bytes_to_read_leaf {#max-bytes-to-read-leaf}
 
-A maximum number of bytes (uncompressed data) that can be read from a local table on a leaf node when running
-a distributed query. While distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will
-be checked only on the read stage on the leaf nodes and ignored on results merging stage on the root node.
-For example, cluster consists of 2 shards and each shard contains a table with 100 bytes of data.
-Then distributed query which suppose to read all the data from both tables with setting `max_bytes_to_read=150` will fail
-as in total it will be 200 bytes. While query with `max_bytes_to_read_leaf=150` will succeed since leaf nodes will read
-100 bytes at max.
+See [`max_bytes_to_read_leaf`](/operations/settings/settings#max_bytes_to_read_leaf)
 
 ## read_overflow_mode_leaf {#read-overflow-mode-leaf}
 
-What to do when the volume of data read exceeds one of the leaf limits: 'throw' or 'break'. By default, throw.
+See [`read_overflow_mode_leaf`](/docs/operations/settings/settings#read_overflow_mode_leaf)
 
 ## max_rows_to_group_by {#settings-max-rows-to-group-by}
 

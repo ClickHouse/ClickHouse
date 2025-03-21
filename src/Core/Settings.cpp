@@ -2426,10 +2426,29 @@ This setting is unstable with `prefer_localhost_replica=1`.
 :::
 )", 0) \
     DECLARE(UInt64, max_bytes_to_read_leaf, 0, R"(
-Limit on read bytes (after decompression) on the leaf nodes for distributed queries. Limit is applied for local reads only, excluding the final merge stage on the root node. Note, the setting is unstable with prefer_localhost_replica=1.
+The maximum number of bytes (of uncompressed data) that can be read from a local
+table on a leaf node when running a distributed query. While distributed queries
+can issue a multiple sub-queries to each shard (leaf) - this limit will
+be checked only on the read stage on the leaf nodes and will be ignored on the
+merging of results stage on the root node.
+
+For example, a cluster consists of 2 shards and each shard contains a table with
+100 bytes of data. A distributed query which is supposed to read all the data
+from both tables with setting `max_bytes_to_read=150` will fail as in total it
+will be 200 bytes. A query with `max_bytes_to_read_leaf=150` will succeed since
+leaf nodes will read 100 bytes at max.
+
+The restriction is checked for each processed chunk of data.
+
+:::note
+This setting is unstable with `prefer_localhost_replica=1`.
+:::
 )", 0) \
     DECLARE(OverflowMode, read_overflow_mode_leaf, OverflowMode::THROW, R"(
-What to do when the volume of data read exceeds one of the limits: `throw` or `break`.
+Sets what happens when the volume of data read exceeds one of the leaf limits,
+with options:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_to_group_by, 0, R"(
