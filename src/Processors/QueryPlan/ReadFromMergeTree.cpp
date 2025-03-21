@@ -868,6 +868,7 @@ Pipe ReadFromMergeTree::readByLayers(const RangesInDataParts & parts_with_ranges
             {
                 auto header = MergeTreeSelectProcessor::transformHeader(
                     storage_snapshot->getSampleBlockForColumns(in_order_column_names_to_read),
+                    lazily_read_info,
                     query_info.prewhere_info);
                 pipe = Pipe(std::make_shared<NullSource>(header));
             }
