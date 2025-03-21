@@ -17,7 +17,6 @@
 
 #include <memory>
 #include <string>
-#include <unordered_map>
 
 #include <Common/ErrorCodes.h>
 
@@ -92,7 +91,6 @@ public:
 
     std::optional<size_t> totalRows() override
     {
-        LOG_DEBUG(log, "TOTAL ROWS IN CONIFG");
         if (!current_metadata)
             return {};
 

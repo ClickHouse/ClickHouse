@@ -24,7 +24,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 
-
 namespace ProfileEvents
 {
     extern const Event IcebergPartitionPrunnedFiles;
@@ -678,7 +677,5 @@ std::optional<size_t> IcebergMetadata::totalBytes() const
 }
 
 }
-
-
 
 #endif
