@@ -76,7 +76,7 @@ Ensure that the psql client supports and negotiates SCRAM-SHA-256 during connect
 
 Example configuration for user `user_with_sha256` with the password `abacaba`:
 
-```
+```xml
 <user_with_sha256>
     <password_scram_sha256_hex>04e7a70338d7af7bb6142fe7e19fef46d9b605f3e78b932a60e8200ef9154976</password_scram_sha256_hex>
 </user_with_sha256>
