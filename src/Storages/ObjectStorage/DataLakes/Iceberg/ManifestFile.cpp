@@ -259,7 +259,7 @@ std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFiles() const
     Int64 result = 0;
     for (const auto & file : files)
     {
-        /// Have at least one column with rows count
+        /// Have at least one column with bytes count
         bool found = false;
         for (const auto & [column, column_info] : file.columns_infos)
         {
