@@ -719,10 +719,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         [this, read_settings, read_hint, file_size]
         (bool restricted_seek, const StoredObject & object_) mutable -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        if (!object_storage->supportsCache())
-            read_settings.remote_read_buffer_restrict_seek = restricted_seek;
-        else
+        if (object_storage->supportsCache())
             read_settings.remote_read_buffer_restrict_seek = false;
+        else
+            read_settings.remote_read_buffer_restrict_seek = restricted_seek;
         return object_storage->readObject(object_, read_settings, read_hint, file_size);
     };
 
