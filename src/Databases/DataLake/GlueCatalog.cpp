@@ -2,6 +2,7 @@
 
 #if USE_AWS_S3 && USE_AVRO
 
+#include <aws/glue/GlueClient.h>
 #include <aws/glue/model/GetTablesRequest.h>
 #include <aws/glue/model/GetTableRequest.h>
 #include <aws/glue/model/GetDatabasesRequest.h>
@@ -199,6 +200,8 @@ GlueCatalog::GlueCatalog(
     }
 
 }
+
+GlueCatalog::~GlueCatalog() = default;
 
 DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & prefix, size_t limit) const
 {

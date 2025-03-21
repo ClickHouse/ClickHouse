@@ -20,6 +20,7 @@
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Parsers/ASTFunction.h>
 #    include <Parsers/ASTIdentifier.h>
+#    include <Parsers/IAST_erase.h>
 #    include <Parsers/ParserCreateQuery.h>
 #    include <Parsers/parseQuery.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>

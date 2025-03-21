@@ -6,6 +6,11 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 
+#include <Core/Field.h>
+#include <Core/Names.h>
+
+#include <Columns/IColumn_fwd.h>
+
 namespace DB
 {
 
