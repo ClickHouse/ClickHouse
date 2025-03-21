@@ -560,14 +560,24 @@
         }
 
         const uploaded = usage_data.uploaded;
-        const details = { ...usage_data.uploaded_details };
+        const originalDetails = usage_data.uploaded_details;
 
-        const used = Object.values(details).reduce((a, b) => a + b, 0);
-        if (used < uploaded) {
-            details["other"] = uploaded - used;
+        // Group small files into 'other'
+        const groupedDetails = {};
+        let otherTotal = 0;
+        for (const [name, size] of Object.entries(originalDetails)) {
+            const percent = size / uploaded;
+            if (percent < 0.15) {
+                otherTotal += size;
+            } else {
+                groupedDetails[name] = size;
+            }
+        }
+        if (otherTotal > 0) {
+            groupedDetails["other"] = otherTotal;
         }
 
-        const labels = Object.keys(details);
+        const labels = Object.keys(groupedDetails);
 
         const chartWrapper = document.createElement("div");
 
@@ -576,7 +586,7 @@
         title.textContent = "usage:";
         chartWrapper.appendChild(title);
 
-        // Total size row with left/right alignment
+        // Total size row
         const totalRow = document.createElement("div");
         totalRow.style.display = "flex";
         totalRow.style.justifyContent = "space-between";
@@ -608,8 +618,8 @@
         const radius = 150;
 
         let startAngle = 0;
-        labels.forEach((label, i) => {
-            const value = details[label];
+        labels.forEach((label) => {
+            const value = groupedDetails[label];
             const sliceAngle = (value / uploaded) * 2 * Math.PI;
             const color = stringToColor(label);
 
@@ -628,7 +638,7 @@
         legend.style.marginTop = "10px";
 
         labels.forEach((label) => {
-            const value = details[label];
+            const value = groupedDetails[label];
             const percent = ((value / uploaded) * 100).toFixed(1);
             const sizeMB = (value / (1024 * 1024)).toFixed(2);
             const color = stringToColor(label);
@@ -677,7 +687,6 @@
             return `hsl(${hue}, 60%, 60%)`;
         }
     }
-
 
     function addTimeTraceWidget(results) {
         const statusContainer = document.getElementById("status-container");
