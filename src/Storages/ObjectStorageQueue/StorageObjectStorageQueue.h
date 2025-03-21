@@ -83,8 +83,10 @@ private:
     bool enable_hash_ring_filtering TSA_GUARDED_BY(mutex);
     CommitSettings commit_settings TSA_GUARDED_BY(mutex);
 
-    std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
-    std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
+    mutable std::mutex startup_mutex;
+
+    std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata TSA_GUARDED_BY(startup_mutex);
+    std::shared_ptr<ObjectStorageQueueMetadata> files_metadata TSA_GUARDED_BY(startup_mutex);
     ConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
 

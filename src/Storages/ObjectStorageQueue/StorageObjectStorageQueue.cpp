@@ -263,6 +263,7 @@ void StorageObjectStorageQueue::startup()
 {
     /// Register the metadata in startup(), unregister in shutdown.
     /// (If startup is never called, shutdown also won't be called.)
+    std::lock_guard lock(startup_mutex);
     startup_called = true;
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(temp_metadata), getStorageID());
 
@@ -1004,6 +1005,7 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
 
 const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetadata() const
 {
+    std::lock_guard lock(startup_mutex);
     if (!files_metadata)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Files metadata is empty");
     return files_metadata->getTableMetadata();
@@ -1046,9 +1048,13 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
     /// If startup() for a table was not called, results of getTableMetadata() might be empty, in which case
-    /// get the table metadata from temp_metadata
-    const auto & table_metadata = startup_called ? getTableMetadata() : temp_metadata->getTableMetadata();
-
+    /// get the table metadata from temp_metadata. Also, use a startup_mutext to ensure that there is no race
+    /// between when the temp_metadata is reset during startup() and when we call getTableMetadata() below.
+    const auto & table_metadata = [this]() -> const ObjectStorageQueueTableMetadata &
+    {
+        std::lock_guard lock(startup_mutex);
+        return startup_called ? getTableMetadata() : temp_metadata->getTableMetadata();
+    }();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
     settings[ObjectStorageQueueSetting::keeper_path] = zk_path;
