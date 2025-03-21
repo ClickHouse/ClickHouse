@@ -10,17 +10,21 @@ ${CLICKHOUSE_CLIENT} --query "create table tbl (timestamp DateTime, x UInt32 TTL
 ${CLICKHOUSE_CLIENT} --query "insert into tbl select today() - 100, 1, 2 union all select today() - 50, 2, 4;"
 
 # Wait for column TTL to take effect
-while true
-do
+i=0
+retries=300
+while [[ $i -lt $retries ]]; do
     res=$($CLICKHOUSE_CLIENT -q "select x from tbl limit 1 format TSVRaw")
     if [[ $res -eq 0 ]]; then
-        break
+        ${CLICKHOUSE_CLIENT} --query "select x, y from tbl;"
+        ${CLICKHOUSE_CLIENT} --query "select x, y from tbl where x = 0;"
+        ${CLICKHOUSE_CLIENT} --query "select x, y from tbl where y = 2 settings force_optimize_projection_name = 'p';"
+
+        ${CLICKHOUSE_CLIENT} --query "drop table tbl;"
+        exit 0
     fi
+    ((++i))
     sleep 1
 done
 
-${CLICKHOUSE_CLIENT} --query "select x, y from tbl;"
-${CLICKHOUSE_CLIENT} --query "select x, y from tbl where x = 0;"
-${CLICKHOUSE_CLIENT} --query "select x, y from tbl where y = 2 settings force_optimize_projection_name = 'p';"
-
-${CLICKHOUSE_CLIENT} --query "drop table tbl;"
+echo "Timeout waiting for column TTL to take effect" >&2
+exit 1

@@ -488,7 +488,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// Also note, that it is better to do this here, since in other places it
     /// will be too late (i.e. they will be written, and we will burn CPU/disk
     /// resources for this).
-    NameSet columns_to_remove;
     if (!ctx->need_remove_expired_values)
     {
         for (auto & [column_name, ttl] : global_ctx->new_data_part->ttl_infos.columns_ttl)
