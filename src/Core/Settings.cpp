@@ -2452,7 +2452,13 @@ with options:
 )", 0) \
     \
     DECLARE(UInt64, max_rows_to_group_by, 0, R"(
-If aggregation during GROUP BY is generating more than the specified number of rows (unique GROUP BY keys), the behavior will be determined by the 'group_by_overflow_mode' which by default is - throw an exception, but can be also switched to an approximate GROUP BY mode.
+The maximum number of unique keys received from aggregation. This setting lets
+you limit memory consumption when aggregating.
+
+If aggregation during GROUP BY is generating more than the specified number of
+rows (unique GROUP BY keys), the behavior will be determined by the
+'group_by_overflow_mode' which by default is `throw`, but can be also switched
+to an approximate GROUP BY mode.
 )", 0) \
     DECLARE(OverflowModeGroupBy, group_by_overflow_mode, OverflowMode::THROW, R"(
 What to do when the limit is exceeded.

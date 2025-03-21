@@ -80,7 +80,7 @@ See [`read_overflow_mode_leaf`](/docs/operations/settings/settings#read_overflow
 
 ## max_rows_to_group_by {#settings-max-rows-to-group-by}
 
-A maximum number of unique keys received from aggregation. This setting lets you limit memory consumption when aggregating.
+See [`max_rows_to_group_by`](/operations/settings/settings#max_rows_to_group_by)
 
 ## group_by_overflow_mode {#group-by-overflow-mode}
 
