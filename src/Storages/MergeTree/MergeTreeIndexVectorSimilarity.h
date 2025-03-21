@@ -65,6 +65,8 @@ public:
     };
 
     Statistics getStatistics() const;
+
+    size_t memoryUsageBytes() const;
 };
 
 using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization>;
@@ -91,6 +93,8 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return !index || index->size() == 0; }
+
+    size_t memoryUsageBytes() const override { return index->memoryUsageBytes(); }
 
     const String index_name;
     const unum::usearch::metric_kind_t metric_kind;

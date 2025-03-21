@@ -49,6 +49,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -90,7 +91,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 
-#include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
 
 #include <base/insertAtEnd.h>
@@ -303,7 +303,7 @@ static void checkSuspiciousIndices(const ASTFunction * index_function)
     std::unordered_set<UInt64> unique_index_expression_hashes;
     for (const auto & child : index_function->arguments->children)
     {
-        const IAST::Hash hash = child->getTreeHash(/*ignore_aliases=*/ true);
+        const IASTHash hash = child->getTreeHash(/*ignore_aliases=*/ true);
         const auto & first_half_of_hash = hash.low64;
 
         if (!unique_index_expression_hashes.emplace(first_half_of_hash).second)

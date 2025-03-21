@@ -5,7 +5,7 @@
 #include <Core/Names.h>
 #include <Core/Settings.h>
 #include <Interpreters/Aliases.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {

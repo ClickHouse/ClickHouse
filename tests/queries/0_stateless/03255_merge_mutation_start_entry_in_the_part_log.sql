@@ -10,7 +10,7 @@ ALTER TABLE test UPDATE z = x || y WHERE 1;
 SELECT * FROM test ORDER BY ALL;
 TRUNCATE TABLE test;
 DROP TABLE test SYNC;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT event_type, merge_reason, table, part_name, partition_id, partition, rows, merged_from
 FROM system.part_log WHERE database = currentDatabase() AND event_type IN ('MergePartsStart', 'MergeParts', 'MutatePartStart', 'MutatePart')
