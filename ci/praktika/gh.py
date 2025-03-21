@@ -37,7 +37,7 @@ class GH:
 
     @classmethod
     def post_pr_comment(
-        cls, comment_body, or_update_comment_with_substring, repo=None, pr=None
+        cls, comment_body, or_update_comment_with_substring, pr=None, repo=None
     ):
         if not repo:
             repo = _Environment.get().REPOSITORY
@@ -70,7 +70,7 @@ class GH:
         return cls.do_command_with_retries(cmd)
 
     @classmethod
-    def get_pr_contributors(cls, repo=None, pr=None):
+    def get_pr_contributors(cls, pr=None, repo=None):
         if not repo:
             repo = _Environment.get().REPOSITORY
         if not pr:
@@ -90,7 +90,21 @@ class GH:
         return res
 
     @classmethod
-    def get_pr_label_assigner(cls, label, repo=None, pr=None):
+    def get_pr_labels(cls, pr=None, repo=None):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        cmd = f"gh pr view {pr} --repo {repo} --json labels --jq '.labels[].name'"
+        output = Shell.get_output(cmd, verbose=True)
+        res = []
+        if output:
+            res = output.splitlines()
+        return res
+
+    @classmethod
+    def get_pr_label_assigner(cls, label, pr=None, repo=None):
         if not repo:
             repo = _Environment.get().REPOSITORY
         if not pr:
