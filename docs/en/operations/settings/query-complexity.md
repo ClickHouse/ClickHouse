@@ -88,16 +88,7 @@ See [`group_by_overflow_mode`]
 
 ## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
 
-Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](/sql-reference/statements/select/group-by#group-by-in-external-memory).
-
-Possible values:
-
-- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](/sql-reference/statements/select/group-by) operation.
-- 0 — `GROUP BY` in external memory disabled.
-
-Default value: `0`.
-
-Cloud default value: half the memory amount per replica.
+See [`max_bytes_before_external_group_by`](/operations/settings/settings#max_bytes_before_external_group_by)
 
 ## max_bytes_ratio_before_external_group_by {#settings-max_bytes_ratio_before_external_group_by}
 

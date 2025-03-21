@@ -2470,7 +2470,22 @@ Using the 'any' value lets you run an approximation of GROUP BY. The quality of
 this approximation depends on the statistical nature of the data.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_group_by, 0, R"(
-If memory usage during GROUP BY operation is exceeding this threshold in bytes, activate the 'external aggregation' mode (spill data to disk). Recommended value is half of the available system memory.
+Cloud default value: half the memory amount per replica.
+
+Enables or disables execution of `GROUP BY` clauses in external memory.
+(See [GROUP BY in external memory](/sql-reference/statements/select/group-by#group-by-in-external-memory))
+
+Possible values:
+
+- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](/sql-reference/statements/select/group-by) operation.
+- `0` — `GROUP BY` in external memory disabled.
+
+:::note
+If memory usage during GROUP BY operations is exceeding this threshold in bytes,
+activate the 'external aggregation' mode (spill data to disk).
+
+The recommended value is half of the available system memory.
+:::
 )", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_group_by, 0.5, R"(
 Ratio of used memory before enabling external GROUP BY. If you set it to 0.6 the external GROUP BY will be used once the memory usage will reach 60% of allowed memory for query.
