@@ -4428,10 +4428,40 @@ UInt16 Context::getServerPort(const String & port_name) const
     return it->second;
 }
 
-void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
+size_t Context::getMaxPendingMutationsToWarn() const
 {
     SharedLockGuard lock(shared->mutex);
-    shared->max_part_num_to_warn = max_part_to_warn;
+    return shared->max_pending_mutations_to_warn;
+}
+
+size_t Context::getMaxPartNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_part_num_to_warn;
+}
+
+size_t Context::getMaxTableNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_table_num_to_warn;
+}
+
+size_t Context::getMaxViewNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_view_num_to_warn;
+}
+
+size_t Context::getMaxDictionaryNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_dictionary_num_to_warn;
+}
+
+size_t Context::getMaxDatabaseNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_database_num_to_warn;
 }
 
 void Context::setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn)
@@ -4440,10 +4470,10 @@ void Context::setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn)
     shared->max_pending_mutations_to_warn = max_pending_mutations_to_warn;
 }
 
-size_t Context::getMaxPendingMutationsToWarn() const
+void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->max_pending_mutations_to_warn;
+    shared->max_part_num_to_warn = max_part_to_warn;
 }
 
 void Context::setMaxTableNumToWarn(size_t max_table_to_warn)
@@ -5283,14 +5313,14 @@ InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, co
     return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
 }
 
-OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
+OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
 {
-    return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this());
+    return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this(), format_settings);
 }
 
-OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
+OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
 {
-    return FormatFactory::instance().getOutputFormatParallelIfPossible(name, buf, sample, shared_from_this());
+    return FormatFactory::instance().getOutputFormatParallelIfPossible(name, buf, sample, shared_from_this(), format_settings);
 }
 
 

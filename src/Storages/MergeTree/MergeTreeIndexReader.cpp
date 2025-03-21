@@ -103,14 +103,22 @@ MergeTreeIndexGranulePtr MergeTreeIndexReader::read(size_t mark)
         return granule;
     };
 
+    /// Not all skip indexes are created equal. Vector similarity indexes typically have a high index granularity (e.g. GRANULARITY
+    /// 1000000), and as a result they tend to be very large (hundreds of megabytes). Besides IO, repeated de-serialization consumes lots of
+    /// CPU cycles as the on-disk and the in-memory format differ. We therefore keep the deserialized vector similarity granules in a cache.
+    ///
+    /// The same cannot be done for other skip indexes. Because their GRANULARITY is small (e.g. 1), the sheer number of skip index granules
+    /// would create too much lock contention in the cache (this was learned the hard way).
     if (!index->isVectorSimilarityIndex())
         return load_func();
-
-    UInt128 key = VectorSimilarityIndexCache::hash(
-        part->getDataPartStorage().getFullPath(),
-        index->getFileName(),
-        mark);
-    return vector_similarity_index_cache->getOrSet(key, load_func);
+    else
+    {
+        UInt128 key = VectorSimilarityIndexCache::hash(
+            part->getDataPartStorage().getFullPath(),
+            index->getFileName(),
+            mark);
+        return vector_similarity_index_cache->getOrSet(key, load_func);
+    }
 }
 
 }

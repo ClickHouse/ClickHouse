@@ -763,15 +763,18 @@ try
         if (!out_file_buf && default_output_compression_method != CompressionMethod::None)
             out_file_buf = wrapWriteBufferWithCompressionMethod(out_buf, default_output_compression_method, 3, 0);
 
+        auto format_settings = getFormatSettings(client_context);
+        format_settings.is_writing_to_terminal = stdout_is_a_tty;
+
         /// It is not clear how to write progress and logs
         /// intermixed with data with parallel formatting.
         /// It may increase code complexity significantly.
         if (!extras_into_stdout || select_only_into_file)
             output_format = client_context->getOutputFormatParallelIfPossible(
-                current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+                current_format, out_file_buf ? *out_file_buf : *out_buf, block, format_settings);
         else
             output_format = client_context->getOutputFormat(
-                current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+                current_format, out_file_buf ? *out_file_buf : *out_buf, block, format_settings);
 
         output_format->setAutoFlush();
 
