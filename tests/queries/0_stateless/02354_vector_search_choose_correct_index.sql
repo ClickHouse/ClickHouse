@@ -1,6 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database
 
-set allow_experimental_vector_similarity_index=1;
+SET allow_experimental_vector_similarity_index=1;
 SET enable_analyzer = 1; -- analyzer vs. non-analyzer produce slightly different EXPLAIN
 
 -- Test for issue #77978

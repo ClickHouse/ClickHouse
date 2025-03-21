@@ -108,22 +108,24 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     else
         return updated_layers;
 
-    /// Extract reference_vec. It is expected to be a COLUMN-type node and of type Const(Array(Float*)).
+    /// Extract stuff from the ORDER BY clause. It is expected to look like this: ORDER BY cosineDistance(vec1, [1.0, 2.0 ...])
+    /// - The search column is 'vec1'.
+    /// - The reference vector is [1.0, 2.0, ...].
     const ActionsDAG::NodeRawConstPtrs & sort_column_node_children = sort_column_node->children;
     std::vector<Float64> reference_vector;
-    String search_column_name;
-    /// ORDER BY cosineDistance(vec1, [1.0, 2.0 ...]) -> search_column_name is `vec1` and reference_vector is [1.0, 2.0 ...]
+    String search_column;
+
     for (const auto * child : sort_column_node_children)
     {
-        if (child->type == ActionsDAG::ActionType::ALIAS)
+        if (child->type == ActionsDAG::ActionType::ALIAS) /// new analyzer
         {
-            const auto * column_name_node = child->children.at(0);
-            if (column_name_node->type == ActionsDAG::ActionType::INPUT)
-                search_column_name = column_name_node->result_name;
+            const auto * search_column_node = child->children.at(0);
+            if (search_column_node->type == ActionsDAG::ActionType::INPUT)
+                search_column = search_column_node->result_name;
         }
         else if (child->type == ActionsDAG::ActionType::INPUT) /// old analyzer
         {
-            search_column_name = child->result_name;
+            search_column = child->result_name;
         }
         else if (child->type == ActionsDAG::ActionType::COLUMN)
         {
@@ -160,10 +162,10 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         }
     }
 
-    if (search_column_name.empty() || reference_vector.empty())
+    if (search_column.empty() || reference_vector.empty())
         return updated_layers;
 
-    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column_name, distance_function, n, reference_vector);
+    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector);
     read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
 
     return updated_layers;
