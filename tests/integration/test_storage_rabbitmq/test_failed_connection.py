@@ -18,7 +18,6 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=[
-        "configs/rabbitmq.xml",
         "configs/macros.xml",
         "configs/named_collection.xml",
     ],
