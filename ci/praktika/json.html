@@ -568,10 +568,8 @@
         }
 
         const labels = Object.keys(details);
-        const values = Object.values(details);
 
         const chartWrapper = document.createElement("div");
-        chartWrapper.style.marginTop = "50px";
 
         // Title
         const title = document.createElement("h4");
@@ -689,29 +687,31 @@
         }
 
         // Constants
-        const lineWidth = 5; // Height per task
-        const padding = 1; // Space between lines
+        const lineWidth = 5;
+        const padding = 1;
         const totalHeight = (lineWidth + padding) * results.length;
+
+        const widgetWrapper = document.createElement("div");
+        widgetWrapper.style.position = "relative";
+        widgetWrapper.style.marginTop = "20px"; // spacing from previous widget
+        widgetWrapper.style.height = `${totalHeight}px`;
+        widgetWrapper.style.marginLeft = "-10px";
+        widgetWrapper.style.marginRight = "-10px";
+        widgetWrapper.style.width = "calc(100% + 20px)";
+        statusContainer.appendChild(widgetWrapper);
 
         // Create and configure canvas
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
-        const tooltip = document.createElement("div");
 
-        canvas.style.position = "absolute";
-        canvas.style.left = "0px"; // Force canvas to start from the very left
-        canvas.style.width = "100%"; // Make it stretch within container
+        canvas.style.width = "100%";
         canvas.style.height = `${totalHeight}px`;
+        canvas.style.display = "block"; // ensures it's a block-level element
 
-        function resizeCanvas() {
-            canvas.width = statusContainer.clientWidth; // Full width of container
-            canvas.height = totalHeight;
-            drawTimeline(); // Redraw after resizing
-        }
-        resizeCanvas();
-        statusContainer.appendChild(canvas);
+        widgetWrapper.appendChild(canvas);
 
         // Tooltip styles
+        const tooltip = document.createElement("div");
         tooltip.style.position = "absolute";
         tooltip.style.background = "black";
         tooltip.style.color = "white";
@@ -720,23 +720,28 @@
         tooltip.style.fontSize = "12px";
         tooltip.style.display = "none";
         tooltip.style.pointerEvents = "none";
-        statusContainer.appendChild(tooltip);
+        widgetWrapper.appendChild(tooltip);
+
+        function resizeCanvas() {
+            canvas.width = widgetWrapper.clientWidth;
+            canvas.height = totalHeight;
+            drawTimeline();
+        }
+        resizeCanvas();
 
         window.addEventListener("resize", resizeCanvas);
 
         function getColorFromName(name) {
             let hash = 0;
             for (let i = 0; i < name.length; i++) {
-                hash = name.charCodeAt(i) + ((hash << 5) - hash); // Simple hash function
+                hash = name.charCodeAt(i) + ((hash << 5) - hash);
             }
-            const hue = Math.abs(hash % 360); // Map hash to 0-360 for color hue
-            return `hsl(${hue}, 70%, 60%)`; // Use HSL for vibrant, distinct colors
+            const hue = Math.abs(hash % 360);
+            return `hsl(${hue}, 70%, 60%)`;
         }
 
         function drawTimeline() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Store task positions for hover detection
             let taskRects = [];
 
             const minStartTime = runtimeCache.json0.start_time;
@@ -752,15 +757,8 @@
                 if (task.start_time === null) {
                     x = 0;
                     width = canvas.width;
-                    function getCssVariable(name) {
-                        return getComputedStyle(document.body).getPropertyValue(name).trim();
-                    }
-
-                    if (task.status === "pending") {
-                        color = getCssVariable('--pending-bar-color');
-                    } else {
-                        color = getCssVariable('--skipped-bar-color');
-                    }
+                    const getCss = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
+                    color = task.status === "pending" ? getCss('--pending-bar-color') : getCss('--skipped-bar-color');
                 } else if (task.duration === null) {
                     x = (task.start_time - minStartTime) * scaleX;
                     width = (maxTime - (task.start_time - minStartTime)) * scaleX;
@@ -771,15 +769,11 @@
                     color = getColorFromName(task.name);
                 }
 
-                // Draw the bar
                 ctx.fillStyle = color;
                 ctx.fillRect(x, y, width, height);
-
-                // Store task row position (entire row for hover detection)
                 taskRects.push({ x, y, width, height, name: task.name });
             });
 
-            // Mouse move event for hover detection
             canvas.addEventListener("mousemove", (event) => {
                 const rect = canvas.getBoundingClientRect();
                 const tooltipRect = tooltip.getBoundingClientRect();
@@ -794,10 +788,9 @@
                 }
 
                 if (hoveredTask) {
-                    let tooltipX = event.clientX + 10; // Default tooltip position (right of mouse)
-                    // Prevent tooltip from going outside the right edge
+                    let tooltipX = event.clientX + 10;
                     if (tooltipX + tooltipRect.width > rect.right) {
-                        tooltipX = rect.right - tooltipRect.width; // Stop moving right
+                        tooltipX = rect.right - tooltipRect.width;
                     }
                     tooltip.textContent = hoveredTask.name;
                     tooltip.style.left = `${tooltipX}px`;
@@ -808,7 +801,6 @@
                 }
             });
 
-            // Hide tooltip on mouse out
             canvas.addEventListener("mouseleave", () => {
                 tooltip.style.display = "none";
             });
@@ -816,10 +808,7 @@
 
         drawTimeline();
 
-        // Redraw traces every 5 seconds
-        setInterval(() => {
-            drawTimeline();
-        }, 5000);
+        setInterval(drawTimeline, 5000);
     }
 
     function addStatusToStatus(status, start_time, duration) {
@@ -1273,10 +1262,10 @@
         addStatusToStatus(result.status, result.start_time, result.duration);
         if (nameParams.length > 1) {
             addFileButtonToStatus('files', result.links);
-            addStorageUsageChartToStatus(result.ext?.storage_usage)
         } else {
             addTimeTraceWidget(result.results)
         }
+        addStorageUsageChartToStatus(result.ext?.storage_usage)
     }
 
     async function fetchData(PR, REF, sha, nameParams) {
