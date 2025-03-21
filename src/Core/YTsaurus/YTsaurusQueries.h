@@ -3,8 +3,10 @@
 #if USE_YTSAURUS
 
 #include <Core/Types.h>
+#include <fmt/format.h>
 
-namespace ytsaurus
+
+namespace DB
 {
 
 
@@ -54,6 +56,28 @@ struct YTsaurusGetQuery : public IYTsaurusQuery
         return {{.name="path", .value=path}};
     }
     String path;
+};
+
+
+struct YTsaurusSelectRowsQuery : public IYTsaurusQuery
+{
+    explicit YTsaurusSelectRowsQuery(const String& table_path_) : table_path(table_path_) {}
+
+    String getQueryName() const override
+    {
+        return "select_rows";
+    }
+
+    String constructQuery() const
+    {
+        return fmt::format("* from [{}]", table_path);
+    }
+
+    QueryParameters getQueryParameters() const override
+    {
+        return {{.name="query", .value=constructQuery()}};
+    }
+    String table_path;
 };
 
 using YTsaurusQueryPtr = std::shared_ptr<IYTsaurusQuery>;
