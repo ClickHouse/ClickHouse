@@ -2507,7 +2507,11 @@ uncompressed bytes have to be processed for ORDER BY operation, the behavior wil
 be determined by the `sort_overflow_mode` which by default is set to `throw`.
 )", 0) \
     DECLARE(OverflowMode, sort_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what happens if the number of rows received before sorting exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception.
+- `break`: stop executing the query and return the partial result.
 )", 0) \
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
 Prefer maximum block bytes for external sort, reduce the memory usage during merging.

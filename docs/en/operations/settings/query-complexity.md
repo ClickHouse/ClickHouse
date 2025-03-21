@@ -112,7 +112,7 @@ See [`max_bytes_to_sort`](/operations/settings/settings#max_rows_to_sort)
 
 ## sort_overflow_mode {#sort-overflow-mode}
 
-What to do if the number of rows received before sorting exceeds one of the limits: 'throw' or 'break'. By default, throw.
+See [`sort_overflow_mode`](/operations/settings/settings#sort_overflow_mode)
 
 ## max_result_rows {#setting-max_result_rows}
 
