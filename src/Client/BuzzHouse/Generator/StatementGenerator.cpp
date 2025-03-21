@@ -596,13 +596,42 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
 void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
 {
     String buf;
-    const uint32_t noption = rg.nextLargeNumber();
+    const uint32_t noption = rg.nextLargeNumber(), noption2 = rg.nextMediumNumber();
     const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
     std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
     std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
     std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
-    t.setName(ins->mutable_est(), false);
+    if (noption2 < 81)
+    {
+        /// Use insert into table
+        t.setName(ins->mutable_est(), false);
+    }
+    else
+    {
+        /// Use insert into function
+        TableFunction * tf = ins->mutable_tfunc();
+
+        if (fc.clusters.empty() || noption2 < 91)
+        {
+            setTableRemote(rg, true, t, tf);
+        }
+        else
+        {
+            ClusterFunc * cdf = tf->mutable_cluster();
+
+            cdf->set_cname(static_cast<ClusterFunc_CName>((rg.nextRandomUInt32() % static_cast<uint32_t>(ClusterFunc::CName_MAX)) + 1));
+            cdf->set_ccluster(rg.pickRandomly(fc.clusters));
+            t.setName(cdf->mutable_tof()->mutable_est(), true);
+            if (rg.nextBool())
+            {
+                /// Optional sharding key
+                flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
+                cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
+                this->remote_entries.clear();
+            }
+        }
+    }
     flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
     for (const auto & entry : this->entries)

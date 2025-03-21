@@ -313,7 +313,7 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t cte = 10 * static_cast<uint32_t>(!under_remote && !this->ctes.empty());
     const uint32_t table = (40 * static_cast<uint32_t>(has_table)) + (20 * static_cast<uint32_t>(this->peer_query != PeerQuery::None));
     const uint32_t view = 20 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_view);
-    const uint32_t engine_udf = 5 * static_cast<uint32_t>(this->allow_engine_udf && (can_recurse || has_table || has_view));
+    const uint32_t remote_udf = 5 * static_cast<uint32_t>(this->allow_engine_udf && (can_recurse || has_table || has_view));
     const uint32_t generate_series_udf = 10;
     const uint32_t system_table = 3 * static_cast<uint32_t>(this->allow_not_deterministic && !systemTables.empty());
     const uint32_t merge_udf = 2 * static_cast<uint32_t>(this->allow_engine_udf);
@@ -321,10 +321,10 @@ bool StatementGenerator::joinedTableOrFunction(
         = 5 * static_cast<uint32_t>(!fc.clusters.empty() && this->allow_engine_udf && (can_recurse || has_table || has_view));
     const uint32_t merge_index_udf = 3 * static_cast<uint32_t>(has_mergetree_table && this->allow_engine_udf);
     const uint32_t loop_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf && can_recurse);
-    const uint32_t values = 3 * static_cast<uint32_t>(can_recurse);
-    const uint32_t random_data = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf);
-    const uint32_t prob_space = derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf
-        + cluster_udf + merge_index_udf + loop_udf + values + random_data;
+    const uint32_t values_udf = 3 * static_cast<uint32_t>(can_recurse);
+    const uint32_t random_data_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf);
+    const uint32_t prob_space = derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf
+        + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -374,8 +374,9 @@ bool StatementGenerator::joinedTableOrFunction(
         set_final = !v.is_materialized && (this->enforce_final || rg.nextSmallNumber() < 3);
         addViewRelation(rel_name, v);
     }
-    else if (engine_udf && nopt < (derived_table + cte + table + view + engine_udf + 1))
+    else if (remote_udf && nopt < (derived_table + cte + table + view + remote_udf + 1))
     {
+        TableFunction * tf = tof->mutable_tfunc();
         const uint32_t remote_table = 10 * static_cast<uint32_t>(has_table);
         const uint32_t remote_view = 5 * static_cast<uint32_t>(has_view);
         const uint32_t recurse = 10 * static_cast<uint32_t>(can_recurse);
@@ -387,12 +388,12 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
 
-            setTableRemote(rg, true, t, tof->mutable_tfunc());
+            setTableRemote(rg, true, t, tf);
             addTableRelation(rg, true, rel_name, t);
         }
         else if (remote_view && nopt2 < (remote_table + remote_view + 1))
         {
-            RemoteFunc * rfunc = tof->mutable_tfunc()->mutable_remote();
+            RemoteFunc * rfunc = tf->mutable_remote();
             const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(has_view_lambda));
 
             rfunc->set_address(fc.getConnectionHostAndPort());
@@ -402,7 +403,7 @@ bool StatementGenerator::joinedTableOrFunction(
         else if (recurse && nopt2 < (remote_table + remote_view + recurse + 1))
         {
             /// This is the tricky part
-            RemoteFunc * rfunc = tof->mutable_tfunc()->mutable_remote();
+            RemoteFunc * rfunc = tf->mutable_remote();
 
             rfunc->set_address(fc.getConnectionHostAndPort());
             /// Here don't care about the returned result
@@ -416,7 +417,7 @@ bool StatementGenerator::joinedTableOrFunction(
             chassert(0);
         }
     }
-    else if (generate_series_udf && nopt < (derived_table + cte + table + view + engine_udf + generate_series_udf + 1))
+    else if (generate_series_udf && nopt < (derived_table + cte + table + view + remote_udf + generate_series_udf + 1))
     {
         SQLRelation rel(rel_name);
         std::unordered_map<uint32_t, QueryLevel> levels_backup;
@@ -509,7 +510,7 @@ bool StatementGenerator::joinedTableOrFunction(
         rel.cols.emplace_back(SQLRelationCol(rel_name, {cname}));
         this->levels[this->current_level].rels.emplace_back(rel);
     }
-    else if (system_table && nopt < (derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + 1))
+    else if (system_table && nopt < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + 1))
     {
         SQLRelation rel(rel_name);
         ExprSchemaTable * est = tof->mutable_est();
@@ -524,7 +525,7 @@ bool StatementGenerator::joinedTableOrFunction(
         }
         this->levels[this->current_level].rels.emplace_back(rel);
     }
-    else if (merge_udf && nopt < (derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf + 1))
+    else if (merge_udf && nopt < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + 1))
     {
         SQLRelation rel(rel_name);
         TableFunction * tf = tof->mutable_tfunc();
@@ -543,7 +544,7 @@ bool StatementGenerator::joinedTableOrFunction(
     }
     else if (
         cluster_udf
-        && nopt < (derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf + cluster_udf + 1))
+        && nopt < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf + 1))
     {
         TableFunction * tf = tof->mutable_tfunc();
         ClusterFunc * cdf = tf->mutable_cluster();
@@ -597,7 +598,7 @@ bool StatementGenerator::joinedTableOrFunction(
     else if (
         merge_index_udf
         && nopt
-            < (derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf + cluster_udf
+            < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
                + merge_index_udf + 1))
     {
         SQLRelation rel(rel_name);
@@ -618,7 +619,7 @@ bool StatementGenerator::joinedTableOrFunction(
     else if (
         loop_udf
         && nopt
-            < (derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf + cluster_udf
+            < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
                + merge_index_udf + loop_udf + 1))
     {
         /// Here don't care about the returned result
@@ -628,10 +629,10 @@ bool StatementGenerator::joinedTableOrFunction(
         this->depth--;
     }
     else if (
-        values
+        values_udf
         && nopt
-            < (derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf + cluster_udf
-               + merge_index_udf + loop_udf + values + 1))
+            < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
+               + merge_index_udf + loop_udf + values_udf + 1))
     {
         SQLRelation rel(rel_name);
         std::unordered_map<uint32_t, QueryLevel> levels_backup;
@@ -674,10 +675,10 @@ bool StatementGenerator::joinedTableOrFunction(
         this->levels[this->current_level].rels.emplace_back(rel);
     }
     else if (
-        random_data
+        random_data_udf
         && nopt
-            < (derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf + cluster_udf
-               + merge_index_udf + loop_udf + values + random_data + 1))
+            < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
+               + merge_index_udf + loop_udf + values_udf + random_data_udf + 1))
     {
         SQLRelation rel(rel_name);
         const uint32_t ncols = (rg.nextSmallNumber() < 8) ? rg.nextSmallNumber() : rg.nextMediumNumber();

@@ -176,7 +176,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     bool first = true;
     std::error_code ec;
     Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
-    FileFunc * ff = ins->mutable_tfunction()->mutable_file();
+    FileFunc * ff = ins->mutable_tfunc()->mutable_file();
     SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
     OutFormat outf = rg.pickRandomly(outIn);
@@ -234,7 +234,7 @@ void QueryOracle::generateImportQuery(
 {
     Insert * ins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
     InsertFromFile * iff = ins->mutable_insert_file();
-    const FileFunc & ff = sq2.explain().inner_query().insert().tfunction().file();
+    const FileFunc & ff = sq2.explain().inner_query().insert().tfunc().file();
     const OutFormat & outf = ff.outformat();
 
     t.setName(ins->mutable_est(), false);
@@ -359,7 +359,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     else
     {
         ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
-        FileFunc * ff = ins->mutable_tfunction()->mutable_file();
+        FileFunc * ff = ins->mutable_tfunc()->mutable_file();
         OutFormat outf = rg.pickRandomly(outIn);
 
         if (!std::filesystem::remove(qfile, ec) && ec)
@@ -615,7 +615,7 @@ void QueryOracle::replaceQueryWithTablePeers(
     {
         /// Use a different file for the peer database
         std::error_code ec;
-        FileFunc & ff = const_cast<FileFunc &>(sq2.explain().inner_query().insert().tfunction().file());
+        FileFunc & ff = const_cast<FileFunc &>(sq2.explain().inner_query().insert().tfunc().file());
 
         if (!std::filesystem::remove(qfile_peer, ec) && ec)
         {
@@ -631,7 +631,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
 
         /// Then insert the data
-        gen.setTableRemote(rg, false, t, ins->mutable_tfunction());
+        gen.setTableRemote(rg, false, t, ins->mutable_tfunc());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
         t.setName(jtf->mutable_tof()->mutable_est(), false);

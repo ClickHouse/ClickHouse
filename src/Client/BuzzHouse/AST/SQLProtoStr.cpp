@@ -3078,10 +3078,10 @@ CONV_FN(Insert, insert)
     {
         ExprSchemaTableToString(ret, insert.est());
     }
-    else if (insert.has_tfunction())
+    else if (insert.has_tfunc())
     {
         ret += "FUNCTION ";
-        TableFunctionToString(ret, insert.tfunction());
+        TableFunctionToString(ret, insert.tfunc());
     }
     if (insert.cols_size())
     {

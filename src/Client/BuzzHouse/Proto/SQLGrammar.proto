@@ -3180,7 +3180,7 @@ message Insert {
     optional CTEs ctes = 1;
     oneof into_oneof {
         ExprSchemaTable est = 2;
-        TableFunction tfunction = 3;
+        TableFunction tfunc = 3;
     }
     repeated ColumnPath cols = 4;
     oneof insert_oneof {
