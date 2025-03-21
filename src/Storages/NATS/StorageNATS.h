@@ -69,9 +69,6 @@ public:
 
     const String & getFormatName() const { return format_name; }
 
-    void incrementReader();
-    void decrementReader();
-
 private:
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
@@ -90,7 +87,7 @@ private:
     NATSConnectionPtr consumers_connection; /// Connection for all consumers
     NATSConfiguration configuration;
 
-    size_t num_created_consumers = 0;
+    std::atomic<size_t> num_created_consumers = 0;
     Poco::Semaphore semaphore;
     std::mutex consumers_mutex;
     std::vector<NATSConsumerPtr> consumers; /// available NATS consumers
@@ -99,19 +96,15 @@ private:
     /// to setup size of inner consumer for received messages
     uint32_t queue_size;
 
-    std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
     BackgroundSchedulePoolTaskHolder streaming_task;
-    BackgroundSchedulePoolTaskHolder subscribe_consumers_task;
+    BackgroundSchedulePoolTaskHolder initialize_consumers_task;
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
     /// Needed for tell MV or producer background tasks
     /// that they must finish as soon as possible.
     std::atomic<bool> shutdown_called{false};
-    /// For select query we must be aware of the end of streaming
-    /// to be able to turn off the loop.
-    std::atomic<size_t> readers_count = 0;
     std::atomic<bool> mv_attached = false;
 
     mutable bool drop_table = false;
@@ -122,11 +115,14 @@ private:
     bool isSubjectInSubscriptions(const std::string & subject);
 
     /// Functions working in the background
+    void initializeConsumersFunc();
     void streamingToViewsFunc();
-    void subscribeConsumersFunc();
 
+    void createConsumersConnection();
     void createConsumers();
+
     bool subscribeConsumers();
+    void unsubscribeConsumers();
 
     void stopEventLoop();
 
