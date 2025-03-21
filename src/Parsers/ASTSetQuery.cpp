@@ -133,7 +133,7 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
 
 void ASTSetQuery::appendColumnName(WriteBuffer & ostr) const
 {
-    Hash hash = getTreeHash(/*ignore_aliases=*/ true);
+    IASTHash hash = getTreeHash(/*ignore_aliases=*/ true);
 
     writeCString("__settings_", ostr);
     writeText(hash.low64, ostr);
