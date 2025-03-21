@@ -2788,7 +2788,20 @@ source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_in_join, 0, R"(
-Maximum size of the hash table for JOIN (in number of rows).
+Limits the number of rows in the hash table that is used when joining tables.
+
+This settings applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
+operations and the [Join](/engines/table-engines/special/join) table engine.
+
+If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
+
+ClickHouse can proceed with different actions when the limit is reached. Use the
+[`join_overflow_mode`](/operations/settings/query-complexity#settings-join_overflow_mode) setting to choose the action.
+
+Possible values:
+
+- Positive integer.
+- `0` — Unlimited number of rows.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, R"(
 Maximum size of the hash table for JOIN (in number of bytes in memory).

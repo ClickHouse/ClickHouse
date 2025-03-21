@@ -238,20 +238,7 @@ See [`transfer_overflow_mode`](/operations/settings/settings#transfer_overflow_m
 
 ## max_rows_in_join {#settings-max_rows_in_join}
 
-Limits the number of rows in the hash table that is used when joining tables.
-
-This settings applies to [SELECT ... JOIN](/sql-reference/statements/select/join) operations and the [Join](../../engines/table-engines/special/join.md) table engine.
-
-If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
-
-ClickHouse can proceed with different actions when the limit is reached. Use the [join_overflow_mode](#settings-join_overflow_mode) setting to choose the action.
-
-Possible values:
-
-- Positive integer.
-- 0 — Unlimited number of rows.
-
-Default value: 0.
+See [`max_rows_in_join`](/operations/settings/settings#max_rows_in_join)
 
 ## max_bytes_in_join {#settings-max_bytes_in_join}
 
