@@ -891,8 +891,19 @@ bool BackupCoordinationStageSync::checkIfHostsReachStage(const Strings & hosts, 
         }
 
         if (host_info.finished)
+        {
+            if (stage_to_wait == "finalizing tables")
+            {
+                /// This is a newly added stage. For compatibility with older server versions,
+                /// allow other replicas to skip this stage. This doesn't break anything: this stage
+                /// unpauses refreshable materialized views, but older server versions don't pause
+                /// them in the first place.
+                results[i] = "";
+                continue;
+            }
             throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
                             "{} finished without coming to stage {}", getHostDesc(host), stage_to_wait);
+        }
 
         if (should_stop_watching_thread)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "waitHostsReachStage() can't wait for stage {} after the watching thread stopped", stage_to_wait);
