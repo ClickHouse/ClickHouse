@@ -168,11 +168,11 @@ See [`max_estimated_execution_time`](/operations/settings/settings#max_estimated
 
 ## max_columns_to_read {#max-columns-to-read}
 
-A maximum number of columns that can be read from a table in a single query. If a query requires reading a greater number of columns, it throws an exception.
+See [`max_columns_to_read`](/operations/settings/settings#max_columns_to_read)
 
 ## max_temporary_columns {#max-temporary-columns}
 
-A maximum number of temporary columns that must be kept in RAM at the same time when running a query, including constant columns. If there are more temporary columns than this, it throws an exception.
+See [`max_temporary_columns`](/operations/settings/settings#max_temporary_columns)
 
 ## max_temporary_non_const_columns {#max-temporary-non-const-columns}
 

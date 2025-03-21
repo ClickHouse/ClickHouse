@@ -2696,10 +2696,27 @@ expires.
 )", 0) \
     \
     DECLARE(UInt64, max_columns_to_read, 0, R"(
-If a query requires reading more than specified number of columns, exception is thrown. Zero value means unlimited. This setting is useful to prevent too complex queries.
+The maximum number of columns that can be read from a table in a single query.
+If a query requires reading more than the specified number of columns, an exception
+is thrown.
+
+:::tip
+This setting is useful for preventing overly complex queries.
+:::
+
+`0` value means unlimited.
 )", 0) \
     DECLARE(UInt64, max_temporary_columns, 0, R"(
-If a query generates more than the specified number of temporary columns in memory as a result of intermediate calculation, the exception is thrown. Zero value means unlimited. This setting is useful to prevent too complex queries.
+The maximum number of temporary columns that must be kept in RAM simultaneously
+when running a query, including constant columns. If a query generates more than
+the specified number of temporary columns in memory as a result of intermediate
+calculation, then an exception is thrown.
+
+:::tip
+This setting is useful for preventing overly complex queries.
+:::
+
+`0` value means unlimited.
 )", 0) \
     DECLARE(UInt64, max_temporary_non_const_columns, 0, R"(
 Similar to the 'max_temporary_columns' setting but applies only to non-constant columns. This makes sense because constant columns are cheap and it is reasonable to allow more of them.
