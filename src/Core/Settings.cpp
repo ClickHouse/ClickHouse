@@ -2930,10 +2930,12 @@ Possible values:
 )", 0) \
     \
     DECLARE(UInt64, max_rows_to_transfer, 0, R"(
-Maximum size (in rows) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.
+Maximum size (in rows) that can be passed to a remote server or saved in a
+temporary table when the GLOBAL IN/JOIN section is executed.
 )", 0) \
     DECLARE(UInt64, max_bytes_to_transfer, 0, R"(
-Maximum size (in uncompressed bytes) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.
+The maximum number of bytes (uncompressed data) that can be passed to a remote
+server or saved in a temporary table when the GLOBAL IN/JOIN section is executed.
 )", 0) \
     DECLARE(OverflowMode, transfer_overflow_mode, OverflowMode::THROW, R"(
 What to do when the limit is exceeded.

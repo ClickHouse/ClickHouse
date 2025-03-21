@@ -226,11 +226,11 @@ See [`distinct_overflow_mode`](/operations/settings/settings#distinct_overflow_m
 
 ## max_rows_to_transfer {#max-rows-to-transfer}
 
-A maximum number of rows that can be passed to a remote server or saved in a temporary table when using GLOBAL IN.
+See [`max_rows_to_transfer`](/operations/settings/settings#max_rows_to_transfer)
 
 ## max_bytes_to_transfer {#max-bytes-to-transfer}
 
-A maximum number of bytes (uncompressed data) that can be passed to a remote server or saved in a temporary table when using GLOBAL IN.
+See [`max_bytes_to_transfer`](/operations/settings/settings#max_bytes_to_transfer)
 
 ## transfer_overflow_mode {#transfer-overflow-mode}
 
