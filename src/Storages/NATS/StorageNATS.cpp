@@ -96,7 +96,7 @@ StorageNATS::StorageNATS(
     , schema_name(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_schema]))
     , num_consumers((*nats_settings)[NATSSetting::nats_num_consumers].value)
     , max_rows_per_message((*nats_settings)[NATSSetting::nats_max_rows_per_message])
-    , log(getLogger("StorageNATS (" + table_id_.getNameForLogs() + ")"))
+    , log(getLogger("StorageNATS (" + table_id_.getFullTableName() + ")"))
     , event_handler(log)
     , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
