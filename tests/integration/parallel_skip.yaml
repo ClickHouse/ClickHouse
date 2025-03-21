@@ -49,3 +49,4 @@
 - test_zookeeper_fallback_session/
 - test_storage_s3_queue/
 - test_postgresql_replica_database_engine/
+- test_ytsaurus/

@@ -7,6 +7,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
+    main_configs=["configs/display_secrets.xml"],
     user_configs=["configs/allow_experimental_ytsaurus.xml"],
     with_ytsaurus=True,
     stay_alive=True,
@@ -29,38 +30,66 @@ class YTsaurusCLI:
         self.proxy = proxy
         self.port = port
 
-    def create_table(self, table_path, data, schema=None):
+    def create_table(
+        self,
+        table_path,
+        data,
+        dynamic=False,
+        schema=None,
+        retry_count=0,
+        time_to_sleep=10,
+    ):
 
         schema_arribute = ""
+
         if schema:
             schema_arribute = (
-                '--attributes "{schema= ['
+                '--attributes "{'
+                + ("dynamic=%true;" if dynamic else "")
+                + "schema= ["
                 + ";".join(
                     f"{{name = {name}; type = {type}}}" for name, type in schema.items()
                 )
                 + ']}"'
             )
 
-        print(schema_arribute)
+        for retry in range(retry_count):
+            try:
+                cluster.exec_in_container(
+                    cluster.get_container_id(self.proxy),
+                    [
+                        "bash",
+                        "-c",
+                        "yt create table {} {}".format(table_path, schema_arribute),
+                    ],
+                )
+                break
+            except Exception:
+                ## For some reasons ytstaurs can receive queries with not fully loaded resouces.
+                ## And we can have errors like:
+                ## ` Account <acc> is over tablet count limit `
+                ## Haven't found better solution then simple retries.
+                print(f"Exception : {retry}/{retry_count}")
+                if retry == retry_count - 1:
+                    raise
+                time.sleep(time_to_sleep)
 
+        if dynamic:
+            cluster.exec_in_container(
+                cluster.get_container_id(self.proxy),
+                [
+                    "bash",
+                    "-c",
+                    "yt mount-table {}".format(table_path),
+                ],
+            )
         cluster.exec_in_container(
             cluster.get_container_id(self.proxy),
             [
                 "bash",
                 "-c",
-                "yt --proxy {}:{} create {} table {}".format(
-                    self.proxy, self.port, schema_arribute, table_path
-                ),
-            ],
-        )
-
-        cluster.exec_in_container(
-            cluster.get_container_id(self.proxy),
-            [
-                "bash",
-                "-c",
-                "echo '{}' | yt --proxy {}:{} write-table {} --format json".format(
-                    data, self.proxy, self.port, table_path
+                "echo '{}' | yt {} '{}' --format json".format(
+                    data, "insert-rows" if dynamic else "write-table", table_path
                 ),
             ],
         )
@@ -71,7 +100,7 @@ class YTsaurusCLI:
             [
                 "bash",
                 "-c",
-                "yt --proxy {}:{} remove {}".format(self.proxy, self.port, table_path),
+                "yt remove {}".format(table_path),
             ],
         )
 
@@ -242,3 +271,50 @@ def test_ytsaurus_multiple_tables(started_cluster):
 
     instance.query("DROP DATABASE db")
     yt.remove_table(table_path)
+
+
+def test_ytsaurus_dynamic_table(started_cluster):
+    table_path = "//tmp/dynamic_table"
+    yt = YTsaurusCLI(instance, YT_HOST, YT_PORT)
+    yt.create_table(
+        table_path,
+        '{"a":10,"b":"20"}{"a":20,"b":"40"}',
+        dynamic=True,
+        schema={"a": "int32", "b": "string"},
+        retry_count=5,
+    )
+
+    instance.query(
+        f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '//tmp/dynamic_table', '{YT_DEFAULT_TOKEN}')"
+    )
+    assert instance.query("SELECT * FROM yt_test") == "10\t20\n20\t40\n"
+    instance.query("DROP TABLE yt_test SYNC")
+    yt.remove_table("//tmp/dynamic_table")
+
+
+def test_hiding_credentials(started_cluster):
+    table_name = "yt_hide_cred"
+    instance.query(
+        f"CREATE TABLE {table_name}(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '//tmp/{table_name}', '{YT_DEFAULT_TOKEN}')"
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+    message = instance.query(
+        f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE {table_name}%'"
+    )
+    assert (
+        f"YTsaurus(\\'http://ytsaurus_backend1:80\\', \\'//tmp/{table_name}\\', \\'[HIDDEN]\\'"
+        in message
+    )
+
+    engine_full_hidden = instance.query(
+        f"SELECT engine_full FROM system.tables WHERE name='{table_name}';"
+    )
+    assert "[HIDDEN]" in engine_full_hidden
+
+    engine_full = instance.query(
+        f"SELECT engine_full FROM system.tables WHERE name='{table_name}' SETTINGS format_display_secrets_in_show_and_select=1;"
+    )
+    assert f"{YT_DEFAULT_TOKEN}" in engine_full
+
+    instance.query(f"DROP TABLE {table_name};")

@@ -10,9 +10,11 @@
 #include <IO/ReadBuffer.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Parser.h>
+
 
 #include <boost/noncopyable.hpp>
 
@@ -21,11 +23,8 @@ namespace Poco
 class Logger;
 }
 
-namespace ytsaurus
+namespace DB
 {
-
-const uint16_t DEFAULT_PROXY_PORT = 80;
-
 
 enum class YTsaurusNodeType : uint8_t
 {
@@ -37,7 +36,6 @@ enum class YTsaurusNodeType : uint8_t
 class YTsaurusClient : private boost::noncopyable
 {
 public:
-
     struct ConnectionInfo
     {
         String base_uri;
@@ -45,10 +43,13 @@ public:
         String api_version = "v3";
     };
 
-    explicit YTsaurusClient(const ConnectionInfo & connection_info_, size_t num_tries = 3);
+    explicit YTsaurusClient(ContextPtr context_, const ConnectionInfo & connection_info_);
 
     const ConnectionInfo & getConnectionInfo() { return connection_info; }
+
     DB::ReadBufferPtr readTable(const String & path);
+
+    DB::ReadBufferPtr selectRows(const String & path);
 
     YTsaurusNodeType getNodeType(const String & path);
 
@@ -56,11 +57,10 @@ private:
 
     YTsaurusNodeType getNodeTypeFromAttributes(Poco::JSON::Object::Ptr json_ptr);
 
-    DB::ReadBufferPtr execQuery(YTsaurusQueryPtr query);
+    ReadBufferPtr execQuery(YTsaurusQueryPtr query);
+    ContextPtr context;
 
     ConnectionInfo connection_info;
-    [[maybe_unused]] size_t num_tries;
-
     LoggerPtr log;
 };
 
