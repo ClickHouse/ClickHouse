@@ -26,7 +26,6 @@
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
 
 #include <Formats/FormatSettings.h>
 
@@ -1366,12 +1365,6 @@ inline void writeBinaryBigEndian(T x, WriteBuffer & buf)
 void writePointerHex(const void * ptr, WriteBuffer & buf);
 
 String fourSpaceIndent(size_t indent);
-
-bool inline isWritingToTerminal(const WriteBuffer & buf)
-{
-    const auto * write_buffer_to_descriptor = dynamic_cast<const WriteBufferFromFileDescriptor *>(&buf);
-    return write_buffer_to_descriptor && write_buffer_to_descriptor->getFD() == STDOUT_FILENO && isatty(STDOUT_FILENO);
-}
 
 }
 

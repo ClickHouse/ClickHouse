@@ -15,5 +15,5 @@ select 'parts in data1', count() from system.parts where database = currentDatab
 alter table data2 fetch partition () from '/tables/{database}/data1';
 select 'detached parts in data2', count() from system.detached_parts where database = currentDatabase() and table = 'data2';
 
-system flush logs;
+system flush logs query_log;
 select 'FETCH PARTITION uses multiple threads', peak_threads_usage>10 from system.query_log where event_date >= yesterday() and type != 'QueryStart' and query_kind = 'Alter' and current_database = currentDatabase();

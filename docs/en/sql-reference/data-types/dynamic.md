@@ -7,11 +7,7 @@ slug: /sql-reference/data-types/dynamic
 title: 'Dynamic'
 ---
 
-import BetaBadge from '@theme/badges/BetaBadge';
-
 # Dynamic
-
-<BetaBadge/>
 
 This type allows to store values of any type inside it without knowing all of them in advance.
 
@@ -22,10 +18,6 @@ To declare a column of `Dynamic` type, use the following syntax:
 ```
 
 Where `N` is an optional parameter between `0` and `254` indicating how many different data types can be stored as separate subcolumns inside a column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). If this limit is exceeded, all values with new types will be stored together in a special shared data structure in binary form. Default value of `max_types` is `32`.
-
-:::note
-The Dynamic data type is a beta feature. To use it, set `enable_dynamic_type = 1`.
-:::
 
 ## Creating Dynamic {#creating-dynamic}
 

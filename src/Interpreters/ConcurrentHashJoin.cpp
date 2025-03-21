@@ -152,6 +152,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     bool any_take_last_row_)
     : table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
+    , any_take_last_row(any_take_last_row_)
     , pool(std::make_unique<ThreadPool>(
           CurrentMetrics::ConcurrentHashJoinPoolThreads,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
