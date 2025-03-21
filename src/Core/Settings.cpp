@@ -2461,7 +2461,13 @@ rows (unique GROUP BY keys), the behavior will be determined by the
 to an approximate GROUP BY mode.
 )", 0) \
     DECLARE(OverflowModeGroupBy, group_by_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what happens when the number of unique keys for aggregation exceeds the limit:
+- `throw`: throw an exception
+- `break`: stop executing the query and return the partial result
+- `any`: continue aggregation for the keys that got into the set, but do not add new keys to the set.
+
+Using the 'any' value lets you run an approximation of GROUP BY. The quality of
+this approximation depends on the statistical nature of the data.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_group_by, 0, R"(
 If memory usage during GROUP BY operation is exceeding this threshold in bytes, activate the 'external aggregation' mode (spill data to disk). Recommended value is half of the available system memory.

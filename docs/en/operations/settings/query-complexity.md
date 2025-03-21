@@ -84,8 +84,7 @@ See [`max_rows_to_group_by`](/operations/settings/settings#max_rows_to_group_by)
 
 ## group_by_overflow_mode {#group-by-overflow-mode}
 
-What to do when the number of unique keys for aggregation exceeds the limit: 'throw', 'break', or 'any'. By default, throw.
-Using the 'any' value lets you run an approximation of GROUP BY. The quality of this approximation depends on the statistical nature of the data.
+See [`group_by_overflow_mode`]
 
 ## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
 
