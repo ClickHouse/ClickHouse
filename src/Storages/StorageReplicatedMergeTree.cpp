@@ -6084,6 +6084,12 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWrite(const 
     {
         return distributedWriteFromClusterStorage(src_distributed, query, local_context);
     }
+    else if (auto src_mt = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(src_storage))
+    {
+        // pipeline will be built outside
+        return {};
+    }
+
     if (local_context->getClientInfo().distributed_depth == 0)
     {
         throw Exception(

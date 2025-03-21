@@ -80,6 +80,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool enable_parsing_to_custom_serialization;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace MergeTreeSetting
@@ -788,6 +789,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(
             if (settings[Setting::min_insert_block_size_bytes])
                 new_settings[Setting::preferred_block_size_bytes] = settings[Setting::min_insert_block_size_bytes];
         }
+        new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
 
         auto context_for_trivial_select = Context::createCopy(context);
         context_for_trivial_select->setSettings(new_settings);
@@ -797,7 +799,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(
     }
 
     QueryPipelineBuilder pipeline;
-    const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+    const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1); // TODO: what does subquery_depth affect actuall?
     InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
     pipeline = interpreter_select_analyzer.buildQueryPipeline();
 
@@ -852,7 +854,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(
 
     pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
     {
-        auto context_ptr = getContext();
         auto counting = std::make_shared<CountingTransform>(in_header, nullptr, context_ptr->getQuota());
         counting->setProcessListElement(context_ptr->getProcessListElement());
         counting->setProgressCallback(context_ptr->getProgressCallback());
@@ -1076,10 +1077,11 @@ BlockIO InterpreterInsertQuery::execute()
             {
                 res.pipeline = std::move(*distributed);
             }
-            else if (context->canUseParallelReplicasOnInitiator())
+            if (context->canUseParallelReplicasOnInitiator())
             {
                 res.pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
             }
+
         }
         if (!res.pipeline.initialized())
             res.pipeline = buildInsertSelectPipeline(query, table);
