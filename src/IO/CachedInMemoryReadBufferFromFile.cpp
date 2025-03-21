@@ -11,6 +11,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_END_OF_FILE;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
