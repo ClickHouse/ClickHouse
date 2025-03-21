@@ -627,6 +627,8 @@ std::optional<size_t> IcebergMetadata::totalRows() const
         return 0;
     }
 
+    /// All these "hints" with total rows or bytes are optional both in
+    /// metadata files and in manifest files, so we try all of them one by one
     if (relevant_snapshot->total_rows.has_value())
     {
         ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
@@ -657,6 +659,8 @@ std::optional<size_t> IcebergMetadata::totalBytes() const
     if (!relevant_snapshot)
         return 0;
 
+    /// All these "hints" with total rows or bytes are optional both in
+    /// metadata files and in manifest files, so we try all of them one by one
     if (relevant_snapshot->total_bytes.has_value())
         return relevant_snapshot->total_bytes;
 
