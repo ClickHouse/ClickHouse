@@ -3,7 +3,7 @@
 #include <Processors/Sources/NativeCompressedSource.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
-#include <Processors/QueryPlan/TemporaryFiles.h>
+#include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
@@ -23,9 +23,8 @@ void ShuffleReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, con
     /// Read all shards
     for (const String & shard_id : source_shards)
     {
-        const auto shard_file_name = fileNameForExchange(exchange_id, shard_id, bucket_id);
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
-        pipeline_ptr->init(Pipe(std::make_shared<NativeCompressedSource>(output_header.value(), settings.temporary_file_lookup->getTemporaryFileForReading(shard_file_name))));
+        pipeline_ptr->init(Pipe(settings.exchange_lookup->createSource(output_header.value(), exchange_id, shard_id, bucket_id)));
         pipelines.emplace_back(std::move(pipeline_ptr));
     }
 

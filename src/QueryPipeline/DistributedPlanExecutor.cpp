@@ -8,9 +8,13 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/TemporaryFiles.h>
+#include <Processors/QueryPlan/ExchangeLookup.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sinks/NativeCompressedSink.h>
+#include <Processors/Sources/NativeCompressedSource.h>
 #include <Planner/Utils.h>
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
 #include <Core/ProtocolDefines.h>
@@ -99,6 +103,32 @@ private:
     const std::unordered_set<String> output_temporary_files;
     std::vector<std::unique_ptr<WriteBuffer>> write_buffers;
     LoggerPtr logger = getLogger("TemporaryFilesInObjectStorage");
+};
+
+
+class ExchangeViaTemporaryFiles : public IExchangeLookup
+{
+public:
+    explicit ExchangeViaTemporaryFiles(TemporaryFileLookupPtr temporary_files_)
+        : temporary_files(std::move(temporary_files_))
+    {
+    }
+
+    std::shared_ptr<ISink> createSink(const Header & input_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
+    {
+        auto file_name = fileNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
+        return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name));
+    }
+
+    std::shared_ptr<ISource> createSource(const Header & output_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
+    {
+        auto file_name = fileNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
+        std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
+        return std::make_shared<NativeCompressedSource>(output_header, temporary_files->getTemporaryFileForReading(file_name));
+    }
+
+private:
+    TemporaryFileLookupPtr temporary_files;
 };
 
 /// Cleans up temporary files produced by distributed query execution.
@@ -209,6 +239,7 @@ void doExecuteTask(const String & serialized_query_plan, const DistributedQueryT
     auto pipeline_settings = BuildQueryPipelineSettings(context);
     pipeline_settings.temporary_file_lookup = temporary_files;
     pipeline_settings.parameter_lookup = std::make_shared<TaskParameters>(task.parameters);
+    pipeline_settings.exchange_lookup = std::make_shared<ExchangeViaTemporaryFiles>(temporary_files);
 
     auto optimization_settings = QueryPlanOptimizationSettings(context);
 

@@ -3,7 +3,7 @@
 #include <Processors/Sinks/NativeCompressedSink.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
-#include <Processors/QueryPlan/TemporaryFiles.h>
+#include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -43,9 +43,9 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
     pipeline.setSinks([&](const Block & header, Pipe::StreamType stream_type)
     {
         chassert(stream_type == Pipe::StreamType::Main);
-        String file_name = fileNameForExchange(exchange_id, shard_id, bucket);
+        String destination_bucket_id = toString(bucket);
         ++bucket;   /// TODO: this is a hack. Find a better way to assigning bucket id to each sink.
-        return std::make_shared<NativeCompressedSink>(header, settings.temporary_file_lookup->getTemporaryFileForWriting(file_name));
+        return settings.exchange_lookup->createSink(header, exchange_id, shard_id, destination_bucket_id);
     });
 
     if (bucket != num_buckets)

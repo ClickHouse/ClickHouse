@@ -3,7 +3,7 @@
 #include <Processors/Sources/NativeCompressedSource.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
-#include <Processors/QueryPlan/TemporaryFiles.h>
+#include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
@@ -21,9 +21,8 @@ void GatherReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// Read from all buckets
     for (size_t i = 0; i < num_buckets; ++i)
     {
-        auto file_name = fileNameForExchange(exchange_id, i, "0");
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
-        pipeline_ptr->init(Pipe(std::make_shared<NativeCompressedSource>(output_header.value(), settings.temporary_file_lookup->getTemporaryFileForReading(file_name))));
+        pipeline_ptr->init(Pipe(settings.exchange_lookup->createSource(output_header.value(), exchange_id, toString(i), "0")));
         pipelines.emplace_back(std::move(pipeline_ptr));
     }
 

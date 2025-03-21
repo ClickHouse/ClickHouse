@@ -3,7 +3,7 @@
 #include <Processors/Sinks/NativeCompressedSink.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
-#include <Processors/QueryPlan/TemporaryFiles.h>
+#include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
@@ -27,15 +27,14 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     Block stream_header = pipeline.getHeader();
 
     const String bucket = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
-    auto file_name = fileNameForExchange(exchange_id, bucket, "0");
 
     /// Cannot have multiple sinks writing to the same file concurrently.
     pipeline.resize(1);
 
-    pipeline.setSinks([&](const Block & header, Pipe::StreamType stream_type)
+    pipeline.setSinks([&](const Block & header, Pipe::StreamType stream_type) -> ProcessorPtr
     {
         chassert(stream_type == Pipe::StreamType::Main);
-        return std::make_shared<NativeCompressedSink>(header, settings.temporary_file_lookup->getTemporaryFileForWriting(file_name));
+        return settings.exchange_lookup->createSink(header, exchange_id, bucket, "0");
     });
 
     return std::move(pipelines.front());
