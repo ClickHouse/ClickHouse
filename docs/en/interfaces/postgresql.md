@@ -68,7 +68,7 @@ Each client has their own method of how to connect using SSL. The following comm
 psql "port=9005 host=127.0.0.1 user=alice dbname=default sslcert=/path/to/certificate.pem sslkey=/path/to/key.pem sslrootcert=/path/to/rootcert.pem sslmode=verify-ca"
 ```
 
-## Configuring ClickHouse User Authentication with SCRAM-SHA-256
+## Configuring ClickHouse User Authentication with SCRAM-SHA-256 {#using-scram-sha256}
 
 To ensure secure user authentication in ClickHouse, it is recommended to use the SCRAM-SHA-256 protocol. Configure the user by specifying the <password_scram_sha256_hex> element in the users.xml file. The password hash must be generated with num_iterations=4096.
 
