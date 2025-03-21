@@ -1880,3 +1880,26 @@ if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
     cluster.shutdown()
+
+
+def test_hiding_credentials(nats_cluster):
+    table_name = 'test_hiding_credentials'
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.{table_name};
+        CREATE TABLE test.{table_name} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{table_name}',
+                     nats_format = 'TSV',
+                     nats_username = 'click',
+                     nats_password = 'house',
+                     nats_credential_file = '',
+                     nats_row_delimiter = '\\n';
+        """
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+    message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE test.{table_name}%'")
+    assert "nats_password = \\'[HIDDEN]\\'" in  message
+    assert "nats_credential_file = \\'[HIDDEN]\\'" in  message
