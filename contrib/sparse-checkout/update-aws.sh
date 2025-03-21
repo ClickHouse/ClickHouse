@@ -11,6 +11,7 @@ echo '/generated/src/aws-cpp-sdk-s3/*' >> $FILES_TO_CHECKOUT
 echo '/generated/src/aws-cpp-sdk-aws/*' >> $FILES_TO_CHECKOUT
 echo '/generated/src/aws-cpp-sdk-sts/*' >> $FILES_TO_CHECKOUT
 echo '/generated/src/aws-cpp-sdk-cognito-identity/*' >> $FILES_TO_CHECKOUT
+echo '/generated/src/aws-cpp-sdk-glue/*' >> $FILES_TO_CHECKOUT
 
 git config core.sparsecheckout true
 git checkout $1
