@@ -17,7 +17,6 @@ class StorageUsage(MetaClasses.SerializableSingleton):
     downloaded_details: Dict[str, int]
     uploaded_details: Dict[str, int]
     ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
-    name: str = "storage_usage"
 
     @classmethod
     def file_name_static(cls):
@@ -42,7 +41,9 @@ class StorageUsage(MetaClasses.SerializableSingleton):
         usage.downloaded += file_zize
         if file_name in usage.downloaded_details:
             print(f"WARNING: Duplicated download for filename [{file_name}]")
-        usage.downloaded_details[file_name] = file_zize
+            usage.downloaded_details[file_name] += file_zize
+        else:
+            usage.downloaded_details[file_name] = file_zize
         usage.dump()
 
     @classmethod
@@ -56,7 +57,9 @@ class StorageUsage(MetaClasses.SerializableSingleton):
         usage.uploaded += file_zize
         if file_name in usage.uploaded_details:
             print(f"WARNING: Duplicated upload for filename [{file_name}]")
-        usage.uploaded_details[file_name] = file_zize
+            usage.uploaded_details[file_name] += file_zize
+        else:
+            usage.uploaded_details[file_name] = file_zize
         usage.dump()
 
     @classmethod

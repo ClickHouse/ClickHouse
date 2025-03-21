@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>praktika report</title>
-<!--    <link rel="icon" href="https://w4z3pajszlbkfcw2wcylfei5km0xmwag.lambda-url.us-east-1.on.aws/" type="image/x-icon">-->
     <style>
 
         /* Default (Day Theme) */
@@ -552,6 +551,136 @@
         }
     }
 
+    function addStorageUsageChartToStatus(usage_data) {
+        const statusContainer = document.getElementById("status-container");
+
+        if (!usage_data || !usage_data.uploaded || !usage_data.uploaded_details) {
+            console.error("Invalid or missing storage usage data.");
+            return;
+        }
+
+        const uploaded = usage_data.uploaded;
+        const details = { ...usage_data.uploaded_details };
+
+        const used = Object.values(details).reduce((a, b) => a + b, 0);
+        if (used < uploaded) {
+            details["other"] = uploaded - used;
+        }
+
+        const labels = Object.keys(details);
+        const values = Object.values(details);
+
+        const chartWrapper = document.createElement("div");
+        chartWrapper.style.marginTop = "50px";
+
+        // Title
+        const title = document.createElement("h4");
+        title.textContent = "usage:";
+        chartWrapper.appendChild(title);
+
+        // Total size row with left/right alignment
+        const totalRow = document.createElement("div");
+        totalRow.style.display = "flex";
+        totalRow.style.justifyContent = "space-between";
+        totalRow.style.margin = 0;
+
+        const totalLabel = document.createElement("span");
+        totalLabel.textContent = "uploaded";
+
+        const uploadedMB = (uploaded / (1024 * 1024)).toFixed(2);
+        const totalSize = document.createElement("span");
+        totalSize.textContent = `${uploadedMB} MB`;
+
+        totalRow.appendChild(totalLabel);
+        totalRow.appendChild(totalSize);
+        chartWrapper.appendChild(totalRow);
+
+        // Canvas
+        const canvas = document.createElement("canvas");
+        canvas.width = 400;
+        canvas.height = 400;
+        canvas.style.width = "100%";
+        canvas.style.maxWidth = "400px";
+        canvas.style.margin = 0;
+        chartWrapper.appendChild(canvas);
+
+        const ctx = canvas.getContext("2d");
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const radius = 150;
+
+        let startAngle = 0;
+        labels.forEach((label, i) => {
+            const value = details[label];
+            const sliceAngle = (value / uploaded) * 2 * Math.PI;
+            const color = stringToColor(label);
+
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle);
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            startAngle += sliceAngle;
+        });
+
+        // Legend
+        const legend = document.createElement("div");
+        legend.style.marginTop = "10px";
+
+        labels.forEach((label) => {
+            const value = details[label];
+            const percent = ((value / uploaded) * 100).toFixed(1);
+            const sizeMB = (value / (1024 * 1024)).toFixed(2);
+            const color = stringToColor(label);
+
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.alignItems = "center";
+            row.style.justifyContent = "space-between";
+            row.style.fontSize = "10px";
+
+            const left = document.createElement("span");
+            left.style.display = "flex";
+            left.style.alignItems = "center";
+
+            const dot = document.createElement("span");
+            dot.style.display = "inline-block";
+            dot.style.width = "8px";
+            dot.style.height = "8px";
+            dot.style.marginRight = "6px";
+            dot.style.backgroundColor = color;
+
+            const labelText = document.createElement("span");
+            labelText.textContent = label;
+
+            left.appendChild(dot);
+            left.appendChild(labelText);
+
+            const right = document.createElement("span");
+            right.textContent = `${sizeMB} MB (${percent}%)`;
+
+            row.appendChild(left);
+            row.appendChild(right);
+            legend.appendChild(row);
+        });
+
+        chartWrapper.appendChild(legend);
+        statusContainer.appendChild(chartWrapper);
+
+        // Helper: consistent color from string
+        function stringToColor(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const hue = hash % 360;
+            return `hsl(${hue}, 60%, 60%)`;
+        }
+    }
+
+
     function addTimeTraceWidget(results) {
         const statusContainer = document.getElementById("status-container");
         if (!results || results.length === 0) {
@@ -579,9 +708,8 @@
             canvas.height = totalHeight;
             drawTimeline(); // Redraw after resizing
         }
-
-        statusContainer.appendChild(canvas);
         resizeCanvas();
+        statusContainer.appendChild(canvas);
 
         // Tooltip styles
         tooltip.style.position = "absolute";
@@ -1145,6 +1273,7 @@
         addStatusToStatus(result.status, result.start_time, result.duration);
         if (nameParams.length > 1) {
             addFileButtonToStatus('files', result.links);
+            addStorageUsageChartToStatus(result.ext?.storage_usage)
         } else {
             addTimeTraceWidget(result.results)
         }

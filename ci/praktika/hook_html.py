@@ -12,7 +12,7 @@ from .info import Info
 from .parser import WorkflowConfigParser
 from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
-from .s3 import S3
+from .s3 import S3, StorageUsage
 from .settings import Settings
 from .utils import Utils
 
@@ -225,6 +225,12 @@ class HtmlRunnerHooks:
     def post_run(cls, _workflow, _job, info_errors):
         result = Result.from_fs(_job.name)
         _ResultS3.upload_result_files_to_s3(result).dump()
+        if StorageUsage.exist():
+            StorageUsage.add_uploaded(
+                result.file_name()
+            )  # add Result file beforehand to upload actual storage usage data
+            print("Storage usage data found - add to Result")
+            result.ext["storage_usage"] = StorageUsage.from_fs()
         _ResultS3.copy_result_to_s3(result)
 
         env = _Environment.get()

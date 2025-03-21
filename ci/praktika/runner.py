@@ -355,10 +355,6 @@ class Runner:
         result.update_duration()
         # if result.is_error():
         result.set_files([Settings.RUN_LOG])
-        if StorageUsage.exist():
-            StorageUsage.add_uploaded(result.file_name())  # add Result file beforehand to upload actual storage usage data
-            print("Storage usage data found - add to Result")
-            result.ext["storage"] = StorageUsage.from_fs()
 
         if run_exit_code == 0:
             providing_artifacts = []
