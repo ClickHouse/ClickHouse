@@ -218,11 +218,11 @@ See [`max_rows_in_distinct`](/operations/settings/settings#max_rows_in_distinct)
 
 ## max_bytes_in_distinct {#max-bytes-in-distinct}
 
-A maximum number of bytes used by a hash table when using DISTINCT.
+See [`max_bytes_in_distinct`](/operations/settings/settings#max_bytes_in_distinct)
 
 ## distinct_overflow_mode {#distinct-overflow-mode}
 
-What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.
+See [`distinct_overflow_mode`](/operations/settings/settings#distinct_overflow_mode)
 
 ## max_rows_to_transfer {#max-rows-to-transfer}
 

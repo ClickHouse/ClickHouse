@@ -2943,10 +2943,16 @@ What to do when the limit is exceeded.
 The maximum number of different rows when using DISTINCT.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_distinct, 0, R"(
-Maximum total size of the state (in uncompressed bytes) in memory for the execution of DISTINCT.
+The maximum number of bytes of the state (in uncompressed bytes) in memory, which
+is used by a hash table when using DISTINCT.
 )", 0) \
     DECLARE(OverflowMode, distinct_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what happens when the amount of data exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, max_memory_usage, 0, R"(
