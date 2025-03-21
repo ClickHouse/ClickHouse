@@ -12,7 +12,7 @@ The following operations are available:
 
 ## MODIFY {#modify}
 
-``` sql
+```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
 ```
 
@@ -20,7 +20,7 @@ The command changes the [sampling key](../../../engines/table-engines/mergetree-
 
 ## REMOVE {#remove}
 
-``` sql
+```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
 ```
 

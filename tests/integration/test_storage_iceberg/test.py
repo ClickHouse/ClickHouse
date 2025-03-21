@@ -4,7 +4,7 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pyspark
 import pytest
@@ -201,21 +201,13 @@ def get_creation_expression(
     table_function=False,
     allow_dynamic_metadata_for_data_lakes=False,
     run_on_cluster=False,
-    explicit_metadata_path="",
     **kwargs,
 ):
-
-    settings_array = []
-    if allow_dynamic_metadata_for_data_lakes:
-        settings_array.append("allow_dynamic_metadata_for_data_lakes = 1")
-
-    if explicit_metadata_path:
-        settings_array.append(f"iceberg_metadata_file_path = '{explicit_metadata_path}'")
-
-    if settings_array:
-        settings_expression = " SETTINGS " + ",".join(settings_array)
-    else:
-        settings_expression = ""
+    allow_dynamic_metadata_for_datalakes_suffix = (
+        " SETTINGS allow_dynamic_metadata_for_data_lakes = 1"
+        if allow_dynamic_metadata_for_data_lakes
+        else ""
+    )
 
     if storage_type == "s3":
         if "bucket" in kwargs:
@@ -235,7 +227,7 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
-                    + settings_expression
+                    + allow_dynamic_metadata_for_datalakes_suffix
                 )
 
     elif storage_type == "azure":
@@ -255,7 +247,7 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
-                    + settings_expression
+                    + allow_dynamic_metadata_for_datalakes_suffix
                 )
 
     elif storage_type == "local":
@@ -271,16 +263,20 @@ def get_creation_expression(
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {table_name}
                 ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})"""
-                + settings_expression
+                + allow_dynamic_metadata_for_datalakes_suffix
             )
 
     else:
         raise Exception(f"Unknown iceberg storage type: {storage_type}")
 
 
-def check_schema_and_data(instance, table_expression, expected_schema, expected_data):
-    schema = instance.query(f"DESC {table_expression}")
-    data = instance.query(f"SELECT * FROM {table_expression} ORDER BY ALL")
+def check_schema_and_data(instance, table_expression, expected_schema, expected_data, timestamp_ms=None):
+    if timestamp_ms:
+        schema = instance.query(f"DESC {table_expression} SETTINGS iceberg_timestamp_ms = {timestamp_ms}")
+        data = instance.query(f"SELECT * FROM {table_expression} ORDER BY ALL SETTINGS iceberg_timestamp_ms = {timestamp_ms}")
+    else:
+        schema = instance.query(f"DESC {table_expression}")
+        data = instance.query(f"SELECT * FROM {table_expression} ORDER BY ALL")
     schema = list(
         map(
             lambda x: x.split("\t")[:2],
@@ -295,7 +291,6 @@ def check_schema_and_data(instance, table_expression, expected_schema, expected_
     )
     assert expected_schema == schema
     assert expected_data == data
-
 
 def get_uuid_str():
     return str(uuid.uuid4()).replace("-", "_")
@@ -1880,8 +1875,6 @@ def test_filesystem_cache(started_cluster, storage_type):
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_partition_pruning(started_cluster, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_partition_pruning_" + storage_type + "_" + get_uuid_str()
@@ -2099,41 +2092,340 @@ def test_partition_pruning(started_cluster, storage_type):
         == 1
     )
 
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_explicit_metadata_file(started_cluster, storage_type):
+def test_schema_evolution_with_time_travel(
+    started_cluster, format_version, storage_type
+):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
-        "test_explicit_metadata_file_"
+        "test_schema_evolution_with_time_travel_"
+        + format_version
+        + "_"
         + storage_type
         + "_"
         + get_uuid_str()
     )
 
-    spark.sql(
-        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
+    def execute_spark_query(query: str):
+        spark.sql(query)
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+        return
+
+    execute_spark_query(
+        f"""
+            DROP TABLE IF EXISTS {TABLE_NAME};
+        """
     )
 
-    for i in range(50):
-        spark.sql(
-            f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10)"
-        )
+    execute_spark_query(
+        f"""
+            CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+                a int NOT NULL
+            )
+            USING iceberg 
+            OPTIONS ('format-version'='{format_version}')
+        """
+    )
 
+    table_creation_expression = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        allow_dynamic_metadata_for_data_lakes=True,
+    )
+
+    table_select_expression =  table_creation_expression
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["a", "Int32"]
+        ],
+        [],
+    )
+
+    first_timestamp_ms = int(datetime.now().timestamp() * 1000)
+
+    time.sleep(0.5)
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (4);
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["a", "Int32"],
+        ],
+        [["4"]],
+    )
+
+    error_message = instance.query_and_get_error(f"SELECT * FROM {table_select_expression} ORDER BY ALL SETTINGS iceberg_timestamp_ms = {first_timestamp_ms}")
+    assert "No snapshot found in snapshot log before requested timestamp" in error_message
+
+
+    second_timestamp_ms = int(datetime.now().timestamp() * 1000)
+
+    time.sleep(0.5)
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ADD COLUMNS (
+                b double
+            );
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float64)"]
+        ],
+        [["4", "\\N"]],
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["a", "Int32"],
+        ],
+        [["4"]],
+        timestamp_ms=second_timestamp_ms,
+    )
+
+    third_timestamp_ms = int(datetime.now().timestamp() * 1000)
+
+    time.sleep(0.5)
+
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (7, 5.0);
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float64)"]
+        ],
+        [["4", "\\N"], ["7", "5"]],
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["a", "Int32"],
+        ],
+        [["4"]],
+        timestamp_ms=second_timestamp_ms,
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["a", "Int32"],        ],
+        [["4"]],
+        timestamp_ms=third_timestamp_ms,
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ADD COLUMNS (
+                c double
+            );
+        """
+    )
+
+    time.sleep(0.5)
+    fourth_timestamp_ms = int(datetime.now().timestamp() * 1000)
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float64)"]
+        ],
+        [["4", "\\N"], ["7", "5"]],
+        timestamp_ms=fourth_timestamp_ms,
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float64)"],
+            ["c", "Nullable(Float64)"]
+        ],
+        [["4", "\\N", "\\N"], ["7", "5", "\\N"]],
+    )
+
+def get_last_snapshot(path_to_table):
+    import json
+    import os
+
+    metadata_dir = f"{path_to_table}/metadata/"
+    last_timestamp = 0
+    last_snapshot_id = -1
+    for filename in os.listdir(metadata_dir):
+        if filename.endswith('.json'):
+            filepath = os.path.join(metadata_dir, filename)
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+                print(data)
+                timestamp = data.get('last-updated-ms')
+                if (timestamp > last_timestamp):
+                    last_timestamp = timestamp
+                    last_snapshot_id = data.get('current-snapshot-id')
+    return last_snapshot_id
+    
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_iceberg_snapshot_reads"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 0, 100),
+        TABLE_NAME,
+        mode="overwrite",
+        format_version=format_version,
+    )
     default_upload_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
+        "",
     )
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="")
-
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 500
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="metadata/v31.metadata.json")
-
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="metadata/v11.metadata.json")
-
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    snapshot1_timestamp = datetime.now(timezone.utc)
+    snapshot1_id = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
+    time.sleep(0.1)
+
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 100, 200),
+        TABLE_NAME,
+        mode="append",
+        format_version=format_version,
+    )
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        "",
+    )
+    snapshot2_timestamp = datetime.now(timezone.utc)
+    snapshot2_id = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
+    time.sleep(0.1)
+
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 200, 300),
+        TABLE_NAME,
+        mode="append",
+        format_version=format_version,
+    )
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        "",
+    )
+    snapshot3_timestamp = datetime.now(timezone.utc)
+    snapshot3_id = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY 1") == instance.query(
+        "SELECT number, toString(number + 1) FROM numbers(300)"
+    )
+
+    # Validate that each snapshot timestamp only sees the data inserted by that time.
+    assert (
+        instance.query(
+            f"""
+                          SELECT * FROM {TABLE_NAME} ORDER BY 1
+                          SETTINGS iceberg_timestamp_ms = {int(snapshot1_timestamp.timestamp() * 1000)}"""
+        )
+        == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
+    )
+
+    assert (
+        instance.query(
+            f"""
+                          SELECT * FROM {TABLE_NAME} ORDER BY 1
+                          SETTINGS iceberg_snapshot_id = {snapshot1_id}"""
+        )
+        == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
+    )
+
+
+    assert (
+        instance.query(
+            f"""
+                          SELECT * FROM {TABLE_NAME} ORDER BY 1
+                          SETTINGS iceberg_timestamp_ms = {int(snapshot2_timestamp.timestamp() * 1000)}"""
+        )
+        == instance.query("SELECT number, toString(number + 1) FROM numbers(200)")
+    )
+
+    assert (
+        instance.query(
+            f"""
+                          SELECT * FROM {TABLE_NAME} ORDER BY 1
+                          SETTINGS iceberg_snapshot_id = {snapshot2_id}"""
+        )
+        == instance.query("SELECT number, toString(number + 1) FROM numbers(200)")
+    )
+
+
+    assert (
+        instance.query(
+            f"""SELECT * FROM {TABLE_NAME} ORDER BY 1
+                          SETTINGS iceberg_timestamp_ms = {int(snapshot3_timestamp.timestamp() * 1000)}"""
+        )
+        == instance.query("SELECT number, toString(number + 1) FROM numbers(300)")
+    )
+
+    assert (
+        instance.query(
+            f"""
+                          SELECT * FROM {TABLE_NAME} ORDER BY 1
+                          SETTINGS iceberg_snapshot_id = {snapshot3_id}"""
+        )
+        == instance.query("SELECT number, toString(number + 1) FROM numbers(300)")
+    )
+

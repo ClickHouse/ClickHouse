@@ -13,7 +13,7 @@ Provides a read-only table-like interface to Apache [Hudi](https://hudi.apache.o
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
 ```
 

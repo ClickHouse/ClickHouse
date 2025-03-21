@@ -1,6 +1,7 @@
 #include <Interpreters/JoinInfo.h>
 
 #include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -65,8 +66,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const QueryPlanSerializationSettingsUInt64 join_on_disk_max_files_to_merge;
 
-    extern const QueryPlanSerializationSettingsUInt64 grace_hash_join_initial_buckets;
-    extern const QueryPlanSerializationSettingsUInt64 grace_hash_join_max_buckets;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_max_buckets;
 
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_set_to_optimize_join;
 

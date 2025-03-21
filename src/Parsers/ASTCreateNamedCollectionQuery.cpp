@@ -3,7 +3,6 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/formatSettingName.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Common/FieldVisitorToString.h>
 
 

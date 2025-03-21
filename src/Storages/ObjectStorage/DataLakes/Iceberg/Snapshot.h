@@ -22,6 +22,7 @@ using ManifestListIterator = IteratorWrapper<ManifestList>;
 struct IcebergSnapshot
 {
     ManifestListIterator manifest_list_iterator;
+    Int64 snapshot_id;
 };
 }
 
