@@ -2772,10 +2772,11 @@ Maximum size of query syntax tree in number of nodes after expansion of aliases 
 )", 0) \
     \
     DECLARE(UInt64, max_rows_in_set, 0, R"(
-Maximum size of the set (in number of elements) resulting from the execution of the IN section.
+The maximum number of rows for a data set in the IN clause created from a subquery.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_set, 0, R"(
-Maximum size of the set (in bytes in memory) resulting from the execution of the IN section.
+The maximum number of bytes (of uncompressed data) used by a set in the IN clause
+created from a subquery.
 )", 0) \
     DECLARE(OverflowMode, set_overflow_mode, OverflowMode::THROW, R"(
 What to do when the limit is exceeded.

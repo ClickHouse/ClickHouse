@@ -202,11 +202,11 @@ See [`max_ast_elements`](/operations/settings/settings#max_ast_elements)
 
 ## max_rows_in_set {#max-rows-in-set}
 
-A maximum number of rows for a data set in the IN clause created from a subquery.
+See [`max_rows_in_set`](/operations/settings/settings#max_rows_in_set)
 
 ## max_bytes_in_set {#max-bytes-in-set}
 
-A maximum number of bytes (uncompressed data) used by a set in the IN clause created from a subquery.
+See [`max_bytes_in_set`](/operations/settings/settings#max_bytes_in_set)
 
 ## set_overflow_mode {#set-overflow-mode}
 
