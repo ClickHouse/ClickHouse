@@ -44,7 +44,7 @@ send -- "n\r"
 
 expect {
     "PAR" { exit 1 }
-    ":) " { send -- "\r" }
+    ":) " {}
 }
 
 send -- "SELECT 1 FORMAT Parquet\r"
@@ -54,7 +54,7 @@ send -- "\r"
 
 expect {
     "PAR" { exit 1 }
-    ":) " { send -- "\r" }
+    ":) " {}
 }
 
 send -- "exit\r"
