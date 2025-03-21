@@ -596,7 +596,8 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
 void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
 {
     String buf;
-    const uint32_t noption = rg.nextLargeNumber(), noption2 = rg.nextMediumNumber();
+    const uint32_t noption = rg.nextLargeNumber();
+    const uint32_t noption2 = rg.nextMediumNumber();
     const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
     std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
     std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
