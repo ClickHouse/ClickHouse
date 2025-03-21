@@ -7,6 +7,8 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Databases/DataLake/DataLakeConstants.h>
+#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
+#include <Storages/NATS/NATS_fwd.h>
 
 
 namespace DB
@@ -96,7 +98,23 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
             {
                 if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
                 {
-                    ostr << " = " << "'[HIDDEN]'";
+                    ostr << " = " << DataLake::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                    return true;
+                }
+            }
+            if (RabbitMQ::TABLE_ENGINE_NAME == state.create_engine_name)
+            {
+                if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
+                {
+                    ostr << " = " << RabbitMQ::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                    return true;
+                }
+            }
+            if (NATS::TABLE_ENGINE_NAME == state.create_engine_name)
+            {
+                if (NATS::SETTINGS_TO_HIDE.contains(change.name))
+                {
+                    ostr << " = " << NATS::SETTINGS_TO_HIDE.at(change.name)(change.value);
                     return true;
                 }
             }
@@ -139,6 +157,20 @@ void ASTSetQuery::appendColumnName(WriteBuffer & ostr) const
     writeText(hash.low64, ostr);
     ostr.write('_');
     writeText(hash.high64, ostr);
+}
+
+bool ASTSetQuery::hasSecretParts() const
+{
+    for (const auto & change : changes)
+    {
+        if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
+            return true;
+        if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
+            return true;
+        if (NATS::SETTINGS_TO_HIDE.contains(change.name))
+            return true;
+    }
+    return false;
 }
 
 }
