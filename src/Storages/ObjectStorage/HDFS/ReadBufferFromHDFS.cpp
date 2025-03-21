@@ -44,6 +44,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     off_t file_offset = 0;
     off_t read_until_position = 0;
     off_t file_size;
+    bool enable_pread = true;
 
     explicit ReadBufferFromHDFSImpl(
         const std::string & hdfs_uri_,
@@ -59,6 +60,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         , hdfs_file_path(hdfs_file_path_)
         , read_settings(read_settings_)
         , read_until_position(read_until_position_)
+        , enable_pread(read_settings_.enable_hdfs_pread)
     {
         fs = createHDFSFS(builder.get());
         fin = wrapErr<hdfsFile>(hdfsOpenFile, fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
@@ -281,7 +283,7 @@ size_t ReadBufferFromHDFS::readBigAt(char * buffer, size_t size, size_t offset, 
 
 bool ReadBufferFromHDFS::supportsReadAt()
 {
-    return true;
+    return impl->enable_pread;
 }
 
 }
