@@ -466,7 +466,7 @@ class ArtifactConfigs:
     clickhouse_rpms = Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*.rpm",
+        path=f"{TEMP_DIR}/*.rpm",
     ).parametrize(
         names=[
             ArtifactNames.RPM_AMD_RELEASE,

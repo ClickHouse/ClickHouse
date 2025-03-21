@@ -4,7 +4,7 @@ import os
 from praktika.result import Result
 from praktika.utils import MetaClasses, Shell, Utils
 
-from ci.defs.defs import BuildTypes, CIFiles, ToolSet
+from ci.defs.defs import BuildTypes, ToolSet
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.settings import Settings
 
