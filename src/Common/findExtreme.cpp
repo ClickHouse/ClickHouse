@@ -3,7 +3,9 @@
 #include <Common/TargetSpecific.h>
 #include <Common/findExtreme.h>
 
+#include <cstring>
 #include <limits>
+#include <type_traits>
 
 namespace DB
 {
@@ -205,13 +207,27 @@ std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start
     std::optional<T> opt = findExtremeMin(ptr, start, end);
     if (!opt)
         return std::nullopt;
+    T value = *opt;
 
-    /// Some minimal heuristics for the case the input is sorted
-    if (*opt == ptr[start])
-        return {start};
-    for (size_t i = end - 1; i > start; i--)
-        if (ptr[i] == *opt)
-            return {i};
+    /// We apply some minimal heuristics for the case the input is sorted
+    if constexpr (is_floating_point<T>)
+    {
+        /// We search for the exact byte representation, not the default floating point equal, otherwise we might not find the value (NaN)
+        static_assert(std::is_pod_v<T>);
+        if (std::memcmp(&ptr[start], &value, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+            return {start};
+        for (size_t i = end - 1; i > start; i--)
+            if (std::memcmp(&ptr[i], &value, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                return {i};
+    }
+    else
+    {
+        if (value == ptr[start])
+            return {start};
+        for (size_t i = end - 1; i > start; i--)
+            if (ptr[i] == *opt)
+                return {i};
+    }
     return std::nullopt;
 }
 
@@ -222,13 +238,27 @@ std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start
     std::optional<T> opt = findExtremeMax(ptr, start, end);
     if (!opt)
         return std::nullopt;
+    T value = *opt;
 
-    /// Some minimal heuristics for the case the input is sorted
-    if (*opt == ptr[start])
-        return {start};
-    for (size_t i = end - 1; i > start; i--)
-        if (ptr[i] == *opt)
-            return {i};
+    /// We apply some minimal heuristics for the case the input is sorted
+    if constexpr (is_floating_point<T>)
+    {
+        /// We search for the exact byte representation, not the default floating point equal, otherwise we might not find the value (NaN)
+        static_assert(std::is_pod_v<T>);
+        if (std::memcmp(&ptr[start], &value, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+            return {start};
+        for (size_t i = end - 1; i > start; i--)
+            if (std::memcmp(&ptr[i], &value, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                return {i};
+    }
+    else
+    {
+        if (value == ptr[start])
+            return {start};
+        for (size_t i = end - 1; i > start; i--)
+            if (ptr[i] == *opt)
+                return {i};
+    }
     return std::nullopt;
 }
 

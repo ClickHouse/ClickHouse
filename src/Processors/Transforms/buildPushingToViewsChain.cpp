@@ -1,6 +1,7 @@
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
