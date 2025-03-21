@@ -68,14 +68,7 @@ See [`read_overflow_mode_leaf`](/operations/settings/settings#read_overflow_mode
 
 ## max_rows_to_read_leaf {#max-rows-to-read-leaf}
 
-The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
-
-A maximum number of rows that can be read from a local table on a leaf node when running a distributed query. While
-distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will be checked only on the read
-stage on the leaf nodes and ignored on results merging stage on the root node. For example, cluster consists of 2 shards
-and each shard contains a table with 100 rows. Then distributed query which suppose to read all the data from both
-tables with setting `max_rows_to_read=150` will fail as in total it will be 200 rows. While query
-with `max_rows_to_read_leaf=150` will succeed since leaf nodes will read 100 rows at max.
+See [`max_rows_to_read_leaf`](/operations/settings/settings#max_rows_to_read_leaf)
 
 ## max_bytes_to_read_leaf {#max-bytes-to-read-leaf}
 

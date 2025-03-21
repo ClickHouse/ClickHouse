@@ -2408,7 +2408,22 @@ What to do when the limit is exceeded.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_to_read_leaf, 0, R"(
-Limit on read rows on the leaf nodes for distributed queries. Limit is applied for local reads only, excluding the final merge stage on the root node. Note, the setting is unstable with prefer_localhost_replica=1.
+The maximum number of rows that can be read from a local table on a leaf node when
+running a distributed query. While distributed queries can issue multiple sub-queries
+to each shard (leaf) - this limit will be checked only on the read stage on the
+leaf nodes and ignored on the merging of results stage on the root node.
+
+For example, a cluster consists of 2 shards and each shard contains a table with
+100 rows. The distributed query which is supposed to read all the data from both
+tables with setting `max_rows_to_read=150` will fail, as in total there will be
+200 rows. A query with `max_rows_to_read_leaf=150` will succeed, since leaf nodes
+will read at max 100 rows.
+
+The restriction is checked for each processed chunk of data.
+
+:::note
+This setting is unstable with `prefer_localhost_replica=1`.
+:::
 )", 0) \
     DECLARE(UInt64, max_bytes_to_read_leaf, 0, R"(
 Limit on read bytes (after decompression) on the leaf nodes for distributed queries. Limit is applied for local reads only, excluding the final merge stage on the root node. Note, the setting is unstable with prefer_localhost_replica=1.
