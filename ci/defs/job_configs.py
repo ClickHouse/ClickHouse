@@ -152,7 +152,6 @@ class JobConfigs:
             ],
             [
                 ArtifactNames.CH_AMD_BINARY,
-                ArtifactNames.UNITTEST_AMD_BINARY,
             ],
             [
                 ArtifactNames.CH_ARM_RELEASE,
@@ -469,7 +468,6 @@ class JobConfigs:
         ),
     ).parametrize(
         parameter=[
-            "binary",
             "asan",
             "tsan",
             "msan",
@@ -480,10 +478,8 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            ["Build (amd_binary)"],
             ["Build (amd_asan)"],
             ["Build (amd_tsan)"],
             ["Build (amd_msan)"],
