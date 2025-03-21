@@ -7,7 +7,6 @@
 #include <base/types.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ThreadPool_fwd.h>
 

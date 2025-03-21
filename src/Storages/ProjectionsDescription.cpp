@@ -13,6 +13,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Core/Defines.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
