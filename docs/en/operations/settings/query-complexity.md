@@ -18,20 +18,22 @@ execution, particularly when using the user interface.
 Almost all the restrictions only apply to `SELECT` queries, and for distributed 
 query processing, restrictions are applied on each server separately.
 
-ClickHouse checks the restrictions by data parts, and not by row. This means 
-that it is possible to exceed the value of a restriction with the size of a
-data part.
+ClickHouse generally checks the restrictions only after data parts have been 
+fully processed, rather than checking the restrictions for each row. This can
+result in a situation where restrictions are violated while the part is being
+processed.
 
-Restrictions on the "maximum amount of something" can take a value of `0`, 
-meaning "unrestricted".
+## overflow_mode settings {#overflow_mode_setting}
 
-Most restrictions also have an 'overflow_mode' setting, which defines what happens
+Most restrictions also have an `overflow_mode` setting, which defines what happens
 when the limit is exceeded, and take one of two values:
 - `throw`: throw an exception (default).
 - `break`: stop executing the query and return the partial result, as if the 
            source data ran out.
 
-Restrictions on aggregation (group_by_overflow_mode) also have the value `any`:
+## group_by_overflow_mode settings {#group_by_overflow_mode_settings}
+
+Restrictions on aggregation (`group_by_overflow_mode`) also have the value `any`:
 - `any` : continue aggregation for the keys that got into the set, but do not 
           add new keys to the set.
 
@@ -39,9 +41,10 @@ Restrictions on aggregation (group_by_overflow_mode) also have the value `any`:
 
 The following settings apply to query complexity.
 
-| Setting | Description |
-|---------|-------------|
-|`max_memory_usage`||
+:::note
+Restrictions on the "maximum amount of something" can take a value of `0`,
+which means that it is "unrestricted".
+:::
 
 ## max_memory_usage {#settings_max_memory_usage}
 
@@ -53,9 +56,7 @@ See [`max_memory_usage_for_user`](/operations/settings/settings#max_memory_usage
 
 ## max_rows_to_read {#max-rows-to-read}
 
-The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
-
-A maximum number of rows that can be read from a table when running a query.
+See [`max_rows_to_read`](/operations/settings/settings#max_rows_to_read)
 
 ## max_bytes_to_read {#max-bytes-to-read}
 

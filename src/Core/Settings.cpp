@@ -2392,7 +2392,10 @@ If enable, remove duplicated rows during FINAL by marking rows as deleted and fi
       */ \
     \
     DECLARE(UInt64, max_rows_to_read, 0, R"(
-Limit on read rows from the most 'deep' sources. That is, only in the deepest subquery. When reading from a remote server, it is only checked on a remote server.
+The maximum number of rows that can be read from a table when running a query.
+The restriction is checked for each processed chunk of data, applied only to the
+deepest table expression and when reading from a remote server, it is only checked
+on the remote server.
 )", 0) \
     DECLARE(UInt64, max_bytes_to_read, 0, R"(
 Limit on read bytes (after decompression) from the most 'deep' sources. That is, only in the deepest subquery. When reading from a remote server, it is only checked on a remote server.
