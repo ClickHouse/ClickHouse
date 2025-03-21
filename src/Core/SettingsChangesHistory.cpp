@@ -89,6 +89,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_snapshot_id", 0, 0, "New setting."},
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
             /// Release closed. Please use 25.4
+            {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {

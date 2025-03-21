@@ -142,7 +142,6 @@ class MergeTreeIndexConditionVectorSimilarity final : public IMergeTreeIndexCond
 public:
     explicit MergeTreeIndexConditionVectorSimilarity(
         const std::optional<VectorSearchParameters> & parameters_,
-        const String & index_column_,
         unum::usearch::metric_kind_t metric_kind_,
         ContextPtr context);
 
@@ -154,7 +153,6 @@ public:
 
 private:
     std::optional<VectorSearchParameters> parameters;
-    const String index_column;
     const unum::usearch::metric_kind_t metric_kind;
     const size_t expansion_search;
 };
