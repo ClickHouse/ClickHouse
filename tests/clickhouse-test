@@ -1738,9 +1738,7 @@ class TestCase:
         return TestResult(self.name, TestStatus.OK, None, total_time, description)
 
     def print_test_time(self, test_time) -> str:
-        if self.args.print_time:
-            return f" {test_time:.2f} sec."
-        return ""
+        return f" {test_time:.2f} sec."
 
     def process_result(self, result: TestResult, messages):
         args = self.args
@@ -3571,9 +3569,6 @@ def parse_args():
     )
     parser.add_argument(
         "--client-option", nargs="+", help="Specify additional client argument"
-    )
-    parser.add_argument(
-        "--print-time", action="store_true", dest="print_time", help="Print test time"
     )
     parser.add_argument(
         "--check-zookeeper-session",
