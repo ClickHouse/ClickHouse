@@ -1,7 +1,9 @@
 ---
+description: 'Documentation for ALTER DATABASE ... MODIFY COMMENT Statements'
 slug: /sql-reference/statements/alter/database-comment
 sidebar_position: 51
-sidebar_label: DATABASE COMMENT
+sidebar_label: 'UPDATE'
+title: 'ALTER DATABASE ... MODIFY COMMENT Statements'
 ---
 
 # ALTER DATABASE ... MODIFY COMMENT
