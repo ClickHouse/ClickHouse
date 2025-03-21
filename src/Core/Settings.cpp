@@ -2746,10 +2746,22 @@ cluster from writing overly complex queries.
 Maximum number of analyses performed by interpreter.
 )", 0) \
     DECLARE(UInt64, max_ast_depth, 1000, R"(
-Maximum depth of query syntax tree. Checked after parsing.
+The maximum nesting depth of a query syntactic tree. If exceeded, an exception is thrown.
+
+:::note
+At this time, it isn't checked during parsing, but only after parsing the query.
+This means that a syntactic tree that is too deep can be created during parsing,
+but the query will fail.
+:::
 )", 0) \
     DECLARE(UInt64, max_ast_elements, 50000, R"(
-Maximum size of query syntax tree in number of nodes. Checked after parsing.
+The maximum number of elements in a query syntactic tree. If exceeded, an exception is thrown.
+
+:::note
+At this time, it isn't checked during parsing, but only after parsing the query.
+This means that a syntactic tree that is too deep can be created during parsing,
+but the query will fail.
+:::
 )", 0) \
     DECLARE(UInt64, max_expanded_ast_elements, 500000, R"(
 Maximum size of query syntax tree in number of nodes after expansion of aliases and the asterisk.

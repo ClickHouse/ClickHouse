@@ -194,13 +194,11 @@ This is an obsolete setting
 
 ## max_ast_depth {#max-ast-depth}
 
-Maximum nesting depth of a query syntactic tree. If exceeded, an exception is thrown.
-At this time, it isn't checked during parsing, but only after parsing the query. That is, a syntactic tree that is too deep can be created during parsing, but the query will fail. By default, 1000.
+See [`max_ast_depth`](/operations/settings/settings#max_ast_depth)
 
 ## max_ast_elements {#max-ast-elements}
 
-A maximum number of elements in a query syntactic tree. If exceeded, an exception is thrown.
-In the same way as the previous setting, it is checked only after parsing the query. By default, 50,000.
+See [`max_ast_elements`](/operations/settings/settings#max_ast_elements)
 
 ## max_rows_in_set {#max-rows-in-set}
 
