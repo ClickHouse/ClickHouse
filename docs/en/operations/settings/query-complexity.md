@@ -100,11 +100,7 @@ See [`max_bytes_before_external_sort`](/operations/settings/settings#max_bytes_b
 
 ## max_bytes_ratio_before_external_sort {#settings-max_bytes_ratio_before_external_sort}
 
-The ratio of available memory that is allowed for `ORDER BY`, once reached, uses external sort.
-
-For example, if set to `0.6`, `ORDER BY` will allow to use `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
-
-Default value: `0.5`.
+See [`max_bytes_ratio_before_external_sort`](/operations/settings/settings#max_bytes_ratio_before_external_sort)
 
 ## max_rows_to_sort {#max-rows-to-sort}
 

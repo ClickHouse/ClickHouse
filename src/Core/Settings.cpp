@@ -2524,7 +2524,12 @@ Possible values:
 - `0` — `ORDER BY` in external memory disabled.
 )", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
-Ratio of used memory before enabling external ORDER BY. If you set it to 0.6 the external ORDER BY will be used once the memory usage will reach 60% of allowed memory for query.
+The ratio of available memory that is allowed for `ORDER BY`. Once reached,
+external sort is used.
+
+For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory
+(to server/user/merges) at the beginning of the execution, after that,
+it will start using external sort.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
 In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
