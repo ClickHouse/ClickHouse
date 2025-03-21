@@ -21,13 +21,13 @@ namespace DB
 
 struct QuillFrontendOptions
 {
-    static constexpr quill::QueueType queue_type = quill::QueueType::UnboundedBlocking;
+    static constexpr quill::QueueType queue_type = quill::QueueType::BoundedBlocking;
 
     /**
    * Initial capacity of the queue. Used for UnboundedBlocking, UnboundedDropping, and
    * UnboundedUnlimited. Also serves as the capacity for BoundedBlocking and BoundedDropping.
    */
-    static constexpr uint32_t initial_queue_capacity = 128 * 1024;
+    static constexpr uint32_t initial_queue_capacity = 512 * 1024;
 
     /**
    * Interval for retrying when using BoundedBlocking or UnboundedBlocking.

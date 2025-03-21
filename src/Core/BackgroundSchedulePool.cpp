@@ -305,7 +305,10 @@ void BackgroundSchedulePool::threadFunction()
         }
 
         if (task)
+        {
             task->execute();
+            DB::QuillLogger::reset_thread_context();
+        }
     }
 }
 
