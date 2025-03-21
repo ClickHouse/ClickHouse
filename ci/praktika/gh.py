@@ -1,5 +1,6 @@
 import json
 import time
+import traceback
 from typing import Any
 
 from ._environment import _Environment
@@ -67,6 +68,36 @@ class GH:
 
         cmd = f'gh pr comment {pr} --body "{comment_body}"'
         return cls.do_command_with_retries(cmd)
+
+    @classmethod
+    def get_pr_contributors(cls, repo=None, pr=None):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        cmd = f"gh pr view {pr} --repo {repo} --json commits --jq '[.commits[].authors[].login]'"
+        contributors_str = Shell.get_output(cmd, verbose=True)
+        res = []
+        if contributors_str:
+            try:
+                res = json.loads(contributors_str)
+            except Exception:
+                print(
+                    f"ERROR: Failed to fetch contributors list for PR [{pr}], repo [{repo}]"
+                )
+                traceback.print_exc()
+        return res
+
+    @classmethod
+    def get_pr_label_assigner(cls, label, repo=None, pr=None):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        cmd = f'gh api repos/{repo}/issues/{pr}/events --jq \'.[] | select(.event=="labeled" and .label.name=="{label}") | .actor.login'
+        return Shell.get_output(cmd, verbose=True)
 
     @classmethod
     def post_commit_status(cls, name, status, description, url):
