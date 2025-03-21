@@ -225,12 +225,14 @@ class HtmlRunnerHooks:
     def post_run(cls, _workflow, _job, info_errors):
         result = Result.from_fs(_job.name)
         _ResultS3.upload_result_files_to_s3(result).dump()
+        storage_usage = None
         if StorageUsage.exist():
             StorageUsage.add_uploaded(
                 result.file_name()
             )  # add Result file beforehand to upload actual storage usage data
             print("Storage usage data found - add to Result")
-            result.ext["storage_usage"] = StorageUsage.from_fs()
+            storage_usage = StorageUsage.from_fs()
+            result.ext["storage_usage"] = storage_usage
         _ResultS3.copy_result_to_s3(result)
 
         env = _Environment.get()
@@ -288,6 +290,7 @@ class HtmlRunnerHooks:
             new_info=new_result_info,
             new_sub_results=new_sub_results,
             workflow_name=_workflow.name,
+            storage_usage=storage_usage,
         )
 
         if updated_status:

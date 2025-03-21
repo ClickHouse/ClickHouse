@@ -12,11 +12,26 @@ from .utils import MetaClasses, Shell
 
 @dataclasses.dataclass
 class StorageUsage(MetaClasses.SerializableSingleton):
-    downloaded: int
-    uploaded: int
-    downloaded_details: Dict[str, int]
-    uploaded_details: Dict[str, int]
+    downloaded: int = 0
+    uploaded: int = 0
+    downloaded_details: Dict[str, int] = dataclasses.field(default_factory=dict)
+    uploaded_details: Dict[str, int] = dataclasses.field(default_factory=dict)
     ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
+
+    def merge_with(self, storage_usage: "StorageUsage"):
+        self.downloaded += storage_usage.downloaded
+        self.uploaded += storage_usage.uploaded
+        for k, v in storage_usage.downloaded_details.items():
+            if k in self.downloaded_details:
+                self.downloaded_details[k] += v
+            else:
+                self.downloaded_details[k] = v
+        for k, v in storage_usage.uploaded_details.items():
+            if k in self.uploaded_details:
+                self.uploaded_details[k] += v
+            else:
+                self.uploaded_details[k] = v
+        return self
 
     @classmethod
     def file_name_static(cls):
