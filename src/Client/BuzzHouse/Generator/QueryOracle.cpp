@@ -153,6 +153,7 @@ void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & ge
         gen.setAllowNotDetermistic(true);
         gen.enforceFinal(false);
         gen.setAllowEngineUDF(true);
+        gen.levels.clear();
     }
 }
 

@@ -299,7 +299,8 @@ auto StatementGenerator::getQueryTableLambda()
 bool StatementGenerator::joinedTableOrFunction(
     RandomGenerator & rg, const String & rel_name, const uint32_t allowed_clauses, const bool under_remote, TableOrFunction * tof)
 {
-    bool set_final = false;
+    const SQLTable * t = nullptr;
+    const SQLView * v = nullptr;
     const auto has_table_lambda = getQueryTableLambda<false>();
     const auto has_mergetree_table_lambda = getQueryTableLambda<true>();
     const auto has_view_lambda
@@ -360,19 +361,17 @@ bool StatementGenerator::joinedTableOrFunction(
     }
     else if (table && nopt < (derived_table + cte + table + 1))
     {
-        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
+        t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
 
-        t.setName(tof->mutable_est(), false);
-        set_final = t.supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3);
-        addTableRelation(rg, true, rel_name, t);
+        t->setName(tof->mutable_est(), false);
+        addTableRelation(rg, true, rel_name, *t);
     }
     else if (view && nopt < (derived_table + cte + table + view + 1))
     {
-        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(has_view_lambda));
+        v = &rg.pickRandomly(filterCollection<SQLView>(has_view_lambda)).get();
 
-        v.setName(tof->mutable_est(), false);
-        set_final = !v.is_materialized && (this->enforce_final || rg.nextSmallNumber() < 3);
-        addViewRelation(rel_name, v);
+        v->setName(tof->mutable_est(), false);
+        addViewRelation(rel_name, *v);
     }
     else if (remote_udf && nopt < (derived_table + cte + table + view + remote_udf + 1))
     {
@@ -386,19 +385,19 @@ bool StatementGenerator::joinedTableOrFunction(
 
         if (remote_table && nopt2 < (remote_table + 1))
         {
-            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
+            t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
 
-            setTableRemote(rg, true, t, tf);
-            addTableRelation(rg, true, rel_name, t);
+            setTableRemote(rg, true, *t, tf);
+            addTableRelation(rg, true, rel_name, *t);
         }
         else if (remote_view && nopt2 < (remote_table + remote_view + 1))
         {
             RemoteFunc * rfunc = tf->mutable_remote();
-            const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(has_view_lambda));
+            v = &rg.pickRandomly(filterCollection<SQLView>(has_view_lambda)).get();
 
             rfunc->set_address(fc.getConnectionHostAndPort());
-            v.setName(rfunc->mutable_tof()->mutable_est(), true);
-            addViewRelation(rel_name, v);
+            v->setName(rfunc->mutable_tof()->mutable_est(), true);
+            addViewRelation(rel_name, *v);
         }
         else if (recurse && nopt2 < (remote_table + remote_view + recurse + 1))
         {
@@ -559,28 +558,28 @@ bool StatementGenerator::joinedTableOrFunction(
         cdf->set_ccluster(rg.pickRandomly(fc.clusters));
         if (remote_table && nopt2 < (remote_table + 1))
         {
-            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
+            t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
 
-            t.setName(cdf->mutable_tof()->mutable_est(), true);
+            t->setName(cdf->mutable_tof()->mutable_est(), true);
             if (rg.nextBool())
             {
                 /// Optional sharding key
-                flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
+                flatTableColumnPath(to_remote_entries, *t, [](const SQLColumn &) { return true; });
                 cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
                 this->remote_entries.clear();
             }
-            addTableRelation(rg, false, rel_name, t);
+            addTableRelation(rg, false, rel_name, *t);
         }
         else if (remote_view && nopt2 < (remote_table + remote_view + 1))
         {
-            const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(has_view_lambda));
+            v = &rg.pickRandomly(filterCollection<SQLView>(has_view_lambda)).get();
 
-            v.setName(cdf->mutable_tof()->mutable_est(), true);
+            v->setName(cdf->mutable_tof()->mutable_est(), true);
             if (rg.nextBool())
             {
                 cdf->set_sharding_key("c" + std::to_string(rg.randomInt<uint32_t>(0, 5)));
             }
-            addViewRelation(rel_name, v);
+            addViewRelation(rel_name, *v);
         }
         else if (recurse && nopt2 < (remote_table + remote_view + recurse + 1))
         {
@@ -604,9 +603,10 @@ bool StatementGenerator::joinedTableOrFunction(
         SQLRelation rel(rel_name);
         TableFunction * tf = tof->mutable_tfunc();
         MergeTreeIndexFunc * mtudf = tf->mutable_mtindex();
-        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
+        const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
 
-        t.setName(mtudf->mutable_est(), true);
+        /// mergeTreeIndex function doesn't support final
+        tt.setName(mtudf->mutable_est(), true);
         if (rg.nextBool())
         {
             mtudf->set_with_marks(rg.nextBool());
@@ -745,7 +745,8 @@ bool StatementGenerator::joinedTableOrFunction(
     {
         chassert(0);
     }
-    return set_final;
+    return (t && t->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3))
+        || (v && v->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3));
 }
 
 void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, TableOrSubquery * tos)

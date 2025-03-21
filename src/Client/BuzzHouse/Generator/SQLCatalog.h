@@ -253,7 +253,7 @@ public:
     bool supportsFinal() const
     {
         return (teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
-            || this->isBufferEngine();
+            || isBufferEngine() || isDistributedEngine();
     }
 
     bool hasSignColumn() const
@@ -288,6 +288,8 @@ public:
         }
         est->mutable_table()->set_table("v" + std::to_string(tname));
     }
+
+    bool supportsFinal() const { return !this->is_materialized; }
 };
 
 struct SQLFunction

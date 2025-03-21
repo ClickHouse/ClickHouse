@@ -2113,7 +2113,7 @@ CONV_FN(JoinedTableOrFunction, jtf)
         ret += " ";
         TableToString(ret, jtf.table_alias());
     }
-    if (tof.has_est() && jtf.final())
+    if (jtf.final())
     {
         ret += " FINAL";
     }
