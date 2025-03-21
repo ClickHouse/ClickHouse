@@ -28,6 +28,7 @@ struct BuildQueryPipelineSettings
 
     size_t max_threads;
     size_t aggregation_memory_efficient_merge_threads;
+    size_t min_outstreams_per_resize_after_split;
 
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
 };
