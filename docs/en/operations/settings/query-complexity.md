@@ -124,30 +124,7 @@ See [`max_result_bytes`](/operations/settings/settings#max_result_bytes)
 
 ## result_overflow_mode {#result-overflow-mode}
 
-What to do if the volume of the result exceeds one of the limits: 'throw' or 'break'.
-
-Using 'break' is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](/operations/settings/settings#max_block_size) and depends on [max_threads](../../operations/settings/settings.md#max_threads).
-
-Default value: `throw`.
-
-Cloud default value: `throw`.
-
-Example:
-
-```sql
-SET max_threads = 3, max_block_size = 3333;
-SET max_result_rows = 3334, result_overflow_mode = 'break';
-
-SELECT *
-FROM numbers_mt(100000)
-FORMAT Null;
-```
-
-Result:
-
-```text
-6666 rows in set. ...
-```
+See [`result_overflow_mode`](/operations/settings/settings#result_overflow_mode)
 
 ## max_execution_time {#max-execution-time}
 

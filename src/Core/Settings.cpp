@@ -2572,7 +2572,34 @@ The setting is fairly low level and should be used with caution
 :::
 )", 0) \
     DECLARE(OverflowMode, result_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Cloud default value: `throw`
+
+What to do if the volume of the result exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+           source data ran out.
+
+Using 'break' is similar to using LIMIT. `Break` interrupts execution only at the
+block level. This means that amount of returned rows is greater than
+[`max_result_rows`](/operations/settings/settings#max_result_rows), multiple of [`max_block_size`](/operations/settings/settings#max_block_size)
+and depends on [`max_threads`](/operations/settings/settings#max_threads).
+
+**Example**
+
+```sql title="Query"
+SET max_threads = 3, max_block_size = 3333;
+SET max_result_rows = 3334, result_overflow_mode = 'break';
+
+SELECT *
+FROM numbers_mt(100000)
+FORMAT Null;
+```
+
+```text title="Result"
+6666 rows in set. ...
+```
 )", 0) \
     \
     /* TODO: Check also when merging and finalizing aggregate functions. */ \
