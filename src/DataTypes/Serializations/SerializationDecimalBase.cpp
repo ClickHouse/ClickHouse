@@ -55,11 +55,12 @@ void SerializationDecimalBase<T>::deserializeBinary(IColumn & column, ReadBuffer
 }
 
 template <typename T>
-void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double) const
+void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double) const
 {
     typename ColumnType::Container & x = typeid_cast<ColumnType &>(column).getData();
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
+    istr.ignore(sizeof(FieldType) * rows_offset);
     const size_t size = istr.readBig(reinterpret_cast<char *>(&x[initial_size]), sizeof(FieldType) * limit);
     x.resize(initial_size + size / sizeof(FieldType));
 
