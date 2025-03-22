@@ -18,6 +18,7 @@ CREATE TABLE products (id Int32, name String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO products SELECT number, 'product ' || toString(number) FROM numbers(100_000);
 
 SET query_plan_join_swap_table = 'auto';
+SET query_plan_join_swap_table_use_statistics = 0;
 
 SELECT * FROM products, sales
 WHERE sales.product_id = products.id AND date = '2024-05-07'
