@@ -86,12 +86,15 @@ CPUSlotsAllocation::~CPUSlotsAllocation()
         std::unique_lock lock{schedule_mutex};
         if (allocated < total_slots)
         {
-            bool canceled = getCurrentQueue(lock)->cancelRequest(current_request);
-            if (!canceled)
+            if (ISchedulerQueue * queue = getCurrentQueue(lock))
             {
-                // Request was not canceled, it means it is currently processed by the scheduler thread, we have to wait
-                allocated = total_slots; // to prevent enqueueing of the next request - see schedule()
-                schedule_cv.wait(lock, [this] { return allocated == total_slots + 1; });
+                bool canceled = queue->cancelRequest(current_request);
+                if (!canceled)
+                {
+                    // Request was not canceled, it means it is currently processed by the scheduler thread, we have to wait
+                    allocated = total_slots; // to prevent enqueueing of the next request - see schedule()
+                    schedule_cv.wait(lock, [this] { return allocated == total_slots + 1; });
+                }
             }
         }
     }
@@ -142,20 +145,14 @@ CPUSlotsAllocation::~CPUSlotsAllocation()
 
 [[nodiscard]] AcquiredSlotPtr CPUSlotsAllocation::acquire()
 {
-    // lock-free shortcut
-    if (auto result = tryAcquire())
-        return result;
-
-    // TODO(serxa): this logic could be optimized with FUTEX_WAIT
-    std::unique_lock lock{schedule_mutex};
-    waiters++;
-    SCOPE_EXIT({ waiters--; });
     while (true)
     {
-        schedule_cv.wait(lock, [this] { return granted > 0 || noncompeting > 0; });
         if (auto result = tryAcquire())
             return result;
-        // NOTE: We need retries because there are lock-free code paths that could acquire slot in another thread regardless of schedule_mutex
+        std::unique_lock lock{schedule_mutex};
+        waiters++;
+        schedule_cv.wait(lock, [this] { return granted > 0 || noncompeting > 0; });
+        waiters--;
     }
 }
 
@@ -192,6 +189,16 @@ void CPUSlotsAllocation::grant()
 ISchedulerQueue * CPUSlotsAllocation::getCurrentQueue(const std::unique_lock<std::mutex> &)
 {
     return allocated < master_slots ? master_link.queue : worker_link.queue;
+}
+
+bool CPUSlotsAllocation::isRequesting()
+{
+    std::unique_lock lock{schedule_mutex};
+    if (allocated < total_slots && getCurrentQueue(lock))
+        // Caller should make sure that request will not be dequeued by the scheduler thread. Otherwise, it will be a race condition.
+        return current_request->is_linked();
+    else
+        return false;
 }
 
 }
