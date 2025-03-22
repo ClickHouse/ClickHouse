@@ -25,6 +25,8 @@ node = cluster.add_instance(
         "configs/zookeeper_retries.xml",
     ],
     with_minio=True,
+    # The test compares some S3 events. We disable the remote DB disk, so it doesn't affect the comparing events.
+    with_remote_database_disk=False,
     with_zookeeper=True,
     stay_alive=True,
 )
