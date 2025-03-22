@@ -7,10 +7,12 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 
+#include <Common/setThreadName.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
+
 #include <base/scope_guard.h>
 
 #include <Interpreters/Context.h>
@@ -192,6 +194,20 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
         });
         return &threads.back();
     }
+
+    template <class Func>
+    ThreadFromGlobalPool * async(const String & workload, const String & resource1, const String & resource2, Func func)
+    {
+        std::scoped_lock lock{threads_mutex};
+        threads.emplace_back([=, this, func2 = std::move(func)] mutable
+        {
+            ClassifierPtr classifier = manager->acquire(workload);
+            ResourceLink link1 = resource1.empty() ? ResourceLink{} : classifier->get(resource1);
+            ResourceLink link2 = resource2.empty() ? ResourceLink{} : classifier->get(resource2);
+            func2(link1, link2);
+        });
+        return &threads.back();
+    }
 };
 
 using TestGuard = ResourceTest::Guard;
@@ -358,7 +374,9 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
 // It emulates how PipelineExecutor interacts with CPU scheduler
 struct TestQuery {
     ResourceTest & t;
-    SlotAllocationPtr slots;
+
+    std::mutex start_mutex;
+    std::shared_ptr<CPUSlotsAllocation> slots;
 
     std::mutex mutex;
     std::condition_variable cv;
@@ -368,6 +386,7 @@ struct TestQuery {
     size_t started_threads = 0;
     bool query_is_finished = false;
     UInt64 work_left = UInt64(-1);
+    String name;
 
     std::mutex threads_mutex;
     std::vector<ThreadFromGlobalPool *> threads;
@@ -441,6 +460,20 @@ struct TestQuery {
         cv.wait(lock, [=, this] () { return started_threads >= thread_num_to_wait; });
     }
 
+    // Wait until resource request is enqueued
+    void waitEnqueued()
+    {
+        while (true)
+        {
+            {
+                std::unique_lock lock{start_mutex};
+                if (slots && slots->isRequesting())
+                    return;
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+    }
+
     // Returns unique thread number
     size_t onThreadStart()
     {
@@ -484,6 +517,7 @@ struct TestQuery {
         size_t thread_num = onThreadStart();
         SCOPE_EXIT({ onThreadStop(); });
 
+        setThreadName(fmt::format("name.{}", name, thread_num).c_str());
         while (true)
         {
             upscaleIfPossible();
@@ -495,14 +529,20 @@ struct TestQuery {
     void start(String workload, SlotCount max_threads_, UInt64 runtime_us = UInt64(-1))
     {
         std::scoped_lock lock{mutex};
+        name = workload;
         max_threads = max_threads_;
         if (runtime_us != UInt64(-1))
             work_left = runtime_us / us_per_work;
-        t.async(workload, t.storage.getWorkerThreadResourceName(), [&] (ResourceLink link)
-        {
-            slots = std::make_shared<CPUSlotsAllocation>(1, max_threads, ResourceLink{}, link);
-            threadFunc(slots->tryAcquire());
-        });
+        t.async(workload, t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName(),
+            [&, workload] (ResourceLink master_link, ResourceLink worker_link)
+            {
+                setThreadName(workload.c_str());
+                {
+                    std::scoped_lock lock2{start_mutex};
+                    slots = std::make_shared<CPUSlotsAllocation>(1, max_threads - 1, master_link, worker_link);
+                }
+                threadFunc(slots->acquire());
+            });
     }
 };
 
@@ -550,6 +590,61 @@ TEST(SchedulerWorkloadResourceManager, CPUSlotsAllocationRoundRobin)
     ensure(7, 3); // Q0: 5 6; Q1: 1 2
 
     // Q0 - is done, Q1 still have pending resource requests, but we cancel it
+    queries.clear();
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, CPUSlotsAllocationFairness)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 4");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+    t.query("CREATE WORKLOAD leader IN all");
+
+    auto leader = std::make_shared<TestQuery>(t);
+    std::vector<TestQueryPtr> queries;
+    for (int query = 0; query < 2; query++)
+        queries.push_back(std::make_shared<TestQuery>(t));
+
+    auto ensure = [&] (size_t q0_threads, size_t q1_threads)
+    {
+        if (q0_threads > 0)
+            queries[0]->waitStartedThreads(q0_threads);
+        if (q1_threads > 0)
+            queries[1]->waitStartedThreads(q1_threads);
+    };
+
+    auto finish = [&] (size_t q0_threads, size_t q1_threads)
+    {
+        if (q0_threads > 0)
+            queries[0]->finishThread(q0_threads);
+        if (q1_threads > 0)
+            queries[1]->finishThread(q1_threads);
+    };
+
+    // Acquire all slots to create overloaded state
+    leader->start("leader", 4);
+    leader->waitStartedThreads(4);
+
+    // One of queries will be the first, but we do not case which one
+    queries[0]->start("A", 10);
+    queries[1]->start("B", 10);
+
+    // Make sure requests are enqueued and release all the slots
+    queries[0]->waitEnqueued();
+    queries[1]->waitEnqueued();
+    leader.reset();
+
+    for (int i = 2; i < 10; i++)
+    {
+        ensure(i, i); // acquire two slots
+        finish(1, 1); // release two slots
+    }
+
     queries.clear();
 
     t.wait();
