@@ -178,10 +178,20 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
+    /// Get the total length of all indexes in the table.
+    virtual UInt64 getIndexLengthFromFile() const { return 0; }
+
+    /// Get the total length of all marks in the table.
+    virtual UInt64 getMarksSize() const { return 0; }
+
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.
     using IndexSizeByName = std::unordered_map<std::string, IndexSize>;
     virtual IndexSizeByName getSecondaryIndexSizes() const { return {}; }
+
+    /// Get the total compressed size of all indexes, marks, secondary indexes,
+    /// and their marks.
+    virtual std::optional<UInt64> getAllIndexesTotalCompressedSize() const { return std::nullopt; }
 
     /// Get mutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be

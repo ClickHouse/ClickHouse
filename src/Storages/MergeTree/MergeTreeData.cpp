@@ -5276,6 +5276,8 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded() const
         return;
 
     column_sizes.clear();
+    primary_index_file_size = 0;
+    primary_index_marks_size = 0;
 
     /// Take into account only committed parts
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
@@ -5303,6 +5305,8 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
         ColumnSize part_column_size = part->getColumnSize(column.name);
         total_column_size.add(part_column_size);
     }
+    primary_index_file_size += part->getIndexSizeFromFile();
+    primary_index_marks_size += part->getTotalColumnsSize().marks;
 
     const auto metadata_snapshot = getInMemoryMetadataPtr();
     auto indexes_descriptions = metadata_snapshot->secondary_indices;
