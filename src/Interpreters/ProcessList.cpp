@@ -28,7 +28,6 @@ namespace Setting
     extern const SettingsUInt64 max_concurrent_queries_for_all_users;
     extern const SettingsUInt64 max_concurrent_queries_for_user;
     extern const SettingsSeconds max_execution_time;
-    extern const SettingsMilliseconds low_priority_query_wait_time_ms;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_memory_usage_for_user;
     extern const SettingsUInt64 max_network_bandwidth_for_all_users;
@@ -50,6 +49,7 @@ namespace Setting
     extern const SettingsString temporary_files_codec;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool trace_profile_events;
+    extern const SettingsMilliseconds low_priority_query_wait_time_ms;
 }
 
 namespace ErrorCodes
@@ -300,7 +300,7 @@ ProcessList::EntryPtr ProcessList::insert(
             query_,
             normalized_query_hash,
             client_info,
-            priorities.insert(settings[Setting::priority]),
+            priorities.insert(settings[Setting::priority], settings[Setting::low_priority_query_wait_time_ms]),
             std::move(thread_group),
             query_kind,
             settings,
