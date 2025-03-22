@@ -2445,8 +2445,9 @@ This setting is unstable with `prefer_localhost_replica=1`.
 :::
 )", 0) \
     DECLARE(OverflowMode, read_overflow_mode_leaf, OverflowMode::THROW, R"(
-Sets what happens when the volume of data read exceeds one of the leaf limits,
-with options:
+Sets what happens when the volume of data read exceeds one of the leaf limits.
+
+Possible options:
 - `throw`: throw an exception (default).
 - `break`: stop executing the query and return the partial result.
 )", 0) \
@@ -2549,7 +2550,7 @@ If memory usage after remerge does not reduced by this ratio, remerge will be di
     DECLARE(UInt64, max_result_rows, 0, R"(
 Cloud default value: `0`.
 
-Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
+Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 No limit is applied when the value is `0`.
 
 The query will stop after processing a block of data if the threshold is met, but
@@ -2557,7 +2558,7 @@ it will not cut the last block of the result, therefore the result size can be
 larger than the threshold.
 )", 0) \
     DECLARE(UInt64, max_result_bytes, 0, R"(
-Limit on result size in bytes (uncompressed). The query will stop after processing a block of data if the threshold is met,
+Limits the result size in bytes (uncompressed). The query will stop after processing a block of data if the threshold is met,
 but it will not cut the last block of the result, therefore the result size can be larger than the threshold.
 
 **Caveats**
@@ -2574,7 +2575,7 @@ The setting is fairly low level and should be used with caution
     DECLARE(OverflowMode, result_overflow_mode, OverflowMode::THROW, R"(
 Cloud default value: `throw`
 
-What to do if the volume of the result exceeds one of the limits.
+Sets what to do if the volume of the result exceeds one of the limits.
 
 Possible values:
 - `throw`: throw an exception (default).
@@ -2657,7 +2658,7 @@ FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 
 ```
 )", 0) \
     DECLARE(OverflowMode, timeout_overflow_mode_leaf, OverflowMode::THROW, R"(
-What to do when the query in leaf node run longer than `max_execution_time_leaf`.
+Sets what happens when the query in leaf node run longer than `max_execution_time_leaf`.
 
 Possible values:
 - `throw`: throw an exception (default).
@@ -3013,7 +3014,7 @@ The maximum number of bytes (uncompressed data) that can be passed to a remote
 server or saved in a temporary table when the GLOBAL IN/JOIN section is executed.
 )", 0) \
     DECLARE(OverflowMode, transfer_overflow_mode, OverflowMode::THROW, R"(
-What to do when the amount of data exceeds one of the limits.
+Sets what happens when the amount of data exceeds one of the limits.
 
 Possible values:
 - `throw`: throw an exception (default).
@@ -3073,7 +3074,7 @@ The maximum amount of RAM to use for running a user's queries on a single server
 
 By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
 
-See also the description of [`max_memory_usage`](#settings_max_memory_usage).
+Also see the description of [`max_memory_usage`](#settings_max_memory_usage).
 
 For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
 
