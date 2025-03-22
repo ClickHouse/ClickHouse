@@ -212,7 +212,7 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                 }
 
                 const auto & node_match = mt->second;
-                if (node_match.node != proj_node || node_match.monotonicity)
+                if (node_match.node != proj_node || (node_match.monotonicity && !node_match.monotonicity->identity))
                 {
                     // LOG_TRACE(
                     //     getLogger("optimizeUseProjections"),
@@ -284,7 +284,7 @@ std::optional<ActionsDAG> analyzeAggregateProjection(
 {
     auto proj_index = buildDAGIndex(*info.before_aggregation);
 
-    MatchedTrees::Matches matches = matchTrees(info.before_aggregation->getOutputs(), *query.dag, false /* check_monotonicity */);
+    MatchedTrees::Matches matches = matchTrees(info.before_aggregation->getOutputs(), *query.dag, true /* check_monotonicity */);
 
     // for (const auto & [node, match] : matches)
     // {
