@@ -180,6 +180,7 @@ void SchedulingSettings::updateFromChanges(Unit unit_, const ASTCreateWorkloadQu
     max_burst_bytes = get_value(specific.new_max_burst_bytes, regular.new_max_burst_bytes, max_burst_bytes);
     max_io_requests = get_value(specific.new_max_io_requests, regular.new_max_io_requests, max_io_requests);
     max_bytes_inflight = get_value(specific.new_max_bytes_inflight, regular.new_max_bytes_inflight, max_bytes_inflight);
+    max_concurrent_threads = get_value(specific.new_max_concurrent_threads, regular.new_max_concurrent_threads, max_concurrent_threads);
 }
 
 }
