@@ -2,7 +2,7 @@
 -- Tag no-parallel: Messes with internal cache
 
 -- Test for issue #77553: SQL-defined UDFs may be non-deterministic. The query cache should treat them as such, i.e. reject them.
--- Also see 02494_query_cache_udf_executable.sh
+-- Also see test_executable_function_query_cache in tests/integration/test_executable_user_defined_function
 
 SYSTEM DROP QUERY CACHE;
 DROP FUNCTION IF EXISTS udf;

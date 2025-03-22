@@ -232,7 +232,7 @@ ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
-IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
+IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
 {
     ast = removeQueryResultCacheSettings(ast);
 

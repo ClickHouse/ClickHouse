@@ -5,7 +5,6 @@
 #include <Interpreters/ActionsMatcher.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/ArrayJoin.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
@@ -43,6 +42,10 @@ class Set;
 using SetPtr = std::shared_ptr<Set>;
 
 class QueryPlan;
+
+struct TemporaryTableHolder;
+using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
+using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
 
 namespace ExpressionActionsChainSteps
 {

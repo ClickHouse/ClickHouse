@@ -1569,7 +1569,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         if (unlikely(year == 0))
             datetime = 0;
         else
-            datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
+            datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
     }
     else
     {
