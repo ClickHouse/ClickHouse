@@ -569,10 +569,11 @@ public:
     }
 
     /// Fills column values from RowRefList
+    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
     virtual void fillFromRowRefs(const DataTypePtr & type, size_t right_index, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges);
 
     /// Fills column values from list of blocks and row numbers
-    /// blocks.size() == row_nums.size()
+    /// `blocks` and `row_nums` must have same size
     virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t right_index, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums);
 
     /// Some columns may require finalization before using of other operations.
@@ -809,10 +810,11 @@ private:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
     /// Fills column values from RowRefList
+    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
     void fillFromRowRefs(const DataTypePtr & type, size_t right_index, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges) override;
 
     /// Fills column values from list of blocks and row numbers
-    /// blocks.size() == row_nums.size()
+    /// `blocks` and `row_nums` must have same size
     void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t right_index, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.

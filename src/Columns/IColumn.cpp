@@ -455,6 +455,7 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
             const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
             if constexpr (row_refs_are_ranges)
             {
+                row_ref_list->assertIsRange();
                 col->insertRangeFrom(*row_ref_list->block->getByPosition(right_index).column, row_ref_list->row_num, row_ref_list->rows);
             }
             else
@@ -488,10 +489,12 @@ void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, s
         fillColumnFromRowRefs<false>(&self, type, right_index, row_refs);
 }
 
-
+/// Fills column values from list of blocks and row numbers
+/// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <typename ColumnType>
 static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t right_index, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
 {
+    chassert(blocks.size() == row_nums.size());
     col->reserve(col->size() + blocks.size());
     for (size_t j = 0; j < blocks.size(); ++j)
     {
@@ -503,14 +506,12 @@ static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePt
 }
 
 /// Fills column values from list of blocks and row numbers
-/// blocks.size() == row_nums.size()
 void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t right_index, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
 {
     fillColumnFromBlocksAndRowNumbers(this, type, right_index, blocks, row_nums);
 }
 
 /// Fills column values from list of blocks and row numbers
-/// blocks.size() == row_nums.size()
 template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t right_index, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
 {
