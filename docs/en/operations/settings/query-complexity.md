@@ -270,14 +270,4 @@ See [`max_sessions_for_user`](/operations/settings/settings#max_sessions_for_use
 
 ## max_partitions_to_read {#max-partitions-to-read}
 
-Limits the maximum number of partitions that can be accessed in one query.
-
-The setting value specified when the table is created can be overridden via query-level setting.
-
-Possible values:
-
-- Any positive integer.
-
-Default value: -1 (unlimited).
-
-You can also specify a MergeTree setting [max_partitions_to_read](merge-tree-settings#max-partitions-to-read) in tables' setting.
+See [`max_partitions_to_read`](/operations/settings/settings#max_partitions_to_read)

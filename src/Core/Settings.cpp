@@ -3644,7 +3644,18 @@ This can be useful if you're trying to understand the impact on users when chang
 :::
 )", 0) \
     DECLARE(Int64, max_partitions_to_read, -1, R"(
-Limit the max number of partitions that can be accessed in one query. &lt;= 0 means unlimited.
+Limits the maximum number of partitions that can be accessed in a single query.
+
+The setting value specified when the table is created can be overridden via query-level setting.
+
+Possible values:
+
+- Positive integer
+- `-1` - unlimited (default)
+
+:::note
+You can also specify the MergeTree setting [`max_partitions_to_read`](/operations/settings/settings#max_partitions_to_read) in tables' setting.
+:::
 )", 0) \
     DECLARE(Bool, check_query_single_value_result, true, R"(
 Defines the level of detail for the [CHECK TABLE](/sql-reference/statements/check-table) query result for `MergeTree` family engines .
