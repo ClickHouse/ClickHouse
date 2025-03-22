@@ -3607,7 +3607,7 @@ Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 )", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
 Limits the maximum number of partitions in a single inserted block
-and an excception is thrown if the block contains too many partitions.
+and an exception is thrown if the block contains too many partitions.
 
 - Positive integer.
 - `0` — Unlimited number of partitions.
