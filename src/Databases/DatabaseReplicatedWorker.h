@@ -39,6 +39,14 @@ public:
 
     UInt64 getCurrentInitializationDurationMs() const;
 
+    void resetQueueOnFaultInjected()
+    {
+        need_reset_fault_injected = true;
+        queue_updated_event->set();
+    }
+
+    void notifyCurrentTaskChange() { wait_current_task_change.notify_all(); }
+
 private:
     bool initializeMainThread() override;
     void initializeReplication() override;

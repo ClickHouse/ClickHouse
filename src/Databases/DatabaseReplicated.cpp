@@ -1184,6 +1184,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     is_recovering = true;
     SCOPE_EXIT({ is_recovering = false; });
 
+    ddl_worker->notifyCurrentTaskChange();
+
     /// Let's compare local (possibly outdated) metadata with (most actual) metadata stored in ZooKeeper
     /// and try to update the set of local tables.
     /// We could drop all local tables and create the new ones just like it's new replica.
@@ -1194,6 +1196,11 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         LOG_INFO(log, "Will create new replica from log pointer {}", max_log_ptr);
     else
         LOG_WARNING(log, "Will recover replica with staled log pointer {} from log pointer {}", our_log_ptr, max_log_ptr);
+
+    {
+        /// Wait for running [CREATE OR] REPLACE TABLE queries to finish before comparing the list of tables
+        auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(getDatabaseName());
+    }
 
     auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(current_zookeeper, max_log_ptr);
 
@@ -1773,7 +1780,18 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
-    DatabaseAtomic::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
+    try
+    {
+        DatabaseAtomic::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
+    }
+    catch (const Coordination::Exception & e)
+    {
+        /// We are trying to emulate connection loss, but we just throw an exception without marking the ZooKeeper object as expired
+        /// So we also need to notify the queue, so it will restart just like in case of real connection loss
+        if (e.code == Coordination::Error::ZCONNECTIONLOSS && e.message().starts_with("Fault injected"))
+            ddl_worker->resetQueueOnFaultInjected();
+        throw;
+    }
 
     tables_metadata_digest = new_digest;
     assertDigest(local_context);
