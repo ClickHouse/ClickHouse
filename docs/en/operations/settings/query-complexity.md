@@ -242,20 +242,7 @@ See [`max_rows_in_join`](/operations/settings/settings#max_rows_in_join)
 
 ## max_bytes_in_join {#settings-max_bytes_in_join}
 
-Limits the size in bytes of the hash table used when joining tables.
-
-This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join) operations and [Join table engine](../../engines/table-engines/special/join.md).
-
-If the query contains joins, ClickHouse checks this setting for every intermediate result.
-
-ClickHouse can proceed with different actions when the limit is reached. Use [join_overflow_mode](#settings-join_overflow_mode) settings to choose the action.
-
-Possible values:
-
-- Positive integer.
-- 0 — Memory control is disabled.
-
-Default value: 0.
+See [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join)
 
 ## join_overflow_mode {#settings-join_overflow_mode}
 

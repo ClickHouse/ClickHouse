@@ -2804,7 +2804,20 @@ Possible values:
 - `0` — Unlimited number of rows.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, R"(
-Maximum size of the hash table for JOIN (in number of bytes in memory).
+The maximum size in number of bytes of the hash table used when joining tables.
+
+This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
+operations and the [Join table engine](/engines/table-engines/special/join).
+
+If the query contains joins, ClickHouse checks this setting for every intermediate result.
+
+ClickHouse can proceed with different actions when the limit is reached. Use
+the [join_overflow_mode](#settings-join_overflow_mode) settings to choose the action.
+
+Possible values:
+
+- Positive integer.
+- 0 — Memory control is disabled.
 )", 0) \
     DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, R"(
 What to do when the limit is exceeded.
