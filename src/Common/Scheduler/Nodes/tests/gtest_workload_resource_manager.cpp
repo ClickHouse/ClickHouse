@@ -610,22 +610,6 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingFairness)
     for (int query = 0; query < 2; query++)
         queries.push_back(std::make_shared<TestQuery>(t));
 
-    auto ensure = [&] (size_t q0_threads, size_t q1_threads)
-    {
-        if (q0_threads > 0)
-            queries[0]->waitStartedThreads(q0_threads);
-        if (q1_threads > 0)
-            queries[1]->waitStartedThreads(q1_threads);
-    };
-
-    auto finish = [&] (size_t q0_threads, size_t q1_threads)
-    {
-        if (q0_threads > 0)
-            queries[0]->finishThread(q0_threads);
-        if (q1_threads > 0)
-            queries[1]->finishThread(q1_threads);
-    };
-
     // Acquire all slots to create overloaded state
     leader->start("leader", 4);
     leader->waitStartedThreads(4);
@@ -641,8 +625,57 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingFairness)
 
     for (int i = 2; i < 10; i++)
     {
-        ensure(i, i); // acquire two slots
-        finish(1, 1); // release two slots
+        // Acquire two slots
+        queries[0]->waitStartedThreads(i);
+        queries[1]->waitStartedThreads(i);
+
+        // Release two slots
+        queries[0]->finishThread(1);
+        queries[1]->finishThread(1);
+    }
+
+    queries.clear();
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, CPUSchedulingWeights)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all SETTINGS weight = 3");
+    t.query("CREATE WORKLOAD leader IN all");
+
+    auto leader = std::make_shared<TestQuery>(t);
+    std::vector<TestQueryPtr> queries;
+    for (int query = 0; query < 2; query++)
+        queries.push_back(std::make_shared<TestQuery>(t));
+
+    // Acquire all slots to create overloaded state
+    leader->start("leader", 8);
+    leader->waitStartedThreads(8);
+
+    // One of queries will be the first, but we do not case which one
+    queries[0]->start("A", 10);
+    queries[1]->start("B", 30);
+
+    // Make sure requests are enqueued and release all the slots
+    queries[0]->waitEnqueued();
+    queries[1]->waitEnqueued();
+    leader.reset();
+
+    for (int i = 2; i < 10; i++)
+    {
+        // Acquire slots
+        queries[0]->waitStartedThreads(i);
+        queries[1]->waitStartedThreads(i * 3);
+
+        // Release slots
+        queries[0]->finishThread(1);
+        queries[1]->finishThread(3);
     }
 
     queries.clear();
