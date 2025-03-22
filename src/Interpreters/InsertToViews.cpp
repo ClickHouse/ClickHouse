@@ -1029,6 +1029,12 @@ Chain ViewsManager::createSelect(StorageIDPrivate view_id) const
     result.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", output_header));
 #endif
 
+    auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota());
+    counting->setProcessListElement(insert_context->getProcessListElement());
+    counting->setProgressCallback(insert_context->getProgressCallback());
+    counting->setRuntimeData(thread_groups.at(view_id));
+    result.addSource(std::move(counting));
+
     auto source_table_id = source_tables.at(view_id);
     auto input_header = input_headers.at(view_id);
 
@@ -1167,15 +1173,6 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
     LOG_DEBUG(logger, "createPreSink: {}, metadata_header {}", view_id, metadata->getSampleBlock().dumpStructure());
     LOG_DEBUG(logger, "createPreSink: {}, output_headers {}", view_id, output_header.dumpStructure());
 
-
-    //chain.addSink(std::make_shared<DebugPrintTransform>(output_header, "before CountingTransform", insert_context));
-
-
-    auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota());
-    counting->setProcessListElement(insert_context->getProcessListElement());
-    counting->setProgressCallback(insert_context->getProgressCallback());
-    counting->setRuntimeData(thread_groups.at(view_id));
-    chain.addSink(std::move(counting));
 
     LOG_DEBUG(logger, "createPreSink: {}, input {}, output {}", view_id, chain.getInputHeader().dumpStructure(), chain.getOutputHeader().dumpStructure());
 

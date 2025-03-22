@@ -465,15 +465,15 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         return std::make_shared<MaterializingTransform>(in_header, !table->supportsSparseSerialization());
     });
 
-    // pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-    // {
-    //     auto context_ptr = getContext();
-    //     auto counting = std::make_shared<CountingTransform>(in_header, context_ptr->getQuota());
-    //     counting->setProcessListElement(context_ptr->getProcessListElement());
-    //     counting->setProgressCallback(context_ptr->getProgressCallback());
+    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+    {
+        auto context_ptr = getContext();
+        auto counting = std::make_shared<CountingTransform>(in_header, context_ptr->getQuota());
+        counting->setProcessListElement(context_ptr->getProcessListElement());
+        counting->setProgressCallback(context_ptr->getProgressCallback());
 
-    //     return counting;
-    // });
+        return counting;
+    });
 
     size_t num_select_threads = pipeline.getNumThreads();
 
@@ -636,11 +636,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         chain.addSource(std::move(balancing));
     }
 
-    // auto context_ptr = getContext();
-    // auto counting = std::make_shared<CountingTransform>(chain.getInputHeader(), context_ptr->getQuota());
-    // counting->setProcessListElement(context_ptr->getProcessListElement());
-    // counting->setProgressCallback(context_ptr->getProgressCallback());
-    // chain.addSource(std::move(counting));
+
+    auto context_ptr = getContext();
+    auto counting = std::make_shared<CountingTransform>(chain.getInputHeader(), context_ptr->getQuota());
+    counting->setProcessListElement(context_ptr->getProcessListElement());
+    counting->setProgressCallback(context_ptr->getProgressCallback());
+    chain.addSource(std::move(counting));
 
     QueryPipeline pipeline = QueryPipeline(std::move(chain));
 
