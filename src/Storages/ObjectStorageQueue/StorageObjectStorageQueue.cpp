@@ -263,6 +263,8 @@ void StorageObjectStorageQueue::startup()
 {
     /// Register the metadata in startup(), unregister in shutdown.
     /// (If startup is never called, shutdown also won't be called.)
+    std::lock_guard lock(startup_mutex);
+    startup_called = true;
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(temp_metadata), getStorageID());
     try
     {
@@ -287,7 +289,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     {
         task->deactivate();
     }
-
+    std::lock_guard lock(startup_mutex);
     if (files_metadata)
     {
         try
@@ -453,6 +455,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         std::lock_guard lock(mutex);
         commit_settings_copy = commit_settings;
     }
+    std::lock_guard lock(startup_mutex);
     return std::make_shared<ObjectStorageQueueSource>(
         getName(), processor_id,
         file_iterator, configuration, object_storage, progress_,
@@ -507,6 +510,7 @@ void StorageObjectStorageQueue::threadFunc()
 
             LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
+            std::lock_guard lock_startup_mutex(startup_mutex);
             files_metadata->registerIfNot(storage_id, /* active */true);
 
             if (streamToViews())
@@ -543,6 +547,7 @@ void StorageObjectStorageQueue::threadFunc()
         {
             try
             {
+                std::lock_guard lock_startup_mutex(startup_mutex);
                 files_metadata->unregister(storage_id, /* active */true);
             }
             catch (...)
@@ -670,6 +675,7 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
+    std::lock_guard lock(startup_mutex);
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
     {
@@ -970,6 +976,7 @@ void StorageObjectStorageQueue::alter(
         LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
 
         /// Alter settings which are stored in keeper.
+        std::lock_guard lock_startup_mutex(startup_mutex);
         files_metadata->alterSettings(changed_settings, local_context);
 
         /// Alter settings which are not stored in keeper.
@@ -1009,6 +1016,14 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
+const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetadata() const
+{
+    std::lock_guard lock(startup_mutex);
+    if (!files_metadata)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Files metadata is empty");
+    return files_metadata->getTableMetadata();
+}
+
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
@@ -1024,6 +1039,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         enable_hash_ring_filtering_copy = enable_hash_ring_filtering;
     }
 
+    std::lock_guard lock_startup_mutex(startup_mutex);
     return std::make_shared<FileIterator>(
         files_metadata,
         object_storage,
@@ -1045,7 +1061,14 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
-    const auto & table_metadata = getTableMetadata();
+    /// If startup() for a table was not called, results of getTableMetadata() might be empty, in which case
+    /// get the table metadata from temp_metadata. Also, use a startup_mutext to ensure that there is no race
+    /// between when the temp_metadata is reset during startup() and when we call getTableMetadata() below.
+    const auto table_metadata = [this]() -> ObjectStorageQueueTableMetadata
+    {
+        std::lock_guard lock(startup_mutex);
+        return startup_called ? getTableMetadata() : temp_metadata->getTableMetadata();
+    }();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
     settings[ObjectStorageQueueSetting::keeper_path] = zk_path;

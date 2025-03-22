@@ -83,8 +83,10 @@ private:
     bool enable_hash_ring_filtering TSA_GUARDED_BY(mutex);
     CommitSettings commit_settings TSA_GUARDED_BY(mutex);
 
-    std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
-    std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
+    mutable std::mutex startup_mutex;
+
+    std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata TSA_GUARDED_BY(startup_mutex);
+    std::shared_ptr<ObjectStorageQueueMetadata> files_metadata TSA_GUARDED_BY(startup_mutex);
     ConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
 
@@ -96,6 +98,7 @@ private:
 
     std::atomic<bool> mv_attached = false;
     std::atomic<bool> shutdown_called = false;
+    std::atomic<bool> startup_called = false;
     std::atomic<bool> table_is_being_dropped = false;
 
     LoggerPtr log;
@@ -109,7 +112,7 @@ private:
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
-    const ObjectStorageQueueTableMetadata & getTableMetadata() const { return files_metadata->getTableMetadata(); }
+    const ObjectStorageQueueTableMetadata & getTableMetadata() const;
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
     std::shared_ptr<ObjectStorageQueueSource> createSource(
