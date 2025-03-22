@@ -31,20 +31,20 @@ INNER JOIN system.processes AS b ON (a.query_id = b.query_id) AND (type = 'Query
 WHERE current_database = currentDatabase()
 SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;
 
-SELECT *
+SELECT dummy
 FROM
 (
-    SELECT *
+    SELECT dummy
     FROM system.one
 ) AS a
 INNER JOIN
 (
-    SELECT *
+    SELECT dummy
     FROM system.one
 ) AS b USING (dummy)
 INNER JOIN
 (
-    SELECT *
+    SELECT dummy
     FROM system.one
 ) AS c USING (dummy)
 SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;

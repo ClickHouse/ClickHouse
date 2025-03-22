@@ -3,9 +3,6 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -201,7 +198,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
             return 0;
     }
 
-    /// Check input and output type
+    /// Check input and output type.
     {
         const auto & output_header = join->getOutputHeader();
         for (const auto & column_type_and_name : output_header)
