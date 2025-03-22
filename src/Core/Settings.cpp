@@ -3559,7 +3559,32 @@ If enabled, functions 'least' and 'greatest' return NULL if one of their argumen
 Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 )", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
-Limit maximum number of partitions in the single INSERTed block. Zero means unlimited. Throw an exception if the block contains too many partitions. This setting is a safety threshold because using a large number of partitions is a common misconception.
+Limits the maximum number of partitions in a single inserted block
+and an excception is thrown if the block contains too many partitions.
+
+- Positive integer.
+- `0` — Unlimited number of partitions.
+
+**Details**
+
+When inserting data, ClickHouse calculates the number of partitions in the
+inserted block. If the number of partitions is more than
+`max_partitions_per_insert_block`, ClickHouse either logs a warning or throws an
+exception based on `throw_on_max_partitions_per_insert_block`. Exceptions have
+the following text:
+
+> "Too many partitions for a single INSERT block (`partitions_count` partitions, limit is " + toString(max_partitions) + ").
+  The limit is controlled by the 'max_partitions_per_insert_block' setting.
+  A large number of partitions is a common misconception. It will lead to severe
+  negative performance impact, including slow server startup, slow INSERT queries
+  and slow SELECT queries. Recommended total number of partitions for a table is
+  under 1000..10000. Please note, that partitioning is not intended to speed up
+  SELECT queries (ORDER BY key is sufficient to make range queries fast).
+  Partitions are intended for data manipulation (DROP PARTITION, etc)."
+
+:::note
+This setting is a safety threshold because using a large number of partitions is a common misconception.
+:::
 )", 0) \
     DECLARE(Bool, throw_on_max_partitions_per_insert_block, true, R"(
 Used with max_partitions_per_insert_block. If true (default), an exception will be thrown when max_partitions_per_insert_block is reached. If false, details of the insert query reaching this limit with the number of partitions will be logged. This can be useful if you're trying to understand the impact on users when changing max_partitions_per_insert_block.
