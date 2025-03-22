@@ -2730,7 +2730,41 @@ approximately zero computing resources.
 )", 0) \
     \
     DECLARE(UInt64, max_sessions_for_user, 0, R"(
-Maximum number of simultaneous sessions for a user.
+Maximum number of simultaneous sessions per authenticated user to the ClickHouse server.
+
+Example:
+
+```xml
+<profiles>
+    <single_session_profile>
+        <max_sessions_for_user>1</max_sessions_for_user>
+    </single_session_profile>
+    <two_sessions_profile>
+        <max_sessions_for_user>2</max_sessions_for_user>
+    </two_sessions_profile>
+    <unlimited_sessions_profile>
+        <max_sessions_for_user>0</max_sessions_for_user>
+    </unlimited_sessions_profile>
+</profiles>
+<users>
+    <!-- User Alice can connect to a ClickHouse server no more than once at a time. -->
+    <Alice>
+        <profile>single_session_user</profile>
+    </Alice>
+    <!-- User Bob can use 2 simultaneous sessions. -->
+    <Bob>
+        <profile>two_sessions_profile</profile>
+    </Bob>
+    <!-- User Charles can use arbitrarily many of simultaneous sessions. -->
+    <Charles>
+        <profile>unlimited_sessions_profile</profile>
+    </Charles>
+</users>
+```
+
+Possible values:
+- Positive integer
+- `0` - infinite count of simultaneous sessions (default)
 )", 0) \
     \
     DECLARE(UInt64, max_subquery_depth, 100, R"(
@@ -3138,7 +3172,13 @@ Possible values:
 - `0` — unlimited (default)
 )", 0)\
     DECLARE(UInt64, max_temporary_data_on_disk_size_for_query, 0, R"(
-The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running queries. Zero means unlimited.
+The maximum amount of data consumed by temporary files on disk in bytes for all
+concurrently running queries.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
 )", 0)\
     \
     DECLARE(UInt64, backup_restore_keeper_max_retries, 1000, R"(
