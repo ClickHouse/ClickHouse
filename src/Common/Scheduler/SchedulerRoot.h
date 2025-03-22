@@ -4,7 +4,7 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-
+#include <Common/setThreadName.h>
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Common/Scheduler/ISchedulerConstraint.h>
 
@@ -52,7 +52,7 @@ private:
     };
 
 public:
-    SchedulerRoot()
+    explicit SchedulerRoot()
         : ISchedulerNode(&events)
     {}
 
@@ -64,10 +64,10 @@ public:
     }
 
     /// Runs separate scheduler thread
-    void start()
+    void start(const String & name)
     {
         if (!scheduler.joinable())
-            scheduler = ThreadFromGlobalPool([this] { schedulerThread(); });
+            scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
     }
 
     /// Joins scheduler threads and execute every pending request iff graceful
@@ -232,8 +232,9 @@ private:
         value->next = nullptr;
     }
 
-    void schedulerThread()
+    void schedulerThread(const String & name)
     {
+        setThreadName(name.c_str());
         while (!stop_flag.load())
         {
             // Dequeue and execute single request
