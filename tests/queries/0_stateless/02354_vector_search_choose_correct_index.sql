@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-ordinary-database
+-- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
+-- no-parallel-replicas: EXPLAIN returns a different plan, this is expected behavior
 
 SET allow_experimental_vector_similarity_index=1;
 SET enable_analyzer = 1; -- analyzer vs. non-analyzer produce slightly different EXPLAIN
