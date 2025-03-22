@@ -362,6 +362,8 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
             table->drop();
             table->is_dropped = true;
         }
+        std::lock_guard lock(mutex);
+        snapshot_detached_tables.erase(table_name);
     }
     catch (...)
     {
