@@ -48,6 +48,13 @@ void SerializationLowCardinality::enumerateStreams(
 {
     const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
 
+    if (settings.use_specialized_prefixes_substreams)
+    {
+        settings.path.push_back(Substream::DictionaryKeysPrefix);
+        callback(settings.path);
+        settings.path.pop_back();
+    }
+
     settings.path.push_back(Substream::DictionaryKeys);
     auto dict_data = SubstreamData(dict_inner_serialization)
         .withType(data.type ? dictionary_type : nullptr)
@@ -231,7 +238,7 @@ void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    settings.path.push_back(Substream::DictionaryKeys);
+    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::DictionaryKeysPrefix : Substream::DictionaryKeys);
     auto * stream = settings.getter(settings.path);
     settings.path.pop_back();
 
@@ -276,7 +283,7 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsDeserializeStatesCache * cache) const
 {
-    settings.path.push_back(Substream::DictionaryKeys);
+    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::DictionaryKeysPrefix : Substream::DictionaryKeys);
 
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
     {

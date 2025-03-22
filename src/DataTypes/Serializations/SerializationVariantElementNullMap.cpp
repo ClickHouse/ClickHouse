@@ -42,6 +42,13 @@ void SerializationVariantElementNullMap::enumerateStreams(
     const DB::ISerialization::SubstreamData &) const
 {
     /// We will need stream for discriminators during deserialization.
+    if (settings.use_specialized_prefixes_substreams)
+    {
+        settings.path.push_back(Substream::VariantDiscriminatorsPrefix);
+        callback(settings.path);
+        settings.path.pop_back();
+    }
+
     settings.path.push_back(Substream::VariantDiscriminators);
     callback(settings.path);
     settings.path.pop_back();

@@ -29,6 +29,7 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
     ISerialization::DeserializeBinaryBulkStatePtr nested_state;
     bool read_from_shared_data;
     ColumnPtr shared_data;
+    size_t shared_data_size = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -171,18 +172,20 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::ObjectSharedData);
         /// Initialize shared_data column if needed.
-        if (result_column->empty())
+        if (result_column->empty() || !dynamic_path_state->shared_data)
+        {
             dynamic_path_state->shared_data = DataTypeObject::getTypeOfSharedData()->createColumn();
-        size_t prev_size = result_column->size();
+            dynamic_path_state->shared_data_size = 0;
+        }
         shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_path_state->shared_data, limit, settings, dynamic_path_state->nested_state, cache);
         /// If we need to read a subcolumn from Dynamic column, create an empty Dynamic column, fill it and extract subcolumn.
         MutableColumnPtr dynamic_column = path_subcolumn.empty() ? result_column->assumeMutable() : ColumnDynamic::create(max_dynamic_types)->getPtr();
         /// Check if we don't have any paths in shared data in current range.
         const auto & offsets = assert_cast<const ColumnArray &>(*dynamic_path_state->shared_data).getOffsets();
-        if (offsets.back() == offsets[ssize_t(prev_size) - 1])
+        if (offsets.back() == offsets[ssize_t(dynamic_path_state->shared_data_size) - 1])
             dynamic_column->insertManyDefaults(limit);
         else
-            ColumnObject::fillPathColumnFromSharedData(*dynamic_column, path, dynamic_path_state->shared_data, prev_size, dynamic_path_state->shared_data->size());
+            ColumnObject::fillPathColumnFromSharedData(*dynamic_column, path, dynamic_path_state->shared_data, dynamic_path_state->shared_data_size, dynamic_path_state->shared_data->size());
 
         /// Extract subcolumn from Dynamic column if needed.
         if (!path_subcolumn.empty())
@@ -192,6 +195,7 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
         }
 
         settings.path.pop_back();
+        dynamic_path_state->shared_data_size = dynamic_path_state->shared_data->size();
     }
 
     settings.path.pop_back();

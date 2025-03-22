@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -28,6 +29,7 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
     ColumnPtr variant;
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
+    size_t discriminators_size = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -44,6 +46,13 @@ void SerializationVariantElement::enumerateStreams(
     const DB::ISerialization::SubstreamData & data) const
 {
     /// We will need stream for discriminators during deserialization.
+    if (settings.use_specialized_prefixes_substreams)
+    {
+        settings.path.push_back(Substream::VariantDiscriminatorsPrefix);
+        callback(settings.path);
+        settings.path.pop_back();
+    }
+
     settings.path.push_back(Substream::VariantDiscriminators);
     callback(settings.path);
     settings.path.pop_back();
@@ -118,7 +127,10 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
         /// If we started to read a new column, reinitialize discriminators column in deserialization state.
         if (!variant_element_state->discriminators || result_column->empty())
+        {
             variant_element_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
+            variant_element_state->discriminators_size = 0;
+        }
 
         /// Deserialize discriminators according to serialization mode.
         if (discriminators_state->mode.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
@@ -144,7 +156,8 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 
     /// We could read less than limit discriminators, but we will need actual number of read rows later.
-    size_t num_new_discriminators = variant_element_state->discriminators->size() - result_column->size();
+    size_t num_new_discriminators = variant_element_state->discriminators->size() - variant_element_state->discriminators_size;
+    variant_element_state->discriminators_size = variant_element_state->discriminators->size();
 
     /// Iterate through new discriminators to calculate the limit for our variant
     /// if we didn't do it during discriminators deserialization.

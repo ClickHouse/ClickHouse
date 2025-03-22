@@ -104,10 +104,12 @@ void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*eac
 void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     MergeTreeIndexGranularityPtr & index_granularity_ptr,
     const MergeTreeIndexGranularityInfo & index_granularity_info_,
-    size_t columns_count,
+    size_t marks_per_granule,
     const IDataPartStorage & data_part_storage_,
     const MergeTreeSettings & storage_settings)
 {
+    LOG_DEBUG(getLogger("MergeTreeDataPartCompact"), "loadIndexGranularityImpl. Marks per granule: {}", marks_per_granule);
+
     if (!index_granularity_info_.mark_type.adaptive)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeDataPartCompact cannot be created with non-adaptive granularity.");
 
@@ -129,7 +131,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
 
     while (!marks_reader->eof())
     {
-        marks_reader->ignore(columns_count * sizeof(MarkInCompressedFile));
+        marks_reader->ignore(marks_per_granule * sizeof(MarkInCompressedFile));
         size_t granularity;
         readBinaryLittleEndian(granularity, *marks_reader);
         index_granularity_ptr->appendMark(granularity);
@@ -147,7 +149,12 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     if (columns.empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-    loadIndexGranularityImpl(index_granularity, index_granularity_info, columns.size(), getDataPartStorage(), *storage.getSettings());
+    loadIndexGranularityImpl(
+        index_granularity,
+        index_granularity_info,
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size(),
+        getDataPartStorage(),
+        *storage.getSettings());
 }
 
 void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const

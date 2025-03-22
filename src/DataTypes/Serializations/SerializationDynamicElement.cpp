@@ -26,6 +26,7 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
     bool read_from_shared_variant;
     ColumnPtr shared_variant;
+    size_t shared_variant_size = 0;
 
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
@@ -160,11 +161,16 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::DynamicData);
         /// Initialize shared_variant column if needed.
-        if (result_column->empty())
+        if (result_column->empty() || !dynamic_element_state->shared_variant)
+        {
             dynamic_element_state->shared_variant = makeNullable(ColumnDynamic::getSharedVariantDataType()->createColumn());
-        size_t prev_size = result_column->size();
+            dynamic_element_state->shared_variant_size = 0;
+        }
+
         dynamic_element_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(
             dynamic_element_state->shared_variant, limit, settings, dynamic_element_state->variant_element_state, cache);
+        size_t prev_shared_variant_size = dynamic_element_state->shared_variant_size;
+        dynamic_element_state->shared_variant_size = dynamic_element_state->shared_variant->size();
         settings.path.pop_back();
 
         /// If we need to read a subcolumn from variant column, create an empty variant column, fill it and extract subcolumn.
@@ -194,7 +200,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         const auto & shared_null_map = nullable_shared_variant.getNullMapData();
         const auto & shared_variant = assert_cast<const ColumnString &>(nullable_shared_variant.getNestedColumn());
         const FormatSettings format_settings;
-        for (size_t i = prev_size; i != shared_variant.size(); ++i)
+        for (size_t i = prev_shared_variant_size; i != shared_variant.size(); ++i)
         {
             if (!shared_null_map[i])
             {

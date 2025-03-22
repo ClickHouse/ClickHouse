@@ -29,6 +29,7 @@ struct DeserializeBinaryBulkStateSubObject : public ISerialization::DeserializeB
     std::vector<String> dynamic_sub_paths;
     ISerialization::DeserializeBinaryBulkStatePtr shared_data_state;
     ColumnPtr shared_data;
+    size_t shared_data_size = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -204,16 +205,18 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.push_back(Substream::ObjectSharedData);
     /// If it's a new object column, reinitialize column for shared data.
-    if (result_column->empty())
+    if (result_column->empty() || !sub_object_state->shared_data)
+    {
         sub_object_state->shared_data = DataTypeObject::getTypeOfSharedData()->createColumn();
-    size_t prev_size = column_object.size();
+        sub_object_state->shared_data_size = 0;
+    }
     shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(sub_object_state->shared_data, limit, settings, sub_object_state->shared_data_state, cache);
     settings.path.pop_back();
 
     auto & sub_object_shared_data = column_object.getSharedDataColumn();
     const auto & offsets = assert_cast<const ColumnArray &>(*sub_object_state->shared_data).getOffsets();
     /// Check if there is no data in shared data in current range.
-    if (offsets.back() == offsets[ssize_t(prev_size) - 1])
+    if (offsets.back() == offsets[ssize_t(sub_object_state->shared_data_size) - 1])
     {
         sub_object_shared_data.insertManyDefaults(limit);
     }
@@ -228,7 +231,7 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
         auto & sub_object_data_offsets = column_object.getSharedDataOffsets();
         auto [sub_object_shared_data_paths, sub_object_shared_data_values] = column_object.getSharedDataPathsAndValues();
         StringRef prefix_ref(path_prefix);
-        for (size_t i = prev_size; i != shared_data_offsets.size(); ++i)
+        for (size_t i = sub_object_state->shared_data_size; i != shared_data_offsets.size(); ++i)
         {
             size_t start = shared_data_offsets[ssize_t(i) - 1];
             size_t end = shared_data_offsets[ssize_t(i)];
@@ -246,6 +249,8 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
             sub_object_data_offsets.push_back(sub_object_shared_data_paths->size());
         }
     }
+
+    sub_object_state->shared_data_size = sub_object_state->shared_data->size();
     settings.path.pop_back();
 }
 
