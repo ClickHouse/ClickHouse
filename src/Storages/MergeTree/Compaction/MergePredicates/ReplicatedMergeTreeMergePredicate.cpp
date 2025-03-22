@@ -61,6 +61,14 @@ ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePre
     /// Order of actions is important, DO NOT CHANGE.
     /// For explanation check DistributedMergePredicate.
 
+    /// We want to ensure that the predicate uses the most recent state of the queue
+    /// (in particular the list of virtual parts). Because in some cases the race condition
+    /// takes place between creating the predicate to use it for some parts and placing this parts
+    /// in the list of virtual parts during pulling queue.
+    /// The second call to pullLogsToQueue() below is used for preserving the invariant,
+    /// see DistributedMergePredicate
+    queue_.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);
+
     {
         std::lock_guard lock(queue.state_mutex);
         prev_virtual_parts = std::make_shared<ActiveDataPartSet>(queue.virtual_parts);
