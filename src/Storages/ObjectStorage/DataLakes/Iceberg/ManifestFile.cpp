@@ -11,6 +11,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Common/logger_useful.h>
 
 namespace DB::ErrorCodes
 {
@@ -29,6 +30,12 @@ constexpr const char * COLUMN_SEQ_NUMBER_NAME = "sequence_number";
 constexpr const char * SUBCOLUMN_FILE_PATH_NAME = "data_file.file_path";
 constexpr const char * SUBCOLUMN_CONTENT_NAME = "data_file.content";
 constexpr const char * SUBCOLUMN_PARTITION_NAME = "data_file.partition";
+
+constexpr const char * SUBCOLUMN_VALUES_COUNT_NAME = "data_file.value_counts";
+constexpr const char * SUBCOLUMN_COLUMN_SIZES_NAME = "data_file.column_sizes";
+constexpr const char * SUBCOLUMN_NULL_VALUE_COUNTS_NAME = "data_file.null_value_counts";
+constexpr const char * SUBCOLUMN_LOWER_BOUNDS_NAME = "data_file.lower_bounds";
+constexpr const char * SUBCOLUMN_UPPER_BOUNDS_NAME = "data_file.upper_bounds";
 
 
 const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles() const
@@ -136,6 +143,46 @@ ManifestFileContent::ManifestFileContent(
         for (const auto & value : tuple)
             partition_key_value.emplace_back(value);
 
+        std::unordered_map<Int32, ColumnInfo> columns_infos;
+
+        for (const auto & path : {SUBCOLUMN_VALUES_COUNT_NAME, SUBCOLUMN_COLUMN_SIZES_NAME, SUBCOLUMN_NULL_VALUE_COUNTS_NAME})
+        {
+            if (manifest_file_deserializer.hasPath(path))
+            {
+                Field values_count = manifest_file_deserializer.getValueFromRowByName(i, path);
+                for (const auto & column_stats : values_count.safeGet<Array>())
+                {
+                    const auto & column_number_and_count = column_stats.safeGet<Tuple>();
+                    Int32 number = column_number_and_count[0].safeGet<Int32>();
+                    Int64 count = column_number_and_count[1].safeGet<Int64>();
+                    if (path == SUBCOLUMN_VALUES_COUNT_NAME)
+                        columns_infos[number].rows_count = count;
+                    else if (path == SUBCOLUMN_COLUMN_SIZES_NAME)
+                        columns_infos[number].bytes_size = count;
+                    else
+                        columns_infos[number].nulls_count = count;
+                }
+            }
+        }
+
+        for (const auto & path : {SUBCOLUMN_LOWER_BOUNDS_NAME, SUBCOLUMN_UPPER_BOUNDS_NAME})
+        {
+            if (manifest_file_deserializer.hasPath(path))
+            {
+                Field bounds = manifest_file_deserializer.getValueFromRowByName(i, path);
+                for (const auto & column_stats : bounds.safeGet<Array>())
+                {
+                    const auto & column_number_and_bound = column_stats.safeGet<Tuple>();
+                    Int32 number = column_number_and_bound[0].safeGet<Int32>();
+                    const Field & bound_value = column_number_and_bound[1];
+                    if (path == SUBCOLUMN_LOWER_BOUNDS_NAME)
+                        columns_infos[number].lower_bound = bound_value;
+                    else
+                        columns_infos[number].upper_bound = bound_value;
+                }
+            }
+        }
+
         FileEntry file = FileEntry{DataFileEntry{file_path}};
 
         Int64 added_sequence_number = 0;
@@ -162,7 +209,7 @@ ManifestFileContent::ManifestFileContent(
                     break;
             }
         }
-        this->files.emplace_back(status, added_sequence_number, file, partition_key_value);
+        this->files.emplace_back(status, added_sequence_number, file, partition_key_value, columns_infos);
     }
 }
 
@@ -181,6 +228,54 @@ const DB::KeyDescription & ManifestFileContent::getPartitionKeyDescription() con
 const std::vector<Int32> & ManifestFileContent::getPartitionKeyColumnIDs() const
 {
     return partition_column_ids;
+}
+
+std::optional<Int64> ManifestFileContent::getRowsCountInAllDataFilesExcludingDeleted() const
+{
+    Int64 result = 0;
+    for (const auto & file : files)
+    {
+        /// Have at least one column with rows count
+        bool found = false;
+        for (const auto & [column, column_info] : file.columns_infos)
+        {
+            if (column_info.rows_count.has_value())
+            {
+                if (file.status != ManifestEntryStatus::DELETED)
+                    result += *column_info.rows_count;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+            return std::nullopt;
+    }
+    return result;
+}
+
+std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFiles() const
+{
+    Int64 result = 0;
+    for (const auto & file : files)
+    {
+        /// Have at least one column with bytes count
+        bool found = false;
+        for (const auto & [column, column_info] : file.columns_infos)
+        {
+            if (column_info.bytes_size.has_value())
+            {
+                result += *column_info.bytes_size;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+            return std::nullopt;
+    }
+    return result;
+
 }
 
 }

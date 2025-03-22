@@ -377,7 +377,6 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
-                        const auto & settings = context->getSettingsRef();
                         while (src_index < columns_mask.size())
                         {
                             // total_rows
@@ -390,7 +389,7 @@ protected:
                             {
                                 try
                                 {
-                                    if (auto total_rows = table.second->totalRows(settings))
+                                    if (auto total_rows = table.second->totalRows(context))
                                         res_columns[res_index++]->insert(*total_rows);
                                     else
                                         res_columns[res_index++]->insertDefault();
@@ -407,7 +406,7 @@ protected:
                             {
                                 try
                                 {
-                                    if (auto total_bytes = table.second->totalBytes(settings))
+                                    if (auto total_bytes = table.second->totalBytes(context))
                                         res_columns[res_index++]->insert(*total_bytes);
                                     else
                                         res_columns[res_index++]->insertDefault();
@@ -633,13 +632,16 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
-                auto settings = context->getSettingsRef();
-                settings[Setting::select_sequential_consistency] = 0;
+                ContextMutablePtr context_copy = Context::createCopy(context);
+                Settings settings_copy = context_copy->getSettingsCopy();
+                settings_copy[Setting::select_sequential_consistency] = 0;
+                context_copy->setSettings(settings_copy);
+
                 if (columns_mask[src_index++])
                 {
                     try
                     {
-                        auto total_rows = table ? table->totalRows(settings) : std::nullopt;
+                        auto total_rows = table ? table->totalRows(context) : std::nullopt;
                         if (total_rows)
                             res_columns[res_index++]->insert(*total_rows);
                         else
@@ -657,7 +659,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes = table->totalBytes(settings);
+                        auto total_bytes = table->totalBytes(context_copy);
                         if (total_bytes)
                             res_columns[res_index++]->insert(*total_bytes);
                         else
@@ -675,7 +677,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes_uncompressed = table->totalBytesUncompressed(settings);
+                        auto total_bytes_uncompressed = table->totalBytesUncompressed(context_copy->getSettingsRef());
                         if (total_bytes_uncompressed)
                             res_columns[res_index++]->insert(*total_bytes_uncompressed);
                         else
