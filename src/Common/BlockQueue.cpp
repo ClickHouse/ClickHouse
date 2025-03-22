@@ -83,7 +83,10 @@ bool BlockQueue::enqueueForProcessing(const Block & block, bool wait)
 
         std::promise<Block> promise;
         processed.push(promise.get_future());
-        to_be_processed.emplace(block, std::move(promise));
+        if (block.rows() <= 1)
+            promise.set_value(block);
+        else
+            to_be_processed.emplace(block, std::move(promise));
     }
     pop_condition.notify_one();
     processed_condition.notify_one();
