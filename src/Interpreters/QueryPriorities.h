@@ -111,7 +111,6 @@ public:
             parent.condvar.notify_all();
         }
 
-        template <typename Duration>
         void waitIfNeed()
         {
             parent.waitIfNeed(value.first, std::chrono::milliseconds(wait_time));
