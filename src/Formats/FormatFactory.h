@@ -179,7 +179,8 @@ public:
         WriteBuffer & buf,
         const Block & sample,
         const ContextPtr & context,
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        std::shared_ptr<ThreadPool> pool = nullptr) const;
 
     OutputFormatPtr getOutputFormat(
         const String & name,
