@@ -1,7 +1,11 @@
 ---
-slug: /en/engines/table-engines/integrations/s3queue
+description: 'This engine provides integration with the Amazon S3 ecosystem and allows
+  streaming imports. Similar to the Kafka and RabbitMQ engines, but provides S3-specific
+  features.'
+sidebar_label: 'S3Queue'
 sidebar_position: 181
-sidebar_label: S3Queue
+slug: /engines/table-engines/integrations/s3queue
+title: 'S3Queue Table Engine'
 ---
 
 import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
@@ -12,7 +16,7 @@ This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ec
 
 ## Create Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression], [headers])
     [SETTINGS]
@@ -50,7 +54,7 @@ SETTINGS
 
 Using named collections:
 
-``` xml
+```xml
 <clickhouse>
     <named_collections>
         <s3queue_conf>
@@ -194,12 +198,12 @@ For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Q
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](../../../engines/table-engines/integrations/s3.md).
 
-## S3 role-based access
+## S3 role-based access {#s3-role-based-access}
 
 <ScalePlanFeatureBadge feature="S3 Role-Based Access" />
 
 The s3Queue table engine supports role-based access.
-Refer to the documentation [here](https://clickhouse.com/docs/en/cloud/security/secure-s3) for steps to configure a role to access your bucket.
+Refer to the documentation [here](/cloud/security/secure-s3) for steps to configure a role to access your bucket.
 
 Once the role is configured, a `roleARN` can be passed via an `extra_credentials` parameter as shown below:
 ```sql
@@ -237,7 +241,7 @@ When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the 
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE s3queue_engine_table (name String, value UInt32)
     ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
     SETTINGS
@@ -291,7 +295,7 @@ For introspection use `system.s3queue` stateless table and `system.s3queue_log` 
 
 1. `system.s3queue`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
 
-``` sql
+```sql
 ┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE system.s3queue
 (
@@ -312,7 +316,7 @@ COMMENT 'Contains in-memory state of S3Queue metadata and currently processed ro
 
 Example:
 
-``` sql
+```sql
 
 SELECT *
 FROM system.s3queue
@@ -333,7 +337,7 @@ exception:
 
 The table has the following structure:
 
-``` sql
+```sql
 SHOW CREATE TABLE system.s3queue_log
 
 Query id: 0ad619c3-0f2a-4ee4-8b40-c73d86e04314
@@ -361,7 +365,7 @@ SETTINGS index_granularity = 8192 │
 
 In order to use `system.s3queue_log` define its configuration in server config file:
 
-``` xml
+```xml
     <s3queue_log>
         <database>system</database>
         <table>s3queue_log</table>
@@ -370,7 +374,7 @@ In order to use `system.s3queue_log` define its configuration in server config f
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.s3queue_log
 

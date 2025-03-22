@@ -27,13 +27,13 @@ CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY from;
 在写入与查询时，`IPv4`类型能够识别可读性更加友好的输入输出格式：
 
 ``` sql
-INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')('https://clickhouse.com', '183.247.232.58')('https://clickhouse.com/docs/en/', '116.106.34.242');
+INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')('https://clickhouse.com', '183.247.232.58')('/', '116.106.34.242');
 
 SELECT * FROM hits;
 ```
 
     ┌─url────────────────────────────────┬───────────from─┐
-    │ https://clickhouse.com/docs/en/ │ 116.106.34.242 │
+    │ / │ 116.106.34.242 │
     │ https://wikipedia.org              │ 116.253.40.133 │
     │ https://clickhouse.com          │ 183.247.232.58 │
     └────────────────────────────────────┴────────────────┘

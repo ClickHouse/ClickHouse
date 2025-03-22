@@ -9,12 +9,12 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Columns/ColumnsNumber.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
@@ -78,6 +78,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
+    extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
 }
 
 namespace ErrorCodes
@@ -211,8 +212,12 @@ static void splitAndModifyMutationCommands(
                     if (command.type == MutationCommand::Type::DROP_COLUMN)
                         dropped_columns.emplace(command.column_name);
                 }
+                else if (command.type == MutationCommand::READ_COLUMN)
+                {
+                    for_interpreter.push_back(command);
+                    mutated_columns.emplace(command.column_name);
+                }
             }
-
         }
 
         /// We don't add renames from commands, instead we take them from rename_map.
@@ -967,7 +972,7 @@ void finalizeMutatedPart(
 
     {
         auto out_comp = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
-        DB::writeText(queryToString(codec->getFullCodecDesc()), *out_comp);
+        DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), *out_comp);
         written_files.push_back(std::move(out_comp));
     }
 
@@ -1017,7 +1022,8 @@ void finalizeMutatedPart(
     new_data_part->setBytesOnDisk(new_data_part->checksums.getTotalSizeOnDisk());
     new_data_part->setBytesUncompressedOnDisk(new_data_part->checksums.getTotalSizeUncompressedOnDisk());
     /// Also use information from checksums
-    new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    if (!(*new_data_part->storage.getSettings())[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
+        new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     new_data_part->default_codec = codec;
 }
@@ -1596,8 +1602,13 @@ private:
 
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
+            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
+            if (!extracting_subcolumns_dag.getNodes().empty())
+                indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
+
             builder->addTransform(std::make_shared<ExpressionTransform>(
-                builder->getHeader(), ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)));
+                builder->getHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
 
             builder->addTransform(std::make_shared<MaterializingTransform>(builder->getHeader()));
         }
@@ -2222,6 +2233,8 @@ bool MutateTask::prepare()
     /// Skip using large sets in KeyCondition
     context_for_reading->setSetting("use_index_for_in_with_subqueries_max_values", 100000);
     context_for_reading->setSetting("use_concurrency_control", false);
+    /// disable parallel replicas for mutations
+    context_for_reading->setSetting("enable_parallel_replicas", false);
 
     for (const auto & command : *ctx->commands)
         if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
@@ -2317,7 +2330,11 @@ bool MutateTask::prepare()
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
-        ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
+        ctx->progress_callback = MergeProgressCallback(
+            (*ctx->mutate_entry)->ptr(),
+            ctx->watch_prev_elapsed,
+            *ctx->stage_progress,
+            [&my_ctx = *ctx]() { my_ctx.checkOperationIsNotCanceled(); });
 
         lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
         /// If under the condition of lightweight delete mode with rebuild option, add projections again here as we can only know

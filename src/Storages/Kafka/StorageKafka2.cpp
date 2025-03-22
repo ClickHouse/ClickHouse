@@ -1,5 +1,6 @@
 #include <Storages/Kafka/StorageKafka2.h>
 
+#include <Columns/IColumn.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -133,6 +134,7 @@ StorageKafka2::StorageKafka2(
     , WithContext(context_->getGlobalContext())
     , keeper(getContext()->getZooKeeper())
     , keeper_path((*kafka_settings_)[KafkaSetting::kafka_keeper_path].value)
+    , fs_keeper_path(keeper_path)
     , replica_path(keeper_path + "/replicas/" + (*kafka_settings_)[KafkaSetting::kafka_replica_name].value)
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
@@ -518,8 +520,7 @@ std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & pa
 bool StorageKafka2::createTableIfNotExists()
 {
     // Heavily based on StorageReplicatedMergeTree::createTableIfNotExists
-    const auto my_keeper_path = fs::path(keeper_path);
-    const auto replicas_path = my_keeper_path / "replicas";
+    const auto replicas_path = fs_keeper_path / "replicas";
 
     for (auto i = 0; i < 1000; ++i)
     {
@@ -530,14 +531,14 @@ bool StorageKafka2::createTableIfNotExists()
         }
 
         /// There are leftovers from incompletely dropped table.
-        if (keeper->exists(my_keeper_path / "dropped"))
+        if (keeper->exists(fs_keeper_path / "dropped"))
         {
             /// This condition may happen when the previous drop attempt was not completed
             ///  or when table is dropped by another replica right now.
             /// This is Ok because another replica is definitely going to drop the table.
 
             LOG_WARNING(log, "Removing leftovers from table {}", keeper_path);
-            String drop_lock_path = my_keeper_path / "dropped" / "lock";
+            String drop_lock_path = fs_keeper_path / "dropped" / "lock";
             Coordination::Error code = keeper->tryCreate(drop_lock_path, "", zkutil::CreateMode::Ephemeral);
 
             if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
@@ -564,7 +565,7 @@ bool StorageKafka2::createTableIfNotExists()
 
         ops.emplace_back(zkutil::makeCreateRequest(keeper_path, "", zkutil::CreateMode::Persistent));
 
-        const auto topics_path = my_keeper_path / "topics";
+        const auto topics_path = fs_keeper_path / "topics";
         ops.emplace_back(zkutil::makeCreateRequest(topics_path, "", zkutil::CreateMode::Persistent));
 
         for (const auto & topic : topics)
@@ -615,16 +616,15 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
     if (const auto code = keeper_to_use->tryGetChildren(keeper_path, children); code == Coordination::Error::ZNONODE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal. It's a bug");
 
-    const auto my_keeper_path = fs::path(keeper_path);
     for (const auto & child : children)
         if (child != "dropped")
-            keeper_to_use->tryRemoveRecursive(my_keeper_path / child);
+            keeper_to_use->tryRemoveRecursive(fs_keeper_path / child);
 
     Coordination::Requests ops;
     Coordination::Responses responses;
     ops.emplace_back(zkutil::makeRemoveRequest(drop_lock->getPath(), -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(my_keeper_path / "dropped", -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(my_keeper_path, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(fs_keeper_path / "dropped", -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(fs_keeper_path, -1));
     const auto code = keeper_to_use->tryMulti(ops, responses, /* check_session_valid */ true);
 
     if (code == Coordination::Error::ZNONODE)
@@ -719,10 +719,9 @@ void StorageKafka2::dropReplica()
     /// (The existence of child node does not allow to remove parent node).
     Coordination::Requests ops;
     Coordination::Responses responses;
-    fs::path my_keeper_path = keeper_path;
-    String drop_lock_path = my_keeper_path / "dropped" / "lock";
-    ops.emplace_back(zkutil::makeRemoveRequest(my_keeper_path / "replicas", -1));
-    ops.emplace_back(zkutil::makeCreateRequest(my_keeper_path / "dropped", "", zkutil::CreateMode::Persistent));
+    String drop_lock_path = fs_keeper_path / "dropped" / "lock";
+    ops.emplace_back(zkutil::makeRemoveRequest(fs_keeper_path / "replicas", -1));
+    ops.emplace_back(zkutil::makeCreateRequest(fs_keeper_path / "dropped", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
     Coordination::Error code = my_keeper->tryMulti(ops, responses);
 
@@ -756,15 +755,17 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
 
     Coordination::Requests ops;
 
-    static constexpr auto ignore_if_exists = true;
-
     for (const auto & topic_partition_path : topic_partition_paths)
     {
         const auto lock_file_path = String(topic_partition_path / lock_file_name);
-        LOG_TRACE(log, "Creating locking ops for: {}", lock_file_path);
-        ops.push_back(zkutil::makeCreateRequest(topic_partition_path, "", zkutil::CreateMode::Persistent, ignore_if_exists));
+
+        // It is okay that these paths are created in a different transaction. The important thing is the lock file.
+        keeper_to_use.createAncestors(lock_file_path);
+
         ops.push_back(zkutil::makeCreateRequest(lock_file_path, (*kafka_settings)[KafkaSetting::kafka_replica_name].value, zkutil::CreateMode::Ephemeral));
+        LOG_TRACE(log, "Creating locking ops for: {}", lock_file_path);
     }
+
     Coordination::Responses responses;
 
     if (const auto code = keeper_to_use.tryMulti(ops, responses); code != Coordination::Error::ZOK)
@@ -772,6 +773,7 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
         if (code != Coordination::Error::ZNODEEXISTS)
             zkutil::KeeperMultiException::check(code, ops, responses);
 
+        LOG_TRACE(log, "Couldn't create topic partitions locks because some of them already exists");
         // Possible optimization: check the content of lock files, if we locked them, then we can clean them up and retry to lock them.
         return std::nullopt;
     }
@@ -1317,7 +1319,7 @@ zkutil::ZooKeeperPtr StorageKafka2::getZooKeeperIfTableShutDown() const
 
 fs::path StorageKafka2::getTopicPartitionPath(const TopicPartition & topic_partition)
 {
-    return fs::path(keeper_path) / "topics" / topic_partition.topic / "partitions" / std::to_string(topic_partition.partition_id);
+    return fs_keeper_path / "topics" / topic_partition.topic / "partitions" / std::to_string(topic_partition.partition_id);
 }
 
 }

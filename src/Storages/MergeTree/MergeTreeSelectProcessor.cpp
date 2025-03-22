@@ -4,10 +4,12 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/FilterDescription.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Chunk.h>
@@ -97,21 +99,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), prewhere_info))
 {
-    if (reader_settings.apply_deleted_mask)
-    {
-        PrewhereExprStep step
-        {
-            .type = PrewhereExprStep::Filter,
-            .actions = nullptr,
-            .filter_column_name = RowExistsColumn::name,
-            .remove_filter_column = true,
-            .need_filter = true,
-            .perform_alter_conversions = true,
-        };
-
-        lightweight_delete_filter_step = std::make_shared<PrewhereExprStep>(std::move(step));
-    }
-
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
         LOG_TRACE(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
@@ -177,7 +164,32 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         try
         {
             if (!task || algorithm->needNewTask(*task))
+            {
+                /// Update the query condition cache for filters in PREWHERE stage
+                if (reader_settings.use_query_condition_cache && task && prewhere_info)
+                {
+                    for (const auto * outputs : prewhere_info->prewhere_actions.getOutputs())
+                    {
+                        if (outputs->result_name == prewhere_info->prewhere_column_name)
+                        {
+                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                            auto data_part = task->getInfo().data_part;
+
+                            query_condition_cache->write(
+                                data_part->storage.getStorageID().uuid,
+                                data_part->name,
+                                outputs->getHash(),
+                                task->getPrewhereUnmatchedMarks(),
+                                data_part->index_granularity->getMarksCount(),
+                                data_part->index_granularity->hasFinalMark());
+
+                            break;
+                        }
+                    }
+                }
+
                 task = algorithm->getNewTask(*pool, task.get());
+            }
 
             if (!task)
                 break;
@@ -189,8 +201,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             throw;
         }
 
-        if (!task->getMainRangeReader().isInitialized())
-            initializeRangeReaders();
+        if (!task->getReadersChain().isInitialized())
+            initializeReadersChain();
 
         auto res = algorithm->readFromTask(*task);
 
@@ -206,8 +218,18 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             }
 
             auto chunk = Chunk(ordered_columns, res.row_count);
+            const auto & data_part = task->getInfo().data_part;
             if (add_part_level)
-                chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(task->getInfo().data_part->info.level));
+                chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
+
+            if (reader_settings.use_query_condition_cache)
+            {
+                chunk.getChunkInfos().add(
+                    std::make_shared<MarkRangesInfo>(
+                        data_part->storage.getStorageID().uuid, data_part->name,
+                        data_part->index_granularity->getMarksCount(), data_part->index_granularity->hasFinalMark(),
+                        res.read_mark_ranges));
+            }
 
             return ChunkAndProgress{
                 .chunk = std::move(chunk),
@@ -216,17 +238,18 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 .is_finished = false};
         }
 
+        if (reader_settings.use_query_condition_cache && prewhere_info)
+            task->addPrewhereUnmatchedMarks(res.read_mark_ranges);
+
         return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
     }
 
     return {Chunk(), 0, 0, true};
 }
 
-void MergeTreeSelectProcessor::initializeRangeReaders()
+void MergeTreeSelectProcessor::initializeReadersChain()
 {
     PrewhereExprInfo all_prewhere_actions;
-    if (lightweight_delete_filter_step && task->getInfo().data_part->hasLightweightDelete())
-        all_prewhere_actions.steps.push_back(lightweight_delete_filter_step);
 
     for (const auto & step : task->getInfo().mutation_steps)
         all_prewhere_actions.steps.push_back(step);
@@ -234,7 +257,7 @@ void MergeTreeSelectProcessor::initializeRangeReaders()
     for (const auto & step : prewhere_actions.steps)
         all_prewhere_actions.steps.push_back(step);
 
-    task->initializeRangeReaders(all_prewhere_actions, read_steps_performance_counters);
+    task->initializeReadersChain(all_prewhere_actions, read_steps_performance_counters);
 }
 
 Block MergeTreeSelectProcessor::transformHeader(Block block, const PrewhereInfoPtr & prewhere_info)
@@ -248,7 +271,7 @@ static String dumpStatistics(const ReadStepsPerformanceCounters & counters)
     const auto & all_counters = counters.getCounters();
     for (size_t i = 0; i < all_counters.size(); ++i)
     {
-        out << fmt::format("step {} rows_read: {}", i, all_counters[i]->rows_read);
+        out << fmt::format("step {} rows_read: {}", i, all_counters[i]->rows_read.load());
         if (i + 1 < all_counters.size())
             out << ", ";
     }

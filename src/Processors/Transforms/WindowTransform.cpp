@@ -14,7 +14,7 @@
 #include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeString.h>
@@ -365,8 +365,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
                 window_description.frame.begin_offset,
                 *entry.type);
 
-            if (applyVisitor(FieldVisitorAccurateLess{},
-                window_description.frame.begin_offset, Field(0)))
+            if (accurateLess(window_description.frame.begin_offset, Field(0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Window frame start offset must be nonnegative, {} given",
@@ -380,8 +379,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
                 window_description.frame.end_offset,
                 *entry.type);
 
-            if (applyVisitor(FieldVisitorAccurateLess{},
-                window_description.frame.end_offset, Field(0)))
+            if (accurateLess(window_description.frame.end_offset, Field(0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Window frame start offset must be nonnegative, {} given",

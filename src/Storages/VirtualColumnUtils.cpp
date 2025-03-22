@@ -1,14 +1,18 @@
 #include <memory>
 #include <stack>
-#include <unordered_set>
+
+#include <Storages/VirtualColumnUtils.h>
+
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
 
+#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 
 #include <Parsers/ASTIdentifier.h>
@@ -31,30 +35,24 @@
 
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Storages/VirtualColumnUtils.h>
-#include <IO/WriteHelpers.h>
+#include <Columns/ColumnSet.h>
 #include <Common/re2.h>
 #include <Common/typeid_cast.h>
-#include <Formats/SchemaInferenceUtils.h>
+#include <Core/Settings.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
-#include <Core/Settings.h>
-#include "Functions/FunctionsLogical.h"
-#include "Functions/IFunction.h"
-#include "Functions/IFunctionAdaptors.h"
-#include "Functions/indexHint.h"
-#include <IO/ReadBufferFromString.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Parsers/makeASTForLogicalFunction.h>
-#include <Columns/ColumnSet.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <Functions/FunctionHelpers.h>
-#include <Interpreters/ActionsVisitor.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/makeASTForLogicalFunction.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 
 namespace DB
@@ -356,6 +354,23 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allo
         for (const auto * child : cur->children)
             nodes.push(child);
     }
+
+    return true;
+}
+
+bool isDeterministic(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+    {
+        if (!isDeterministic(child))
+            return false;
+    }
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+
+    if (!node->function_base->isDeterministic())
+        return false;
 
     return true;
 }

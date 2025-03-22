@@ -1,24 +1,26 @@
 ---
-slug: /en/sql-reference/statements/alter/ttl
+description: 'Documentation for Manipulations with Table TTL'
+sidebar_label: 'TTL'
 sidebar_position: 44
-sidebar_label: TTL
+slug: /sql-reference/statements/alter/ttl
+title: 'Manipulations with Table TTL'
 ---
 
 # Manipulations with Table TTL
 
 :::note
-If you are looking for details on using TTL for managing old data, check out the [Manage Data with TTL](/docs/en/guides/developer/ttl.md) user guide. The docs below demonstrate how to alter or remove an existing TTL rule.
+If you are looking for details on using TTL for managing old data, check out the [Manage Data with TTL](/guides/developer/ttl.md) user guide. The docs below demonstrate how to alter or remove an existing TTL rule.
 :::
 
-## MODIFY TTL
+## MODIFY TTL {#modify-ttl}
 
 You can change [table TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) with a request of the following form:
 
-``` sql
+```sql
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] MODIFY TTL ttl_expression;
 ```
 
-## REMOVE TTL
+## REMOVE TTL {#remove-ttl}
 
 TTL-property can be removed from table with the following query:
 
@@ -87,4 +89,4 @@ The `TTL` is no longer there, so the second row is not deleted:
 **See Also**
 
 - More about the [TTL-expression](../../../sql-reference/statements/create/table.md#ttl-expression).
-- Modify column [with TTL](../../../sql-reference/statements/alter/column.md#alter_modify-column).
+- Modify column [with TTL](/sql-reference/statements/alter/ttl).

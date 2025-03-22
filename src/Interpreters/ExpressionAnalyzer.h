@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Core/ColumnNumbers.h>
 #include <Columns/FilterDescription.h>
-#include <Interpreters/ActionsVisitor.h>
+#include <Core/ColumnNumbers.h>
+#include <Interpreters/ActionsMatcher.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/ArrayJoin.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
@@ -39,6 +38,15 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
+class Set;
+using SetPtr = std::shared_ptr<Set>;
+
+class QueryPlan;
+
+struct TemporaryTableHolder;
+using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
+using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
+
 namespace ExpressionActionsChainSteps
 {
 struct Step;
@@ -50,6 +58,7 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
 {
+    ExpressionAnalyzerData();
     ~ExpressionAnalyzerData();
 
     PreparedSetsPtr prepared_sets;

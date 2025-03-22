@@ -27,6 +27,7 @@
 #include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
+#include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Core/Settings.h>
 
@@ -74,268 +75,6 @@ QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
         return nullable_resolved_identifier;
     }
     return nullptr;
-}
-
-bool IdentifierResolver::isExpressionNodeType(QueryTreeNodeType node_type)
-{
-    return node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::FUNCTION
-        || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
-}
-
-bool IdentifierResolver::isFunctionExpressionNodeType(QueryTreeNodeType node_type)
-{
-    return node_type == QueryTreeNodeType::LAMBDA;
-}
-
-bool IdentifierResolver::isSubqueryNodeType(QueryTreeNodeType node_type)
-{
-    return node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
-}
-
-bool IdentifierResolver::isTableExpressionNodeType(QueryTreeNodeType node_type)
-{
-    return node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION ||
-        isSubqueryNodeType(node_type);
-}
-
-DataTypePtr IdentifierResolver::getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node)
-{
-    auto node_type = query_tree_node->getNodeType();
-
-    switch (node_type)
-    {
-        case QueryTreeNodeType::CONSTANT:
-            [[fallthrough]];
-        case QueryTreeNodeType::COLUMN:
-        {
-            return query_tree_node->getResultType();
-        }
-        case QueryTreeNodeType::FUNCTION:
-        {
-            auto & function_node = query_tree_node->as<FunctionNode &>();
-            if (function_node.isResolved())
-                return function_node.getResultType();
-            break;
-        }
-        default:
-        {
-            break;
-        }
-    }
-
-    return nullptr;
-}
-
-/// Get valid identifiers for typo correction from compound expression
-void IdentifierResolver::collectCompoundExpressionValidIdentifiersForTypoCorrection(
-    const Identifier & unresolved_identifier,
-    const DataTypePtr & compound_expression_type,
-    const Identifier & valid_identifier_prefix,
-    std::unordered_set<Identifier> & valid_identifiers_result)
-{
-    IDataType::forEachSubcolumn([&](const auto &, const auto & name, const auto &)
-    {
-        Identifier subcolumn_indentifier(name);
-        size_t new_identifier_size = valid_identifier_prefix.getPartsSize() + subcolumn_indentifier.getPartsSize();
-
-        if (new_identifier_size == unresolved_identifier.getPartsSize())
-        {
-            auto new_identifier = valid_identifier_prefix;
-            for (const auto & part : subcolumn_indentifier)
-                new_identifier.push_back(part);
-
-            valid_identifiers_result.insert(std::move(new_identifier));
-        }
-    }, ISerialization::SubstreamData(compound_expression_type->getDefaultSerialization()));
-}
-
-/// Get valid identifiers for typo correction from table expression
-void IdentifierResolver::collectTableExpressionValidIdentifiersForTypoCorrection(
-    const Identifier & unresolved_identifier,
-    const QueryTreeNodePtr & table_expression,
-    const AnalysisTableExpressionData & table_expression_data,
-    std::unordered_set<Identifier> & valid_identifiers_result)
-{
-    for (const auto & [column_name, column_node] : table_expression_data.column_name_to_column_node)
-    {
-        Identifier column_identifier(column_name);
-        if (unresolved_identifier.getPartsSize() == column_identifier.getPartsSize())
-            valid_identifiers_result.insert(column_identifier);
-
-        collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-            column_node->getColumnType(),
-            column_identifier,
-            valid_identifiers_result);
-
-        if (table_expression->hasAlias())
-        {
-            Identifier column_identifier_with_alias({table_expression->getAlias()});
-            for (const auto & column_identifier_part : column_identifier)
-                column_identifier_with_alias.push_back(column_identifier_part);
-
-            if (unresolved_identifier.getPartsSize() == column_identifier_with_alias.getPartsSize())
-                valid_identifiers_result.insert(column_identifier_with_alias);
-
-            collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                column_node->getColumnType(),
-                column_identifier_with_alias,
-                valid_identifiers_result);
-        }
-
-        if (!table_expression_data.table_name.empty())
-        {
-            Identifier column_identifier_with_table_name({table_expression_data.table_name});
-            for (const auto & column_identifier_part : column_identifier)
-                column_identifier_with_table_name.push_back(column_identifier_part);
-
-            if (unresolved_identifier.getPartsSize() == column_identifier_with_table_name.getPartsSize())
-                valid_identifiers_result.insert(column_identifier_with_table_name);
-
-            collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                column_node->getColumnType(),
-                column_identifier_with_table_name,
-                valid_identifiers_result);
-        }
-
-        if (!table_expression_data.database_name.empty() && !table_expression_data.table_name.empty())
-        {
-            Identifier column_identifier_with_table_name_and_database_name({table_expression_data.database_name, table_expression_data.table_name});
-            for (const auto & column_identifier_part : column_identifier)
-                column_identifier_with_table_name_and_database_name.push_back(column_identifier_part);
-
-            if (unresolved_identifier.getPartsSize() == column_identifier_with_table_name_and_database_name.getPartsSize())
-                valid_identifiers_result.insert(column_identifier_with_table_name_and_database_name);
-
-            collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                column_node->getColumnType(),
-                column_identifier_with_table_name_and_database_name,
-                valid_identifiers_result);
-        }
-    }
-}
-
-/// Get valid identifiers for typo correction from scope without looking at parent scopes
-void IdentifierResolver::collectScopeValidIdentifiersForTypoCorrection(
-    const Identifier & unresolved_identifier,
-    const IdentifierResolveScope & scope,
-    bool allow_expression_identifiers,
-    bool allow_function_identifiers,
-    bool allow_table_expression_identifiers,
-    std::unordered_set<Identifier> & valid_identifiers_result)
-{
-    bool identifier_is_short = unresolved_identifier.isShort();
-    bool identifier_is_compound = unresolved_identifier.isCompound();
-
-    if (allow_expression_identifiers)
-    {
-        for (const auto & [name, expression] : scope.aliases.alias_name_to_expression_node)
-        {
-            assert(expression);
-            auto expression_identifier = Identifier(name);
-            valid_identifiers_result.insert(expression_identifier);
-        }
-
-        if (identifier_is_compound)
-        {
-            for (const auto & [name, expression_type] : scope.aliases.alias_name_to_expression_type)
-            {
-                chassert(expression_type);
-                auto expression_identifier = Identifier(name);
-
-                collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                    expression_type,
-                    expression_identifier,
-                    valid_identifiers_result);
-            }
-        }
-
-        for (const auto & [table_expression, table_expression_data] : scope.table_expression_node_to_data)
-        {
-            collectTableExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                table_expression,
-                table_expression_data,
-                valid_identifiers_result);
-        }
-    }
-
-    if (identifier_is_short)
-    {
-        if (allow_function_identifiers)
-        {
-            for (const auto & [name, _] : scope.aliases.alias_name_to_expression_node)
-                valid_identifiers_result.insert(Identifier(name));
-        }
-
-        if (allow_table_expression_identifiers)
-        {
-            for (const auto & [name, _] : scope.aliases.alias_name_to_table_expression_node)
-                valid_identifiers_result.insert(Identifier(name));
-        }
-    }
-
-    for (const auto & [argument_name, expression] : scope.expression_argument_name_to_node)
-    {
-        assert(expression);
-        auto expression_node_type = expression->getNodeType();
-
-        if (allow_expression_identifiers && isExpressionNodeType(expression_node_type))
-        {
-            auto expression_identifier = Identifier(argument_name);
-            valid_identifiers_result.insert(expression_identifier);
-
-            auto result_type = getExpressionNodeResultTypeOrNull(expression);
-
-            if (identifier_is_compound && result_type)
-            {
-                collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                    result_type,
-                    expression_identifier,
-                    valid_identifiers_result);
-            }
-        }
-        else if (identifier_is_short && allow_function_identifiers && isFunctionExpressionNodeType(expression_node_type))
-        {
-            valid_identifiers_result.insert(Identifier(argument_name));
-        }
-        else if (allow_table_expression_identifiers && isTableExpressionNodeType(expression_node_type))
-        {
-            valid_identifiers_result.insert(Identifier(argument_name));
-        }
-    }
-}
-
-void IdentifierResolver::collectScopeWithParentScopesValidIdentifiersForTypoCorrection(
-    const Identifier & unresolved_identifier,
-    const IdentifierResolveScope & scope,
-    bool allow_expression_identifiers,
-    bool allow_function_identifiers,
-    bool allow_table_expression_identifiers,
-    std::unordered_set<Identifier> & valid_identifiers_result)
-{
-    const IdentifierResolveScope * current_scope = &scope;
-
-    while (current_scope)
-    {
-        collectScopeValidIdentifiersForTypoCorrection(unresolved_identifier,
-            *current_scope,
-            allow_expression_identifiers,
-            allow_function_identifiers,
-            allow_table_expression_identifiers,
-            valid_identifiers_result);
-
-        current_scope = current_scope->parent_scope;
-    }
-}
-
-std::vector<String> IdentifierResolver::collectIdentifierTypoHints(const Identifier & unresolved_identifier, const std::unordered_set<Identifier> & valid_identifiers)
-{
-    std::vector<String> prompting_strings;
-    prompting_strings.reserve(valid_identifiers.size());
-
-    for (const auto & valid_identifier : valid_identifiers)
-        prompting_strings.push_back(valid_identifier.getFullName());
-
-    return NamePrompter<1>::getHints(unresolved_identifier.getFullName(), prompting_strings);
 }
 
 static FunctionNodePtr wrapExpressionNodeInFunctionWithSecondConstantStringArgument(
@@ -500,12 +239,13 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
             return {};
 
         std::unordered_set<Identifier> valid_identifiers;
-        collectCompoundExpressionValidIdentifiersForTypoCorrection(expression_identifier,
+        TypoCorrection::collectCompoundExpressionValidIdentifiers(
+            expression_identifier,
             expression_type,
             compound_expression_identifier,
             valid_identifiers);
 
-        auto hints = collectIdentifierTypoHints(expression_identifier, valid_identifiers);
+        auto hints = TypoCorrection::collectIdentifierTypoHints(expression_identifier, valid_identifiers);
 
         String compound_expression_from_error_message;
         if (!compound_expression_source.empty())
@@ -850,12 +590,13 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         if (can_be_not_found)
             return {};
         std::unordered_set<Identifier> valid_identifiers;
-        collectTableExpressionValidIdentifiersForTypoCorrection(identifier,
+        TypoCorrection::collectTableExpressionValidIdentifiers(
+            identifier,
             table_expression_node,
             table_expression_data,
             valid_identifiers);
 
-        auto hints = collectIdentifierTypoHints(identifier, valid_identifiers);
+        auto hints = TypoCorrection::collectIdentifierTypoHints(identifier, valid_identifiers);
 
         throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}. In scope {}{}",
             identifier.getFullName(),
@@ -1422,7 +1163,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinNestedExpr
         size_t nested_function_arguments_size = nested_function_arguments.size();
 
         const auto & nested_keys_names_constant_node = nested_function_arguments[0]->as<ConstantNode &>();
-        const auto & nested_keys_names = nested_keys_names_constant_node.getValue().safeGet<Array &>();
+        const auto & nested_keys_names = nested_keys_names_constant_node.getValue().safeGet<Array>();
         size_t nested_keys_names_size = nested_keys_names.size();
 
         if (nested_keys_names_size == nested_function_arguments_size - 1)
@@ -1435,7 +1176,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinNestedExpr
                 auto array_join_column = std::make_shared<ColumnNode>(
                     array_join_column_expression_typed.getColumn(), array_join_column_expression_typed.getColumnSource());
 
-                const auto & nested_key_name = nested_keys_names[i - 1].safeGet<String &>();
+                const auto & nested_key_name = nested_keys_names[i - 1].safeGet<String>();
                 Identifier nested_identifier = Identifier(nested_key_name);
                 return wrapExpressionNodeInTupleElement(array_join_column, nested_identifier, scope.context);
             }

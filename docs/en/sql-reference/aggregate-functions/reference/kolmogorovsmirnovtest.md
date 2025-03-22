@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/kolmogorovsmirnovtest
+description: 'Applies Kolmogorov-Smirnov''s test to samples from two populations.'
+sidebar_label: 'kolmogorovSmirnovTest'
 sidebar_position: 156
-sidebar_label: kolmogorovSmirnovTest
+slug: /sql-reference/aggregate-functions/reference/kolmogorovsmirnovtest
+title: 'kolmogorovSmirnovTest'
 ---
 
 # kolmogorovSmirnovTest
@@ -10,7 +12,7 @@ Applies Kolmogorov-Smirnov's test to samples from two populations.
 
 **Syntax**
 
-``` sql
+```sql
 kolmogorovSmirnovTest([alternative, computation_method])(sample_data, sample_index)
 ```
 
@@ -55,7 +57,7 @@ Samples must belong to continuous, one-dimensional probability distributions.
 
 Query:
 
-``` sql
+```sql
 SELECT kolmogorovSmirnovTest('less', 'exact')(value, num)
 FROM
 (
@@ -73,7 +75,7 @@ FROM
 
 Result:
 
-``` text
+```text
 ┌─kolmogorovSmirnovTest('less', 'exact')(value, num)─┐
 │ (0.009899999999999996,0.37528595205132287)         │
 └────────────────────────────────────────────────────┘
@@ -85,7 +87,7 @@ P-value is bigger than 0.05 (for confidence level of 95%), so null hypothesis is
 
 Query:
 
-``` sql
+```sql
 SELECT kolmogorovSmirnovTest('two-sided', 'exact')(value, num)
 FROM
 (
@@ -103,7 +105,7 @@ FROM
 
 Result:
 
-``` text
+```text
 ┌─kolmogorovSmirnovTest('two-sided', 'exact')(value, num)─┐
 │ (0.4100000000000002,6.61735760482795e-8)                │
 └─────────────────────────────────────────────────────────┘

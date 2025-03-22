@@ -1,15 +1,16 @@
 ---
-slug: /en/sql-reference/statements/create/user
+description: 'Documentation for User'
+sidebar_label: 'USER'
 sidebar_position: 39
-sidebar_label: USER
-title: "CREATE USER"
+slug: /sql-reference/statements/create/user
+title: 'CREATE USER'
 ---
 
 Creates [user accounts](../../../guides/sre/user-management/index.md#user-account-management).
 
 Syntax:
 
-``` sql
+```sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
     [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime] 
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
@@ -24,7 +25,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 `ON CLUSTER` clause allows creating users on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
-## Identification
+## Identification {#identification}
 
 There are multiple ways of user identification:
 
@@ -43,7 +44,7 @@ There are multiple ways of user identification:
 - `IDENTIFIED WITH http SERVER 'http_server'` or `IDENTIFIED WITH http SERVER 'http_server' SCHEME 'basic'`
 - `IDENTIFIED BY 'qwerty'`
 
-Password complexity requirements can be edited in [config.xml](/docs/en/operations/configuration-files). Below is an example configuration that requires passwords to be at least 12 characters long and contain 1 number. Each password complexity rule requires a regex to match against passwords and a description of the rule.
+Password complexity requirements can be edited in [config.xml](/operations/configuration-files). Below is an example configuration that requires passwords to be at least 12 characters long and contain 1 number. Each password complexity rule requires a regex to match against passwords and a description of the rule.
 
 ```xml
 <clickhouse>
@@ -69,7 +70,7 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
 - Contain at least 1 special character
 :::
 
-## Examples
+## Examples {#examples}
 
 1. The following username is `name1` and does not require a password - which obviously doesn't provide much security:
 
@@ -155,7 +156,7 @@ Notes:
 2. `no_password` can not co-exist with other authentication methods for security reasons. Therefore, you can only specify
 `no_password` if it is the only authentication method in the query. 
 
-## User Host
+## User Host {#user-host}
 
 User host is a host from which a connection to ClickHouse server could be established. The host can be specified in the `HOST` query section in the following ways:
 
@@ -164,7 +165,7 @@ User host is a host from which a connection to ClickHouse server could be establ
 - `HOST LOCAL` — User can connect only locally.
 - `HOST NAME 'fqdn'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
 - `HOST REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST REGEXP '.*\.mysite\.com'`.
-- `HOST LIKE 'template'` — Allows you to use the [LIKE](../../../sql-reference/functions/string-search-functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '%.mysite.com'` filters all the hosts in the `mysite.com` domain.
+- `HOST LIKE 'template'` — Allows you to use the [LIKE](/sql-reference/functions/string-search-functions#like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '%.mysite.com'` filters all the hosts in the `mysite.com` domain.
 
 Another way of specifying host is to use `@` syntax following the username. Examples:
 
@@ -176,7 +177,7 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
 :::
 
-## VALID UNTIL Clause
+## VALID UNTIL Clause {#valid-until-clause}
 
 Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`.
 The `VALID UNTIL` clause can only be specified along with an authentication method, except for the case where no authentication method has been specified in the query. In this scenario, the `VALID UNTIL` clause will be applied to all existing authentication methods.
@@ -189,7 +190,7 @@ Examples:
 - ```CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 `Asia/Tokyo`'```
 - `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01''`
 
-## GRANTEES Clause
+## GRANTEES Clause {#grantees-clause}
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#granting-privilege-syntax). Options of the `GRANTEES` clause:
 
@@ -200,11 +201,11 @@ Specifies users or roles which are allowed to receive [privileges](../../../sql-
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `CREATE USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with `GRANT OPTION` it will be able to grant those privileges to anyone except `user2`.
 
-## Examples
+## Examples {#examples-1}
 
 Create the user account `mira` protected by the password `qwerty`:
 
-``` sql
+```sql
 CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty';
 ```
 
@@ -212,13 +213,13 @@ CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
 
 Create the user account `john`, assign roles to it and make this roles default:
 
-``` sql
+```sql
 CREATE USER john DEFAULT ROLE role1, role2;
 ```
 
 Create the user account `john` and make all his future roles default:
 
-``` sql
+```sql
 CREATE USER john DEFAULT ROLE ALL;
 ```
 
@@ -226,12 +227,12 @@ When some role is assigned to `john` in the future, it will become default autom
 
 Create the user account `john` and make all his future roles default excepting `role1` and `role2`:
 
-``` sql
+```sql
 CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2;
 ```
 
 Create the user account `john` and allow him to grant his privileges to the user with `jack` account:
 
-``` sql
+```sql
 CREATE USER john GRANTEES jack;
 ```

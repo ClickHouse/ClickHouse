@@ -17,9 +17,11 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -113,9 +115,9 @@ ORDER BY expr
 [SETTINGS name=value, ...]
 [COMMENT 'comment']
 
-See details in documentation: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/. Other engines of the family support different syntax, see details in the corresponding documentation topics.
+See details in documentation: https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree/. Other engines of the family support different syntax, see details in the corresponding documentation topics.
 
-If you use the Replicated version of engines, see https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/.
+If you use the Replicated version of engines, see https://clickhouse.com/docs/engines/table-engines/mergetree-family/replication/.
 )";
 
 static ColumnsDescription getColumnsDescriptionFromZookeeper(const TableZnodeInfo & zookeeper_info, ContextMutablePtr context)
@@ -716,11 +718,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             for (const auto & index : args.query.columns_list->indices->children)
             {
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
-
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
-                if (((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
+                if (!args.query.attach && (
+                    ((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
                     || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
-                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
                 }

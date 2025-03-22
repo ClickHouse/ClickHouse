@@ -1,6 +1,7 @@
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -1014,7 +1015,7 @@ void FinalizingViewsTransform::work()
                 "Pushing from {} to {} took {} ms.",
                 views_data->source_storage_id.getNameForLogs(),
                 view.table_id.getNameForLogs(),
-                view.runtime_stats->elapsed_ms);
+                view.runtime_stats->elapsed_ms.load());
         }
     }
 

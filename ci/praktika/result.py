@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
-from .cache import Cache
-from .info import Info
 from .s3 import S3
 from .settings import Settings
 from .utils import ContextManager, MetaClasses, Shell, Utils
@@ -65,7 +63,7 @@ class Result(MetaClasses.Serializable):
         files=None,
         info: Union[List[str], str] = "",
         with_info_from_results=False,
-    ):
+    ) -> "Result":
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
         if not results and not status:
@@ -75,12 +73,17 @@ class Result(MetaClasses.Serializable):
             if not name:
                 print("ERROR: Failed to guess the .name")
                 raise
+        start_time = None
+        duration = None
         if not stopwatch:
-            start_time = Result.from_fs(name=name).start_time
-            duration = (
-                datetime.datetime.now().timestamp()
-                - Result.from_fs(name=name).start_time
-            )
+            try:
+                preresult = Result.from_fs(name=name)
+                start_time = preresult.start_time
+                duration = datetime.datetime.now().timestamp() - preresult.start_time
+            except Exception:
+                print(
+                    f"WARNING: Failed to get start time for [{name}] - start time and duration won't be set"
+                )
         else:
             start_time = stopwatch.start_time
             duration = stopwatch.duration
@@ -94,19 +97,17 @@ class Result(MetaClasses.Serializable):
                 infos += info
         if results and not status:
             for result in results:
-                if result.status not in (
-                    Result.Status.SUCCESS,
-                    Result.Status.FAILED,
-                    Result.Status.ERROR,
-                ):
+                if result.status in (Result.Status.SUCCESS, Result.Status.SKIPPED):
+                    continue
+                elif result.status == Result.Status.ERROR:
+                    result_status = Result.Status.ERROR
+                    break
+                elif result.status == Result.Status.FAILED:
+                    result_status = Result.Status.FAILED
+                else:
                     Utils.raise_with_error(
                         f"Unexpected result status [{result.status}] for [{result.name}]"
                     )
-                if result.status != Result.Status.SUCCESS:
-                    result_status = Result.Status.FAILED
-                if result.status == Result.Status.ERROR:
-                    result_status = Result.Status.ERROR
-                    break
         if results and with_info_from_results:
             for result in results:
                 if result.info:
@@ -124,6 +125,14 @@ class Result(MetaClasses.Serializable):
     @staticmethod
     def get():
         return Result.from_fs(_Environment.get().JOB_NAME)
+
+    @staticmethod
+    def get_workflow_result():
+        """
+        Returns the latest workflow result, if available on fs
+        :return:
+        """
+        return Result.from_fs(_Environment.get().WORKFLOW_NAME)
 
     def is_completed(self):
         return self.status not in (Result.Status.PENDING, Result.Status.RUNNING)
@@ -184,9 +193,79 @@ class Result(MetaClasses.Serializable):
         self.dump()
         return self
 
+    def add_job_summary_to_info(
+        self, with_local_run_command=False, with_test_in_run_command=False
+    ):
+        if not self.is_ok():
+            failed = [r for r in self.results if not r.is_ok()]
+            if failed:
+                if (
+                    len(failed) == 1
+                    and failed[0].name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
+                    and failed[0].info
+                ):
+                    summary_info = failed[0].info
+                else:
+                    failed_str = ",".join([f.name for f in failed])
+                    summary_info = (
+                        f"Failed: {failed_str}"
+                        if len(failed_str) < 80
+                        else f"Failed: {len(failed)} tests"
+                    )
+            else:
+                summary_info = "Failed"
+        else:
+            summary_info = next(
+                (
+                    r.info
+                    for r in self.results
+                    if r.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS and r.info
+                ),
+                "ok",
+            )
+
+        self.set_info(summary_info)
+
+        if with_local_run_command and not self.is_ok():
+            command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
+            first_failed_test = next((r for r in self.results if not r.is_ok()), None)
+            if (
+                first_failed_test
+                and first_failed_test.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
+            ):
+                first_failed_test = next(
+                    (
+                        r
+                        for r in first_failed_test.results
+                        if "fail" in r.status.lower()
+                    ),
+                    None,
+                )
+            if with_test_in_run_command and first_failed_test:
+                command_info += f" --test {first_failed_test.name}"
+            self.set_info(command_info)
+
+        return self
+
     @classmethod
     def file_name_static(cls, name):
         return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
+
+    @classmethod
+    def experimental_file_name_static(cls):
+        return f"{Settings.TEMP_DIR}/result.json"
+
+    @classmethod
+    def experimental_from_fs(cls, name):
+        # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
+        Shell.check(
+            f"cp {cls.experimental_file_name_static()} {cls.file_name_static(name)}",
+            verbose=True,
+        )
+        result = Result.from_fs(name)
+        result.name = name
+        result.dump()
+        return result
 
     @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
@@ -257,6 +336,10 @@ class Result(MetaClasses.Serializable):
             print("Pipeline finished")
             self.update_duration()
 
+    def add_ext_key_value(self, key, value):
+        self.ext[key] = value
+        return self
+
     @classmethod
     def generate_pending(cls, name, results=None):
         return Result(
@@ -271,7 +354,7 @@ class Result(MetaClasses.Serializable):
         )
 
     @classmethod
-    def generate_skipped(cls, name, cache_record: Cache.CacheRecord, results=None):
+    def generate_skipped(cls, name, links=None, info="", results=None):
         return Result(
             name=name,
             status=Result.Status.SKIPPED,
@@ -279,15 +362,8 @@ class Result(MetaClasses.Serializable):
             duration=None,
             results=results or [],
             files=[],
-            links=[
-                Info().get_specific_report_url(
-                    pr_number=cache_record.pr_number,
-                    branch=cache_record.branch,
-                    sha=cache_record.sha,
-                    job_name=name,
-                )
-            ],
-            info=f"from cache",
+            links=links or [],
+            info=info,
         )
 
     @classmethod
@@ -568,7 +644,9 @@ class _ResultS3:
                 if isinstance(new_sub_results, Result):
                     new_sub_results = [new_sub_results]
                 for result_ in new_sub_results:
-                    workflow_result.update_sub_result(result_, drop_nested_results=True)
+                    workflow_result.update_sub_result(
+                        result_, drop_nested_results=True
+                    ).dump()
             new_status = workflow_result.status
             if cls.copy_result_to_s3_with_version(workflow_result, version=version + 1):
                 done = True

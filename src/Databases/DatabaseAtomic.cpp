@@ -8,7 +8,6 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Parsers/formatAST.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Common/logger_useful.h>
 #include <Common/PoolId.h>

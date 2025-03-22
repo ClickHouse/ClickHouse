@@ -1,21 +1,22 @@
 ---
-title : JSONCompactStrings
-slug : /en/interfaces/formats/JSONCompactStrings
-keywords : [JSONCompactStrings]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the JSONCompactStrings format'
+input_format: false
+keywords: ['JSONCompactStrings']
+output_format: true
+slug: /interfaces/formats/JSONCompactStrings
+title: 'JSONCompactStrings'
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✗     | ✔      |       |
 
-## Description
+## Description {#description}
 
 The `JSONCompactStrings` format differs from [JSONStrings](./JSONStrings.md) only in that data rows are output as arrays, not as objects.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 ```json
 {
@@ -55,4 +56,4 @@ The `JSONCompactStrings` format differs from [JSONStrings](./JSONStrings.md) onl
 }
 ```
 
-## Format Settings
+## Format Settings {#format-settings}

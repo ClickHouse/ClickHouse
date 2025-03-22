@@ -1,6 +1,7 @@
 #include "XDBCDictionarySource.h"
 
 #include <Columns/ColumnString.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
@@ -247,7 +248,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 
         if (global_context->getSettingsRef()[Setting::cloud_mode])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `odbc` is disabled");
-#if USE_ODBC
+
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
             global_context,
             global_context->getSettingsRef()[Setting::http_receive_timeout],
@@ -270,15 +271,6 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
         };
 
         return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, global_context, bridge);
-#else
-        (void)dict_struct;
-        (void)config;
-        (void)config_prefix;
-        (void)sample_block;
-        (void)global_context;
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.");
-#endif
     };
     factory.registerSource("odbc", create_table_source);
 }

@@ -1,12 +1,14 @@
 ---
-slug: /en/sql-reference/functions/rounding-functions
+description: 'Documentation for Rounding Functions'
+sidebar_label: 'Rounding'
 sidebar_position: 155
-sidebar_label: Rounding
+slug: /sql-reference/functions/rounding-functions
+title: 'Rounding Functions'
 ---
 
 # Rounding Functions
 
-## floor
+## floor {#floor}
 
 Returns the largest rounded number less than or equal `x`.
 A rounded number is a multiple of 1 / 10 * N, or the nearest number of the appropriate data type if 1 / 10 * N isn't exact.
@@ -17,7 +19,7 @@ If rounding causes an overflow (for example, `floor(-128, -1)`), the result is u
 
 **Syntax**
 
-``` sql
+```sql
 floor(x[, N])
 ```
 
@@ -40,7 +42,7 @@ SELECT floor(123.45, 1) AS rounded
 
 Result:
 
-```
+```response
 ┌─rounded─┐
 │   123.4 │
 └─────────┘
@@ -54,25 +56,25 @@ SELECT floor(123.45, -1)
 
 Result:
 
-```
+```response
 ┌─rounded─┐
 │     120 │
 └─────────┘
 ```
 
-## ceiling
+## ceiling {#ceiling}
 
 Like `floor` but returns the smallest rounded number greater than or equal `x`.
 
 **Syntax**
 
-``` sql
+```sql
 ceiling(x[, N])
 ```
 
 Alias: `ceil`
 
-## truncate
+## truncate {#truncate}
 
 Like `floor` but returns the rounded number with largest absolute value that has an absolute value less than or equal to `x`'s.
 
@@ -98,7 +100,7 @@ SELECT truncate(123.499, 1) as res;
 └───────┘
 ```
 
-## round
+## round {#round}
 
 Rounds a value to a specified number of decimal places.
 
@@ -107,7 +109,7 @@ If the input value has equal distance to two neighboring numbers, the function u
 
 **Syntax**
 
-``` sql
+```sql
 round(x[, N])
 ```
 
@@ -131,7 +133,7 @@ Example with `Float` inputs:
 SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
-```
+```response
 ┌───x─┬─round(divide(number, 2))─┐
 │   0 │                        0 │
 │ 0.5 │                        0 │
@@ -145,7 +147,7 @@ Example with `Decimal` inputs:
 SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
-```
+```sql
 ┌───x─┬─round(CAST(divide(number, 2), 'Decimal(10, 4)'))─┐
 │   0 │                                                0 │
 │ 0.5 │                                                1 │
@@ -160,7 +162,7 @@ SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIM
 
 ```
 
-```
+```sql
 ┌──────x─┬─round(CAST(divide(number, 2), 'Decimal(10, 4)'))─┐
 │ 0.0000 │                                           0.0000 │
 │ 0.5000 │                                           1.0000 │
@@ -170,7 +172,7 @@ SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIM
 
 Examples of rounding to the nearest number:
 
-``` text
+```text
 round(3.2, 0) = 3
 round(4.1267, 2) = 4.13
 round(22,-1) = 20
@@ -180,7 +182,7 @@ round(-467,-2) = -500
 
 Banker's rounding.
 
-``` text
+```text
 round(3.5) = 4
 round(4.5) = 4
 round(3.55, 1) = 3.6
@@ -191,7 +193,7 @@ round(3.65, 1) = 3.6
 
 - [roundBankers](#roundbankers)
 
-## roundBankers
+## roundBankers {#roundbankers}
 
 Rounds a number to a specified decimal position.
 
@@ -215,7 +217,7 @@ For example, sum numbers 1.5, 2.5, 3.5, 4.5 with different rounding:
 
 **Syntax**
 
-``` sql
+```sql
 roundBankers(x [, N])
 ```
 
@@ -245,7 +247,7 @@ Query:
 
 Result:
 
-```
+```response
 ┌───x─┬─b─┐
 │   0 │ 0 │
 │ 0.5 │ 0 │
@@ -262,7 +264,7 @@ Result:
 
 Examples of Banker's rounding:
 
-```
+```response
 roundBankers(0.4) = 0
 roundBankers(-3.5) = -4
 roundBankers(4.5) = 4
@@ -276,7 +278,7 @@ roundBankers(10.755, 2) = 10.76
 
 - [round](#round)
 
-## roundToExp2
+## roundToExp2 {#roundtoexp2}
 
 Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to the nearest (whole non-negative) degree of two.
 
@@ -316,7 +318,7 @@ Result:
 └────────┴─────────────────────┘
 ```
 
-## roundDuration
+## roundDuration {#roundduration}
 
 Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to numbers from the set of commonly used durations: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`.
 
@@ -366,7 +368,7 @@ Result:
 └────────┴───────────────────────┘
 ```
 
-## roundAge
+## roundAge {#roundage}
 
 Accepts a number within various commonly used ranges of human age and returns either a maximum or a minimum within that range.
 
@@ -414,7 +416,7 @@ Result:
 └────────┴──────────────────┘
 ```
 
-## roundDown
+## roundDown {#rounddown}
 
 Accepts a number and rounds it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 

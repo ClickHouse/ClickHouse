@@ -36,7 +36,7 @@ DROP TABLE null_00634;"
 
 heavy_cpu_query="SELECT ignore(sum(sipHash64(hex(sipHash64(hex(sipHash64(hex(number)))))))) FROM (SELECT * FROM system.numbers_mt LIMIT 1000000)"
 $CLICKHOUSE_CLIENT $settings --max_threads=1 -q "$heavy_cpu_query"
-$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT $settings -q "
 WITH
     any(query_duration_ms*1000) AS duration,

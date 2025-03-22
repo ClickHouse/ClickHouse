@@ -1,26 +1,28 @@
 ---
-slug: /en/sql-reference/functions/uuid-functions
+description: 'Documentation for Functions for Working with UUIDs'
+sidebar_label: 'UUIDs'
 sidebar_position: 205
-sidebar_label: UUIDs
+slug: /sql-reference/functions/uuid-functions
+title: 'Functions for Working with UUIDs'
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
 # Functions for Working with UUIDs
 
-## generateUUIDv4
+## generateUUIDv4 {#generateuuidv4}
 
 Generates a [version 4](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](../data-types/uuid.md).
 
 **Syntax**
 
-``` sql
+```sql
 generateUUIDv4([expr])
 ```
 
 **Arguments**
 
-- `expr` — An arbitrary [expression](../syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
+- `expr` — An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
 
 **Returned value**
 
@@ -30,7 +32,7 @@ A value of type UUIDv4.
 
 First, create a table with a column of type UUID, then insert a generated UUIDv4 into the table.
 
-``` sql
+```sql
 CREATE TABLE tab (uuid UUID) ENGINE = Memory;
 
 INSERT INTO tab SELECT generateUUIDv4();
@@ -66,7 +68,7 @@ In case the counter overflows, the timestamp field is incremented by 1 and the c
 
 Function `generateUUIDv7` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
 
-```
+```text
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 ├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
@@ -86,13 +88,13 @@ As of April 2024, version 7 UUIDs are in draft status and their layout may chang
 
 **Syntax**
 
-``` sql
+```sql
 generateUUIDv7([expr])
 ```
 
 **Arguments**
 
-- `expr` — An arbitrary [expression](../syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
+- `expr` — An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
 
 **Returned value**
 
@@ -102,7 +104,7 @@ A value of type UUIDv7.
 
 First, create a table with a column of type UUID, then insert a generated UUIDv7 into the table.
 
-``` sql
+```sql
 CREATE TABLE tab (uuid UUID) ENGINE = Memory;
 
 INSERT INTO tab SELECT generateUUIDv7();
@@ -128,7 +130,7 @@ SELECT generateUUIDv7(1), generateUUIDv7(2);
 └──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
-## empty
+## empty {#empty}
 
 Checks whether the input UUID is empty.
 
@@ -140,7 +142,7 @@ empty(UUID)
 
 The UUID is considered empty if it contains all zeros (zero UUID).
 
-The function also works for [Arrays](array-functions.md#function-empty) and [Strings](string-functions.md#empty).
+The function also works for [Arrays](/sql-reference/functions/array-functions#empty) and [Strings](string-functions.md#empty).
 
 **Arguments**
 
@@ -168,7 +170,7 @@ Result:
 └─────────────────────────┘
 ```
 
-## notEmpty
+## notEmpty {#notempty}
 
 Checks whether the input UUID is non-empty.
 
@@ -180,7 +182,7 @@ notEmpty(UUID)
 
 The UUID is considered empty if it contains all zeros (zero UUID).
 
-The function also works for [Arrays](array-functions.md#function-notempty) or [Strings](string-functions.md#notempty).
+The function also works for [Arrays](/sql-reference/functions/array-functions#notempty) or [Strings](string-functions.md#notempty).
 
 **Arguments**
 
@@ -208,11 +210,11 @@ Result:
 └────────────────────────────┘
 ```
 
-## toUUID
+## toUUID {#touuid}
 
 Converts a value of type String to a UUID.
 
-``` sql
+```sql
 toUUID(string)
 ```
 
@@ -222,7 +224,7 @@ The UUID type value.
 
 **Usage example**
 
-``` sql
+```sql
 SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 ```
 
@@ -234,7 +236,7 @@ Result:
 └──────────────────────────────────────┘
 ```
 
-## toUUIDOrDefault
+## toUUIDOrDefault {#touuidordefault}
 
 **Arguments**
 
@@ -245,7 +247,7 @@ Result:
 
 UUID
 
-``` sql
+```sql
 toUUIDOrDefault(string, default)
 ```
 
@@ -257,7 +259,7 @@ The UUID type value.
 
 This first example returns the first argument converted to a UUID type as it can be converted:
 
-``` sql
+```sql
 SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' as UUID));
 ```
 
@@ -283,11 +285,11 @@ Result:
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## toUUIDOrNull
+## toUUIDOrNull {#touuidornull}
 
 Takes an argument of type String and tries to parse it into UUID. If failed, returns NULL.
 
-``` sql
+```sql
 toUUIDOrNull(string)
 ```
 
@@ -297,7 +299,7 @@ The Nullable(UUID) type value.
 
 **Usage example**
 
-``` sql
+```sql
 SELECT toUUIDOrNull('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 ```
 
@@ -309,11 +311,11 @@ Result:
 └──────┘
 ```
 
-## toUUIDOrZero
+## toUUIDOrZero {#touuidorzero}
 
 It takes an argument of type String and tries to parse it into UUID. If failed, returns zero UUID.
 
-``` sql
+```sql
 toUUIDOrZero(string)
 ```
 
@@ -323,7 +325,7 @@ The UUID type value.
 
 **Usage example**
 
-``` sql
+```sql
 SELECT toUUIDOrZero('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 ```
 
@@ -335,19 +337,19 @@ Result:
 └──────────────────────────────────────┘
 ```
 
-## UUIDStringToNum
+## UUIDStringToNum {#uuidstringtonum}
 
 Accepts `string` containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns a [FixedString(16)](../data-types/fixedstring.md) as its binary representation, with its format optionally specified by `variant` (`Big-endian` by default).
 
 **Syntax**
 
-``` sql
+```sql
 UUIDStringToNum(string[, variant = 1])
 ```
 
 **Arguments**
 
-- `string` — A [String](../syntax.md#syntax-string-literal) of 36 characters or [FixedString](../syntax.md#syntax-string-literal)
+- `string` — A [String](/sql-reference/data-types/string) of 36 characters or [FixedString](/sql-reference/data-types/string)
 - `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
 
 **Returned value**
@@ -356,7 +358,7 @@ FixedString(16)
 
 **Usage examples**
 
-``` sql
+```sql
 SELECT
     '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid,
     UUIDStringToNum(uuid) AS bytes
@@ -370,7 +372,7 @@ Result:
 └──────────────────────────────────────┴──────────────────┘
 ```
 
-``` sql
+```sql
 SELECT
     '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid,
     UUIDStringToNum(uuid, 2) AS bytes
@@ -384,13 +386,13 @@ Result:
 └──────────────────────────────────────┴──────────────────┘
 ```
 
-## UUIDNumToString
+## UUIDNumToString {#uuidnumtostring}
 
 Accepts `binary` containing a binary representation of a UUID, with its format optionally specified by `variant` (`Big-endian` by default), and returns a string containing 36 characters in text format.
 
 **Syntax**
 
-``` sql
+```sql
 UUIDNumToString(binary[, variant = 1])
 ```
 
@@ -405,7 +407,7 @@ String.
 
 **Usage example**
 
-``` sql
+```sql
 SELECT
     'a/<@];!~p{jTj={)' AS bytes,
     UUIDNumToString(toFixedString(bytes, 16)) AS uuid
@@ -419,7 +421,7 @@ Result:
 └──────────────────┴──────────────────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT
     '@</a;]~!p{jTj={)' AS bytes,
     UUIDNumToString(toFixedString(bytes, 16), 2) AS uuid
@@ -433,13 +435,13 @@ Result:
 └──────────────────┴──────────────────────────────────────┘
 ```
 
-## UUIDToNum
+## UUIDToNum {#uuidtonum}
 
 Accepts a [UUID](../data-types/uuid.md) and returns its binary representation as a [FixedString(16)](../data-types/fixedstring.md), with its format optionally specified by `variant` (`Big-endian` by default). This function replaces calls to two separate functions `UUIDStringToNum(toString(uuid))` so no intermediate conversion from UUID to string is required to extract bytes from a UUID.
 
 **Syntax**
 
-``` sql
+```sql
 UUIDToNum(uuid[, variant = 1])
 ```
 
@@ -454,7 +456,7 @@ The binary representation of the UUID.
 
 **Usage examples**
 
-``` sql
+```sql
 SELECT
     toUUID('612f3c40-5d3b-217e-707b-6a546a3d7b29') AS uuid,
     UUIDToNum(uuid) AS bytes
@@ -468,7 +470,7 @@ Result:
 └──────────────────────────────────────┴──────────────────┘
 ```
 
-``` sql
+```sql
 SELECT
     toUUID('612f3c40-5d3b-217e-707b-6a546a3d7b29') AS uuid,
     UUIDToNum(uuid, 2) AS bytes
@@ -482,13 +484,13 @@ Result:
 └──────────────────────────────────────┴──────────────────┘
 ```
 
-## UUIDv7ToDateTime
+## UUIDv7ToDateTime {#uuidv7todatetime}
 
 Returns the timestamp component of a UUID version 7.
 
 **Syntax**
 
-``` sql
+```sql
 UUIDv7ToDateTime(uuid[, timezone])
 ```
 
@@ -503,7 +505,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 
 **Usage examples**
 
-``` sql
+```sql
 SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
 ```
 
@@ -515,7 +517,7 @@ Result:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')
 ```
 
@@ -527,7 +529,7 @@ Result:
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## serverUUID
+## serverUUID {#serveruuid}
 
 Returns the random UUID generated during the first start of the ClickHouse server. The UUID is stored in file `uuid` in the ClickHouse server directory (e.g. `/var/lib/clickhouse/`) and retained between server restarts.
 
@@ -541,7 +543,7 @@ serverUUID()
 
 - The UUID of the server. [UUID](../data-types/uuid.md).
 
-## generateSnowflakeID
+## generateSnowflakeID {#generatesnowflakeid}
 
 Generates a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID).
 
@@ -556,7 +558,7 @@ The generated Snowflake IDs are based on the UNIX epoch 1970-01-01.
 While no standard or recommendation exists for the epoch of Snowflake IDs, implementations in other systems may use a different epoch, e.g. Twitter/X (2010-11-04) or Mastodon (2015-01-01).
 :::
 
-```
+```text
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 ├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
@@ -568,13 +570,13 @@ While no standard or recommendation exists for the epoch of Snowflake IDs, imple
 
 **Syntax**
 
-``` sql
+```sql
 generateSnowflakeID([expr, [machine_id]])
 ```
 
 **Arguments**
 
-- `expr` — An arbitrary [expression](../../sql-reference/syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional.
+- `expr` — An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional.
 - `machine_id` — A machine ID, the lowest 10 bits are used. [Int64](../data-types/int-uint.md). Optional.
 
 **Returned value**
@@ -585,7 +587,7 @@ A value of type UInt64.
 
 First, create a table with a column of type UInt64, then insert a generated Snowflake ID into the table.
 
-``` sql
+```sql
 CREATE TABLE tab (id UInt64) ENGINE = Memory;
 
 INSERT INTO tab SELECT generateSnowflakeID();
@@ -613,7 +615,7 @@ SELECT generateSnowflakeID(1), generateSnowflakeID(2);
 
 **Example with expression and a machine ID**
 
-```
+```sql
 SELECT generateSnowflakeID('expr', 1);
 
 ┌─generateSnowflakeID('expr', 1)─┐
@@ -621,7 +623,7 @@ SELECT generateSnowflakeID('expr', 1);
 └────────────────────────────────┘
 ```
 
-## snowflakeToDateTime
+## snowflakeToDateTime {#snowflaketodatetime}
 
 <DeprecatedBadge/>
 
@@ -634,14 +636,14 @@ Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wi
 
 **Syntax**
 
-``` sql
+```sql
 snowflakeToDateTime(value[, time_zone])
 ```
 
 **Arguments**
 
 - `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+- `time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -651,7 +653,7 @@ snowflakeToDateTime(value[, time_zone])
 
 Query:
 
-``` sql
+```sql
 SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
 ```
 
@@ -664,7 +666,7 @@ Result:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## snowflakeToDateTime64
+## snowflakeToDateTime64 {#snowflaketodatetime64}
 
 <DeprecatedBadge/>
 
@@ -677,14 +679,14 @@ Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wi
 
 **Syntax**
 
-``` sql
+```sql
 snowflakeToDateTime64(value[, time_zone])
 ```
 
 **Arguments**
 
 - `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+- `time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -694,7 +696,7 @@ snowflakeToDateTime64(value[, time_zone])
 
 Query:
 
-``` sql
+```sql
 SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
 ```
 
@@ -707,7 +709,7 @@ Result:
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-## dateTimeToSnowflake
+## dateTimeToSnowflake {#datetimetosnowflake}
 
 <DeprecatedBadge/>
 
@@ -720,7 +722,7 @@ Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake I
 
 **Syntax**
 
-``` sql
+```sql
 dateTimeToSnowflake(value)
 ```
 
@@ -736,7 +738,7 @@ dateTimeToSnowflake(value)
 
 Query:
 
-``` sql
+```sql
 WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
 ```
 
@@ -748,7 +750,7 @@ Result:
 └─────────────────────────┘
 ```
 
-## dateTime64ToSnowflake
+## dateTime64ToSnowflake {#datetime64tosnowflake}
 
 <DeprecatedBadge/>
 
@@ -761,7 +763,7 @@ Convert a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](
 
 **Syntax**
 
-``` sql
+```sql
 dateTime64ToSnowflake(value)
 ```
 
@@ -777,7 +779,7 @@ dateTime64ToSnowflake(value)
 
 Query:
 
-``` sql
+```sql
 WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
 ```
 
@@ -789,13 +791,13 @@ Result:
 └─────────────────────────────┘
 ```
 
-## snowflakeIDToDateTime
+## snowflakeIDToDateTime {#snowflakeidtodatetime}
 
 Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime](../data-types/datetime.md).
 
 **Syntax**
 
-``` sql
+```sql
 snowflakeIDToDateTime(value[, epoch[, time_zone]])
 ```
 
@@ -803,7 +805,7 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 - `value` — Snowflake ID. [UInt64](../data-types/int-uint.md).
 - `epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+- `time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -819,19 +821,19 @@ SELECT snowflakeIDToDateTime(7204436857747984384) AS res
 
 Result:
 
-```
+```response
 ┌─────────────────res─┐
 │ 2024-06-06 10:59:58 │
 └─────────────────────┘
 ```
 
-## snowflakeIDToDateTime64
+## snowflakeIDToDateTime64 {#snowflakeidtodatetime64}
 
 Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime64](../data-types/datetime64.md).
 
 **Syntax**
 
-``` sql
+```sql
 snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 ```
 
@@ -839,7 +841,7 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 - `value` — Snowflake ID. [UInt64](../data-types/int-uint.md).
 - `epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+- `time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -855,19 +857,19 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
 
 Result:
 
-```
+```response
 ┌─────────────────res─┐
 │ 2024-06-06 10:59:58 │
 └─────────────────────┘
 ```
 
-## dateTimeToSnowflakeID
+## dateTimeToSnowflakeID {#datetimetosnowflakeid}
 
 Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
 
-``` sql
+```sql
 dateTimeToSnowflakeID(value[, epoch])
 ```
 
@@ -890,19 +892,19 @@ SELECT toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt, dateTimeToSnowf
 
 Result:
 
-```
+```response
 ┌──────────────────dt─┬─────────────────res─┐
 │ 2021-08-15 18:57:56 │ 6832626392367104000 │
 └─────────────────────┴─────────────────────┘
 ```
 
-## dateTime64ToSnowflakeID
+## dateTime64ToSnowflakeID {#datetime64tosnowflakeid}
 
 Convert a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
 
-``` sql
+```sql
 dateTime64ToSnowflakeID(value[, epoch])
 ```
 
@@ -925,12 +927,12 @@ SELECT toDateTime('2021-08-15 18:57:56.493', 3, 'Asia/Shanghai') AS dt, dateTime
 
 Result:
 
-```
+```yaml
 ┌──────────────────────dt─┬─────────────────res─┐
 │ 2021-08-15 18:57:56.493 │ 6832626394434895872 │
 └─────────────────────────┴─────────────────────┘
 ```
 
-## See also
+## See also {#see-also}
 
-- [dictGetUUID](../functions/ext-dict-functions.md#ext_dict_functions-other)
+- [dictGetUUID](/sql-reference/functions/ext-dict-functions#other-functions)

@@ -22,6 +22,7 @@
 
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -95,7 +96,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <base/map.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
@@ -414,7 +415,7 @@ ASTPtr parseAdditionalFilterConditionForTable(
 {
     for (const auto & additional_filter : additional_table_filters)
     {
-        const auto & tuple = additional_filter.safeGet<const Tuple &>();
+        const auto & tuple = additional_filter.safeGet<Tuple>();
         const auto & table = tuple.at(0).safeGet<String>();
         const auto & filter = tuple.at(1).safeGet<String>();
 
@@ -1317,16 +1318,16 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
     else
         descr.fill_step = order_by_elem.direction;
 
-    if (applyVisitor(FieldVisitorAccurateEquals(), descr.fill_step, Field{0}))
+    if (accurateEquals(descr.fill_step, Field{0}))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be zero");
 
     if (order_by_elem.direction == 1)
     {
-        if (applyVisitor(FieldVisitorAccurateLess(), descr.fill_step, Field{0}))
+        if (accurateLess(descr.fill_step, Field{0}))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be negative for sorting in ascending direction");
 
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
-            applyVisitor(FieldVisitorAccurateLess(), descr.fill_to, descr.fill_from))
+            accurateLess(descr.fill_to, descr.fill_from))
         {
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                             "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
@@ -1334,11 +1335,11 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
     }
     else
     {
-        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, descr.fill_step))
+        if (accurateLess(Field{0}, descr.fill_step))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be positive for sorting in descending direction");
 
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
-            applyVisitor(FieldVisitorAccurateLess(), descr.fill_from, descr.fill_to))
+            accurateLess(descr.fill_from, descr.fill_to))
         {
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                             "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");
@@ -1825,7 +1826,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         for (const auto & key_name : key_names)
                             order_descr.emplace_back(key_name);
 
-                        SortingStep::Settings sort_settings(*context);
+                        SortingStep::Settings sort_settings(context->getSettingsRef());
 
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentHeader(),
@@ -2568,7 +2569,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             ErrorCodes::TOO_MANY_COLUMNS,
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
             required_columns.size(),
-            settings[Setting::max_columns_to_read]);
+            settings[Setting::max_columns_to_read].value);
 
     /// General limit for the number of threads.
     size_t max_threads_execute_query = settings[Setting::max_threads];
@@ -3051,7 +3052,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         }
         if (need_sort)
         {
-            SortingStep::Settings sort_settings(*context);
+            SortingStep::Settings sort_settings(context->getSettingsRef());
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
@@ -3108,7 +3109,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         return;
     }
 
-    SortingStep::Settings sort_settings(*context);
+    SortingStep::Settings sort_settings(context->getSettingsRef());
 
     /// Merge the sorted blocks.
     auto sorting_step = std::make_unique<SortingStep>(

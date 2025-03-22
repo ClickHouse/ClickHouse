@@ -27,6 +27,8 @@
 
 #include <filesystem>
 
+#include <fmt/ranges.h>
+
 #define ORDINARY_TO_ATOMIC_PREFIX ".tmp_convert."
 
 

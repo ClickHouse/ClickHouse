@@ -23,9 +23,7 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 namespace DB
@@ -45,9 +43,10 @@ String serializeAccessEntity(const IAccessEntity & entity)
 
     /// Serialize the list of ATTACH queries to a string.
     WriteBufferFromOwnString buf;
+    IAST::FormatSettings format_settings(/*one_line=*/true, /*hilite*/false);
     for (const ASTPtr & query : queries)
     {
-        formatAST(*query, buf, false, true);
+        query->format(buf, format_settings);
         buf.write(";\n", 2);
     }
     return buf.str();

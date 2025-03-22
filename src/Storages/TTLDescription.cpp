@@ -21,7 +21,6 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -32,6 +31,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool enable_zstd_qat_codec;
+    extern const SettingsBool enable_deflate_qpl_codec;
 }
 
 namespace ErrorCodes
@@ -175,7 +175,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
 static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
 {
     ExpressionAndSets result;
-    auto ttl_string = queryToString(ast);
+    auto ttl_string = ast->formatWithSecretsOneLine();
     auto context_copy = Context::createCopy(context);
     /// FIXME All code here will work with old analyzer, however for TTL
     /// with subqueries it's possible that new analyzer will be enabled in ::read method
@@ -350,7 +350,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs], context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
+                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs], context->getSettingsRef()[Setting::enable_deflate_qpl_codec], context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
         }
     }
 

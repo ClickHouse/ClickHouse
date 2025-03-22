@@ -21,8 +21,11 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -135,6 +138,11 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
             }
             else
             {
+                ASTPtr input_function;
+                query.tryFindInputFunction(input_function);
+                if (input_function)
+                    throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Schema inference is not supported with allow_experimental_analyzer=0 for INSERT INTO FUNCTION ... SELECT FROM input()");
+
                 InterpreterSelectWithUnionQuery interpreter_select{
                     query.select, current_context, select_query_options};
                 auto tmp_pipeline = interpreter_select.buildQueryPipeline();
@@ -378,6 +386,11 @@ Chain InterpreterInsertQuery::buildSink(
     }
 
     return out;
+}
+
+void InterpreterInsertQuery::addBuffer(std::unique_ptr<ReadBuffer> buffer)
+{
+    owned_buffers.push_back(std::move(buffer));
 }
 
 bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & table) const

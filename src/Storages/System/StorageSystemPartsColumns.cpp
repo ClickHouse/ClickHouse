@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
-#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -27,7 +26,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"uuid",                                       std::make_shared<DataTypeUUID>(), "The parts UUID."},
         {"part_type",                                  std::make_shared<DataTypeString>(), "The data part storing format. "
             "Possible values: Wide — Each column is stored in a separate file in a filesystem, Compact — All columns are stored in one file in a filesystem."},
-        {"active",                                     std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging."},
+        {"active",                                     std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging."},
         {"marks",                                      std::make_shared<DataTypeUInt64>(), "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                       std::make_shared<DataTypeUInt64>(), "The number of rows."},
         {"bytes_on_disk",                              std::make_shared<DataTypeUInt64>(), "Total size of all the data part files in bytes."},
@@ -100,7 +99,7 @@ void StorageSystemPartsColumns::processNextStorage(
         if (column.default_desc.expression)
         {
             column_info.default_kind = toString(column.default_desc.kind);
-            column_info.default_expression = queryToString(column.default_desc.expression);
+            column_info.default_expression = column.default_desc.expression->formatForLogging();
         }
 
         columns_info[column.name] = column_info;

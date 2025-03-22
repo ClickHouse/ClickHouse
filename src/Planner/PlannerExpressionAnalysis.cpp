@@ -8,6 +8,8 @@
 
 #include <Interpreters/Context.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
+
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/WindowNode.h>

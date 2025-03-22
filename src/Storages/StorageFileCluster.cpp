@@ -4,12 +4,11 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <Parsers/queryToString.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/StorageFileCluster.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFile.h>
-#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/TableFunctionFileCluster.h>
 
@@ -21,7 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 StorageFileCluster::StorageFileCluster(
@@ -33,7 +32,7 @@ StorageFileCluster::StorageFileCluster(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_)
-    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageFileCluster (" + table_id_.table_name + ")"))
+    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageFileCluster (" + table_id_.getFullTableName() + ")"))
     , filename(filename_)
     , format_name(format_name_)
 {
@@ -66,12 +65,16 @@ StorageFileCluster::StorageFileCluster(
 
 void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
 {
-    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
-    if (!expression_list)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", queryToString(query));
+    auto * table_function = extractTableFunctionFromSelectQuery(query);
+    if (!table_function)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", query->formatForErrorMessage());
 
     TableFunctionFileCluster::updateStructureAndFormatArgumentsIfNeeded(
-        expression_list->children, storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(), format_name, context);
+        table_function,
+        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
+        format_name,
+        context
+    );
 }
 
 RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const

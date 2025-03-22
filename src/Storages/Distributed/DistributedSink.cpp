@@ -8,7 +8,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -63,6 +62,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
     extern const SettingsBool distributed_insert_skip_read_only_replicas;
+    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
@@ -147,7 +147,7 @@ DistributedSink::DistributedSink(
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , query_ast(createInsertToRemoteTableQuery(storage.remote_storage.database_name, storage.remote_storage.table_name, columns_to_send_))
-    , query_string(queryToString(query_ast))
+    , query_string(query_ast->formatWithSecretsOneLine())
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef()[Setting::insert_allow_materialized_columns])
@@ -331,15 +331,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
 
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-        OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
+        ThreadGroupSwitcher switcher(thread_group, "DistrOutStrProc");
 
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
-        setThreadName("DistrOutStrProc");
+        OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
         ++job.blocks_started;
 
@@ -599,12 +593,7 @@ void DistributedSink::onFinish()
                     {
                         pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
                         {
-                            SCOPE_EXIT_SAFE(
-                                if (thread_group)
-                                    CurrentThread::detachFromGroupIfNotDetached();
-                            );
-                            if (thread_group)
-                                CurrentThread::attachToGroupIfDetached(thread_group);
+                            ThreadGroupSwitcher switcher(thread_group, "");
 
                             job.executor->finish();
                         });
@@ -807,6 +796,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         compression_level,
         !settings[Setting::allow_suspicious_codecs],
         settings[Setting::allow_experimental_codecs],
+        settings[Setting::enable_deflate_qpl_codec],
         settings[Setting::enable_zstd_qat_codec]);
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 

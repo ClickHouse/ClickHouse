@@ -1,14 +1,16 @@
 ---
-slug: /en/sql-reference/table-functions/odbc
+description: 'Returns the table that is connected via ODBC.'
+sidebar_label: 'odbc'
 sidebar_position: 150
-sidebar_label: odbc
+slug: /sql-reference/table-functions/odbc
+title: 'odbc'
 ---
 
-# odbc
+# odbc Table Function
 
 Returns table that is connected via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
-``` sql
+```sql
 odbc(connection_settings, external_database, external_table)
 ```
 
@@ -22,7 +24,7 @@ To safely implement ODBC connections, ClickHouse uses a separate program `clickh
 
 The fields with the `NULL` values from the external table are converted into the default values for the base data type. For example, if a remote MySQL table field has the `INT NULL` type it is converted to 0 (the default value for ClickHouse `Int32` data type).
 
-## Usage Example
+## Usage Example {#usage-example}
 
 **Getting data from the local MySQL installation via ODBC**
 
@@ -32,18 +34,18 @@ Ensure that unixODBC and MySQL Connector are installed.
 
 By default (if installed from packages), ClickHouse starts as user `clickhouse`. Thus you need to create and configure this user in the MySQL server.
 
-``` bash
+```bash
 $ sudo mysql
 ```
 
-``` sql
+```sql
 mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
 mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
 ```
 
 Then configure the connection in `/etc/odbc.ini`.
 
-``` bash
+```bash
 $ cat /etc/odbc.ini
 [mysqlconn]
 DRIVER = /usr/local/lib/libmyodbc5w.so
@@ -56,7 +58,7 @@ PASSWORD = clickhouse
 
 You can check the connection using the `isql` utility from the unixODBC installation.
 
-``` bash
+```bash
 $ isql -v mysqlconn
 +-------------------------+
 | Connected!                            |
@@ -66,7 +68,7 @@ $ isql -v mysqlconn
 
 Table in MySQL:
 
-``` text
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -89,17 +91,17 @@ mysql> select * from test;
 
 Retrieving data from the MySQL table in ClickHouse:
 
-``` sql
+```sql
 SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 ```
 
-``` text
+```text
 ┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
 │      1 │            0 │     2 │              0 │
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-## See Also
+## See Also {#see-also}
 
-- [ODBC dictionaries](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-odbc)
-- [ODBC table engine](../../engines/table-engines/integrations/odbc.md).
+- [ODBC dictionaries](/sql-reference/dictionaries#dbms)
+- [ODBC table engine](/engines/table-engines/integrations/odbc).

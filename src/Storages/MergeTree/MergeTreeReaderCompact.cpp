@@ -19,6 +19,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     const StorageSnapshotPtr & storage_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
+    DeserializationPrefixesCache *,
     MarkRanges mark_ranges_,
     MergeTreeReaderSettings settings_,
     ValueSizeMap avg_value_size_hints_,

@@ -42,4 +42,7 @@ public:
 /// Also remove quotes from strings.
 String convertFieldToString(const Field & field);
 
+/// Convert Object to String without quotes.
+String convertObjectToString(const Object & object);
+
 }
