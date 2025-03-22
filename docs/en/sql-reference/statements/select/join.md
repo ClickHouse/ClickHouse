@@ -473,10 +473,11 @@ By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_j
 
 If you need to restrict `JOIN` operation memory consumption use the following settings:
 
-- [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
-- [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
+- [max_rows_in_join](/operations/settings/settings#max_rows_in_join) — Limits number of rows in the hash table.
+- [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join) — Limits size of the hash table.
 
-When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) setting instructs.
+When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) 
+setting instructs.
 
 ## Examples {#examples}
 
