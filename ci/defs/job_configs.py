@@ -58,8 +58,11 @@ class JobConfigs:
     )
     tidy_build_jobs = Job.Config(
         name=JobNames.BUILD,
-        runs_on=["..."],
-        command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
+        runs_on=["...from params..."],
+        requires=[],
+        command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
+        run_in_docker="clickhouse/binary-builder+--network=host",
+        timeout=3600 * 4,
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./src",
@@ -69,10 +72,8 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./docker/packager",
                 "./rust",
-                "./tests/ci/build_check.py",
-                "./tests/performance",
+                "./ci/jobs/build_clickhouse.py",
             ],
             with_git_submodules=True,
         ),
@@ -88,7 +89,10 @@ class JobConfigs:
     build_jobs = Job.Config(
         name=JobNames.BUILD,
         runs_on=["...from params..."],
-        command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
+        requires=[],
+        command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
+        run_in_docker="clickhouse/binary-builder+--network=host",
+        timeout=3600 * 2,
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./src",
@@ -98,11 +102,8 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./docker/packager",
                 "./rust",
-                "./tests/ci/build_check.py",
-                "./tests/performance",
-                "./ci/docker/binary-builder",
+                "./ci/jobs/build_clickhouse.py",
             ],
             with_git_submodules=True,
         ),
@@ -128,7 +129,6 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.RPM_AMD_RELEASE,
                 ArtifactNames.TGZ_AMD_RELEASE,
-                ArtifactNames.PERFORMANCE_PACKAGE_AMD,
             ],
             [
                 ArtifactNames.CH_AMD_ASAN,
@@ -152,14 +152,12 @@ class JobConfigs:
             ],
             [
                 ArtifactNames.CH_AMD_BINARY,
-                ArtifactNames.UNITTEST_AMD_BINARY,
             ],
             [
                 ArtifactNames.CH_ARM_RELEASE,
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
-                ArtifactNames.PERFORMANCE_PACKAGE_ARM,
             ],
             [
                 ArtifactNames.CH_ARM_ASAN,
@@ -181,7 +179,10 @@ class JobConfigs:
     special_build_jobs = Job.Config(
         name=JobNames.BUILD,
         runs_on=["...from params..."],
-        command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
+        requires=[],
+        command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
+        run_in_docker="clickhouse/binary-builder+--network=host",
+        timeout=3600 * 2,
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./src",
@@ -191,11 +192,8 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./docker/packager",
                 "./rust",
-                "./tests/ci/build_check.py",
-                "./tests/performance",
-                "./ci/docker/binary-builder",
+                "./ci/jobs/build_clickhouse.py",
             ],
             with_git_submodules=True,
         ),
@@ -470,7 +468,6 @@ class JobConfigs:
         ),
     ).parametrize(
         parameter=[
-            "binary",
             "asan",
             "tsan",
             "msan",
@@ -481,10 +478,8 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            ["Build (amd_binary)"],
             ["Build (amd_asan)"],
             ["Build (amd_tsan)"],
             ["Build (amd_msan)"],
@@ -696,7 +691,6 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/ci/compatibility_check.py",
-                "./docker/test/compatibility",
             ],
         ),
     ).parametrize(
