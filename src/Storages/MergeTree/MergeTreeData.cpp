@@ -1221,7 +1221,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
         /// Check that summing columns are not in partition key.
         if (metadata.isPartitionKeyDefined())
         {
-            auto partition_key_columns = metadata.getPartitionKey().column_names;
+            auto partition_key_columns = metadata.getPartitionKey().expression->getRequiredColumns();
 
             Names names_intersection;
             std::set_intersection(columns_to_sum.begin(), columns_to_sum.end(),
@@ -1230,6 +1230,21 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
             if (!names_intersection.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Columns: {} listed both in columns to sum and in partition key. "
+                "That is not allowed.", boost::algorithm::join(names_intersection, ", "));
+        }
+
+        /// Check that summing columns are not in sorting key.
+        if (metadata.isSortingKeyDefined())
+        {
+            auto sorting_key_columns = metadata.getSortingKey().expression->getRequiredColumns();
+
+            Names names_intersection;
+            std::set_intersection(columns_to_sum.begin(), columns_to_sum.end(),
+                                  sorting_key_columns.begin(), sorting_key_columns.end(),
+                                  std::back_inserter(names_intersection));
+
+            if (!names_intersection.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Columns: {} listed both in columns to sum and in sorting key. "
                 "That is not allowed.", boost::algorithm::join(names_intersection, ", "));
         }
     }
