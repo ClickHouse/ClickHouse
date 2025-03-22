@@ -59,6 +59,9 @@ public:
     // Blocks until there is a granted slot to acquire
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
+    // For tests only. Returns true iff resource request is enqueued in the scheduler
+    bool isRequesting();
+
 private:
     friend class CPUSlotRequest; // for schedule() and failed()
 
