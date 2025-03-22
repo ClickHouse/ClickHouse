@@ -104,7 +104,7 @@ which means that it is "unrestricted".
 | [`max_sessions_for_user`](/operations/settings/settings#max_sessions_for_user)                                         | Maximum number of simultaneous sessions per authenticated user to the ClickHouse server.                                                                        |
 | [`max_partitions_to_read`](/operations/settings/settings#max_partitions_to_read)                                       | Limits the maximum number of partitions that can be accessed in a single query.                                                                                 |
 
-## Obsolete settings
+## Obsolete settings {#obsolete-settings}
 
 :::note
 The following settings are obsolete
