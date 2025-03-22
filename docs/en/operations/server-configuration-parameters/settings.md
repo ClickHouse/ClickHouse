@@ -2519,7 +2519,7 @@ The default `merges_mutations_memory_usage_soft_limit` value is calculated as `m
 
 **See also:**
 
-- [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage)
+- [max_memory_usage](/operations/settings/settings#max_memory_usage)
 - [merges_mutations_memory_usage_soft_limit](#merges_mutations_memory_usage_soft_limit)
 
 Default: `0.5`.

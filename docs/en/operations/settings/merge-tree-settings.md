@@ -709,7 +709,7 @@ Possible values:
 
 Default value: -1 (unlimited).
 
-You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max-partitions-to-read) at a query / session / profile level.
+You can also specify a query complexity setting [max_partitions_to_read](/operations/settings/settings#max_partitions_to_read) at a query / session / profile level.
 
 ## min_age_to_force_merge_seconds {#min_age_to_force_merge_seconds}
 
