@@ -28,7 +28,7 @@ SELECT max(length(a || b)) FROM t_primary_index_cache WHERE a > '1' AND b < '99'
 SYSTEM RELOAD ASYNCHRONOUS METRICS;
 SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'PrimaryIndexCacheBytes') ORDER BY metric;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     ProfileEvents['LoadedPrimaryIndexFiles'],

@@ -2099,6 +2099,7 @@ kafka
 kafkaMurmurHash
 kafkacat
 keccak
+kbytes
 keepalive
 keepermap
 kerberized
@@ -3074,6 +3075,7 @@ tryPunycodeDecode
 tskv
 tsv
 tui
+tmpfs
 tukey
 tumbleEnd
 tumbleStart
