@@ -1749,16 +1749,30 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         String metadata_zk_path_to = zookeeper_path + "/metadata/" + escapeForFileName(to_table_name);
+
+        String zk_statement;
+        Coordination::Stat stat;
+        String zk_statement_to;
+        Coordination::Stat stat_to;
+
+        /// When performing an ALTER operation on ReplicatedMergeTree tables,
+        ///  we update the metadata in ZooKeeper before updating it locally.
+        /// To prevent overwriting the new version of the metadata, we fetch and
+        ///  use the latest version and ensure it hasn't changed using a version check.
+        auto zookeeper = txn->getZooKeeper();
+        zookeeper->tryGet(metadata_zk_path, zk_statement, &stat);
+        zookeeper->tryGet(metadata_zk_path_to, zk_statement_to, &stat_to);
+
         if (!txn->isCreateOrReplaceQuery())
-            txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+            txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, stat.version));
 
         if (exchange)
         {
-            txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path_to, -1));
+            txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path_to, stat_to.version));
             if (!txn->isCreateOrReplaceQuery())
-                txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement_to, zkutil::CreateMode::Persistent));
+                txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, zk_statement_to, zkutil::CreateMode::Persistent));
         }
-        txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, statement, zkutil::CreateMode::Persistent));
+        txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, zk_statement, zkutil::CreateMode::Persistent));
     }
 
     std::lock_guard lock{metadata_mutex};
