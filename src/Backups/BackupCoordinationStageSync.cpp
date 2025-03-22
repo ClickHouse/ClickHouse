@@ -1,6 +1,7 @@
 #include <Backups/BackupCoordinationStageSync.h>
 
 #include <base/chrono_io.h>
+#include <Backups/BackupCoordinationStage.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -892,7 +893,7 @@ bool BackupCoordinationStageSync::checkIfHostsReachStage(const Strings & hosts, 
 
         if (host_info.finished)
         {
-            if (stage_to_wait == "finalizing tables")
+            if (stage_to_wait == BackupCoordinationStage::FINALIZING_TABLES)
             {
                 /// This is a newly added stage. For compatibility with older server versions,
                 /// allow other replicas to skip this stage. This doesn't break anything: this stage
