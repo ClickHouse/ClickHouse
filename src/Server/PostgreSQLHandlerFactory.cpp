@@ -1,6 +1,7 @@
 #include "PostgreSQLHandlerFactory.h"
 #include <memory>
 #include <Server/PostgreSQLHandler.h>
+#include "Core/PostgreSQLProtocol.h"
 
 namespace DB
 {
@@ -24,6 +25,7 @@ PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(
     {
         std::make_shared<PostgreSQLProtocol::PGAuthentication::NoPasswordAuth>(),
         std::make_shared<PostgreSQLProtocol::PGAuthentication::CleartextPasswordAuth>(),
+        std::make_shared<PostgreSQLProtocol::PGAuthentication::ScrambleSHA256Auth>(),
     };
 }
 
