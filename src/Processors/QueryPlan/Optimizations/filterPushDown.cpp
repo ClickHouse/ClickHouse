@@ -380,6 +380,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     if (join_filter_push_down_actions.left_stream_filter_to_push_down)
     {
         const auto & result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
+
+        if (logical_join)
+        {
+            logical_join->pushDownColumns(JoinTableSide::Left, *join_filter_push_down_actions.left_stream_filter_to_push_down);
+        }
+
         updated_steps += addNewFilterStepOrThrow(parent_node,
             nodes,
             std::move(*join_filter_push_down_actions.left_stream_filter_to_push_down),
@@ -394,6 +400,10 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     if (join_filter_push_down_actions.right_stream_filter_to_push_down && allow_push_down_to_right)
     {
+        if (logical_join)
+        {
+            logical_join->pushDownColumns(JoinTableSide::Right, *join_filter_push_down_actions.right_stream_filter_to_push_down);
+        }
         const auto & result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(parent_node,
             nodes,
