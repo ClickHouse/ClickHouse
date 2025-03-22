@@ -24,6 +24,8 @@ def start_cluster():
 
 def test_insert_distributed_async_send_success():
     node.query("DROP TABLE IF EXISTS data SYNC")
+    node.query("DROP TABLE IF EXISTS dist SYNC")
+
     node.query("CREATE TABLE data (key Int, value String) Engine=Null()")
     node.query(
         """

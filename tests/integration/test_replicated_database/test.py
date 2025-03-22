@@ -1125,10 +1125,6 @@ def test_recover_staled_replica_many_mvs(started_cluster):
     dummy_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
 
 
-@pytest.mark.skip(
-    reason="Since we create a hidden distributed table inside Replicated database it cannot start without zookeeper\
-    because it has to retrieve data from it to form a cluster."
-)
 def test_startup_without_zk(started_cluster):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(main_node)
