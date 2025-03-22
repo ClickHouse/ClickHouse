@@ -77,6 +77,7 @@ pydantic==2.9.2
 pydantic_core==2.23.4
 pyiceberg==0.8.1
 pyiceberg[glue]==0.8.1
+pyiceberg[hive]==0.8.1
 pymongo==3.11.0
 pyparsing==3.1.0
 pyspark==3.3.2
