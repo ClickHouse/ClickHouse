@@ -246,22 +246,7 @@ See [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join)
 
 ## join_overflow_mode {#settings-join_overflow_mode}
 
-Defines what action ClickHouse performs when any of the following join limits is reached:
-
-- [max_bytes_in_join](#settings-max_bytes_in_join)
-- [max_rows_in_join](#settings-max_rows_in_join)
-
-Possible values:
-
-- `THROW` — ClickHouse throws an exception and breaks operation.
-- `BREAK` — ClickHouse breaks operation and does not throw an exception.
-
-Default value: `THROW`.
-
-**See Also**
-
-- [JOIN clause](/sql-reference/statements/select/join)
-- [Join table engine](../../engines/table-engines/special/join.md)
+See [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode)
 
 ## max_partitions_per_insert_block {#settings-max_partitions_per_insert_block}
 

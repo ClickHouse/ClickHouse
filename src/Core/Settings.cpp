@@ -2820,7 +2820,22 @@ Possible values:
 - 0 — Memory control is disabled.
 )", 0) \
     DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Defines what action ClickHouse performs when any of the following join limits is reached:
+
+- [max_bytes_in_join](#max_bytes_in_join)
+- [max_rows_in_join](#max_rows_in_join)
+
+Possible values:
+
+- `THROW` — ClickHouse throws an exception and breaks operation.
+- `BREAK` — ClickHouse breaks operation and does not throw an exception.
+
+Default value: `THROW`.
+
+**See Also**
+
+- [JOIN clause](/sql-reference/statements/select/join)
+- [Join table engine](/engines/table-engines/special/join)
 )", 0) \
     DECLARE(Bool, join_any_take_last_row, false, R"(
 Changes the behaviour of join operations with `ANY` strictness.
