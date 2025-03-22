@@ -3587,7 +3587,15 @@ This setting is a safety threshold because using a large number of partitions is
 :::
 )", 0) \
     DECLARE(Bool, throw_on_max_partitions_per_insert_block, true, R"(
-Used with max_partitions_per_insert_block. If true (default), an exception will be thrown when max_partitions_per_insert_block is reached. If false, details of the insert query reaching this limit with the number of partitions will be logged. This can be useful if you're trying to understand the impact on users when changing max_partitions_per_insert_block.
+Allows you to control the behaviour when `max_partitions_per_insert_block` is reached.
+
+Possible values:
+- `true`  - When an insert block reaches `max_partitions_per_insert_block`, an exception is raised.
+- `false` - Logs a warning when `max_partitions_per_insert_block` is reached.
+
+:::tip
+This can be useful if you're trying to understand the impact on users when changing [`max_partitions_per_insert_block`](/operations/settings/settings#max_partitions_per_insert_block).
+:::
 )", 0) \
     DECLARE(Int64, max_partitions_to_read, -1, R"(
 Limit the max number of partitions that can be accessed in one query. &lt;= 0 means unlimited.

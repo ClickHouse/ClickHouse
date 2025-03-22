@@ -254,12 +254,7 @@ See [`max_partitions_per_insert_block`](/operations/settings/settings#max_partit
 
 ## throw_on_max_partitions_per_insert_block {#settings-throw_on_max_partition_per_insert_block}
 
-Allows you to control behaviour when `max_partitions_per_insert_block` is reached.
-
-- `true`  - When an insert block reaches `max_partitions_per_insert_block`, an exception is raised.
-- `false` - Logs a warning when `max_partitions_per_insert_block` is reached.
-
-Default value: `true`
+See [`throw_on_max_partitions_per_insert_block`](/operations/settings/settings#throw_on_max_partitions_per_insert_block)
 
 ## max_temporary_data_on_disk_size_for_user {#settings_max_temporary_data_on_disk_size_for_user}
 
@@ -267,7 +262,6 @@ The maximum amount of data consumed by temporary files on disk in bytes for all 
 Zero means unlimited.
 
 Default value: 0.
-
 
 ## max_temporary_data_on_disk_size_for_query {#settings_max_temporary_data_on_disk_size_for_query}
 
