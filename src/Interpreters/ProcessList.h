@@ -44,11 +44,6 @@ class QueryStatus;
 class ThreadStatus;
 class ProcessListEntry;
 
-namespace Setting
-{
-    extern const SettingsMilliseconds low_priority_query_wait_time_ms;
-}
-
 enum CancelReason
 {
     UNDEFINED,
@@ -238,10 +233,10 @@ public:
 
         if (priority_handle){
             // Search Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
-            Poco::Timespan::TimeDiff wait_time = getContext()->getSettingsRef()[Setting::low_priority_query_wait_time_ms].totalMilliseconds();
-            LOG_INFO(getLogger("ProcessList"), "Update the progress with current wait time value {}", wait_time);
+            //Poco::Timespan::TimeDiff wait_time = getContext()->getSettingsRef()[Setting::low_priority_query_wait_time_ms].totalMilliseconds();
+            //LOG_INFO(getLogger("ProcessList"), "Update the progress with current wait time value {}", wait_time);
             // 这是一个运算符重载 operator std::chrono::duration<Rep, Period>() const
-            priority_handle->waitIfNeed(std::chrono::milliseconds(wait_time));
+            priority_handle->waitIfNeed();
         }
 
         return !is_killed.load(std::memory_order_relaxed);
@@ -525,7 +520,6 @@ public:
         Lock lock(mutex);
         return max_select_queries_amount;
     }
-
 
     void setMaxWaitingQueriesAmount(UInt64 max_waiting_queries_amount_)
     {

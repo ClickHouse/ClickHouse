@@ -7,6 +7,7 @@
 #include <chrono>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
 namespace CurrentMetrics
 {
@@ -91,10 +92,15 @@ public:
     private:
         QueryPriorities & parent;
         QueryPriorities::Container::value_type & value;
+        Poco::Timespan::TimeDiff wait_time;
 
     public:
         HandleImpl(QueryPriorities & parent_, QueryPriorities::Container::value_type & value_)
-            : parent(parent_), value(value_) {}
+            : parent(parent_), value(value_), wait_time(1000 * 1000) {}
+
+        // Override constructor with customized wait time for low priority query
+        HandleImpl(QueryPriorities & parent_, QueryPriorities::Container::value_type & value_, Poco::Timespan::TimeDiff wait_time_)
+            : parent(parent_), value(value_), wait_time(wait_time_) {}
 
         ~HandleImpl()
         {
@@ -106,9 +112,9 @@ public:
         }
 
         template <typename Duration>
-        void waitIfNeed(Duration timeout)
+        void waitIfNeed()
         {
-            parent.waitIfNeed(value.first, timeout);
+            parent.waitIfNeed(value.first, std::chrono::milliseconds(wait_time));
         }
     };
 
@@ -117,7 +123,7 @@ public:
     /** Register query with specified priority.
       * Returns an object that remove record in destructor.
       */
-    Handle insert(Priority priority)
+    Handle insert(Priority priority, Poco::Timespan::TimeDiff wait_time)
     {
         if (0 == priority)
             return {};
@@ -125,7 +131,8 @@ public:
         std::lock_guard lock(mutex);
         auto it = container.emplace(priority, 0).first;
         ++it->second;
-        return std::make_shared<HandleImpl>(*this, *it);
+        LOG_INFO(getLogger("HandleImpl"), "Creating a HandleImpl with priority {} and wait_time {}", priority, wait_time);
+        return std::make_shared<HandleImpl>(*this, *it, wait_time);
     }
 };
 
