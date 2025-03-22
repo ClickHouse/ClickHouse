@@ -8,7 +8,7 @@ title: 'ALTER DATABASE ... MODIFY COMMENT Statements'
 
 # ALTER DATABASE ... MODIFY COMMENT
 
-Adds, modifies, or removes comment to the table, regardless if it was set before or not. Comment change is reflected in both [system.databases](../../operations/system-tables/databases.md) and `SHOW CREATE DATABASE` query.
+Adds, modifies, or removes comment to the table, regardless if it was set before or not. Comment change is reflected in both [system.databases](/operations/system-tables/databases.md) and `SHOW CREATE DATABASE` query.
 
 **Syntax**
 
