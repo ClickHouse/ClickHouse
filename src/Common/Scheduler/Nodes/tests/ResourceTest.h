@@ -383,11 +383,21 @@ struct ResourceTestManager : public ResourceTestBase
 
     void wait()
     {
-        std::scoped_lock lock{threads_mutex};
-        for (auto & thread : threads)
+        while (true)
         {
-            if (thread.joinable())
-                thread.join();
+            std::list<ThreadFromGlobalPool> threads_to_join;
+            {
+                std::scoped_lock lock{threads_mutex};
+                threads_to_join.swap(threads);
+            }
+            if (threads_to_join.empty())
+                break;
+            for (ThreadFromGlobalPool & thread : threads_to_join)
+            {
+                if (thread.joinable())
+                    thread.join();
+            }
+            // we have to repeat because threads we have just joined could have created new threads in the meantime
         }
     }
 

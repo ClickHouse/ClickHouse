@@ -548,7 +548,7 @@ struct TestQuery {
 
 using TestQueryPtr = std::shared_ptr<TestQuery>;
 
-TEST(SchedulerWorkloadResourceManager, CPUSlotsAllocationRoundRobin)
+TEST(SchedulerWorkloadResourceManager, CPUSchedulingRoundRobin)
 {
     ResourceTest t;
 
@@ -595,7 +595,7 @@ TEST(SchedulerWorkloadResourceManager, CPUSlotsAllocationRoundRobin)
     t.wait();
 }
 
-TEST(SchedulerWorkloadResourceManager, CPUSlotsAllocationFairness)
+TEST(SchedulerWorkloadResourceManager, CPUSchedulingFairness)
 {
     ResourceTest t;
 
@@ -646,6 +646,77 @@ TEST(SchedulerWorkloadResourceManager, CPUSlotsAllocationFairness)
     }
 
     queries.clear();
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, CPUSchedulingIndependentPools)
+{
+    std::barrier sync_start(2);
+
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD pool1 IN all SETTINGS max_concurrent_threads = 4");
+    t.query("CREATE WORKLOAD pool2 IN all SETTINGS max_concurrent_threads = 4");
+    t.query("CREATE WORKLOAD A1 IN pool1");
+    t.query("CREATE WORKLOAD B1 IN pool1");
+    t.query("CREATE WORKLOAD leader1 IN pool1");
+    t.query("CREATE WORKLOAD A2 IN pool2");
+    t.query("CREATE WORKLOAD B2 IN pool2");
+    t.query("CREATE WORKLOAD leader2 IN pool2");
+
+    for (int pool = 1; pool <= 2; pool++)
+    {
+        t.async([&, pool]
+        {
+            auto leader = std::make_shared<TestQuery>(t);
+            std::vector<TestQueryPtr> queries;
+            for (int query = 0; query < 2; query++)
+                queries.push_back(std::make_shared<TestQuery>(t));
+
+            auto ensure = [&] (size_t q0_threads, size_t q1_threads)
+            {
+                if (q0_threads > 0)
+                    queries[0]->waitStartedThreads(q0_threads);
+                if (q1_threads > 0)
+                    queries[1]->waitStartedThreads(q1_threads);
+            };
+
+            auto finish = [&] (size_t q0_threads, size_t q1_threads)
+            {
+                if (q0_threads > 0)
+                    queries[0]->finishThread(q0_threads);
+                if (q1_threads > 0)
+                    queries[1]->finishThread(q1_threads);
+            };
+
+            // Acquire all slots to create overloaded state
+            leader->start(fmt::format("leader{}", pool), 4);
+            leader->waitStartedThreads(4);
+
+            // Ensure both pools have started and used all their threads simultaneously
+            sync_start.arrive_and_wait();
+
+            // One of queries will be the first, but we do not case which one
+            queries[0]->start(fmt::format("A{}", pool), 10);
+            queries[1]->start(fmt::format("B{}", pool), 10);
+
+            // Make sure requests are enqueued and release all the slots
+            queries[0]->waitEnqueued();
+            queries[1]->waitEnqueued();
+            leader.reset();
+
+            for (int i = 2; i < 10; i++)
+            {
+                ensure(i, i); // acquire two slots
+                finish(1, 1); // release two slots
+            }
+
+            queries.clear();
+        });
+    }
 
     t.wait();
 }
