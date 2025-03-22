@@ -3163,6 +3163,7 @@ sensitive data leakage from SQL queries such as names, emails, personal identifi
         <name>hide SSN</name>
         <regexp>(^|\D)\d{3}-\d{2}-\d{4}($|\D)</regexp>
         <replace>000-00-0000</replace>
+        <throw_on_match>false</throw_on_match>
     </rule>
 </query_masking_rules>
 ```

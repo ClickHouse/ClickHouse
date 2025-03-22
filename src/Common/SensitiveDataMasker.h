@@ -61,7 +61,12 @@ public:
     static MaskerMultiVersion::Version getInstance();
 
     /// Used in tests.
-    void addMaskingRule(const std::string & name, const std::string & regexp_string, const std::string & replacement_string);
+    void addMaskingRule(
+        const std::string & name,
+        const std::string & regexp_string,
+        const std::string & replacement_string,
+        bool throw_on_match
+    );
 
 #ifndef NDEBUG
     void printStats();
