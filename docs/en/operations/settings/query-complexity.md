@@ -258,10 +258,7 @@ See [`throw_on_max_partitions_per_insert_block`](/operations/settings/settings#t
 
 ## max_temporary_data_on_disk_size_for_user {#settings_max_temporary_data_on_disk_size_for_user}
 
-The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running user queries.
-Zero means unlimited.
-
-Default value: 0.
+See [`max_temporary_data_on_disk_size_for_user`](/operations/settings/settings#throw_on_max_partitions_per_insert_block)
 
 ## max_temporary_data_on_disk_size_for_query {#settings_max_temporary_data_on_disk_size_for_query}
 

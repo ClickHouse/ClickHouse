@@ -3129,7 +3129,13 @@ Possible values:
 )", 0) \
     \
     DECLARE(UInt64, max_temporary_data_on_disk_size_for_user, 0, R"(
-The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running user queries. Zero means unlimited.
+The maximum amount of data consumed by temporary files on disk in bytes for all
+concurrently running user queries.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
 )", 0)\
     DECLARE(UInt64, max_temporary_data_on_disk_size_for_query, 0, R"(
 The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running queries. Zero means unlimited.
