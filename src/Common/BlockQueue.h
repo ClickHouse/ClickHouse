@@ -17,7 +17,7 @@ class BlockQueue
 public:
     using Job = std::function<Block(const Block &)>;
 
-    BlockQueue(size_t max_queue_size_, Job job_);
+    BlockQueue(size_t max_queue_size_, size_t num_threads_, Job job_);
 
     ~BlockQueue();
 
@@ -36,7 +36,8 @@ private:
         std::promise<Block> promise;
     };
 
-    size_t max_queue_size;
+    const size_t max_queue_size;
+    const size_t num_threads;
     Job job;
     std::unique_ptr<ThreadPool> thread_pool;
 

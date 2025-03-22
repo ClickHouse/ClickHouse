@@ -15,18 +15,19 @@ extern const Metric BlockQueueThreadsScheduled;
 namespace DB
 {
 
-BlockQueue::BlockQueue(size_t max_queue_size_, Job job_)
+BlockQueue::BlockQueue(size_t max_queue_size_, size_t num_threads_, Job job_)
     : max_queue_size(max_queue_size_)
+    , num_threads(num_threads_)
     , job(std::move(job_))
     , thread_pool(std::make_unique<ThreadPool>(
           CurrentMetrics::BlockQueueThreads,
           CurrentMetrics::BlockQueueThreadsActive,
           CurrentMetrics::BlockQueueThreadsScheduled,
-          max_queue_size))
+          num_threads))
 {
     try
     {
-        for (size_t i = 0; i < max_queue_size; ++i)
+        for (size_t i = 0; i < num_threads; ++i)
         {
             thread_pool->scheduleOrThrow(
                 [this, i, thread_group = CurrentThread::getGroup()]()
@@ -36,13 +37,13 @@ BlockQueue::BlockQueue(size_t max_queue_size_, Job job_)
                     work();
                 });
         }
-        max_queue_size = 1e18;
     }
     catch (...)
     {
         failure = true;
         pop_condition.notify_all();
         push_condition.notify_all();
+        processed_condition.notify_all();
         thread_pool->wait();
         throw;
     }
@@ -85,6 +86,7 @@ bool BlockQueue::enqueueForProcessing(const Block & block, bool wait)
         to_be_processed.emplace(block, std::move(promise));
     }
     pop_condition.notify_one();
+    processed_condition.notify_one();
     return true;
 }
 
@@ -107,6 +109,7 @@ Block BlockQueue::dequeueNextProcessed(bool wait)
         block = std::move(processed.front());
         processed.pop();
     }
+    push_condition.notify_one();
     return block.get();
 }
 
@@ -128,7 +131,6 @@ void BlockQueue::work()
             task = std::move(to_be_processed.front());
             to_be_processed.pop();
         }
-        push_condition.notify_one();
 
         try
         {
@@ -146,8 +148,8 @@ void BlockQueue::work()
             task.promise.set_exception(first_exception);
             pop_condition.notify_all();
             push_condition.notify_all();
+            processed_condition.notify_all();
         }
-        processed_condition.notify_one();
     }
 }
 

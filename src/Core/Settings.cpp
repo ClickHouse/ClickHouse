@@ -5974,6 +5974,10 @@ Note that initially (24.12) there was a server setting (`send_settings_to_client
 How many threads to use for parallel block marshaling/unmarshaling in distributed queries. 1 means "disabled".
 )", 0) \
     \
+    DECLARE(UInt64, parallel_block_marshaling_queue_size, 8, R"(
+How many blocks could be queued for parallel marshaling/unmarshaling in distributed queries. 1 means "disabled".
+)", 0) \
+    \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
     /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \

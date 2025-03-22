@@ -122,6 +122,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool apply_settings_from_server;
     extern const SettingsUInt64 parallel_block_marshaling_threads;
+    extern const SettingsUInt64 parallel_block_marshaling_queue_size;
 }
 
 namespace ServerSetting
@@ -1271,6 +1272,18 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                 if (block && !state.io.null_format)
                 {
                     initBlockQueue(state);
+
+                    {
+                        std::lock_guard lock(callback_mutex);
+                        Block processed;
+                        // Make only one iteration with `wait=true`, all other on the best-effort basis
+                        while ((processed = state.block_queue->dequeueNextProcessed(/*wait=*/false)))
+                        {
+                            OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
+                            sendData(state, processed);
+                        }
+                    }
+
                     while (block && state.block_queue->enqueueForProcessing(block, /*wait=*/false))
                     {
                         if (!executor.pull(block, /*milliseconds=*/1))
@@ -2524,6 +2537,7 @@ void TCPHandler::initBlockQueue(QueryState & state)
     if (!state.block_queue)
     {
         state.block_queue = std::make_unique<BlockQueue>(
+            state.query_context->getSettingsRef()[Setting::parallel_block_marshaling_queue_size],
             state.query_context->getSettingsRef()[Setting::parallel_block_marshaling_threads],
             [this, &state](const Block & block)
             {
