@@ -1,14 +1,16 @@
 #include <atomic>
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
 #include <Processors/ISource.h>
-#include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-#include <Core/ProtocolDefines.h>
-#include <Common/logger_useful.h>
-#include <Common/formatReadable.h>
 #include <Processors/Transforms/SquashingTransform.h>
+#include <QueryPipeline/Pipe.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
+#include "Processors/Chunk.h"
+#include "base/types.h"
 
 
 namespace ProfileEvents
@@ -391,6 +393,15 @@ private:
         return Status::PortFull;
     }
 
+    static void encodeDelayedBucketId(Chunk & chunk, Int32 delayed_bucket)
+    {
+        auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+        if (!agg_info)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo.");
+
+        agg_info->bucket_num |= (delayed_bucket << 16);
+    }
+
     /// Read all sources and try to push current bucket.
     IProcessor::Status prepareTwoLevel()
     {
@@ -406,23 +417,61 @@ private:
             }
         }
 
+        auto get_bucket_if_ready = [&](UInt32 bucket_num) -> Chunk
+        {
+            if (!shared_data->is_bucket_processed[bucket_num])
+                return {};
+
+            if (!two_level_chunks[bucket_num])
+                return {};
+
+            return std::move(two_level_chunks[bucket_num]);
+        };
+
         while (current_bucket_num < NUM_BUCKETS)
         {
-            if (!shared_data->is_bucket_processed[current_bucket_num])
-                return Status::NeedData;
+            Chunk chunk;
+            if ((chunk = get_bucket_if_ready(current_bucket_num)))
+            {
+                ++current_bucket_num;
+            }
+            else
+            {
+                if (delayed_bucket != -1)
+                {
+                    chunk = get_bucket_if_ready(delayed_bucket);
+                    if (chunk)
+                        delayed_bucket = -1;
+                }
+                else
+                {
+                    delayed_bucket = current_bucket_num;
+                    ++current_bucket_num;
+                    continue;
+                }
+            }
 
-            if (!two_level_chunks[current_bucket_num])
+            if (!chunk)
                 return Status::NeedData;
-
-            auto chunk = std::move(two_level_chunks[current_bucket_num]);
-            ++current_bucket_num;
 
             const auto has_rows = chunk.hasRows();
             if (has_rows)
             {
+                encodeDelayedBucketId(chunk, delayed_bucket);
                 output.push(std::move(chunk));
                 return Status::PortFull;
             }
+        }
+
+        if (delayed_bucket != -1)
+        {
+            auto chunk = get_bucket_if_ready(delayed_bucket);
+            if (!chunk)
+                return Status::NeedData;
+            delayed_bucket = -1;
+            encodeDelayedBucketId(chunk, delayed_bucket);
+            output.push(std::move(chunk));
+            return Status::PortFull;
         }
 
         output.finish();
@@ -444,6 +493,8 @@ private:
     UInt32 current_bucket_num = 0;
     static constexpr Int32 NUM_BUCKETS = 256;
     std::array<Chunk, NUM_BUCKETS> two_level_chunks;
+
+    Int32 delayed_bucket = -1;
 
     Processors processors;
 
