@@ -203,12 +203,12 @@ private:
 
     static long seekFunc(void *, void *, ZPOS64_T, int) // NOLINT(google-runtime-int)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::seek() is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::seek is not implemented");
     }
 
     static unsigned long readFileFunc(void *, void *, void *, unsigned long) // NOLINT(google-runtime-int)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::readFile() is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::readFile is not implemented");
     }
 
     std::unique_ptr<WriteBuffer> write_buffer;
