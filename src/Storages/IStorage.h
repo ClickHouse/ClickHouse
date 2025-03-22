@@ -323,7 +323,7 @@ public:
       * It will also store needed stuff for projection query pipeline.
       *
       * QueryProcessingStage::Enum required for Distributed over Distributed,
-      * since it cannot return Complete for intermediate queries never.
+      * since it cannot return Complete for intermediate queries ever.
       */
     virtual QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const
     {
