@@ -53,7 +53,7 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     , metadata_key_prefix(metadata_key_prefix_)
     , object_key_prefix(object_storage->generateObjectKeyPrefixForDirectoryPath(path, "" /* object_key_prefix */).serialize())
 {
-    chassert(path.string().ends_with('/'));
+    chassert(path.empty() || path.string().ends_with('/'));
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
@@ -115,8 +115,8 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
     , object_storage(object_storage_)
     , metadata_key_prefix(metadata_key_prefix_)
 {
-    chassert(path_from.string().ends_with('/'));
-    chassert(path_to.string().ends_with('/'));
+    chassert(path_from.empty() || path_from.string().ends_with('/'));
+    chassert(path_to.empty() || path_to.string().ends_with('/'));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::createWriteBuf(
@@ -216,7 +216,7 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
     const std::string & metadata_key_prefix_)
     : path(std::move(path_)), path_map(path_map_), object_storage(object_storage_), metadata_key_prefix(metadata_key_prefix_)
 {
-    chassert(path.string().ends_with('/'));
+    chassert(path.empty() || path.string().ends_with('/'));
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std::unique_lock<SharedMutex> & /* metadata_lock */)
