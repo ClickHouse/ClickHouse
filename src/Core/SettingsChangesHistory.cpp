@@ -689,11 +689,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
-
+            {"refresh_parts_interval", 0, 0, "A new setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.3",
         {
-            {"refresh_parts_interval", 0, 0, "A new setting"},
             /// Release closed. Please use 25.4
             {"shared_merge_tree_enable_keeper_parts_extra_data", false, false, "New setting"},
             {"zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock", 0, 0, "New setting"},
