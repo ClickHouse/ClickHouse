@@ -181,7 +181,7 @@ SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantEleme
 │ [1,2,3]       │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ [1,2,3]                            │
 └───────────────┴─────────────────────────────┴─────────────────────────────┴────────────────────────────────────┘
 )"}}},
-        .category{"Variants"},
+        .categories{"Variant"},
     });
 }
 

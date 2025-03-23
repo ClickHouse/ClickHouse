@@ -1,8 +1,6 @@
 ---
-description: 'Selects the last encountered value of a column.'
+slug: /en/sql-reference/aggregate-functions/reference/anylast
 sidebar_position: 105
-slug: /sql-reference/aggregate-functions/reference/anylast
-title: 'anyLast'
 ---
 
 # anyLast

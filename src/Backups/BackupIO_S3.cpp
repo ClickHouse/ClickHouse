@@ -192,7 +192,7 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
     return objects[0].GetSize();
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name)
+std::unique_ptr<SeekableReadBuffer> BackupReaderS3::readFile(const String & file_name)
 {
     return std::make_unique<ReadBufferFromS3>(
         client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, s3_settings.request_settings, read_settings);
@@ -228,9 +228,9 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                 s3_settings.request_settings,
                 read_settings,
                 blob_storage_log,
+                object_attributes,
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupReaderS3"),
-                [&, this] { return readFile(path_in_backup); },
-                object_attributes);
+                /* for_disk_s3= */ true);
 
             return file_size;
         };
@@ -308,12 +308,9 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
                 s3_settings.request_settings,
                 read_settings,
                 blob_storage_log,
+                {},
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"),
-                [&]
-                {
-                    LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
-                    return src_disk->readFile(src_path, read_settings);
-                });
+                /*for_disk_s3=*/false);
             return; /// copied!
         }
     }
@@ -325,12 +322,10 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
 void BackupWriterS3::copyFile(const String & destination, const String & source, size_t size)
 {
     LOG_TRACE(log, "Copying file inside backup from {} to {} ", source, destination);
-
-    const auto source_key = fs::path(s3_uri.key) / source;
     copyS3File(
         client,
         /* src_bucket */ s3_uri.bucket,
-        /* src_key= */ source_key,
+        /* src_key= */ fs::path(s3_uri.key) / source,
         0,
         size,
         /* dest_s3_client= */ client,
@@ -339,19 +334,14 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
         s3_settings.request_settings,
         read_settings,
         blob_storage_log,
-        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"),
-        [&, this]
-        {
-            LOG_TRACE(log, "Falling back to copy file inside backup from {} to {} through direct buffers", source, destination);
-            return std::make_unique<ReadBufferFromS3>(
-                client, s3_uri.bucket, source_key, s3_uri.version_id, s3_settings.request_settings, read_settings);
-        });
+        {},
+        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
 }
 
 void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
 {
     copyDataToS3File(create_read_buffer, start_pos, length, client, s3_uri.bucket, fs::path(s3_uri.key) / path_in_backup,
-                     s3_settings.request_settings, blob_storage_log,
+                     s3_settings.request_settings, blob_storage_log, {},
                      threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
 }
 
@@ -393,7 +383,7 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
 
 void BackupWriterS3::removeFile(const String & file_name)
 {
-    deleteFileFromS3(client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, /* if_exists = */ true,
+    deleteFileFromS3(client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, /* if_exists = */ false,
                      blob_storage_log);
 }
 
@@ -407,7 +397,7 @@ void BackupWriterS3::removeFiles(const Strings & file_names)
     /// One call of DeleteObjects() cannot remove more than 1000 keys.
     size_t batch_size = 1000;
 
-    deleteFilesFromS3(client, s3_uri.bucket, keys, /* if_exists = */ true,
+    deleteFilesFromS3(client, s3_uri.bucket, keys, /* if_exists = */ false,
                       s3_capabilities, batch_size, blob_storage_log);
 }
 

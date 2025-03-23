@@ -1,15 +1,12 @@
 ---
-description: 'MongoDB engine is read-only table engine which allows to read data from
-  a remote collection.'
-sidebar_label: 'MongoDB'
+slug: /en/engines/table-engines/integrations/mongodb
 sidebar_position: 135
-slug: /engines/table-engines/integrations/mongodb
-title: 'MongoDB'
+sidebar_label: MongoDB
 ---
 
 # MongoDB
 
-MongoDB engine is read-only table engine which allows to read data from a remote [MongoDB](https://www.mongodb.com/) collection.
+MongoDB engine is read-only table engine which allows to read data from remote [MongoDB](https://www.mongodb.com/) collection.
 
 Only MongoDB v3.6+ servers are supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
@@ -27,7 +24,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
     name1 [type1],
     name2 [type2],
     ...
-) ENGINE = MongoDB(host:port, database, collection, user, password[, options[, oid_columns]]);
+) ENGINE = MongoDB(host:port, database, collection, user, password [, options]);
 ```
 
 **Engine Parameters**
@@ -44,99 +41,41 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 - `options` — MongoDB connection string options (optional parameter).
 
-- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
-
 :::tip
 If you are using the MongoDB Atlas cloud offering connection url can be obtained from 'Atlas SQL' option.
 Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future releases.
 :::
 
-Alternatively, you can pass a URI:
+Also, you can simply pass a URI:
 
 ``` sql
-ENGINE = MongoDB(uri, collection[, oid_columns]);
+ENGINE = MongoDB(uri, collection);
 ```
 
 **Engine Parameters**
 
-- `uri` — MongoDB server's connection URI.
+- `uri` — MongoDB server's connection URI
 
 - `collection` — Remote collection name.
 
-- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
 
+## Types mappings
 
-## Types mappings {#types-mappings}
-
-| MongoDB                 | ClickHouse                                                            |
-|-------------------------|-----------------------------------------------------------------------|
-| bool, int32, int64      | *any numeric type*, String                                            |
-| double                  | Float64, String                                                       |
-| date                    | Date, Date32, DateTime, DateTime64, String                            |
-| string                  | String                                                                |
-| document                | String(as JSON)                                                       |
-| array                   | Array, String(as JSON)                                                |
-| oid                     | String                                                                |
-| binary                  | String if in column, base64 encoded string if in an array or document |
-| uuid (binary subtype 4) | UUID                                                                  |
-| *any other*             | String                                                                |
+| MongoDB            | ClickHouse                                                            |
+|--------------------|-----------------------------------------------------------------------|
+| bool, int32, int64 | *any numeric type*, String                                            |
+| double             | Float64, String                                                       |
+| date               | Date, Date32, DateTime, DateTime64, String                            |
+| string             | String, UUID                                                          |
+| document           | String(as JSON)                                                       |
+| array              | Array, String(as JSON)                                                |
+| oid                | String                                                                |
+| binary             | String if in column, base64 encoded string if in an array or document |
+| *any other*        | String                                                                |
 
 If key is not found in MongoDB document (for example, column name doesn't match), default value or `NULL` (if the column is nullable) will be inserted.
 
-### OID {#oid}
-
-If you want a `String` to be treated as `oid` in the WHERE clause, just put the column's name in the last argument of the table engine.
-This may be necessary when querying a record by the `_id` column, which by default has `oid` type in MongoDB.
-If the `_id` field in the table has other type, for example `uuid`, you need to specify empty `oid_columns`, otherwise the default value for this parameter `_id` is used.
-
-```javascript
-db.sample_oid.insertMany([
-    {"another_oid_column": ObjectId()},
-]);
-
-db.sample_oid.find();
-[
-    {
-        "_id": {"$oid": "67bf6cc44ebc466d33d42fb2"},
-        "another_oid_column": {"$oid": "67bf6cc40000000000ea41b1"}
-    }
-]
-```
-
-By default, only `_id` is treated as `oid` column.
-
-```sql
-CREATE TABLE sample_oid
-(
-    _id String,
-    another_oid_column String
-) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid');
-
-SELECT count() FROM sample_oid WHERE _id = '67bf6cc44ebc466d33d42fb2'; --will output 1.
-SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea41b1'; --will output 0
-```
-
-In this case the output will be `0`, because ClickHouse doesn't know that `another_oid_column` has `oid` type, so let's fix it:
-
-```sql
-CREATE TABLE sample_oid
-(
-    _id String,
-    another_oid_column String
-) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid', '_id,another_oid_column');
-
--- or
-
-CREATE TABLE sample_oid
-(
-    _id String,
-    another_oid_column String
-) ENGINE = MongoDB('host', 'db', 'sample_oid', 'user', 'pass', '', '_id,another_oid_column');
-
-SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea41b1'; -- will output 1 now
-```
-
-## Supported clauses {#supported-clauses}
+## Supported clauses
 
 Only queries with simple expressions are supported (for example, `WHERE field = <constant> ORDER BY field2 LIMIT <constant>`).
 Such expressions are translated to MongoDB query language and executed on the server side.
@@ -196,7 +135,7 @@ SELECT count() FROM sample_mflix_table
    └─────────┘
 ```
 
-```sql
+```SQL
 -- JSONExtractString cannot be pushed down to MongoDB
 SET mongodb_throw_on_unsupported_query = 0;
 
@@ -226,7 +165,7 @@ directors: ['Robert Zemeckis']
 released:  1989-11-22
 ```
 
-```sql
+```SQL
 -- Find top 3 movies based on Cormac McCarthy's books
 SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) as rating
 FROM sample_mflix_table
@@ -243,7 +182,7 @@ LIMIT 3;
    └────────────────────────┴────────┘
 ```
 
-## Troubleshooting {#troubleshooting}
+## Troubleshooting
 You can see the generated MongoDB query in DEBUG level logs.
 
 Implementation details can be found in [mongocxx](https://github.com/mongodb/mongo-cxx-driver) and [mongoc](https://github.com/mongodb/mongo-c-driver) documentations.

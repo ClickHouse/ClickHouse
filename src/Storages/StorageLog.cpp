@@ -2,9 +2,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLogSettings.h>
 
-#include <Columns/IColumn.h>
 #include <Common/Exception.h>
-#include <Common/assert_cast.h>
+#include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -66,7 +66,6 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_COLUMN;
 }
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
@@ -569,23 +568,6 @@ namespace
     /// So for Array data type, first stream is array sizes; and number of array sizes is the number of arrays.
     /// Thus we assume we can always get the real number of rows from the first column.
     constexpr size_t INDEX_WITH_REAL_ROW_COUNT = 0;
-
-    void checkSupportedDataTypes(const ColumnsDescription & columns, const String & storage_name)
-    {
-        for (const auto & column : columns.getAll())
-        {
-            auto callback = [&](const IDataType & type)
-            {
-                /// Variant type requires writing prefix in the discriminators stream. In Log engine
-                /// we write prefix before each insert but read it only once before reading the whole file.
-                /// To support such cases we need to reimplement serialization/deserialization in the Log engine.
-                if (isVariant(type))
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support Variant data type", storage_name);
-            };
-            callback(*column.type);
-            column.type->forEachChild(callback);
-        }
-    }
 }
 
 
@@ -611,7 +593,6 @@ StorageLog::StorageLog(
     , file_checker(disk, table_path + "sizes.json")
     , max_compress_block_size(context_->getSettingsRef()[Setting::max_compress_block_size])
 {
-    checkSupportedDataTypes(columns_, getName());
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
@@ -1022,9 +1003,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     disk->createDirectories(temp_dir);
 
     const auto & read_settings = backup_entries_collector.getReadSettings();
-    const auto & backup_settings = backup_entries_collector.getBackupSettings();
-    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
-    bool allow_checksums_from_remote_paths = backup_settings.allow_checksums_from_remote_paths;
+    bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
 
     /// *.bin
     for (const auto & data_file : data_files)
@@ -1034,7 +1013,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file.path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path), allow_checksums_from_remote_paths);
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path));
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
     }
@@ -1047,7 +1026,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String hardlink_file_path = temp_dir / marks_file_name;
         disk->createHardLink(marks_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path), allow_checksums_from_remote_paths);
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path));
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / marks_file_name, std::move(backup_entry));
     }

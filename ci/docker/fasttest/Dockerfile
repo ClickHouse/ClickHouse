@@ -4,7 +4,7 @@ FROM ubuntu:22.04
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-ARG LLVM_APT_VERSION="1:19.1.4"
+ARG LLVM_APT_VERSION="1:19.1.4~*"
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=19
 
@@ -27,7 +27,7 @@ RUN apt-get update \
     && echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list \
     && apt-get update \
-    && apt-get satisfy --yes --no-install-recommends "llvm-${LLVM_VERSION} (>= ${LLVM_APT_VERSION})" \
+    && apt-get install --yes --no-install-recommends --verbose-versions llvm-${LLVM_VERSION}>=${LLVM_APT_VERSION} \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -74,7 +74,7 @@ RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
 RUN sed -i '/_IMPORT_CHECK_FILES_FOR_\(mlir-\|llvm-bolt\|merge-fdata\|MLIR\)/ {s|^|#|}' /usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm/LLVMExports-*.cmake
 
 ARG TARGETARCH
-ARG SCCACHE_VERSION=v0.10.0
+ARG SCCACHE_VERSION=v0.7.7
 ENV SCCACHE_IGNORE_SERVER_IO_ERROR=1
 # sccache requires a value for the region. So by default we use The Default Region
 ENV SCCACHE_REGION=us-east-1
@@ -111,4 +111,5 @@ RUN arch=${TARGETARCH:-amd64} \
     && dpkg -i /tmp/nfpm.deb \
     && rm /tmp/nfpm.deb
 
+ENV PYTHONPATH="/wd"
 ENV PYTHONUNBUFFERED=1

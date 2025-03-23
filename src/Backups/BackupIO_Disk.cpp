@@ -28,7 +28,7 @@ UInt64 BackupReaderDisk::getFileSize(const String & file_name)
     return disk->getFileSize(root_path / file_name);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupReaderDisk::readFile(const String & file_name)
+std::unique_ptr<SeekableReadBuffer> BackupReaderDisk::readFile(const String & file_name)
 {
     return disk->readFile(root_path / file_name, read_settings);
 }
@@ -91,6 +91,12 @@ std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_nam
 void BackupWriterDisk::removeFile(const String & file_name)
 {
     disk->removeFileIfExists(root_path / file_name);
+}
+
+void BackupWriterDisk::removeFiles(const Strings & file_names)
+{
+    for (const auto & file_name : file_names)
+        disk->removeFileIfExists(root_path / file_name);
 }
 
 void BackupWriterDisk::removeEmptyDirectories()

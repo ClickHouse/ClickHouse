@@ -174,8 +174,7 @@ struct CrapWow
         size_t len = x.size;
         size_t seed = 0;
 
-        const UInt64 m = 0x95b47aa3355ba1a1;
-        const UInt64 n = 0x8a970be7488fda55;
+        const UInt64 m = 0x95b47aa3355ba1a1, n = 0x8a970be7488fda55;
         UInt64 hash;
         // 3 = m, 4 = n
         // r12 = h, r13 = k, ecx = seed, r12 = key

@@ -1,28 +1,27 @@
 #include "Interpreters/Context_fwd.h"
 
+#include <Storages/StorageURLCluster.h>
+
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
-
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
-
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-
-#include <Parsers/queryToString.h>
-#include <Processors/Sources/RemoteSource.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+
+#include <Processors/Sources/RemoteSource.h>
+#include <Parsers/queryToString.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageURL.h>
-#include <Storages/StorageURLCluster.h>
+#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/extractTableFunctionFromSelectQuery.h>
 
 #include <TableFunctions/TableFunctionURLCluster.h>
 
@@ -31,15 +30,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 glob_expansion_max_elements;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace Setting
-{
-    extern const SettingsUInt64 glob_expansion_max_elements;
 }
 
 StorageURLCluster::StorageURLCluster(
@@ -81,38 +79,19 @@ StorageURLCluster::StorageURLCluster(
         storage_metadata.setColumns(columns_);
     }
 
-    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context, getSampleURI(uri, context));
-    if (!storage_metadata.getColumns().has("_headers"))
-    {
-        virtual_columns_desc.addEphemeral(
-            "_headers",
-            std::make_shared<DataTypeMap>(
-                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-            "");
-    }
-
     storage_metadata.setConstraints(constraints_);
-    setVirtuals(virtual_columns_desc);
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context, getSampleURI(uri, context)));
     setInMemoryMetadata(storage_metadata);
 }
 
 void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
 {
-    auto * table_function = extractTableFunctionFromSelectQuery(query);
-    if (!table_function)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", queryToString(query));
-
-    auto * expression_list = table_function->arguments->as<ASTExpressionList>();
+    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
     if (!expression_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", queryToString(query));
 
     TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
-        table_function,
-        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
-        format_name,
-        context
-    );
+        expression_list->children, storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(), format_name, context);
 }
 
 RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const

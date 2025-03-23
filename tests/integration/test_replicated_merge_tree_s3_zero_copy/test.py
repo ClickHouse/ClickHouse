@@ -93,7 +93,7 @@ def create_table(cluster, additional_settings=None):
         create_table_statement += ","
         create_table_statement += additional_settings
 
-    list(cluster.instances.values())[0].query_with_retry(create_table_statement)
+    list(cluster.instances.values())[0].query(create_table_statement)
 
 
 @pytest.fixture(autouse=True)
@@ -213,7 +213,7 @@ def test_drop_table(cluster):
 
     # Wait for drop to actually finish
     node.wait_for_log_line(
-        "Removing metadata metadata_dropped/default.test_drop_table",
+        "Removing metadata /var/lib/clickhouse/metadata_dropped/default.test_drop_table",
         timeout=60,
         look_behind_lines=1000000,
     )

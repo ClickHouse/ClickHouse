@@ -6,15 +6,11 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 namespace DB
 {
-
-namespace QueryPlanSerializationSetting
-{
-    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
-}
 
 static ITransformingStep::Traits getTraits()
 {
@@ -88,7 +84,7 @@ void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
-    settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
+    settings.max_block_size = max_block_size;
 }
 
 void ArrayJoinStep::serialize(Serialization & ctx) const
@@ -124,7 +120,7 @@ std::unique_ptr<IQueryPlanStep> ArrayJoinStep::deserialize(Deserialization & ctx
     for (auto & column : array_join.columns)
         readStringBinary(column, ctx.in);
 
-    return std::make_unique<ArrayJoinStep>(ctx.input_headers.front(), std::move(array_join), is_unaligned, ctx.settings[QueryPlanSerializationSetting::max_block_size]);
+    return std::make_unique<ArrayJoinStep>(ctx.input_headers.front(), std::move(array_join), is_unaligned, ctx.settings.max_block_size);
 }
 
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)

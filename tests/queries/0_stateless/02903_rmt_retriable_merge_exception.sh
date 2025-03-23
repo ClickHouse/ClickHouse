@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-shared-merge-tree
+# Tags: no-ordinary-database
 # Tag no-ordinary-database: requires UUID
-# Tag no-shared-merge-tree -- unrelated test
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -48,7 +47,7 @@ part_name='%'
 # wait while there be at least one 'No active replica has part all_0_1_1 or covering part' in logs
 for _ in {0..50}; do
     no_active_repilica_messages=$($CLICKHOUSE_CLIENT -m -q "
-        system flush logs text_log;
+        system flush logs;
 
         select count()
         from system.text_log
@@ -69,7 +68,7 @@ done
 
 $CLICKHOUSE_CLIENT -m -q "
     system start pulling replication log rmt2;
-    system flush logs text_log;
+    system flush logs;
 
     select
         level, count() > 0

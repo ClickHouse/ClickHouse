@@ -1,5 +1,3 @@
-#include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
@@ -143,34 +141,13 @@ void ColumnArray::get(size_t n, Field & res) const
             size, max_array_size_as_field);
 
     res = Array();
-    Array & res_arr = res.safeGet<Array>();
+    Array & res_arr = res.safeGet<Array &>();
     res_arr.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
         res_arr.push_back(getData()[offset + i]);
 }
 
-std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n) const
-{
-    size_t offset = offsetAt(n);
-    size_t size = sizeAt(n);
-
-    String value_name {"["};
-    DataTypes element_types;
-    element_types.reserve(size);
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        const auto & [value, type] = getData().getValueNameAndType(offset + i);
-        element_types.push_back(type);
-        if (i > 0)
-            value_name += ", ";
-        value_name += value;
-    }
-    value_name += "]";
-
-    return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
-}
 
 StringRef ColumnArray::getDataAt(size_t n) const
 {
@@ -332,7 +309,7 @@ void ColumnArray::updateHashFast(SipHash & hash) const
 
 void ColumnArray::insert(const Field & x)
 {
-    const Array & array = x.safeGet<Array>();
+    const Array & array = x.safeGet<const Array &>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
         getData().insert(array[i]);
@@ -344,7 +321,7 @@ bool ColumnArray::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Array)
         return false;
 
-    const Array & array = x.safeGet<Array>();
+    const Array & array = x.safeGet<const Array &>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
     {

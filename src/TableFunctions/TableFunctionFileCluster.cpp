@@ -16,7 +16,7 @@ namespace Setting
 
 StoragePtr TableFunctionFileCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/) const
+    const std::string & table_name, const String & /*compression_method_*/) const
 {
     StoragePtr storage;
 
@@ -60,7 +60,7 @@ void registerTableFunctionFileCluster(TableFunctionFactory & factory)
         {.documentation = {
             .description=R"(This table function is used for distributed reading of files in cluster nodes filesystems.)",
             .examples{{"fileCluster", "SELECT * from fileCluster('my_cluster', 'file{1,2}.csv');", ""}},
-            .category{""}},
+            .categories{"File"}},
         .allow_readonly = false});
 }
 

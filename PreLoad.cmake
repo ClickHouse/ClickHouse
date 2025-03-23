@@ -60,9 +60,10 @@ execute_process(COMMAND uname -m
     COMMAND_ERROR_IS_FATAL ANY
 )
 
-# We already prefer clang
+# By default, prefer clang on Linux
 # But note, that you still may change the compiler with -DCMAKE_C_COMPILER/-DCMAKE_CXX_COMPILER.
-if ("$ENV{CC}" STREQUAL ""
+if (OS MATCHES "Linux"
+    AND "$ENV{CC}" STREQUAL ""
     AND "$ENV{CXX}" STREQUAL ""
     AND NOT DEFINED CMAKE_C_COMPILER
     AND NOT DEFINED CMAKE_CXX_COMPILER)

@@ -75,7 +75,7 @@ ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
             argument_column.type = argument->getResultType();
 
         if (constant && !isNotCreatable(argument_column.type))
-            argument_column.column = constant->getColumn();
+            argument_column.column = argument_column.type->createColumnConst(1, constant->getValue());
 
         argument_columns.push_back(std::move(argument_column));
     }

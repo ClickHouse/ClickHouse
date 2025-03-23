@@ -336,9 +336,6 @@ def test_backup_from_s3_to_s3_disk_native_copy(storage_policy, to_disk):
     assert backup_events["S3CopyObject"] > 0
     assert restore_events["S3CopyObject"] > 0
 
-    # BACKUP shouldn't download any files from S3 except ".lock" file.
-    assert backup_events["S3GetObject"] == backup_events["BackupLockFileReads"]
-
 
 def test_backup_to_s3():
     storage_policy = "default"
@@ -542,11 +539,10 @@ def test_backup_with_fs_cache(
     # print(f"restore_events = {restore_events}")
 
     # BACKUP never updates the filesystem cache but it may read it if `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` allows that.
-    # And if allow_s3_native_copy == True then BACKUP shouldn't read MergeTree parts from S3 and thus it shouldn't request any files from the file cache.
-    if allow_backup_read_cache and in_cache_initially and not allow_s3_native_copy:
+    if allow_backup_read_cache and in_cache_initially:
         assert backup_events["CachedReadBufferReadFromCacheBytes"] > 0
         assert not "CachedReadBufferReadFromSourceBytes" in backup_events
-    elif allow_backup_read_cache and not allow_s3_native_copy:
+    elif allow_backup_read_cache:
         assert not "CachedReadBufferReadFromCacheBytes" in backup_events
         assert backup_events["CachedReadBufferReadFromSourceBytes"] > 0
     else:

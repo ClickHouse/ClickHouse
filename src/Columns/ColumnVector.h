@@ -205,8 +205,6 @@ public:
         res = (*this)[n];
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
-
     UInt64 get64(size_t n) const override;
 
     Float64 getFloat64(size_t n) const override;

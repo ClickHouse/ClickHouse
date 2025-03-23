@@ -12,6 +12,7 @@ class JoiningTransform;
 class ExpressionStep : public ITransformingStep
 {
 public:
+
     explicit ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_);
     String getName() const override { return "Expression"; }
 
@@ -25,8 +26,6 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
-
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:

@@ -40,7 +40,7 @@ function check_span()
     fi
 
     ret=$(${CLICKHOUSE_CLIENT} -q "
-        SYSTEM FLUSH LOGS opentelemetry_span_log;
+        SYSTEM FLUSH LOGS;
 
         SELECT count()
         FROM system.opentelemetry_span_log

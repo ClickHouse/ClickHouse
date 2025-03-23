@@ -1,15 +1,7 @@
 ---
-description: 'System table containing information about Refreshable Materialized Views.'
-keywords: ['system table', 'view_refreshes']
-slug: /operations/system-tables/view_refreshes
-title: 'system.view_refreshes'
+slug: /en/operations/system-tables/view_refreshes
 ---
-
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-# system.view_refreshes
-
-<SystemTableCloud/>
+# view_refreshes
 
 Information about [Refreshable Materialized Views](../../sql-reference/statements/create/view.md#refreshable-materialized-view). Contains all refreshable materialized views, regardless of whether there's a refresh in progress or not.
 

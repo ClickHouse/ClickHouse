@@ -1,7 +1,6 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -73,8 +72,7 @@ StoragePtr StorageFactory::get(
     const ConstraintsDescription & constraints,
     LoadingStrictnessLevel mode) const
 {
-    String name;
-    String comment;
+    String name, comment;
 
     ASTStorage * storage_def = query.storage;
 
@@ -136,10 +134,6 @@ StoragePtr StorageFactory::get(
             if (name == "View")
             {
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE View is not supported, use CREATE VIEW statement");
-            }
-            if (name == "Loop")
-            {
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE Loop is not supported, use Loop as a table function only");
             }
             if (name == "MaterializedView")
             {

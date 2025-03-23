@@ -3,7 +3,10 @@
 #include "ReplicatedMergeTreeMutationEntry.h"
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/Exception.h>
+#include <IO/ReadHelpers.h>
 
+#include <map>
 #include <optional>
 
 
@@ -11,6 +14,11 @@ namespace DB
 {
 class ZooKeeperWithFaultInjection;
 using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// A class that is used for locking a block number in a partition.
 /// Before 22.11 it used to create a secondary ephemeral node in `temp_path` with "abandonable_lock-" prefix
@@ -20,8 +28,7 @@ class EphemeralLockInZooKeeper : public boost::noncopyable
 {
     template<typename T>
     friend std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-        const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path,
-        const std::optional<String> & znode_data);
+        const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path);
 
 protected:
     EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, const String & conflict_path_ = "");
@@ -68,7 +75,11 @@ public:
     }
 
     /// Parse the number at the end of the path.
-    UInt64 getNumber() const;
+    UInt64 getNumber() const
+    {
+        checkCreated();
+        return parse<UInt64>(path.c_str() + path_prefix.size(), path.size() - path_prefix.size());
+    }
 
     void unlock();
 
@@ -83,7 +94,11 @@ public:
         zookeeper = nullptr;
     }
 
-    void checkCreated() const;
+    void checkCreated() const
+    {
+        if (!isLocked())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "EphemeralLock is not created");
+    }
 
     ~EphemeralLockInZooKeeper();
 
@@ -96,8 +111,7 @@ private:
 
 template<typename T>
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path,
-    const std::optional<String> & znode_data);
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path);
 
 /// Acquires block number locks in all partitions.
 class EphemeralLocksInAllPartitions : public boost::noncopyable

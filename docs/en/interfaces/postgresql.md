@@ -1,9 +1,7 @@
 ---
-description: 'Documentation for the PostgreSQL wire protocol interface in ClickHouse'
-sidebar_label: 'PostgreSQL Interface'
+slug: /en/interfaces/postgresql
 sidebar_position: 20
-slug: /interfaces/postgresql
-title: 'PostgreSQL Interface'
+sidebar_label: PostgreSQL Interface
 ---
 
 # PostgreSQL Interface
@@ -24,7 +22,7 @@ Startup your ClickHouse server and look for a log message similar to the followi
 {} <Information> Application: Listening for PostgreSQL compatibility protocol: 127.0.0.1:9005
 ```
 
-## Connect psql to ClickHouse {#connect-psql-to-clickhouse}
+## Connect psql to ClickHouse
 
 The following command demonstrates how to connect the PostgreSQL client `psql` to ClickHouse:
 
@@ -60,7 +58,7 @@ And that's it! You now have a PostgreSQL client connected to ClickHouse, and all
 The PostgreSQL protocol currently only supports plain-text passwords.
 :::
 
-## Using SSL {#using-ssl}
+## Using SSL
 
 If you have SSL/TLS configured on your ClickHouse instance, then `postgresql_port` will use the same settings (the port is shared for both secure and insecure clients).
 

@@ -49,6 +49,7 @@ export CLICKHOUSE_BENCHMARK=${CLICKHOUSE_BENCHMARK:="$CLICKHOUSE_BENCHMARK_BINAR
 # others
 export CLICKHOUSE_OBFUSCATOR=${CLICKHOUSE_OBFUSCATOR:="${CLICKHOUSE_BINARY}-obfuscator"}
 export CLICKHOUSE_COMPRESSOR=${CLICKHOUSE_COMPRESSOR:="${CLICKHOUSE_BINARY}-compressor"}
+export CLICKHOUSE_GIT_IMPORT=${CLICKHOUSE_GIT_IMPORT="${CLICKHOUSE_BINARY}-git-import"}
 
 export CLICKHOUSE_CONFIG_DIR=${CLICKHOUSE_CONFIG_DIR:="/etc/clickhouse-server"}
 export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:="/etc/clickhouse-server/config.xml"}
@@ -140,7 +141,7 @@ export MYSQL_CLIENT_CLICKHOUSE_USER=${MYSQL_CLIENT_CLICKHOUSE_USER:="default"}
 [ -n "${CLICKHOUSE_HOST:-}" ] && MYSQL_CLIENT_OPT0+=" --host ${CLICKHOUSE_HOST} "
 [ -n "${CLICKHOUSE_PORT_MYSQL:-}" ] && MYSQL_CLIENT_OPT0+=" --port ${CLICKHOUSE_PORT_MYSQL} "
 [ -n "${CLICKHOUSE_DATABASE:-}" ] && MYSQL_CLIENT_OPT0+=" --database ${CLICKHOUSE_DATABASE} "
-MYSQL_CLIENT_OPT0+=" --user ${MYSQL_CLIENT_CLICKHOUSE_USER} --no-auto-rehash "
+MYSQL_CLIENT_OPT0+=" --user ${MYSQL_CLIENT_CLICKHOUSE_USER} "
 export MYSQL_CLIENT_OPT="${MYSQL_CLIENT_OPT0:-} ${MYSQL_CLIENT_OPT:-}"
 export MYSQL_CLIENT=${MYSQL_CLIENT:="$MYSQL_CLIENT_BINARY ${MYSQL_CLIENT_OPT:-}"}
 
@@ -156,7 +157,7 @@ function clickhouse_client_removed_host_parameter()
 function wait_for_queries_to_finish()
 {
     local max_tries="${1:-20}"
-    # Wait for all queries to finish (query may still be running if a thread is killed by timeout)
+    # Wait for all queries to finish (query may still be running if thread is killed by timeout)
     num_tries=0
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%'") -ne 0 ]]; do
         sleep 0.5;

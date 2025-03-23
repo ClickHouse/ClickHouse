@@ -59,7 +59,6 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override;
     StringRef getDataAt(size_t n) const override;
@@ -122,10 +121,8 @@ public:
     ColumnCheckpointPtr getCheckpoint() const override;
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
-    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
-    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
-    void forEachSubcolumn(ColumnCallback callback) const override;
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
+    void forEachSubcolumn(MutableColumnCallback callback) override;
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
     bool isCollationSupported() const override;
     ColumnPtr compress(bool force_compression) const override;

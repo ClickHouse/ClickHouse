@@ -1,14 +1,11 @@
 ---
-description: 'Guide to configuring secure SSL/TLS communication between ClickHouse
-  and ZooKeeper'
-sidebar_label: 'Secured Communication with Zookeeper'
+slug: /en/operations/ssl-zookeeper
 sidebar_position: 45
-slug: /operations/ssl-zookeeper
-title: 'Optional secured communication between ClickHouse and Zookeeper'
+sidebar_label: Secured Communication with Zookeeper
 ---
 
 # Optional secured communication between ClickHouse and Zookeeper
-import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_automated.md';
 
 <SelfManaged />
 

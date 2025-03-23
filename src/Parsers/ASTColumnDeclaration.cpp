@@ -71,7 +71,7 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
     if (type)
     {
         ostr << ' ';
-        type->format(ostr, format_settings, state, frame);
+        type->formatImpl(ostr, format_settings, state, frame);
     }
 
     if (null_modifier)
@@ -86,44 +86,44 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
         if (!ephemeral_default)
         {
             ostr << ' ';
-            default_expression->format(ostr, format_settings, state, frame);
+            default_expression->formatImpl(ostr, format_settings, state, frame);
         }
     }
 
     if (comment)
     {
         ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COMMENT" << (format_settings.hilite ? hilite_none : "") << ' ';
-        comment->format(ostr, format_settings, state, frame);
+        comment->formatImpl(ostr, format_settings, state, frame);
     }
 
     if (codec)
     {
         ostr << ' ';
-        codec->format(ostr, format_settings, state, frame);
+        codec->formatImpl(ostr, format_settings, state, frame);
     }
 
     if (statistics_desc)
     {
         ostr << ' ';
-        statistics_desc->format(ostr, format_settings, state, frame);
+        statistics_desc->formatImpl(ostr, format_settings, state, frame);
     }
 
     if (ttl)
     {
         ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "TTL" << (format_settings.hilite ? hilite_none : "") << ' ';
-        ttl->format(ostr, format_settings, state, frame);
+        ttl->formatImpl(ostr, format_settings, state, frame);
     }
 
     if (collation)
     {
         ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COLLATE" << (format_settings.hilite ? hilite_none : "") << ' ';
-        collation->format(ostr, format_settings, state, frame);
+        collation->formatImpl(ostr, format_settings, state, frame);
     }
 
     if (settings)
     {
         ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "SETTINGS" << (format_settings.hilite ? hilite_none : "") << ' ' << '(';
-        settings->format(ostr, format_settings, state, frame);
+        settings->formatImpl(ostr, format_settings, state, frame);
         ostr << ')';
     }
 }

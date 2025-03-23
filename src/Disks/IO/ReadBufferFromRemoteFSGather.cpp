@@ -22,14 +22,12 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
     const ReadSettings & settings_,
-    std::shared_ptr<FilesystemCacheLog> cache_log_,
     bool use_external_buffer_,
     size_t buffer_size)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : buffer_size, nullptr, 0)
     , settings(settings_)
     , blobs_to_read(blobs_to_read_)
     , read_buffer_creator(std::move(read_buffer_creator_))
-    , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
     , query_id(CurrentThread::getQueryId())
     , use_external_buffer(use_external_buffer_)
     , with_file_cache(settings.enable_filesystem_cache)
@@ -41,11 +39,6 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
 
 SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object, size_t start_offset)
 {
-    if (current_buf && !with_file_cache)
-    {
-        appendUncachedReadInfo();
-    }
-
     current_object = object;
     auto buf = read_buffer_creator(/* restricted_seek */true, object);
 
@@ -53,26 +46,6 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
         buf->setReadUntilPosition(read_until_position - start_offset);
 
     return buf;
-}
-
-void ReadBufferFromRemoteFSGather::appendUncachedReadInfo()
-{
-    if (!cache_log || current_object.remote_path.empty())
-        return;
-
-    FilesystemCacheLogElement elem
-    {
-        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-        .query_id = query_id,
-        .source_file_path = current_object.remote_path,
-        .file_segment_range = { 0, current_object.bytes_size },
-        .cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
-        .file_segment_key = {},
-        .file_segment_offset = {},
-        .file_segment_size = current_object.bytes_size,
-        .read_from_cache_attempted = false,
-    };
-    cache_log->add(std::move(elem));
 }
 
 void ReadBufferFromRemoteFSGather::initialize()
@@ -218,12 +191,6 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
     return file_offset_of_buffer_end;
 }
 
-ReadBufferFromRemoteFSGather::~ReadBufferFromRemoteFSGather()
-{
-    if (!with_file_cache)
-        appendUncachedReadInfo();
-}
-
 bool ReadBufferFromRemoteFSGather::isSeekCheap()
 {
     return !current_buf || current_buf->isSeekCheap();
@@ -237,19 +204,11 @@ bool ReadBufferFromRemoteFSGather::isContentCached(size_t offset, size_t size)
     if (current_buf)
     {
         /// offset should be adjusted the same way as we do it in initialize()
-        for (size_t i = 0; i < blobs_to_read.size(); ++i)
-        {
-            const auto & blob = blobs_to_read[i];
-            if (i == current_buf_idx)
-            {
-                if (offset + size <= blob.bytes_size)
-                    return current_buf->isContentCached(offset, size);
-                return false;
-            }
-            if (offset < blob.bytes_size)
-                return false;
-            offset -= blob.bytes_size;
-        }
+        for (const auto & blob : blobs_to_read)
+            if (offset >= blob.bytes_size)
+                offset -= blob.bytes_size;
+
+        return current_buf->isContentCached(offset, size);
     }
 
     return false;

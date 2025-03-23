@@ -1,16 +1,13 @@
 ---
-description: 'This engine provides a read-only integration with existing Apache Iceberg
-  tables in Amazon S3, Azure, HDFS and locally stored tables.'
-sidebar_label: 'Iceberg'
+slug: /en/engines/table-engines/integrations/iceberg
 sidebar_position: 90
-slug: /engines/table-engines/integrations/iceberg
-title: 'Iceberg Table Engine'
+sidebar_label: Iceberg
 ---
 
 # Iceberg Table Engine
 
 :::warning 
-We recommend using the [Iceberg Table Function](/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
+We recommend using the [Iceberg Table Function](/docs/en/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
 
 The Iceberg Table Engine is available but may have limitations. ClickHouse wasn't originally designed to support tables with externally changing schemas, which can affect the functionality of the Iceberg Table Engine. As a result, some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
 
@@ -19,7 +16,7 @@ For optimal compatibility, we suggest using the Iceberg Table Function while we 
 
 This engine provides a read-only integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 
-## Create Table {#create-table}
+## Create Table
 
 Note that the Iceberg table must already exist in the storage, this command does not take DDL parameters to create a new table.
 
@@ -84,14 +81,10 @@ Currently, it is not possible to change nested structures or the types of elemen
 
 To read a table where the schema has changed after its creation with dynamic schema inference, set allow_dynamic_metadata_for_data_lakes = true when creating the table.
 
-**Partition Pruning**
-
-ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. Now it works with only identity transforms and time-based transforms (hour, day, month, year). To enable partition pruning, set `use_iceberg_partition_pruning = 1`.
-
 ### Data cache {#data-cache}
 
 `Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).
 
-## See also {#see-also}
+## See also
 
-- [iceberg table function](/sql-reference/table-functions/iceberg.md)
+- [iceberg table function](/docs/en/sql-reference/table-functions/iceberg.md)

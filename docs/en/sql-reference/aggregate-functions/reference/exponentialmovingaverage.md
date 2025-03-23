@@ -1,12 +1,10 @@
 ---
-description: 'Calculates the exponential moving average of values for the determined
-  time.'
+slug: /en/sql-reference/aggregate-functions/reference/exponentialMovingAverage
 sidebar_position: 132
-slug: /sql-reference/aggregate-functions/reference/exponentialMovingAverage
-title: 'exponentialMovingAverage'
+title: exponentialMovingAverage
 ---
 
-## exponentialMovingAverage {#exponentialmovingaverage}
+## exponentialMovingAverage
 
 Calculates the exponential moving average of values for the determined time.
 
@@ -21,7 +19,7 @@ Each `value` corresponds to the determinate `timeunit`. The half-life `x` is the
 **Arguments**
 
 - `value` — Value. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
-- `timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md). Timeunit is not timestamp (seconds), it's -- an index of the time interval. Can be calculated using [intDiv](/sql-reference/functions/arithmetic-functions#intdiv).
+- `timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md). Timeunit is not timestamp (seconds), it's -- an index of the time interval. Can be calculated using [intDiv](../../functions/arithmetic-functions.md#intdiva-b).
 
 **Parameters**
 
@@ -31,7 +29,7 @@ Each `value` corresponds to the determinate `timeunit`. The half-life `x` is the
 
 - Returns an [exponentially smoothed moving average](https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average) of the values for the past `x` time at the latest point of time.
 
-Type: [Float64](/sql-reference/data-types/float).
+Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 
 **Examples**
 

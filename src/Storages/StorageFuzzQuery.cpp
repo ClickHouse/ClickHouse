@@ -1,5 +1,7 @@
 #include <Storages/StorageFuzzQuery.h>
 
+#include <optional>
+#include <unordered_set>
 #include <Columns/ColumnString.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -7,7 +9,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
-#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {

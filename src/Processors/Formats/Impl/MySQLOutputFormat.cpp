@@ -8,8 +8,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 
-#include <Processors/Port.h>
-
 namespace DB
 {
 
@@ -85,7 +83,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
         }
     }
 
-    flushImpl();
+    flush();
 }
 
 void MySQLOutputFormat::finalizeImpl()
@@ -133,7 +131,7 @@ void MySQLOutputFormat::finalizeImpl()
     }
 }
 
-void MySQLOutputFormat::flushImpl()
+void MySQLOutputFormat::flush()
 {
     packet_endpoint->out->next();
 }
@@ -145,7 +143,6 @@ void registerOutputFormatMySQLWire(FormatFactory & factory)
         [](WriteBuffer & buf,
            const Block & sample,
            const FormatSettings & settings) { return std::make_shared<MySQLOutputFormat>(buf, sample, settings); });
-    factory.markOutputFormatNotTTYFriendly("MySQLWire");
 }
 
 }

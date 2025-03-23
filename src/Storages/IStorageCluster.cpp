@@ -24,10 +24,8 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDictionary.h>
 
-#include <algorithm>
 #include <memory>
 #include <string>
-
 
 namespace DB
 {
@@ -37,9 +35,6 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
-    extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsString cluster_for_parallel_replicas;
-    extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
 
 IStorageCluster::IStorageCluster(
@@ -188,45 +183,29 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     auto new_context = updateSettings(context->getSettingsRef());
     const auto & current_settings = new_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
-
-    auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
-    if (current_settings[Setting::max_parallel_replicas] > 1)
-        max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
-
     for (const auto & shard_info : cluster->getShardsInfo())
     {
-        if (pipes.size() >= max_replicas_to_use)
-            break;
+        auto try_results = shard_info.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY);
+        for (auto & try_result : try_results)
+        {
+            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+                std::vector<IConnectionPool::Entry>{try_result},
+                queryToString(query_to_send),
+                getOutputHeader(),
+                new_context,
+                /*throttler=*/nullptr,
+                scalars,
+                Tables(),
+                processed_stage,
+                extension);
 
-        /// We're taking all replicas as shards,
-        /// so each shard will have only one address to connect to.
-        auto try_results = shard_info.pool->getMany(
-            timeouts,
-            current_settings,
-            PoolMode::GET_ONE,
-            {},
-            /*skip_unavailable_endpoints=*/true);
-
-        if (try_results.empty())
-            continue;
-
-        auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::vector<IConnectionPool::Entry>{try_results.front()},
-            queryToString(query_to_send),
-            getOutputHeader(),
-            new_context,
-            /*throttler=*/nullptr,
-            scalars,
-            Tables(),
-            processed_stage,
-            extension);
-
-        remote_query_executor->setLogger(log);
-        pipes.emplace_back(std::make_shared<RemoteSource>(
-            remote_query_executor,
-            add_agg_info,
-            current_settings[Setting::async_socket_for_remote],
-            current_settings[Setting::async_query_sending_for_remote]));
+            remote_query_executor->setLogger(log);
+            pipes.emplace_back(std::make_shared<RemoteSource>(
+                remote_query_executor,
+                add_agg_info,
+                current_settings[Setting::async_socket_for_remote],
+                current_settings[Setting::async_query_sending_for_remote]));
+        }
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

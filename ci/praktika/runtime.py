@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from .cache import Cache
 from .settings import Settings
@@ -16,9 +16,7 @@ class RunConfig(MetaClasses.Serializable):
     cache_success_base64: List[str]
     cache_artifacts: Dict[str, Cache.CacheRecord]
     cache_jobs: Dict[str, Cache.CacheRecord]
-    filtered_jobs: Dict[str, str]
     sha: str
-    custom_data: Dict[str, Any]
 
     @classmethod
     def from_dict(cls, obj):
@@ -41,8 +39,3 @@ class RunConfig(MetaClasses.Serializable):
         return (
             f"{Settings.TEMP_DIR}/workflow_config_{Utils.normalize_string(name)}.json"
         )
-
-    def set_job_as_filtered(self, job_name, reason):
-        self.cache_success.append(job_name)
-        self.cache_success_base64.append(Utils.to_base64(job_name))
-        self.filtered_jobs[job_name] = reason

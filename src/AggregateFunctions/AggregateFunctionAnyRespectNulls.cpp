@@ -177,7 +177,7 @@ public:
         if (d.status == Data::Status::SetOther)
             to.insert(d.value);
         else
-            this->result_type->insertDefaultInto(to);
+            to.insertDefault();
     }
 
     AggregateFunctionPtr getOwnNullAdapter(
