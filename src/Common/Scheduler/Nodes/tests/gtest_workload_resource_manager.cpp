@@ -683,6 +683,53 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingWeights)
     t.wait();
 }
 
+TEST(SchedulerWorkloadResourceManager, CPUSchedulingPriorities)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 4");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all SETTINGS priority = 1"); // lower priority
+    t.query("CREATE WORKLOAD leader IN all");
+
+    auto leader = std::make_shared<TestQuery>(t);
+    std::vector<TestQueryPtr> queries;
+    for (int query = 0; query < 2; query++)
+        queries.push_back(std::make_shared<TestQuery>(t));
+
+    // Acquire all slots to create overloaded state
+    leader->start("leader", 4);
+    leader->waitStartedThreads(4);
+
+    // One of queries will be the first, but we do not case which one
+    queries[0]->start("A", 10);
+    queries[1]->start("B", 10);
+
+    // Make sure requests are enqueued and release all the slots
+    queries[0]->waitEnqueued();
+    queries[1]->waitEnqueued();
+    leader.reset();
+
+    queries[0]->waitStartedThreads(4);
+    queries[0]->finishThread(3);
+    queries[0]->waitStartedThreads(7);
+    queries[0]->finishThread(3);
+    queries[0]->waitStartedThreads(10);
+    queries[0]->finishThread(3);
+    queries[1]->waitStartedThreads(3);
+    queries[0]->finishThread(1);
+    queries[1]->waitStartedThreads(4);
+    queries[1]->finishThread(3);
+    queries[1]->waitStartedThreads(7);
+    queries[1]->finishThread(3);
+    queries[1]->waitStartedThreads(10);
+
+    queries.clear();
+
+    t.wait();
+}
+
 TEST(SchedulerWorkloadResourceManager, CPUSchedulingIndependentPools)
 {
     std::barrier sync_start(2);
