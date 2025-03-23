@@ -11,10 +11,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void ConditionSelectivityEstimator::extractOperators(const RPNBuilderTreeNode & node, const String & qualified_column_name, std::vector<std::pair<String, Field>> & result) const
+/// This function tries to extract operators from the expression.
+/// It supports a conjunction of simple comparison conditions (e.g. (col < val1) and (col > val2)).
+/// The result is a vector of operators, each in a form of operator name and constant value. For the condition above it would be [{"less",val1},{"greater"},val2].
+bool ConditionSelectivityEstimator::extractOperators(const RPNBuilderTreeNode & node, const String & qualified_column_name, std::vector<std::pair<String, Field>> & result) const
 {
     if (!node.isFunction())
-        return;
+        return false;
 
     auto function_node = node.toFunctionNode();
     String function_name = function_node.getFunctionName();
@@ -22,13 +25,14 @@ void ConditionSelectivityEstimator::extractOperators(const RPNBuilderTreeNode & 
     if (function_name == "and")
     {
         for (size_t i = 0; i < function_node.getArgumentsSize(); ++i)
-            extractOperators(function_node.getArgumentAt(i), qualified_column_name, result);
+            if (!extractOperators(function_node.getArgumentAt(i), qualified_column_name, result))
+                return false;
 
-        return;
+        return true;
     }
 
     if (function_node.getArgumentsSize() != 2)
-        return;
+        return false;
 
     auto lhs_argument = function_node.getArgumentAt(0);
     auto rhs_argument = function_node.getArgumentAt(1);
@@ -66,12 +70,13 @@ void ConditionSelectivityEstimator::extractOperators(const RPNBuilderTreeNode & 
     else if (rhs_argument_is_column)
         maybe_constant_node = &lhs_argument;
     else
-        return;
+        return false;
 
     if (!try_get_constant_from_arg(maybe_constant_node, non_column_argument_is_constant))
-        return;
+        return false;
 
     result.emplace_back(std::make_pair(function_name, output_value));
+    return true;
 }
 
 /// second return value represents how many columns in the node.
@@ -132,7 +137,9 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
         dummy = true;
 
     std::vector<std::pair<String, Field>> operators;
-    extractOperators(node, result.first, operators);
+    /// It means that we weren't able to extract all the operators involved in the condition, so we can't estimate the number of rows.
+    if (!extractOperators(node, result.first, operators))
+        return default_unknown_cond_factor * total_rows;
 
     Float64 curr_rows = total_rows;
     std::optional<Float64> curr_min = {};

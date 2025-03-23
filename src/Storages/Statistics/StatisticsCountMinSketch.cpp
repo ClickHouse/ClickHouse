@@ -46,7 +46,7 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val, std::optional
 
     if (data_type->isValueRepresentedByNumber())
     {
-        calculated_val = StatisticsUtils::tryConvertToFloat64(val, data_type);
+        calculated_val = StatisticsUtils::tryConvertToFloat64(val_converted, data_type);
         return sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory());
     }
 
