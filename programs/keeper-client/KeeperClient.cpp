@@ -143,7 +143,7 @@ std::vector<String> KeeperClient::getCompletions(const String & prefix) const
     try
     {
         for (const auto & child : zookeeper->getChildren(parent_path))
-            result.push_back(parent_prefix + child);
+            result.push_back(fmt::format("\"{}{}\"", parent_prefix, child));
     }
     catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
 
