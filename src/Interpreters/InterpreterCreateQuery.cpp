@@ -2038,7 +2038,7 @@ void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create) con
                                 entity_name, setting_name, num_limit, attached_count);
         };
 
-    String engine_name = create.storage && create.storage->engine ? create.storage->engine->name : ""; 
+    String engine_name = create.storage && create.storage->engine ? create.storage->engine->name : "";
     bool is_replicated = engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree");
 
     if (create.is_dictionary)
@@ -2046,7 +2046,7 @@ void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create) con
     else if (create.isView())
         check_and_throw(ServerSetting::max_view_num_to_throw, CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
     else if (is_replicated)
-    check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
+        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
     else
         check_and_throw(ServerSetting::max_table_num_to_throw, CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
 }
