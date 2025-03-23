@@ -97,8 +97,11 @@ String KeeperClient::executeFourLetterCommand(const String & command)
     return result;
 }
 
-std::vector<String> KeeperClient::getCompletions(const String & prefix) const
+std::vector<String> KeeperClient::getCompletions(String prefix) const
 {
+    /// Append trailing double quote to pass the parser correctly
+    if (!prefix.ends_with('"'))
+        prefix.append("\"");
     Tokens tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
     IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
