@@ -16,7 +16,7 @@ select '01547_query_log_current_database' from system.one format Null;
 set log_queries=0;
 set log_query_threads=0;
 
-system flush logs query_log, query_thread_log;
+system flush logs;
 
 select count()
 from system.query_log

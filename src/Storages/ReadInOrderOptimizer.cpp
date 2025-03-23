@@ -7,9 +7,8 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/TreeCNFConverter.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>

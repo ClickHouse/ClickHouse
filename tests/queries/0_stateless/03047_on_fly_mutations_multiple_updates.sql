@@ -1,5 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel
--- no-parallel: SYSTEM DROP MARK CACHE is used.
+-- Tags: no-random-merge-tree-settings, no-random-settings
 
 DROP TABLE IF EXISTS t_lightweight_mut_5;
 
@@ -25,7 +24,7 @@ SELECT s2 FROM t_lightweight_mut_5 ORDER BY id;
 SYSTEM DROP MARK CACHE;
 SELECT s1, s2 FROM t_lightweight_mut_5 ORDER BY id;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT query, ProfileEvents['FileOpen'] FROM system.query_log
 WHERE

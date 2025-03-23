@@ -1,12 +1,9 @@
 #pragma once
 
-#include <base/types.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
-
-class ASTLiteral;
 
 template <typename T>
 T checkAndGetLiteralArgument(const ASTPtr & arg, const String & arg_name);

@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Columns/FilterDescription.h>
 #include <Core/ColumnNumbers.h>
-#include <Interpreters/ActionsMatcher.h>
+#include <Columns/FilterDescription.h>
+#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/ArrayJoin.h>
-#include <Interpreters/ExpressionActionsSettings.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
+#include <Interpreters/JoinUtils.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
@@ -38,27 +38,12 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
-class Set;
-using SetPtr = std::shared_ptr<Set>;
-
-class QueryPlan;
-
-struct TemporaryTableHolder;
-using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
-using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
-
-namespace ExpressionActionsChainSteps
-{
-struct Step;
-}
-
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
 {
-    ExpressionAnalyzerData();
     ~ExpressionAnalyzerData();
 
     PreparedSetsPtr prepared_sets;
@@ -416,7 +401,7 @@ private:
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
-    void appendSelectSkipWindowExpressions(ExpressionActionsChainSteps::Step & step, ASTPtr const & node);
+    void appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node);
 
     void appendGroupByModifiers(ActionsDAG & before_aggregation, ExpressionActionsChain & chain, bool only_types);
 

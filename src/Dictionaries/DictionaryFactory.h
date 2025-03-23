@@ -2,6 +2,8 @@
 
 #include <Interpreters/Context_fwd.h>
 #include "IDictionary.h"
+#include "registerDictionaries.h"
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace Poco

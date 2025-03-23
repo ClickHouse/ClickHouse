@@ -5,7 +5,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
 
@@ -69,6 +69,7 @@ public:
         /// If we connect to replicas lazily.
         /// (When there is a local replica with big delay).
         bool lazy = false;
+        time_t local_delay = 0;
         AdditionalShardFilterGenerator shard_filter_generator{};
     };
 

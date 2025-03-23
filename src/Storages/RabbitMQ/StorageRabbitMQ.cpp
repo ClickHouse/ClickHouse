@@ -1,14 +1,11 @@
 #include <amqpcpp.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -36,11 +33,8 @@
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/RemoteHostFilter.h>
 
 #include <base/range.h>
-
-#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -134,7 +128,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , queue_base(getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_queue_base]))
         , queue_settings_list(parseSettings(getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_queue_settings_list])))
         , max_rows_per_message((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_max_rows_per_message])
-        , log(getLogger("StorageRabbitMQ (" + table_id_.getFullTableName() + ")"))
+        , log(getLogger("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , persistent((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_persistent].value)
         , use_user_setup((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_queue_consume].value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
@@ -191,11 +185,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         SSL_library_init();
 
     if (!columns_.getMaterialized().empty() || !columns_.getAliases().empty() || !columns_.getDefaults().empty() || !columns_.getEphemeral().empty())
-    {
-        context_->addOrUpdateWarningMessage(
-            Context::WarningType::RABBITMQ_UNSUPPORTED_COLUMNS,
-            PreformattedMessage::create("RabbitMQ table engine doesn't support ALIAS, DEFAULT or MATERIALIZED columns. They will be ignored and filled with default values"));
-    }
+        context_->addWarningMessage("RabbitMQ table engine doesn't support ALIAS, DEFAULT or MATERIALIZED columns. They will be ignored and filled with default values");
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
@@ -1215,7 +1206,7 @@ bool StorageRabbitMQ::tryStreamToViews()
         write_failed = true;
     }
 
-    LOG_TRACE(log, "Processed {} rows", rows.load());
+    LOG_TRACE(log, "Processed {} rows", rows);
 
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent

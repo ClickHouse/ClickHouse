@@ -5,7 +5,6 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Core/Block.h>
-#include <Core/Block_fwd.h>
 
 #include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
@@ -53,9 +52,7 @@ public:
     using Buckets = std::vector<BucketPtr>;
 
     GraceHashJoin(
-        size_t initial_num_buckets_,
-        size_t max_num_buckets_,
-        std::shared_ptr<TableJoin> table_join_,
+        ContextPtr context_, std::shared_ptr<TableJoin> table_join_,
         const Block & left_sample_block_, const Block & right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         bool any_take_last_row_ = false);
@@ -94,8 +91,6 @@ public:
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
-    void forceSpill() { force_spill = true; }
-
 private:
     void initBuckets();
     /// Create empty join for in-memory processing.
@@ -130,12 +125,12 @@ private:
     Block prepareRightBlock(const Block & block);
 
     LoggerPtr log;
+    ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     Block left_sample_block;
     Block right_sample_block;
     Block output_sample_block;
     bool any_take_last_row;
-    const size_t initial_num_buckets;
     const size_t max_num_buckets;
 
     Names left_key_names;
@@ -153,7 +148,6 @@ private:
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
-    std::atomic<bool> force_spill = false;
 };
 
 }

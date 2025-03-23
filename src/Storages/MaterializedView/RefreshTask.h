@@ -4,8 +4,7 @@
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
 #include <Common/StopToken.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <IO/Progress.h>
+#include <Core/BackgroundSchedulePool.h>
 
 #include <random>
 
@@ -54,7 +53,7 @@ public:
     /// Called at most once.
     void startup();
     /// Permanently disable task scheduling and remove this table from RefreshSet.
-    /// Ok to call multiple times, including in parallel.
+    /// Ok to call multiple times, but not in parallel.
     /// Ok to call even if startup() wasn't called or failed.
     void shutdown();
     /// Call when dropping the table, after shutdown(). Removes coordination znodes if needed.
@@ -66,8 +65,6 @@ public:
     void alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy);
 
     Info getInfo() const;
-
-    bool canCreateOrDropOtherTables() const;
 
     /// Enable task scheduling
     void start();
@@ -159,7 +156,6 @@ public:
         CoordinationZnode znode;
         bool refresh_running;
         ProgressValues progress;
-        std::optional<String> unexpected_error; // refreshing is stopped because of unexpected error
     };
 
 private:
@@ -212,8 +208,6 @@ private:
     {
         /// Refreshes are stopped, e.g. by SYSTEM STOP VIEW.
         bool stop_requested = false;
-        /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
-        std::optional<String> unexpected_error;
         /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
         bool out_of_schedule_refresh_requested = false;
 
@@ -242,7 +236,7 @@ private:
     RefreshSet::Handle set_handle;
 
     /// Calls refreshTask() from background thread.
-    BackgroundSchedulePoolTaskHolder refresh_task;
+    BackgroundSchedulePool::TaskHolder refresh_task;
 
     CoordinationState coordination;
     ExecutionState execution;
@@ -267,8 +261,8 @@ private:
     void refreshTask();
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
-    /// Mutex must be unlocked. Called only from refresh_task. Doesn't throw.
-    std::optional<UUID> executeRefreshUnlocked(bool append, int32_t root_znode_version, std::chrono::system_clock::time_point start_time, const Stopwatch & stopwatch, const String & log_comment, String & out_error_message);
+    /// Mutex must be unlocked. Called only from refresh_task.
+    UUID executeRefreshUnlocked(bool append, int32_t root_znode_version);
 
     /// Assigns dependencies_satisfied_until.
     void updateDependenciesIfNeeded(std::unique_lock<std::mutex> & lock);
@@ -281,7 +275,6 @@ private:
     void removeRunningZnodeIfMine(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
-    void scheduleRefresh(std::lock_guard<std::mutex> & lock);
     void interruptExecution();
     std::chrono::system_clock::time_point currentTime() const;
 };
@@ -304,4 +297,5 @@ struct OwnedRefreshTask
     RefreshTask& operator*() const { return *ptr; }
     explicit operator bool() const { return ptr != nullptr; }
 };
+
 }

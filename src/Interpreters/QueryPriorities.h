@@ -6,17 +6,12 @@
 #include <memory>
 #include <chrono>
 #include <Common/CurrentMetrics.h>
-#include <Common/ProfileEvents.h>
 
 namespace CurrentMetrics
 {
     extern const Metric QueryPreempted;
 }
 
-namespace ProfileEvents
-{
-extern const Event QueryPreempted;
-}
 
 namespace DB
 {
@@ -79,7 +74,6 @@ private:
             return;
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryPreempted};
-        ProfileEvents::increment(ProfileEvents::QueryPreempted);
 
         /// Spurious wakeups are Ok. We allow to wait less than requested.
         condvar.wait_for(lock, timeout);

@@ -1,12 +1,7 @@
 ---
-description: 'System table containing licenses of third-party libraries that are located
-  in the contrib directory of ClickHouse sources.'
-keywords: ['system table', 'licenses']
-slug: /operations/system-tables/licenses
-title: 'system.licenses'
+slug: /en/operations/system-tables/licenses
 ---
-
-# system.licenses
+# licenses
 
 Contains licenses of third-party libraries that are located in the [contrib](https://github.com/ClickHouse/ClickHouse/tree/master/contrib) directory of ClickHouse sources.
 
@@ -19,11 +14,11 @@ Columns:
 
 **Example**
 
-```sql
+``` sql
 SELECT library_name, license_type, license_path FROM system.licenses LIMIT 15
 ```
 
-```text
+``` text
 ┌─library_name───────┬─license_type─┬─license_path────────────────────────┐
 │ aws-c-common       │ Apache       │ /contrib/aws-c-common/LICENSE       │
 │ base64             │ BSD 2-clause │ /contrib/aklomp-base64/LICENSE      │

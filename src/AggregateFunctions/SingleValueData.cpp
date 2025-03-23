@@ -289,7 +289,7 @@ void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_beg
         return;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T>)
     {
         std::optional<T> opt = findExtremeMin(vec.getData().data(), row_begin, row_end);
         if (opt.has_value())
@@ -309,7 +309,7 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
         return;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T>)
     {
         std::optional<T> opt = findExtremeMax(vec.getData().data(), row_begin, row_end);
         if (opt.has_value())
@@ -334,7 +334,7 @@ void SingleValueDataFixed<T>::setSmallestNotNullIf(
     chassert(if_map || null_map);
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -378,7 +378,7 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
     chassert(if_map || null_map);
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -417,7 +417,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T>)
     {
         return findExtremeMinIndex(vec.getData().data(), row_begin, row_end);
     }
@@ -438,7 +438,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T>)
     {
         return findExtremeMaxIndex(vec.getData().data(), row_begin, row_end);
     }
@@ -460,9 +460,8 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    const auto & vec_data = vec.getData();
 
-    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -477,12 +476,12 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 {
                     /// We search for the exact byte representation, not the default floating point equal, otherwise we might not find the value (NaN)
                     static_assert(std::is_pod_v<T>);
-                    if (!null_map[i] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                    if (!null_map[i] && std::memcmp(&vec.getData()[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
                 else
                 {
-                    if (!null_map[i] && vec_data[i] == smallest)
+                    if (!null_map[i] && vec.getData()[i] == smallest)
                         return {i};
                 }
             }
@@ -498,12 +497,12 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 if constexpr (is_floating_point<T>)
                 {
                     static_assert(std::is_pod_v<T>);
-                    if (if_map[i] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                    if (if_map[i] && std::memcmp(&vec.getData()[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
                 else
                 {
-                    if (if_map[i] && vec_data[i] == smallest)
+                    if (if_map[i] && vec.getData()[i] == smallest)
                         return {i};
                 }
             }
@@ -520,12 +519,12 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 if constexpr (is_floating_point<T>)
                 {
                     static_assert(std::is_pod_v<T>);
-                    if (final_flags[i] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                    if (final_flags[i] && std::memcmp(&vec.getData()[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
                 else
                 {
-                    if (final_flags[i] && vec_data[i] == smallest)
+                    if (final_flags[i] && vec.getData()[i] == smallest)
                         return {i};
                 }
             }
@@ -541,7 +540,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
             return std::nullopt;
 
         for (size_t i = index + 1; i < row_end; i++)
-            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec_data[i] < vec_data[index]))
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec.getData()[i] < vec.getData()[index]))
                 index = i;
         return {index};
     }
@@ -555,9 +554,8 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    const auto & vec_data = vec.getData();
 
-    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -571,12 +569,12 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
                 if constexpr (is_floating_point<T>)
                 {
                     static_assert(std::is_pod_v<T>);
-                    if (!null_map[i] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                    if (!null_map[i] && std::memcmp(&vec.getData()[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
                 else
                 {
-                    if (!null_map[i] && vec_data[i] == greatest)
+                    if (!null_map[i] && vec.getData()[i] == greatest)
                         return {i};
                 }
             }
@@ -592,12 +590,12 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
                 if constexpr (is_floating_point<T>)
                 {
                     static_assert(std::is_pod_v<T>);
-                    if (if_map[i] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                    if (if_map[i] && std::memcmp(&vec.getData()[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
                 else
                 {
-                    if (if_map[i] && vec_data[i] == greatest)
+                    if (if_map[i] && vec.getData()[i] == greatest)
                         return {i};
                 }
             }
@@ -614,12 +612,12 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
                 if constexpr (is_floating_point<T>)
                 {
                     static_assert(std::is_pod_v<T>);
-                    if (final_flags[i] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                    if (final_flags[i] && std::memcmp(&vec.getData()[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
                 else
                 {
-                    if (final_flags[i] && vec_data[i] == greatest)
+                    if (final_flags[i] && vec.getData()[i] == greatest)
                         return {i};
                 }
             }
@@ -635,7 +633,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
             return std::nullopt;
 
         for (size_t i = index + 1; i < row_end; i++)
-            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec_data[i] > vec_data[index]))
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec.getData()[i] > vec.getData()[index]))
                 index = i;
         return {index};
     }

@@ -72,7 +72,7 @@ def wait_backup(backup_id):
         sleep_time=5,
     )
 
-    backup_duration = float(
+    backup_duration = int(
         node.query(
             f"SELECT end_time - start_time FROM system.backups WHERE id='{backup_id}'"
         )
@@ -105,13 +105,7 @@ def cancel_backup(backup_id):
             f"SELECT query_duration_ms FROM system.query_log WHERE query_kind='KillQuery' AND query LIKE '%{backup_id}%' AND type='QueryFinish'"
         )
     )
-    # Common failures in CI with 2000:
-    # E       assert 2520 < 2000
-    # E       assert 2210 < 2000
-    # E       assert 2160 < 2000
-    # E       assert 2143 < 2000
-    # E       assert 2495 < 2000
-    assert kill_duration_ms < 4000  # Query must be cancelled quickly
+    assert kill_duration_ms < 2000  # Query must be cancelled quickly
 
 
 # Start restoring from a backup.
@@ -142,7 +136,7 @@ def wait_restore(restore_id):
         sleep_time=5,
     )
 
-    restore_duration = float(
+    restore_duration = int(
         node.query(
             f"SELECT end_time - start_time FROM system.backups WHERE id='{restore_id}'"
         )

@@ -1,10 +1,8 @@
 ---
-description: 'Documentation for floating-point data types in ClickHouse: Float32,
-  Float64, and BFloat16'
-sidebar_label: 'Float32 | Float64 | BFloat16'
+slug: /en/sql-reference/data-types/float
 sidebar_position: 4
-slug: /sql-reference/data-types/float
-title: 'Float32 | Float64 | BFloat16 Types'
+sidebar_label: Float32 | Float64 | BFloat16
+title: Float32 | Float64 | BFloat16 Types
 ---
 
 :::note
@@ -24,7 +22,7 @@ ORDER BY tuple();
 # Generate 1 000 000 random numbers with 2 decimal places and store them as a float and as a decimal
 INSERT INTO float_vs_decimal SELECT round(randCanonical(), 3) AS res, res FROM system.numbers LIMIT 1000000;
 ```
-```sql
+```
 SELECT sum(my_float), sum(my_decimal) FROM float_vs_decimal;
 
 ┌──────sum(my_float)─┬─sum(my_decimal)─┐
@@ -51,13 +49,13 @@ Float types in ClickHouse have the following aliases:
 
 When creating tables, numeric parameters for floating point numbers can be set (e.g. `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), but ClickHouse ignores them.
 
-## Using Floating-point Numbers {#using-floating-point-numbers}
+## Using Floating-point Numbers
 
 - Computations with floating-point numbers might produce a rounding error.
 
 <!-- -->
 
-```sql
+``` sql
 SELECT 1 - 0.9
 
 ┌───────minus(1, 0.9)─┐
@@ -66,10 +64,10 @@ SELECT 1 - 0.9
 ```
 
 - The result of the calculation depends on the calculation method (the processor type and architecture of the computer system).
-- Floating-point calculations might result in numbers such as infinity (`Inf`) and "not-a-number" (`NaN`). This should be taken into account when processing the results of calculations.
+- Floating-point calculations might result in numbers such as infinity (`Inf`) and “not-a-number” (`NaN`). This should be taken into account when processing the results of calculations.
 - When parsing floating-point numbers from text, the result might not be the nearest machine-representable number.
 
-## NaN and Inf {#nan-and-inf}
+## NaN and Inf
 
 In contrast to standard SQL, ClickHouse supports the following categories of floating-point numbers:
 
@@ -77,7 +75,7 @@ In contrast to standard SQL, ClickHouse supports the following categories of flo
 
 <!-- -->
 
-```sql
+``` sql
 SELECT 0.5 / 0
 
 ┌─divide(0.5, 0)─┐
@@ -89,7 +87,7 @@ SELECT 0.5 / 0
 
 <!-- -->
 
-```sql
+``` sql
 SELECT -0.5 / 0
 
 ┌─divide(-0.5, 0)─┐
@@ -101,7 +99,7 @@ SELECT -0.5 / 0
 
 <!-- -->
 
-```sql
+``` sql
 SELECT 0 / 0
 
 ┌─divide(0, 0)─┐
@@ -111,7 +109,7 @@ SELECT 0 / 0
 
 See the rules for `NaN` sorting in the section [ORDER BY clause](../../sql-reference/statements/select/order-by.md).
 
-## BFloat16 {#bfloat16}
+## BFloat16
 
 `BFloat16` is a 16-bit floating point data type with 8-bit exponent, sign, and 7-bit mantissa. 
 It is useful for machine learning and AI applications.

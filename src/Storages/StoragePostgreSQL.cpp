@@ -88,7 +88,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     , remote_table_schema(remote_table_schema_)
     , on_conflict(on_conflict_)
     , pool(std::move(pool_))
-    , log(getLogger("StoragePostgreSQL (" + table_id_.getFullTableName() + ")"))
+    , log(getLogger("StoragePostgreSQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -354,13 +354,19 @@ public:
         if (nested_type->isNullable())
             nested_type = static_cast<const DataTypeNullable *>(nested_type.get())->getNestedType();
 
+        /// UUIDs inside arrays are expected to be unquoted in PostgreSQL.
+        const bool quoted = !isUUID(nested_type);
+
         writeChar('{', ostr);
         for (size_t i = 0, size = array_field.size(); i < size; ++i)
         {
             if (i != 0)
                 writeChar(',', ostr);
 
-            serialization->serializeText(nested_column, i, ostr, settings);
+            if (quoted)
+                serialization->serializeTextQuoted(nested_column, i, ostr, settings);
+            else
+                serialization->serializeText(nested_column, i, ostr, settings);
         }
         writeChar('}', ostr);
     }

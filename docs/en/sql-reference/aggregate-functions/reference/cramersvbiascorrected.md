@@ -1,8 +1,6 @@
 ---
-description: 'Calculates Cramer''s V, but uses a bias correction.'
+slug: /en/sql-reference/aggregate-functions/reference/cramersvbiascorrected
 sidebar_position: 128
-slug: /sql-reference/aggregate-functions/reference/cramersvbiascorrected
-title: 'cramersVBiasCorrected'
 ---
 
 # cramersVBiasCorrected
@@ -11,7 +9,7 @@ Cramer's V is a measure of association between two columns in a table. The resul
 
 **Syntax**
 
-```sql
+``` sql
 cramersVBiasCorrected(column1, column2)
 ```
 
@@ -32,7 +30,7 @@ The following two columns being compared below have a small association with eac
 
 Query:
 
-```sql
+``` sql
 SELECT
     cramersV(a, b),
     cramersVBiasCorrected(a ,b)

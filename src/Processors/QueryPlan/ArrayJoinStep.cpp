@@ -3,8 +3,10 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/ArrayJoinTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 namespace DB

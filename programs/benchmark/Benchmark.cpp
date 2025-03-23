@@ -13,7 +13,6 @@
 #include <Common/ThreadPool.h>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <base/defines.h>
 #include <boost/program_options.hpp>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Exception.h>
@@ -225,8 +224,7 @@ private:
     ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
-    std::mutex mutex;
-    AutoFinalizedWriteBuffer<WriteBufferFromFileDescriptor> log TSA_GUARDED_BY(mutex) {STDERR_FILENO};
+    AutoFinalizedWriteBuffer<WriteBufferFromFileDescriptor> log{STDERR_FILENO};
 
     std::atomic<size_t> consecutive_errors{0};
 
@@ -276,6 +274,8 @@ private:
     Stopwatch total_watch;
     Stopwatch delay_watch;
 
+    std::mutex mutex;
+
     ThreadPool pool;
 
     void readQueries()
@@ -303,15 +303,12 @@ private:
         }
 
 
-        std::lock_guard lock(mutex);
         log << "Loaded " << queries.size() << " queries.\n" << flush;
     }
 
 
     void printNumberOfQueriesExecuted(size_t num)
     {
-        std::lock_guard lock(mutex);
-
         log << "\nQueries executed: " << num;
         if (queries.size() > 1)
             log << " (" << (num * 100.0 / queries.size()) << "%)";
@@ -544,7 +541,7 @@ private:
         }
         log << "\n";
 
-        auto print_percentile = [&](double percent) TSA_REQUIRES(mutex)
+        auto print_percentile = [&](double percent)
         {
             log << percent << "%\t\t";
             for (const auto & info : infos)
@@ -653,7 +650,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
-            std::cout << "\nSee also: https://clickhouse.com/docs/operations/utilities/clickhouse-benchmark/\n";
+            std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/\n";
             return 0;
         }
 

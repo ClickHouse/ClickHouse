@@ -5,7 +5,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromEmptyFile.h>
-#include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Formats/NativeWriter.h>
@@ -334,9 +333,8 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
 
 TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(const Block & header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size)
     : WrapperGuard(std::make_unique<TemporaryDataBuffer>(parent_, reserve_size), DBMS_TCP_PROTOCOL_VERSION, header_)
-    , header(header_.cloneWithoutColumns()) /// header is copied without columns to exclude constant columns since they are not supported in (de/)serialization
-{
-}
+    , header(header_)
+{}
 
 TemporaryDataBuffer::Stat TemporaryBlockStreamHolder::finishWriting() const
 {

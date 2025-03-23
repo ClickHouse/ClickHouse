@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 disk_name="s3_cache_02944"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
-$CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"
+$CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS test;
@@ -36,7 +36,7 @@ mv $config_path_tmp $config_path
 $CLICKHOUSE_CLIENT -m --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
-$CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"
+$CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE state = 'DOWNLOADED'"
 $CLICKHOUSE_CLIENT --query "SELECT sum(size) FROM system.filesystem_cache WHERE state = 'DOWNLOADED'"
@@ -50,7 +50,7 @@ mv $config_path_tmp $config_path
 $CLICKHOUSE_CLIENT -m --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
-$CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"
+$CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM test FORMAT Null"
 
@@ -66,7 +66,7 @@ mv $config_path_tmp $config_path
 $CLICKHOUSE_CLIENT -m --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
-$CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"
+$CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE state = 'DOWNLOADED'"
 $CLICKHOUSE_CLIENT --query "SELECT sum(size) FROM system.filesystem_cache WHERE state = 'DOWNLOADED'"
@@ -80,7 +80,7 @@ mv $config_path_tmp $config_path
 $CLICKHOUSE_CLIENT -m --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
-$CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"
+$CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM test FORMAT Null"
 

@@ -11,59 +11,40 @@ class QueryOracle
 {
 private:
     const FuzzConfig & fc;
-    const std::filesystem::path qfile, qfile_peer;
+    MD5Impl md5_hash;
+    bool first_success = false, second_sucess = false;
+    uint8_t first_digest[16], second_digest[16];
+    std::string buf;
+    std::set<uint32_t> found_tables;
+    std::vector<std::string> nsettings;
 
-    MD5Impl md5_hash1, md5_hash2;
-    Poco::DigestEngine::Digest first_digest, second_digest;
-    PerformanceResult res1, res2;
-
-    PeerQuery peer_query = PeerQuery::AllPeers;
-    bool first_success = true, other_steps_sucess = true, can_test_query_success, measure_performance;
-
-    std::unordered_set<uint32_t> found_tables;
-    DB::Strings nsettings;
-
-    void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
+    void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen);
 
 public:
-    explicit QueryOracle(const FuzzConfig & ffc)
-        : fc(ffc)
-        , qfile(ffc.db_file_path / "query.data")
-        , qfile_peer(
-              ffc.clickhouse_server.has_value() ? (ffc.clickhouse_server.value().user_files_dir / "peer.data")
-                                                : std::filesystem::temp_directory_path())
-        , can_test_query_success(fc.compare_success_results)
-        , measure_performance(fc.measure_performance)
-    {
-    }
+    explicit QueryOracle(const FuzzConfig & ffc) : fc(ffc) { buf.reserve(4096); }
 
-    void resetOracleValues();
-    void setIntermediateStepSuccess(bool success);
-    void processFirstOracleQueryResult(bool success, ExternalIntegrations & ei);
-    void processSecondOracleQueryResult(bool success, ExternalIntegrations & ei, const String & oracle_name);
+    int processOracleQueryResult(bool first, bool success, const std::string & oracle_name);
 
-    /// Correctness query oracle
-    void generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
-    void generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
+    /* Correctness query oracle */
+    int generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
+    int generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
-    /// Dump and read table oracle
-    void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1);
-    void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2);
-    void generateClearQuery(const SQLTable & t, SQLQuery & sq3);
-    void generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4);
+    /* Dump and read table oracle */
+    int dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1);
+    int generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2);
+    int generateClearQuery(const SQLTable & t, SQLQuery & sq3);
+    int generateImportQuery(StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4);
 
-    /// Run query with different settings oracle
-    void generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
-    void generateOracleSelectQuery(RandomGenerator & rg, PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2);
-    void generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3);
+    /* Run query with different settings oracle */
+    int generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
+    int generateOracleSelectQuery(RandomGenerator & rg, bool peer_query, StatementGenerator & gen, SQLQuery & sq2);
+    int generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3);
 
-    /// Replace query with peer tables
-    void truncatePeerTables(const StatementGenerator & gen);
-    void optimizePeerTables(const StatementGenerator & gen);
-    void replaceQueryWithTablePeers(
+    /* Replace query with peer tables */
+    int truncatePeerTables(const StatementGenerator & gen) const;
+    int optimizePeerTables(const StatementGenerator & gen) const;
+    int replaceQueryWithTablePeers(
         RandomGenerator & rg, const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2);
 };
-
-void loadFuzzerOracleSettings(const FuzzConfig & fc);
 
 }

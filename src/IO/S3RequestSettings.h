@@ -3,7 +3,6 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
-#include <Common/Throttler_fwd.h>
 
 namespace Poco::Util
 {

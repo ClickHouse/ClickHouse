@@ -1,9 +1,7 @@
 ---
-description: 'Documentation for TinyLog'
-slug: /engines/table-engines/log-family/tinylog
+slug: /en/engines/table-engines/log-family/tinylog
 toc_priority: 34
-toc_title: 'TinyLog'
-title: 'TinyLog'
+toc_title: TinyLog
 ---
 
 # TinyLog
@@ -12,9 +10,9 @@ The engine belongs to the log engine family. See [Log Engine Family](../../../en
 
 This table engine is typically used with the write-once method: write data one time, then read it as many times as necessary. For example, you can use `TinyLog`-type tables for intermediary data that is processed in small batches. Note that storing data in a large number of small tables is inefficient.
 
-Queries are executed in a single stream. In other words, this engine is intended for relatively small tables (up to about 1,000,000 rows). It makes sense to use this table engine if you have many small tables, since it's simpler than the [Log](../../../engines/table-engines/log-family/log.md) engine (fewer files need to be opened).
+Queries are executed in a single stream. In other words, this engine is intended for relatively small tables (up to about 1,000,000 rows). It makes sense to use this table engine if you have many small tables, since it’s simpler than the [Log](../../../engines/table-engines/log-family/log.md) engine (fewer files need to be opened).
 
-## Characteristics {#characteristics}
+## Characteristics
 
 - **Simpler Structure**: Unlike the Log engine, TinyLog does not use mark files. This reduces complexity but also limits performance optimizations for large datasets.
 - **Single Stream Queries**: Queries on TinyLog tables are executed in a single stream, making it suitable for relatively small tables, typically up to 1,000,000 rows.
@@ -24,7 +22,7 @@ Unlike the Log engine, TinyLog does not use mark files. This reduces complexity 
 
 ## Creating a Table {#table_engines-tinylog-creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -33,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = TinyLog
 ```
 
-See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 ## Writing the Data {#table_engines-tinylog-writing-the-data}
 
@@ -49,7 +47,7 @@ The `TinyLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` oper
 
 Creating a table:
 
-```sql
+``` sql
 CREATE TABLE tiny_log_table
 (
     timestamp DateTime,
@@ -61,7 +59,7 @@ ENGINE = TinyLog
 
 Inserting data:
 
-```sql
+``` sql
 INSERT INTO tiny_log_table VALUES (now(),'REGULAR','The first regular message')
 INSERT INTO tiny_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
 ```
@@ -70,11 +68,11 @@ We used two `INSERT` queries to create two data blocks inside the `<column>.bin`
 
 ClickHouse uses a single stream selecting data. As a result, the order of blocks of rows in the output matches the order of the same blocks in the input. For example:
 
-```sql
+``` sql
 SELECT * FROM tiny_log_table
 ```
 
-```text
+``` text
 ┌───────────timestamp─┬─message_type─┬─message────────────────────┐
 │ 2024-12-10 13:11:58 │ REGULAR      │ The first regular message  │
 │ 2024-12-10 13:12:12 │ REGULAR      │ The second regular message │

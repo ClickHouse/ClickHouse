@@ -2,7 +2,6 @@
 #include <Processors/Transforms/RollupTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/Port.h>
 
 namespace DB
 {

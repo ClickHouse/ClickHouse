@@ -27,7 +27,7 @@ INSERT INTO table_a SELECT '111', * FROM numbers(100);
 -- INSERT 2
 INSERT INTO table_d SELECT 0.5, * FROM numbers(50);
 
-SYSTEM FLUSH LOGS query_log, query_views_log;
+SYSTEM FLUSH LOGS;
 
 
 -- CHECK LOGS OF INSERT 1

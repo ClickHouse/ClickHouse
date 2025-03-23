@@ -15,10 +15,8 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <boost/circular_buffer.hpp>
-#include <fmt/ranges.h>
 
 #include <ranges>
-
 
 namespace DB
 {
@@ -673,9 +671,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             input_pipes[i].addTransform(std::move(transform));
         }
 
-        auto num_streams = input_pipes[i].maxParallelStreams();
         auto pipeline = std::make_shared<QueryPipeline>(std::move(input_pipes[i]));
-        pipeline->setNumThreads(num_streams);
         auto out = context->getOutputFormat(configuration.format, *timeout_write_buffer, materializeBlock(pipeline->getHeader()));
         out->setAutoFlush();
         pipeline->complete(std::move(out));

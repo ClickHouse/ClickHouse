@@ -57,7 +57,7 @@ template <>
 struct FunctionUnaryArithmeticMonotonicity<NameByteSwap>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &) { return {}; }
+    static IFunction::Monotonicity get(const Field &, const Field &) { return {}; }
 };
 
 REGISTER_FUNCTION(ByteSwap)

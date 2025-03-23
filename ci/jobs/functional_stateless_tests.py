@@ -40,10 +40,10 @@ def run_stateless_test(
     nproc = int(Utils.cpu_count() / 2)
     if batch_num and batch_total:
         aux = f"--run-by-hash-total {batch_total} --run-by-hash-num {batch_num-1}"
-    statless_test_command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check \
-                --capture-client-stacktrace --queries /repo/tests/queries --test-runs 1 --hung-check \
+    statless_test_command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
+                --no-drop-if-fail --capture-client-stacktrace --queries /repo/tests/queries --test-runs 1 --hung-check \
                 {'--no-parallel' if no_parallel else ''}  {'--no-sequential' if no_sequiential else ''} \
-                --jobs {nproc} --report-coverage --report-logs-stats {aux} \
+                --print-time --jobs {nproc} --report-coverage --report-logs-stats {aux} \
                 --queries ./tests/queries -- '{test}' | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
@@ -119,6 +119,7 @@ def main():
             f"for file in {temp_dir}/etc/clickhouse-server/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g' $(readlink -f $file); done",
             f"for file in {temp_dir}/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|<path>local_disk|<path>{temp_dir}/local_disk|g' $(readlink -f $file); done",
             f"clickhouse-server --version",
+            f"chmod +x {temp_dir}/clickhouse-odbc-bridge",
         ]
         results.append(
             Result.from_commands_run(

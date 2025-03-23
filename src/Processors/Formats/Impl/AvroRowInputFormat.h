@@ -8,6 +8,7 @@
 #include <map>
 #include <vector>
 
+#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -26,8 +27,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
 }
-
-class Block;
 
 class AvroInputStreamReadBufferAdapter : public avro::InputStream
 {
@@ -50,7 +49,6 @@ class AvroDeserializer
 {
 public:
     AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
-    AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
     using DeserializeFn = std::function<bool(IColumn & column, avro::Decoder & decoder)>;

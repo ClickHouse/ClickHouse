@@ -185,16 +185,7 @@ public:
     size_t byteSizeAt(size_t n) const override { return getDictionary().byteSizeAt(getIndexes().getUInt(n)); }
     size_t allocatedBytes() const override { return idx.getPositions()->allocatedBytes() + getDictionary().allocatedBytes(); }
 
-    void forEachSubcolumn(ColumnCallback callback) const override
-    {
-        callback(idx.getPositionsPtr());
-
-        /// Column doesn't own dictionary if it's shared.
-        if (!dictionary.isShared())
-            callback(dictionary.getColumnUniquePtr());
-    }
-
-    void forEachMutableSubcolumn(MutableColumnCallback callback) override
+    void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(idx.getPositionsPtr());
 
@@ -223,16 +214,16 @@ public:
         }
     }
 
-    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*idx.getPositionsPtr());
-        idx.getPositionsPtr()->forEachMutableSubcolumnRecursively(callback);
+        idx.getPositionsPtr()->forEachSubcolumnRecursively(callback);
 
         /// Column doesn't own dictionary if it's shared.
         if (!dictionary.isShared())
         {
             callback(*dictionary.getColumnUniquePtr());
-            dictionary.getColumnUniquePtr()->forEachMutableSubcolumnRecursively(callback);
+            dictionary.getColumnUniquePtr()->forEachSubcolumnRecursively(callback);
         }
     }
 

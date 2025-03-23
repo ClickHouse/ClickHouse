@@ -23,8 +23,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
-#include <Processors/Port.h>
-
 namespace DB
 {
 
