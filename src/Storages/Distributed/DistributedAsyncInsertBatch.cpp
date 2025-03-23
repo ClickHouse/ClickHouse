@@ -5,6 +5,7 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
+#include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/quoteString.h>
 #include <base/defines.h>
@@ -12,6 +13,7 @@
 #include <IO/WriteBufferFromFile.h>
 
 #include <fmt/ranges.h>
+#include <ranges>
 
 namespace CurrentMetrics
 {
@@ -72,7 +74,7 @@ bool DistributedAsyncInsertBatch::isEnoughSize() const
         || (parent.min_batched_block_size_bytes && total_bytes >= parent.min_batched_block_size_bytes);
 }
 
-void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes)
+void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes, bool update_current_batch)
 {
     if (files.empty())
         return;
@@ -81,7 +83,7 @@ void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes)
 
     Stopwatch watch;
 
-    if (!recovered)
+    if (update_current_batch)
     {
         /// For deduplication in Replicated tables to work, in case of error
         /// we must try to re-send exactly the same batches.
@@ -120,7 +122,9 @@ void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes)
         }
         else
         {
-            e.addMessage(fmt::format("While sending a batch of {} files, files: {}", files.size(), fmt::join(files, "\n")));
+            e.addMessage(fmt::format("While sending a batch of {} files, files: {}",
+                files.size(),
+                fmt::join(files | std::ranges::views::take(8), "\n")));
             throw;
         }
     }
@@ -135,7 +139,10 @@ void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes)
     }
     else if (!batch_marked_as_broken)
     {
-        LOG_ERROR(parent.log, "Marking a batch of {} files as broken, files: {}", files.size(), fmt::join(files, "\n"));
+        LOG_ERROR(parent.log,
+            "Marking a batch of {} files as broken, files: {}",
+            files.size(),
+            fmt::join(files | std::ranges::views::take(8), "\n"));
 
         for (const auto & file : files)
             parent.markAsBroken(file);
@@ -144,7 +151,6 @@ void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes)
     files.clear();
     total_rows = 0;
     total_bytes = 0;
-    recovered = false;
 
     std::filesystem::resize_file(parent.current_batch_file_path, 0);
 }
@@ -160,7 +166,11 @@ void DistributedAsyncInsertBatch::serialize()
 
     {
         WriteBufferFromFile out{tmp_file, O_WRONLY | O_TRUNC | O_CREAT};
-        writeText(out);
+        for (const auto & file : files)
+        {
+            UInt64 file_index = parse<UInt64>(std::filesystem::path(file).stem());
+            out << file_index << '\n';
+        }
 
         out.finalize();
         if (fsync)
@@ -170,57 +180,57 @@ void DistributedAsyncInsertBatch::serialize()
     std::filesystem::rename(tmp_file, parent.current_batch_file_path);
 }
 
-void DistributedAsyncInsertBatch::deserialize()
+bool DistributedAsyncInsertBatch::recoverBatch()
 {
-    ReadBufferFromFile in{parent.current_batch_file_path};
-    readText(in);
-}
+    /// Fill the files
+    {
+        ReadBufferFromFile in{parent.current_batch_file_path};
+        while (!in.eof())
+        {
+            UInt64 idx;
+            in >> idx >> "\n";
+            files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
+        }
+    }
 
-bool DistributedAsyncInsertBatch::valid()
-{
-    chassert(!files.empty());
-
-    bool res = true;
+    /// In case of recovery it is possible that some of files will be
+    /// missing (or even broken), if server had been restarted abnormally
+    /// (between unlink(*.bin) and unlink(current_batch.txt)).
+    ///
+    /// But we should not throw in this case since current_batch_file_path
+    /// since there there is nothing we can do about it, the deduplication will
+    /// be broken anyway hence the info about this batch should be removed
+    /// anyway, and the batch should be started from scratch.
     for (const auto & file : files)
     {
         if (!fs::exists(file))
         {
             LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", file);
-            res = false;
+            return false;
         }
-    }
-    return res;
-}
 
-void DistributedAsyncInsertBatch::writeText(WriteBuffer & out)
-{
-    for (const auto & file : files)
-    {
-        UInt64 file_index = parse<UInt64>(std::filesystem::path(file).stem());
-        out << file_index << '\n';
-    }
-}
-
-void DistributedAsyncInsertBatch::readText(ReadBuffer & in)
-{
-    while (!in.eof())
-    {
-        UInt64 idx;
-        in >> idx >> "\n";
-        files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
-
-        ReadBufferFromFile header_buffer(files.back());
-        const DistributedAsyncInsertHeader & header = DistributedAsyncInsertHeader::read(header_buffer, parent.log);
-        total_bytes += total_bytes;
-
-        if (header.rows)
+        try
         {
-            total_rows += header.rows;
-            total_bytes += header.bytes;
+            ReadBufferFromFile header_buffer(files.back());
+            const DistributedAsyncInsertHeader & header = DistributedAsyncInsertHeader::read(header_buffer, parent.log);
+            if (header.rows)
+            {
+                total_rows += header.rows;
+                total_bytes += header.bytes;
+            }
+        }
+        catch (Exception & e)
+        {
+            if (isDistributedSendBroken(e.code(), /*remote_error=*/ false))
+            {
+                tryLogCurrentException(parent.log, fmt::format("File {} is broken", file));
+                return false;
+            }
+            throw;
         }
     }
 
-    recovered = true;
+    return true;
 }
 
 void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_changes)

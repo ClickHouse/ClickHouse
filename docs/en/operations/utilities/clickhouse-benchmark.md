@@ -1,7 +1,9 @@
 ---
-slug: /operations/utilities/clickhouse-benchmark
+description: 'Documentation for clickhouse-benchmark '
+sidebar_label: 'clickhouse-benchmark'
 sidebar_position: 61
-sidebar_label: clickhouse-benchmark
+slug: /operations/utilities/clickhouse-benchmark
+title: 'clickhouse-benchmark'
 ---
 
 # clickhouse-benchmark 
@@ -10,32 +12,32 @@ Connects to a ClickHouse server and repeatedly sends specified queries.
 
 **Syntax**
 
-``` bash
+```bash
 $ clickhouse-benchmark --query ["single query"] [keys]
 ```
 
 or
 
-``` bash
+```bash
 $ echo "single query" | clickhouse-benchmark [keys]
 ```
 
 or
 
-``` bash
+```bash
 $ clickhouse-benchmark [keys] <<< "single query"
 ```
 
 If you want to send a set of queries, create a text file and place each query on the individual string in this file. For example:
 
-``` sql
+```sql
 SELECT * FROM system.numbers LIMIT 10000000;
 SELECT 1;
 ```
 
 Then pass this file to a standard input of `clickhouse-benchmark`:
 
-``` bash
+```bash
 clickhouse-benchmark [keys] < queries_file;
 ```
 
@@ -67,7 +69,7 @@ By default, `clickhouse-benchmark` reports for each `--delay` interval.
 
 Example of the report:
 
-``` text
+```text
 Queries executed: 10.
 
 localhost:9000, queries 10, QPS: 6.772, RPS: 67904487.440, MiB/s: 518.070, result RPS: 67721584.984, result MiB/s: 516.675.
@@ -112,11 +114,11 @@ To use the comparison mode, specify endpoints of both servers by two pairs of `-
 
 ## Example {#clickhouse-benchmark-example}
 
-``` bash
+```bash
 $ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark --host=localhost --port=9001 --host=localhost --port=9000 -i 10
 ```
 
-``` text
+```text
 Loaded 1 queries.
 
 Queries executed: 5.

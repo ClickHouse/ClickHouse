@@ -60,7 +60,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     size_t read_until_position_,
     bool restricted_seek_,
     std::optional<size_t> file_size_)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase()
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
@@ -72,6 +72,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
 {
+    file_size = file_size_;
 }
 
 bool ReadBufferFromS3::nextImpl()

@@ -1,8 +1,9 @@
 ---
-slug: /operations/storing-data
+description: 'Documentation for highlight-next-line'
+sidebar_label: 'External Disks for Storing Data'
 sidebar_position: 68
-sidebar_label: "External Disks for Storing Data"
-title: "External Disks for Storing Data"
+slug: /operations/storing-data
+title: 'External Disks for Storing Data'
 ---
 
 Data, processed in ClickHouse, is usually stored in the local file system — on the same machine with the ClickHouse server. That requires large-capacity disks, which can be expensive enough. To avoid that you can store the data remotely. Various storages are supported:
@@ -32,7 +33,7 @@ Optionally, `metadata_type` can be specified (it is equal to `local` by default)
 Usage of `plain` metadata type is described in [plain storage section](/operations/storing-data#plain-storage), `web` metadata type can be used only with `web` object storage type, `local` metadata type stores metadata files locally (each metadata files contains mapping to files in object storage and some additional meta information about them).
 
 E.g. configuration option
-``` xml
+```xml
 <s3>
     <type>s3</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
@@ -41,7 +42,7 @@ E.g. configuration option
 ```
 
 is equal to configuration (from `24.1`):
-``` xml
+```xml
 <s3>
     <type>object_storage</type>
     <object_storage_type>s3</object_storage_type>
@@ -52,7 +53,7 @@ is equal to configuration (from `24.1`):
 ```
 
 Configuration
-``` xml
+```xml
 <s3_plain>
     <type>s3_plain</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
@@ -61,7 +62,7 @@ Configuration
 ```
 
 is equal to
-``` xml
+```xml
 <s3_plain>
     <type>object_storage</type>
     <object_storage_type>s3</object_storage_type>
@@ -72,7 +73,7 @@ is equal to
 ```
 
 Example of full storage configuration will look like:
-``` xml
+```xml
 <clickhouse>
     <storage_configuration>
         <disks>
@@ -96,7 +97,7 @@ Example of full storage configuration will look like:
 ```
 
 Starting with 24.1 clickhouse version, it can also look like:
-``` xml
+```xml
 <clickhouse>
     <storage_configuration>
         <disks>
@@ -122,7 +123,7 @@ Starting with 24.1 clickhouse version, it can also look like:
 ```
 
 In order to make a specific kind of storage a default option for all `MergeTree` tables add the following section to configuration file:
-``` xml
+```xml
 <clickhouse>
     <merge_tree>
         <storage_policy>s3</storage_policy>
@@ -132,7 +133,7 @@ In order to make a specific kind of storage a default option for all `MergeTree`
 
 If you want to configure a specific storage policy only to specific table, you can define it in settings while creating the table:
 
-``` sql
+```sql
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY a
 SETTINGS storage_policy = 's3';
@@ -140,7 +141,7 @@ SETTINGS storage_policy = 's3';
 
 You can also use `disk` instead of `storage_policy`. In this case it is not requires to have `storage_policy` section in configuration file, only `disk` section would be enough.
 
-``` sql
+```sql
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = 's3';
@@ -172,12 +173,12 @@ ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 )
 ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2)
-  # highlight-start
+  -- highlight-start
   SETTINGS disk = disk(
     type=web,
     endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
   );
-  # highlight-end
+  -- highlight-end
 ```
 
 The example below adds cache to external storage.
@@ -202,7 +203,7 @@ ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 )
 ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2)
-  # highlight-start
+  -- highlight-start
   SETTINGS disk = disk(
     type=cache,
     max_size='1Gi',
@@ -212,7 +213,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
       endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
       )
   );
-  # highlight-end
+  -- highlight-end
 ```
 
 In the settings highlighted below notice that the disk of `type=web` is nested within
@@ -244,7 +245,7 @@ ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 )
 ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2)
-  # highlight-start
+  -- highlight-start
   SETTINGS disk = disk(
     type=cache,
     max_size='1Gi',
@@ -254,12 +255,12 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
       endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
       )
   );
-  # highlight-end
+  -- highlight-end
 ```
 
 where `web` is a from a server configuration file:
 
-``` xml
+```xml
 <storage_configuration>
     <disks>
         <web>
@@ -320,7 +321,7 @@ This disk type allows to keep a static version of the table, as it does not allo
 A use case for this disk type is to create backups on it, which can be done via `BACKUP TABLE data TO Disk('plain_disk_name', 'backup_name')`. Afterwards you can do `RESTORE TABLE data AS data_restored FROM Disk('plain_disk_name', 'backup_name')` or using `ATTACH TABLE data (...) ENGINE = MergeTree() SETTINGS disk = 'plain_disk_name'`.
 
 Configuration:
-``` xml
+```xml
 <s3_plain>
     <type>s3_plain</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
@@ -331,7 +332,7 @@ Configuration:
 Starting from `24.1` it is possible configure any object storage disk (`s3`, `azure`, `hdfs` (unsupported), `local`) using `plain` metadata type.
 
 Configuration:
-``` xml
+```xml
 <s3_plain>
     <type>object_storage</type>
     <object_storage_type>azure</object_storage_type>
@@ -352,7 +353,7 @@ MergeTree tables, you may opt for the `s3_plain_rewritable` disk type if you do 
 willing to accept a limited set of operations. This could be useful, for example, for system tables.
 
 Configuration:
-``` xml
+```xml
 <s3_plain_rewritable>
     <type>s3_plain_rewritable</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
@@ -361,7 +362,7 @@ Configuration:
 ```
 
 is equal to
-``` xml
+```xml
 <s3_plain_rewritable>
     <type>object_storage</type>
     <object_storage_type>s3</object_storage_type>
@@ -378,7 +379,7 @@ Starting from `24.5` it is possible configure any object storage disk (`s3`, `az
 `MergeTree` family table engines can store data to [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/) using a disk with type `azure_blob_storage`.
 
 Configuration markup:
-``` xml
+```xml
 <storage_configuration>
     ...
     <disks>
@@ -473,7 +474,7 @@ You can encrypt the data stored on [S3](/engines/table-engines/mergetree-family/
 
 Example of disk configuration:
 
-``` xml
+```xml
 <disks>
   <disk1>
     <type>local</type>
@@ -507,7 +508,7 @@ Optional parameters:
 
 Example of disk configuration:
 
-``` xml
+```xml
 <clickhouse>
     <storage_configuration>
         <disks>
@@ -538,7 +539,7 @@ Cache uses `LRU` cache policy.
 
 Example of configuration for versions later or equal to 22.8:
 
-``` xml
+```xml
 <clickhouse>
     <storage_configuration>
         <disks>
@@ -568,7 +569,7 @@ Example of configuration for versions later or equal to 22.8:
 
 Example of configuration for versions earlier than 22.8:
 
-``` xml
+```xml
 <clickhouse>
     <storage_configuration>
         <disks>
@@ -651,7 +652,7 @@ SHOW FILESYSTEM CACHES
 
 Result:
 
-``` text
+```text
 ┌─Caches────┐
 │ s3_cache  │
 └───────────┘
@@ -663,7 +664,7 @@ Result:
 DESCRIBE FILESYSTEM CACHE 's3_cache'
 ```
 
-``` text
+```text
 ┌────max_size─┬─max_elements─┬─max_file_segment_size─┬─boundary_alignment─┬─cache_on_write_operations─┬─cache_hits_threshold─┬─current_size─┬─current_elements─┬─path───────┬─background_download_threads─┬─enable_bypass_cache_with_threshold─┐
 │ 10000000000 │      1048576 │             104857600 │            4194304 │                         1 │                    0 │         3276 │               54 │ /s3_cache/ │                           2 │                                  0 │
 └─────────────┴──────────────┴───────────────────────┴────────────────────┴───────────────────────────┴──────────────────────┴──────────────┴──────────────────┴────────────┴─────────────────────────────┴────────────────────────────────────┘
@@ -750,7 +751,7 @@ A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in Git
 In this `ATTACH TABLE` query the `UUID` provided matches the directory name of the data, and the endpoint is the URL for the raw GitHub content.
 
 ```sql
-# highlight-next-line
+-- highlight-next-line
 ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 (
     price UInt32,
@@ -770,17 +771,17 @@ ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 )
 ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2)
-  # highlight-start
+  -- highlight-start
   SETTINGS disk = disk(
       type=web,
       endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
       );
-  # highlight-end
+  -- highlight-end
 ```
 
 A ready test case. You need to add this configuration to config:
 
-``` xml
+```xml
 <clickhouse>
     <storage_configuration>
         <disks>

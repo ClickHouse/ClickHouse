@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/mongodb
+description: 'MongoDB engine is read-only table engine which allows to read data from
+  a remote collection.'
+sidebar_label: 'MongoDB'
 sidebar_position: 135
-sidebar_label: MongoDB
-title: "MongoDB"
-description: "MongoDB engine is read-only table engine which allows to read data from a remote collection."
+slug: /engines/table-engines/integrations/mongodb
+title: 'MongoDB'
 ---
 
 # MongoDB
@@ -13,20 +14,15 @@ MongoDB engine is read-only table engine which allows to read data from a remote
 Only MongoDB v3.6+ servers are supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
 
-:::note
-If you're facing troubles, please report the issue, and try to use [the legacy implementation](../../../operations/server-configuration-parameters/settings.md#use_legacy_mongodb_integration).
-Keep in mind that it is deprecated, and will be removed in next releases.
-:::
-
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
 (
     name1 [type1],
     name2 [type2],
     ...
-) ENGINE = MongoDB(host:port, database, collection, user, password [, options]);
+) ENGINE = MongoDB(host:port, database, collection, user, password[, options[, oid_columns]]);
 ```
 
 **Engine Parameters**
@@ -43,39 +39,97 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 - `options` — MongoDB connection string options (optional parameter).
 
+- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
+
 :::tip
 If you are using the MongoDB Atlas cloud offering connection url can be obtained from 'Atlas SQL' option.
 Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future releases.
 :::
 
-Also, you can simply pass a URI:
+Alternatively, you can pass a URI:
 
-``` sql
-ENGINE = MongoDB(uri, collection);
+```sql
+ENGINE = MongoDB(uri, collection[, oid_columns]);
 ```
 
 **Engine Parameters**
 
-- `uri` — MongoDB server's connection URI
+- `uri` — MongoDB server's connection URI.
 
 - `collection` — Remote collection name.
+
+- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
 
 
 ## Types mappings {#types-mappings}
 
-| MongoDB            | ClickHouse                                                            |
-|--------------------|-----------------------------------------------------------------------|
-| bool, int32, int64 | *any numeric type*, String                                            |
-| double             | Float64, String                                                       |
-| date               | Date, Date32, DateTime, DateTime64, String                            |
-| string             | String, UUID                                                          |
-| document           | String(as JSON)                                                       |
-| array              | Array, String(as JSON)                                                |
-| oid                | String                                                                |
-| binary             | String if in column, base64 encoded string if in an array or document |
-| *any other*        | String                                                                |
+| MongoDB                 | ClickHouse                                                            |
+|-------------------------|-----------------------------------------------------------------------|
+| bool, int32, int64      | *any numeric type*, String                                            |
+| double                  | Float64, String                                                       |
+| date                    | Date, Date32, DateTime, DateTime64, String                            |
+| string                  | String                                                                |
+| document                | String(as JSON)                                                       |
+| array                   | Array, String(as JSON)                                                |
+| oid                     | String                                                                |
+| binary                  | String if in column, base64 encoded string if in an array or document |
+| uuid (binary subtype 4) | UUID                                                                  |
+| *any other*             | String                                                                |
 
 If key is not found in MongoDB document (for example, column name doesn't match), default value or `NULL` (if the column is nullable) will be inserted.
+
+### OID {#oid}
+
+If you want a `String` to be treated as `oid` in the WHERE clause, just put the column's name in the last argument of the table engine.
+This may be necessary when querying a record by the `_id` column, which by default has `oid` type in MongoDB.
+If the `_id` field in the table has other type, for example `uuid`, you need to specify empty `oid_columns`, otherwise the default value for this parameter `_id` is used.
+
+```javascript
+db.sample_oid.insertMany([
+    {"another_oid_column": ObjectId()},
+]);
+
+db.sample_oid.find();
+[
+    {
+        "_id": {"$oid": "67bf6cc44ebc466d33d42fb2"},
+        "another_oid_column": {"$oid": "67bf6cc40000000000ea41b1"}
+    }
+]
+```
+
+By default, only `_id` is treated as `oid` column.
+
+```sql
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid');
+
+SELECT count() FROM sample_oid WHERE _id = '67bf6cc44ebc466d33d42fb2'; --will output 1.
+SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea41b1'; --will output 0
+```
+
+In this case the output will be `0`, because ClickHouse doesn't know that `another_oid_column` has `oid` type, so let's fix it:
+
+```sql
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid', '_id,another_oid_column');
+
+-- or
+
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('host', 'db', 'sample_oid', 'user', 'pass', '', '_id,another_oid_column');
+
+SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea41b1'; -- will output 1 now
+```
 
 ## Supported clauses {#supported-clauses}
 
@@ -110,7 +164,7 @@ Assuming MongoDB has [sample_mflix](https://www.mongodb.com/docs/atlas/sample-da
 
 Create a table in ClickHouse which allows to read data from MongoDB collection:
 
-``` sql
+```sql
 CREATE TABLE sample_mflix_table
 (
     _id String,
@@ -127,11 +181,11 @@ CREATE TABLE sample_mflix_table
 
 Query:
 
-``` sql
+```sql
 SELECT count() FROM sample_mflix_table
 ```
 
-``` text
+```text
    ┌─count()─┐
 1. │   21349 │
    └─────────┘

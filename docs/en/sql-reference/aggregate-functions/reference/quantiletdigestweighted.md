@@ -1,15 +1,16 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiletdigestweighted
+description: 'Computes an approximate quantile of a numeric data sequence using the
+  t-digest algorithm.'
 sidebar_position: 179
-title: "quantileTDigestWeighted"
-description: "Computes an approximate quantile of a numeric data sequence using the t-digest algorithm."
+slug: /sql-reference/aggregate-functions/reference/quantiletdigestweighted
+title: 'quantileTDigestWeighted'
 ---
 
 # quantileTDigestWeighted
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The function takes into account the weight of each sequence member. The maximum error is 1%. Memory consumption is `log(n)`, where `n` is a number of values.
 
-The performance of the function is lower than performance of [quantile](/sql-reference/aggregate-functions/reference/quantile) or [quantileTiming](../../../sql-reference/aggregate-functions/reference/quantiletiming.md#quantiletiming). In terms of the ratio of State size to precision, this function is much better than `quantile`.
+The performance of the function is lower than performance of [quantile](/sql-reference/aggregate-functions/reference/quantile) or [quantileTiming](/sql-reference/aggregate-functions/reference/quantiletiming). In terms of the ratio of State size to precision, this function is much better than `quantile`.
 
 The result depends on the order of running the query, and is nondeterministic.
 
@@ -21,7 +22,7 @@ Using `quantileTDigestWeighted` [is not recommended for tiny data sets](https://
 
 **Syntax**
 
-``` sql
+```sql
 quantileTDigestWeighted(level)(expr, weight)
 ```
 
@@ -47,13 +48,13 @@ Type:
 
 Query:
 
-``` sql
+```sql
 SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantileTDigestWeighted(number, 1)─┐
 │                                4.5 │
 └────────────────────────────────────┘

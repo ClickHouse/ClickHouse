@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/grouparraysample
+description: 'Creates an array of sample argument values. The size of the resulting
+  array is limited to `max_size` elements. Argument values are selected and added
+  to the array randomly.'
 sidebar_position: 145
-title: "groupArraySample"
-description: "Creates an array of sample argument values. The size of the resulting array is limited to `max_size` elements. Argument values are selected and added to the array randomly."
+slug: /sql-reference/aggregate-functions/reference/grouparraysample
+title: 'groupArraySample'
 ---
 
 # groupArraySample
@@ -11,7 +13,7 @@ Creates an array of sample argument values. The size of the resulting array is l
 
 **Syntax**
 
-``` sql
+```sql
 groupArraySample(max_size[, seed])(x)
 ```
 
@@ -31,7 +33,7 @@ Type: [Array](../../data-types/array.md).
 
 Consider table `colors`:
 
-``` text
+```text
 ┌─id─┬─color──┐
 │  1 │ red    │
 │  2 │ blue   │
@@ -43,7 +45,7 @@ Consider table `colors`:
 
 Query with column name as argument:
 
-``` sql
+```sql
 SELECT groupArraySample(3)(color) as newcolors FROM colors;
 ```
 
@@ -57,7 +59,7 @@ Result:
 
 Query with column name and different seed:
 
-``` sql
+```sql
 SELECT groupArraySample(3, 987654321)(color) as newcolors FROM colors;
 ```
 
@@ -71,7 +73,7 @@ Result:
 
 Query with expression as argument:
 
-``` sql
+```sql
 SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM colors;
 ```
 

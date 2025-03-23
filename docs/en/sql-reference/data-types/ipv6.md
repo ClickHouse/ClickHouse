@@ -1,7 +1,10 @@
 ---
-slug: /sql-reference/data-types/ipv6
+description: 'Documentation for the IPv6 data type in ClickHouse, which stores IPv6
+  addresses as 16-byte values'
+sidebar_label: 'IPv6'
 sidebar_position: 30
-sidebar_label: IPv6
+slug: /sql-reference/data-types/ipv6
+title: 'IPv6'
 ---
 
 ## IPv6 {#ipv6}
@@ -10,13 +13,13 @@ IPv6 addresses. Stored in 16 bytes as UInt128 big-endian.
 
 ### Basic Usage {#basic-usage}
 
-``` sql
+```sql
 CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY url;
 
 DESCRIBE TABLE hits;
 ```
 
-``` text
+```text
 ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┐
 │ url  │ String │              │                    │         │                  │
 │ from │ IPv6   │              │                    │         │                  │
@@ -25,19 +28,19 @@ DESCRIBE TABLE hits;
 
 OR you can use `IPv6` domain as a key:
 
-``` sql
+```sql
 CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY from;
 ```
 
 `IPv6` domain supports custom input as IPv6-strings:
 
-``` sql
+```sql
 INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:3100::2')('https://clickhouse.com', '2001:44c8:129:2632:33:0:252:2')('https://clickhouse.com/docs/en/', '2a02:e980:1e::1');
 
 SELECT * FROM hits;
 ```
 
-``` text
+```text
 ┌─url────────────────────────────────┬─from──────────────────────────┐
 │ https://clickhouse.com          │ 2001:44c8:129:2632:33:0:252:2 │
 │ https://clickhouse.com/docs/en/ │ 2a02:e980:1e::1               │
@@ -47,11 +50,11 @@ SELECT * FROM hits;
 
 Values are stored in compact binary form:
 
-``` sql
+```sql
 SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 ```
 
-``` text
+```text
 ┌─toTypeName(from)─┬─hex(from)────────────────────────┐
 │ IPv6             │ 200144C8012926320033000002520002 │
 └──────────────────┴──────────────────────────────────┘

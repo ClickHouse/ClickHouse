@@ -31,7 +31,7 @@ SELECT * FROM (
 
 echo "CHECK WITH query_log"
 $CLICKHOUSE_CLIENT -q "
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT type,
        'S3CreateMultipartUpload', ProfileEvents['S3CreateMultipartUpload'],
        'S3UploadPart', ProfileEvents['S3UploadPart'],
@@ -79,7 +79,7 @@ DROP TABLE times;
 
 echo "CHECK with query_log"
 $CLICKHOUSE_CLIENT -q "
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT type,
        query,
        'FileOpen', ProfileEvents['FileOpen']

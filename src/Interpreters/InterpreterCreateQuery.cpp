@@ -9,7 +9,6 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/queryToString.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
@@ -35,7 +34,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -46,6 +44,7 @@
 #include <Storages/WindowView/StorageWindowView.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
@@ -276,7 +275,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                   || (create.columns_list->projections && !create.columns_list->projections->children.empty()))))
     {
         /// Currently, there are no database engines, that support any arguments.
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->formatForErrorMessage());
     }
 
     if (create.storage && !create.storage->engine)
@@ -351,7 +350,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.if_not_exists = false;
 
         WriteBufferFromOwnString statement_buf;
-        formatAST(create, statement_buf, false);
+        IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite=*/false);
+        create.format(statement_buf, format_settings);
         writeChar('\n', statement_buf);
         String statement = statement_buf.str();
 
@@ -881,7 +881,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS with tables of the MergeTree family");
 
                 /// Ensure that as_storage and the new storage has the same primary key, sorting key and partition key
-                auto query_to_string = [](const IAST * ast) { return ast ? queryToString(*ast) : ""; };
+                auto query_to_string = [](const IAST * ast) { return ast ? ast->formatWithSecretsOneLine() : ""; };
 
                 const String as_storage_sorting_key_str = query_to_string(as_storage_metadata->getSortingKeyAST().get());
                 const String as_storage_primary_key_str = query_to_string(as_storage_metadata->getPrimaryKeyAST().get());
@@ -1445,10 +1445,10 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
                             "3. ATTACH {} {} FROM '/path/to/data/' <table definition>;\n"
                             "4. ATTACH {} {} UUID '<uuid>' <table definition>;",
                             kind_upper,
-                            kind_upper, create.table,
-                            kind_upper, create.table,
-                            kind_upper, create.table,
-                            kind_upper, create.table);
+                            kind_upper, create.table->formatForErrorMessage(),
+                            kind_upper, create.table->formatForErrorMessage(),
+                            kind_upper, create.table->formatForErrorMessage(),
+                            kind_upper, create.table->formatForErrorMessage());
         }
 
         create.generateRandomUUIDs();
@@ -1844,9 +1844,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     data_path = database->getTableDataPath(create);
-    auto db_disk = getContext()->getDatabaseDisk();
+    // When creating a table, when checking if the data path exists, it should use the local disk to check, not the database disk. Because the database disk stores metadata files only.
+    auto full_data_path = fs::path{getContext()->getPath()} / data_path;
 
-    if (!create.attach && !data_path.empty() && db_disk->existsDirectory(data_path))
+    if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
     {
         if (getContext()->getZooKeeperMetadataTransaction() &&
             !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery() &&
@@ -1858,11 +1859,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// We don't have a table with this UUID (and all metadata is loaded),
             /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
 
-            fs::path trash_path = fs::path("trash") / data_path / getHexUIntLowercase(thread_local_rng());
+            fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
             LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
-            db_disk->createDirectories(trash_path.parent_path());
-            db_disk->moveFile(data_path, trash_path);
+            fs::create_directories(trash_path.parent_path());
+            renameNoReplace(full_data_path, trash_path);
         }
         else
         {
@@ -1924,7 +1925,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
         /// and because storage lifetime is bigger than query context lifetime.
-        res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true);
+        res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
     }
     else
@@ -1992,7 +1993,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    if (!internal)
+    bool is_initial_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+    if (!internal && is_initial_query)
         throwIfTooManyEntities(create, res);
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);

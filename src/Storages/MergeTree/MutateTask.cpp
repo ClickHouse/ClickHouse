@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Columns/ColumnsNumber.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -1105,7 +1104,7 @@ void finalizeMutatedPart(
 
     {
         auto out_comp = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
-        DB::writeText(queryToString(codec->getFullCodecDesc()), *out_comp);
+        DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), *out_comp);
         written_files.push_back(std::move(out_comp));
     }
 
@@ -2770,7 +2769,11 @@ bool MutateTask::prepare()
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
-        ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
+        ctx->progress_callback = MergeProgressCallback(
+            (*ctx->mutate_entry)->ptr(),
+            ctx->watch_prev_elapsed,
+            *ctx->stage_progress,
+            [&my_ctx = *ctx]() { my_ctx.checkOperationIsNotCanceled(); });
 
         lightweight_delete_mode = ctx->commands_for_part.hasOnlyLightweightDeleteCommand();
         /// If under the condition of lightweight delete mode with rebuild option, add projections again here as we can only know

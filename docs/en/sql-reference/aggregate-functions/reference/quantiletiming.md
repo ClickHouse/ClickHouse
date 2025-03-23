@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiletiming
+description: 'With the determined precision computes the quantile of a numeric data
+  sequence.'
 sidebar_position: 180
-title: "quantileTiming"
-description: "With the determined precision computes the quantile of a numeric data sequence."
+slug: /sql-reference/aggregate-functions/reference/quantiletiming
+title: 'quantileTiming'
 ---
 
 # quantileTiming
@@ -15,7 +16,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 **Syntax**
 
-``` sql
+```sql
 quantileTiming(level)(expr)
 ```
 
@@ -57,7 +58,7 @@ If no values are passed to the function (when using `quantileTimingIf`), [NaN](/
 
 Input table:
 
-``` text
+```text
 ┌─response_time─┐
 │            72 │
 │           112 │
@@ -73,13 +74,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT quantileTiming(response_time) FROM t
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantileTiming(response_time)─┐
 │                           126 │
 └───────────────────────────────┘

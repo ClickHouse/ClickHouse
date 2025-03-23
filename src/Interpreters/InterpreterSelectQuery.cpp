@@ -22,6 +22,7 @@
 
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -1825,7 +1826,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         for (const auto & key_name : key_names)
                             order_descr.emplace_back(key_name);
 
-                        SortingStep::Settings sort_settings(*context);
+                        SortingStep::Settings sort_settings(context->getSettingsRef());
 
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentHeader(),
@@ -3051,7 +3052,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         }
         if (need_sort)
         {
-            SortingStep::Settings sort_settings(*context);
+            SortingStep::Settings sort_settings(context->getSettingsRef());
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
@@ -3108,7 +3109,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         return;
     }
 
-    SortingStep::Settings sort_settings(*context);
+    SortingStep::Settings sort_settings(context->getSettingsRef());
 
     /// Merge the sorted blocks.
     auto sorting_step = std::make_unique<SortingStep>(

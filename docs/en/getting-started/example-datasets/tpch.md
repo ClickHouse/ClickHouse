@@ -1,8 +1,8 @@
 ---
-description:  "The TPC-H benchmark data set and queries."
+description: 'The TPC-H benchmark data set and queries.'
+sidebar_label: 'TPC-H'
 slug: /getting-started/example-datasets/tpch
-sidebar_label: TPC-H
-title: "TPC-H (1999)"
+title: 'TPC-H (1999)'
 ---
 
 A popular benchmark which models the internal data warehouse of a wholesale supplier.
@@ -20,7 +20,7 @@ Despite its age and its unrealistic assumption that the data is uniformly and in
 
 First, checkout the TPC-H repository and compile the data generator:
 
-``` bash
+```bash
 git clone https://github.com/gregrahn/tpch-kit.git
 cd tpch-kit/dbgen
 make
@@ -28,7 +28,7 @@ make
 
 Then, generate the data. Parameter `-s` specifies the scale factor. For example, with `-s 100`, 600 million rows are generated for table 'lineitem'.
 
-``` bash
+```bash
 ./dbgen -s 100
 ```
 
@@ -154,7 +154,7 @@ ORDER BY (l_orderkey, l_linenumber);
 
 The data can be imported as follows:
 
-``` bash
+```bash
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO nation FORMAT CSV" < nation.tbl
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO region FORMAT CSV" < region.tbl
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO part FORMAT CSV" < part.tbl

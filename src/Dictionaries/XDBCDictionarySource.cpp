@@ -1,6 +1,7 @@
 #include "XDBCDictionarySource.h"
 
 #include <Columns/ColumnString.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>

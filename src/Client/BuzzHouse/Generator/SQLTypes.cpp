@@ -541,7 +541,7 @@ SQLType * EnumType::typeDeepCopy() const
 
 String EnumType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    return rg.pickRandomlyFromVector(values).val;
+    return rg.pickRandomly(values).val;
 }
 
 String IPv4Type::typeName(const bool) const
@@ -1094,7 +1094,7 @@ SQLType * VariantType::typeDeepCopy() const
 
 String VariantType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    return subtypes.empty() ? "NULL" : rg.pickRandomlyFromVector(subtypes)->appendRandomRawValue(rg, gen);
+    return subtypes.empty() ? "NULL" : rg.pickRandomly(subtypes)->appendRandomRawValue(rg, gen);
 }
 
 VariantType::~VariantType()
@@ -1208,7 +1208,7 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
         this->ids.emplace_back(11);
         this->ids.emplace_back(12);
     }
-    const uint32_t nopt = rg.pickRandomlyFromVector(this->ids);
+    const uint32_t nopt = rg.pickRandomly(this->ids);
     this->ids.clear();
     switch (nopt)
     {
@@ -1275,7 +1275,7 @@ SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uin
     }
     if ((!use64 || has_precision) && !fc.timezones.empty() && rg.nextSmallNumber() < 5)
     {
-        timezone = std::optional<String>(rg.pickRandomlyFromVector(fc.timezones));
+        timezone = std::optional<String>(rg.pickRandomly(fc.timezones));
         if (dt)
         {
             dt->set_timezone(timezone.value());
@@ -1658,10 +1658,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         /// Nullable
         const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
         SQLType * res = new Nullable(bottomType(
-            rg,
-            allowed_types & ~(allow_dynamic | allow_JSON),
-            lcard,
-            tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
+            rg, allowed_types & ~(allow_dynamic), lcard, tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
         return lcard ? new LowCardinality(res) : res;
     }
     else if (array_type && nopt < (nullable_type + non_nullable_type + array_type + 1))

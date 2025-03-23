@@ -1,10 +1,10 @@
 ---
-slug: /sql-reference/table-functions/input
+description: 'Table function that allows effectively converting and inserting data
+  sent to the server with a given structure to a table with another structure.'
+sidebar_label: 'input'
 sidebar_position: 95
-sidebar_label: input
-title: "input"
-description: "Table function that allows effectively converting and inserting data sent to the
-server with a given structure to a table with another structure."
+slug: /sql-reference/table-functions/input
+title: 'input'
 ---
 
 # input Table Function
@@ -33,7 +33,7 @@ with all transferred data is not created.
 
 <!-- -->
 
-``` bash
+```bash
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1), col3 * col3 FROM input('col1 String, col2 Date, col3 Int32') FORMAT CSV";
 ```
 
@@ -41,7 +41,7 @@ $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1),
 
 <!-- -->
 
-``` bash
+```bash
 $ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
 ```

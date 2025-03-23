@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/other-functions
+description: 'Documentation for Other Functions'
+sidebar_label: 'Other'
 sidebar_position: 140
-sidebar_label: Other
+slug: /sql-reference/functions/other-functions
+title: 'Other Functions'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -1262,7 +1264,7 @@ If executed in the context of a distributed table, this function generates a nor
 
 **Syntax**
 
-``` sql
+```sql
 uptime()
 ```
 
@@ -1274,13 +1276,13 @@ uptime()
 
 Query:
 
-``` sql
+```sql
 SELECT uptime() as Uptime;
 ```
 
 Result:
 
-``` response
+```response
 ┌─Uptime─┐
 │  55867 │
 └────────┘
@@ -1514,7 +1516,7 @@ Replaces literals, sequences of literals and complex aliases (containing whitesp
 
 **Syntax**
 
-``` sql
+```sql
 normalizeQuery(x)
 ```
 
@@ -1530,7 +1532,7 @@ normalizeQuery(x)
 
 Query:
 
-``` sql
+```sql
 SELECT normalizeQuery('[1, 2, 3, x]') AS query;
 ```
 
@@ -1549,7 +1551,7 @@ or at least 36 bytes long such as UUIDs). This helps better analyze complex quer
 
 **Syntax**
 
-``` sql
+```sql
 normalizeQueryKeepNames(x)
 ```
 
@@ -1565,7 +1567,7 @@ normalizeQueryKeepNames(x)
 
 Query:
 
-``` sql
+```sql
 SELECT normalizeQuery('SELECT 1 AS aComplexName123'), normalizeQueryKeepNames('SELECT 1 AS aComplexName123');
 ```
 
@@ -1583,7 +1585,7 @@ Returns identical 64bit hash values without the values of literals for similar q
 
 **Syntax**
 
-``` sql
+```sql
 normalizedQueryHash(x)
 ```
 
@@ -1599,7 +1601,7 @@ normalizedQueryHash(x)
 
 Query:
 
-``` sql
+```sql
 SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
 ```
 
@@ -1618,7 +1620,7 @@ or at least 36 bytes long such as UUIDs) with a placeholder before hashing. Can 
 
 **Syntax**
 
-``` sql
+```sql
 normalizedQueryHashKeepNames(x)
 ```
 
@@ -1632,7 +1634,7 @@ normalizedQueryHashKeepNames(x)
 
 **Example**
 
-``` sql
+```sql
 SELECT normalizedQueryHash('SELECT 1 AS `xyz123`') != normalizedQueryHash('SELECT 1 AS `abc123`') AS normalizedQueryHash;
 SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHashKeepNames('SELECT 1 AS `abc123`') AS normalizedQueryHashKeepNames;
 ```
@@ -2465,7 +2467,7 @@ Result:
 
 ## initializeAggregation {#initializeaggregation}
 
-Calculates the result of an aggregate function based on a single value. This function can be used to initialize aggregate functions with combinator [-State](/sql-reference/aggregate-functions/combinators#-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](/sql-reference/data-types/aggregatefunctione) or use initialized aggregates as default values.
+Calculates the result of an aggregate function based on a single value. This function can be used to initialize aggregate functions with combinator [-State](/sql-reference/aggregate-functions/combinators#-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](/sql-reference/data-types/aggregatefunction) or use initialized aggregates as default values.
 
 **Syntax**
 
@@ -2550,7 +2552,7 @@ finalizeAggregation(state)
 
 **Arguments**
 
-- `state` — State of aggregation. [AggregateFunction](/sql-reference/data-types/aggregatefunctione).
+- `state` — State of aggregation. [AggregateFunction](/sql-reference/data-types/aggregatefunction).
 
 **Returned value(s)**
 
@@ -2658,7 +2660,7 @@ runningAccumulate(agg_state[, grouping]);
 
 **Arguments**
 
-- `agg_state` — State of the aggregate function. [AggregateFunction](/sql-reference/data-types/aggregatefunctione).
+- `agg_state` — State of the aggregate function. [AggregateFunction](/sql-reference/data-types/aggregatefunction).
 - `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../data-types/index.md) for which the equality operator is defined.
 
 **Returned value**
@@ -3060,11 +3062,11 @@ Result:
 
 **See Also**
 
-- [Custom Settings](/operations/settings/overview#custom_settings)
+- [Custom Settings](/operations/settings/query-level#custom_settings)
 
 ## getSettingOrDefault {#getsettingordefault}
 
-Returns the current value of a [custom setting](/operations/settings/overview#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
+Returns the current value of a [custom setting](/operations/settings/query-level#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
 
 **Syntax**
 
@@ -3099,7 +3101,7 @@ NULL
 
 **See Also**
 
-- [Custom Settings](/operations/settings/overview#custom_settings)
+- [Custom Settings](/operations/settings/query-level#custom_settings)
 
 ## isDecimalOverflow {#isdecimaloverflow}
 
@@ -3135,7 +3137,7 @@ SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
 Result:
 
 ```text
-1	1	1	1
+1    1    1    1
 ```
 
 ## countDigits {#countdigits}
@@ -3173,7 +3175,7 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 Result:
 
 ```text
-10	10	19	19	39	39
+10    10    19    19    39    39
 ```
 
 ## errorCodeToName {#errorcodetoname}

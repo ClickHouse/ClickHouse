@@ -1,7 +1,9 @@
 ---
-slug: /development/build
+description: 'Step-by-step guide for building ClickHouse from source on Linux systems'
+sidebar_label: 'Build on Linux'
 sidebar_position: 10
-sidebar_label: Build on Linux
+slug: /development/build
+title: 'How to Build ClickHouse on Linux'
 ---
 
 # How to Build ClickHouse on Linux
@@ -31,7 +33,7 @@ ClickHouse uses CMake and Ninja for building.
 
 You can optionally install ccache to let the build reuse already compiled object files.
 
-``` bash
+```bash
 sudo apt-get update
 sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
@@ -40,7 +42,7 @@ sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-rel
 
 To install Clang on Ubuntu/Debian, use LLVM's automatic installation script from [here](https://apt.llvm.org/).
 
-``` bash
+```bash
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
 
@@ -172,7 +174,7 @@ You can also run your custom-built ClickHouse binary with the config file from t
 ```bash
 sudo service clickhouse-server stop
 sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
-````
+```
 
 ### Building on Any Linux {#building-on-any-linux}
 

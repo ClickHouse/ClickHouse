@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/data-types/lowcardinality
+description: 'Documentation for the LowCardinality optimization for string columns'
+sidebar_label: 'LowCardinality(T)'
 sidebar_position: 42
-sidebar_label: LowCardinality(T)
+slug: /sql-reference/data-types/lowcardinality
+title: 'LowCardinality(T)'
 ---
 
 # LowCardinality(T)
@@ -10,7 +12,7 @@ Changes the internal representation of other data types to be dictionary-encoded
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 LowCardinality(data_type)
 ```
 
@@ -30,7 +32,7 @@ Consider using `LowCardinality` instead of [Enum](../../sql-reference/data-types
 
 Create a table with a `LowCardinality`-column:
 
-``` sql
+```sql
 CREATE TABLE lc_t
 (
     `id` UInt16,

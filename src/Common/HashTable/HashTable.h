@@ -9,7 +9,6 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <base/MemorySanitizer.h>
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -502,7 +501,7 @@ protected:
     }
 
     /// Increase the size of the buffer.
-    void resize(size_t for_num_elems = 0, size_t for_buf_size = 0)
+    void PRESERVE_MOST resize(size_t for_num_elems = 0, size_t for_buf_size = 0)
     {
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         Stopwatch watch;
@@ -962,10 +961,7 @@ protected:
     }
 
 public:
-    void reserve(size_t num_elements)
-    {
-        resize(num_elements);
-    }
+    void PRESERVE_MOST reserve(size_t num_elements) { resize(num_elements); }
 
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)

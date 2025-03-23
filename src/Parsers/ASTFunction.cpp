@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTFunction.h>
 
-#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/KnownObjectNames.h>
@@ -15,7 +14,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
 
@@ -282,6 +280,27 @@ static bool formatNamedArgWithHiddenValue(IAST * arg, WriteBuffer & ostr, const 
     return true;
 }
 
+/// Only some types of arguments are accepted by the parser of the '->' operator.
+static bool isAcceptableArgumentsForLambdaExpression(const ASTs & arguments)
+{
+    if (arguments.size() == 2)
+    {
+        const auto & first_argument = arguments[0];
+        if (first_argument->as<ASTIdentifier>())
+            return true;
+        const ASTFunction * first_argument_function = first_argument->as<ASTFunction>();
+        if (first_argument_function && (first_argument_function->name == "tuple") && first_argument_function->arguments)
+        {
+            const auto & tuple_args = first_argument_function->arguments->children;
+            auto all_tuple_arguments_are_identifiers
+                = std::all_of(tuple_args.begin(), tuple_args.end(), [](const ASTPtr & x) { return x->as<ASTIdentifier>(); });
+            if (all_tuple_arguments_are_identifiers)
+                return true;
+        }
+    }
+    return false;
+}
+
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
@@ -543,16 +562,13 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 }
             }
 
-            const auto & first_argument = arguments->children[0];
-            const ASTIdentifier * first_argument_identifier = first_argument->as<ASTIdentifier>();
-            const ASTFunction * first_argument_function = first_argument->as<ASTFunction>();
-            bool first_argument_is_tuple = first_argument_function && first_argument_function->name == "tuple";
-
-            /// Only these types of arguments are accepted by the parser of the '->' operator.
-            bool acceptable_first_argument_for_lambda_expression = first_argument_identifier || first_argument_is_tuple;
-
-            if (!written && name == "lambda"sv && acceptable_first_argument_for_lambda_expression)
+            /// Only some types of arguments are accepted by the parser of the '->' operator.
+            if (!written && name == "lambda"sv && isAcceptableArgumentsForLambdaExpression(arguments->children))
             {
+                const auto & first_argument = arguments->children[0];
+                const ASTFunction * first_argument_function = first_argument->as<ASTFunction>();
+                bool first_argument_is_tuple = first_argument_function && first_argument_function->name == "tuple";
+
                 /// Special case: zero elements tuple in lhs of lambda is printed as ().
                 /// Special case: one-element tuple in lhs of lambda is printed as its element.
                 /// If lambda function is not the first element in the list, it has to be put in parentheses.
@@ -790,7 +806,7 @@ String getFunctionName(const IAST * ast)
     if (tryGetFunctionNameInto(ast, res))
         return res;
     if (ast)
-        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "{} is not an function", queryToString(*ast));
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "{} is not an function", ast->formatForErrorMessage());
     throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "AST node is nullptr");
 }
 
