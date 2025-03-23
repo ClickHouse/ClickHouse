@@ -422,40 +422,43 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
 
 #if USE_SKIM
-    auto interactive_history_search = [this](char32_t code)
+    if (!options.embedded_mode)
     {
-        std::vector<std::string> words;
+        auto interactive_history_search = [this](char32_t code)
         {
-            auto hs(rx.history_scan());
-            while (hs.next())
-                words.push_back(hs.get().text());
-        }
+            std::vector<std::string> words;
+            {
+                auto hs(rx.history_scan());
+                while (hs.next())
+                    words.push_back(hs.get().text());
+            }
 
-        std::string current_query(rx.get_state().text());
-        std::string new_query;
-        try
-        {
-            new_query = std::string(skim(current_query, words));
-        }
-        catch (const std::exception & e)
-        {
-            rx.print("skim failed: %s (consider using Ctrl-T for a regular non-fuzzy reverse search)\n", e.what());
-        }
+            std::string current_query(rx.get_state().text());
+            std::string new_query;
+            try
+            {
+                new_query = std::string(skim(current_query, words));
+            }
+            catch (const std::exception & e)
+            {
+                rx.print("skim failed: %s (consider using Ctrl-T for a regular non-fuzzy reverse search)\n", e.what());
+            }
 
-        /// REPAINT before to avoid prompt overlap by the query
-        rx.invoke(Replxx::ACTION::REPAINT, code);
+            /// REPAINT before to avoid prompt overlap by the query
+            rx.invoke(Replxx::ACTION::REPAINT, code);
 
-        if (!new_query.empty())
-            rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
+            if (!new_query.empty())
+                rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
 
-        if (bracketed_paste_enabled)
-            enableBracketedPaste();
+            if (bracketed_paste_enabled)
+                enableBracketedPaste();
 
-        rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
-        return rx.invoke(Replxx::ACTION::REPAINT, code);
-    };
+            rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
+            return rx.invoke(Replxx::ACTION::REPAINT, code);
+        };
 
-    rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
+        rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
+    }
 #endif
 
     /// Rebind regular incremental search to C-T.
@@ -485,6 +488,10 @@ ReplxxLineReader::~ReplxxLineReader()
 {
     if (history_file_fd >= 0 && close(history_file_fd))
         rx.print("Close of history file failed: %s\n", errnoToString().c_str());
+
+    /// Reset cursor blinking
+    if (overwrite_mode)
+        rx.print("%s", "\033[0 q");
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)

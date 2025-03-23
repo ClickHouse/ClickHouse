@@ -854,7 +854,6 @@ static std::unordered_map<String, CHSetting> serverSettings3
        {"use_compact_format_in_distributed_parts_names", CHSetting(trueOrFalse, {}, false)},
        {"use_hedged_requests", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_hive_partitioning", CHSetting(trueOrFalse, {}, false)},
-       {"use_local_cache_for_remote_storage", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_page_cache_for_disks_without_file_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
        /*{"use_query_cache",
         CHSetting(
