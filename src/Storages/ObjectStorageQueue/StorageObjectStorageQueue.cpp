@@ -579,6 +579,8 @@ bool StorageObjectStorageQueue::streamToViews()
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
         sources.reserve(processing_threads_num);
 
+        auto processing_progress = std::make_shared<ProcessingProgress>();
+
         for (size_t i = 0; i < processing_threads_num; ++i)
         {
             /// FIXME:
@@ -599,7 +601,6 @@ bool StorageObjectStorageQueue::streamToViews()
                 queue_context,
                 supportsSubsetOfColumns(queue_context));
 
-            auto processing_progress = std::make_shared<ProcessingProgress>();
             auto source = createSource(
                 /*processor_id=*/ i,
                 read_from_format_info,
