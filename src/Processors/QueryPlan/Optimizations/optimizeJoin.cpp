@@ -8,6 +8,8 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Core/Settings.h>
 #include <Interpreters/IJoin.h>
@@ -19,6 +21,8 @@
 
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
+
+#include <Parsers/ASTSelectQuery.h>
 
 #include <Common/logger_useful.h>
 #include <Core/Joins.h>
@@ -83,7 +87,32 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
         if (has_filter && !is_filtered_by_index && !use_statistics)
             return {};
 
-        return analyzed_result->selected_rows_after_size_hint;
+        UInt64 estimated_read_rows_count = analyzed_result->selected_rows;
+
+        if (use_statistics)
+        {
+            const auto & filter_dag = reading->getFilterActionsDAG();
+            const auto context = reading->getContext();
+            ConditionSelectivityEstimator estimator = reading->getMergeTreeData().getConditionSelectivityEstimatorByPredicate(
+                reading->getStorageSnapshot(),
+                filter_dag.has_value() ? &filter_dag.value() : nullptr,
+                context);
+            const auto & query_info = reading->getQueryInfo();
+
+            if (const auto * where_ast = query_info.query->as<ASTSelectQuery &>().where().get())
+            {
+                auto block_with_constants = KeyCondition::getBlockWithConstants(
+                    query_info.query->clone(),
+                    query_info.syntax_analyzer_result,
+                    context);
+                RPNBuilderTreeContext tree_context(reading->getContext(), std::move(block_with_constants), {});
+                RPNBuilderTreeNode tree_node(where_ast, tree_context);
+                const auto & unqualified_column_names = query_info.buildNodeNameToInputNodeColumn();
+                estimated_read_rows_count = static_cast<UInt64>(std::ceil(estimator.estimateRowCount(tree_node, unqualified_column_names)));
+            }
+        }
+
+        return estimated_read_rows_count;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
@@ -126,13 +155,14 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0], join_step->swap_join_tables_use_statistics);
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1], join_step->swap_join_tables_use_statistics);
+        bool use_statistics = join_step->swap_join_tables_use_statistics;
+        auto lhs_estimation = estimateReadRowsCount(*node.children[0], use_statistics);
+        auto rhs_estimation = estimateReadRowsCount(*node.children[1], use_statistics);
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
-            lhs_extimation.transform(toString<UInt64>).value_or("unknown"),
-            rhs_extimation.transform(toString<UInt64>).value_or("unknown"));
+            lhs_estimation.transform(toString<UInt64>).value_or("unknown"),
+            rhs_estimation.transform(toString<UInt64>).value_or("unknown"));
 
-        if (lhs_extimation && rhs_extimation && *lhs_extimation < *rhs_extimation)
+        if (lhs_estimation && rhs_estimation && *lhs_estimation < *rhs_estimation)
             need_swap = true;
     }
     else if (join_step->swap_join_tables.value())
@@ -337,13 +367,14 @@ bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
     bool need_swap = false;
     if (!optimization_settings.join_swap_table.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0], optimization_settings.join_swap_table_use_statistics);
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1], optimization_settings.join_swap_table_use_statistics);
+        bool use_statistics = optimization_settings.join_swap_table_use_statistics;
+        auto lhs_estimation = estimateReadRowsCount(*node.children[0], use_statistics);
+        auto rhs_estimation = estimateReadRowsCount(*node.children[1], use_statistics);
         LOG_TRACE(getLogger("optimizeJoin"), "Left table estimation: {}, right table estimation: {}",
-            lhs_extimation.transform(toString<UInt64>).value_or("unknown"),
-            rhs_extimation.transform(toString<UInt64>).value_or("unknown"));
+            lhs_estimation.transform(toString<UInt64>).value_or("unknown"),
+            rhs_estimation.transform(toString<UInt64>).value_or("unknown"));
 
-        if (lhs_extimation && rhs_extimation && *lhs_extimation < *rhs_extimation)
+        if (lhs_estimation && rhs_estimation && *lhs_estimation < *rhs_estimation)
             need_swap = true;
     }
     else if (optimization_settings.join_swap_table.value())

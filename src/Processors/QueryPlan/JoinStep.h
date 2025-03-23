@@ -40,6 +40,8 @@ public:
 
     /// Swap automatically if not set, otherwise always or never, depending on the value
     std::optional<bool> swap_join_tables = false;
+    /// Should we use statistics for row estimations in join.
+    /// Only works if swap_join_tables is nullopt
     bool swap_join_tables_use_statistics = false;
 
     struct PrimaryKeyNamesPair
