@@ -384,6 +384,9 @@
     M(StartupScriptsExecutionState, "State of startup scripts execution: 0 = not finished, 1 = success, 2 = failure.") \
     \
     M(IsServerShuttingDown, "Indicates if the server is shutting down: 0 = no, 1 = yes") \
+    \
+    M(TotalMergeFailures, "Number of all failed merges since startup, including the ones that were aborted") \
+    M(NonAbortedMergeFailures, "Number of failed merges since startup, excluding the merges that were aborted") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
