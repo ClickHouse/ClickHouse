@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -32,8 +33,9 @@
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -1119,7 +1121,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
         if (!metadata.table_ttl.definition_ast)
             return true;
         /// If TTL had not been changed, do not require mutations
-        return metadata.table_ttl.definition_ast->formatWithSecretsOneLine() != ttl->formatWithSecretsOneLine();
+        return queryToString(metadata.table_ttl.definition_ast) != queryToString(ttl);
     }
 
     if (!ttl || type != MODIFY_COLUMN)
@@ -1128,7 +1130,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
     bool column_ttl_changed = true;
     for (const auto & [name, ttl_ast] : metadata.columns.getColumnTTLs())
     {
-        if (name == column_name && ttl->formatWithSecretsOneLine() == ttl_ast->formatWithSecretsOneLine())
+        if (name == column_name && queryToString(*ttl) == queryToString(*ttl_ast))
         {
             column_ttl_changed = false;
             break;
@@ -1361,7 +1363,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     {
         if (!query)
             return "";
-        return query->formatWithSecretsOneLine();
+        return queryToString(query);
     };
 
     for (size_t i = 0; i < size(); ++i)

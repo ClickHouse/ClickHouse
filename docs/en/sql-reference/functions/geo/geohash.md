@@ -1,23 +1,22 @@
 ---
-description: 'Documentation for Geohash'
-sidebar_label: 'Geohash'
 slug: /sql-reference/functions/geo/geohash
-title: 'Functions for Working with Geohash'
+sidebar_label: Geohash
+title: "Functions for Working with Geohash"
 ---
 
-## Geohash {#geohash}
+## Geohash
 
 [Geohash](https://en.wikipedia.org/wiki/Geohash) is the geocode system, which subdivides Earth's surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer the geohash string is, the more precise the geographic location will be.
 
 If you need to manually convert geographic coordinates to geohash strings, you can use [geohash.org](http://geohash.org/).
 
-## geohashEncode {#geohashencode}
+## geohashEncode
 
 Encodes latitude and longitude as a [geohash](#geohash)-string.
 
 **Syntax**
 
-```sql
+``` sql
 geohashEncode(longitude, latitude, [precision])
 ```
 
@@ -40,19 +39,19 @@ geohashEncode(longitude, latitude, [precision])
 
 Query:
 
-```sql
+``` sql
 SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res──────────┐
 │ ezs42d000000 │
 └──────────────┘
 ```
 
-## geohashDecode {#geohashdecode}
+## geohashDecode
 
 Decodes any [geohash](#geohash)-encoded string into longitude and latitude.
 
@@ -72,23 +71,23 @@ geohashDecode(hash_str)
 
 **Example**
 
-```sql
+``` sql
 SELECT geohashDecode('ezs42') AS res;
 ```
 
-```text
+``` text
 ┌─res─────────────────────────────┐
 │ (-5.60302734375,42.60498046875) │
 └─────────────────────────────────┘
 ```
 
-## geohashesInBox {#geohashesinbox}
+## geohashesInBox
 
 Returns an array of [geohash](#geohash)-encoded strings of given precision that fall inside and intersect boundaries of given box, basically a 2D grid flattened into array.
 
 **Syntax**
 
-```sql
+``` sql
 geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)
 ```
 
@@ -117,13 +116,13 @@ Function throws an exception if resulting array is over 10'000'000 items long.
 
 Query:
 
-```sql
+``` sql
 SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
 ```
 
 Result:
 
-```text
+``` text
 ┌─thasos──────────────────────────────────────┐
 │ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
 └─────────────────────────────────────────────┘

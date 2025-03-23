@@ -23,7 +23,7 @@ ${CLICKHOUSE_CLIENT} --query "
 SELECT count() FROM t_mt_async_insert;
 SELECT count() FROM t_mt_sync_insert;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT tables[1], ProfileEvents['AsyncInsertQuery'] FROM system.query_log
 WHERE
     type = 'QueryFinish' AND

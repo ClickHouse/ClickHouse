@@ -163,25 +163,25 @@ enum class DistributedProductMode : uint8_t
 
 DECLARE_SETTING_ENUM(DistributedProductMode)
 
-/// How the query result cache handles queries with non-deterministic functions, e.g. now()
-enum class QueryResultCacheNondeterministicFunctionHandling : uint8_t
+/// How the query cache handles queries with non-deterministic functions, e.g. now()
+enum class QueryCacheNondeterministicFunctionHandling : uint8_t
 {
     Throw,
     Save,
     Ignore
 };
 
-DECLARE_SETTING_ENUM(QueryResultCacheNondeterministicFunctionHandling)
+DECLARE_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling)
 
-/// How the query result cache handles queries against system tables, tables in databases 'system.*' and 'information_schema.*'
-enum class QueryResultCacheSystemTableHandling : uint8_t
+/// How the query cache handles queries against system tables, tables in databases 'system.*' and 'information_schema.*'
+enum class QueryCacheSystemTableHandling : uint8_t
 {
     Throw,
     Save,
     Ignore
 };
 
-DECLARE_SETTING_ENUM(QueryResultCacheSystemTableHandling)
+DECLARE_SETTING_ENUM(QueryCacheSystemTableHandling)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeInputFormat)
 
@@ -359,13 +359,11 @@ DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
-enum class DatabaseDataLakeCatalogType : uint8_t
+enum class DatabaseIcebergCatalogType : uint8_t
 {
-    ICEBERG_REST,
-    UNITY,
-    GLUE,
+    REST,
 };
 
-DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
+DECLARE_SETTING_ENUM(DatabaseIcebergCatalogType)
 
 }

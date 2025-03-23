@@ -1,8 +1,6 @@
 ---
-description: 'Documentation for JOIN Clause'
-sidebar_label: 'Joining Tables'
 slug: /sql-reference/statements/select/join
-title: 'JOIN Clause'
+sidebar_label: Joining Tables
 ---
 
 # JOIN Clause
@@ -11,7 +9,7 @@ Join produces a new table by combining columns from one or multiple tables by us
 
 **Syntax**
 
-```sql
+``` sql
 SELECT <expr_list>
 FROM <left_table>
 [GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ALL|ASOF] JOIN <right_table>
@@ -20,14 +18,14 @@ FROM <left_table>
 
 Expressions from `ON` clause and columns from `USING` clause are called "join keys". Unless otherwise stated, join produces a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from rows with matching "join keys", which might produce results with much more rows than the source tables.
 
-## Related Content {#related-content}
+## Related Content
 
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Part 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 2](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 3](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3)
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 4](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4)
 
-## Supported Types of JOIN {#supported-types-of-join}
+## Supported Types of JOIN
 
 All standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) types are supported:
 
@@ -51,7 +49,7 @@ Additional join types available in ClickHouse:
 When [join_algorithm](../../../operations/settings/settings.md#join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
 :::
 
-## Settings {#settings}
+## Settings
 
 The default join type can be overridden using [join_default_strictness](../../../operations/settings/settings.md#join_default_strictness) setting.
 
@@ -63,13 +61,14 @@ The behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_
 - [join_algorithm](../../../operations/settings/settings.md#join_algorithm)
 - [join_any_take_last_row](../../../operations/settings/settings.md#join_any_take_last_row)
 - [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
+- [partial_merge_join_optimizations](../../../operations/settings/settings.md#partial_merge_join_optimizations)
 - [partial_merge_join_rows_in_right_blocks](../../../operations/settings/settings.md#partial_merge_join_rows_in_right_blocks)
 - [join_on_disk_max_files_to_merge](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
 - [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
 
 Use the `cross_to_inner_join_rewrite` setting to define the behavior when ClickHouse fails to rewrite a `CROSS JOIN` as an `INNER JOIN`. The default value is `1`, which  allows the join to continue but it will be slower. Set `cross_to_inner_join_rewrite` to `0` if you want an error to be thrown, and set it to `2` to not run the cross joins but instead force a rewrite of all comma/cross joins. If the rewriting fails when the value is `2`, you will receive an error message stating "Please, try to simplify `WHERE` section".
 
-## ON Section Conditions {#on-section-conditions}
+## ON Section Conditions
 
 An `ON` section can contain several conditions combined using the `AND` and `OR` operators. Conditions specifying join keys must refer both left and right tables and must use the equality operator. Other conditions may use other logical operators but they must refer either the left or the right table of a query.
 
@@ -95,7 +94,7 @@ Consider `table_1` and `table_2`:
 
 Query with one join key condition and an additional condition for `table_2`:
 
-```sql
+``` sql
 SELECT name, text FROM table_1 LEFT OUTER JOIN table_2
     ON table_1.Id = table_2.Id AND startsWith(table_2.text, 'Text');
 ```
@@ -112,7 +111,7 @@ Note that the result contains the row with the name `C` and the empty text colum
 
 Query with `INNER` type of a join and multiple conditions:
 
-```sql
+``` sql
 SELECT name, text, scores FROM table_1 INNER JOIN table_2
     ON table_1.Id = table_2.Id AND table_2.scores > 10 AND startsWith(table_2.text, 'Text');
 ```
@@ -126,7 +125,7 @@ Result:
 ```
 Query with `INNER` type of a join and condition with `OR`:
 
-```sql
+``` sql
 CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree() ORDER BY a;
 
 CREATE TABLE t2 (`key` Int32, `val` Int64) ENGINE = MergeTree() ORDER BY key;
@@ -160,7 +159,7 @@ However, you can try experimental support for conditions like `t1.a = t2.key AND
 
 :::
 
-```sql
+``` sql
 SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.val > 3;
 ```
 
@@ -174,7 +173,7 @@ Result:
 └───┴────┴─────┘
 ```
 
-## Join with inequality conditions for columns from different tables {#join-with-inequality-conditions-for-columns-from-different-tables}
+## Join with inequality conditions for columns from different tables
 
 Clickhouse currently supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions. The inequality conditions are supported only for `hash` and `grace_hash` join algorithms. The inequality conditions are not supported with `join_use_nulls`.
 
@@ -212,20 +211,20 @@ SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDE
 ```
 
 ```response
-key1    a    1    1    2    key1    B    2    1    2
-key1    a    1    1    2    key1    C    3    4    5
-key1    a    1    1    2    key1    D    4    1    6
-key1    b    2    3    2    key1    C    3    4    5
-key1    b    2    3    2    key1    D    4    1    6
-key1    c    3    2    1    key1    D    4    1    6
-key1    d    4    7    2            0    0    \N
-key1    e    5    5    5            0    0    \N
-key2    a2    1    1    1            0    0    \N
-key4    f    2    3    4            0    0    \N
+key1	a	1	1	2	key1	B	2	1	2
+key1	a	1	1	2	key1	C	3	4	5
+key1	a	1	1	2	key1	D	4	1	6
+key1	b	2	3	2	key1	C	3	4	5
+key1	b	2	3	2	key1	D	4	1	6
+key1	c	3	2	1	key1	D	4	1	6
+key1	d	4	7	2			0	0	\N
+key1	e	5	5	5			0	0	\N
+key2	a2	1	1	1			0	0	\N
+key4	f	2	3	4			0	0	\N
 ```
 
 
-## NULL values in JOIN keys {#null-values-in-join-keys}
+## NULL values in JOIN keys
 
 The NULL is not equal to any value, including itself. It means that if a JOIN key has a NULL value in one table, it won't match a NULL value in the other table.
 
@@ -279,7 +278,7 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 └─────────┴───────┘
 ```
 
-## ASOF JOIN Usage {#asof-join-usage}
+## ASOF JOIN Usage
 
 `ASOF JOIN` is useful when you need to join records that have no exact match.
 
@@ -291,7 +290,7 @@ Algorithm requires the special column in tables. This column:
 
 Syntax `ASOF JOIN ... ON`:
 
-```sql
+``` sql
 SELECT expressions_list
 FROM table_1
 ASOF LEFT JOIN table_2
@@ -304,7 +303,7 @@ Conditions supported for the closest match: `>`, `>=`, `<`, `<=`.
 
 Syntax `ASOF JOIN ... USING`:
 
-```sql
+``` sql
 SELECT expressions_list
 FROM table_1
 ASOF JOIN table_2
@@ -331,7 +330,7 @@ For example, consider the following tables:
 It's **not** supported in the [Join](../../../engines/table-engines/special/join.md) table engine.
 :::
 
-## PASTE JOIN Usage {#paste-join-usage}
+## PASTE JOIN Usage
 
 The result of `PASTE JOIN` is a table that contains all columns from left subquery followed by all columns from the right subquery.
 The rows are matched based on their positions in the original tables (the order of rows should be defined).
@@ -386,16 +385,16 @@ SETTINGS max_block_size = 2;
 └───┴──────┘
 ```
 
-## Distributed JOIN {#distributed-join}
+## Distributed JOIN
 
 There are two ways to execute join involving distributed tables:
 
 - When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
 - When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
 
-Be careful when using `GLOBAL`. For more information, see the [Distributed subqueries](/sql-reference/operators/in#distributed-subqueries) section.
+Be careful when using `GLOBAL`. For more information, see the [Distributed subqueries](../../../sql-reference/operators/in.md#select-distributed-subqueries) section.
 
-## Implicit Type Conversion {#implicit-type-conversion}
+## Implicit Type Conversion
 
 `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, and `FULL JOIN` queries support the implicit type conversion for "join keys". However the query can not be executed, if join keys from the left and the right tables cannot be converted to a single type (for example, there is no data type that can hold all values from both `UInt64` and `Int64`, or `String` and `Int32`).
 
@@ -431,21 +430,21 @@ returns the set:
 └────┴──────┴───────────────┴─────────────────┘
 ```
 
-## Usage Recommendations {#usage-recommendations}
+## Usage Recommendations
 
-### Processing of Empty or NULL Cells {#processing-of-empty-or-null-cells}
+### Processing of Empty or NULL Cells
 
 While joining tables, the empty cells may appear. The setting [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) define how ClickHouse fills these cells.
 
-If the `JOIN` keys are [Nullable](../../../sql-reference/data-types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](/sql-reference/syntax#null) are not joined.
+If the `JOIN` keys are [Nullable](../../../sql-reference/data-types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](../../../sql-reference/syntax.md#null-literal) are not joined.
 
-### Syntax {#syntax}
+### Syntax
 
 The columns specified in `USING` must have the same names in both subqueries, and the other columns must be named differently. You can use aliases to change the names of columns in subqueries.
 
 The `USING` clause specifies one or more columns to join, which establishes the equality of these columns. The list of columns is set without brackets. More complex join conditions are not supported.
 
-### Syntax Limitations {#syntax-limitations}
+### Syntax Limitations
 
 For multiple `JOIN` clauses in a single `SELECT` query:
 
@@ -457,7 +456,7 @@ For `ON`, `WHERE`, and `GROUP BY` clauses:
 
 - Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
 
-### Performance {#performance}
+### Performance
 
 When running a `JOIN`, there is no optimization of the order of execution in relation to other stages of the query. The join (a search in the right table) is run before filtering in `WHERE` and before aggregation.
 
@@ -467,7 +466,7 @@ In some cases, it is more efficient to use [IN](../../../sql-reference/operators
 
 If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is a "dictionaries" feature that you should use instead of `JOIN`. For more information, see the [Dictionaries](../../../sql-reference/dictionaries/index.md) section.
 
-### Memory Limitations {#memory-limitations}
+### Memory Limitations
 
 By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the right_table and creates a hash table for it in RAM. If `join_algorithm = 'auto'` is enabled, then after some threshold of memory consumption, ClickHouse falls back to [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join algorithm. For `JOIN` algorithms description see the [join_algorithm](../../../operations/settings/settings.md#join_algorithm) setting.
 
@@ -478,11 +477,11 @@ If you need to restrict `JOIN` operation memory consumption use the following se
 
 When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) setting instructs.
 
-## Examples {#examples}
+## Examples
 
 Example:
 
-```sql
+``` sql
 SELECT
     CounterID,
     hits,
@@ -506,7 +505,7 @@ ORDER BY hits DESC
 LIMIT 10
 ```
 
-```text
+``` text
 ┌─CounterID─┬───hits─┬─visits─┐
 │   1143050 │ 523264 │  13665 │
 │    731962 │ 475698 │ 102716 │

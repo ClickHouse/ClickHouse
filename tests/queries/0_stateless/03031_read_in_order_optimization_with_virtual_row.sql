@@ -1,6 +1,5 @@
 
 SET read_in_order_use_virtual_row = 1;
-SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS t;
 
@@ -44,7 +43,7 @@ max_threads = 1,
 optimize_read_in_order = 1,
 log_comment = 'preliminary merge, no filter';
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT read_rows
 FROM system.query_log
@@ -68,7 +67,7 @@ max_threads = 1,
 optimize_read_in_order = 1,
 log_comment = 'preliminary merge with filter';
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT read_rows
 FROM system.query_log
@@ -91,7 +90,7 @@ max_threads = 1,
 optimize_read_in_order = 1,
 log_comment = 'no preliminary merge, no filter';
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT read_rows
 FROM system.query_log
@@ -115,7 +114,7 @@ max_threads = 1,
 optimize_read_in_order = 1,
 log_comment = 'no preliminary merge, with filter';
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT read_rows
 FROM system.query_log

@@ -1,16 +1,15 @@
 ---
-description: 'Documentation for Attach'
-sidebar_label: 'ATTACH'
-sidebar_position: 40
 slug: /sql-reference/statements/attach
-title: 'ATTACH Statement'
+sidebar_position: 40
+sidebar_label: ATTACH
+title: "ATTACH Statement"
 ---
 
 Attaches a table or a dictionary, for example, when moving a database to another server.
 
 **Syntax**
 
-```sql
+``` sql
 ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
 ```
 
@@ -18,11 +17,11 @@ The query does not create data on the disk, but assumes that data is already in 
 
 If a table was previously detached ([DETACH](../../sql-reference/statements/detach.md) query), meaning that its structure is known, you can use shorthand without defining the structure.
 
-## Attach Existing Table {#attach-existing-table}
+## Attach Existing Table
 
 **Syntax**
 
-```sql
+``` sql
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -30,9 +29,9 @@ This query is used when starting the server. The server stores table metadata as
 
 If the table was detached permanently, it won't be reattached at the server start, so you need to use `ATTACH` query explicitly.
 
-## Create New Table And Attach Data {#create-new-table-and-attach-data}
+## Create New Table And Attach Data
 
-### With Specified Path to Table Data {#with-specified-path-to-table-data}
+### With Specified Path to Table Data
 
 The query creates a new table with provided structure and attaches table data from the provided directory in `user_files`.
 
@@ -60,7 +59,7 @@ Result:
 └──────┴────┘
 ```
 
-### With Specified Table UUID {#with-specified-table-uuid}
+### With Specified Table UUID
 
 This query creates a new table with provided structure and attaches data from the table with the specified UUID.
 It is supported by the [Atomic](../../engines/database-engines/atomic.md) database engine.
@@ -71,7 +70,7 @@ It is supported by the [Atomic](../../engines/database-engines/atomic.md) databa
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-## Attach MergeTree table as ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
+## Attach MergeTree table as ReplicatedMergeTree
 
 Allows to attach non-replicated MergeTree table as ReplicatedMergeTree. ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings. It is also possible to attach a replicated table as a regular MergeTree.
 
@@ -113,22 +112,22 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-## Attach Existing Dictionary {#attach-existing-dictionary}
+## Attach Existing Dictionary
 
 Attaches a previously detached dictionary.
 
 **Syntax**
 
-```sql
+``` sql
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## Attach Existing Database {#attach-existing-database}
+## Attach Existing Database
 
 Attaches a previously detached database.
 
 **Syntax**
 
-```sql
+``` sql
 ATTACH DATABASE [IF NOT EXISTS] name [ENGINE=<database engine>] [ON CLUSTER cluster]
 ```

@@ -1,22 +1,21 @@
 ---
-alias: []
-description: 'Documentation for the JSONCompactStringsEachRow format'
-input_format: true
-keywords: ['JSONCompactStringsEachRow']
-output_format: true
+title : JSONCompactStringsEachRow
 slug: /interfaces/formats/JSONCompactStringsEachRow
-title: 'JSONCompactStringsEachRow'
+keywords : [JSONCompactStringsEachRow]
+input_format: true
+output_format: true
+alias: []
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description
 
 Differs from [`JSONCompactEachRow`](./JSONCompactEachRow.md) only in that data fields are output as strings, not as typed JSON values.
 
-## Example Usage {#example-usage}
+## Example Usage
 
 Example:
 
@@ -26,5 +25,5 @@ Example:
 ["44", "hello", "[0,1,2,3]"]
 ```
 
-## Format Settings {#format-settings}
+## Format Settings
 

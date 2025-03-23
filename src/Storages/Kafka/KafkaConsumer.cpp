@@ -151,12 +151,19 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
 
 ConsumerPtr && KafkaConsumer::moveConsumer()
 {
-    // messages & assignment should be destroyed before consumer
     cleanUnprocessed();
-    assignment.reset();
-
-    StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
-
+    if (!consumer->get_subscription().empty())
+    {
+        try
+        {
+            consumer->unsubscribe();
+        }
+        catch (const cppkafka::HandleException & e)
+        {
+            LOG_ERROR(log, "Error during unsubscribe: {}", e.what());
+        }
+        drain();
+    }
     return std::move(consumer);
 }
 
@@ -166,11 +173,35 @@ KafkaConsumer::~KafkaConsumer()
         return;
 
     cleanUnprocessed();
-    assignment.reset();
-
-    StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
+    try
+    {
+        if (!consumer->get_subscription().empty())
+        {
+            try
+            {
+                consumer->unsubscribe();
+            }
+            catch (const cppkafka::HandleException & e)
+            {
+                LOG_ERROR(log, "Error during unsubscribe: {}", e.what());
+            }
+            drain();
+        }
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Error while destructing consumer: {}", e.what());
+    }
 }
 
+// Needed to drain rest of the messages / queued callback calls from the consumer
+// after unsubscribe, otherwise consumer will hang on destruction
+// see https://github.com/edenhill/librdkafka/issues/2077
+//     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
+void KafkaConsumer::drain()
+{
+    StorageKafkaUtils::drainConsumer(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
+}
 
 void KafkaConsumer::commit()
 {
@@ -205,7 +236,7 @@ void KafkaConsumer::commit()
 
     if (hasMorePolledMessages())
     {
-        LOG_WARNING(log, "Logical error. Not all polled messages were processed.");
+        LOG_WARNING(log, "Logical error. Non all polled messages were processed.");
     }
 
     if (offsets_stored > 0)
@@ -268,105 +299,80 @@ void KafkaConsumer::commit()
 
 void KafkaConsumer::subscribe()
 {
+    LOG_TRACE(log, "Already subscribed to topics: [{}]", boost::algorithm::join(consumer->get_subscription(), ", "));
+
+    if (assignment.has_value())
+    {
+        LOG_TRACE(log, "Already assigned to: {}", assignment.value());
+    }
+    else
+    {
+        LOG_TRACE(log, "No assignment");
+    }
+
+
+    size_t max_retries = 5;
+
+    while (consumer->get_subscription().empty())
+    {
+        --max_retries;
+        try
+        {
+            consumer->subscribe(topics);
+            // FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
+            //        see https://github.com/edenhill/librdkafka/issues/2077
+        }
+        catch (cppkafka::HandleException & e)
+        {
+            if (max_retries > 0 && e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
+                continue;
+            throw;
+        }
+    }
+
     cleanUnprocessed();
 
     // we can reset any flags (except of CONSUMER_STOPPED) before attempt of reading new block of data
     if (stalled_status != CONSUMER_STOPPED)
         stalled_status = NO_MESSAGES_RETURNED;
-
-    auto subscription = consumer->get_subscription();
-
-    if (!subscription.empty())
-    {
-        LOG_TRACE(log, "Already subscribed to topics: [{}]", boost::algorithm::join(subscription, ", "));
-
-        if (assignment.has_value())
-            LOG_TRACE(log, "Already assigned to: {}", assignment.value());
-        else
-            LOG_TRACE(log, "No assignment");
-
-        if (current_subscription_valid)
-            return;
-    }
-
-    size_t max_retries = 5;
-
-    while (true)
-    {
-        --max_retries;
-
-        if (stopped)
-        {
-            LOG_TRACE(log, "Consumer is stopped; cannot subscribe.");
-            return;
-        }
-
-        LOG_TRACE(log, "Subscribing to topics: [{}]", boost::algorithm::join(topics, ", "));
-
-        try
-        {
-            consumer->subscribe(topics);
-        }
-        catch (const cppkafka::HandleException & e)
-        {
-            LOG_ERROR(log, "Exception during subscribe: {}", e.what());
-
-            if (max_retries > 0 && e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
-                continue;
-
-            setExceptionInfo(e.what());
-            throw;
-        }
-
-        subscription = consumer->get_subscription();
-
-        if (subscription.empty())
-        {
-            if (max_retries > 0)
-            {
-                LOG_WARNING(log, "Subscription is empty. Will try to resubscribe.");
-                continue;
-            }
-            else
-            {
-                throw Exception(ErrorCodes::CANNOT_COMMIT_OFFSET, "Can not get subscription.");
-            }
-        }
-        else
-        {
-            LOG_TRACE(log, "Subscribed to topics: [{}]", boost::algorithm::join(subscription, ", "));
-            break;
-        }
-    }
-
-    current_subscription_valid = true;
-
-    // Immediately poll for messages (+callbacks) after successful subscription.
-    doPoll();
 }
 
 void KafkaConsumer::cleanUnprocessed()
 {
     messages.clear();
-    current = messages.end();
+    current = messages.begin();
     offsets_stored = 0;
 }
 
-void KafkaConsumer::markDirty()
+void KafkaConsumer::unsubscribe()
 {
-    LOG_TRACE(log, "Marking consumer as dirty after failure, so it will rejoin consumer group on the next usage.");
-
+    LOG_TRACE(log, "Re-joining claimed consumer after failure");
     cleanUnprocessed();
 
-    // Next subscribe call will redo subscription, causing a rebalance/offset reset and potential duplicates.
-    current_subscription_valid = false;
+    // it should not raise exception as used in destructor
+    try
+    {
+        // From docs: Any previous subscription will be unassigned and unsubscribed first.
+        consumer->subscribe(topics);
+
+        // I wanted to avoid explicit unsubscribe as it requires draining the messages
+        // to close the consumer safely after unsubscribe
+        // see https://github.com/edenhill/librdkafka/issues/2077
+        //     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Exception from KafkaConsumer::unsubscribe: {}", e.what());
+    }
+
 }
+
 
 void KafkaConsumer::resetToLastCommitted(const char * msg)
 {
     if (!assignment.has_value() || assignment->empty())
     {
-        LOG_TRACE(log, "Not assigned; cannot reset to last committed position.");
+        LOG_TRACE(log, "Not assigned. Can't reset to last committed position.");
         return;
     }
     auto committed_offset = consumer->get_offsets_committed(consumer->get_assignment());
@@ -374,10 +380,19 @@ void KafkaConsumer::resetToLastCommitted(const char * msg)
     LOG_TRACE(log, "{} Returned to committed position: {}", msg, committed_offset);
 }
 
-
-void KafkaConsumer::doPoll()
+// it do the poll when needed
+ReadBufferPtr KafkaConsumer::consume()
 {
-    assert(current == messages.end());
+    resetIfStopped();
+
+    if (polledDataUnusable())
+        return nullptr;
+
+    if (hasMorePolledMessages())
+        return getNextMessage();
+
+    if (intermediate_commit)
+        commit();
 
     while (true)
     {
@@ -396,16 +411,12 @@ void KafkaConsumer::doPoll()
         auto new_messages = consumer->poll_batch(batch_size,
                             std::chrono::milliseconds(actual_poll_timeout_ms));
         last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
-
-        // Remove messages with errors and log any exceptions.
-        auto num_errors = StorageKafkaUtils::eraseMessageErrors(new_messages, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
         num_messages_read += new_messages.size();
 
         resetIfStopped();
-
         if (stalled_status == CONSUMER_STOPPED)
         {
-            return;
+            return nullptr;
         }
         if (stalled_status == REBALANCE_HAPPENED)
         {
@@ -414,9 +425,9 @@ void KafkaConsumer::doPoll()
                 // we have polled something just after rebalance.
                 // we will not use current batch, so we need to return to last committed position
                 // otherwise we will continue polling from that position
-                resetToLastCommitted("Rewinding last poll after rebalance.");
+                resetToLastCommitted("Rewind last poll after rebalance.");
             }
-            return;
+            return nullptr;
         }
 
         if (new_messages.empty())
@@ -425,7 +436,7 @@ void KafkaConsumer::doPoll()
             // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
             if (!assignment.has_value())
             {
-                waited_for_assignment += poll_timeout; // Rough calculation for total wait time.
+                waited_for_assignment += poll_timeout; // slightly inaccurate, but rough calculation is ok.
                 if (waited_for_assignment < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
                 {
                     continue;
@@ -433,61 +444,40 @@ void KafkaConsumer::doPoll()
 
                 LOG_WARNING(log, "Can't get assignment. Will keep trying.");
                 stalled_status = NO_ASSIGNMENT;
-                return;
+                return nullptr;
             }
-
             if (assignment->empty())
             {
                 LOG_TRACE(log, "Empty assignment.");
-                return;
+                return nullptr;
             }
 
-            if (num_errors > 0)
-            {
-                LOG_WARNING(log, "Only errors polled.");
-                stalled_status = ERRORS_RETURNED;
-                return;
-            }
-
-            LOG_TRACE(log, "Stalled.");
-            return;
+            LOG_TRACE(log, "Stalled");
+            return nullptr;
         }
 
         messages = std::move(new_messages);
         current = messages.begin();
-
-        ProfileEvents::increment(ProfileEvents::KafkaMessagesPolled, messages.size());
-
         LOG_TRACE(
             log,
             "Polled batch of {} messages. Offsets position: {}",
             messages.size(),
             consumer->get_offsets_position(consumer->get_assignment()));
-
-        stalled_status = NOT_STALLED;
-
         break;
     }
-}
 
-/// Consumes a single message from the buffered polled batch
-/// does the poll if needed
-ReadBufferPtr KafkaConsumer::consume()
-{
-    resetIfStopped();
-
-    if (polledDataUnusable())
+    filterMessageErrors();
+    if (current == messages.end())
+    {
+        LOG_ERROR(log, "Only errors left");
+        stalled_status = ERRORS_RETURNED;
         return nullptr;
+    }
 
-    if (hasMorePolledMessages())
-        return getNextMessage();
+    ProfileEvents::increment(ProfileEvents::KafkaMessagesPolled, messages.size());
 
-    if (intermediate_commit)
-        commit();
-
-    doPoll();
-
-    return stalled_status == NOT_STALLED ? getNextMessage() : nullptr;
+    stalled_status = NOT_STALLED;
+    return getNextMessage();
 }
 
 ReadBufferPtr KafkaConsumer::getNextMessage()
@@ -505,6 +495,13 @@ ReadBufferPtr KafkaConsumer::getNextMessage()
     return getNextMessage();
 }
 
+void KafkaConsumer::filterMessageErrors()
+{
+    assert(current == messages.begin());
+
+    StorageKafkaUtils::eraseMessageErrors(messages, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
+    current = messages.begin();
+}
 
 void KafkaConsumer::resetIfStopped()
 {

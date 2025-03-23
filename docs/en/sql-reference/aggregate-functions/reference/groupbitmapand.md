@@ -1,14 +1,12 @@
 ---
-description: 'Calculations the AND of a bitmap column, return cardinality of type
-  UInt64, if add suffix -State, then return a bitmap object.'
-sidebar_position: 149
 slug: /sql-reference/aggregate-functions/reference/groupbitmapand
-title: 'groupBitmapAnd'
+sidebar_position: 149
+title: groupBitmapAnd
 ---
 
 Calculations the AND of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../../sql-reference/functions/bitmap-functions.md).
 
-```sql
+``` sql
 groupBitmapAnd(expr)
 ```
 
@@ -22,7 +20,7 @@ Value of the `UInt64` type.
 
 **Example**
 
-```sql
+``` sql
 DROP TABLE IF EXISTS bitmap_column_expr_test2;
 CREATE TABLE bitmap_column_expr_test2
 (

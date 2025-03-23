@@ -1,10 +1,7 @@
 ---
-description: 'Documentation for the DateTime64 data type in ClickHouse, which stores
-  timestamps with sub-second precision'
-sidebar_label: 'DateTime64'
-sidebar_position: 18
 slug: /sql-reference/data-types/datetime64
-title: 'DateTime64'
+sidebar_position: 18
+sidebar_label: DateTime64
 ---
 
 # DateTime64
@@ -16,7 +13,7 @@ Typically, are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
 
 **Syntax:**
 
-```sql
+``` sql
 DateTime64(precision, [timezone])
 ```
 
@@ -26,11 +23,11 @@ Supported range of values: \[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999\]
 
 Note: The precision of the maximum value is 8. If the maximum precision of 9 digits (nanoseconds) is used, the maximum supported value is `2262-04-11 23:47:16` in UTC.
 
-## Examples {#examples}
+## Examples
 
 1. Creating a table with `DateTime64`-type column and inserting data into it:
 
-```sql
+``` sql
 CREATE TABLE dt64
 (
     `timestamp` DateTime64(3, 'Asia/Istanbul'),
@@ -39,7 +36,7 @@ CREATE TABLE dt64
 ENGINE = TinyLog;
 ```
 
-```sql
+``` sql
 -- Parse DateTime
 -- - from integer interpreted as number of seconds since 1970-01-01.
 -- - from string,
@@ -48,7 +45,7 @@ INSERT INTO dt64 VALUES (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00
 SELECT * FROM dt64;
 ```
 
-```text
+``` text
 ┌───────────────timestamp─┬─event_id─┐
 │ 2019-01-01 03:00:00.123 │        1 │
 │ 2019-01-01 03:00:00.123 │        2 │
@@ -61,11 +58,11 @@ SELECT * FROM dt64;
 
 2. Filtering on `DateTime64` values
 
-```sql
+``` sql
 SELECT * FROM dt64 WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul');
 ```
 
-```text
+``` text
 ┌───────────────timestamp─┬─event_id─┐
 │ 2019-01-01 00:00:00.000 │        3 │
 └─────────────────────────┴──────────┘
@@ -73,11 +70,11 @@ SELECT * FROM dt64 WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asi
 
 Unlike `DateTime`, `DateTime64` values are not converted from `String` automatically.
 
-```sql
+``` sql
 SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
 ```
 
-```text
+``` text
 ┌───────────────timestamp─┬─event_id─┐
 │ 2019-01-01 03:00:00.123 │        1 │
 │ 2019-01-01 03:00:00.123 │        2 │
@@ -89,11 +86,11 @@ be given after the decimal point.
 
 3. Getting a time zone for a `DateTime64`-type value:
 
-```sql
+``` sql
 SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS x;
 ```
 
-```text
+``` text
 ┌──────────────────column─┬─x──────────────────────────────┐
 │ 2023-06-05 00:09:52.000 │ DateTime64(3, 'Asia/Istanbul') │
 └─────────────────────────┴────────────────────────────────┘
@@ -101,14 +98,14 @@ SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS 
 
 4. Timezone conversion
 
-```sql
+``` sql
 SELECT
 toDateTime64(timestamp, 3, 'Europe/London') as lon_time,
 toDateTime64(timestamp, 3, 'Asia/Istanbul') as istanbul_time
 FROM dt64;
 ```
 
-```text
+``` text
 ┌────────────────lon_time─┬───────────istanbul_time─┐
 │ 2019-01-01 00:00:00.123 │ 2019-01-01 03:00:00.123 │
 │ 2019-01-01 00:00:00.123 │ 2019-01-01 03:00:00.123 │

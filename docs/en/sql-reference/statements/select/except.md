@@ -1,8 +1,6 @@
 ---
-description: 'Documentation for EXCEPT Clause'
-sidebar_label: 'EXCEPT'
 slug: /sql-reference/statements/select/except
-title: 'EXCEPT Clause'
+sidebar_label: EXCEPT
 ---
 
 # EXCEPT Clause
@@ -14,9 +12,9 @@ The `EXCEPT` clause returns only those rows that result from the first query wit
 - Multiple `EXCEPT` statements are executed from left to right if parentheses are not specified. 
 - The `EXCEPT` operator has the same priority as the `UNION` clause and lower priority than the `INTERSECT` clause.
 
-## Syntax {#syntax}
+## Syntax
 
-```sql
+``` sql
 SELECT column1 [, column2 ]
 FROM table1
 [WHERE condition]
@@ -37,22 +35,22 @@ FROM table1
 [WHERE condition]
 ```
 
-## Examples {#examples}
+## Examples
 
 The examples in this section demonstrate usage of the `EXCEPT` clause.
 
-### Filtering Numbers Using the `EXCEPT` Clause {#filtering-numbers-using-the-except-clause}
+### Filtering Numbers Using the `EXCEPT` Clause
 
 Here is a simple example that returns the numbers 1 to 10 that are _not_ a part of the numbers 3 to 8:
 
 Query:
 
-```sql
+``` sql
 SELECT number
 FROM numbers(1, 10)
 EXCEPT
 SELECT number
-FROM numbers(3, 8)
+FROM numbers(3, 6)
 ```
 
 Result:
@@ -66,7 +64,7 @@ Result:
 └────────┘
 ```
 
-### Excluding Specific Columns Using `EXCEPT()` {#excluding-specific-columns-using-except}
+### Excluding Specific Columns Using `EXCEPT()`
 
 `EXCEPT()` can be used to quickly exclude columns from a result. For instance if we want to select all columns from a table, except a few select columns as shown in the example below:
 
@@ -107,7 +105,7 @@ Result:
    └─────────────────────────┴────────────┴─────────┴──────┴──────┴─────────┴─────────────┴────────────┘
 ```
 
-### Using `EXCEPT` and `INTERSECT` with Cryptocurrency Data {#using-except-and-intersect-with-cryptocurrency-data}
+### Using `EXCEPT` and `INTERSECT` with Cryptocurrency Data
 
 `EXCEPT` and `INTERSECT` can often be used interchangeably with different Boolean logic, and they are both useful if you have two tables that share a common column (or columns).
 For example, suppose we have a few million rows of historical cryptocurrency data that contains trade prices and volume:
@@ -197,7 +195,7 @@ Result:
 
 This means of the four cryptocurrencies we own, only Bitcoin has never dropped below $10 (based on the limited data we have here in this example).
 
-### Using `EXCEPT DISTINCT` {#using-except-distinct}
+### Using `EXCEPT DISTINCT`
 
 Notice in the previous query we had multiple Bitcoin holdings in the result. You can add `DISTINCT` to `EXCEPT` to eliminate duplicate rows from the result:
 
@@ -218,5 +216,5 @@ Result:
 
 **See Also**
 
-- [UNION](/sql-reference/statements/select/union)
-- [INTERSECT](/sql-reference/statements/select/intersect)
+- [UNION](union.md#union-clause)
+- [INTERSECT](intersect.md#intersect-clause)

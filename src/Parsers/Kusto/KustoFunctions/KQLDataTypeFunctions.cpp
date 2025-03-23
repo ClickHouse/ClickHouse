@@ -10,8 +10,7 @@
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSetQuery.h>
 #include "Poco/String.h"
-
-#include <fmt/format.h>
+#include <format>
 
 namespace DB
 {
@@ -35,7 +34,7 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     if (pos->type == TokenType::QuotedIdentifier)
-        datetime_str = fmt::format("'{}'", String(pos->begin + 1, pos->end - 1));
+        datetime_str = std::format("'{}'", String(pos->begin + 1, pos->end - 1));
     else if (pos->type == TokenType::StringLiteral)
         datetime_str = String(pos->begin, pos->end);
     else if (pos->type == TokenType::BareWord)
@@ -44,7 +43,7 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
         if (Poco::toUpper(datetime_str) == "NULL")
             out = "NULL";
         else
-            out = fmt::format(
+            out = std::format(
                 "if(toTypeName({0}) = 'Int64' OR toTypeName({0}) = 'Int32'OR toTypeName({0}) = 'Float64' OR  toTypeName({0}) = 'UInt32' OR "
                 " toTypeName({0}) = 'UInt64', toDateTime64({0},9,'UTC'), parseDateTime64BestEffortOrNull({0}::String,9,'UTC'))",
                 datetime_str);
@@ -60,9 +59,9 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
                 break;
         }
         --pos;
-        datetime_str = fmt::format("'{}'", String(start->begin, pos->end));
+        datetime_str = std::format("'{}'", String(start->begin, pos->end));
     }
-    out = fmt::format("parseDateTime64BestEffortOrNull({},9,'UTC')", datetime_str);
+    out = std::format("parseDateTime64BestEffortOrNull({},9,'UTC')", datetime_str);
     ++pos;
     return true;
 }
@@ -128,7 +127,7 @@ bool DatatypeGuid::convertImpl(String & out, IParser::Pos & pos)
         --pos;
         guid_str = String(start->begin, pos->end);
     }
-    out = fmt::format("toUUIDOrNull('{}')", guid_str);
+    out = std::format("toUUIDOrNull('{}')", guid_str);
     ++pos;
     return true;
 }
@@ -144,7 +143,7 @@ bool DatatypeInt::convertImpl(String & out, IParser::Pos & pos)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "String is not parsed as int literal.");
 
     auto arg = getConvertedArgument(fn_name, pos);
-    out = fmt::format("toInt32({})", arg);
+    out = std::format("toInt32({})", arg);
     return true;
 }
 
@@ -164,7 +163,7 @@ bool DatatypeReal::convertImpl(String & out, IParser::Pos & pos)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "String is not parsed as double literal.");
 
     auto arg = getConvertedArgument(fn_name, pos);
-    out = fmt::format("toFloat64({})", arg);
+    out = std::format("toFloat64({})", arg);
     return true;
 }
 
@@ -194,9 +193,9 @@ bool DatatypeTimespan::convertImpl(String & out, IParser::Pos & pos)
     if (time_span.parse(pos, node, expected))
     {
         if (sign)
-            out = fmt::format("-{}::Float64", time_span.toSeconds());
+            out = std::format("-{}::Float64", time_span.toSeconds());
         else
-            out = fmt::format("{}::Float64", time_span.toSeconds());
+            out = std::format("{}::Float64", time_span.toSeconds());
         ++pos;
     }
     else
@@ -236,7 +235,7 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
         else
             scale = std::stoi(arg.substr(exponential_pos + 1, arg.length()));
 
-        out = fmt::format("toDecimal128({}::String,{})", arg, scale);
+        out = std::format("toDecimal128({}::String,{})", arg, scale);
         return true;
     }
 
@@ -251,7 +250,7 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
     if (scale < 0 || Poco::toUpper(arg) == "NULL")
         out = "NULL";
     else
-        out = fmt::format("toDecimal128({}::String,{})", arg, scale);
+        out = std::format("toDecimal128({}::String,{})", arg, scale);
 
     return true;
 }

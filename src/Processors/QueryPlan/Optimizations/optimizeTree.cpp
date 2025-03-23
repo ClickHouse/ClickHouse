@@ -123,9 +123,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     while (!stack.empty())
     {
         optimizePrimaryKeyConditionAndLimit(stack);
-
-        updateQueryConditionCache(stack, optimization_settings);
-
         /// NOTE: optimizePrewhere can modify the stack.
         /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
         if (optimization_settings.optimize_prewhere)
@@ -144,8 +141,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         stack.pop_back();
     }
-
-    calculateHashTableCacheKeys(root);
 
     stack.push_back({.node = &root});
     while (!stack.empty())
@@ -251,9 +246,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
-
-    if (optimization_settings.query_plan_join_shard_by_pk_ranges)
-        optimizeJoinByShards(root);
 }
 
 void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)

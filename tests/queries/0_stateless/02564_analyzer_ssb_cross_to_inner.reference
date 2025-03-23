@@ -62,7 +62,7 @@ QUERY id: 0
   WHERE
     FUNCTION id: 36, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
-        LIST id: 37, nodes: 8
+        LIST id: 37, nodes: 6
           FUNCTION id: 38, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 39, nodes: 2
@@ -93,52 +93,32 @@ QUERY id: 0
                       ARGUMENTS
                         LIST id: 58, nodes: 1
                           CONSTANT id: 59, constant_value: \'1996-12-31\', constant_value_type: String
-          FUNCTION id: 60, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+          FUNCTION id: 60, function_name: equals, function_type: ordinary, result_type: LowCardinality(UInt8)
             ARGUMENTS
               LIST id: 61, nodes: 2
-                COLUMN id: 62, column_name: D_DATEKEY, result_type: Date, source_id: 3
-                CONSTANT id: 63, constant_value: UInt64_9861, constant_value_type: Date
-                  EXPRESSION
-                    FUNCTION id: 57, function_name: toDate, function_type: ordinary, result_type: Date
-                      ARGUMENTS
-                        LIST id: 58, nodes: 1
-                          CONSTANT id: 59, constant_value: \'1996-12-31\', constant_value_type: String
-          FUNCTION id: 64, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+                COLUMN id: 62, column_name: S_NATION, result_type: LowCardinality(String), source_id: 5
+                CONSTANT id: 63, constant_value: \'UNITED KINGDOM\', constant_value_type: String
+          FUNCTION id: 64, function_name: equals, function_type: ordinary, result_type: LowCardinality(UInt8)
             ARGUMENTS
               LIST id: 65, nodes: 2
-                COLUMN id: 66, column_name: D_DATEKEY, result_type: Date, source_id: 3
-                CONSTANT id: 67, constant_value: UInt64_9496, constant_value_type: Date
-                  EXPRESSION
-                    FUNCTION id: 50, function_name: toDate, function_type: ordinary, result_type: Date
-                      ARGUMENTS
-                        LIST id: 51, nodes: 1
-                          CONSTANT id: 52, constant_value: \'1996-01-01\', constant_value_type: String
-          FUNCTION id: 68, function_name: equals, function_type: ordinary, result_type: LowCardinality(UInt8)
-            ARGUMENTS
-              LIST id: 69, nodes: 2
-                COLUMN id: 70, column_name: S_NATION, result_type: LowCardinality(String), source_id: 5
-                CONSTANT id: 71, constant_value: \'UNITED KINGDOM\', constant_value_type: String
-          FUNCTION id: 72, function_name: equals, function_type: ordinary, result_type: LowCardinality(UInt8)
-            ARGUMENTS
-              LIST id: 73, nodes: 2
-                COLUMN id: 74, column_name: P_CATEGORY, result_type: LowCardinality(String), source_id: 7
-                CONSTANT id: 75, constant_value: \'MFGR#21\', constant_value_type: String
+                COLUMN id: 66, column_name: P_CATEGORY, result_type: LowCardinality(String), source_id: 7
+                CONSTANT id: 67, constant_value: \'MFGR#21\', constant_value_type: String
   GROUP BY
-    LIST id: 76, nodes: 3
-      COLUMN id: 77, column_name: D_YEARMONTHNUM, result_type: UInt32, source_id: 3
-      COLUMN id: 78, column_name: S_CITY, result_type: LowCardinality(String), source_id: 5
-      COLUMN id: 79, column_name: P_BRAND, result_type: LowCardinality(String), source_id: 7
+    LIST id: 68, nodes: 3
+      COLUMN id: 69, column_name: D_YEARMONTHNUM, result_type: UInt32, source_id: 3
+      COLUMN id: 70, column_name: S_CITY, result_type: LowCardinality(String), source_id: 5
+      COLUMN id: 71, column_name: P_BRAND, result_type: LowCardinality(String), source_id: 7
   ORDER BY
-    LIST id: 80, nodes: 3
-      SORT id: 81, sort_direction: ASCENDING, with_fill: 0
+    LIST id: 72, nodes: 3
+      SORT id: 73, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
-          COLUMN id: 82, column_name: D_YEARMONTHNUM, result_type: UInt32, source_id: 3
-      SORT id: 83, sort_direction: ASCENDING, with_fill: 0
+          COLUMN id: 74, column_name: D_YEARMONTHNUM, result_type: UInt32, source_id: 3
+      SORT id: 75, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
-          COLUMN id: 84, column_name: S_CITY, result_type: LowCardinality(String), source_id: 5
-      SORT id: 85, sort_direction: ASCENDING, with_fill: 0
+          COLUMN id: 76, column_name: S_CITY, result_type: LowCardinality(String), source_id: 5
+      SORT id: 77, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
-          COLUMN id: 86, column_name: P_BRAND, result_type: LowCardinality(String), source_id: 7
+          COLUMN id: 78, column_name: P_BRAND, result_type: LowCardinality(String), source_id: 7
 
 SELECT
     __table1.D_YEARMONTHNUM AS D_YEARMONTHNUM,
@@ -150,7 +130,7 @@ ALL INNER JOIN default.lineorder AS __table5 ON __table5.LO_ORDERDATE = __table1
 ALL INNER JOIN default.customer AS __table2 ON __table5.LO_CUSTKEY = __table2.C_CUSTKEY
 ALL INNER JOIN default.supplier AS __table3 ON __table5.LO_SUPPKEY = __table3.S_SUPPKEY
 ALL INNER JOIN default.part AS __table4 ON __table5.LO_PARTKEY = __table4.P_PARTKEY
-WHERE (__table5.LO_QUANTITY >= 34) AND (__table5.LO_QUANTITY <= 44) AND (__table5.LO_ORDERDATE >= _CAST(\'1996-01-01\', \'Date\')) AND (__table5.LO_ORDERDATE <= _CAST(\'1996-12-31\', \'Date\')) AND (__table1.D_DATEKEY <= _CAST(\'1996-12-31\', \'Date\')) AND (__table1.D_DATEKEY >= _CAST(\'1996-01-01\', \'Date\')) AND (__table3.S_NATION = \'UNITED KINGDOM\') AND (__table4.P_CATEGORY = \'MFGR#21\')
+WHERE (__table5.LO_QUANTITY >= 34) AND (__table5.LO_QUANTITY <= 44) AND (__table5.LO_ORDERDATE >= _CAST(9496, \'Date\')) AND (__table5.LO_ORDERDATE <= _CAST(9861, \'Date\')) AND (__table3.S_NATION = \'UNITED KINGDOM\') AND (__table4.P_CATEGORY = \'MFGR#21\')
 GROUP BY
     __table1.D_YEARMONTHNUM,
     __table3.S_CITY,

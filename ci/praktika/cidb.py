@@ -50,7 +50,7 @@ class CIDB:
             return result
         for sub_result in result.results:
             if sub_result.name.lower() in [
-                n.lower() for n in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
+                n.lower() for n in Settings.SUB_RESULT_NAMES_WITH_TESTS
             ]:
                 return sub_result
         return result
@@ -110,7 +110,7 @@ class CIDB:
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
-        assert Settings.CI_DB_TABLE_NAME
+        assert Settings.CI_DB_TABLE_NAME and Settings.CI_DB_TABLE_NAME
 
         MAX_RETRIES = 3
         jsons = []

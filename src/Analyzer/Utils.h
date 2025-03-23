@@ -6,11 +6,6 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 
-#include <Core/Field.h>
-#include <Core/Names.h>
-
-#include <Columns/IColumn_fwd.h>
-
 namespace DB
 {
 
@@ -202,7 +197,5 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const QueryTreeNodePtr & replacement_table_expression,
     const ContextPtr & context);
 
-
-Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
 
 }

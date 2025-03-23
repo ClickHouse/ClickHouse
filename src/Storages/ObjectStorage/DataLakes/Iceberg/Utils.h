@@ -2,16 +2,14 @@
 
 #include "config.h"
 
-#include <string>
-#include <string_view>
-
 #if USE_AVRO
+
+#include <Processors/Formats/Impl/AvroRowInputFormat.h>
 
 namespace Iceberg
 {
 
-std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location);
-
+DB::MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const DB::Block & header, const DB::FormatSettings & settings);
 }
 
 #endif

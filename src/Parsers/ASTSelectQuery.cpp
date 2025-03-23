@@ -1,5 +1,7 @@
+#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -236,7 +238,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         limitOffset()->format(ostr, s, state, frame);
     }
 
-    if (settings())
+    if (settings() && assert_cast<ASTSetQuery *>(settings().get())->print_in_format)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings()->format(ostr, s, state, frame);
@@ -526,14 +528,6 @@ bool ASTSelectQuery::hasQueryParameters() const
     }
 
     return  has_query_parameters.value();
-}
-
-NameToNameMap ASTSelectQuery::getQueryParameters() const
-{
-    if (!hasQueryParameters())
-        return {};
-
-    return analyzeReceiveQueryParamsWithType(std::make_shared<ASTSelectQuery>(*this));
 }
 
 }

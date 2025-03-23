@@ -9,6 +9,7 @@
 #endif
 
 #include <sys/resource.h>
+#include <base/bit_cast.h>
 #include <Common/randomSeed.h>
 #include <pcg_random.hpp>
 

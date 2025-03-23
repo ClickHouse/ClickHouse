@@ -6,9 +6,6 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Databases/DataLake/DataLakeConstants.h>
-#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
-#include <Storages/NATS/NATS_fwd.h>
 
 
 namespace DB
@@ -94,27 +91,12 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
                 return true;
             }
 
-            if (DataLake::DATABASE_ENGINE_NAME == state.create_engine_name)
+            if (state.create_engine_name == "Iceberg")
             {
-                if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
+                const std::set<std::string_view> secret_settings = {"catalog_credential", "auth_header"};
+                if (secret_settings.contains(change.name))
                 {
-                    ostr << " = " << DataLake::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (RabbitMQ::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << RabbitMQ::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (NATS::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (NATS::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << NATS::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                    ostr << " = " << "'[HIDDEN]'";
                     return true;
                 }
             }
@@ -151,26 +133,12 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
 
 void ASTSetQuery::appendColumnName(WriteBuffer & ostr) const
 {
-    IASTHash hash = getTreeHash(/*ignore_aliases=*/ true);
+    Hash hash = getTreeHash(/*ignore_aliases=*/ true);
 
     writeCString("__settings_", ostr);
     writeText(hash.low64, ostr);
     ostr.write('_');
     writeText(hash.high64, ostr);
-}
-
-bool ASTSetQuery::hasSecretParts() const
-{
-    for (const auto & change : changes)
-    {
-        if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (NATS::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-    }
-    return false;
 }
 
 }

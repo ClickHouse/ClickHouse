@@ -36,7 +36,7 @@ void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory);
 
 
-void registerDictionaries()
+void registerDictionaries(bool use_legacy_mongodb_integration)
 {
     {
         auto & source_factory = DictionarySourceFactory::instance();
@@ -44,7 +44,12 @@ void registerDictionaries()
         registerDictionarySourceFile(source_factory);
         registerDictionarySourceMysql(source_factory);
         registerDictionarySourceClickHouse(source_factory);
-        registerDictionarySourceMongoDB(source_factory);
+
+        if (use_legacy_mongodb_integration)
+            registerDictionarySourceMongoDBPocoLegacy(source_factory);
+        else
+            registerDictionarySourceMongoDB(source_factory);
+
         registerDictionarySourceRedis(source_factory);
         registerDictionarySourceCassandra(source_factory);
         registerDictionarySourceXDBC(source_factory);

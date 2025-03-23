@@ -1,13 +1,7 @@
 ---
-description: 'Enables simultaneous processing of files matching a specified path across
-  multiple nodes within a cluster. The initiator establishes connections to worker
-  nodes, expands globs in the file path, and delegates file-reading tasks to worker
-  nodes. Each worker node is querying the initiator for the next file to process,
-  repeating until all tasks are completed (all files are read).'
-sidebar_label: 'fileCluster'
-sidebar_position: 61
 slug: /sql-reference/table-functions/fileCluster
-title: 'fileCluster'
+sidebar_position: 61
+sidebar_label: fileCluster
 ---
 
 # fileCluster Table Function
@@ -21,15 +15,15 @@ In case these files differ between nodes, the return value cannot be predetermin
 
 **Syntax**
 
-```sql
+``` sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
 **Arguments**
 
 - `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
-- `path` — The relative path to the file from [user_files_path](/operations/server-configuration-parameters/settings.md#user_files_path). Path to file also supports [globs](#globs-in-path).
-- `format` — [Format](/sql-reference/formats) of the files. Type: [String](../../sql-reference/data-types/string.md).
+- `path` — The relative path to the file from [user_files_path](/docs/operations/server-configuration-parameters/settings.md#user_files_path). Path to file also supports [globs](#globs-in-path).
+- `format` — [Format](../../interfaces/formats.md#formats) of the files. Type: [String](../../sql-reference/data-types/string.md).
 - `structure` — Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).
 - `compression_method` — Compression method. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.
 
@@ -41,7 +35,7 @@ A table with the specified format and structure and with data from files matchin
 
 Given a cluster named `my_cluster` and given the following value of setting `user_files_path`:
 
-```bash
+``` bash
 $ grep user_files_path /etc/clickhouse-server/config.xml
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
@@ -80,7 +74,7 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 ```
 
 
-## Globs in Path {#globs-in-path}
+## Globs in Path
 
 All patterns supported by [File](../../sql-reference/table-functions/file.md#globs-in-path) table function are supported by FileCluster.
 

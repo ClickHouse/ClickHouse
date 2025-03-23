@@ -1,15 +1,13 @@
 ---
-description: 'Applies bit-wise `AND` for series of numbers.'
-sidebar_position: 147
 slug: /sql-reference/aggregate-functions/reference/groupbitand
-title: 'groupBitAnd'
+sidebar_position: 147
 ---
 
 # groupBitAnd
 
 Applies bit-wise `AND` for series of numbers.
 
-```sql
+``` sql
 groupBitAnd(expr)
 ```
 
@@ -25,7 +23,7 @@ Value of the `UInt*` or `Int*` type.
 
 Test data:
 
-```text
+``` text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -35,7 +33,7 @@ binary     decimal
 
 Query:
 
-```sql
+``` sql
 SELECT groupBitAnd(num) FROM t
 ```
 
@@ -43,7 +41,7 @@ Where `num` is the column with the test data.
 
 Result:
 
-```text
+``` text
 binary     decimal
 00000100 = 4
 ```

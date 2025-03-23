@@ -8,7 +8,7 @@
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Interpreters/Context_fwd.h>
 
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 
 namespace DB
 {

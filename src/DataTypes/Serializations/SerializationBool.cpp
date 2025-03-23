@@ -267,11 +267,6 @@ void SerializationBool::serializeTextJSON(const IColumn &column, size_t row_num,
     serializeSimple(column, row_num, ostr, settings);
 }
 
-void SerializationBool::serializeTextJSONPretty(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings, size_t) const
-{
-    serializeSimple(column, row_num, ostr, settings);
-}
-
 void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, const FormatSettings &) const
 {
     if (istr.eof())

@@ -5,7 +5,6 @@
 
 #include <algorithm>
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
@@ -24,9 +23,9 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/addMissingDefaults.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sources/BlocksSource.h>
@@ -544,7 +543,7 @@ namespace
                 ContextMutablePtr insert_context = Context::createCopy(context);
                 insert_context->setCurrentQueryId(context->getCurrentQueryId() + ":" + String{toString(table_kind)});
 
-                LOG_TEST(log, "{}: Executing query: {}", time_series_storage_id.getNameForLogs(), insert_query->formatForLogging());
+                LOG_TEST(log, "{}: Executing query: {}", time_series_storage_id.getNameForLogs(), queryToString(insert_query));
 
                 InterpreterInsertQuery interpreter(
                     insert_query,

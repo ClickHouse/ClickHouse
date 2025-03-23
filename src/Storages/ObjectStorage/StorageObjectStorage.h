@@ -4,6 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -17,8 +18,6 @@ namespace DB
 class ReadBufferIterator;
 class SchemaCache;
 class NamedCollection;
-struct StorageObjectStorageSettings;
-using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 
 namespace ErrorCodes
 {
@@ -169,11 +168,11 @@ public:
     using Paths = std::vector<Path>;
 
     static void initialize(
-        Configuration & configuration_to_initialize,
+        Configuration & configuration,
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        StorageObjectStorageSettingsPtr settings);
+        StorageObjectStorageSettings * settings);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -254,7 +253,6 @@ public:
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 
-    const StorageObjectStorageSettings & getSettingsRef() const;
 
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
@@ -264,7 +262,8 @@ protected:
 
     bool initialized = false;
 
-    StorageObjectStorageSettingsPtr storage_settings;
+    bool allow_dynamic_metadata_for_data_lakes = false;
+    bool allow_experimental_delta_kernel_rs = false;
 };
 
 }

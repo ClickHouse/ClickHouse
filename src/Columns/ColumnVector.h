@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DataTypes/FieldToDataType.h>
+#include <Common/FieldVisitorToString.h>
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
@@ -205,7 +207,12 @@ public:
         res = (*this)[n];
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    {
+        assert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
+        const auto & val = castToNearestFieldType(data[n]);
+        return {FieldVisitorToString()(val), FieldToDataType()(val)};
+    }
 
     UInt64 get64(size_t n) const override;
 

@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/GinFilter.h>
-#include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -78,15 +77,6 @@ void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTr
         istr.readStrict(reinterpret_cast<char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentWithRowIdRangeVector::value_type));
     }
     has_elems = true;
-}
-
-
-size_t MergeTreeIndexGranuleFullText::memoryUsageBytes() const
-{
-    size_t sum = 0;
-    for (const auto & gin_filter : gin_filters)
-        sum += gin_filter.memoryUsageBytes();
-    return sum;
 }
 
 
@@ -312,7 +302,7 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             const auto & gin_filters = element.set_gin_filters[0];
 
             for (size_t row = 0; row < gin_filters.size(); ++row)
-                result[row] = granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
+                result[row] = result[row] && granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
 
             rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
         }
@@ -326,7 +316,7 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
                 const auto & gin_filters = element.set_gin_filters[0];
 
                 for (size_t row = 0; row < gin_filters.size(); ++row)
-                    result[row] = granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
+                    result[row] = result[row] && granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
 
                 rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
             }

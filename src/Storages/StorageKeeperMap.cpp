@@ -13,7 +13,6 @@
 
 #include <DataTypes/DataTypeString.h>
 
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/MutationsInterpreter.h>
 
@@ -26,6 +25,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/formatAST.h>
 
 #include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -104,7 +104,7 @@ std::string formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    return ast->formatWithSecretsOneLine();
+    return serializeAST(*ast);
 }
 
 void verifyTableId(const StorageID & table_id)
