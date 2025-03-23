@@ -141,8 +141,6 @@ public:
         std::atomic<size_t> processed_rows = 0;
         std::atomic<size_t> processed_bytes = 0;
         Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
-
-        std::mutex processed_files_mutex;
     };
     using ProcessingProgressPtr = std::shared_ptr<ProcessingProgress>;
 
