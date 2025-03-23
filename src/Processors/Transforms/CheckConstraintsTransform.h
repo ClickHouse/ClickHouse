@@ -1,23 +1,16 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/StorageID.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
+#include <Storages/ConstraintsDescription.h>
+#include <Interpreters/StorageID.h>
 
 
 namespace DB
 {
 
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-using ConstraintsExpressions = std::vector<ExpressionActionsPtr>;
-
 /** Check for constraints violation. If anything is found - throw an exception with detailed error message.
   * Otherwise just pass block to output unchanged.
   */
-
-struct ConstraintsDescription;
 
 class CheckConstraintsTransform final : public ExceptionKeepingTransform
 {

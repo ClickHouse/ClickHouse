@@ -1,6 +1,4 @@
 #include <Processors/Formats/Impl/MySQLDumpRowInputFormat.h>
-
-#include <Common/assert_cast.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>
@@ -40,7 +38,7 @@ MySQLDumpRowInputFormat::MySQLDumpRowInputFormat(ReadBuffer & in_, const Block &
     , types(header_.getDataTypes())
     , format_settings(format_settings_)
 {
-    column_indexes_by_names = getNamesToIndexesMap(getPort().getHeader());
+    column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
 }
 
 

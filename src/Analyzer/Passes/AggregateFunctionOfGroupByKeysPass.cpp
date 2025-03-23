@@ -1,19 +1,19 @@
 #include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
 #include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
 
 #include <Core/Settings.h>
 
-
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool optimize_aggregators_of_group_by_keys;
-}
 
 namespace ErrorCodes
 {
@@ -34,7 +34,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_aggregators_of_group_by_keys])
+        if (!getSettings().optimize_aggregators_of_group_by_keys)
             return;
 
         /// Collect group by keys.
@@ -79,7 +79,7 @@ public:
     /// Now we visit all nodes in QueryNode, we should remove group_by_keys from stack.
     void leaveImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_aggregators_of_group_by_keys])
+        if (!getSettings().optimize_aggregators_of_group_by_keys)
             return;
 
         if (node->getNodeType() == QueryTreeNodeType::FUNCTION)

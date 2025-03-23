@@ -12,7 +12,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/IAST_erase.h>
 
 namespace
 {
@@ -169,7 +168,7 @@ public:
         {
             if (isTuple(constant->getResultType()))
             {
-                const auto tuple = constant->getValue().safeGet<Tuple>();
+                const auto & tuple = constant->getValue().safeGet<Tuple &>();
                 Tuple new_tuple;
                 new_tuple.reserve(tuple.size());
 

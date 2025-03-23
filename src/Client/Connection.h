@@ -4,14 +4,12 @@
 
 #include <Common/callOnce.h>
 #include <Common/SSHWrapper.h>
-#include <Common/SettingsChanges.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
-#include <Formats/FormatSettings.h>
 
-#include <IO/ReadBufferFromPocoSocketChunked.h>
-#include <IO/WriteBufferFromPocoSocketChunked.h>
+#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromPocoSocket.h>
 
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/Context_fwd.h>
@@ -28,7 +26,6 @@ namespace DB
 {
 
 struct Settings;
-struct TimeoutSetter;
 
 class Connection;
 struct ConnectionParameters;
@@ -55,7 +52,6 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
-        const String & proto_send_chunked_, const String & proto_recv_chunked_,
         const SSHKey & ssh_private_key_,
         const String & jwt_,
         const String & quota_key_,
@@ -92,8 +88,6 @@ public:
     const String & getServerTimezone(const ConnectionTimeouts & timeouts) override;
     const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
 
-    const SettingsChanges & settingsFromServer() const;
-
     /// For log and exception messages.
     const String & getDescription(bool with_extra = false) const override; /// NOLINT
     const String & getHost() const;
@@ -113,7 +107,6 @@ public:
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
         bool with_pending_data/* = false */,
-        const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
 
     void sendCancel() override;
@@ -131,7 +124,6 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds/* = 0*/) override;
 
     Packet receivePacket() override;
-    UInt64 receivePacketType() override;
 
     void forceConnected(const ConnectionTimeouts & timeouts) override;
 
@@ -140,6 +132,7 @@ public:
     bool checkConnected(const ConnectionTimeouts & timeouts) override { return connected && ping(timeouts); }
 
     void disconnect() override;
+
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.
@@ -171,21 +164,12 @@ public:
 
     bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
 
-    void setFormatSettings(const FormatSettings & settings) override
-    {
-        format_settings = settings;
-    }
-
 private:
     String host;
     UInt16 port;
     String default_database;
     String user;
     String password;
-    String proto_send_chunked;
-    String proto_recv_chunked;
-    String proto_send_chunked_srv;
-    String proto_recv_chunked_srv;
 #if USE_SSH
     SSHKey ssh_private_key;
 #endif
@@ -221,14 +205,12 @@ private:
     UInt64 server_version_minor = 0;
     UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
-    UInt64 server_parallel_replicas_protocol_version = 0;
     String server_timezone;
     String server_display_name;
-    SettingsChanges settings_from_server;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
-    std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
-    std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
+    std::shared_ptr<ReadBufferFromPocoSocket> in;
+    std::shared_ptr<WriteBufferFromPocoSocket> out;
     std::optional<UInt64> last_input_packet_type;
 
     String query_id;
@@ -285,16 +267,11 @@ private:
 
     AsyncCallback async_callback = {};
 
-    std::optional<FormatSettings> format_settings;
-
     void connect(const ConnectionTimeouts & timeouts);
-    void sendHello(const Poco::Timespan & handshake_timeout);
-
-    void cancel() noexcept;
-    void reset() noexcept;
+    void sendHello();
 
 #if USE_SSH
-    void performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout);
+    void performHandshakeForSSHAuth();
 #endif
 
     void sendAddendum();
@@ -322,7 +299,7 @@ private:
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
 
-    [[noreturn]] void throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected);
+    [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
 };
 
 template <typename Conn>

@@ -14,7 +14,6 @@ class StorageHDFSConfiguration : public StorageObjectStorage::Configuration
 public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
-    static constexpr auto type = ObjectStorageType::HDFS;
     static constexpr auto type_name = "hdfs";
     static constexpr auto engine_name = "HDFS";
     /// All possible signatures for HDFS engine with structure argument (for example for hdfs table function).
@@ -35,7 +34,6 @@ public:
     StorageHDFSConfiguration() = default;
     StorageHDFSConfiguration(const StorageHDFSConfiguration & other);
 
-    ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return engine_name; }
 

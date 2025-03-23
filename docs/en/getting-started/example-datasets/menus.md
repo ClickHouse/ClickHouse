@@ -1,9 +1,7 @@
 ---
-description: 'Dataset containing 1.3 million records of historical data on the menus
-  of hotels, restaurants and cafes with the dishes along with their prices.'
-sidebar_label: 'New York Public Library "What''s on the Menu?" Dataset'
-slug: /getting-started/example-datasets/menus
-title: 'New York Public Library "What''s on the Menu?" Dataset'
+slug: /en/getting-started/example-datasets/menus
+sidebar_label: New York Public Library "What's on the Menu?" Dataset
+title: "New York Public Library \"What's on the Menu?\" Dataset"
 ---
 
 The dataset is created by the New York Public Library. It contains historical data on the menus of hotels, restaurants and cafes with the dishes along with their prices.
@@ -124,13 +122,13 @@ We use [CSVWithNames](../../interfaces/formats.md#csvwithnames) format as the da
 
 We disable `format_csv_allow_single_quotes` as only double quotes are used for data fields and single quotes can be inside the values and should not confuse the CSV parser.
 
-We disable [input_format_null_as_default](/operations/settings/formats#input_format_null_as_default) as our data does not have [NULL](/operations/settings/formats#input_format_null_as_default). Otherwise ClickHouse will try to parse `\N` sequences and can be confused with `\` in data.
+We disable [input_format_null_as_default](../../operations/settings/settings-formats.md#settings-input-format-null-as-default) as our data does not have [NULL](../../sql-reference/syntax.md#null-literal). Otherwise ClickHouse will try to parse `\N` sequences and can be confused with `\` in data.
 
-The setting [date_time_input_format best_effort](/operations/settings/formats#date_time_input_format) allows to parse [DateTime](../../sql-reference/data-types/datetime.md)  fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed DateTime format is allowed.
+The setting [date_time_input_format best_effort](../../operations/settings/settings-formats.md#settings-date_time_input_format) allows to parse [DateTime](../../sql-reference/data-types/datetime.md)  fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed DateTime format is allowed.
 
 ## Denormalize the Data {#denormalize-data}
 
-Data is presented in multiple tables in [normalized form](https://en.wikipedia.org/wiki/Database_normalization#Normal_forms). It means you have to perform [JOIN](/sql-reference/statements/select/join) if you want to query, e.g. dish names from menu items.
+Data is presented in multiple tables in [normalized form](https://en.wikipedia.org/wiki/Database_normalization#Normal_forms). It means you have to perform [JOIN](../../sql-reference/statements/select/join.md#select-join) if you want to query, e.g. dish names from menu items.
 For typical analytical tasks it is way more efficient to deal with pre-JOINed data to avoid doing `JOIN` every time. It is called "denormalized" data.
 
 We will create a table `menu_item_denorm` where will contain all the data JOINed together:
@@ -356,4 +354,4 @@ At least they have caviar with vodka. Very nice.
 
 ## Online Playground {#playground}
 
-The data is uploaded to ClickHouse Playground, [example](https://sql.clickhouse.com?query_id=KB5KQJJFNBKHE5GBUJCP1B).
+The data is uploaded to ClickHouse Playground, [example](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICByb3VuZCh0b1VJbnQzMk9yWmVybyhleHRyYWN0KG1lbnVfZGF0ZSwgJ15cXGR7NH0nKSksIC0xKSBBUyBkLAogICAgY291bnQoKSwKICAgIHJvdW5kKGF2ZyhwcmljZSksIDIpLAogICAgYmFyKGF2ZyhwcmljZSksIDAsIDUwLCAxMDApLAogICAgYW55KGRpc2hfbmFtZSkKRlJPTSBtZW51X2l0ZW1fZGVub3JtCldIRVJFIChtZW51X2N1cnJlbmN5IElOICgnRG9sbGFycycsICcnKSkgQU5EIChkID4gMCkgQU5EIChkIDwgMjAyMikgQU5EIChkaXNoX25hbWUgSUxJS0UgJyVjYXZpYXIlJykKR1JPVVAgQlkgZApPUkRFUiBCWSBkIEFTQw==).

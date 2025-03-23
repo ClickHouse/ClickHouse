@@ -4,7 +4,6 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/Distributed/DistributedSettings.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -16,19 +15,15 @@
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/Macros.h>
-#include <Common/RemoteHostFilter.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <base/range.h>
 #include "registerTableFunctions.h"
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 table_function_remote_max_addresses;
-}
 
 namespace ErrorCodes
 {
@@ -133,7 +128,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             if (lit->value.getType() != Field::Types::String)
                 return false;
 
-            res = lit->value.safeGet<String>();
+            res = lit->value.safeGet<const String &>();
             return true;
         };
 
@@ -183,11 +178,13 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                     {
                         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table name was not found in function arguments. {}", static_cast<const std::string>(help_message));
                     }
-
-                    std::swap(qualified_name.database, qualified_name.table);
-                    args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-                    qualified_name.table = checkAndGetLiteralArgument<String>(args[arg_num], "table");
-                    ++arg_num;
+                    else
+                    {
+                        std::swap(qualified_name.database, qualified_name.table);
+                        args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
+                        qualified_name.table = checkAndGetLiteralArgument<String>(args[arg_num], "table");
+                        ++arg_num;
+                    }
                 }
 
                 database = std::move(qualified_name.database);
@@ -250,7 +247,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     else
     {
         /// Create new cluster from the scratch
-        size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
+        size_t max_addresses = context->getSettingsRef().table_function_remote_max_addresses;
         std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
         std::vector<std::vector<String>> names;

@@ -165,6 +165,7 @@ protected:
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
     String build_id;
+    String git_hash;
     String stored_binary_hash;
 
     bool should_setup_watchdog = false;
@@ -187,7 +188,8 @@ std::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
 
     if (ptr)
         return std::optional<std::reference_wrapper<Daemon>>(*ptr);
-    return {};
+    else
+        return {};
 }
 
 #if defined(OS_LINUX)

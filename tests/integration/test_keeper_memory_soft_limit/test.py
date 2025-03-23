@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 import random
 import string
-
 import pytest
-from kazoo.client import KazooClient
-from kazoo.exceptions import ConnectionLoss
-
 from helpers.cluster import ClickHouseCluster
+from helpers import keeper_utils
+from kazoo.client import KazooClient, KazooState
+from kazoo.exceptions import ConnectionLoss
 
 cluster = ClickHouseCluster(__file__, keeper_config_dir="configs/")
 
@@ -23,7 +22,6 @@ def random_string(length):
 
 
 def get_connection_zk(nodename, timeout=30.0):
-    # NOTE: here we need KazooClient without implicit retries! (KazooClientWithImplicitRetries)
     _fake_zk_instance = KazooClient(
         hosts=cluster.get_instance_ip(nodename) + ":2181", timeout=timeout
     )

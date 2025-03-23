@@ -1,11 +1,6 @@
-import logging
-import re
 import time
-
 import pytest
-
 from helpers.cluster import ClickHouseCluster
-from helpers.keeper_utils import ss_established
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 
@@ -23,21 +18,9 @@ node2 = cluster.add_instance(
 node3 = cluster.add_instance(
     "nod3", with_zookeeper=True, main_configs=["configs/zookeeper_load_balancing.xml"]
 )
+
 node4 = cluster.add_instance(
     "nod4", with_zookeeper=True, main_configs=["configs/zookeeper_load_balancing2.xml"]
-)
-
-zk1_re = re.compile(
-    r"testzookeeperconfigloadbalancing-(gw\d+-)?zoo1-1"
-    r".*testzookeeperconfigloadbalancing(-gw\d+)?_default:2181"
-)
-zk2_re = re.compile(
-    r"testzookeeperconfigloadbalancing-(gw\d+-)?zoo2-1"
-    r".*testzookeeperconfigloadbalancing(-gw\d+)?_default:2181"
-)
-zk3_re = re.compile(
-    r"testzookeeperconfigloadbalancing-(gw\d+-)?zoo3-1"
-    r".*testzookeeperconfigloadbalancing(-gw\d+)?_default:2181"
 )
 
 
@@ -68,15 +51,89 @@ def started_cluster():
 def test_first_or_random(started_cluster):
     try:
         change_balancing("random", "first_or_random")
-        for node in (node1, node2, node3):
-            connections = (
-                node.exec_in_container(ss_established, privileged=True, user="root")
-                .strip()
-                .split("\n")
+        print(
+            str(
+                node1.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
             )
-            logging.debug("Established connections for 2181:\n%s", connections)
-            assert len(connections) == 1
-            assert zk1_re.search(connections[0])
+        )
+        assert (
+            "1"
+            == str(
+                node1.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep -P 'testzookeeperconfigloadbalancing_(gw\\d+_)?zoo1_1.*testzookeeperconfigloadbalancing_(gw\\d+_)?default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
+
+        print(
+            str(
+                node2.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            )
+        )
+        assert (
+            "1"
+            == str(
+                node2.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep -P 'testzookeeperconfigloadbalancing_(gw\\d+_)?zoo1_1.*testzookeeperconfigloadbalancing_(gw\\d+_)?default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
+
+        print(
+            str(
+                node3.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            )
+        )
+        assert (
+            "1"
+            == str(
+                node3.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep -P 'testzookeeperconfigloadbalancing_(gw\\d+_)?zoo1_1.*testzookeeperconfigloadbalancing_(gw\\d+_)?default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
     finally:
         change_balancing("first_or_random", "random", reload=False)
 
@@ -84,15 +141,89 @@ def test_first_or_random(started_cluster):
 def test_in_order(started_cluster):
     try:
         change_balancing("random", "in_order")
-        for node in (node1, node2, node3):
-            connections = (
-                node.exec_in_container(ss_established, privileged=True, user="root")
-                .strip()
-                .split("\n")
+        print(
+            str(
+                node1.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
             )
-            logging.debug("Established connections for 2181:\n%s", connections)
-            assert len(connections) == 1
-            assert zk1_re.search(connections[0])
+        )
+        assert (
+            "1"
+            == str(
+                node1.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep -P 'testzookeeperconfigloadbalancing_(gw\\d+_)?zoo1_1.*testzookeeperconfigloadbalancing_(gw\\d+_)?default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
+
+        print(
+            str(
+                node2.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            )
+        )
+        assert (
+            "1"
+            == str(
+                node2.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep -P 'testzookeeperconfigloadbalancing_(gw\\d+_)?zoo1_1.*testzookeeperconfigloadbalancing_(gw\\d+_)?default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
+
+        print(
+            str(
+                node3.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            )
+        )
+        assert (
+            "1"
+            == str(
+                node3.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep -P 'testzookeeperconfigloadbalancing_(gw\\d+_)?zoo1_1.*testzookeeperconfigloadbalancing_(gw\\d+_)?default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
     finally:
         change_balancing("in_order", "random", reload=False)
 
@@ -100,15 +231,89 @@ def test_in_order(started_cluster):
 def test_nearest_hostname(started_cluster):
     try:
         change_balancing("random", "nearest_hostname")
-        for node, regexp in ((node1, zk1_re), (node2, zk2_re), (node3, zk3_re)):
-            connections = (
-                node.exec_in_container(ss_established, privileged=True, user="root")
-                .strip()
-                .split("\n")
+        print(
+            str(
+                node1.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
             )
-            logging.debug("Established connections for 2181:\n%s", connections)
-            assert len(connections) == 1
-            assert regexp.search(connections[0])
+        )
+        assert (
+            "1"
+            == str(
+                node1.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep -P 'testzookeeperconfigloadbalancing_(gw\\d+_)?zoo1_1.*testzookeeperconfigloadbalancing_(gw\\d+_)?default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
+
+        print(
+            str(
+                node2.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            )
+        )
+        assert (
+            "1"
+            == str(
+                node2.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep -P 'testzookeeperconfigloadbalancing_(gw\\d+_)?zoo2_1.*testzookeeperconfigloadbalancing_(gw\\d+_)?default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
+
+        print(
+            str(
+                node3.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            )
+        )
+        assert (
+            "1"
+            == str(
+                node3.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep -P 'testzookeeperconfigloadbalancing_(gw\\d+_)?zoo3_1.*testzookeeperconfigloadbalancing_(gw\\d+_)?default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
     finally:
         change_balancing("nearest_hostname", "random", reload=False)
 
@@ -116,15 +321,89 @@ def test_nearest_hostname(started_cluster):
 def test_hostname_levenshtein_distance(started_cluster):
     try:
         change_balancing("random", "hostname_levenshtein_distance")
-        for node, regexp in ((node1, zk1_re), (node2, zk2_re), (node3, zk3_re)):
-            connections = (
-                node.exec_in_container(ss_established, privileged=True, user="root")
-                .strip()
-                .split("\n")
+        print(
+            str(
+                node1.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
             )
-            logging.debug("Established connections for 2181:\n%s", connections)
-            assert len(connections) == 1
-            assert regexp.search(connections[0])
+        )
+        assert (
+            "1"
+            == str(
+                node1.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep -P 'testzookeeperconfigloadbalancing_(gw\\d+_)?zoo1_1.*testzookeeperconfigloadbalancing_(gw\\d+_)?default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
+
+        print(
+            str(
+                node2.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            )
+        )
+        assert (
+            "1"
+            == str(
+                node2.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep -P 'testzookeeperconfigloadbalancing_(gw\\d+_)?zoo2_1.*testzookeeperconfigloadbalancing_(gw\\d+_)?default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
+
+        print(
+            str(
+                node3.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            )
+        )
+        assert (
+            "1"
+            == str(
+                node3.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep -P 'testzookeeperconfigloadbalancing_(gw\\d+_)?zoo3_1.*testzookeeperconfigloadbalancing_(gw\\d+_)?default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
     finally:
         change_balancing("hostname_levenshtein_distance", "random", reload=False)
 

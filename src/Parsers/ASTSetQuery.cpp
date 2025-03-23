@@ -6,9 +6,6 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Databases/DataLake/DataLakeConstants.h>
-#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
-#include <Storages/NATS/NATS_fwd.h>
 
 
 namespace DB
@@ -69,108 +66,59 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
     }
 }
 
-void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked state) const
+void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (is_standalone)
-        ostr << (format.hilite ? hilite_keyword : "") << "SET " << (format.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << "SET " << (format.hilite ? hilite_none : "");
 
     bool first = true;
 
     for (const auto & change : changes)
     {
         if (!first)
-            ostr << ", ";
+            format.ostr << ", ";
         else
             first = false;
 
-        formatSettingName(change.name, ostr);
-
-        auto format_if_secret = [&]() -> bool
-        {
-            CustomType custom;
-            if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
-            {
-                ostr << " = " << custom.toString(/* show_secrets */false);
-                return true;
-            }
-
-            if (DataLake::DATABASE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << DataLake::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (RabbitMQ::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << RabbitMQ::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (NATS::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (NATS::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << NATS::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-
-            return false;
-        };
-
-        if (format.show_secrets || !format_if_secret())
-            ostr << " = " << applyVisitor(FieldVisitorToSetting(), change.value);
+        formatSettingName(change.name, format.ostr);
+        CustomType custom;
+        if (!format.show_secrets && change.value.tryGet<CustomType>(custom) && custom.isSecret())
+            format.ostr << " = " << custom.toString(false);
+        else
+            format.ostr << " = " << applyVisitor(FieldVisitorToSetting(), change.value);
     }
 
     for (const auto & setting_name : default_settings)
     {
         if (!first)
-            ostr << ", ";
+            format.ostr << ", ";
         else
             first = false;
 
-        formatSettingName(setting_name, ostr);
-        ostr << " = DEFAULT";
+        formatSettingName(setting_name, format.ostr);
+        format.ostr << " = DEFAULT";
     }
 
     for (const auto & [name, value] : query_parameters)
     {
         if (!first)
-            ostr << ", ";
+            format.ostr << ", ";
         else
             first = false;
 
-        formatSettingName(QUERY_PARAMETER_NAME_PREFIX + name, ostr);
-        ostr << " = " << quoteString(value);
+        formatSettingName(QUERY_PARAMETER_NAME_PREFIX + name, format.ostr);
+        format.ostr << " = " << quoteString(value);
     }
 }
 
 void ASTSetQuery::appendColumnName(WriteBuffer & ostr) const
 {
-    IASTHash hash = getTreeHash(/*ignore_aliases=*/ true);
+    Hash hash = getTreeHash(/*ignore_aliases=*/ true);
 
     writeCString("__settings_", ostr);
     writeText(hash.low64, ostr);
     ostr.write('_');
     writeText(hash.high64, ostr);
-}
-
-bool ASTSetQuery::hasSecretParts() const
-{
-    for (const auto & change : changes)
-    {
-        if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (NATS::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-    }
-    return false;
 }
 
 }

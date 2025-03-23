@@ -1,6 +1,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 
@@ -17,11 +18,12 @@ String ASTDropQuery::getID(char delim) const
 {
     if (kind == ASTDropQuery::Kind::Drop)
         return "DropQuery" + (delim + getDatabase()) + delim + getTable();
-    if (kind == ASTDropQuery::Kind::Detach)
+    else if (kind == ASTDropQuery::Kind::Detach)
         return "DetachQuery" + (delim + getDatabase()) + delim + getTable();
-    if (kind == ASTDropQuery::Kind::Truncate)
+    else if (kind == ASTDropQuery::Kind::Truncate)
         return "TruncateQuery" + (delim + getDatabase()) + delim + getTable();
-    throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
+    else
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 }
 
 ASTPtr ASTDropQuery::clone() const
@@ -32,43 +34,43 @@ ASTPtr ASTDropQuery::clone() const
     return res;
 }
 
-void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "");
     if (kind == ASTDropQuery::Kind::Drop)
-        ostr << "DROP ";
+        settings.ostr << "DROP ";
     else if (kind == ASTDropQuery::Kind::Detach)
-        ostr << "DETACH ";
+        settings.ostr << "DETACH ";
     else if (kind == ASTDropQuery::Kind::Truncate)
-        ostr << "TRUNCATE ";
+        settings.ostr << "TRUNCATE ";
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 
     if (temporary)
-        ostr << "TEMPORARY ";
+        settings.ostr << "TEMPORARY ";
 
     if (has_all_tables)
-        ostr << "ALL TABLES FROM ";
+        settings.ostr << "ALL TABLES FROM ";
     else if (!table && !database_and_tables && database)
-        ostr << "DATABASE ";
+        settings.ostr << "DATABASE ";
     else if (is_dictionary)
-        ostr << "DICTIONARY ";
+        settings.ostr << "DICTIONARY ";
     else if (is_view)
-        ostr << "VIEW ";
+        settings.ostr << "VIEW ";
     else
-        ostr << "TABLE ";
+        settings.ostr << "TABLE ";
 
     if (if_exists)
-        ostr << "IF EXISTS ";
+        settings.ostr << "IF EXISTS ";
 
     if (if_empty)
-        ostr << "IF EMPTY ";
+        settings.ostr << "IF EMPTY ";
 
-    ostr << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_none : "");
 
     if (!table && !database_and_tables && database)
     {
-        database->format(ostr, settings, state, frame);
+        database->formatImpl(settings, state, frame);
     }
     else if (database_and_tables)
     {
@@ -76,7 +78,7 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         for (auto * it = list.children.begin(); it != list.children.end(); ++it)
         {
             if (it != list.children.begin())
-                ostr << ", ";
+                settings.ostr << ", ";
 
             auto identifier = dynamic_pointer_cast<ASTTableIdentifier>(*it);
             if (!identifier)
@@ -84,34 +86,34 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
 
             if (auto db = identifier->getDatabase())
             {
-                db->format(ostr, settings, state, frame);
-                ostr << '.';
+                db->formatImpl(settings, state, frame);
+                settings.ostr << '.';
             }
 
             auto tb = identifier->getTable();
             chassert(tb);
-            tb->format(ostr, settings, state, frame);
+            tb->formatImpl(settings, state, frame);
         }
     }
     else
     {
         if (database)
         {
-            database->format(ostr, settings, state, frame);
-            ostr << '.';
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
         }
 
         chassert(table);
-        table->format(ostr, settings, state, frame);
+        table->formatImpl(settings, state, frame);
     }
 
-    formatOnCluster(ostr, settings);
+    formatOnCluster(settings);
 
     if (permanently)
-        ostr << " PERMANENTLY";
+        settings.ostr << " PERMANENTLY";
 
     if (sync)
-        ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
 }
 
 ASTs ASTDropQuery::getRewrittenASTsOfSingleTable()

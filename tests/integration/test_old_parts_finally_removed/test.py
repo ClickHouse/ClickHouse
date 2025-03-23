@@ -3,9 +3,8 @@
 import os
 import time
 
-import pytest
-
 import helpers.client as client
+import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)

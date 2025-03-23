@@ -8,6 +8,7 @@
 #include <Common/quoteString.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -26,23 +27,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-IDataType::IDataType() = default;
-
 IDataType::~IDataType() = default;
-
-String IDataType::getName() const
-{
-    if (custom_name)
-        return custom_name->getName();
-    return doGetName();
-}
-
-String IDataType::getPrettyName(size_t indent) const
-{
-    if (custom_name)
-        return custom_name->getName();
-    return doGetPrettyName(indent);
-}
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
 {
@@ -151,7 +136,7 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
                         {
                             dynamic_subcolumn_data->type = tmp_subpath[i].creator->create(dynamic_subcolumn_data->type);
                             dynamic_subcolumn_data->column = tmp_subpath[i].creator->create(dynamic_subcolumn_data->column);
-                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization, dynamic_subcolumn_data->type);
+                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization);
                         }
 
                         tmp_subpath[i].data = *dynamic_subcolumn_data;
@@ -337,8 +322,6 @@ bool isUInt8(TYPE data_type) { return WhichDataType(data_type).isUInt8(); } \
 bool isUInt16(TYPE data_type) { return WhichDataType(data_type).isUInt16(); } \
 bool isUInt32(TYPE data_type) { return WhichDataType(data_type).isUInt32(); } \
 bool isUInt64(TYPE data_type) { return WhichDataType(data_type).isUInt64(); } \
-bool isUInt128(TYPE data_type) { return WhichDataType(data_type).isUInt128(); } \
-bool isUInt256(TYPE data_type) { return WhichDataType(data_type).isUInt256(); } \
 bool isNativeUInt(TYPE data_type) { return WhichDataType(data_type).isNativeUInt(); } \
 bool isUInt(TYPE data_type) { return WhichDataType(data_type).isUInt(); } \
 \
@@ -346,8 +329,6 @@ bool isInt8(TYPE data_type) { return WhichDataType(data_type).isInt8(); } \
 bool isInt16(TYPE data_type) { return WhichDataType(data_type).isInt16(); } \
 bool isInt32(TYPE data_type) { return WhichDataType(data_type).isInt32(); } \
 bool isInt64(TYPE data_type) { return WhichDataType(data_type).isInt64(); } \
-bool isInt128(TYPE data_type) { return WhichDataType(data_type).isInt128(); } \
-bool isInt256(TYPE data_type) { return WhichDataType(data_type).isInt256(); } \
 bool isNativeInt(TYPE data_type) { return WhichDataType(data_type).isNativeInt(); } \
 bool isInt(TYPE data_type) { return WhichDataType(data_type).isInt(); } \
 \

@@ -35,13 +35,12 @@ public:
         const VirtualFields & virtual_fields,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
-        DeserializationPrefixesCache * deserialization_prefixes_cache,
         const AlterConversionsPtr & alter_conversions,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
-    bool isStoredOnReadonlyDisk() const override;
+    bool isStoredOnDisk() const override { return true; }
 
     bool isStoredOnRemoteDisk() const override;
 
@@ -53,18 +52,12 @@ public:
 
     std::optional<String> getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 
-    void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
-    void removeMarksFromCache(MarkCache * mark_cache) const override;
-
     ~MergeTreeDataPartCompact() override;
 
 protected:
      static void loadIndexGranularityImpl(
-         MergeTreeIndexGranularityPtr & index_granularity_,
-         const MergeTreeIndexGranularityInfo & index_granularity_info_,
-         size_t columns_count,
-         const IDataPartStorage & data_part_storage_,
-         const MergeTreeSettings & storage_settings);
+         MergeTreeIndexGranularity & index_granularity_, const MergeTreeIndexGranularityInfo & index_granularity_info_,
+         size_t columns_count, const IDataPartStorage & data_part_storage_);
 
      void doCheckConsistency(bool require_part_metadata) const override;
 

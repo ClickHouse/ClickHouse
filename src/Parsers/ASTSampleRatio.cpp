@@ -31,12 +31,13 @@ String ASTSampleRatio::toString(Rational ratio)
 {
     if (ratio.denominator == 1)
         return toString(ratio.numerator);
-    return toString(ratio.numerator) + " / " + toString(ratio.denominator);
+    else
+        return toString(ratio.numerator) + " / " + toString(ratio.denominator);
 }
 
-void ASTSampleRatio::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings &, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTSampleRatio::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << toString(ratio);
+    settings.ostr << toString(ratio);
 }
 
 }

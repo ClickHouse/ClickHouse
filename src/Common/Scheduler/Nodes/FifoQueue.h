@@ -23,33 +23,18 @@ namespace ErrorCodes
 /*
  * FIFO queue to hold pending resource requests
  */
-class FifoQueue final : public ISchedulerQueue
+class FifoQueue : public ISchedulerQueue
 {
 public:
     FifoQueue(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
         : ISchedulerQueue(event_queue_, config, config_prefix)
     {}
 
-    FifoQueue(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
-        : ISchedulerQueue(event_queue_, info_)
-    {}
-
-    ~FifoQueue() override
-    {
-        purgeQueue();
-    }
-
-    const String & getTypeName() const override
-    {
-        static String type_name("fifo");
-        return type_name;
-    }
-
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * _ = dynamic_cast<FifoQueue *>(other))
+        if (auto * o = dynamic_cast<FifoQueue *>(other))
             return true;
         return false;
     }
@@ -57,8 +42,6 @@ public:
     void enqueueRequest(ResourceRequest * request) override
     {
         std::lock_guard lock(mutex);
-        if (is_not_usable)
-            throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue is about to be destructed");
         queue_cost += request->cost;
         bool was_empty = requests.empty();
         requests.push_back(*request);
@@ -83,8 +66,6 @@ public:
     bool cancelRequest(ResourceRequest * request) override
     {
         std::lock_guard lock(mutex);
-        if (is_not_usable)
-            return false; // Any request should already be failed or executed
         if (request->is_linked())
         {
             // It's impossible to check that `request` is indeed inserted to this queue and not another queue.
@@ -105,19 +86,6 @@ public:
             return true;
         }
         return false;
-    }
-
-    void purgeQueue() override
-    {
-        std::lock_guard lock(mutex);
-        is_not_usable = true;
-        while (!requests.empty())
-        {
-            ResourceRequest * request = &requests.front();
-            requests.pop_front();
-            request->failed(std::make_exception_ptr(
-                Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue with resource request is about to be destructed")));
-        }
     }
 
     bool isActive() override
@@ -163,7 +131,6 @@ private:
     std::mutex mutex;
     Int64 queue_cost = 0;
     boost::intrusive::list<ResourceRequest> requests;
-    bool is_not_usable = false;
 };
 
 }

@@ -67,7 +67,6 @@ private:
     struct ClusterInfo
     {
         const String name;
-        const String zk_name;
         const String zk_root;
         NodesInfo nodes_info;
 
@@ -88,12 +87,7 @@ private:
         String password;
         String cluster_secret;
 
-        /// For dynamic clusters, index+1 in multicluster_discovery_paths where cluster was found
-        /// 0 for static ckusters
-        size_t zk_root_index;
-
         ClusterInfo(const String & name_,
-                    const String & zk_name_,
                     const String & zk_root_,
                     const String & host_name,
                     const String & username_,
@@ -103,11 +97,8 @@ private:
                     bool secure,
                     size_t shard_id,
                     bool observer_mode,
-                    bool invisible,
-                    size_t zk_root_index_ = 0
-                    )
+                    bool invisible)
             : name(name_)
-            , zk_name(zk_name_)
             , zk_root(zk_root_)
             , current_node(host_name + ":" + toString(port), secure, shard_id)
             , current_node_is_observer(observer_mode)
@@ -116,7 +107,6 @@ private:
             , username(username_)
             , password(password_)
             , cluster_secret(cluster_secret_)
-            , zk_root_index(zk_root_index_)
         {
         }
     };
@@ -128,22 +118,18 @@ private:
     Strings getNodeNames(zkutil::ZooKeeperPtr & zk,
                          const String & zk_root,
                          const String & cluster_name,
-                         int * version,
-                         bool set_callback,
-                         size_t zk_root_index);
+                         int * version = nullptr,
+                         bool set_callback = true);
 
     NodesInfo getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & node_uuids);
 
     ClusterPtr makeCluster(const ClusterInfo & cluster_info);
 
     bool needUpdate(const Strings & node_uuids, const NodesInfo & nodes);
-    bool upsertCluster(ClusterInfo & cluster_info);
-    void removeCluster(const String & name);
+    bool updateCluster(ClusterInfo & cluster_info);
 
     bool runMainThread(std::function<void()> up_to_date_callback);
     void shutdown();
-
-    void findDynamicClusters(std::unordered_map<String, ClusterInfo> & info, std::unordered_set<size_t> * unchanged_roots = nullptr);
 
     /// cluster name -> cluster info (zk root, set of nodes)
     std::unordered_map<String, ClusterInfo> clusters_info;
@@ -152,17 +138,13 @@ private:
 
     String current_node_name;
 
-    template <typename T> class Flags;
-    using UpdateFlags = Flags<std::string>;
+    template <typename T> class ConcurrentFlags;
+    using UpdateFlags = ConcurrentFlags<std::string>;
 
     /// Cluster names to update.
     /// The `shared_ptr` is used because it's passed to watch callback.
     /// It prevents accessing to invalid object after ClusterDiscovery is destroyed.
     std::shared_ptr<UpdateFlags> clusters_to_update;
-
-    /// Hold the callback pointers of each cluster.
-    /// To avoid registering callbacks for the same path multiple times.
-    std::unordered_map<String, Coordination::WatchCallbackPtr> get_nodes_callbacks;
 
     mutable std::mutex mutex;
     std::unordered_map<String, ClusterPtr> cluster_impls;
@@ -171,39 +153,6 @@ private:
     ThreadFromGlobalPool main_thread;
 
     LoggerPtr log;
-
-    struct MulticlusterDiscovery
-    {
-        const String zk_name;
-        const String zk_path;
-        bool is_secure_connection;
-        String username;
-        String password;
-        String cluster_secret;
-
-        Stopwatch watch;
-        mutable std::atomic_bool need_update;
-
-        MulticlusterDiscovery(const String & zk_name_,
-                              const String & zk_path_,
-                              bool is_secure_connection_,
-                              const String & username_,
-                              const String & password_,
-                              const String & cluster_secret_)
-            : zk_name(zk_name_)
-            , zk_path(zk_path_)
-            , is_secure_connection(is_secure_connection_)
-            , username(username_)
-            , password(password_)
-            , cluster_secret(cluster_secret_)
-        {
-            need_update = true;
-        }
-
-        String getFullPath() const { return zk_name + ":" + zk_path; }
-    };
-
-    std::shared_ptr<std::vector<std::shared_ptr<MulticlusterDiscovery>>> multicluster_discovery_paths;
 };
 
 }
