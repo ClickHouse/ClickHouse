@@ -21,14 +21,13 @@ namespace
 
 char WORD_BREAK_CHARACTERS[] = " \t\v\f\a\b\r\n";
 
-/// Automatically wrap non first (first word is a command in keeper that should
-/// not be wrapped) word under cursor into double brackets, i.e.:
+/// Automatically prepend double quote for non first word under cursor, i.e.:
 ///
 ///     ls     => ls
-///     ls /   => ls "/"
-///     ls "/" => ls "/"
+///     ls /   => ls "/
+///     ls "/  => ls "/
 ///
-void wrapInDoubleQuotes(replxx::Replxx & rx)
+void prependDoubleQuoteForPath(replxx::Replxx & rx)
 {
     replxx::Replxx::State state(rx.get_state());
     std::string_view word_breaks(WORD_BREAK_CHARACTERS);
@@ -56,11 +55,6 @@ void wrapInDoubleQuotes(replxx::Replxx & rx)
     if (std::distance(word_begin, word_end) < 1)
         return;
 
-    if (*(word_end-1) != '"')
-    {
-        text.insert(word_end, '"');
-        ++cursor;
-    }
     if (*word_begin != '"')
     {
         text.insert(word_begin, '"');
@@ -401,7 +395,7 @@ void KeeperClient::runInteractiveReplxx()
         .delimiters = query_delimiters,
         .word_break_characters = WORD_BREAK_CHARACTERS,
         .highlighter = {},
-        .on_complete_modify_callback = wrapInDoubleQuotes,
+        .on_complete_modify_callback = prependDoubleQuoteForPath,
     };
     ReplxxLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();
