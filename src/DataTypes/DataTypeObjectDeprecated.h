@@ -30,7 +30,7 @@ public:
 
     Field getDefault() const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDefault() is not implemented for data type {}", getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDefault is not implemented for data type {}", getName());
     }
 
     bool haveSubtypes() const override { return false; }
