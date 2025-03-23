@@ -1,4 +1,8 @@
 #include "KeeperClient.h"
+#include <algorithm>
+#include <cctype>
+#include <iterator>
+#include <string_view>
 #include "Commands.h"
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
@@ -9,8 +13,65 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/parseQuery.h>
+#include <replxx.hxx>
 #include <Poco/Util/HelpFormatter.h>
 
+namespace
+{
+
+char WORD_BREAK_CHARACTERS[] = " \t\v\f\a\b\r\n/";
+char WORD_BREAK_CHARACTERS_NO_PATH_DELIMITER[] = " \t\v\f\a\b\r\n";
+
+/// Automatically wrap non first (first word is a command in keeper that should
+/// not be wrapped) word under cursor into double brackets, i.e.:
+///
+///     ls     => ls
+///     ls /   => ls "/"
+///     ls "/" => ls "/"
+///
+void wrapInDoubleQuotes(replxx::Replxx & rx)
+{
+    replxx::Replxx::State state(rx.get_state());
+    std::string_view word_breaks(WORD_BREAK_CHARACTERS_NO_PATH_DELIMITER);
+
+    size_t cursor = state.cursor_position();
+    std::string text(state.text());
+
+    /// Example of algorith for 'ls /foo':
+    ///
+    /// std::string(text.begin(), word_begin) = 'ls '
+    /// std::string(word_begin, word_end) = '/foo'
+    /// std::string(word_end, text.end()) = ''
+
+    auto word_begin = std::find_first_of(text.rbegin() + text.size() - cursor, text.rend(), word_breaks.begin(), word_breaks.end()).base();
+    /// Do not quote first argument (w/o moving word_begin)
+    {
+        auto first_word = word_begin;
+        while (std::isspace(*first_word))
+            --first_word;
+        if (first_word == text.begin())
+            return;
+    }
+
+    auto word_end = std::find_first_of(text.begin() + cursor, text.end(), word_breaks.begin(), word_breaks.end());
+    if (std::distance(word_begin, word_end) < 1)
+        return;
+
+    if (*(word_end-1) != '"')
+    {
+        text.insert(word_end, '"');
+        ++cursor;
+    }
+    if (*word_begin != '"')
+    {
+        text.insert(word_begin, '"');
+        ++cursor;
+    }
+
+    rx.set_state(replxx::Replxx::State(text.c_str(), cursor));
+}
+
+}
 
 namespace DB
 {
@@ -323,7 +384,6 @@ void KeeperClient::runInteractiveReplxx()
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {};
-    char word_break_characters[] = " \t\v\f\a\b\r\n/";
 
     auto reader_options = ReplxxLineReader::Options
     {
@@ -334,8 +394,9 @@ void KeeperClient::runInteractiveReplxx()
         .ignore_shell_suspend = false,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
-        .word_break_characters = word_break_characters,
+        .word_break_characters = WORD_BREAK_CHARACTERS,
         .highlighter = {},
+        .on_complete_modify_callback = wrapInDoubleQuotes,
     };
     ReplxxLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();
