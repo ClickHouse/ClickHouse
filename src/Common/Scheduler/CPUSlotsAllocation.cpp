@@ -92,11 +92,15 @@ CPUSlotsAllocation::~CPUSlotsAllocation()
                 if (!canceled)
                 {
                     // Request was not canceled, it means it is currently processed by the scheduler thread, we have to wait
-                    allocated = total_slots; // to prevent enqueueing of the next request - see schedule()
+                    allocated = total_slots; // to prevent enqueueing of the next request - see grant()
                     schedule_cv.wait(lock, [this] { return allocated == total_slots + 1; });
                 }
             }
         }
+
+        // Finish resource requests for unacquired slots
+        for (size_t index = last_acquire_index; granted > 0; --granted, ++index)
+            requests[index].finish();
     }
 }
 
