@@ -129,15 +129,21 @@ std::vector<String> KeeperClient::getCompletions(const String & prefix) const
 
     fs::path path = string_path;
     String parent_path;
-    if (string_path.ends_with("/"))
+    /// parent_path has "/" at the end only if it is root
+    if (string_path.ends_with('/'))
         parent_path = getAbsolutePath(string_path);
     else
         parent_path = getAbsolutePath(path.parent_path());
 
+    /// parent_prefix always has "/" at the end
+    auto parent_prefix = parent_path;
+    if (!parent_prefix.ends_with('/'))
+        parent_prefix.append("/");
+
     try
     {
         for (const auto & child : zookeeper->getChildren(parent_path))
-            result.push_back(child);
+            result.push_back(parent_prefix + child);
     }
     catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
 
