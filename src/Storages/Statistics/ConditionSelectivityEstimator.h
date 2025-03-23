@@ -37,7 +37,7 @@ private:
         Float64 estimateEqual(const Field & val, Float64 rows, std::optional<Float64> & calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const;
     };
 
-    void extractOperators(const RPNBuilderTreeNode & node, const String & qualified_column_name, std::vector<std::pair<String, Field>> & result) const;
+    bool extractOperators(const RPNBuilderTreeNode & node, const String & qualified_column_name, std::vector<std::pair<String, Field>> & result) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
     static constexpr auto default_cond_range_factor = 0.5;
