@@ -19,8 +19,7 @@
 namespace
 {
 
-char WORD_BREAK_CHARACTERS[] = " \t\v\f\a\b\r\n/";
-char WORD_BREAK_CHARACTERS_NO_PATH_DELIMITER[] = " \t\v\f\a\b\r\n";
+char WORD_BREAK_CHARACTERS[] = " \t\v\f\a\b\r\n";
 
 /// Automatically wrap non first (first word is a command in keeper that should
 /// not be wrapped) word under cursor into double brackets, i.e.:
@@ -32,7 +31,7 @@ char WORD_BREAK_CHARACTERS_NO_PATH_DELIMITER[] = " \t\v\f\a\b\r\n";
 void wrapInDoubleQuotes(replxx::Replxx & rx)
 {
     replxx::Replxx::State state(rx.get_state());
-    std::string_view word_breaks(WORD_BREAK_CHARACTERS_NO_PATH_DELIMITER);
+    std::string_view word_breaks(WORD_BREAK_CHARACTERS);
 
     size_t cursor = state.cursor_position();
     std::string text(state.text());
