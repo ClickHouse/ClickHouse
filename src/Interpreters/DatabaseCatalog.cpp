@@ -16,7 +16,6 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -515,10 +514,12 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 
 void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
 {
+    if (database_name.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
+
     DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
-        assert(!database_name.empty());
         if (auto it = databases.find(database_name); it != databases.end())
             db = it->second;
     }
@@ -1126,7 +1127,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             {
                 tryLogCurrentException(log, "Cannot load partially dropped table " + table_id.getNameForLogs() +
                                             " from: " + dropped_metadata_path +
-                                            ". Parsed query: " + serializeAST(*create) +
+                                            ". Parsed query: " + create->formatForLogging() +
                                             ". Will remove metadata and " + data_path +
                                             ". Garbage may be left in ZooKeeper.");
             }

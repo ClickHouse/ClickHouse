@@ -22,6 +22,7 @@
 #include <Core/AccurateComparison.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/NaNUtils.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>

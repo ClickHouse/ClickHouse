@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/mongodb
+description: 'Allows `SELECT` queries to be performed on data that is stored on a
+  remote MongoDB server.'
+sidebar_label: 'mongodb'
 sidebar_position: 135
-sidebar_label: mongodb
-title: "mongodb"
-description: "Allows `SELECT` queries to be performed on data that is stored on a remote MongoDB server."
+slug: /sql-reference/table-functions/mongodb
+title: 'mongodb'
 ---
 
 # mongodb Table Function
@@ -12,8 +13,8 @@ Allows `SELECT` queries to be performed on data that is stored on a remote Mongo
 
 **Syntax**
 
-``` sql
-mongodb(host:port, database, collection, user, password, structure [, options])
+```sql
+mongodb(host:port, database, collection, user, password, structure[, options[, oid_columns]])
 ```
 
 **Arguments**
@@ -32,19 +33,22 @@ mongodb(host:port, database, collection, user, password, structure [, options])
 
 - `options` - MongoDB connection string options (optional parameter).
 
+- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
+
 :::tip
 If you are using the MongoDB Atlas cloud offering please add these options:
 
 ```ini
 'connectTimeoutMS=10000&ssl=true&authSource=admin'
 ```
-
 :::
 
-Also, you can connect by URI:
-``` sql
-mongodb(uri, collection, structure)
+You can also connect by URI:
+
+```sql
+mongodb(uri, collection, structure[, oid_columns])
 ```
+
 **Arguments**
 
 - `uri` — Connection string.
@@ -52,6 +56,8 @@ mongodb(uri, collection, structure)
 - `collection` — Remote collection name.
 
 - `structure` — The schema for the ClickHouse table returned from this function.
+
+- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
 
 **Returned Value**
 

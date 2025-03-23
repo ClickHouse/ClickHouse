@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/mannwhitneyutest
+description: 'Applies the Mann-Whitney rank test to samples from two populations.'
+sidebar_label: 'mannWhitneyUTest'
 sidebar_position: 161
-sidebar_label: mannWhitneyUTest
-title: "mannWhitneyUTest"
-description: "Applies the Mann-Whitney rank test to samples from two populations."
+slug: /sql-reference/aggregate-functions/reference/mannwhitneyutest
+title: 'mannWhitneyUTest'
 ---
 
 # mannWhitneyUTest
@@ -12,7 +12,7 @@ Applies the Mann-Whitney rank test to samples from two populations.
 
 **Syntax**
 
-``` sql
+```sql
 mannWhitneyUTest[(alternative[, continuity_correction])](sample_data, sample_index)
 ```
 
@@ -44,7 +44,7 @@ The null hypothesis is that two populations are stochastically equal. Also one-s
 
 Input table:
 
-``` text
+```text
 ┌─sample_data─┬─sample_index─┐
 │          10 │            0 │
 │          11 │            0 │
@@ -57,13 +57,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT mannWhitneyUTest('greater')(sample_data, sample_index) FROM mww_ttest;
 ```
 
 Result:
 
-``` text
+```text
 ┌─mannWhitneyUTest('greater')(sample_data, sample_index)─┐
 │ (9,0.04042779918503192)                                │
 └────────────────────────────────────────────────────────┘

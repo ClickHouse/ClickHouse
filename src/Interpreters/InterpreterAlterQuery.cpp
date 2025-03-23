@@ -11,6 +11,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -21,7 +22,6 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
@@ -177,7 +177,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                     if (!mut_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
-                            queryToString(*command_ast), queryToString(*rewritten_command_ast));
+                            command_ast->formatForErrorMessage(), rewritten_command_ast->formatForErrorMessage());
                 }
             }
 

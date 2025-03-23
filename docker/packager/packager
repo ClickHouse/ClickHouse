@@ -93,7 +93,7 @@ def run_docker_image_with_env(
     cmd = (
         f"docker run --network=host --user={user} --rm {ccache_mount} "
         f"--volume={output_dir}:/output --volume={ch_root}:/build {env_part} "
-        f"--volume={cargo_cache_dir}:/rust/cargo/registry {interactive} {image_name}"
+        f"--volume={cargo_cache_dir}:/rust/cargo/registry {interactive} {image_name} /build/docker/packager/binary-builder/build.sh"
     )
 
     logging.info("Will build ClickHouse pkg with cmd: '%s'", cmd)

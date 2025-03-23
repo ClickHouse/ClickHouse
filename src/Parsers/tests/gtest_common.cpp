@@ -2,7 +2,6 @@
 
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 
@@ -29,9 +28,7 @@ TEST_P(ParserRegexTest, parseQuery)
 
     DB::ASTPtr ast;
     ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.data(), input_text.data() + input_text.size(), 0, 0, 0));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    DB::WriteBufferFromOwnString buf;
-    formatAST(*ast->clone(), buf, false, false);
-    EXPECT_THAT(buf.str(), ::testing::MatchesRegex(expected_ast));
+    EXPECT_THAT(ast->clone()->formatWithSecretsMultiLine(), ::testing::MatchesRegex(expected_ast));
 }
 
 TEST_P(ParserKQLTest, parseKQLQuery)
@@ -54,9 +51,7 @@ TEST_P(ParserKQLTest, parseKQLQuery)
             if (std::string("CREATE USER or ALTER USER query") != parser->getName()
                     && std::string("ATTACH access entity query") != parser->getName())
             {
-                DB::WriteBufferFromOwnString buf;
-                formatAST(*ast->clone(), buf, false, false);
-                String formatted_ast = buf.str();
+                String formatted_ast = ast->clone()->formatWithSecretsMultiLine();
                 EXPECT_EQ(expected_ast, formatted_ast);
             }
             else
@@ -68,9 +63,7 @@ TEST_P(ParserKQLTest, parseKQLQuery)
                 }
                 else
                 {
-                    DB::WriteBufferFromOwnString buf;
-                    formatAST(*ast->clone(), buf, false, false);
-                    String formatted_ast = buf.str();
+                    String formatted_ast = ast->clone()->formatWithSecretsMultiLine();
                     EXPECT_TRUE(re2::RE2::FullMatch(formatted_ast, expected_ast));
                 }
             }

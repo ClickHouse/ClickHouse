@@ -8,6 +8,12 @@
 
 #include "config.h"
 
+namespace Poco::Net
+{
+    class HTTPRequest;
+    class SocketAddress;
+}
+
 namespace DB
 {
 
@@ -90,6 +96,36 @@ public:
 private:
     String scramble;
     String scrambled_password;
+};
+
+class ScramSHA256Credentials : public Credentials
+{
+public:
+    explicit ScramSHA256Credentials(const String& user_name_, const String& client_proof_, const String& auth_message_, int iterations_)
+        : Credentials(user_name_), client_proof(client_proof_), auth_message(auth_message_), iterations(iterations_)
+    {
+        is_ready = true;
+    }
+
+    const String& getClientProof() const
+    {
+        return client_proof;
+    }
+
+    const String& getAuthMessage() const
+    {
+        return auth_message;
+    }
+
+    int getIterations() const
+    {
+        return iterations;
+    }
+
+private:
+    String client_proof;
+    String auth_message;
+    int iterations;
 };
 
 class MySQLNative41Credentials : public CredentialsWithScramble

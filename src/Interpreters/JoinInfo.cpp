@@ -1,6 +1,7 @@
 #include <Interpreters/JoinInfo.h>
 
 #include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -14,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace Setting
@@ -64,8 +66,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const QueryPlanSerializationSettingsUInt64 join_on_disk_max_files_to_merge;
 
-    extern const QueryPlanSerializationSettingsUInt64 grace_hash_join_initial_buckets;
-    extern const QueryPlanSerializationSettingsUInt64 grace_hash_join_max_buckets;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_max_buckets;
 
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_set_to_optimize_join;
 
@@ -158,6 +160,43 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     default_max_bytes_in_join = settings[QueryPlanSerializationSetting::default_max_bytes_in_join];
 }
 
+void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
+{
+    settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
+    settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
+
+    settings[QueryPlanSerializationSetting::max_rows_in_join] = max_rows_in_join;
+    settings[QueryPlanSerializationSetting::max_bytes_in_join] = max_bytes_in_join;
+
+    settings[QueryPlanSerializationSetting::join_overflow_mode] = join_overflow_mode;
+    settings[QueryPlanSerializationSetting::join_any_take_last_row] = join_any_take_last_row;
+
+    settings[QueryPlanSerializationSetting::cross_join_min_rows_to_compress] = cross_join_min_rows_to_compress;
+    settings[QueryPlanSerializationSetting::cross_join_min_bytes_to_compress] = cross_join_min_bytes_to_compress;
+
+    settings[QueryPlanSerializationSetting::partial_merge_join_left_table_buffer_bytes] = partial_merge_join_left_table_buffer_bytes;
+    settings[QueryPlanSerializationSetting::partial_merge_join_rows_in_right_blocks] = partial_merge_join_rows_in_right_blocks;
+    settings[QueryPlanSerializationSetting::join_on_disk_max_files_to_merge] = join_on_disk_max_files_to_merge;
+
+    settings[QueryPlanSerializationSetting::grace_hash_join_initial_buckets] = grace_hash_join_initial_buckets;
+    settings[QueryPlanSerializationSetting::grace_hash_join_max_buckets] = grace_hash_join_max_buckets;
+
+    settings[QueryPlanSerializationSetting::max_rows_in_set_to_optimize_join] = max_rows_in_set_to_optimize_join;
+
+    settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_joins] = collect_hash_table_stats_during_joins;
+    settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_joins] = max_size_to_preallocate_for_joins;
+
+    settings[QueryPlanSerializationSetting::max_joined_block_size_rows] = max_joined_block_size_rows;
+    settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
+    settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold] = join_output_by_rowlist_perkey_rows_threshold;
+    settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows] = join_to_sort_minimum_perkey_rows;
+    settings[QueryPlanSerializationSetting::join_to_sort_maximum_table_rows] = join_to_sort_maximum_table_rows;
+    settings[QueryPlanSerializationSetting::allow_experimental_join_right_table_sorting] = allow_experimental_join_right_table_sorting;
+    settings[QueryPlanSerializationSetting::min_joined_block_size_bytes] = min_joined_block_size_bytes;
+
+    settings[QueryPlanSerializationSetting::default_max_bytes_in_join] = default_max_bytes_in_join;
+}
+
 std::string_view toString(PredicateOperator op)
 {
     switch (op)
@@ -247,6 +286,203 @@ const String & JoinActionRef::getColumnName() const
 DataTypePtr JoinActionRef::getType() const
 {
     return getNode()->result_type;
+}
+
+void serializePredicateOperator(PredicateOperator op, WriteBuffer & out)
+{
+    UInt8 val = UInt8(op);
+    writeIntBinary(val, out);
+}
+
+PredicateOperator deserializePredicateOperator(ReadBuffer & in)
+{
+    UInt8 val;
+    readIntBinary(val, in);
+
+    if (val == UInt8(PredicateOperator::Equals))
+        return PredicateOperator::Equals;
+    if (val == UInt8(PredicateOperator::NullSafeEquals))
+        return PredicateOperator::NullSafeEquals;
+    if (val == UInt8(PredicateOperator::Less))
+        return PredicateOperator::Less;
+    if (val == UInt8(PredicateOperator::LessOrEquals))
+        return PredicateOperator::LessOrEquals;
+    if (val == UInt8(PredicateOperator::Greater))
+        return PredicateOperator::Greater;
+    if (val == UInt8(PredicateOperator::GreaterOrEquals))
+        return PredicateOperator::GreaterOrEquals;
+
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to PredicateOperator", UInt16(val));
+}
+
+void JoinActionRef::serialize(WriteBuffer & out, const ActionsDAGRawPtrs & dags) const
+{
+    if (actions_dag == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot serialize JoinActionRef({}) because actions_dag is nullptr", column_name);
+
+    UInt64 pos = 0;
+    while (pos < dags.size() && dags[pos] != actions_dag)
+        ++pos;
+
+    if (pos == dags.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot serialize JoinActionRef({}) because actions_dag is not in the DAGs list. DAG: {}",
+            column_name, actions_dag->dumpDAG());
+
+    writeVarUInt(pos, out);
+    writeStringBinary(column_name, out);
+}
+
+JoinActionRef JoinActionRef::deserialize(ReadBuffer & in, const ActionsDAGRawPtrs & dags)
+{
+    UInt64 pos;
+    readVarUInt(pos, in);
+
+    if (pos >= dags.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot deserialize JoinActionRef because actions_dag position {} outside of range (0, {})",
+            pos, dags.size());
+
+    JoinActionRef res(nullptr);
+    readStringBinary(res.column_name, in);
+    res.actions_dag = dags[pos];
+
+    return res;
+}
+
+void JoinPredicate::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
+{
+    serializePredicateOperator(op, out);
+    left_node.serialize(out, dags);
+    right_node.serialize(out, dags);
+}
+
+JoinPredicate JoinPredicate::deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
+{
+    auto op = deserializePredicateOperator(in);
+    auto left_node = JoinActionRef::deserialize(in, dags);
+    auto right_node = JoinActionRef::deserialize(in, dags);
+    return {std::move(left_node), std::move(right_node), op};
+}
+
+static void serializePredicates(WriteBuffer & out, const std::vector<JoinPredicate> & predicates, const JoinActionRef::ActionsDAGRawPtrs & dags)
+{
+    writeVarUInt(predicates.size(), out);
+    for (const auto & predicate : predicates)
+        predicate.serialize(out, dags);
+}
+
+static std::vector<JoinPredicate> deserializePredicates(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
+{
+    UInt64 size;
+    readVarUInt(size, in);
+
+    std::vector<JoinPredicate> predicates;
+    predicates.reserve(size);
+
+    for (size_t i = 0; i < size; ++i)
+        predicates.emplace_back(JoinPredicate::deserialize(in, dags));
+
+    return predicates;
+}
+
+static void serializeJoinActions(WriteBuffer & out, const std::vector<JoinActionRef> & actions, const JoinActionRef::ActionsDAGRawPtrs & dags)
+{
+    writeVarUInt(actions.size(), out);
+    for (const auto & action : actions)
+        action.serialize(out, dags);
+}
+
+static std::vector<JoinActionRef> deserializeJoinActions(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
+{
+    UInt64 size;
+    readVarUInt(size, in);
+
+    std::vector<JoinActionRef> actions;
+    actions.reserve(size);
+
+    for (size_t i = 0; i < size; ++i)
+        actions.emplace_back(JoinActionRef::deserialize(in, dags));
+
+    return actions;
+}
+
+void JoinCondition::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
+{
+    serializePredicates(out, predicates, dags);
+    serializeJoinActions(out, left_filter_conditions, dags);
+    serializeJoinActions(out, right_filter_conditions, dags);
+    serializeJoinActions(out, residual_conditions, dags);
+}
+
+JoinCondition JoinCondition::deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
+{
+    auto predicates = deserializePredicates(in, dags);
+    auto left_filter_conditions = deserializeJoinActions(in, dags);
+    auto right_filter_conditions = deserializeJoinActions(in, dags);
+    auto residual_conditions = deserializeJoinActions(in, dags);
+    return {
+        std::move(predicates),
+        std::move(left_filter_conditions),
+        std::move(right_filter_conditions),
+        std::move(residual_conditions)
+    };
+}
+
+void JoinExpression::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
+{
+    UInt8 is_using_flag = is_using ? 1 : 0;
+    writeIntBinary(is_using_flag, out);
+
+    UInt64 num_conditions = disjunctive_conditions.size() + 1;
+    writeVarUInt(num_conditions, out);
+
+    condition.serialize(out, dags);
+    for (const auto & disjunctive_condition : disjunctive_conditions)
+        disjunctive_condition.serialize(out, dags);
+}
+
+JoinExpression JoinExpression::deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
+{
+    UInt8 is_using_flag;
+    readIntBinary(is_using_flag, in);
+
+    if (is_using_flag > 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Cannot deserialize JoinExpression because is_using flag ({}) is not 0 or 1",
+            UInt16(is_using_flag));
+
+    UInt64 num_conditions;
+    readVarUInt(num_conditions, in);
+    if (num_conditions == 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Cannot deserialize JoinExpression because the list of conditions is empty");
+
+    auto condition = JoinCondition::deserialize(in, dags);
+    std::vector<JoinCondition> disjunctive_conditions;
+    disjunctive_conditions.reserve(num_conditions - 1);
+    for (size_t i = 1; i < num_conditions; ++i)
+        disjunctive_conditions.emplace_back(JoinCondition::deserialize(in, dags));
+
+    return {std::move(condition), std::move(disjunctive_conditions), bool(is_using_flag)};
+}
+
+void JoinInfo::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
+{
+    expression.serialize(out, dags);
+    serializeJoinKind(kind, out);
+    serializeJoinStrictness(strictness, out);
+    serializeJoinLocality(locality, out);
+}
+JoinInfo JoinInfo::deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
+{
+    auto expressin = JoinExpression::deserialize(in, dags);
+    auto kind = deserializeJoinKind(in);
+    auto strictness = deserializeJoinStrictness(in);
+    auto locality = deserializeJoinLocality(in);
+
+    return {std::move(expressin), kind, strictness, locality};
 }
 
 }
