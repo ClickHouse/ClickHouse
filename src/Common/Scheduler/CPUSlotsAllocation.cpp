@@ -58,7 +58,7 @@ CPUSlotsAllocation::CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker
     , master_link(master_link_)
     , worker_link(worker_link_)
     , requests(total_slots - noncompeting_slots) // NOTE: it should not be reallocated after initialization because AcquiredCPUSlot holds raw pointer
-    , current_request(&requests.front())
+    , current_request(requests.empty() ? nullptr : &requests.front())
 {
     for (CPUSlotRequest & request : requests)
         request.allocation = this;
