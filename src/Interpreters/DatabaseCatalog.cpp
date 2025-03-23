@@ -675,8 +675,7 @@ void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
             ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database->getDatabaseName()));
 
     auto * ast_create_query = ast->as<ASTCreateQuery>();
-    if (!ast_create_query->is_dictionary)
-        ast_create_query->attach = true;
+    ast_create_query->attach = true;
 
     WriteBufferFromOwnString statement_buf;
     IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);

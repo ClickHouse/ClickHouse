@@ -1049,7 +1049,7 @@ def test_password_leak(started_cluster):
 def test_mysql_database_engine_comment(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            "root", "clickhouse", started_cluster.mysql8_ip, started_cluster.mysql8_port
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
@@ -1057,7 +1057,7 @@ def test_mysql_database_engine_comment(started_cluster):
 
         clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
-            "CREATE DATABASE test_database ENGINE = MySQL('mysql80:3306', 'test_database', 'root', 'clickhouse') \
+            f"CREATE DATABASE test_database ENGINE = MySQL('mysql80:3306', 'test_database', 'root', '{mysql_pass}') \
             comment 'test mysql database engine comment'"
         )
         assert "test_database" in clickhouse_node.query("SHOW DATABASES")
