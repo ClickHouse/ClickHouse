@@ -96,7 +96,7 @@ StorageNATS::StorageNATS(
     , schema_name(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_schema]))
     , num_consumers((*nats_settings)[NATSSetting::nats_num_consumers].value)
     , max_rows_per_message((*nats_settings)[NATSSetting::nats_max_rows_per_message])
-    , log(getLogger("StorageNATS (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageNATS (" + table_id_.getFullTableName() + ")"))
     , event_handler(log)
     , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
@@ -710,7 +710,6 @@ bool StorageNATS::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        LOG_DEBUG(log, "Current queue[{}] size: {}", i, consumers[i]->queueSize());
         auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
         sources.emplace_back(source);
         pipes.emplace_back(source);

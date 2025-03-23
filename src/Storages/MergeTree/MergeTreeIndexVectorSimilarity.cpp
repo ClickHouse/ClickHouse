@@ -143,7 +143,6 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
         /// See the comment in MergeTreeIndexGranuleVectorSimilarity::deserializeBinary why we throw here
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not load vector similarity index. Please drop the index and create it again. Error: {}", String(result.error.release()));
 
-    /// Indicate the number of concurrent threads that will potentially search this specific usearch index
     try_reserve(limits());
 }
 
@@ -397,11 +396,9 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
 
 MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity(
     const std::optional<VectorSearchParameters> & parameters_,
-    const String & index_column_,
     unum::usearch::metric_kind_t metric_kind_,
     ContextPtr context)
     : parameters(parameters_)
-    , index_column(index_column_)
     , metric_kind(metric_kind_)
     , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
 {
@@ -416,21 +413,13 @@ bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexG
 
 bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
 {
-    if (!parameters)
-        return true;
+    /// The vector similarity index was build for a specific distance function ("metric_kind").
+    /// We can use it for vector search only if the distance function used in the SELECT query is the same.
+    bool distance_function_in_query_and_distance_function_in_index_match = parameters &&
+        ((parameters->distance_function == "L2Distance" && metric_kind == unum::usearch::metric_kind_t::l2sq_k)
+        || (parameters->distance_function == "cosineDistance" && metric_kind == unum::usearch::metric_kind_t::cos_k));
 
-    /// The vector similarity index was build on a specific column.
-    /// It can only be used if the ORDER BY clause in the SELECT query is against the same column.
-    if (parameters->column != index_column)
-        return true;
-
-    /// The vector similarity index was build for a specific distance function.
-    /// It can only be used if the ORDER BY clause in the SELECT query uses the same distance function.
-    if ((parameters->distance_function == "L2Distance" && metric_kind != unum::usearch::metric_kind_t::l2sq_k)
-        || (parameters->distance_function == "cosineDistance" && metric_kind != unum::usearch::metric_kind_t::cos_k))
-            return true;
-
-    return false;
+    return !distance_function_in_query_and_distance_function_in_index_match;
 }
 
 std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
@@ -507,8 +496,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 
 MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const ActionsDAG * /*filter_actions_dag*/, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const
 {
-    const String & index_column = index.column_names[0];
-    return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, index_column, metric_kind, context);
+    return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, metric_kind, context);
 }
 
 MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
