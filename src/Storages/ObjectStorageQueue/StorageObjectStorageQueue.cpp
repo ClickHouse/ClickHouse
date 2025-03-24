@@ -263,7 +263,6 @@ void StorageObjectStorageQueue::startup()
 {
     /// Register the metadata in startup(), unregister in shutdown.
     /// (If startup is never called, shutdown also won't be called.)
-    startup_called = true;
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(temp_metadata), getStorageID());
     try
     {
@@ -276,6 +275,7 @@ void StorageObjectStorageQueue::startup()
         files_metadata->shutdown();
         throw;
     }
+    startup_called = true;
 }
 
 void StorageObjectStorageQueue::shutdown(bool is_drop)
@@ -1052,9 +1052,8 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
-    /// If startup() for a table was not called, results of getTableMetadata() might be empty, in which case
-    /// get the table metadata from temp_metadata.
-    const auto & table_metadata = startup_called ? getTableMetadata() : temp_metadata->getTableMetadata();
+    /// If startup() for a table was not called, just use the default queue settings
+    const auto & table_metadata = startup_called ? getTableMetadata() : ObjectStorageQueueSettings{};
 
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
