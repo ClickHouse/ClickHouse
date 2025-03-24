@@ -526,10 +526,14 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// CreatingSets does not change header.
         /// We can push down filter and update header.
         /// Filter - DelayedCreatingSets - Something
-        child = std::make_unique<DelayedCreatingSetsStep>(filter->getOutputHeader(), delayed->detachSets(), delayed->getContext());
+
+        child = std::make_unique<DelayedCreatingSetsStep>(
+            filter->getOutputHeader(),
+            delayed->detachSets(),
+            delayed->getNetworkTransferLimits(),
+            delayed->getPreparedSetsCache());
+
         std::swap(parent, child);
-        std::swap(parent_node->children, child_node->children);
-        std::swap(parent_node->children.front(), child_node->children.front());
         /// DelayedCreatingSets - Filter - Something
         return 2;
     }

@@ -491,7 +491,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
         QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
         if (optimization_settings.build_sets)
-            QueryPlanOptimizations::addStepsToBuildSets(*this, *root, nodes);
+            QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
     }
     catch (Exception & e)
     {
@@ -550,6 +550,79 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
         columns[index++]->insert(counter.second->rows);
         columns[index++]->insert(counter.second->marks);
     }
+}
+
+// static void validatePlan(QueryPlan::Node * root, QueryPlan::Nodes & nodes)
+// {
+//     std::unordered_set<const QueryPlan::Node *> used;
+//     std::stack<const QueryPlan::Node *> stack;
+
+//     std::unordered_set<const QueryPlan::Node *> known;
+//     for (const auto & node : nodes)
+//         known.emplace(&node);
+
+//     stack.push(root);
+//     while (!stack.empty())
+//     {
+//         const auto * node = stack.top();
+//         used.insert(node);
+//         stack.pop();
+
+//         if (!known.contains(node))
+//             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} {} is not known", node->step->getName(), reinterpret_cast<const void *>(node));
+
+//         for (auto * child : node->children)
+//         {
+//             stack.push(child);
+//         }
+//     }
+
+//     for (const auto * node : known)
+//         if (!used.contains(node))
+//             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} {} is not used", node->step->getName(), reinterpret_cast<const void *>(node));
+// }
+
+QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
+{
+    std::unordered_set<Node *> used;
+    std::stack<Node *> stack;
+
+    stack.push(root);
+    used.insert(root);
+    while (!stack.empty())
+    {
+        const auto * node = stack.top();
+        stack.pop();
+
+        for (auto * child : node->children)
+        {
+            used.insert(child);
+            stack.push(child);
+        }
+    }
+
+    QueryPlan new_plan;
+    new_plan.root = root;
+
+    auto it = nodes.begin();
+    while (it != nodes.end())
+    {
+        auto curr = it;
+        ++it;
+
+        if (used.contains(&*curr))
+            new_plan.nodes.splice(new_plan.nodes.end(), nodes, curr);
+    }
+
+    // {
+    //     WriteBufferFromOwnString buf;
+    //     new_plan.explainPlan(buf, {.header=true, .actions=true});
+    //     std::cerr << buf.stringView() << std::endl;
+    // }
+
+    // validatePlan(new_plan.root, new_plan.nodes);
+
+    return new_plan;
 }
 
 std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndResources(QueryPlan && plan)

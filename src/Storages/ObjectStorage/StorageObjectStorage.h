@@ -139,6 +139,8 @@ public:
 
     void updateExternalDynamicMetadata(ContextPtr) override;
 
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 protected:
     String getPathSample(ContextPtr context);
 
@@ -221,6 +223,9 @@ public:
     virtual bool isDataLakeConfiguration() const { return false; }
 
     virtual void implementPartitionPruning(const ActionsDAG &) { }
+
+    virtual std::optional<size_t> totalRows() { return {}; }
+    virtual std::optional<size_t> totalBytes() { return {}; }
 
     virtual bool hasExternalDynamicMetadata() { return false; }
 

@@ -13,6 +13,7 @@ namespace DB
 {
 
 class Context;
+struct AlterCommand;
 
 
 /** Real-time access to table list and table structure from remote PostgreSQL.
@@ -59,6 +60,8 @@ public:
 
     void drop(ContextPtr /*context*/) override;
     void shutdown() override;
+
+    void alterDatabaseComment(const AlterCommand & command) override;
 
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;

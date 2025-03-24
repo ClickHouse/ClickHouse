@@ -151,7 +151,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         const auto & settings = getContext()->getSettingsRef();
         if (query.if_empty)
         {
-            if (auto rows = table->totalRows(settings); rows > 0)
+            if (auto rows = table->totalRows(getContext()); rows > 0)
                 throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
         }
         checkStorageSupportsTransactionsIfNeeded(table, context_);
