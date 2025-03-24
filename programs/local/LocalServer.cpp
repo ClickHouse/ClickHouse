@@ -100,10 +100,10 @@ namespace ServerSetting
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
     extern const ServerSettingsDouble mark_cache_size_ratio;
-    extern const ServerSettingsString datalake_metadata_cache_policy;
-    extern const ServerSettingsUInt64 datalake_metadata_cache_size;
-    extern const ServerSettingsUInt64 datalake_metadata_cache_max_entries;
-    extern const ServerSettingsDouble datalake_metadata_cache_size_ratio;
+    extern const ServerSettingsString iceberg_metadata_files_cache_policy;
+    extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
+    extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
+    extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_size;
@@ -828,16 +828,16 @@ void LocalServer::processConfig()
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
-    String datalake_metadata_cache_policy = server_settings[ServerSetting::datalake_metadata_cache_policy];
-    size_t datalake_metadata_cache_size = server_settings[ServerSetting::datalake_metadata_cache_size];
-    size_t datalake_metadata_cache_max_entries = server_settings[ServerSetting::datalake_metadata_cache_max_entries];
-    double datalake_metadata_cache_size_ratio = server_settings[ServerSetting::datalake_metadata_cache_size_ratio];
-    if (datalake_metadata_cache_size > max_cache_size)
+    String iceberg_metadata_files_cache_policy = server_settings[ServerSetting::iceberg_metadata_files_cache_policy];
+    size_t iceberg_metadata_files_cache_size = server_settings[ServerSetting::iceberg_metadata_files_cache_size];
+    size_t iceberg_metadata_files_cache_max_entries = server_settings[ServerSetting::iceberg_metadata_files_cache_max_entries];
+    double iceberg_metadata_files_cache_size_ratio = server_settings[ServerSetting::iceberg_metadata_files_cache_size_ratio];
+    if (iceberg_metadata_files_cache_size > max_cache_size)
     {
-        datalake_metadata_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered datalake metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(datalake_metadata_cache_size));
+        iceberg_metadata_files_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered datalake metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(iceberg_metadata_files_cache_size));
     }
-    global_context->setDataLakeMetadataCache(datalake_metadata_cache_policy, datalake_metadata_cache_size, datalake_metadata_cache_max_entries, datalake_metadata_cache_size_ratio);
+    global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
 
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);

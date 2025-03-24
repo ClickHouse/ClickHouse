@@ -4272,16 +4272,10 @@ The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELE
 The probability of a fault injection during table creation after creating metadata in ZooKeeper
 )", 0) \
     \
-    DECLARE(Bool, use_datalake_metadata_cache, false, R"(
-If turned on, datalake table function and datalake storage may utilize the datalake metadata cache. Parameters [enable_reads_from_datalake_metadata_cache](#enable_reads_from_datalake_metadata_cache)
-and [enable_writes_to_datalake_metadata_cache](#enable_writes_to_datalake_metadata_cache) control in more detail how the cache is used.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
+    DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
+If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
 )", 0) \
-    DECLARE(Bool, enable_writes_to_datalake_metadata_cache, true, R"(
+    DECLARE(Bool, enable_writes_to_iceberg_metadata_files_cache, true, R"(
 If turned on, datalake metadata will be written to cache
 
 Possible values:
@@ -4289,7 +4283,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(Bool, enable_reads_from_datalake_metadata_cache, true, R"(
+    DECLARE(Bool, enable_reads_from_iceberg_metadata_files_cache, true, R"(
 If turned on, datalake metadata will be read from cache
 
 Possible values:

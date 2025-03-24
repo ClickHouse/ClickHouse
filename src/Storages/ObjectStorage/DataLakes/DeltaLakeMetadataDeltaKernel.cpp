@@ -66,11 +66,6 @@ NamesAndTypesList DeltaLakeMetadataDeltaKernel::getReadSchema() const
     return schema;
 }
 
-size_t DeltaLakeMetadataDeltaKernel::getMemoryBytes() const
-{
-    return sizeof(*this) + sizeof(DeltaLake::TableSnapshot);
-}
-
 }
 
 #endif

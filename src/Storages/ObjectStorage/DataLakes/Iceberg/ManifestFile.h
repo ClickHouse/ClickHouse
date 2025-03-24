@@ -82,6 +82,7 @@ public:
         Int32 format_version_,
         const String & common_path,
         Int32 schema_id_,
+        Poco::JSON::Object::Ptr schema_object_,
         const DB::IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         const std::string & table_location,
@@ -93,19 +94,21 @@ public:
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
     const std::vector<Int32> & getPartitionKeyColumnIDs() const;
+    Poco::JSON::Object::Ptr getSchemaObject() const { return schema_object; }
+    size_t getMemoryBytes() const;
 private:
 
     Int32 schema_id;
-
+    Poco::JSON::Object::Ptr schema_object;
     std::optional<DB::KeyDescription> partition_key_description;
     std::vector<Int32> partition_column_ids;
     // Size - number of files
     std::vector<ManifestFileEntry> files;
-
 };
 
 /// Once manifest file is constructed. It's unchangeable.
 using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
+using ManifestFileObservePtr = std::weak_ptr<const ManifestFileContent>;
 
 }
 

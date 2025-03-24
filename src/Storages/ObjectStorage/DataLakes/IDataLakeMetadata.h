@@ -50,8 +50,6 @@ public:
     /// Whether schema evolution is supported.
     virtual bool supportsExternalMetadataChange() const { return false; }
 
-    virtual size_t getMemoryBytes() const = 0;
-
 protected:
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {
@@ -59,6 +57,6 @@ protected:
     }
 };
 
-using DataLakeMetadataPtr = std::shared_ptr<IDataLakeMetadata>;
+using DataLakeMetadataPtr = std::unique_ptr<IDataLakeMetadata>;
 
 }

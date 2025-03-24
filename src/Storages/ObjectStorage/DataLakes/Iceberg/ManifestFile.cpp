@@ -48,12 +48,14 @@ ManifestFileContent::ManifestFileContent(
     Int32 format_version_,
     const String & common_path,
     Int32 schema_id_,
+    Poco::JSON::Object::Ptr schema_object_,
     const IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number,
     const String & table_location,
     DB::ContextPtr context)
 {
     this->schema_id = schema_id_;
+    this->schema_object = schema_object_;
 
     for (const auto & column_name : {COLUMN_STATUS_NAME, COLUMN_TUPLE_DATA_FILE_NAME})
     {
@@ -181,6 +183,16 @@ const DB::KeyDescription & ManifestFileContent::getPartitionKeyDescription() con
 const std::vector<Int32> & ManifestFileContent::getPartitionKeyColumnIDs() const
 {
     return partition_column_ids;
+}
+
+size_t ManifestFileContent::getMemoryBytes() const
+{
+    size_t total_size = sizeof(ManifestFileContent) + 200; /// assume we have some overhead
+    if (partition_key_description)
+        total_size += sizeof(DB::KeyDescription);
+    total_size += partition_column_ids.capacity() * sizeof(Int32);
+    total_size += files.capacity() * sizeof(ManifestFileEntry);
+    return total_size;
 }
 
 }

@@ -38,7 +38,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeMetadataCache.h>
+#include <Storages/ObjectStorage/DataLakes/IcebergMetadataFilesCache.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -447,7 +447,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
-    mutable DataLakeMetadataCachePtr datalake_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized datalake metadata.
+    mutable IcebergMetadataFilesCachePtr iceberg_metadata_files_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized datalake metadata.
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
     ProcessList process_list;                                   /// Executing queries at the moment.
@@ -3623,38 +3623,38 @@ void Context::clearMMappedFileCache() const
         cache->clear();
 }
 
-void Context::setDataLakeMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+void Context::setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (shared->datalake_metadata_cache)
+    if (shared->iceberg_metadata_files_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Datalake metadata cache has been already created.");
 
-    shared->datalake_metadata_cache = std::make_shared<DataLakeMetadataCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+    shared->iceberg_metadata_files_cache = std::make_shared<IcebergMetadataFilesCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
 }
 
-void Context::updateDataLakeMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (!shared->datalake_metadata_cache)
+    if (!shared->iceberg_metadata_files_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Datalake metadata cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("datalake_metadata_cache_size", DEFAULT_DATALAKE_METADATA_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("datalake_metadata_cache_max_entries", DEFAULT_DATALAKE_METADATA_CACHE_MAX_ENTRIES);
-    shared->datalake_metadata_cache->setMaxSizeInBytes(max_size_in_bytes);
-    shared->datalake_metadata_cache->setMaxCount(max_entries);
+    size_t max_size_in_bytes = config.getUInt64("iceberg_metadata_files_cache_size", DEFAULT_DATALAKE_METADATA_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("iceberg_metadata_files_cache_max_entries", DEFAULT_DATALAKE_METADATA_CACHE_MAX_ENTRIES);
+    shared->iceberg_metadata_files_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->iceberg_metadata_files_cache->setMaxCount(max_entries);
 }
 
-std::shared_ptr<DataLakeMetadataCache> Context::getDataLakeMetadataCache() const
+std::shared_ptr<IcebergMetadataFilesCache> Context::getIcebergMetadataFilesCache() const
 {
     std::lock_guard lock(shared->mutex);
-    return shared->datalake_metadata_cache;
+    return shared->iceberg_metadata_files_cache;
 }
 
-void Context::clearDataLakeMetadataCache() const
+void Context::clearIcebergMetadataFilesCache() const
 {
-    auto cache = getDataLakeMetadataCache();
+    auto cache = getIcebergMetadataFilesCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
