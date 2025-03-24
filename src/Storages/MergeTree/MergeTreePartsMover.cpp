@@ -237,48 +237,78 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     cloned_part.temporary_directory_lock = data->getTemporaryPartDirectoryHolder(part->name);
 
     MutableDataPartStoragePtr cloned_part_storage;
-    bool preserve_blobs = false;
-    if (disk->supportZeroCopyReplication() && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
+    cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME, read_settings, write_settings, cancellation_hook);
+
+    MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage, getReadSettings());
+    cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
+    LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
+
+    cloned_part.part->is_temp = false;
+    if (data->allowRemoveStaleMovingParts())
     {
-        /// Try zero-copy replication and fallback to default copy if it's not possible
-        String path_to_clone = fs::path(data->getRelativeDataPath()) / MergeTreeData::MOVING_DIR_NAME / "";
-        String relative_path = part->getDataPartStorage().getPartDirectory();
-        if (disk->existsFile(path_to_clone + relative_path))
-        {
-            // If setting is on, we should've already cleaned moving/ dir on startup
-            if (data->allowRemoveStaleMovingParts())
-                throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
-                    "Cannot clone part {} from '{}' to '{}': path '{}' already exists",
-                    part->name, part->getDataPartStorage().getDiskName(), disk->getName(),
-                    fullPath(disk, path_to_clone + relative_path));
+        cloned_part.part->is_temp = true;
+        /// Setting it in case connection to zookeeper is lost while moving
+        /// Otherwise part might be stuck in the moving directory due to the KEEPER_EXCEPTION in part's destructor
+        cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
+    }
+    cloned_part.part->loadColumnsChecksumsIndexes(true, true);
+    cloned_part.part->loadVersionMetadata();
+    cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
+    return cloned_part;
+}
 
-            LOG_DEBUG(log, "Path {} already exists. Will remove it and clone again",
+MergeTreePartsMover::TemporaryClonedPart MergeTreeZeroCopyPartsMover::clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const
+{
+    auto cancellation_hook = [&moves_blocker_ = moves_blocker]()
+    {
+        if (moves_blocker_.isCancelled())
+            throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
+    };
+    cancellation_hook();
+
+    auto settings = data->getSettings();
+    auto part = moving_part.part;
+    auto disk = moving_part.reserved_space->getDisk();
+    LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, part->getDataPartStorage().getDiskName(), disk->getName());
+    TemporaryClonedPart cloned_part;
+    cloned_part.temporary_directory_lock = data->getTemporaryPartDirectoryHolder(part->name);
+
+    MutableDataPartStoragePtr cloned_part_storage;
+    bool preserve_blobs = false;
+    /// Try zero-copy replication and fallback to default copy if it's not possible
+    String path_to_clone = fs::path(data->getRelativeDataPath()) / MergeTreeData::MOVING_DIR_NAME / "";
+    String relative_path = part->getDataPartStorage().getPartDirectory();
+    if (disk->existsFile(path_to_clone + relative_path))
+    {
+        // If setting is on, we should've already cleaned moving/ dir on startup
+        if (data->allowRemoveStaleMovingParts())
+            throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
+                "Cannot clone part {} from '{}' to '{}': path '{}' already exists",
+                part->name, part->getDataPartStorage().getDiskName(), disk->getName(),
                 fullPath(disk, path_to_clone + relative_path));
-            disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
-        }
 
-        disk->createDirectories(path_to_clone);
+        LOG_DEBUG(log, "Path {} already exists. Will remove it and clone again",
+            fullPath(disk, path_to_clone + relative_path));
+        disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
+    }
 
-        /// TODO: Make it possible to fetch only zero-copy part without fallback to fetching a full-copy one
-        auto zero_copy_part = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
+    disk->createDirectories(path_to_clone);
 
-        if (zero_copy_part)
-        {
-            /// FIXME for some reason we cannot just use this part, we have to re-create it through MergeTreeDataPartBuilder
-            preserve_blobs = true;
-            zero_copy_part->is_temp = false;    /// Do not remove it in dtor
-            cloned_part_storage = zero_copy_part->getDataPartStoragePtr();
-        }
-        else
-        {
-            LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
-            cloned_part_storage = part->getDataPartStorage().clonePart(
-                path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, log, cancellation_hook);
-        }
+    /// TODO: Make it possible to fetch only zero-copy part without fallback to fetching a full-copy one
+    auto zero_copy_part = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
+
+    if (zero_copy_part)
+    {
+        /// FIXME for some reason we cannot just use this part, we have to re-create it through MergeTreeDataPartBuilder
+        preserve_blobs = true;
+        zero_copy_part->is_temp = false;    /// Do not remove it in dtor
+        cloned_part_storage = zero_copy_part->getDataPartStoragePtr();
     }
     else
     {
-        cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME, read_settings, write_settings, cancellation_hook);
+        LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
+        cloned_part_storage = part->getDataPartStorage().clonePart(
+            path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, log, cancellation_hook);
     }
 
     MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage, getReadSettings());
@@ -325,16 +355,13 @@ catch (...)
     throw;
 }
 
-void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) const
+bool MergeTreePartsMover::hasActivePartToSwap(TemporaryClonedPart & cloned_part, DataPartsLock & part_lock) const
 {
     /// Used to get some stuck parts in the moving directory by stopping moves while pause is active
     FailPointInjection::pauseFailPoint(FailPoints::stop_moving_part_before_swap_with_active);
     if (moves_blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
 
-    /// `getActiveContainingPart` and `swapActivePart` are called under the same lock
-    /// to prevent part becoming inactive between calls
-    auto part_lock = data->lockParts();
     auto active_part = data->getActiveContainingPart(cloned_part.part->name, part_lock);
 
     /// It's ok, because we don't block moving parts for merges or mutations
@@ -347,8 +374,46 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
             active_part ? active_part->name : "doesn't exist",
             cloned_part.part->getDataPartStorage().getFullPath(),
             data->allowRemoveStaleMovingParts() ? "will be removed" : "will remain intact (set <allow_remove_stale_moving_parts> in config.xml, exercise caution when using)");
-        return;
+        return false;
     }
+    return true;
+}
+
+void MergeTreePartsMover::swapActivePart(TemporaryClonedPart & cloned_part, DataPartsLock & part_lock) const
+{
+    renameClonedPart(*cloned_part.part);
+
+    /// If server goes down here we will get two copy of the part with the same name on different disks.
+    /// And on the next ClickHouse startup during loading parts the first copy (in the order of defining disks
+    /// in the storage policy) will be loaded as Active, the second one will be loaded as Outdated and removed as duplicate.
+    /// See MergeTreeData::loadDataParts().
+    data->swapActivePart(cloned_part.part, part_lock);
+
+    LOG_TRACE(log, "Part {} was moved to {}", cloned_part.part->name, cloned_part.part->getDataPartStorage().getFullPath());
+
+    cloned_part.temporary_directory_lock = {};
+}
+
+void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) const
+{
+    /// `hasActivePartToSwap` and `swapActivePart` are called under the same lock
+    /// to prevent part becoming inactive between calls
+    auto part_lock = data->lockParts();
+
+    if (!hasActivePartToSwap(cloned_part, part_lock))
+        return;
+
+    swapActivePart(cloned_part, part_lock);
+}
+
+void MergeTreeZeroCopyPartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) const
+{
+    /// `hasActivePartToSwap` and `swapActivePart` are called under the same lock
+    /// to prevent part becoming inactive between calls
+    auto part_lock = data->lockParts();
+
+    if (!hasActivePartToSwap(cloned_part, part_lock))
+        return;
 
     /// It is safe to acquire zero-copy lock for the temporary part here
     /// because no one can fetch it until it is *swapped*.
@@ -361,17 +426,7 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
     cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
     data->lockSharedData(*cloned_part.part, /* replace_existing_lock = */ true);
 
-    renameClonedPart(*cloned_part.part);
-
-    /// If server goes down here we will get two copy of the part with the same name on different disks.
-    /// And on the next ClickHouse startup during loading parts the first copy (in the order of defining disks
-    /// in the storage policy) will be loaded as Active, the second one will be loaded as Outdated and removed as duplicate.
-    /// See MergeTreeData::loadDataParts().
-    data->swapActivePart(cloned_part.part, part_lock);
-
-    LOG_TRACE(log, "Part {} was moved to {}", cloned_part.part->name, cloned_part.part->getDataPartStorage().getFullPath());
-
-    cloned_part.temporary_directory_lock = {};
+    swapActivePart(cloned_part, part_lock);
 }
 
 }

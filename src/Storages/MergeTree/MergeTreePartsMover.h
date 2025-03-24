@@ -12,6 +12,8 @@
 namespace DB
 {
 
+struct DataPartsLock;
+
 enum class MovePartsOutcome : uint8_t
 {
     PartsMoved,
@@ -40,7 +42,7 @@ using MergeTreeMovingParts = std::vector<MergeTreeMoveEntry>;
  */
 class MergeTreePartsMover
 {
-private:
+protected:
     /// Callback tells that part is not participating in background process
     using AllowedMovingPredicate = std::function<bool(const std::shared_ptr<const IMergeTreeDataPart> &, String * reason)>;
 
@@ -66,14 +68,14 @@ public:
         const std::lock_guard<std::mutex> & moving_parts_lock);
 
     /// Copies part to selected reservation in detached folder. Throws exception if part already exists.
-    TemporaryClonedPart clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const;
+    virtual TemporaryClonedPart clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const;
 
     /// Replaces cloned part from detached directory into active data parts set.
     /// Replacing part changes state to DeleteOnDestroy and will be removed from disk after destructor of
     /// IMergeTreeDataPart called. If replacing part doesn't exists or not active (committed) than
     /// cloned part will be removed and log message will be reported. It may happen in case of concurrent
     /// merge or mutation.
-    void swapClonedPart(TemporaryClonedPart & cloned_part) const;
+    virtual void swapClonedPart(TemporaryClonedPart & cloned_part) const;
 
     /// Rename cloned part from `moving/` directory to the actual part storage
     void renameClonedPart(IMergeTreeDataPart & part) const;
@@ -81,10 +83,36 @@ public:
     /// Can stop background moves and moves from queries
     ActionBlocker moves_blocker;
 
-private:
+    virtual ~MergeTreePartsMover() = default;
+
+protected:
+
+    bool hasActivePartToSwap(TemporaryClonedPart & cloned_part, DataPartsLock & part_lock) const;
+    void swapActivePart(TemporaryClonedPart & cloned_part, DataPartsLock & part_lock) const;
 
     MergeTreeData * data;
     LoggerPtr log;
+};
+
+
+class MergeTreeZeroCopyPartsMover: public MergeTreePartsMover
+{
+public:
+
+    explicit MergeTreeZeroCopyPartsMover(MergeTreeData * data_)
+        : MergeTreePartsMover(data_)
+    {
+    }
+
+    /// Copies part to selected reservation in detached folder. Throws exception if part already exists.
+    TemporaryClonedPart clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const override;
+
+    /// Replaces cloned part from detached directory into active data parts set.
+    /// Replacing part changes state to DeleteOnDestroy and will be removed from disk after destructor of
+    /// IMergeTreeDataPart called. If replacing part doesn't exists or not active (committed) than
+    /// cloned part will be removed and log message will be reported. It may happen in case of concurrent
+    /// merge or mutation.
+    void swapClonedPart(TemporaryClonedPart & cloned_part) const override;
 };
 
 
