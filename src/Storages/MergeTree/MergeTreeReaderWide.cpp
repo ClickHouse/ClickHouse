@@ -352,6 +352,15 @@ void MergeTreeReaderWide::deserializePrefix(
         deserialize_settings.prefixes_deserialization_thread_pool = settings.use_prefixes_deserialization_thread_pool ? &getMergeTreePrefixesDeserializationThreadPool().get() : nullptr;
         deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
+            /// This stream could be prefetched in prefetchBeginOfRange, but here we
+            /// have to seek the stream to the start of file to deserialize the prefix.
+            /// If we read not from the first mark, we should remove this stream from
+            /// prefetched_streams to prefetch it again starting from the current mark
+            /// after prefix is deserialized.
+            if (stream_name && from_mark != 0)
+                prefetched_streams.erase(*stream_name);
+
             return getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, cache);
         };
         /// Add streams for newly discovered dynamic subcolumns to start async marks loading beforehand if needed.
