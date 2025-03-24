@@ -16,6 +16,11 @@ namespace CurrentMetrics
 extern const Metric KafkaLibrdkafkaThreads;
 }
 
+namespace ProfileEvents
+{
+extern const Event KafkaConsumerErrors;
+}
+
 namespace DB
 {
 
@@ -381,7 +386,10 @@ void updateGlobalConfiguration(
             if (client_logs_level <= DB::LogsLevel::error)
             {
                 if (auto sink_shared_ptr = sink.lock())
+                {
+                    ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
                     sink_shared_ptr->setExceptionInfo(message, /* with_stacktrace = */ true);
+                }
             }
         });
 
