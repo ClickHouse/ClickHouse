@@ -10,7 +10,7 @@ title: 'groupBitmapOr'
 
 Calculations the OR of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return a [bitmap object](../../../sql-reference/functions/bitmap-functions.md). This is equivalent to `groupBitmapMerge`.
 
-``` sql
+```sql
 groupBitmapOr(expr)
 ```
 
@@ -24,7 +24,7 @@ Value of the `UInt64` type.
 
 **Example**
 
-``` sql
+```sql
 DROP TABLE IF EXISTS bitmap_column_expr_test2;
 CREATE TABLE bitmap_column_expr_test2
 (

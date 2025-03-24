@@ -41,7 +41,9 @@ RUN ARCH=$(uname -m) && \
     rustup target add riscv64gc-unknown-linux-gnu
 
 # A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
-RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
+RUN apt-get update \
+    && apt-get install software-properties-common --yes --no-install-recommends --verbose-versions \
+    && add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
     && apt-get install --yes \
         binutils-riscv64-linux-gnu \
@@ -50,6 +52,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         yasm \
         zstd \
         zip \
+        clang-tidy-${LLVM_VERSION} \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 

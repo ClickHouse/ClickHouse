@@ -21,7 +21,7 @@ A detailed guide on ReplacingMergeTree, including best practices and how to opti
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -162,7 +162,7 @@ When creating a `ReplacingMergeTree` table the same [clauses](../../../engines/t
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
 :::
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],

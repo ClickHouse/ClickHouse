@@ -37,14 +37,14 @@ class JobConfigs:
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.BUILDER_AMD,
+        command="python3 ./ci/jobs/fast_test.py",
+        run_in_docker="clickhouse/fasttest",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
+                "./ci/jobs/fast_test.py",
                 "./tests/queries/0_stateless/",
-                "./tests/docker_scripts/",
                 "./tests/config/",
                 "./tests/clickhouse-test",
-                "./tests/ci/fast_test_check.py",
-                "./docker",
                 "./src",
                 "./contrib/",
                 "./CMakeLists.txt",
@@ -52,20 +52,13 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./docker/packager/packager",
                 "./rust",
-                "./ci/docker/fasttest",
-            ]
+            ],
         ),
-        requires=[],
-        timeout=3000,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-        provides=[ArtifactNames.FAST_TEST],
     )
     tidy_build_jobs = Job.Config(
         name=JobNames.BUILD,
         runs_on=["..."],
-        # requires=[JobNames.STYLE_CHECK, JobNames.FAST_TEST],
         command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -76,7 +69,7 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./docker/packager/packager",
+                "./docker/packager",
                 "./rust",
                 "./tests/ci/build_check.py",
                 "./tests/performance",
@@ -95,7 +88,6 @@ class JobConfigs:
     build_jobs = Job.Config(
         name=JobNames.BUILD,
         runs_on=["...from params..."],
-        # requires=[JobNames.STYLE_CHECK, JobNames.FAST_TEST],
         command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -106,7 +98,7 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./docker/packager/packager",
+                "./docker/packager",
                 "./rust",
                 "./tests/ci/build_check.py",
                 "./tests/performance",
@@ -199,7 +191,7 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./docker/packager/packager",
+                "./docker/packager",
                 "./rust",
                 "./tests/ci/build_check.py",
                 "./tests/performance",

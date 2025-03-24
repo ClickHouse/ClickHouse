@@ -1264,7 +1264,7 @@ If executed in the context of a distributed table, this function generates a nor
 
 **Syntax**
 
-``` sql
+```sql
 uptime()
 ```
 
@@ -1276,13 +1276,13 @@ uptime()
 
 Query:
 
-``` sql
+```sql
 SELECT uptime() as Uptime;
 ```
 
 Result:
 
-``` response
+```response
 ┌─Uptime─┐
 │  55867 │
 └────────┘
@@ -1516,7 +1516,7 @@ Replaces literals, sequences of literals and complex aliases (containing whitesp
 
 **Syntax**
 
-``` sql
+```sql
 normalizeQuery(x)
 ```
 
@@ -1532,7 +1532,7 @@ normalizeQuery(x)
 
 Query:
 
-``` sql
+```sql
 SELECT normalizeQuery('[1, 2, 3, x]') AS query;
 ```
 
@@ -1551,7 +1551,7 @@ or at least 36 bytes long such as UUIDs). This helps better analyze complex quer
 
 **Syntax**
 
-``` sql
+```sql
 normalizeQueryKeepNames(x)
 ```
 
@@ -1567,7 +1567,7 @@ normalizeQueryKeepNames(x)
 
 Query:
 
-``` sql
+```sql
 SELECT normalizeQuery('SELECT 1 AS aComplexName123'), normalizeQueryKeepNames('SELECT 1 AS aComplexName123');
 ```
 
@@ -1585,7 +1585,7 @@ Returns identical 64bit hash values without the values of literals for similar q
 
 **Syntax**
 
-``` sql
+```sql
 normalizedQueryHash(x)
 ```
 
@@ -1601,7 +1601,7 @@ normalizedQueryHash(x)
 
 Query:
 
-``` sql
+```sql
 SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
 ```
 
@@ -1620,7 +1620,7 @@ or at least 36 bytes long such as UUIDs) with a placeholder before hashing. Can 
 
 **Syntax**
 
-``` sql
+```sql
 normalizedQueryHashKeepNames(x)
 ```
 
@@ -1634,7 +1634,7 @@ normalizedQueryHashKeepNames(x)
 
 **Example**
 
-``` sql
+```sql
 SELECT normalizedQueryHash('SELECT 1 AS `xyz123`') != normalizedQueryHash('SELECT 1 AS `abc123`') AS normalizedQueryHash;
 SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHashKeepNames('SELECT 1 AS `abc123`') AS normalizedQueryHashKeepNames;
 ```

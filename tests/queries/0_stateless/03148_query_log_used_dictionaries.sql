@@ -19,7 +19,7 @@ SETTINGS
     log_comment = 'simple_with_analyzer'
 FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, used_dictionaries
 FROM system.query_log
@@ -38,7 +38,7 @@ SETTINGS
     log_comment = 'nested_with_analyzer'
 FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, used_dictionaries
 FROM system.query_log
@@ -54,7 +54,7 @@ SETTINGS
     log_comment = 'simple_without_analyzer'
 FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, used_dictionaries
 FROM system.query_log
@@ -73,7 +73,7 @@ SETTINGS
     log_comment = 'nested_without_analyzer'
 FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, used_dictionaries
 FROM system.query_log

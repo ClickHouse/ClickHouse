@@ -58,12 +58,19 @@ public:
         if (args.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 argument", getName());
 
-        bool all_when_values_constant = true;
+        bool all_when_then_values_constant = true;
         for (size_t i = 1; i < args.size() - 1; i += 2)
         {
+            // i is the WHEN value
             if (!isColumnConst(*args[i].column))
             {
-                all_when_values_constant = false;
+                all_when_then_values_constant = false;
+                break;
+            }
+            // i+1 is the THEN value
+            if (!isColumnConst(*args[i+1].column))
+            {
+                all_when_then_values_constant = false;
                 break;
             }
         }
@@ -110,7 +117,7 @@ public:
 
         /// If we have non-constant arguments, we execute the transform function, which is highly optimized, which uses precomputed lookup tables.
         /// Else we should use the multiIf implementation
-        if (all_when_values_constant)
+        if (all_when_then_values_constant)
         {
             ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
             return FunctionFactory::instance().get("transform", context)->build(transform_args)
