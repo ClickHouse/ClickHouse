@@ -95,7 +95,6 @@ int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv)
     {
         if (changelog.entry_at(i)->get_val_type() == nuraft::log_val_type::app_log)
         {
-            std::cerr << "dumper!\n";
             state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
             state_machine->commit(i, changelog.entry_at(i)->get_buf());
         }

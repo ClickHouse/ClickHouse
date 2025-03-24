@@ -237,7 +237,6 @@ size_t ZooKeeperCreateRequest::sizeImpl() const
 
 void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
 {
-    std::cerr << "create request bp1 " << include_data << '\n';
     Coordination::read(path, in);
     Coordination::read(data, in);
     Coordination::read(acls, in);
@@ -249,8 +248,6 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
         is_ephemeral = true;
     if (flags & 2)
         is_sequential = true;
-
-    std::cerr << "create request bp2 " << path << ' ' << data.data() << ' ' << acls.data() << ' ' << flags << '\n';
 }
 
 std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
@@ -266,7 +263,6 @@ std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
 
 void ZooKeeperCreateRequest::setStats(Stat stats) const
 {
-    std::cerr << "set stats check " << include_data << '\n';
     zstat = stats;
 }
 
@@ -289,7 +285,6 @@ void ZooKeeperCreate2Response::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path_created, out);
     zstat.writeImpl(out);
-    std::cerr << "serialized ZooKeeperCreate2Response\n";
 }
 
 size_t ZooKeeperCreate2Response::sizeImpl() const
@@ -807,18 +802,14 @@ ZooKeeperResponsePtr ZooKeeperSetWatchRequest::makeResponse() const
 
 void ZooKeeperSetWatch2Request::readImpl(ReadBuffer & in)
 {
-    std::cerr << "read ZooKeeperSetWatch2Request\n";
     Coordination::read(zxid, in);
     
     Coordination::read(data_watches, in);
     Coordination::read(exist_watches, in);
     Coordination::read(child_watches, in);
-    std::cerr << "read ZooKeeperSetWatch2Request bp1\n";
 
     Coordination::read(persistent_watches, in);
     Coordination::read(persistent_recursive_watches, in);
-    std::cerr << "end ZooKeeperSetWatch2Request " << persistent_watches.size() << ' ' << persistent_recursive_watches.size() << ' ' << data_watches.size() << ' ' << exist_watches.size() << ' ' << child_watches.size() << '\n';
-
 }
 
 void ZooKeeperSetWatch2Request::writeImpl(WriteBuffer & out) const
@@ -1060,7 +1051,6 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
 
 void ZooKeeperMultiRequest::readImpl(ReadBuffer & in, RequestValidator request_validator)
 {
-    std::cerr << "read multi request\n";
     while (true)
     {
         OpNum op_num;
@@ -1242,7 +1232,6 @@ ZooKeeperResponsePtr ZooKeeperSimpleListRequest::makeResponse() const { return s
 
 ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
 {
-    std::cerr << "make create Response " << include_data << '\n';
     if (include_data)
         return std::make_shared<ZooKeeperCreate2Response>();
     if (not_exists)
@@ -1290,7 +1279,6 @@ void ZooKeeperSessionIDRequest::readImpl(ReadBuffer & in)
     Coordination::read(internal_id, in);
     Coordination::read(session_timeout_ms, in);
     Coordination::read(server_id, in);
-    std::cerr << "session info " << internal_id << ' ' << session_timeout_ms << ' ' << server_id << '\n';
 }
 
 Coordination::ZooKeeperResponsePtr ZooKeeperSessionIDRequest::makeResponse() const
@@ -1483,7 +1471,6 @@ std::shared_ptr<ZooKeeperRequest> ZooKeeperRequest::read(ReadBuffer & in)
 
 ZooKeeperRequestPtr ZooKeeperRequestFactory::get(OpNum op_num) const
 {
-    std::cerr << "op_num " << static_cast<Int32>(op_num) << '\n';
     auto it = op_num_to_request.find(op_num);
     if (it == op_num_to_request.end())
         throw Exception(Error::ZBADARGUMENTS, "Unknown operation type {}", op_num);

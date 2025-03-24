@@ -190,7 +190,6 @@ KeeperResponsesForSessions processWatchesImplBase(
         auto current_path = path;
         while (current_path.size() > 1)
         {
-            std::cerr << "current_path " << current_path << '\n';
             paths_to_check_for_list_watches.push_back(current_path);
             current_path = parentNodePath(current_path).toString();
         }
@@ -200,11 +199,9 @@ KeeperResponsesForSessions processWatchesImplBase(
 
     for (const auto & path_to_check : paths_to_check_for_list_watches)
     {
-        std::cerr << "path_to_check " << path_to_check << ' ' << list_watches.size() << '\n';
         watch_it = list_watches.find(path_to_check);
         if (watch_it != list_watches.end())
         {
-            std::cerr << "found session to persistent watches\n";
             std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response
                 = std::make_shared<Coordination::ZooKeeperWatchResponse>();
             watch_list_response->path = path_to_check;
@@ -238,7 +235,6 @@ KeeperResponsesForSessions processWatchesImplBase(
         }
     }
 
-    std::cerr << "result processing " << result.size() << '\n';
     return result;
 }
 
@@ -252,8 +248,6 @@ KeeperResponsesForSessions processWatchesImpl(
     KeeperStorageBase::SessionAndWatcher & sessions_and_watchers,
     Coordination::Event event_type)
 {
-    std::cerr << "processWatchesImpl\n";
-
     KeeperResponsesForSessions result;
 
     if (event_type == Coordination::Event::CREATED || event_type == Coordination::Event::DELETED)
@@ -280,7 +274,6 @@ KeeperResponsesForSessions processWatchesImpl(
     }
 
     auto process_non_persistent_watches = processWatchesImplBase(path, watches, list_watches, sessions_and_watchers, event_type, true);
-    std::cerr << "processing persistent watches " << persistent_watches.size() << ' ' << persistent_recursive_watches.size() << '\n';
     auto process_persistent_watches = processWatchesImplBase(path, persistent_watches, persistent_recursive_watches, sessions_and_watchers, event_type, false);
 
     for (const auto & response : process_non_persistent_watches)
@@ -1455,7 +1448,6 @@ bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t vers
 template <typename F>
 auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request, F function)
 {
-    std::cerr << "callOnConcreteRequestType bp1 " << static_cast<int>(zk_request.getOpNum()) << '\n';
     switch (zk_request.getOpNum())
     {
         case Coordination::OpNum::Heartbeat:
@@ -1668,8 +1660,6 @@ std::list<KeeperStorageBase::Delta> preprocess(
     uint64_t * /*digest*/,
     const KeeperContext & keeper_context)
 {
-    std::cerr << "preprocess ZooKeeperCreateRequest " << zk_request.include_data << '\n';
-
     ProfileEvents::increment(ProfileEvents::KeeperCreateRequest);
 
     std::list<KeeperStorageBase::Delta> new_deltas;
@@ -1764,7 +1754,6 @@ std::list<KeeperStorageBase::Delta> preprocess(
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t /*session_id*/)
 {
-    std::cerr << "process ZooKeeperCreateRequest " << zk_request.include_data << '\n';
     std::shared_ptr<Coordination::ZooKeeperCreateResponse> response;
     
     if (zk_request.include_data)
@@ -3746,11 +3735,9 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 
     /// ZooKeeper update sessions expirity for each request, not only for heartbeats
     session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
-    std::cerr << "Storage Process request bp2\n";
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {
-        std::cerr << "Storage Process request bp4\n";
         for (const auto & delta : deltas)
         {
             if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
@@ -3785,7 +3772,6 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat) /// Heartbeat request is also special
     {
-        std::cerr << "Storage Process request bp3\n";
         Coordination::ZooKeeperResponsePtr response = nullptr;
         {
             std::lock_guard lock(storage_mutex);
@@ -3798,7 +3784,6 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
     }
     else /// normal requests proccession
     {
-        std::cerr << "Storage Process request bp1\n";
         const auto process_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(const T & concrete_zk_request)
         {
             Coordination::ZooKeeperResponsePtr response;
@@ -3859,13 +3844,9 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
                 }
             }
 
-            std::cerr << "maybe check watch " << static_cast<Int32>(response->error) << ' ' << static_cast<Int32>(zk_request->getOpNum()) << '\n';
-
             /// If this requests processed successfully we need to check watches
             if (response->error == Coordination::Error::ZOK)
             {
-                std::cerr << "check watch!!!\n";
-
                 auto watch_responses = processWatches(concrete_zk_request, deltas_range, watches, list_watches, exist_watches, persistent_watches, persistent_recursive_watches, sessions_and_watchers);
                 total_watches_count -= watch_responses.size();
                 results.insert(results.end(), watch_responses.begin(), watch_responses.end());
@@ -3877,7 +3858,6 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             results.push_back(KeeperResponseForSession{session_id, response});
         };
 
-        std::cerr << "processRequest\n";
         callOnConcreteRequestType(*zk_request, process_request);
     }
 
@@ -4266,7 +4246,6 @@ void KeeperStorageBase::addPersistentWatch(const String & path, Coordination::Ad
         }
         case Coordination::AddWatchRequest::AddWatchMode::PERSISTENT_RECURSIVE:
         {
-            std::cerr << "INSERT PERSISTENT\n";
             persistent_recursive_watches[path].insert(session_id);
             sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = true, .is_persistent = true, .trigger_on_exists = false});
             break;
