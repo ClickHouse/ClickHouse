@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
-from .s3 import S3
+from .s3 import S3, StorageUsage
 from .settings import Settings
 from .utils import ContextManager, MetaClasses, Shell, Utils
 
@@ -625,7 +625,9 @@ class _ResultS3:
         return result
 
     @classmethod
-    def update_workflow_results(cls, workflow_name, new_info="", new_sub_results=None):
+    def update_workflow_results(
+        cls, workflow_name, new_info="", new_sub_results=None, storage_usage=None
+    ):
         assert new_info or new_sub_results
 
         attempt = 1
@@ -647,6 +649,12 @@ class _ResultS3:
                     workflow_result.update_sub_result(
                         result_, drop_nested_results=True
                     ).dump()
+            if storage_usage:
+                workflow_storage_usage = StorageUsage.from_dict(
+                    workflow_result.ext.get("storage_usage", {})
+                ).merge_with(storage_usage)
+                workflow_result.ext["storage_usage"] = workflow_storage_usage
+
             new_status = workflow_result.status
             if cls.copy_result_to_s3_with_version(workflow_result, version=version + 1):
                 done = True
