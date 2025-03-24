@@ -224,6 +224,7 @@ fi
 if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
     rm /etc/clickhouse-server/config.d/zookeeper.xml
     rm /etc/clickhouse-server/config.d/keeper_port.xml
 

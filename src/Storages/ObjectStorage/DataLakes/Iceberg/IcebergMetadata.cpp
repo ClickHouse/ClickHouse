@@ -24,10 +24,10 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 
-
 namespace ProfileEvents
 {
     extern const Event IcebergPartitionPrunnedFiles;
+    extern const Event IcebergTrivialCountOptimizationApplied;
 }
 
 namespace DB
@@ -347,10 +347,24 @@ void IcebergMetadata::updateSnapshot()
                     "No manifest list found for snapshot id `{}` for iceberg table `{}`",
                     relevant_snapshot_id,
                     configuration_ptr->getPath());
+            std::optional<size_t> total_rows;
+            std::optional<size_t> total_bytes;
+
+            if (snapshot->has("summary"))
+            {
+                auto summary_object = snapshot->get("summary").extract<Poco::JSON::Object::Ptr>();
+                if (summary_object->has("total-records"))
+                    total_rows = summary_object->getValue<Int64>("total-records");
+
+                if (summary_object->has("total-files-size"))
+                    total_bytes = summary_object->getValue<Int64>("total-files-size");
+            }
+
             relevant_snapshot = IcebergSnapshot{
                 getManifestList(getProperFilePathFromMetadataInfo(
                     snapshot->getValue<String>(MANIFEST_LIST_PATH_FIELD), configuration_ptr->getPath(), table_location)),
-                relevant_snapshot_id};
+                relevant_snapshot_id, total_rows, total_bytes};
+
             if (!snapshot->has("schema-id"))
                 throw Exception(
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -492,20 +506,19 @@ ManifestList IcebergMetadata::initializeManifestList(const String & filename) co
 
         /// We can't encapsulate this logic in getManifestFile because we need not only the name of the file, but also an inherited sequence number which is known only during the parsing of ManifestList
         auto manifest_file_content = initializeManifestFile(manifest_file_name, added_sequence_number);
-        auto [iterator, _inserted] = manifest_files_by_name.emplace(manifest_file_name, std::move(manifest_file_content));
-        auto manifest_file_iterator = ManifestFileIterator{iterator};
-        for (const auto & data_file_path : manifest_file_iterator->getFiles())
+        manifest_files_by_name.emplace(manifest_file_name, manifest_file_content);
+        for (const auto & data_file_path : manifest_file_content->getFiles())
         {
             if (std::holds_alternative<DataFileEntry>(data_file_path.file))
-                manifest_file_by_data_file.emplace(std::get<DataFileEntry>(data_file_path.file).file_name, manifest_file_iterator);
+                manifest_file_by_data_file.emplace(std::get<DataFileEntry>(data_file_path.file).file_name, manifest_file_content);
         }
-        manifest_list.push_back(ManifestListFileEntry{manifest_file_iterator, added_sequence_number});
+        manifest_list.push_back(manifest_file_content);
     }
 
     return manifest_list;
 }
 
-ManifestFileContent IcebergMetadata::initializeManifestFile(const String & filename, Int64 inherited_sequence_number) const
+ManifestFilePtr IcebergMetadata::initializeManifestFile(const String & filename, Int64 inherited_sequence_number) const
 {
     auto configuration_ptr = configuration.lock();
 
@@ -514,7 +527,7 @@ ManifestFileContent IcebergMetadata::initializeManifestFile(const String & filen
     AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(getContext()));
     auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(manifest_file_deserializer, filename);
     schema_processor.addIcebergTableSchema(schema_object);
-    return ManifestFileContent(
+    return std::make_shared<ManifestFileContent>(
         manifest_file_deserializer,
         format_version,
         configuration_ptr->getPath(),
@@ -523,32 +536,26 @@ ManifestFileContent IcebergMetadata::initializeManifestFile(const String & filen
         inherited_sequence_number,
         table_location,
         getContext());
+
 }
 
-ManifestFileIterator IcebergMetadata::getManifestFile(const String & filename) const
+ManifestFilePtr IcebergMetadata::tryGetManifestFile(const String & filename) const
 {
     auto manifest_file_it = manifest_files_by_name.find(filename);
     if (manifest_file_it != manifest_files_by_name.end())
-        return ManifestFileIterator{manifest_file_it};
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find manifest file: {}", filename);
+        return manifest_file_it->second;
+    return nullptr;
 }
 
-std::optional<ManifestFileIterator> IcebergMetadata::tryGetManifestFile(const String & filename) const
-{
-    auto manifest_file_it = manifest_files_by_name.find(filename);
-    if (manifest_file_it != manifest_files_by_name.end())
-        return ManifestFileIterator{manifest_file_it};
-    return std::nullopt;
-}
-
-ManifestListIterator IcebergMetadata::getManifestList(const String & filename) const
+ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
 {
     auto manifest_file_it = manifest_lists_by_name.find(filename);
     if (manifest_file_it != manifest_lists_by_name.end())
-        return ManifestListIterator{manifest_file_it};
+        return manifest_file_it->second;
     auto configuration_ptr = configuration.lock();
-    auto [manifest_file_iterator, _inserted] = manifest_lists_by_name.emplace(filename, initializeManifestList(filename));
-    return ManifestListIterator{manifest_file_iterator};
+    auto manifest_list_ptr = std::make_shared<ManifestList>(initializeManifestList(filename));
+    manifest_lists_by_name.emplace(filename, manifest_list_ptr);
+    return manifest_list_ptr;
 }
 
 Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
@@ -560,10 +567,10 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
         return cached_unprunned_files_for_last_processed_snapshot.value();
 
     Strings data_files;
-    for (const auto & manifest_list_entry : *(relevant_snapshot->manifest_list_iterator))
+    for (const auto & manifest_file_ptr : *(relevant_snapshot->manifest_list))
     {
-        PartitionPruner pruner(schema_processor, relevant_snapshot_schema_id, filter_dag, *manifest_list_entry.manifest_file, getContext());
-        const auto & data_files_in_manifest = manifest_list_entry.manifest_file->getFiles();
+        PartitionPruner pruner(schema_processor, relevant_snapshot_schema_id, filter_dag, *manifest_file_ptr, getContext());
+        const auto & data_files_in_manifest = manifest_file_ptr->getFiles();
         for (const auto & manifest_file_entry : data_files_in_manifest)
         {
             if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
@@ -599,6 +606,69 @@ Strings IcebergMetadata::makePartitionPruning(const ActionsDAG & filter_dag)
     }
     return getDataFilesImpl(&filter_dag);
 }
+
+std::optional<size_t> IcebergMetadata::totalRows() const
+{
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
+
+    if (!relevant_snapshot)
+    {
+        ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
+        return 0;
+    }
+
+    /// All these "hints" with total rows or bytes are optional both in
+    /// metadata files and in manifest files, so we try all of them one by one
+    if (relevant_snapshot->total_rows.has_value())
+    {
+        ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
+        return relevant_snapshot->total_rows;
+    }
+
+    Int64 result = 0;
+    for (const auto & manifest_list_entry : *(relevant_snapshot->manifest_list))
+    {
+        auto count = manifest_list_entry->getRowsCountInAllDataFilesExcludingDeleted();
+        if (!count.has_value())
+            return {};
+
+        result += count.value();
+    }
+
+    ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
+    return result;
+}
+
+
+std::optional<size_t> IcebergMetadata::totalBytes() const
+{
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
+
+    if (!relevant_snapshot)
+        return 0;
+
+    /// All these "hints" with total rows or bytes are optional both in
+    /// metadata files and in manifest files, so we try all of them one by one
+    if (relevant_snapshot->total_bytes.has_value())
+        return relevant_snapshot->total_bytes;
+
+    Int64 result = 0;
+    for (const auto & manifest_list_entry : *(relevant_snapshot->manifest_list))
+    {
+        auto count = manifest_list_entry->getBytesCountInAllDataFiles();
+        if (!count.has_value())
+            return {};
+
+        result += count.value();
+    }
+
+    return result;
+}
+
 }
 
 #endif

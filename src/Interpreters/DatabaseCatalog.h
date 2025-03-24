@@ -271,6 +271,8 @@ public:
     void startReplicatedDDLQueries();
     bool canPerformReplicatedDDLQueries() const;
 
+    void updateMetadataFile(const DatabasePtr & database);
+
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't

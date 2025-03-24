@@ -39,6 +39,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_statistics;
+    extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
@@ -58,7 +59,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int QUERY_IS_PROHIBITED;
 }
-
 
 InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_)
 {
@@ -267,20 +267,27 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 
     if (!alter_commands.empty())
     {
-        /// Only ALTER SETTING is supported.
+        /// Only ALTER SETTING and ALTER COMMENT is supported.
         for (const auto & command : alter_commands)
         {
-            if (command.type != AlterCommand::MODIFY_DATABASE_SETTING)
+            if (command.type != AlterCommand::MODIFY_DATABASE_SETTING && command.type != AlterCommand::MODIFY_DATABASE_COMMENT)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported alter type for database engines");
         }
 
         for (const auto & command : alter_commands)
         {
-            if (!command.ignore)
+            if (command.ignore)
+                continue;
+
+            switch (command.type)
             {
-                if (command.type == AlterCommand::MODIFY_DATABASE_SETTING)
+                case AlterCommand::MODIFY_DATABASE_SETTING:
                     database->applySettingsChanges(command.settings_changes, getContext());
-                else
+                    break;
+                case AlterCommand::MODIFY_DATABASE_COMMENT:
+                    database->alterDatabaseComment(command);
+                    break;
+                default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported alter command");
             }
         }
@@ -519,6 +526,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::MODIFY_DATABASE_SETTING:
         {
             required_access.emplace_back(AccessType::ALTER_DATABASE_SETTINGS, database, table);
+            break;
+        }
+        case ASTAlterCommand::MODIFY_DATABASE_COMMENT:
+        {
+            required_access.emplace_back(AccessType::ALTER_MODIFY_DATABASE_COMMENT, database, table);
             break;
         }
         case ASTAlterCommand::NO_TYPE: break;

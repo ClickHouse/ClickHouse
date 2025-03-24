@@ -22,6 +22,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -362,6 +363,8 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
             table->drop();
             table->is_dropped = true;
         }
+        std::lock_guard lock(mutex);
+        snapshot_detached_tables.erase(table_name);
     }
     catch (...)
     {
@@ -905,4 +908,11 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
 
     db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
 }
+
+void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)
+{
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+}
+
+
 }

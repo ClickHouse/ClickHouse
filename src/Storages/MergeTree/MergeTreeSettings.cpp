@@ -77,6 +77,7 @@ namespace ErrorCodes
     /** Merge settings. */ \
     DECLARE(UInt64, merge_max_block_size, 8192, "How many rows in blocks should be formed for merge operations. By default has the same value as `index_granularity`.", 0) \
     DECLARE(UInt64, merge_max_block_size_bytes, 10 * 1024 * 1024, "How many bytes in blocks should be formed for merge operations. By default has the same value as `index_granularity_bytes`.", 0) \
+    DECLARE(UInt64, max_merge_delayed_streams_for_parallel_write, 40, "The maximum number of streams (columns) that can be flushed in parallel (analog of max_insert_delayed_streams_for_parallel_write for merges). Works only for Vertical merges.", 0) \
     DECLARE(UInt64, max_bytes_to_merge_at_max_space_in_pool, 150ULL * 1024 * 1024 * 1024, "Maximum in total size of parts to merge, when there are maximum free threads in background pool (or entries in replication queue).", 0) \
     DECLARE(UInt64, max_bytes_to_merge_at_min_space_in_pool, 1024 * 1024, "Maximum in total size of parts to merge, when there are minimum free threads in background pool (or entries in replication queue).", 0) \
     DECLARE(UInt64, max_replicated_merges_in_queue, 1000, "How many tasks of merging and mutating parts are allowed simultaneously in ReplicatedMergeTree queue.", 0) \

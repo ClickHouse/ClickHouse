@@ -581,6 +581,8 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
+    DECLARE(Bool, enable_hdfs_pread, true, R"(
+Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -4745,6 +4747,9 @@ Possible values:
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
 )", 0) \
+    DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
+Allow to convert JOIN to subquery with IN if output columns tied to only left table
+)", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages
 )", 0) \
@@ -5130,9 +5135,6 @@ Check that DDL query (such as DROP TABLE or RENAME) will not break dependencies
 )", 0) \
     DECLARE(Bool, check_referential_table_dependencies, false, R"(
 Check that DDL query (such as DROP TABLE or RENAME) will not break referential dependencies
-)", 0) \
-    DECLARE(Bool, use_local_cache_for_remote_storage, true, R"(
-Use local cache for remote storage like HDFS or S3, it's used for remote table engine only
 )", 0) \
     \
     DECLARE(Bool, allow_unrestricted_reads_from_keeper, false, R"(
@@ -6166,6 +6168,8 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, use_mysql_types_in_show_columns, false) \
     MAKE_OBSOLETE(M, Bool, s3queue_allow_experimental_sharded_mode, false) \
     MAKE_OBSOLETE(M, LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW) \
+    MAKE_OBSOLETE(M, Bool, use_local_cache_for_remote_storage, false) \
+    \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_pool_size, 16) \
