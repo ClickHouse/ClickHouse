@@ -37,21 +37,21 @@ void StatisticsTDigest::deserialize(ReadBuffer & buf)
     t_digest.deserialize(buf);
 }
 
-Float64 StatisticsTDigest::estimateLess(const Field & val, std::optional<Float64> & calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
+Float64 StatisticsTDigest::estimateLess(const Field & val, std::optional<Float64> left_bound, std::optional<Float64> right_bound, std::optional<Float64> & val_as_float_to_return) const
 {
     auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
-    calculated_val = val_as_float;
+    val_as_float_to_return = val_as_float;
     if (!val_as_float.has_value())
         return 0;
-    Float64 count_less_than_val = t_digest.getCountLessThan((custom_max.has_value() && custom_max.value() < val_as_float.value()) ? *custom_max : *val_as_float);
-    Float64 count_less_than_custom_min = custom_min.has_value() ? t_digest.getCountLessThan(*custom_min) : 0;
-    return std::max(count_less_than_val - count_less_than_custom_min, 0.0);
+    Float64 count_less_than_val = t_digest.getCountLessThan((right_bound.has_value() && right_bound.value() < val_as_float.value()) ? *right_bound : *val_as_float);
+    Float64 count_less_than_left_bound = left_bound.has_value() ? t_digest.getCountLessThan(*left_bound) : 0;
+    return std::max(count_less_than_val - count_less_than_left_bound, 0.0);
 }
 
-Float64 StatisticsTDigest::estimateEqual(const Field & val, std::optional<Float64> & calculated_val) const
+Float64 StatisticsTDigest::estimateEqual(const Field & val, std::optional<Float64> & val_as_float_to_return) const
 {
     auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
-    calculated_val = val_as_float;
+    val_as_float_to_return = val_as_float;
     if (!val_as_float.has_value())
         return 0;
     return t_digest.getCountEqual(*val_as_float);
