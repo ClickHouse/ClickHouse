@@ -148,7 +148,7 @@ StorageMaterializedView::StorageMaterializedView(
         auto max_materialized_views_count_for_table = getContext()->getServerSettings()[ServerSetting::max_materialized_views_count_for_table];
         if (max_materialized_views_count_for_table && select_table_dependent_views.size() >= max_materialized_views_count_for_table)
             throw Exception(ErrorCodes::TOO_MANY_MATERIALIZED_VIEWS,
-                            "Too many materialized views, maximum: {}", max_materialized_views_count_for_table);
+                            "Too many materialized views, maximum: {}", max_materialized_views_count_for_table.value);
     }
 
     storage_metadata.setSelectQuery(select);
@@ -785,6 +785,14 @@ Strings StorageMaterializedView::getDataPaths() const
     if (auto table = tryGetTargetTable())
         return table->getDataPaths();
     return {};
+}
+
+bool StorageMaterializedView::supportsDynamicSubcolumns() const
+{
+    /// If target table was not created yet, we don't know if it supports dynamic subcolumns or not,
+    /// but it will be checked during its future creation anyway, so we can return true here.
+    auto target_table = tryGetTargetTable();
+    return target_table ? target_table->supportsDynamicSubcolumns() : true;
 }
 
 void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)

@@ -6,6 +6,7 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Databases/DataLake/DataLakeConstants.h>
 
 
 namespace DB
@@ -66,7 +67,7 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
     }
 }
 
-void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked state) const
 {
     if (is_standalone)
         ostr << (format.hilite ? hilite_keyword : "") << "SET " << (format.hilite ? hilite_none : "");
@@ -81,10 +82,29 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
             first = false;
 
         formatSettingName(change.name, ostr);
-        CustomType custom;
-        if (!format.show_secrets && change.value.tryGet<CustomType>(custom) && custom.isSecret())
-            ostr << " = " << custom.toString(false);
-        else
+
+        auto format_if_secret = [&]() -> bool
+        {
+            CustomType custom;
+            if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
+            {
+                ostr << " = " << custom.toString(/* show_secrets */false);
+                return true;
+            }
+
+            if (DataLake::DATABASE_ENGINE_NAME == state.create_engine_name)
+            {
+                if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
+                {
+                    ostr << " = " << "'[HIDDEN]'";
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        if (format.show_secrets || !format_if_secret())
             ostr << " = " << applyVisitor(FieldVisitorToSetting(), change.value);
     }
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import json
 import logging
 import os
 import subprocess
@@ -10,7 +9,7 @@ from build_download_helper import read_build_urls
 from ci_config import CI
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import IS_NEW_CI, REPO_COPY, REPORT_PATH, TEMP_PATH
+from env_helper import REPORT_PATH, TEMP_PATH
 from pr_info import PRInfo
 from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult
 from stopwatch import Stopwatch
@@ -69,24 +68,18 @@ def main():
 
     pr_info = PRInfo()
 
-    if not IS_NEW_CI:
-        build_name = CI.get_required_build_name(check_name)
-        urls = read_build_urls(build_name, reports_path)
-        if not urls:
-            raise ValueError("No build URLs found")
+    build_name = CI.get_required_build_name(check_name)
+    urls = read_build_urls(build_name, reports_path)
+    if not urls:
+        raise ValueError("No build URLs found")
 
-        for url in urls:
-            if url.endswith("/clickhouse"):
-                build_url = url
-                break
-        else:
-            raise ValueError("Cannot find the clickhouse binary among build results")
-        docker_image = pull_image(get_docker_image(IMAGE_NAME))
+    for url in urls:
+        if url.endswith("/clickhouse"):
+            build_url = url
+            break
     else:
-        # hack during the transition to praktika
-        with open(f"{REPO_COPY}/ci/tmp/artifact_urls.json", "r", encoding="utf-8") as f:
-            build_url = json.load(f)["clickhouse"]
-        docker_image = pull_image(DockerImage(IMAGE_NAME, "latest"))
+        raise ValueError("Cannot find the clickhouse binary among build results")
+    docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
     logging.info("Got build url %s", build_url)
 

@@ -13,6 +13,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Disks/IDisk.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils.h>
 #include <Common/SipHash.h>
@@ -547,18 +548,10 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
         LOG_DEBUG(log, "Restoring the batch");
 
         DistributedAsyncInsertBatch batch(*this);
-        batch.deserialize();
+        if (batch.recoverBatch())
+            batch.send(settings_changes, /*update_current_batch=*/ false);
 
-        /// In case of recovery it is possible that some of files will be
-        /// missing, if server had been restarted abnormally
-        /// (between unlink(*.bin) and unlink(current_batch.txt)).
-        ///
-        /// But current_batch_file_path should be removed anyway, since if some
-        /// file was missing, then the batch is not complete and there is no
-        /// point in trying to pretend that it will not break deduplication.
-        if (batch.valid())
-            batch.send(settings_changes);
-
+        /// Remove the batch info unconditionally since it is either valid and sent or broken and should be re-created from scratch.
         auto dir_sync_guard = getDirectorySyncGuard(relative_path);
         fs::remove(current_batch_file_path);
     }
@@ -637,15 +630,13 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
             batch.total_bytes += total_bytes;
 
             if (batch.isEnoughSize())
-            {
-                batch.send(settings_changes);
-            }
+                batch.send(settings_changes, /*update_current_batch=*/ true);
         }
 
         for (auto & kv : header_to_batch)
         {
             DistributedAsyncInsertBatch & batch = kv.second;
-            batch.send(settings_changes);
+            batch.send(settings_changes, /*update_current_batch=*/ true);
         }
     }
     catch (...)

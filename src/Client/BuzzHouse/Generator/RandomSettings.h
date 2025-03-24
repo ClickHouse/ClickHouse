@@ -12,29 +12,13 @@
 namespace BuzzHouse
 {
 
-struct CHSetting
-{
-public:
-    const std::function<String(RandomGenerator &)> random_func;
-    const std::unordered_set<String> oracle_values;
-    const bool changes_behavior;
+const RandomSettingParameter trueOrFalse = [](RandomGenerator & rg) { return rg.nextBool() ? "1" : "0"; };
 
-    CHSetting(const std::function<String(RandomGenerator &)> & rf, const std::unordered_set<String> & ov, const bool cb)
-        : random_func(rf), oracle_values(ov), changes_behavior(cb)
-    {
-    }
+const RandomSettingParameter zeroOneTwo = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 2)); };
 
-    constexpr CHSetting(const CHSetting & rhs) = default;
-    constexpr CHSetting(CHSetting && rhs) = default;
-};
+const RandomSettingParameter zeroToThree = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); };
 
-const std::function<String(RandomGenerator &)> trueOrFalse = [](RandomGenerator & rg) { return rg.nextBool() ? "1" : "0"; };
-
-const std::function<String(RandomGenerator &)> zeroOneTwo
-    = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 2)); };
-
-const std::function<String(RandomGenerator &)> zeroToThree
-    = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); };
+extern std::unordered_map<String, CHSetting> performanceSettings;
 
 extern std::unordered_map<String, CHSetting> serverSettings;
 
@@ -75,7 +59,7 @@ const std::unordered_map<String, CHSetting> fileTableSettings
             [](RandomGenerator & rg)
             {
                 const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
-                return rg.pickRandomlyFromVector(choices);
+                return rg.pickRandomly(choices);
             },
             {},
             false)}};
@@ -86,7 +70,7 @@ const std::unordered_map<String, CHSetting> s3QueueTableSettings = {
          [](RandomGenerator & rg)
          {
              const DB::Strings & choices = {"''", "'keep'", "'delete'"};
-             return rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomly(choices);
          },
          {},
          false)},
@@ -94,6 +78,14 @@ const std::unordered_map<String, CHSetting> s3QueueTableSettings = {
     {"processing_threads_num",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, std::thread::hardware_concurrency())); }, {}, false)}};
+
+const std::unordered_map<String, CHSetting> distributedTableSettings
+    = {{"background_insert_batch", CHSetting(trueOrFalse, {}, false)},
+       {"background_insert_split_batch_on_failure", CHSetting(trueOrFalse, {}, false)},
+       {"flush_on_detach", CHSetting(trueOrFalse, {}, false)},
+       {"fsync_after_insert", CHSetting(trueOrFalse, {}, false)},
+       {"fsync_directories", CHSetting(trueOrFalse, {}, false)},
+       {"skip_unavailable_shards", CHSetting(trueOrFalse, {}, false)}};
 
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
@@ -130,7 +122,28 @@ const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting
        {Hudi, {}},
        {DeltaLake, {}},
        {IcebergS3, {}},
-       {Merge, {}}};
+       {Merge, {}},
+       {Distributed, {}}};
+
+const std::unordered_map<String, CHSetting> backupSettings
+    = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},
+       {"allow_backup_broken_projections", CHSetting(trueOrFalse, {}, false)},
+       {"allow_checksums_from_remote_paths", CHSetting(trueOrFalse, {}, false)},
+       {"allow_s3_native_copy", CHSetting(trueOrFalse, {}, false)},
+       {"async", CHSetting(trueOrFalse, {}, false)},
+       {"azure_attempt_to_create_container", CHSetting(trueOrFalse, {}, false)},
+       {"check_parts", CHSetting(trueOrFalse, {}, false)},
+       {"check_projection_parts", CHSetting(trueOrFalse, {}, false)},
+       {"decrypt_files_from_encrypted_disks", CHSetting(trueOrFalse, {}, false)},
+       {"deduplicate_files", CHSetting(trueOrFalse, {}, false)},
+       {"experimental_lightweight_snapshot", CHSetting(trueOrFalse, {}, false)},
+       {"internal", CHSetting(trueOrFalse, {}, false)},
+       {"read_from_filesystem_cache", CHSetting(trueOrFalse, {}, false)},
+       {"s3_storage_class", CHSetting([](RandomGenerator &) { return "'STANDARD'"; }, {}, false)},
+       {"structure_only", CHSetting(trueOrFalse, {}, false)},
+       {"write_access_entities_dependents", CHSetting(trueOrFalse, {}, false)}};
+
+extern std::unordered_map<String, CHSetting> restoreSettings;
 
 extern std::unique_ptr<SQLType> size_tp, null_tp;
 

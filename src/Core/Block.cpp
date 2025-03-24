@@ -3,17 +3,21 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/sort.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
-#include <DataTypes/NestedUtils.h>
 
 #include <iterator>
+#include <ranges>
 
 #include <boost/algorithm/string.hpp>
+#include <fmt/ranges.h>
 
 
 namespace DB
@@ -373,23 +377,22 @@ ColumnWithTypeAndName Block::getColumnOrSubcolumnByName(const std::string & name
 bool Block::has(const std::string & name, bool case_insensitive) const
 {
     if (case_insensitive)
-        return std::find_if(data.begin(), data.end(), [&](const auto & column) { return boost::iequals(column.name, name); })
-            != data.end();
-
-    return index_by_name.end() != index_by_name.find(name);
+        return std::ranges::find_if(data, [&](const auto & column) { return boost::iequals(column.name, name); }) != data.end();
+    else
+        return index_by_name.find(name) != index_by_name.end();
 }
 
 
-size_t Block::getPositionByName(const std::string & name) const
+size_t Block::getPositionByName(const std::string & name, bool case_insensitive) const
 {
-    auto it = index_by_name.find(name);
-    if (index_by_name.end() == it)
-        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}",
-            name, dumpNames());
-
-    return it->second;
+    auto matcher
+        = [&](const auto & column) { return case_insensitive ? boost::iequals(column.name, name) : boost::equals(column.name, name); };
+    auto found = std::find_if(data.begin(), data.end(), matcher);
+    if (found == data.end())
+        throw Exception(
+            ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}", name, dumpNames());
+    return found - data.begin();
 }
-
 
 void Block::checkNumberOfRows(bool allow_null_columns) const
 {
@@ -573,10 +576,12 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
 
     if (num_columns != columns.size())
     {
+        auto dump_columns = std::views::transform([](const auto & col) { return col->dumpStructure(); });
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot clone block with columns because block has {} columns, but {} columns given",
-            num_columns, columns.size());
+            "Cannot clone block with columns because block [{}] has {} columns, but {} columns given [{}]",
+            dumpStructure(), num_columns,
+            columns.size(), fmt::join(columns | dump_columns, ", "));
     }
 
     res.reserve(num_columns);
@@ -596,10 +601,12 @@ Block Block::cloneWithColumns(const Columns & columns) const
 
     if (num_columns != columns.size())
     {
+        auto dump_columns = std::views::transform([](const auto & col) { return col->dumpStructure(); });
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot clone block with columns because block has {} columns, but {} columns given",
-            num_columns, columns.size());
+            "Cannot clone block with columns because block [{}] has {} columns, but {} columns given [{}]",
+            dumpStructure(), num_columns,
+            columns.size(), fmt::join(columns | dump_columns, ", "));
     }
 
     res.reserve(num_columns);
@@ -744,17 +751,6 @@ Names Block::getDataTypeNames() const
 
     return res;
 }
-
-
-Block::NameMap Block::getNamesToIndexesMap() const
-{
-    NameMap res(index_by_name.size());
-    res.set_empty_key(StringRef{});
-    for (const auto & [name, index] : index_by_name)
-        res[name] = index;
-    return res;
-}
-
 
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 {

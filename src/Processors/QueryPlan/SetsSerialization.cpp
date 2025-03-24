@@ -6,10 +6,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Analyzer/Identifier.h>
 #include <Analyzer/TableNode.h>
-#include <Core/Settings.h>
 #include <Columns/ColumnSet.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 #include <Storages/StorageSet.h>
 
@@ -203,7 +205,7 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
     for (auto & set : sets)
     {
         Identifier identifier = parseTableIdentifier(set.storage_name, context);
-        auto table_node = resolveTable(identifier, context);
+        auto * table_node = resolveTable(identifier, context);
         const auto * storage_set = typeid_cast<const StorageSet *>(table_node->getStorage().get());
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);

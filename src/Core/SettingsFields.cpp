@@ -1,13 +1,13 @@
-#include <Core/SettingsFields.h>
-#include <Core/Field.h>
+#include <Columns/IColumn.h>
 #include <Core/AccurateComparison.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
-#include <Common/logger_useful.h>
+#include <Core/Field.h>
+#include <Core/SettingsFields.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/logger_useful.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <cctz/time_zone.h>
@@ -45,7 +45,11 @@ namespace
             throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
         }
         else
-            return parseWithSizeSuffix<T>(str);
+        {
+            T value = parseWithSizeSuffix<T>(str);
+            validateFloatingPointSettingValue(value);
+            return value;
+        }
     }
 
     template <typename T>
@@ -53,22 +57,24 @@ namespace
     {
         if (f.getType() == Field::Types::String)
         {
-            return stringToNumber<T>(f.safeGet<const String &>());
+            return stringToNumber<T>(f.safeGet<String>());
         }
         if (f.getType() == Field::Types::UInt64)
         {
             T result;
             if (!accurate::convertNumeric(f.safeGet<UInt64>(), result))
-                throw Exception(
-                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            validateFloatingPointSettingValue(result);
             return result;
         }
         if (f.getType() == Field::Types::Int64)
         {
             T result;
             if (!accurate::convertNumeric(f.safeGet<Int64>(), result))
-                throw Exception(
-                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            validateFloatingPointSettingValue(result);
             return result;
         }
         if (f.getType() == Field::Types::Bool)
@@ -78,6 +84,7 @@ namespace
         if (f.getType() == Field::Types::Float64)
         {
             Float64 x = f.safeGet<Float64>();
+            validateFloatingPointSettingValue(x);
             if constexpr (std::is_floating_point_v<T>)
             {
                 return T(x);
@@ -122,11 +129,11 @@ namespace
         if (f.getType() == Field::Types::String)
         {
             /// Allow to parse Map from string field. For the convenience.
-            const auto & str = f.safeGet<const String &>();
+            const auto & str = f.safeGet<String>();
             return stringToMap(str);
         }
 
-        return f.safeGet<const Map &>();
+        return f.safeGet<Map>();
     }
 
 }
@@ -220,7 +227,7 @@ namespace
     UInt64 fieldToMaxThreads(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return stringToMaxThreads(f.safeGet<const String &>());
+            return stringToMaxThreads(f.safeGet<String>());
         return fieldToNumber<UInt64>(f);
     }
 }
@@ -436,7 +443,7 @@ namespace
 
     char fieldToChar(const Field & f)
     {
-        return stringToChar(f.safeGet<const String &>());
+        return stringToChar(f.safeGet<String>());
     }
 }
 

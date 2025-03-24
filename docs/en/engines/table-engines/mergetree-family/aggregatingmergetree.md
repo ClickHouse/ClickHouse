@@ -1,12 +1,17 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/aggregatingmergetree
+description: 'Replaces all rows with the same primary key (or more accurately, with
+  the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md))
+  with a single row (within a single data part) that stores a combination of states
+  of aggregate functions.'
+sidebar_label: 'AggregatingMergeTree'
 sidebar_position: 60
-sidebar_label:  AggregatingMergeTree
+slug: /engines/table-engines/mergetree-family/aggregatingmergetree
+title: 'AggregatingMergeTree'
 ---
 
 # AggregatingMergeTree
 
-The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a one data part) that stores a combination of states of aggregate functions.
+The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
 
 You can use `AggregatingMergeTree` tables for incremental data aggregation, including for aggregated materialized views.
 
@@ -17,8 +22,8 @@ You can see an example of how to use the AggregatingMergeTree and Aggregate func
 
 The engine processes all columns with the following types:
 
-## [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md)
-## [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md)
+## [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) {#aggregatefunction}
+## [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md) {#simpleaggregatefunction}
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
@@ -161,6 +166,6 @@ Run the `SELECT` query again, which will return the following output:
 └─────────────────────────┴────────┴───────┘
 ```
 
-## Related Content
+## Related Content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

@@ -541,7 +541,7 @@ SQLType * EnumType::typeDeepCopy() const
 
 String EnumType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    return rg.pickRandomlyFromVector(values).val;
+    return rg.pickRandomly(values).val;
 }
 
 String IPv4Type::typeName(const bool) const
@@ -893,7 +893,7 @@ SQLType * ArrayType::typeDeepCopy() const
     return new ArrayType(subtype->typeDeepCopy());
 }
 
-String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const uint32_t limit) const
+String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const SQLType * tp, const uint64_t limit)
 {
     /// This is a hot loop, so fmt::format may not be desirable
     String ret = "[";
@@ -903,7 +903,7 @@ String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator 
         {
             ret += ", ";
         }
-        ret += subtype->appendRandomRawValue(rg, gen);
+        ret += tp->appendRandomRawValue(rg, gen);
     }
     ret += "]";
     return ret;
@@ -913,7 +913,7 @@ String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator 
 {
     std::uniform_int_distribution<uint64_t> rows_dist(gen.fc.min_nested_rows, gen.fc.max_nested_rows);
 
-    return appendRandomRawValue(rg, gen, rows_dist(rg.generator));
+    return appendRandomRawValue(rg, gen, subtype, rows_dist(rg.generator));
 }
 
 String MapType::typeName(const bool escape) const
@@ -989,7 +989,7 @@ String TupleType::typeName(const bool escape) const
             ret += std::to_string(sub.cname.value());
             ret += " ";
         }
-        sub.subtype->typeName(escape);
+        ret += sub.subtype->typeName(escape);
     }
     ret += ")";
     return ret;
@@ -1094,7 +1094,7 @@ SQLType * VariantType::typeDeepCopy() const
 
 String VariantType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    return subtypes.empty() ? "NULL" : rg.pickRandomlyFromVector(subtypes)->appendRandomRawValue(rg, gen);
+    return subtypes.empty() ? "NULL" : rg.pickRandomly(subtypes)->appendRandomRawValue(rg, gen);
 }
 
 VariantType::~VariantType()
@@ -1167,7 +1167,6 @@ NestedType::~NestedType()
 {
     for (const auto & entry : subtypes)
     {
-        delete entry.array_subtype;
         delete entry.subtype;
     }
 }
@@ -1209,7 +1208,7 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
         this->ids.emplace_back(11);
         this->ids.emplace_back(12);
     }
-    const uint32_t nopt = rg.pickRandomlyFromVector(this->ids);
+    const uint32_t nopt = rg.pickRandomly(this->ids);
     this->ids.clear();
     switch (nopt)
     {
@@ -1259,8 +1258,8 @@ SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uin
 {
     bool has_precision = false;
     const bool use64 = (allowed_types & allow_datetime64) && rg.nextBool();
-    std::optional<uint32_t> precision = std::nullopt;
-    std::optional<String> timezone = std::nullopt;
+    std::optional<uint32_t> precision;
+    std::optional<String> timezone;
 
     if (dt)
     {
@@ -1276,7 +1275,7 @@ SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uin
     }
     if ((!use64 || has_precision) && !fc.timezones.empty() && rg.nextSmallNumber() < 5)
     {
-        timezone = std::optional<String>(rg.pickRandomlyFromVector(fc.timezones));
+        timezone = std::optional<String>(rg.pickRandomly(fc.timezones));
         if (dt)
         {
             dt->set_timezone(timezone.value());
@@ -1346,7 +1345,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     }
     else if (string_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + 1))
     {
-        std::optional<uint32_t> swidth = std::nullopt;
+        std::optional<uint32_t> swidth;
 
         if (rg.nextBool())
         {
@@ -1368,9 +1367,9 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     else if (decimal_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + 1))
     {
         Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
-        std::optional<DecimalN_DecimalPrecision> short_notation = std::nullopt;
-        std::optional<uint32_t> precision = std::nullopt;
-        std::optional<uint32_t> scale = std::nullopt;
+        std::optional<DecimalN_DecimalPrecision> short_notation;
+        std::optional<uint32_t> precision;
+        std::optional<uint32_t> scale;
 
         if (rg.nextBool())
         {
@@ -1609,7 +1608,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                + ipv4_type + ipv6_type + j_type + dynamic_type + 1))
     {
         Dynamic * dyn = tp ? tp->mutable_dynamic() : nullptr;
-        std::optional<uint32_t> ntypes = std::nullopt;
+        std::optional<uint32_t> ntypes;
 
         if (rg.nextBool())
         {
@@ -1659,10 +1658,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         /// Nullable
         const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
         SQLType * res = new Nullable(bottomType(
-            rg,
-            allowed_types & ~(allow_dynamic | allow_JSON),
-            lcard,
-            tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
+            rg, allowed_types & ~(allow_dynamic), lcard, tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
         return lcard ? new LowCardinality(res) : res;
     }
     else if (array_type && nopt < (nullable_type + non_nullable_type + array_type + 1))
@@ -1703,7 +1699,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         this->depth++;
         for (uint32_t i = 0; i < ncols; i++)
         {
-            std::optional<uint32_t> opt_cname = std::nullopt;
+            std::optional<uint32_t> opt_cname;
             TypeColumnDef * tcd = twcn ? twcn->add_values() : nullptr;
             TopTypeName * ttn = twocn ? twocn->add_values() : nullptr;
 

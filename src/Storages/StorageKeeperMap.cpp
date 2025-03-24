@@ -1,4 +1,5 @@
 #include <memory>
+#include <IO/copyData.h>
 #include <Storages/StorageKeeperMap.h>
 
 #include <Columns/ColumnString.h>
@@ -15,6 +16,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/MutationsInterpreter.h>
 
+#include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
@@ -23,7 +25,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
 
 #include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -102,7 +103,7 @@ std::string formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    return serializeAST(*ast);
+    return ast->formatWithSecretsOneLine();
 }
 
 void verifyTableId(const StorageID & table_id)

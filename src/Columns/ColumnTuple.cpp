@@ -142,7 +142,7 @@ void ColumnTuple::get(size_t n, Field & res) const
     const size_t tuple_size = columns.size();
 
     res = Tuple();
-    Tuple & res_tuple = res.safeGet<Tuple &>();
+    Tuple & res_tuple = res.safeGet<Tuple>();
     res_tuple.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
@@ -192,7 +192,7 @@ void ColumnTuple::insertData(const char *, size_t)
 
 void ColumnTuple::insert(const Field & x)
 {
-    const auto & tuple = x.safeGet<const Tuple &>();
+    const auto & tuple = x.safeGet<Tuple>();
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -208,7 +208,7 @@ bool ColumnTuple::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Tuple)
         return false;
 
-    const auto & tuple = x.safeGet<const Tuple &>();
+    const auto & tuple = x.safeGet<Tuple>();
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -728,20 +728,36 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     max = max_tuple;
 }
 
-void ColumnTuple::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnTuple::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
     for (auto & column : columns)
         callback(column);
 }
 
-void ColumnTuple::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnTuple::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
     for (auto & column : columns)
+    {
+        callback(*column);
+        column->forEachMutableSubcolumnRecursively(callback);
+    }
+}
+
+void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const
+{
+    for (const auto & column : columns)
+        callback(column);
+}
+
+void ColumnTuple::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+{
+    for (const auto & column : columns)
     {
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
     }
 }
+
 
 bool ColumnTuple::structureEquals(const IColumn & rhs) const
 {

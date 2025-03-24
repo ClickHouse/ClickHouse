@@ -1,7 +1,7 @@
 import dataclasses
 import importlib.util
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Union
+from typing import Dict, Iterable, List, Optional
 
 
 @dataclasses.dataclass
@@ -15,13 +15,23 @@ class _Settings:
     WORKFLOWS_DIRECTORY: str = f"{CI_PATH}/workflows"
     SETTINGS_DIRECTORY: str = f"{CI_PATH}/settings"
     CI_CONFIG_JOB_NAME = "Config Workflow"
-    DOCKER_BUILD_JOB_NAME = "Docker Builds"
+
+    # Enables a single job (DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME) for building all platforms and merge
+    ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB = False
+    DOCKER_BUILD_ARM_LINUX_JOB_NAME = "Dockers Build (arm)"
+    DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME = "Dockers Build (amd) and Merge"
+    DOCKER_BUILD_AND_MERGE_RUNS_ON: Optional[List[str]] = None
+    DOCKER_BUILD_ARM_RUNS_ON: Optional[List[str]] = None
+
     FINISH_WORKFLOW_JOB_NAME = "Finish Workflow"
-    READY_FOR_MERGE_STATUS_NAME = "Ready for Merge"
+    READY_FOR_MERGE_CUSTOM_STATUS_NAME = ""
     CI_CONFIG_RUNS_ON: Optional[List[str]] = None
-    DOCKER_BUILD_RUNS_ON: Optional[List[str]] = None
     VALIDATE_FILE_PATHS: bool = True
     DISABLED_WORKFLOWS: Optional[List[str]] = None
+    ENABLED_WORKFLOWS: Optional[List[str]] = None
+    DEFAULT_LOCAL_TEST_WORKFLOW: str = ""
+
+    ENABLE_ARTIFACTS_REPORT: bool = False
 
     ######################################
     #    Runtime Settings                #
@@ -44,18 +54,21 @@ class _Settings:
     PYTHON_INTERPRETER: str = "python3"
     PYTHON_PACKET_MANAGER: str = "pip3"
     PYTHON_VERSION: str = "3.9"
+    PYTHONPATHS: str = ""
     INSTALL_PYTHON_FOR_NATIVE_JOBS: bool = False
     INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS: str = "./ci/requirements.txt"
     ENVIRONMENT_VAR_FILE: str = f"{TEMP_DIR}/environment.json"
     RUN_LOG: str = f"{TEMP_DIR}/job.log"
 
-    SECRET_GH_APP_ID: str = "GH_APP_ID"
-    SECRET_GH_APP_PEM_KEY: str = "GH_APP_PEM_KEY"
+    USE_CUSTOM_GH_AUTH: bool = False
+    SECRET_GH_APP_ID: str = ""
+    SECRET_GH_APP_PEM_KEY: str = ""
 
     ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
     WORKFLOW_STATUS_FILE: str = f"{TEMP_DIR}/workflow_status.json"
     WORKFLOW_INPUTS_FILE: str = f"{TEMP_DIR}/workflow_inputs.json"
     ARTIFACT_URLS_FILE: str = f"{TEMP_DIR}/artifact_urls.json"
+    CUSTOM_DATA_FILE: str = "/tmp/custom_data.json"
 
     ######################################
     #        CI Cache settings           #
@@ -69,9 +82,11 @@ class _Settings:
     #        Report settings             #
     ######################################
     HTML_S3_PATH: str = ""
-    HTML_PAGE_FILE: str = "./praktika/json.html"
-    TEXT_CONTENT_EXTENSIONS: Iterable[str] = frozenset([".txt", ".log"])
+    HTML_PAGE_FILE: str = "./ci/praktika/json.html"
     S3_BUCKET_TO_HTTP_ENDPOINT: Optional[Dict[str, str]] = None
+    TEXT_CONTENT_EXTENSIONS: Iterable[str] = frozenset([".txt", ".log"])
+    # Compress if text file size exceeds this threshold (in MB, 0 - disable compression)
+    COMPRESS_THRESHOLD_MB: int = 0
 
     DOCKERHUB_USERNAME: str = ""
     DOCKERHUB_SECRET: str = ""
@@ -89,8 +104,6 @@ class _Settings:
         "Tests",
     ]
 
-    DISABLE_MERGE_COMMIT = True
-
 
 _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
@@ -102,7 +115,9 @@ _USER_DEFINED_SETTINGS = [
     "OUTPUT_DIR",
     "INPUT_DIR",
     "CI_CONFIG_RUNS_ON",
-    "DOCKER_BUILD_RUNS_ON",
+    "DOCKER_BUILD_AND_MERGE_RUNS_ON",
+    "DOCKER_BUILD_ARM_RUNS_ON",
+    "ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB",
     "CI_CONFIG_JOB_NAME",
     "PYTHON_INTERPRETER",
     "PYTHON_VERSION",
@@ -114,18 +129,24 @@ _USER_DEFINED_SETTINGS = [
     "VALIDATE_FILE_PATHS",
     "DOCKERHUB_USERNAME",
     "DOCKERHUB_SECRET",
-    "READY_FOR_MERGE_STATUS_NAME",
+    "READY_FOR_MERGE_CUSTOM_STATUS_NAME",
     "SECRET_CI_DB_URL",
     "SECRET_CI_DB_USER",
     "SECRET_CI_DB_PASSWORD",
     "CI_DB_DB_NAME",
     "CI_DB_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
-    "SUB_RESULT_NAMES_WITH_TESTS" "SECRET_GH_APP_PEM_KEY",
+    "SUB_RESULT_NAMES_WITH_TESTS",
+    "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",
+    "SECRET_GH_APP_PEM_KEY",
     "MAIN_BRANCH",
-    "DISABLE_MERGE_COMMIT",
     "DISABLED_WORKFLOWS",
+    "ENABLED_WORKFLOWS",
+    "PYTHONPATHS",
+    "ENABLE_ARTIFACTS_REPORT",
+    "DEFAULT_LOCAL_TEST_WORKFLOW",
+    "COMPRESS_THRESHOLD_MB",
 ]
 
 
@@ -133,7 +154,13 @@ def _get_settings() -> _Settings:
     res = _Settings()
 
     directory = Path(_Settings.SETTINGS_DIRECTORY)
-    for py_file in directory.glob("*.py"):
+
+    py_files = list(directory.glob("*.py"))
+    # Support for overriding settings (if for whatever reason you need to override setting(s) in your fork)
+    # Sort: First files without "overrides", then files with "overrides"
+    sorted_files = sorted(py_files, key=lambda f: "_overrides" in f.name)
+
+    for py_file in sorted_files:
         module_name = py_file.name.removeprefix(".py")
         spec = importlib.util.spec_from_file_location(
             module_name, f"{_Settings.SETTINGS_DIRECTORY}/{module_name}"

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=line-too-long
 
 import argparse
 import logging
@@ -10,10 +11,12 @@ from typing import Tuple
 
 import docker_images_helper
 from ci_config import CI
-from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
-from git_helper import Git
+from ci_utils import Shell
+from env_helper import REPO_COPY, S3_BUILDS_BUCKET
+from git_helper import Git, checkout_submodules, unshallow
 from pr_info import PRInfo
 from report import FAILURE, SUCCESS, JobReport, StatusType
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from version_helper import (
@@ -34,6 +37,16 @@ def _can_export_binaries(build_config: CI.BuildConfig) -> bool:
     if build_config.debug_build:
         return True
     return False
+
+
+# Copy of packager.is_release_build()
+def with_performance_artifacts(build_config: CI.BuildConfig) -> bool:
+    return (
+        not build_config.debug_build
+        and build_config.package_type == "deb"
+        and build_config.sanitizer == ""
+        and not build_config.coverage
+    )
 
 
 def get_packager_cmd(
@@ -152,11 +165,20 @@ def main():
     build_config = CI.JOB_CONFIGS[build_name].build_config
     assert build_config
 
-    temp_path = Path(TEMP_PATH)
-    temp_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(REPO_COPY)
+    temp_path = repo_path / "ci" / "tmp"
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
+
+    if Shell.get_output("git rev-parse --is-shallow-repository") == "true":
+        thin_unshallow = not with_performance_artifacts(build_config)
+        print(f"Unshallow repo (thin: {thin_unshallow})")
+        unshallow(thin_unshallow)
+
+    print("Fetch submodules")
+    # TODO: test sparse checkout: update-submodules.sh?
+    checkout_submodules()
 
     logging.info("Repo copy path %s", repo_path)
 
@@ -176,7 +198,7 @@ def main():
 
     logging.info("Build short name %s", build_name)
 
-    build_output_path = temp_path / build_name
+    build_output_path = temp_path / "build"
     build_output_path.mkdir(parents=True, exist_ok=True)
 
     docker_image = docker_images_helper.pull_image(
@@ -218,6 +240,24 @@ def main():
                 "The dockerd looks down, won't upload anything and generate report"
             )
             sys.exit(1)
+    else:
+        static_bin_name = CI.get_build_config(build_name).static_binary_name
+        if pr_info.is_master and static_bin_name:
+            s3 = S3Helper()
+            # Full binary with debug info:
+            s3_path_full = "/".join(
+                (pr_info.base_ref, static_bin_name, "clickhouse-full")
+            )
+            binary_full = Path(build_output_path) / "clickhouse"
+            url_full = s3.upload_build_file_to_s3(binary_full, s3_path_full)
+            print(f"::notice ::Binary static URL (with debug info): {url_full}")
+            # Stripped binary without debug info:
+            s3_path_compact = "/".join(
+                (pr_info.base_ref, static_bin_name, "clickhouse")
+            )
+            binary_compact = Path(build_output_path) / "clickhouse-stripped"
+            url_compact = s3.upload_build_file_to_s3(binary_compact, s3_path_compact)
+            print(f"::notice ::Binary static URL (compact): {url_compact}")
 
     JobReport(
         description=version.describe,
@@ -225,7 +265,9 @@ def main():
         status=build_status,
         start_time=stopwatch.start_time_str,
         duration=elapsed,
-        additional_files=[log_path],
+        additional_files=[
+            str(log_path),
+        ],
         build_dir_for_upload=build_output_path,
         version=version.describe,
     ).dump()

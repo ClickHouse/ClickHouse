@@ -1,7 +1,9 @@
 #include <Processors/Transforms/JoiningTransform.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/JoinUtils.h>
 
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/GraceHashJoin.h>
+#include <Interpreters/JoinUtils.h>
+#include <Processors/Port.h>
 #include <Common/logger_useful.h>
 
 namespace ProfileEvents
@@ -265,7 +267,9 @@ Blocks JoiningTransform::readExecute(Chunk & chunk)
 
 FillingRightJoinSideTransform::FillingRightJoinSideTransform(Block input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
     : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
-{}
+{
+    spillable = typeid_cast<GraceHashJoin *>(join.get());
+}
 
 InputPort * FillingRightJoinSideTransform::addTotalsPort()
 {
@@ -357,6 +361,34 @@ void FillingRightJoinSideTransform::work()
         join->tryRerangeRightTableData();
 
     set_totals = for_totals;
+}
+
+ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()
+{
+    if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
+    {
+        ProcessorMemoryStats res;
+        res.spillable_memory_bytes = grace_join->getTotalByteCount();
+        // in case the hash table will resize which requires more than 2x additional memory.
+        // we must reserve enough memory.
+        res.need_reserved_memory_bytes = res.spillable_memory_bytes * 3;
+        return res;
+    }
+    return {};
+}
+
+bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
+{
+    if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
+    {
+        auto total_bytes = grace_join->getTotalByteCount();
+        if (total_bytes >= bytes)
+        {
+            grace_join->forceSpill();
+            return true;
+        }
+    }
+    return false;
 }
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(

@@ -39,6 +39,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
@@ -91,10 +92,6 @@ namespace ServerSetting
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
-    extern const ServerSettingsString skipping_index_cache_policy;
-    extern const ServerSettingsUInt64 skipping_index_cache_size;
-    extern const ServerSettingsUInt64 skipping_index_cache_max_entries;
-    extern const ServerSettingsDouble skipping_index_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
@@ -119,6 +116,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
     extern const ServerSettingsBool use_legacy_mongodb_integration;
+    extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
+    extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
+    extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
 }
 
 namespace ErrorCodes
@@ -251,6 +251,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::database_catalog_drop_table_concurrency],
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
+
+    getMergeTreePrefixesDeserializationThreadPool().initialize(
+        server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
+        server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
+        server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
 }
 
 
@@ -716,18 +721,16 @@ void LocalServer::processConfig()
     /// There is no need for concurrent queries, override max_concurrent_queries.
     global_context->getProcessList().setMaxSize(0);
 
-    const size_t physical_server_memory = getMemoryAmount();
-
     size_t max_server_memory_usage = server_settings[ServerSetting::max_server_memory_usage];
-    double max_server_memory_usage_to_ram_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
-
-    size_t default_max_server_memory_usage = static_cast<size_t>(physical_server_memory * max_server_memory_usage_to_ram_ratio);
+    const double max_server_memory_usage_to_ram_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
+    const size_t physical_server_memory = getMemoryAmount();
+    const size_t default_max_server_memory_usage = static_cast<size_t>(physical_server_memory * max_server_memory_usage_to_ram_ratio);
 
     if (max_server_memory_usage == 0)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
-                      " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
+        LOG_INFO(log, "Changed setting 'max_server_memory_usage' to {}"
+                      " ({} available memory * {:.2f} max_server_memory_usage_to_ram_ratio)",
                  formatReadableSizeWithBinarySuffix(max_server_memory_usage),
                  formatReadableSizeWithBinarySuffix(physical_server_memory),
                  max_server_memory_usage_to_ram_ratio);
@@ -735,10 +738,9 @@ void LocalServer::processConfig()
     else if (max_server_memory_usage > default_max_server_memory_usage)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
-                      " because the system has low amount of memory. The amount was"
-                      " calculated as {} available"
-                      " * {:.2f} max_server_memory_usage_to_ram_ratio",
+        LOG_INFO(log, "Lowered setting 'max_server_memory_usage' to {}"
+                      " because the system has little few memory. The new value was"
+                      " calculated as {} available memory * {:.2f} max_server_memory_usage_to_ram_ratio",
                  formatReadableSizeWithBinarySuffix(max_server_memory_usage),
                  formatReadableSizeWithBinarySuffix(physical_server_memory),
                  max_server_memory_usage_to_ram_ratio);
@@ -803,17 +805,6 @@ void LocalServer::processConfig()
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 
-    String skipping_index_cache_policy = server_settings[ServerSetting::skipping_index_cache_policy];
-    size_t skipping_index_cache_size = server_settings[ServerSetting::skipping_index_cache_size];
-    size_t skipping_index_cache_max_count = server_settings[ServerSetting::skipping_index_cache_max_entries];
-    double skipping_index_cache_size_ratio = server_settings[ServerSetting::skipping_index_cache_size_ratio];
-    if (skipping_index_cache_size > max_cache_size)
-    {
-        skipping_index_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered skipping index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(skipping_index_cache_size));
-    }
-    global_context->setSkippingIndexCache(skipping_index_cache_policy, skipping_index_cache_size, skipping_index_cache_max_count, skipping_index_cache_size_ratio);
-
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -822,8 +813,11 @@ void LocalServer::processConfig()
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
-    /// Initialize a dummy query cache.
-    global_context->setQueryCache(0, 0, 0, 0);
+    /// Initialize a dummy query condition cache.
+    global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
+
+    /// Initialize a dummy query result cache.
+    global_context->setQueryResultCache(0, 0, 0, 0);
 
     /// Initialize allowed tiers
     global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);
@@ -851,6 +845,8 @@ void LocalServer::processConfig()
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
     std::string default_database = server_settings[ServerSetting::default_database];
+    if (default_database.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     {
         DatabasePtr database = createClickHouseLocalDatabaseOverlay(default_database, global_context);
         if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)
@@ -935,7 +931,7 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
     output_stream << getHelpHeader() << "\n";
     if (options_description.main_description.has_value())
         output_stream << options_description.main_description.value() << "\n";
-    output_stream << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
+    output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n\n";
     output_stream << getHelpFooter() << "\n";
     output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     output_stream << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";

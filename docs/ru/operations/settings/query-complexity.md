@@ -99,11 +99,11 @@ sidebar_label: "Ограничения на сложность запроса"
 
 ## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
 
-Включает или отключает выполнение секций `GROUP BY` во внешней памяти. Смотрите [GROUP BY во внешней памяти](../../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory).
+Включает или отключает выполнение секций `GROUP BY` во внешней памяти. Смотрите [GROUP BY во внешней памяти](/sql-reference/statements/select/group-by#group-by-in-external-memory).
 
 Возможные значения:
 
--   Максимальный объём RAM (в байтах), который может использовать отдельная операция [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause).
+-   Максимальный объём RAM (в байтах), который может использовать отдельная операция [GROUP BY](/sql-reference/statements/select/group-by).
 -   0 — `GROUP BY` во внешней памяти отключен.
 
 Значение по умолчанию — 0.
@@ -141,7 +141,7 @@ sidebar_label: "Ограничения на сложность запроса"
 
 Что делать, если объём результата превысил одно из ограничений: throw или break. По умолчанию: throw.
 
-Использование break по смыслу похоже на LIMIT. Break прерывает выполнение только на уровне блока. Т.е. число строк которые вернет запрос будет больше чем ограничение [max_result_rows](#setting-max_result_rows), кратно [max_block_size](../settings/settings.md#setting-max_block_size) и зависит от [max_threads](../settings/settings.md#settings-max_threads).
+Использование break по смыслу похоже на LIMIT. Break прерывает выполнение только на уровне блока. Т.е. число строк которые вернет запрос будет больше чем ограничение [max_result_rows](#setting-max_result_rows), кратно [max_block_size](/operations/settings/settings#max_block_size) и зависит от [max_threads](/operations/settings/settings#max_threads).
 
 Пример:
 
@@ -260,7 +260,7 @@ FORMAT Null;
 
 Ограничивает количество строк в хэш-таблице, используемой при соединении таблиц.
 
-Параметр применяется к операциям [SELECT... JOIN](../../sql-reference/statements/select/join.md#select-join) и к движку таблиц [Join](../../engines/table-engines/special/join.md).
+Параметр применяется к операциям [SELECT... JOIN](/sql-reference/statements/select/join) и к движку таблиц [Join](../../engines/table-engines/special/join.md).
 
 Если запрос содержит несколько `JOIN`, то ClickHouse проверяет значение настройки для каждого промежуточного результата.
 
@@ -277,7 +277,7 @@ FORMAT Null;
 
 Ограничивает размер (в байтах) хэш-таблицы, используемой при объединении таблиц.
 
-Параметр применяется к операциям [SELECT... JOIN](../../sql-reference/statements/select/join.md#select-join) и к движку таблиц [Join](../../engines/table-engines/special/join.md).
+Параметр применяется к операциям [SELECT... JOIN](/sql-reference/statements/select/join) и к движку таблиц [Join](../../engines/table-engines/special/join.md).
 
 Если запрос содержит несколько `JOIN`, то ClickHouse проверяет значение настройки для каждого промежуточного результата.
 
@@ -306,7 +306,7 @@ FORMAT Null;
 
 **Смотрите также**
 
--   [Секция JOIN](../../sql-reference/statements/select/join.md#select-join)
+-   [Секция JOIN](/sql-reference/statements/select/join)
 -   [Движок таблиц Join](../../engines/table-engines/special/join.md)
 
 ## max_partitions_per_insert_block {#max-partitions-per-insert-block}

@@ -1,13 +1,10 @@
 #pragma once
 
-#include <vector>
 #include <base/types.h>
-#include <Core/Field.h>
-#include <Common/PODArray.h>
-#include <Common/Allocator.h>
-#include <Columns/IColumn.h>
-#include <Columns/ColumnVector.h>
+#include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
+
+#include <vector>
 
 
 namespace DB
@@ -54,8 +51,6 @@ public:
 
     /// For debug.
     UInt64 isEmpty() const;
-
-    size_t memoryUsageBytes() const;
 
     friend bool operator== (const BloomFilter & a, const BloomFilter & b);
 private:

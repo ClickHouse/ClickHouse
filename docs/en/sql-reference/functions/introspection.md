@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/functions/introspection
+description: 'Documentation for Introspection Functions'
+sidebar_label: 'Introspection'
 sidebar_position: 100
-sidebar_label: Introspection
+slug: /sql-reference/functions/introspection
+title: 'Introspection Functions'
 ---
 
 # Introspection Functions
@@ -20,9 +22,9 @@ For proper operation of introspection functions:
 
         For security reasons introspection functions are disabled by default.
 
-ClickHouse saves profiler reports to the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
+ClickHouse saves profiler reports to the [trace_log](/operations/system-tables/trace_log) system table. Make sure the table and profiler are configured properly.
 
-## addressToLine
+## addressToLine {#addresstoline}
 
 Converts virtual memory address inside ClickHouse server process to the filename and the line number in ClickHouse source code.
 
@@ -42,7 +44,7 @@ addressToLine(address_of_binary_instruction)
 
 - Source code filename and the line number in this file delimited by colon.
         For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
-- Name of a binary, if the function couldn’t find the debug information.
+- Name of a binary, if the function couldn't find the debug information.
 - Empty string, if the address is not valid.
 
 Type: [String](../../sql-reference/data-types/string.md).
@@ -97,7 +99,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
 
 ``` text
 Row 1:
@@ -112,7 +114,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /build/glibc-OTsEL5/glibc-2.27/misc/../sysdeps/unix/sysv/linux/x86_64/clone.S:97
 ```
 
-## addressToLineWithInlines
+## addressToLineWithInlines {#addresstolinewithinlines}
 
 Similar to `addressToLine`, but returns an Array with all inline functions. As a result of this, it is slower than `addressToLine`.
 
@@ -132,7 +134,7 @@ addressToLineWithInlines(address_of_binary_instruction)
 
 **Returned value**
 
-- An array whose first element is the source code filename and line number in the file delimited by a colon. From the second element onwards, inline functions' source code filenames, line numbers and function names are listed. If the function couldn’t find the debug information, then an array with a single element equal to the name of the binary is returned, otherwise an empty array is returned if the address is not valid. [Array(String)](../data-types/array.md).
+- An array whose first element is the source code filename and line number in the file delimited by a colon. From the second element onwards, inline functions' source code filenames, line numbers and function names are listed. If the function couldn't find the debug information, then an array with a single element equal to the name of the binary is returned, otherwise an empty array is returned if the address is not valid. [Array(String)](../data-types/array.md).
 
 **Example**
 
@@ -164,7 +166,7 @@ WHERE
     query_id = '5e173544-2020-45de-b645-5deebe2aae54';
 ```
 
-The [arrayJoin](../../sql-reference/functions/array-functions.md#array-functions-join) functions will split array to rows.
+The [arrayJoin](/sql-reference/functions/array-join) functions will split array to rows.
 
 ``` text
 ┌────────ta─┬─addressToLineWithInlines(arrayJoin(trace))───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -213,7 +215,7 @@ The [arrayJoin](../../sql-reference/functions/array-functions.md#array-functions
 ```
 
 
-## addressToSymbol
+## addressToSymbol {#addresstosymbol}
 
 Converts virtual memory address inside ClickHouse server process to the symbol from ClickHouse object files.
 
@@ -282,7 +284,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
 
 ``` text
 Row 1:
@@ -308,7 +310,7 @@ start_thread
 clone
 ```
 
-## demangle
+## demangle {#demangle}
 
 Converts a symbol that you can get using the [addressToSymbol](#addresstosymbol) function to the C++ function name.
 
@@ -376,7 +378,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
 
 ``` text
 Row 1:
@@ -401,9 +403,9 @@ execute_native_thread_routine
 start_thread
 clone
 ```
-## tid
+## tid {#tid}
 
-Returns id of the thread, in which current [Block](https://clickhouse.com/docs/en/development/architecture/#block) is processed.
+Returns id of the thread, in which current [Block](/development/architecture/#block) is processed.
 
 **Syntax**
 
@@ -413,7 +415,7 @@ tid()
 
 **Returned value**
 
-- Current thread id. [Uint64](../data-types/int-uint.md#uint-ranges).
+- Current thread id. [Uint64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -431,9 +433,9 @@ Result:
 └───────┘
 ```
 
-## logTrace
+## logTrace {#logtrace}
 
-Emits trace log message to server log for each [Block](https://clickhouse.com/docs/en/development/architecture/#block).
+Emits trace log message to server log for each [Block](/development/architecture/#block).
 
 **Syntax**
 
@@ -443,7 +445,7 @@ logTrace('message')
 
 **Arguments**
 
-- `message` — Message that is emitted to server log. [String](../data-types/string.md#string).
+- `message` — Message that is emitted to server log. [String](/sql-reference/data-types/string).
 
 **Returned value**
 
