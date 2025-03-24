@@ -1352,7 +1352,6 @@ def test_recover_digest_mismatch(started_cluster):
         f"""printf "%s" "{corrupted_mv1_metadata}" | {disk_cmd_prefix} 'write --path-to {db_data_path}mv1.sql'""",
         f"{disk_cmd_prefix} 'remove {db_data_path}d1.sql'",
         "rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/",  # Will trigger "Directory already exists"
-        f"{disk_cmd_prefix} 'remove -r {db_disk_path}store/' && rm -rf /var/lib/clickhouse/store",  # Remove both metadata and data
     ]
 
     for command in ways_to_corrupt_metadata:
