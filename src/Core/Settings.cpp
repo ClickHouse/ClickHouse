@@ -5974,7 +5974,7 @@ Normally this setting should be set in user profile (users.xml or queries like `
 Note that initially (24.12) there was a server setting (`send_settings_to_client`), but latter it got replaced with this client setting, for better usability.
 )", 0)                                  \
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
-wait time in milliseconds when lower priority query meets higher priority query.
+Wait time in milliseconds when lower priority query meets higher priority query.
 )", BETA) \
     \
     /* ####################################################### */ \
