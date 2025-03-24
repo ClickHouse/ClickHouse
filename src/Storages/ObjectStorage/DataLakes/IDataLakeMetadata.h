@@ -50,6 +50,8 @@ public:
     /// Whether schema evolution is supported.
     virtual bool supportsExternalMetadataChange() const { return false; }
 
+    virtual std::optional<size_t> totalRows() const { return {}; }
+    virtual std::optional<size_t> totalBytes() const { return {}; }
 protected:
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {
