@@ -164,10 +164,10 @@ void addSortingForMergeJoin(
     QueryPlan::Nodes & nodes,
     const SortingStep::Settings & sort_settings,
     const JoinSettings & join_settings,
-    const JoinOperator & join_info)
+    const TableJoin & table_join)
 {
-    auto join_kind = join_info.kind;
-    auto join_strictness = join_info.strictness;
+    auto join_kind = table_join.kind();
+    auto join_strictness = table_join.strictness();
     auto add_sorting = [&] (QueryPlan::Node *& node, const Names & key_names, JoinTableSide join_table_side)
     {
         SortDescription sort_description;
@@ -239,10 +239,11 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step)
         return false;
+
     if (node.children.size() <= 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have more than 2 children, but has {}", node.children.size());
 
-    auto result = join_step->convertToPhysical(
+    auto join_order = join_step->convertToPhysical(
         keep_logical,
         optimization_settings.max_threads,
         optimization_settings.max_entries_for_hash_table_stats,
@@ -250,109 +251,79 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
         optimization_settings.lock_acquire_timeout,
         optimization_settings.actions_settings);
 
-    #pragma clang diagnostic ignored "-Wunreachable-code"
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WIP");
-
-    auto join_ptr = result.nodes[result.root].join_strategy;
-
-    if (join_ptr->isFilled())
-    {
-        node.children.pop_back();
-    }
-
-    if (keep_logical)
-        return true;
 
     Header output_header = join_step->getOutputHeader();
-
-    // QueryPlan::Node * new_left_node = makeExpressionNodeOnTopOf(node.children.at(0), std::move(*join_expression_actions.actions[1]), {}, nodes);
-    // QueryPlan::Node * new_right_node = nullptr;
-    // if (node.children.size() >= 2)
-    //     new_right_node = makeExpressionNodeOnTopOf(node.children.at(1), std::move(*join_expression_actions.actions[2]), {}, nodes);
-
-    // if (join_step->areInputsSwapped() && new_right_node)
-    //     std::swap(new_left_node, new_right_node);
-
     const auto & settings = join_step->getSettings();
 
-    auto & new_join_node = nodes.emplace_back();
-
-    // if (!join_ptr->isFilled())
-    // {
-    //     chassert(new_right_node);
-    //     if (const auto * fsmjoin = dynamic_cast<const FullSortingMergeJoin *>(join_ptr.get()))
-    //         addSortingForMergeJoin(fsmjoin, new_left_node, new_right_node, nodes,
-    //             join_step->getSortingSettings(), join_step->getJoinSettings(), join_step->getJoinInfo());
-
-    //     auto required_output_from_join = join_expression_actions.actions[3]->getRequiredColumnsNames();
-    //     new_join_node.step = std::make_unique<JoinStep>(
-    //         new_left_node->step->getOutputHeader(),
-    //         new_right_node->step->getOutputHeader(),
-    //         join_ptr,
-    //         settings.max_block_size,
-    //         settings.min_joined_block_size_bytes,
-    //         settings.max_threads,
-    //         NameSet(required_output_from_join.begin(), required_output_from_join.end()),
-    //         false /*optimize_read_in_order*/,
-    //         true /*use_new_analyzer*/);
-    //     new_join_node.children = {new_left_node, new_right_node};
-    // }
-    // else
-    // {
-    //     new_join_node.step = std::make_unique<FilledJoinStep>(
-    //         new_left_node->step->getOutputHeader(),
-    //         join_ptr,
-    //         settings.max_block_size);
-    //     new_join_node.children = {new_left_node};
-    // }
-
-    UNUSED(result);
-    UNUSED(output_header);
-    UNUSED(new_join_node);
-    UNUSED(settings);
-
-    //     auto required_output_from_join = join_expression_actions.post_join_actions->getRequiredColumnsNames();
-    //     new_join_node.step = std::make_unique<JoinStep>(
-    //         new_left_node->step->getOutputHeader(),
-    //         new_right_node->step->getOutputHeader(),
-    //         join_ptr,
-    //         settings.max_block_size,
-    //         settings.min_joined_block_size_bytes,
-    //         optimization_settings.max_threads,
-    //         NameSet(required_output_from_join.begin(), required_output_from_join.end()),
-    //         false /*optimize_read_in_order*/,
-    //         true /*use_new_analyzer*/);
-    //     new_join_node.children = {new_left_node, new_right_node};
-    // }
-    // else
-    // {
-    //     new_join_node.step = std::make_unique<FilledJoinStep>(
-    //         new_left_node->step->getOutputHeader(),
-    //         join_ptr,
-    //         settings.max_block_size);
-    //     new_join_node.children = {new_left_node};
-    // }
-
-    QueryPlan::Node result_node;
-
-    /*
-    if (post_filter)
+    const auto & inputs = node.children;
+    std::stack<QueryPlan::Node *> nodeStack;
+    for (const auto & physical_node : join_order)
     {
-        bool remove_filter = !output_header.has(post_filter.getColumnName());
-        result_node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.actions[3]), post_filter.getColumnName(), remove_filter);
-        result_node.children = {&new_join_node};
+        if (physical_node.input_idx >= 0)
+        {
+            auto * input_node = inputs.at(physical_node.input_idx);
+            if (physical_node.actions)
+                input_node = makeExpressionNodeOnTopOf(input_node, std::move(*physical_node.actions), physical_node.filter.getColumnName(), nodes);
+            nodeStack.push(input_node);
+        }
+        else if (physical_node.join_strategy)
+        {
+            auto join_ptr = physical_node.join_strategy;
+            auto * new_join_node = &nodes.emplace_back();
+
+            if (!join_ptr->isFilled())
+            {
+                if (nodeStack.size() < 2)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough nodes on stack for join");
+
+                auto join_left_node = nodeStack.top();
+                nodeStack.pop();
+                auto join_right_node = nodeStack.top();
+                nodeStack.pop();
+
+                if (const auto * fsmjoin = dynamic_cast<const FullSortingMergeJoin *>(join_ptr.get()))
+                    addSortingForMergeJoin(fsmjoin, join_left_node, join_right_node, nodes,
+                        join_step->getSortingSettings(), join_step->getJoinSettings(), fsmjoin->getTableJoin());
+
+                auto required_output_from_join = physical_node.actions->getRequiredColumnsNames();
+                new_join_node->step = std::make_unique<JoinStep>(
+                    join_left_node->step->getOutputHeader(),
+                    join_right_node->step->getOutputHeader(),
+                    join_ptr,
+                    settings.max_block_size,
+                    settings.min_joined_block_size_bytes,
+                    optimization_settings.max_threads,
+                    NameSet(required_output_from_join.begin(), required_output_from_join.end()),
+                    false /*optimize_read_in_order*/,
+                    true /*use_new_analyzer*/);
+                new_join_node->children = {join_left_node, join_right_node};
+            }
+            else
+            {
+                if (nodeStack.empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough nodes on stack for join");
+                auto new_left_node = nodeStack.top();
+                nodeStack.pop();
+                new_join_node->step = std::make_unique<FilledJoinStep>(
+                    new_left_node->step->getOutputHeader(),
+                    join_ptr,
+                    settings.max_block_size);
+                new_join_node->children = {new_left_node};
+            }
+
+            new_join_node = makeExpressionNodeOnTopOf(new_join_node, std::move(*physical_node.actions), physical_node.filter.getColumnName(), nodes);
+            nodeStack.push(new_join_node);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have either input or join_strategy");
+        }
     }
-    else if (!isPassthroughActions(*join_expression_actions.actions[3]))
-    {
-        result_node.step = std::make_unique<ExpressionStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.actions[3]));
-        result_node.children = {&new_join_node};
-    }
-    else
-    {
-        result_node = std::move(new_join_node);
-    }
-    */
-    node = std::move(result_node);
+
+    if (nodeStack.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough nodes on stack for join");
+
+    node = std::move(*nodeStack.top());
     return true;
 }
 

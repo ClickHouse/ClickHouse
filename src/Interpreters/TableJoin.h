@@ -8,7 +8,7 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Interpreters/JoinInfo.h>
+#include <Interpreters/JoinOperator.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -313,7 +313,7 @@ public:
     ASTTableJoin & getTableJoin() { return table_join; }
     const ASTTableJoin & getTableJoin() const { return table_join; }
 
-    void setJoinInfo(const JoinOperator & join_info_);
+    void setJoinOperator(const JoinOperator & join_info_);
 
     JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
     const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }

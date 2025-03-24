@@ -48,7 +48,7 @@
 
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
-#include <Interpreters/JoinInfo.h>
+#include <Interpreters/JoinOperator.h>
 #include <ranges>
 
 #include <stack>
@@ -228,7 +228,7 @@ bool tryGetJoinPredicate(const FunctionNode * function_node, JoinFlattenContext 
         join_condition.predicates.push_back(JoinPredicate{
             join_flatten.addExpression(right_node, right_expr_source),
             join_flatten.addExpression(left_node, left_expr_source),
-            reversePredicateOperator(predicate_operator.value())});
+            flipPredicateOperator(predicate_operator.value())});
         return true;
     }
 
@@ -305,7 +305,7 @@ void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinFlattenCo
 }
 
 
-void addConditionsToJoinInfo(JoinFlattenContext & join_flatten, std::vector<JoinCondition> join_conditions)
+void addConditionsToJoinOperator(JoinFlattenContext & join_flatten, std::vector<JoinCondition> join_conditions)
 {
     if (!join_conditions.empty())
     {
@@ -320,7 +320,7 @@ void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinFlattenCo
 {
     std::vector<JoinCondition> join_conditions;
     buildDisjunctiveJoinConditions(node, join_flatten, join_conditions);
-    addConditionsToJoinInfo(join_flatten, std::move(join_conditions));
+    addConditionsToJoinOperator(join_flatten, std::move(join_conditions));
 }
 
 static bool hasEquiConditions(const JoinCondition & condition)
@@ -364,7 +364,7 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
     {
         std::vector<JoinCondition> join_conditions;
         buildJoinCondition(join_expression, join_flatten, join_conditions.emplace_back());
-        addConditionsToJoinInfo(join_flatten, std::move(join_conditions));
+        addConditionsToJoinOperator(join_flatten, std::move(join_conditions));
         return;
     }
 
@@ -455,7 +455,7 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
         }
     }
 
-    addConditionsToJoinInfo(join_flatten, std::move(built_clauses.at(join_expression.get())));
+    addConditionsToJoinOperator(join_flatten, std::move(built_clauses.at(join_expression.get())));
 }
 
 JoinTreeQueryPlan mergeJoinTreePlans(

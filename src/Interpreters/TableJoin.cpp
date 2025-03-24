@@ -191,7 +191,7 @@ TableJoin::TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStric
     table_join.strictness = strictness;
 }
 
-void TableJoin::setJoinInfo(const JoinOperator & join_info_)
+void TableJoin::setJoinOperator(const JoinOperator & join_info_)
 {
     table_join.kind = join_info_.kind;
     table_join.strictness = join_info_.strictness;

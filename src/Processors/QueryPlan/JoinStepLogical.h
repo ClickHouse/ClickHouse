@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Interpreters/JoinInfo.h>
+#include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Common/SafePtr.h>
 
 namespace DB
 {
@@ -73,22 +74,18 @@ public:
 
     struct PhysicalJoinNode
     {
-        ActionsDAGPtr actions;
+        ActionsDAGPtr actions{nullptr};
         JoinActionRef filter{nullptr};
 
-        JoinPtr join_strategy;
+        JoinPtr join_strategy = nullptr;
+        int input_idx = -1;
 
         BaseRelsSet left_child;
         BaseRelsSet right_child;
     };
 
-    struct PhysicalJoinTree
-    {
-        BaseRelsSet root;
-        std::unordered_map<BaseRelsSet, PhysicalJoinNode> nodes;
-    };
-
-    PhysicalJoinTree convertToPhysical(
+    std::vector<JoinStepLogical::PhysicalJoinNode>
+    convertToPhysical(
         bool is_explain_logical,
         UInt64 max_threads,
         UInt64 max_entries_for_hash_table_stats,
@@ -100,18 +97,9 @@ public:
     const JoinSettings & getSettings() const { return join_settings; }
     bool useNulls() const { return use_nulls; }
 
-<<<<<<< HEAD
     void appendRequiredOutputsToActions(JoinActionRef & post_filter);
 
-    void setHashTableCacheKeys(UInt64 left_key_hash, UInt64 right_key_hash)
-    {
-        hash_table_key_hash_left = left_key_hash;
-        hash_table_key_hash_right = right_key_hash;
-    }
-=======
-
     void setHashTableCacheKey(UInt64 hash_table_key_hash_, size_t idx);
->>>>>>> 06fc8532418 (wip join flatten)
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;

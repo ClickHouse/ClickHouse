@@ -1,4 +1,4 @@
-#include <Interpreters/JoinInfo.h>
+#include <Interpreters/JoinOperator.h>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>

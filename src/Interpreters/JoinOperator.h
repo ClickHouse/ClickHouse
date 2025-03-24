@@ -8,6 +8,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Core/Settings.h>
+#include <Common/SafePtr.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -17,9 +18,9 @@ namespace DB
 class BaseRelsSet : public std::bitset<64>
 {
 public:
-    BaseRelsSet(UInt64 value) : std::bitset<64>(value) {}
-    BaseRelsSet() : std::bitset<64>(0) {}
-    BaseRelsSet(const std::bitset<64> & value) : std::bitset<64>(value) {}
+    BaseRelsSet() = default;
+    BaseRelsSet(UInt64 value) : std::bitset<64>(value) {} /// NOLINT
+    BaseRelsSet(const std::bitset<64> & value) : std::bitset<64>(value) {} /// NOLINT
 };
 
 }
@@ -63,7 +64,7 @@ inline std::optional<PredicateOperator> getJoinPredicateOperator(const String & 
     return {};
 }
 
-inline PredicateOperator reversePredicateOperator(PredicateOperator op)
+inline PredicateOperator flipPredicateOperator(PredicateOperator op)
 {
     switch (op)
     {
@@ -76,7 +77,7 @@ inline PredicateOperator reversePredicateOperator(PredicateOperator op)
     }
 }
 
-using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
+using ActionsDAGPtr = SafeUniquePtr<ActionsDAG>;
 
 class JoinActionRef
 {
