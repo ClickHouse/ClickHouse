@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Planner/PlannerJoinTree.h>
 
 namespace DB
 {
@@ -21,11 +22,10 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
 PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expression, const PlannerContextPtr & planner_context);
 
-std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
-    const Block & left_header,
-    const Block & right_header,
+JoinTreeQueryPlan buildJoinStepLogical(
+    JoinTreeQueryPlan left_plan,
+    JoinTreeQueryPlan right_plan,
     const NameSet & outer_scope_columns,
     const JoinNode & join_node,
     const PlannerContextPtr & planner_context);
-
 }

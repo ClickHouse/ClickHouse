@@ -202,7 +202,7 @@ static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, QueryPlan::N
 static void buildEquialentSetsForJoinStepLogical(
     std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_column,
     std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_column,
-    const JoinInfo & join_info)
+    const JoinOperator & join_info)
 {
     if (!join_info.expression.disjunctive_conditions.empty())
         return;
@@ -265,7 +265,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     if (table_join_ptr && table_join_ptr->kind() == JoinKind::Full)
         return 0;
-    if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Full)
+    if (logical_join && (logical_join->getNumberOfTables() != 2 || logical_join->getJoinOperator().kind == JoinKind::Full))
         return 0;
 
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
@@ -296,7 +296,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         buildEquialentSetsForJoinStepLogical(
             equivalent_left_stream_column_to_right_stream_column,
             equivalent_right_stream_column_to_left_stream_column,
-            logical_join->getJoinInfo());
+            logical_join->getJoinOperator());
     }
 
     auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available)
@@ -332,9 +332,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     else if (table_join_ptr && table_join_ptr->kind() == JoinKind::Right)
         left_stream_filter_push_down_input_columns_available = false;
 
-    if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Left)
+    if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left)
         right_stream_filter_push_down_input_columns_available = false;
-    else if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Right)
+    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right)
         left_stream_filter_push_down_input_columns_available = false;
 
     /** We disable push down to right table in cases:
@@ -343,7 +343,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
       */
     bool allow_push_down_to_right = join && join->allowPushDownToRight() && table_join_ptr && table_join_ptr->strictness() != JoinStrictness::Asof;
     if (logical_join)
-        allow_push_down_to_right = !logical_join->hasPreparedJoinStorage() && logical_join->getJoinInfo().strictness != JoinStrictness::Asof;
+        allow_push_down_to_right = !logical_join->hasPreparedJoinStorage() && logical_join->getJoinOperator().strictness != JoinStrictness::Asof;
 
     if (!allow_push_down_to_right)
         right_stream_filter_push_down_input_columns_available = false;

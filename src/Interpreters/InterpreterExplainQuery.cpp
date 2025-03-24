@@ -234,6 +234,7 @@ struct QueryPlanSettings
 
     /// Apply query plan optimizations.
     bool optimize = true;
+    Int64 optimize_level = -1;
     bool keep_logical_steps = false;
     bool json = false;
 
@@ -252,7 +253,10 @@ struct QueryPlanSettings
             {"keep_logical_steps", keep_logical_steps},
     };
 
-    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
+    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings =
+    {
+            {"optimize_level", optimize_level}
+    };
 };
 
 struct QueryPipelineSettings
@@ -519,6 +523,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             {
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.keep_logical_steps = settings.keep_logical_steps;
+                // if (settings.optimize_level >= 0)
+                //     optimization_settings.optimize_level = static_cast<size_t>(settings.optimize_level);
+
                 optimization_settings.is_explain = true;
                 plan.optimize(optimization_settings);
             }

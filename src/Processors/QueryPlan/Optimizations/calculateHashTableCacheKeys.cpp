@@ -57,31 +57,50 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     return 0;
 }
 
-UInt64 calculateHashFromStep(const JoinStepLogical & join_step, JoinTableSide side)
+UInt64 calculateHashFromStep(const JoinStepLogical & join_step, size_t input_num)
 {
     SipHash hash;
+
+    BaseRelsSet input_mask = 1u << input_num;
+    const auto & join_operator = join_step.getJoinOperator(input_num);
+
+    // `HashTablesStatistics` is used currently only for `parallel_hash_join`, i.e. the following calculation doesn't make sense for other join algorithms.
+    const bool calculate = allowParallelHashJoin(
+        join_step.getJoinSettings().join_algorithms,
+        join_operator.kind,
+        join_operator.strictness,
+        join_step.hasPreparedJoinStorage(),
+        join_operator.expression.disjunctive_conditions.empty());
+
+    if (!calculate)
+        return 0;
 
     auto serialize_join_condition = [&](const JoinCondition & condition)
     {
         hash.update(condition.predicates.size());
         for (const auto & pred : condition.predicates)
         {
-            const auto & node = side == JoinTableSide::Left ? pred.left_node : pred.right_node;
-            hash.update(node.getColumnName());
-            hash.update(static_cast<UInt8>(pred.op));
+            if (pred.op != PredicateOperator::Equals && pred.op != PredicateOperator::NullSafeEquals)
+                continue;
+            if (pred.left_node.canBeCalculated(input_mask))
+                hash.update(pred.left_node.getColumnName());
+            if (pred.right_node.canBeCalculated(input_mask))
+                hash.update(pred.right_node.getColumnName());
         }
     };
 
     hash.update(join_step.getSerializationName());
-    const auto & pre_join_actions = side == JoinTableSide::Left ? join_step.getExpressionActions().left_pre_join_actions
-                                                                : join_step.getExpressionActions().right_pre_join_actions;
-    chassert(pre_join_actions);
-    pre_join_actions->updateHash(hash);
+    for (const auto & [mask, pre_join_actions] : join_operator.expression_actions.actions)
+    {
+        if (mask != input_mask)
+            continue;
+        chassert(pre_join_actions);
+        pre_join_actions->updateHash(hash);
+    }
 
-    serialize_join_condition(join_step.getJoinInfo().expression.condition);
-    for (const auto & condition : join_step.getJoinInfo().expression.disjunctive_conditions)
+    serialize_join_condition(join_operator.expression.condition);
+    for (const auto & condition : join_operator.expression.disjunctive_conditions)
         serialize_join_condition(condition);
-    hash.update(join_step.getJoinInfo().expression.is_using);
 
     return hash.get64();
 }
@@ -102,13 +121,12 @@ void calculateHashTableCacheKeys(QueryPlan::Node & root)
         size_t next_child = 0;
         // Hash state which steps should update with their own hashes
         SipHash * hash = nullptr;
-        // Hash state for left and right children of JoinStepLogical,
-        // kept in frame object since we cannot allocate them on the stack
-        SipHash left{};
-        SipHash right{};
+
+        // Hash states for children of JoinStepLogical
+        std::vector<SipHash> children_hashes{};
     };
 
-    // We use addresses of `left` and `right`, so they should be stable
+    // We use addresses of children, so they should be stable
     std::list<Frame> stack;
     stack.push_back({.node = &root});
 
@@ -119,32 +137,39 @@ void calculateHashTableCacheKeys(QueryPlan::Node & root)
 
         if (auto * join_step = dynamic_cast<JoinStepLogical *>(node.step.get()))
         {
-            // `HashTablesStatistics` is used currently only for `parallel_hash_join`, i.e. the following calculation doesn't make sense for other join algorithms.
-            const bool calculate = frame.hash
-                || allowParallelHashJoin(
-                                       join_step->getJoinSettings().join_algorithms,
-                                       join_step->getJoinInfo().kind,
-                                       join_step->getJoinInfo().strictness,
-                                       join_step->hasPreparedJoinStorage(),
-                                       join_step->getJoinInfo().expression.disjunctive_conditions.empty());
+            chassert(node.children.size() >= 2);
 
-            chassert(node.children.size() == 2);
-
-            if (calculate)
+            if (frame.hash)
             {
                 if (frame.next_child == 0)
                 {
+                    /// Initialize hashes for all children
+                    frame.children_hashes.resize(node.children.size());
+
                     frame.next_child = node.children.size();
-                    stack.push_back({.node = node.children.at(0), .hash = &frame.left});
-                    stack.push_back({.node = node.children.at(1), .hash = &frame.right});
+                    for (size_t i = 0; i < node.children.size(); ++i)
+                    {
+                        stack.push_back({
+                            .node = node.children.at(i),
+                            .hash = &frame.children_hashes[i]
+                        });
+                    }
                 }
                 else
                 {
-                    frame.left.update(calculateHashFromStep(*join_step, JoinTableSide::Left));
-                    frame.right.update(calculateHashFromStep(*join_step, JoinTableSide::Right));
-                    join_step->setHashTableCacheKeys(frame.left.get64(), frame.right.get64());
-                    if (frame.hash)
-                        frame.hash->update(frame.left.get64() ^ frame.right.get64());
+                    for (size_t input_num = 0; input_num < node.children.size(); ++input_num)
+                    {
+                        auto step_hash = calculateHashFromStep(*join_step, input_num);
+                        if (step_hash == 0)
+                            continue;
+
+                        auto & children_hash = frame.children_hashes.at(input_num);
+                        children_hash.update(step_hash);
+                        join_step->setHashTableCacheKey(children_hash.get64(), input_num);
+
+                        if (frame.hash)
+                            frame.hash->update(children_hash);
+                    }
 
                     stack.pop_back();
                 }
