@@ -163,8 +163,9 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"create_table_query", std::make_shared<DataTypeString>(), "The query that was used to create the table."},
         {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the table engine."},
         {"as_select", std::make_shared<DataTypeString>(), "SELECT query for view."},
-        {"parameterized_view_parameters", std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>( DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"name", "type"})),
-         "Parameters of parameterized view."
+        {"parameterized_view_parameters",
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"name", "type"})),
+            "Parameters of parameterized view."
         },
         {"partition_key", std::make_shared<DataTypeString>(), "The partition key expression specified in the table."},
         {"sorting_key", std::make_shared<DataTypeString>(), "The sorting key expression specified in the table."},
