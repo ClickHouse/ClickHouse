@@ -750,7 +750,7 @@ void checkNormalizedSetting(const std::string & name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting is not normalized: {}", name);
 }
 
-static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
+bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
 {
     checkNormalizedSetting(name);
 

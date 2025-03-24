@@ -358,6 +358,23 @@ def test_alter_settings(started_cluster):
     }
     string_settings = {"after_processing": "delete"}
 
+    def check_alterable(setting):
+        if setting.startswith("s3queue_"):
+            name = setting[len("s3queue_"):]
+        else:
+            name = setting
+        if name == "tracked_files_ttl_sec":
+            name = "tracked_file_ttl_sec" # sadly
+        assert 1 == int(node1.query(f"select alterable from system.s3_queue_settings where name = '{name}'"))
+
+    for setting, _ in int_settings.items():
+        check_alterable(setting)
+
+    for setting, _ in string_settings.items():
+        check_alterable(setting)
+
+    assert 0 == int(node1.query(f"select alterable from system.s3_queue_settings where name = 'mode'"))
+
     def with_keeper(setting):
         return setting in {
             "after_processing",
