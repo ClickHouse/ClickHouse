@@ -92,7 +92,10 @@ def main():
     logging.basicConfig(level=logging.INFO)
     # args = parse_args()
     stopwatch = Stopwatch()
-    if CI.Labels.PR_BUGFIX not in PRInfo().labels:
+    if (
+        CI.Labels.PR_BUGFIX not in PRInfo().labels
+        and CI.Labels.PR_CRITICAL_BUGFIX not in PRInfo().labels
+    ):
         JobReport(
             description="",
             test_results=[],
