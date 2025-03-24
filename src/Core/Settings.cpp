@@ -2861,8 +2861,8 @@ Possible values:
     DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, R"(
 Defines what action ClickHouse performs when any of the following join limits is reached:
 
-- [max_bytes_in_join](#max_bytes_in_join)
-- [max_rows_in_join](#max_rows_in_join)
+- [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
+- [max_rows_in_join](/operations/settings/settings#max_rows_in_join)
 
 Possible values:
 
