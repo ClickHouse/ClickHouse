@@ -72,7 +72,7 @@
     <fill_query>      
 
     ALTER TABLE test.vectors
-    UPDATE vector_quantized = quantize1Bit(vector)
+    UPDATE vector_quantized = quantize1Bit(vector, 2048)
     WHERE 1;
 
     </fill_query>
