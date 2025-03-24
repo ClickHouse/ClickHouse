@@ -7,7 +7,7 @@
 #include <chrono>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <Common/logger_useful.h>
+#include <Poco/Timespan.h>
 
 namespace CurrentMetrics
 {
