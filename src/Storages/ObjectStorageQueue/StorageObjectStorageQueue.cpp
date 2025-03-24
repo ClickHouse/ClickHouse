@@ -275,7 +275,7 @@ void StorageObjectStorageQueue::startup()
         files_metadata->shutdown();
         throw;
     }
-    startup_called = true;
+    startup_finished = true;
 }
 
 void StorageObjectStorageQueue::shutdown(bool is_drop)
@@ -288,6 +288,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     {
         task->deactivate();
     }
+
     if (files_metadata)
     {
         try
@@ -1053,7 +1054,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
     /// If startup() for a table was not called, just use the default queue settings
-    const auto & table_metadata = startup_called ? getTableMetadata() : ObjectStorageQueueSettings{};
+    const auto & table_metadata = startup_finished ? getTableMetadata() : ObjectStorageQueueSettings{};
 
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;

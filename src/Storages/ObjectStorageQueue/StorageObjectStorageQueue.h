@@ -96,7 +96,7 @@ private:
 
     std::atomic<bool> mv_attached = false;
     std::atomic<bool> shutdown_called = false;
-    std::atomic<bool> startup_called = false;
+    std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
 
     LoggerPtr log;
