@@ -1,12 +1,10 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeMetadataCache.h>
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <base/find_symbols.h>
 #include <Poco/String.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
@@ -14,11 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace Setting
-{
-extern const SettingsBool use_datalake_metadata_cache;
 }
 
 /**
@@ -103,23 +96,6 @@ Strings HudiMetadata::getDataFiles() const
     if (data_files.empty())
         data_files = getDataFilesImpl();
     return data_files;
-}
-
-DataLakeMetadataPtr HudiMetadata::create(
-    ObjectStoragePtr object_storage_,
-    ConfigurationObserverPtr configuration_,
-    ContextPtr local_context)
-{
-    auto create_metadata = [&]() { return std::make_unique<HudiMetadata>(object_storage_, configuration_, local_context); };
-    DataLakeMetadataCachePtr metadata_cache = local_context->getDataLakeMetadataCache();
-    if (local_context->getSettingsRef()[Setting::use_datalake_metadata_cache])
-    {
-        auto configuration_ptr = configuration_.lock();
-        auto metadata = metadata_cache->getOrSet(DataLakeMetadataCache::getKey(configuration_ptr), create_metadata);
-        std::static_pointer_cast<HudiMetadata>(metadata)->configuration = configuration_ptr;
-        return metadata;
-    }
-    return create_metadata();
 }
 
 }

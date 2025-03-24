@@ -4269,7 +4269,29 @@ The probability of a fault injection during table creation after creating metada
 )", 0) \
     \
     DECLARE(Bool, use_datalake_metadata_cache, false, R"(
-If turned on, we get datalake metadata from cache by URL. If it doesn't exist in the cache, we will read from object storage.
+If turned on, datalake table function and datalake storage may utilize the datalake metadata cache. Parameters [enable_reads_from_datalake_metadata_cache](#enable_reads_from_datalake_metadata_cache)
+and [enable_writes_to_datalake_metadata_cache](#enable_writes_to_datalake_metadata_cache) control in more detail how the cache is used.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(Bool, enable_writes_to_datalake_metadata_cache, true, R"(
+If turned on, datalake metadata will be written to cache
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(Bool, enable_reads_from_datalake_metadata_cache, true, R"(
+If turned on, datalake metadata will be read from cache
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
 )", 0) \
     \
     DECLARE(Bool, use_query_cache, false, R"(

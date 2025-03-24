@@ -10,13 +10,11 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Formats/FormatFactory.h>
-#include <Core/Settings.h>
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeMetadataCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
@@ -55,11 +53,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-}
-
-namespace Setting
-{
-extern const SettingsBool use_datalake_metadata_cache;
 }
 
 namespace
@@ -610,32 +603,6 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, Configura
 
     LOG_TRACE(impl.log, "Found {} data files, {} partition files, schema: {}",
              data_files.size(), partition_columns.size(), schema.toString());
-}
-
-DataLakeMetadataPtr DeltaLakeMetadata::create(
-    ObjectStoragePtr object_storage,
-    ConfigurationObserverPtr configuration,
-    ContextPtr local_context)
-{
-    auto create_metadata = [&]() -> DataLakeMetadataPtr
-    {
-    #if USE_DELTA_KERNEL_RS
-        auto configuration_ptr = configuration.lock();
-        if (configuration_ptr->getSettingsRef()[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs])
-            return std::make_shared<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
-        else
-            return std::make_shared<DeltaLakeMetadata>(object_storage, configuration, local_context);
-    #else
-        return std::make_shared<DeltaLakeMetadata>(object_storage, configuration, local_context);
-    #endif
-    };
-    DataLakeMetadataCachePtr metadata_cache = local_context->getDataLakeMetadataCache();
-    if (local_context->getSettingsRef()[Setting::use_datalake_metadata_cache])
-    {
-        auto configuration_ptr = configuration.lock();
-        return metadata_cache->getOrSet(DataLakeMetadataCache::getKey(configuration_ptr), create_metadata);
-    }
-    return create_metadata();
 }
 
 DataTypePtr DeltaLakeMetadata::getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable)

@@ -57,23 +57,17 @@ public:
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
-        ContextPtr local_context);
-
-
-    size_t getMemoryBytes() const override
+        ContextPtr local_context)
     {
-        size_t size = sizeof(*this);
-        for (const String & data_file : data_files)
-        {
-            size += data_file.size();
-        }
-        for (const auto & [key, value] : partition_columns)
-        {
-            size += key.size();
-            size += value.size() * sizeof(DeltaLakePartitionColumn);
-        }
-        size += schema.size() * sizeof(NameAndTypePair);
-        return size;
+#if USE_DELTA_KERNEL_RS
+        auto configuration_ptr = configuration.lock();
+        if (configuration_ptr->getSettingsRef()[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs])
+            return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
+        else
+            return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
+#else
+        return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
+#endif
     }
 
     static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);

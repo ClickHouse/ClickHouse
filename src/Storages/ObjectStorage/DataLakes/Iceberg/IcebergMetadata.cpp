@@ -6,7 +6,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
-#include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -51,11 +50,6 @@ extern const int LOGICAL_ERROR;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
-
-namespace Setting
-{
-extern const SettingsBool use_datalake_metadata_cache;
-}
 
 using namespace Iceberg;
 
@@ -347,13 +341,13 @@ DataLakeMetadataPtr IcebergMetadata::create(
 {
     ConfigurationPtr configuration_ptr = configuration.lock();
 
-    auto create_metadata = [&object_storage, &configuration_ptr, &local_context]()
+    auto create_metadata = [&object_storage, &configuration_ptr, &local_context]() -> DataLakeMetadataPtr
     {
-        auto log = getLogger("IcebergMetadata");
-        const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr, log.get());
+        auto log_ = getLogger("IcebergMetadata");
+        const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr, log_.get());
 
         ObjectInfo object_info(metadata_file_path);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
+        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log_);
 
         String json_str;
         readJSONObjectPossiblyInvalid(json_str, *buf);
@@ -365,18 +359,11 @@ DataLakeMetadataPtr IcebergMetadata::create(
         auto format_version_ = object->getValue<int>(FIELD_FORMAT_VERSION_NAME);
 
         auto ptr
-            = std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version_, object);
+            = std::make_shared<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version_, object);
 
         return ptr;
     };
-    DataLakeMetadataCachePtr metadata_cache = local_context->getDataLakeMetadataCache();
-    if (local_context->getSettingsRef()[Setting::use_datalake_metadata_cache])
-    {
-        LOG_DEBUG(getLogger("IcebergMetadata"), "Got cache by key {}", DataLakeMetadataCache::getKey(configuration_ptr));
-        auto metadata = metadata_cache->getOrSet(DataLakeMetadataCache::getKey(configuration_ptr), create_metadata);
-        std::static_pointer_cast<IcebergMetadata>(metadata)->updateConfiguration(configuration_ptr);
-    }
-    return create_metadata();
+    return createDataLakeMetadataByCache<IcebergMetadata>(local_context, configuration_ptr, create_metadata);
 }
 
 ManifestList IcebergMetadata::initializeManifestList(const String & filename) const
