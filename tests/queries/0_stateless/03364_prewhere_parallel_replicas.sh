@@ -25,7 +25,7 @@ query_id="${CLICKHOUSE_DATABASE}_prewhere_parallel_replicas_$RANDOM"
 ${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id="${query_id}" --query="SELECT * FROM t WHERE b < 100000" --format Null
 
 ${CLICKHOUSE_CLIENT} -nq "
-  SYSTEM FLUSH LOGS;
+  SYSTEM FLUSH LOGS query_log;
 
   -- Check that all data was read during PREWHERE
   SELECT sum(ProfileEvents['RowsReadByPrewhereReaders']) = sum(ProfileEvents['SelectedRows'])
