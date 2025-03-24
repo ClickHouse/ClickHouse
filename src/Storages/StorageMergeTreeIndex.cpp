@@ -62,7 +62,13 @@ protected:
 
         std::shared_ptr<MergeTreeMarksLoader> marks_loader;
         if (with_marks && isCompactPart(part))
-            marks_loader = createMarksLoader(part, MergeTreeDataPartCompact::DATA_FILE_NAME, part->getColumns().size());
+        {
+            marks_loader = createMarksLoader(
+                part,
+                MergeTreeDataPartCompact::DATA_FILE_NAME,
+                part->index_granularity_info.mark_type.with_substreams ? part->getColumnsSubstreams().getTotalSubstreams()
+                                                                       : part->getColumns().size());
+        }
 
         size_t num_columns = header.columns();
         size_t num_rows = index_granularity->getMarksCount();
@@ -179,7 +185,10 @@ private:
             auto unescaped_name = unescapeForFileName(column_name);
             if (auto col_idx_opt = part->getColumnPosition(unescaped_name))
             {
-                col_idx = *col_idx_opt;
+                if (part->index_granularity_info.mark_type.with_substreams)
+                    col_idx = part->getColumnsSubstreams().getFirstSubstreamPosition(*col_idx_opt);
+                else
+                    col_idx = *col_idx_opt;
                 has_marks_in_part = true;
             }
         }

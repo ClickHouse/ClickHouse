@@ -176,6 +176,8 @@ String getNameForSubstreamPath(
             ++array_level;
         else if (it->type == Substream::DictionaryKeys)
             stream_name += ".dict";
+        else if (it->type == Substream::DictionaryKeysPrefix)
+            stream_name += ".dict_prefix";
         else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
         else if (Substream::named_types.contains(it->type))
@@ -193,6 +195,8 @@ String getNameForSubstreamPath(
         }
         else if (it->type == Substream::VariantDiscriminators)
             stream_name += ".variant_discr";
+        else if (it->type == Substream::VariantDiscriminatorsPrefix)
+            stream_name += ".variant_discr_prefix";
         else if (it->type == Substream::VariantOffsets)
             stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
