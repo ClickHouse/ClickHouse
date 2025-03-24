@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
+#include <Common/logger_useful.h>
 
 #include <IO/ReadHelpers.h>
 
@@ -117,6 +118,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             auto type = getFieldType(field, "type", required, current_full_name, true);
             clickhouse_schema->push_back(NameAndTypePair{name, type});
             clickhouse_types_by_source_ids[{schema_id, field->getValue<Int32>("id")}] = NameAndTypePair{current_full_name, type};
+            clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>("id");
         }
         clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
     }
@@ -135,6 +137,14 @@ std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristic
 {
     auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
     if (it == clickhouse_types_by_source_ids.end())
+        return {};
+    return it->second;
+}
+
+std::optional<Int32> IcebergSchemaProcessor::tryGetColumnIDByName(Int32 schema_id, const std::string & name) const
+{
+    auto it = clickhouse_ids_by_source_names.find({schema_id, name});
+    if (it == clickhouse_ids_by_source_names.end())
         return {};
     return it->second;
 }
@@ -232,6 +242,8 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
                 element_types.push_back(getFieldType(field, "type", required, current_full_name, true));
                 clickhouse_types_by_source_ids[{current_schema_id.value(), field->getValue<Int32>("id")}]
                     = NameAndTypePair{current_full_name, element_types.back()};
+
+                clickhouse_ids_by_source_names[{current_schema_id.value(), current_full_name}] = field->getValue<Int32>("id");
             }
             else
             {
