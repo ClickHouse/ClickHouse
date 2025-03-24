@@ -21,7 +21,7 @@ Also see [DROP TABLE](/sql-reference/statements/drop.md)
 
 Syntax:
 
-``` sql
+```sql
 UNDROP TABLE [db.]name [UUID '<uuid>'] [ON CLUSTER cluster]
 ```
 

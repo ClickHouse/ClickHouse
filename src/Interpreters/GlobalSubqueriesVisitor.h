@@ -6,6 +6,7 @@
 #include <Databases/IDatabase.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/interpretSubquery.h>

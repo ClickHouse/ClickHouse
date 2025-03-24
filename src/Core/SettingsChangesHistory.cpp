@@ -68,17 +68,26 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.4",
         {
-
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
             /// Release closed. Please use 25.4
+            {"enable_json_type", false, true, "JSON data type is production-ready"},
+            {"enable_dynamic_type", false, true, "Dynamic data type is production-ready"},
+            {"enable_variant_type", false, true, "Variant data type is production-ready"},
+            {"allow_experimental_json_type", false, true, "JSON data type is production-ready"},
+            {"allow_experimental_dynamic_type", false, true, "Dynamic data type is production-ready"},
+            {"allow_experimental_variant_type", false, true, "Variant data type is production-ready"},
             {"allow_experimental_database_unity_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'"},
             {"allow_experimental_database_glue_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'"},
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
             {"use_query_condition_cache", false, false, "New setting."},
+            {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
+            {"iceberg_timestamp_ms", 0, 0, "New setting."},
+            {"iceberg_snapshot_id", 0, 0, "New setting."},
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
             /// Release closed. Please use 25.4
+            {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {

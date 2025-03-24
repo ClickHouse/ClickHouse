@@ -9,7 +9,7 @@ title: 'The Lightweight DELETE Statement'
 
 The lightweight `DELETE` statement removes rows from the table `[db.]table` that match the expression `expr`. It is only available for the *MergeTree table engine family.
 
-``` sql
+```sql
 DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
 ```
 

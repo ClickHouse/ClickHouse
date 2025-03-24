@@ -31,7 +31,7 @@ A table with data parsed from `data` argument according to specified format and 
 Without `structure` argument:
 
 **Query:**
-``` sql
+```sql
 SELECT * FROM format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}

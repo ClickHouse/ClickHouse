@@ -73,14 +73,12 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
 
     if (registry_size == 0)
     {
-        try
+        auto zk_client = Context::getGlobalContextInstance()->getZooKeeper();
+        auto code = zk_client->tryRemoveRecursive(it->first);
+        if (code != Coordination::Error::ZOK
+            && !Coordination::isHardwareError(code))
         {
-            auto zk_client = Context::getGlobalContextInstance()->getZooKeeper();
-            zk_client->removeRecursive(it->first);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
+            LOG_ERROR(log, "Unexpected error while removing metadata: {}, path: {}", code, it->first);
         }
     }
 

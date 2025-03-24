@@ -12,13 +12,13 @@ Contains information about [resources](/operations/workload-scheduling.md#worklo
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.resources
 FORMAT Vertical
 ```
 
-``` text
+```text
 Row 1:
 ──────
 name:         io_read

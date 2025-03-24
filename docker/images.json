@@ -42,15 +42,7 @@
     },
     "docker/test/stateless": {
         "name": "clickhouse/stateless-test",
-        "dependent": [
-            "docker/test/stateful"
-        ]
-    },
-    "docker/test/stateful": {
-        "name": "clickhouse/stateful-test",
-        "dependent": [
-            "docker/test/stress"
-        ]
+        "dependent": []
     },
     "docker/test/unit": {
         "name": "clickhouse/unit-test",
