@@ -669,7 +669,11 @@ def test_delete_files(started_cluster, format_version, storage_type):
     )
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
 
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    # Test trivial count with deleted files
+    query_id = "test_trivial_count_" + get_uuid_str()
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", query_id=query_id)) == 100
+    instance.query("SYSTEM FLUSH LOGS")
+    assert instance.query(f"SELECT ProfileEvents['IcebergTrivialCountOptimizationApplied'] FROM system.query_log where query_id = '{query_id}' and type = 'QueryFinish'") == "1\n"
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 0")
     default_upload_directory(
@@ -679,7 +683,11 @@ def test_delete_files(started_cluster, format_version, storage_type):
         "",
     )
 
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 0
+    query_id = "test_trivial_count_" + get_uuid_str()
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", query_id=query_id)) == 0
+
+    instance.query("SYSTEM FLUSH LOGS")
+    assert instance.query(f"SELECT ProfileEvents['IcebergTrivialCountOptimizationApplied'] FROM system.query_log where query_id = '{query_id}' and type = 'QueryFinish'") == "1\n"
 
     write_iceberg_from_df(
         spark,
@@ -696,7 +704,11 @@ def test_delete_files(started_cluster, format_version, storage_type):
         "",
     )
 
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    query_id = "test_trivial_count_" + get_uuid_str()
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", query_id=query_id)) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+    assert instance.query(f"SELECT ProfileEvents['IcebergTrivialCountOptimizationApplied'] FROM system.query_log where query_id = '{query_id}' and type = 'QueryFinish'") == "1\n"
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 150")
     default_upload_directory(
@@ -706,7 +718,11 @@ def test_delete_files(started_cluster, format_version, storage_type):
         "",
     )
 
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 50
+    query_id = "test_trivial_count_" + get_uuid_str()
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", query_id=query_id)) == 50
+
+    instance.query("SYSTEM FLUSH LOGS")
+    assert instance.query(f"SELECT ProfileEvents['IcebergTrivialCountOptimizationApplied'] FROM system.query_log where query_id = '{query_id}' and type = 'QueryFinish'") == "1\n"
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])

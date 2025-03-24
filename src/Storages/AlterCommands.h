@@ -49,6 +49,7 @@ struct AlterCommand
         RENAME_COLUMN,
         REMOVE_TTL,
         MODIFY_DATABASE_SETTING,
+        MODIFY_DATABASE_COMMENT,
         COMMENT_TABLE,
         REMOVE_SAMPLE_BY,
         MODIFY_SQL_SECURITY,
