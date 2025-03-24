@@ -360,6 +360,9 @@ protected:
         if (!cluster_name.empty())
         {
             auto cluster = context->tryGetCluster(cluster_name);
+            if (!cluster)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' not found", cluster_name);
+
             auto shard_addresses = cluster->getShardsAddresses();
             if (shard_addresses.empty())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);

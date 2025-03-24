@@ -8,7 +8,7 @@
 
     <stateless_worker_client>
         <enabled>1</enabled>
-        <cluster>default</cluster>
+        <cluster>test_cluster_two_shards</cluster>
     </stateless_worker_client>
 
     <distributed_query>
