@@ -16,7 +16,7 @@ class StatisticsCountMinSketch : public IStatistics
 public:
     StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_);
 
-    Float64 estimateEqual(const Field & val, std::optional<Float64> & calculated_val) const override;
+    Float64 estimateEqual(const Field & val, std::optional<Float64> & val_as_float_to_return) const override;
 
     void build(const ColumnPtr & column) override;
 

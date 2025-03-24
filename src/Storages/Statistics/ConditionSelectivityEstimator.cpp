@@ -1,3 +1,4 @@
+#include <cfloat>
 #include <optional>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -111,18 +112,28 @@ static std::pair<String, Int32> tryToExtractSingleColumn(const RPNBuilderTreeNod
 }
 
 
-Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode & node, const std::unordered_map<std::string, ColumnWithTypeAndName> & unqualifiedColumnsNames) const
+Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode & node, const std::unordered_map<std::string, ColumnWithTypeAndName> & unqualified_column_names) const
 {
     auto result = tryToExtractSingleColumn(node);
     if (result.second != 1)
         return default_unknown_cond_factor * total_rows;
 
     String column = result.first;
-    auto it_col = unqualifiedColumnsNames.find(column);
+    auto it_col = unqualified_column_names.find(column);
 
-    if (it_col != unqualifiedColumnsNames.end())
+    /// We need unqualified_column_names in case of using this in join step.
+    /// The problem is that for joins the column name in node would look something like `__table1.col`,
+    /// and inside the statistic we have just `col`. So we need a way to convert one to another.
+    ///
+    /// Another thing is that we need to distinguish a situation, when we have a filter with column from
+    /// another table in a join step. So that if we have a condition like `__table1.col > x`, and a column
+    /// `col` in `__table2`, we wouldn't try to use statistics from another table for estimation (or dummy estimators
+    /// if no such column exists in another table). In order to avoid that, we rely that if have a non-empty `unqualified_column_names`,
+    /// then we should be always capable of converting a column from a node to a shorter name. Otherwise, this column is from another table and
+    /// we shouldn't try to make any estimations at all.
+    if (it_col != unqualified_column_names.end())
         column = it_col->second.name;
-    else if (!unqualifiedColumnsNames.empty() && it_col == unqualifiedColumnsNames.end()) /// column is from another table in join step
+    else if (!unqualified_column_names.empty() && it_col == unqualified_column_names.end()) /// column is from another table in join step
         return total_rows;
 
     auto it = column_estimators.find(column);
@@ -137,39 +148,59 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
         dummy = true;
 
     std::vector<std::pair<String, Field>> operators;
-    /// It means that we weren't able to extract all the operators involved in the condition, so we can't estimate the number of rows.
+    /// It means that we're unable to extract all the operators involved in the condition, so we can't estimate the number of rows.
     if (!extractOperators(node, result.first, operators))
         return default_unknown_cond_factor * total_rows;
 
+    /// We support two modes - with statistics and dummy (when no statistics are present).
+    ///
+    /// The general idea behind the mode with statistics - for each condition we try to estimate the number of rows based on the statistic,
+    /// taking into account known left and right bounds. After the estimation of the current condition we update the number of estimated rows
+    /// and our left and/or right bounds (depending on the condition itself).
+    ///
+    /// If we use a dummy estimator, we assume that all the conditions are independent and use a constant factor to adjust the number of rows for
+    /// each of the conditions. Depending on the operator, we have `default_cond_equal_factor` for `=`, `default_cond_range_factor` for `</<=/>/>=`,
+    /// and `default_unknown_cond_factor` for all the others. So basically, if the selectivity of the i-th condition is F_i, then the total selectivity
+    /// F = F_1 * F_2 * ... * F_n
     Float64 curr_rows = total_rows;
-    std::optional<Float64> curr_min = {};
-    std::optional<Float64> curr_max = {};
+    std::optional<Float64> curr_left_bound = {};
+    std::optional<Float64> curr_right_bound = {};
     for (const auto & [op, val] : operators)
     {
-        std::optional<Float64> calculated_val = {};
+        std::optional<Float64> val_as_float_returned = {};
         if (op == "equals")
         {
-            curr_rows = dummy ? default_cond_equal_factor * curr_rows : estimator.estimateEqual(val, curr_rows, calculated_val, curr_min, curr_max);
-            if (calculated_val.has_value())
+            curr_rows = dummy ? default_cond_equal_factor * curr_rows : estimator.estimateEqual(val, curr_rows, curr_left_bound, curr_right_bound, val_as_float_returned);
+            /// If we were able to convert the value to float during statistics estimation,
+            /// then we can update both left and right bounds with this value for the equality operator.
+            if (val_as_float_returned.has_value())
             {
-                curr_min = calculated_val;
-                curr_max = calculated_val;
+                curr_left_bound = val_as_float_returned;
+                curr_right_bound = val_as_float_returned;
             }
         }
         else if (op == "less" || op == "lessOrEquals")
         {
-            curr_rows = dummy ? default_cond_range_factor * curr_rows : estimator.estimateLess(val, curr_rows, calculated_val, curr_min, curr_max);
-            if (calculated_val.has_value())
-                curr_max = calculated_val;
+            curr_rows = dummy ? default_cond_range_factor * curr_rows : estimator.estimateLess(val, curr_rows, curr_left_bound, curr_right_bound, val_as_float_returned);
+            /// If we were able to convert the value to float during statistics estimation,
+            /// then we can update the right bound with this value for the `</<=` operator.
+            if (val_as_float_returned.has_value())
+                curr_right_bound = val_as_float_returned;
         }
         else if (op == "greater" || op == "greaterOrEquals")
         {
-            curr_rows = dummy ? default_cond_range_factor * curr_rows : estimator.estimateGreater(val, curr_rows, calculated_val, curr_min, curr_max);
-            if (calculated_val.has_value())
-                curr_min = calculated_val;
+            curr_rows = dummy ? default_cond_range_factor * curr_rows : estimator.estimateGreater(val, curr_rows, curr_left_bound, curr_right_bound, val_as_float_returned);
+            /// If we were able to convert the value to float during statistics estimation,
+            /// then we can update the left bound with this value for the `>/>=` operator.
+            if (val_as_float_returned.has_value())
+                curr_left_bound = val_as_float_returned;
         }
         else
             curr_rows *= default_unknown_cond_factor;
+
+        /// If we have 0 rows estimated, there's no point in further estimations.
+        if (fabs(curr_rows) <= DBL_EPSILON)
+            break;
     }
 
     return curr_rows;
@@ -193,7 +224,7 @@ void ConditionSelectivityEstimator::ColumnSelectivityEstimator::addStatistics(St
     part_statistics[part_name] = stats;
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(const Field & val, Float64 rows, std::optional<Float64> & calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(const Field & val, Float64 rows, std::optional<Float64> left_bound, std::optional<Float64> right_bound, std::optional<Float64> & val_as_float_to_return) const
 {
     if (part_statistics.empty())
         return default_cond_range_factor * rows;
@@ -201,18 +232,18 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(
     Float64 part_rows = 0;
     for (const auto & [key, estimator] : part_statistics)
     {
-        result += estimator->estimateLess(val, calculated_val, custom_min, custom_max);
+        result += estimator->estimateLess(val, left_bound, right_bound, val_as_float_to_return);
         part_rows += estimator->rowCount();
     }
     return result * rows / part_rows;
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreater(const Field & val, Float64 rows, std::optional<Float64> & calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreater(const Field & val, Float64 rows, std::optional<Float64> left_bound, std::optional<Float64> right_bound, std::optional<Float64> & val_as_float_to_return) const
 {
-    return rows - estimateLess(val, rows, calculated_val, custom_min, custom_max);
+    return rows - estimateLess(val, rows, left_bound, right_bound, val_as_float_to_return);
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(const Field & val, Float64 rows, std::optional<Float64> & calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(const Field & val, Float64 rows, std::optional<Float64> left_bound, std::optional<Float64> right_bound, std::optional<Float64> & val_as_float_to_return) const
 {
     if (part_statistics.empty())
     {
@@ -222,13 +253,15 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual
     Float64 partial_cnt = 0;
     for (const auto & [key, estimator] : part_statistics)
     {
-        result += estimator->estimateEqual(val, calculated_val);
+        result += estimator->estimateEqual(val, val_as_float_to_return);
         partial_cnt += estimator->rowCount();
     }
 
-    if (calculated_val.has_value() &&
-            ((custom_min.has_value() && custom_min.value() > calculated_val.value()) ||
-             (custom_max.has_value() && custom_max.value() < calculated_val.value())))
+    /// If we have a value calculated, and at the same time it's out of some already known left/right bound,
+    /// we know there shouldn't be any matching rows at all.
+    if (val_as_float_to_return.has_value() &&
+            ((left_bound.has_value() && left_bound.value() > val_as_float_to_return.value()) ||
+             (right_bound.has_value() && right_bound.value() < val_as_float_to_return.value())))
     {
         return 0;
     }

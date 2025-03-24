@@ -32,7 +32,7 @@ StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescrip
 {
 }
 
-Float64 StatisticsCountMinSketch::estimateEqual(const Field & val, std::optional<Float64> & calculated_val) const
+Float64 StatisticsCountMinSketch::estimateEqual(const Field & val, std::optional<Float64> & val_as_float_to_return) const
 {
     /// Try to convert field to data_type. Converting string to proper data types such as: number, date, datetime, IPv4, Decimal etc.
     /// Return null if val larger than the range of data_type
@@ -46,7 +46,7 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val, std::optional
 
     if (data_type->isValueRepresentedByNumber())
     {
-        calculated_val = StatisticsUtils::tryConvertToFloat64(val_converted, data_type);
+        val_as_float_to_return = StatisticsUtils::tryConvertToFloat64(val_converted, data_type);
         return sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory());
     }
 
