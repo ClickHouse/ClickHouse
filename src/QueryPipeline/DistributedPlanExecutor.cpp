@@ -402,7 +402,7 @@ ExchangeLookupPtr createExchangeLookup(const String & query_id, const std::unord
 {
     auto persisted_exchanges = std::make_shared<ExchangeViaTemporaryFiles>(temporary_files_);
     auto streaming_exchanges = std::make_shared<ExchangeViaChunks>(query_id);
-    return std::make_shared<AllKinkdsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges); 
+    return std::make_shared<AllKinkdsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 }
 
 
