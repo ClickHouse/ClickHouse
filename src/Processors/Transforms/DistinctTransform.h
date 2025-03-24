@@ -29,16 +29,19 @@ private:
     SetVariants data;
     std::unique_ptr<BloomFilter> bloom_filter;
 
-    size_t bf_passed = 0;
+    ///Statistics for BloomFilter optimization
+    size_t total_passed_bf = 0;
     size_t new_passes = 0;
-    const bool is_pre_distinct;
-    bool leaky = false;
+    bool use_bf = false;
 
     Sizes key_sizes;
     const UInt64 limit_hint;
 
+    const bool is_pre_distinct;
+
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;
+    const UInt64 max_rows_in_distinct_before_bloom_filter_passthrough = 100000;
 
     template <typename Method>
     void buildFilter(
@@ -47,7 +50,7 @@ private:
         IColumn::Filter & filter,
         size_t rows,
         SetVariants & variant,
-        size_t & passed) const;
+        size_t & passed_bf) const;
 };
 
 }
