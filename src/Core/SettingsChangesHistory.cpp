@@ -69,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.4",
         {
             {"enable_hdfs_pread", true, true, "New setting."},
+            {"low_priority_query_wait_time_ms", 1000, 1000, "New setting.."},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
