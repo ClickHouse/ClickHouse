@@ -60,7 +60,7 @@ namespace ErrorCodes
     DECLARE(Float, ratio_of_defaults_for_sparse_serialization, 0.9375f, "Minimal ratio of number of default values to number of all values in column to store it in sparse serializations. If >= 1, columns will be always written in full serialization.", 0) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, "If the file name for column is too long (more than 'max_file_name_length' bytes) replace it to SipHash128", 0) \
     DECLARE(UInt64, max_file_name_length, 127, "The maximal length of the file name to keep it as is without hashing", 0) \
-    DECLARE(UInt64, min_bytes_for_full_part_storage, 0, "Only available in ClickHouse Cloud. Minimal uncompressed size in bytes to use full type of storage for data part instead of packed", 0) \
+    DECLARE(UInt64, min_bytes_for_full_part_storage, 134217728, "Only available in ClickHouse Cloud. Minimal uncompressed size in bytes to use full type of storage for data part instead of packed", 0) \
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, "Only available in ClickHouse Cloud. Minimal number of rows to use full type of storage for data part instead of packed", 0) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, "Only available in ClickHouse Cloud. Maximal number of bytes to write in a single stripe in compact parts", 0) \
     DECLARE(UInt64, compact_parts_max_granules_to_buffer, 128, "Only available in ClickHouse Cloud. Maximal number of granules to write in a single stripe in compact parts", 0) \
