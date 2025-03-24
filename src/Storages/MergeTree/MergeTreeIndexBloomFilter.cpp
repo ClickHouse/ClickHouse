@@ -72,14 +72,6 @@ bool MergeTreeIndexGranuleBloomFilter::empty() const
     return !total_rows;
 }
 
-size_t MergeTreeIndexGranuleBloomFilter::memoryUsageBytes() const
-{
-    size_t sum = 0;
-    for (const auto & bloom_filter : bloom_filters)
-        sum += bloom_filter->memoryUsageBytes();
-    return sum;
-}
-
 void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     if (version != 1)
@@ -408,6 +400,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
         function_name == "notEquals" ||
         function_name == "has" ||
         function_name == "mapContains" ||
+        function_name == "mapContainsKey" ||
+        function_name == "mapContainsValue" ||
         function_name == "indexOf" ||
         function_name == "hasAny" ||
         function_name == "hasAll")
@@ -727,13 +721,25 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         return true;
     }
 
-    if (function_name == "mapContains" || function_name == "has")
+    if (function_name == "mapContainsValue" || function_name == "mapContainsKey" || function_name == "mapContains" || function_name == "has")
     {
         auto map_keys_index_column_name = fmt::format("mapKeys({})", key_column_name);
-        if (!header.has(map_keys_index_column_name))
-            return false;
+        auto map_values_index_column_name = fmt::format("mapValues({})", key_column_name);
+        size_t position = 0;
 
-        size_t position = header.getPositionByName(map_keys_index_column_name);
+        if (header.has(map_keys_index_column_name))
+        {
+            position = header.getPositionByName(map_keys_index_column_name);
+        }
+        else if (header.has(map_values_index_column_name))
+        {
+            position = header.getPositionByName(map_values_index_column_name);
+        }
+        else
+        {
+            return false;
+        }
+
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
 
