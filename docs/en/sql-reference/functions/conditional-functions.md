@@ -270,7 +270,7 @@ SELECT clamp(1, 2, 3) result,  toTypeName(result) type;
 
 ## CASE statement {#case-statement}
 
-The CASE expression in ClickHouse provides conditional logic similar to SQL’s CASE operator. It evaluates conditions and returns values based on the first matching condition.
+The CASE expression in ClickHouse provides conditional logic similar to the SQL CASE operator. It evaluates conditions and returns values based on the first matching condition.
 
 ClickHouse supports two forms of CASE:
 
