@@ -79,6 +79,11 @@ namespace ErrorCodes
     DECLARE(UInt64, min_rows_for_wide_part, 0, R"(
     Minimal number of rows to create part in wide format instead of compact
     )", 0) \
+    DECLARE(UInt64, max_merge_delayed_streams_for_parallel_write, 40, R"(
+    The maximum number of streams (columns) that can be flushed in parallel
+    (analog of max_insert_delayed_streams_for_parallel_write for merges). Works
+    only for Vertical merges.
+    )", 0) \
     DECLARE(Float, ratio_of_defaults_for_sparse_serialization, 0.9375f, R"(
     Minimal ratio of the number of _default_ values to the number of _all_ values
     in a column. Setting this value causes the column to be stored using sparse
