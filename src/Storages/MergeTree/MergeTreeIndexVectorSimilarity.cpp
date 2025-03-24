@@ -115,7 +115,7 @@ USearchIndexWithSerialization::USearchIndexWithSerialization(
 
     auto result = USearchIndex::make(metric, config);
     if (!result)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Could not create vector similarity index. Error: {}", String(result.error.release()));
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Could not create vector similarity index. Error: {}", result.error.release());
     swap(result.index);
 }
 
@@ -128,7 +128,7 @@ void USearchIndexWithSerialization::serialize(WriteBuffer & ostr) const
     };
 
     if (auto result = Base::save_to_stream(callback); !result)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Could not save vector similarity index. Error: {}", String(result.error.release()));
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Could not save vector similarity index. Error: {}", result.error.release());
 }
 
 void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
@@ -141,10 +141,13 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
 
     if (auto result = Base::load_from_stream(callback); !result)
         /// See the comment in MergeTreeIndexGranuleVectorSimilarity::deserializeBinary why we throw here
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Could not load vector similarity index. Please drop the index and create it again. Error: {}", String(result.error.release()));
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Could not load vector similarity index. Please drop the index and create it again. Error: {}", result.error.release());
 
-    /// Indicate the number of concurrent threads that will potentially search this specific usearch index
-    try_reserve(limits());
+    /// USearch pre-allocates internal data structures for at most N threads. This makes the implicit assumption that the caller (this
+    /// class) uses at most this number of threads. The problem here is that there is no such guarantee in ClickHouse because of potential
+    /// oversubscription. Therefore, set N as 2 * the available cores - that should be pretty safe. In the unlikely case there are still
+    /// more threads at runtime than this limit, we patched usearch to return an error.
+    try_reserve(unum::usearch::index_limits_t(limits().members, 2 * getNumberOfCPUCoresToUse()));
 }
 
 USearchIndexWithSerialization::Statistics USearchIndexWithSerialization::getStatistics() const
@@ -303,7 +306,7 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
         auto result = index->add(key, &column_array_data_float_data[column_array_offsets[row - 1]]);
         if (!result)
         {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", String(result.error.release()));
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", result.error.release());
         }
 
         ProfileEvents::increment(ProfileEvents::USearchAddCount);
@@ -455,7 +458,7 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
 
     auto search_result = index->search(parameters->reference_vector.data(), parameters->limit, USearchIndex::any_thread(), false, expansion_search);
     if (!search_result)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", String(search_result.error.release()));
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
 
     std::vector<USearchIndex::vector_key_t> neighbors(search_result.size()); /// indexes of vectors which were closest to the reference vector
     search_result.dump_to(neighbors.data());
@@ -571,7 +574,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
 
         unum::usearch::index_dense_config_t config(connectivity, expansion_add, expansion_search);
         if (auto error = config.validate(); error)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", String(error.release()));
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", error.release());
     }
 
     /// Check that the index is created on a single column
