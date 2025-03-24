@@ -1326,6 +1326,11 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed, will retry");
 
         auto table = tryGetTable(table_name, getContext());
+        if (!table)
+        {
+            LOG_WARNING(log, "Was going to detach local table {}.{} but it's gone", db_name, table_name);
+            continue;
+        }
 
         auto move_table_to_database = [&](const String & broken_table_name, const String & to_database_name)
         {
