@@ -2835,7 +2835,7 @@ operations and the [Join](/engines/table-engines/special/join) table engine.
 If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
 
 ClickHouse can proceed with different actions when the limit is reached. Use the
-[`join_overflow_mode`](/operations/settings/query-complexity#settings-join_overflow_mode) setting to choose the action.
+[`join_overflow_mode`](/operations/settings/settings#join_overflow_mode) setting to choose the action.
 
 Possible values:
 
@@ -2960,7 +2960,7 @@ Minimal count of rows to compress block in CROSS JOIN. Zero value means - disabl
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 )", 0) \
     DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(
-Maximum size of right-side table if limit is required but max_bytes_in_join is not set.
+Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.
 )", 0) \
     DECLARE(UInt64, partial_merge_join_left_table_buffer_bytes, 0, R"(
 If not 0 group left table blocks in bigger ones for left-side table in partial merge join. It uses up to 2x of specified memory per joining thread.
