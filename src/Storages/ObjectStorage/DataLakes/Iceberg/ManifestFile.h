@@ -4,7 +4,6 @@
 
 #if USE_AVRO
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IteratorWrapper.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
 #include <Storages/KeyDescription.h>
@@ -120,8 +119,9 @@ private:
 
 };
 
-using ManifestFilesStorage = std::map<String, ManifestFileContent>;
-using ManifestFileIterator = IteratorWrapper<ManifestFileContent>;
+/// Once manifest file is constructed. It's unchangeable.
+using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
+
 }
 
 #endif

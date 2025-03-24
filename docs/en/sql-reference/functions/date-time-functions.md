@@ -2403,7 +2403,30 @@ Alias: `dateTrunc`.
 
 **Returned value**
 
-- Value, truncated to the specified part of date. [DateTime](../data-types/datetime.md).
+1. [Date](../data-types/date.md)
+  - Returned when unit is Year, Quarter, Month, or Week.
+  - The second argument is Date (not Date32).
+  - If the second argument is Date32, the return type is changed to Date32.
+
+2. [Date32](../data-types/date32.md)
+  - Returned when:
+  - unit is Year, Quarter, Month, or Week.
+  - The second argument is Date32 (supports negative values).
+  - This is an extension from the previous logic, ensuring compatibility with Date32 inputs.
+
+3. [DateTime](../data-types/datetime.md)
+  - Returned when unit is Day, Hour, Minute, or Second.
+  - The second argument is DateTime.
+
+4. [DateTime64](../data-types/datetime64.md)
+  - Returned when:
+  - unit is Millisecond, Microsecond, or Nanosecond.
+  - If the second argument is DateTime64, the result type DateTime64 is chosen regardless of the unit.
+  - If the second argument is DateTime and the unit is Day, Hour, Minute, or Second, the result type is changed from DateTime to DateTime64 to support negative values.
+  - The scale is determined based on the unit:
+    - Millisecond → scale = 3
+    - Microsecond → scale = 6
+    - Nanosecond → scale = 9
 
 **Example**
 

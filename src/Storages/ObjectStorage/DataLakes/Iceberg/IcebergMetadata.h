@@ -94,15 +94,17 @@ public:
     std::optional<size_t> totalBytes() const override;
 
 private:
-    using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileIterator>;
+    using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFilePtr>;
+    using ManifestFilesStorage = std::unordered_map<String, Iceberg::ManifestFilePtr>;
+    using ManifestListsStorage = std::unordered_map<String, Iceberg::ManifestListPtr>;
 
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 
-    mutable Iceberg::ManifestFilesStorage manifest_files_by_name;
-    mutable Iceberg::ManifestListsStorage manifest_lists_by_name;
+    mutable ManifestFilesStorage manifest_files_by_name;
+    mutable ManifestListsStorage manifest_lists_by_name;
     mutable ManifestEntryByDataFile manifest_file_by_data_file;
 
     std::tuple<Int64, Int32> getVersion() const { return std::make_tuple(relevant_snapshot_id, relevant_snapshot_schema_id); }
@@ -128,13 +130,11 @@ private:
 
     void addTableSchemaById(Int32 schema_id);
 
-    Iceberg::ManifestListIterator getManifestList(const String & filename) const;
+    Iceberg::ManifestListPtr getManifestList(const String & filename) const;
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
-    Iceberg::ManifestFileContent initializeManifestFile(const String & filename, Int64 inherited_sequence_number) const;
-
-    Iceberg::ManifestFileIterator getManifestFile(const String & filename) const;
+    Iceberg::ManifestFilePtr initializeManifestFile(const String & filename, Int64 inherited_sequence_number) const;
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
 
@@ -142,7 +142,7 @@ private:
 
     Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
-    std::optional<Iceberg::ManifestFileIterator> tryGetManifestFile(const String & filename) const;
+    Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 };
 }
 
