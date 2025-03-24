@@ -52,6 +52,7 @@ void registerInterpreterShowPrivilegesQuery(InterpreterFactory & factory);
 void registerInterpreterExternalDDLQuery(InterpreterFactory & factory);
 void registerInterpreterTransactionControlQuery(InterpreterFactory & factory);
 void registerInterpreterCreateFunctionQuery(InterpreterFactory & factory);
+void registerInterpreterCreateDriverFunctionQuery(InterpreterFactory & factory);
 void registerInterpreterDropFunctionQuery(InterpreterFactory & factory);
 void registerInterpreterCreateWorkloadQuery(InterpreterFactory & factory);
 void registerInterpreterDropWorkloadQuery(InterpreterFactory & factory);
@@ -117,6 +118,7 @@ void registerInterpreters()
     registerInterpreterExternalDDLQuery(factory);
     registerInterpreterTransactionControlQuery(factory);
     registerInterpreterCreateFunctionQuery(factory);
+    registerInterpreterCreateDriverFunctionQuery(factory);
     registerInterpreterDropFunctionQuery(factory);
     registerInterpreterCreateWorkloadQuery(factory);
     registerInterpreterDropWorkloadQuery(factory);
