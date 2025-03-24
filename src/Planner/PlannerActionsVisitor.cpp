@@ -607,7 +607,7 @@ private:
 
     NodeNameAndNodeMinLevel visitColumn(const QueryTreeNodePtr & node);
 
-    NodeNameAndNodeMinLevel visitConstant(const QueryTreeNodePtr & node);
+    NodeNameAndNodeMinLevel visitConstant(const QueryTreeNodePtr & node, const std::string & override_column_name = {});
 
     NodeNameAndNodeMinLevel visitLambda(const QueryTreeNodePtr & node);
 
@@ -682,7 +682,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         /// It is possible that during the execution of distributed queries
         /// source columns from constant expression are removed, so that the attempt to recalculate it fails.
         if (expression->getNodeType() == QueryTreeNodeType::CONSTANT)
-            return visitConstant(expression);
+            return visitConstant(expression, column_node_name);
         else if (!use_column_identifier_as_action_node_name)
             return visitImpl(expression);
     }
@@ -703,12 +703,12 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     return {column_node_name, Levels(0)};
 }
 
-PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstant(const QueryTreeNodePtr & node)
+PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstant(const QueryTreeNodePtr & node, const std::string & override_column_name)
 {
     const auto & constant_node = node->as<ConstantNode &>();
     const auto & constant_type = constant_node.getResultType();
 
-    auto constant_node_name = [&]()
+    auto constant_node_name = !override_column_name.empty() ? override_column_name : [&]()
     {
         /* To ensure that headers match during distributed query we need to simulate action node naming on
          * secondary servers. If we don't do that headers will mismatch due to constant folding.
