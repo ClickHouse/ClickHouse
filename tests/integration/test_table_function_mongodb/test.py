@@ -14,10 +14,7 @@ def started_cluster(request):
         cluster.add_instance(
             "node",
             with_mongo=True,
-            main_configs=[
-                "configs/named_collections.xml",
-                "configs/feature_flag.xml",
-            ],
+            main_configs=["configs/named_collections.xml"],
             user_configs=["configs/users.xml"],
         )
         cluster.start()

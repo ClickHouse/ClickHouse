@@ -11,7 +11,7 @@ Join produces a new table by combining columns from one or multiple tables by us
 
 **Syntax**
 
-``` sql
+```sql
 SELECT <expr_list>
 FROM <left_table>
 [GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ALL|ASOF] JOIN <right_table>
@@ -95,7 +95,7 @@ Consider `table_1` and `table_2`:
 
 Query with one join key condition and an additional condition for `table_2`:
 
-``` sql
+```sql
 SELECT name, text FROM table_1 LEFT OUTER JOIN table_2
     ON table_1.Id = table_2.Id AND startsWith(table_2.text, 'Text');
 ```
@@ -112,7 +112,7 @@ Note that the result contains the row with the name `C` and the empty text colum
 
 Query with `INNER` type of a join and multiple conditions:
 
-``` sql
+```sql
 SELECT name, text, scores FROM table_1 INNER JOIN table_2
     ON table_1.Id = table_2.Id AND table_2.scores > 10 AND startsWith(table_2.text, 'Text');
 ```
@@ -126,7 +126,7 @@ Result:
 ```
 Query with `INNER` type of a join and condition with `OR`:
 
-``` sql
+```sql
 CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree() ORDER BY a;
 
 CREATE TABLE t2 (`key` Int32, `val` Int64) ENGINE = MergeTree() ORDER BY key;
@@ -160,7 +160,7 @@ However, you can try experimental support for conditions like `t1.a = t2.key AND
 
 :::
 
-``` sql
+```sql
 SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.val > 3;
 ```
 
@@ -291,7 +291,7 @@ Algorithm requires the special column in tables. This column:
 
 Syntax `ASOF JOIN ... ON`:
 
-``` sql
+```sql
 SELECT expressions_list
 FROM table_1
 ASOF LEFT JOIN table_2
@@ -304,7 +304,7 @@ Conditions supported for the closest match: `>`, `>=`, `<`, `<=`.
 
 Syntax `ASOF JOIN ... USING`:
 
-``` sql
+```sql
 SELECT expressions_list
 FROM table_1
 ASOF JOIN table_2
@@ -482,7 +482,7 @@ When any of these limits is reached, ClickHouse acts as the [join_overflow_mode]
 
 Example:
 
-``` sql
+```sql
 SELECT
     CounterID,
     hits,
@@ -506,7 +506,7 @@ ORDER BY hits DESC
 LIMIT 10
 ```
 
-``` text
+```text
 ┌─CounterID─┬───hits─┬─visits─┐
 │   1143050 │ 523264 │  13665 │
 │    731962 │ 475698 │ 102716 │

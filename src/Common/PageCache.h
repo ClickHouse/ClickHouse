@@ -78,17 +78,35 @@ struct PageCacheWeightFunction
 extern template class CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, PageCacheWeightFunction>;
 
 /// The key is hash of PageCacheKey.
-/// Private inheritance because we have to add MemoryTrackerBlockerInThread to all operations that
-/// lock the mutex and allocate memory, to avoid deadlocking if MemoryTracker calls autoResize().
-class PageCache : private CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, PageCacheWeightFunction>
+///
+/// Experimentally sharded, to reduce mutex contention. Contention seems unlikely to be a problem as
+/// the blocks are pretty big (typically 1 MiB), and the main mutex is only locked during lookup,
+/// not while downloading.
+/// (If it turns out that having more than 1 shard never improves performance in practice, feel free
+///  to simplify this by removing sharding.)
+///
+/// Implementation should be careful to always use MemoryTrackerBlockerInThread for all operations
+/// that lock the mutex or allocate memory. Otherwise we'll can deadlock when MemoryTracker calls
+/// autoResize().
+class PageCache
 {
-public:
+private:
     using Base = CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, PageCacheWeightFunction>;
+
+    class alignas(std::hardware_destructive_interference_size) Shard : public Base
+    {
+    public:
+        using Base::Base;
+
+        void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) override;
+    };
+
+public:
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
     using MappedPtr = typename Base::MappedPtr;
 
-    PageCache(size_t default_block_size_, size_t default_lookahead_blocks_, std::chrono::milliseconds history_window_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_);
+    PageCache(size_t default_block_size_, size_t default_lookahead_blocks_, std::chrono::milliseconds history_window_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_, size_t num_shards);
 
     /// Get or insert a chunk for the given key.
     ///
@@ -121,11 +139,18 @@ private:
     /// To avoid overreacting to brief drops in memory usage, we use peak memory usage over the last
     /// `history_window` milliseconds. It's calculated using this "sliding" (leapfrogging?) window.
     /// If history_window <= 0, there's no window and we just use current memory usage.
-    std::chrono::milliseconds history_window;
-    std::array<size_t, 2> peak_memory_buckets {0, 0};
-    int64_t cur_bucket = 0;
+    std::mutex mutex;
+    std::chrono::milliseconds history_window TSA_GUARDED_BY(mutex);
+    std::array<size_t, 2> peak_memory_buckets TSA_GUARDED_BY(mutex) {0, 0};
+    int64_t cur_bucket TSA_GUARDED_BY(mutex) = 0;
 
-    void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) override;
+    std::vector<std::unique_ptr<Shard>> shards;
+
+    size_t getShardIdx(UInt128 key) const
+    {
+        /// UInt128TrivialHash uses the lower 64 bits, we use the upper 64 bits.
+        return key.items[UInt128::_impl::little(1)] % shards.size();
+    }
 };
 
 using PageCachePtr = std::shared_ptr<PageCache>;

@@ -12,7 +12,7 @@ Calculates the sum of the numbers and counts the number of rows at the same time
 
 **Syntax**
 
-``` sql
+```sql
 sumCount(x)
 ```
 
@@ -30,7 +30,7 @@ Type: [Tuple](../../../sql-reference/data-types/tuple.md).
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE s_table (x Int8) Engine = Log;
 INSERT INTO s_table SELECT number FROM numbers(0, 20);
 INSERT INTO s_table VALUES (NULL);
@@ -39,7 +39,7 @@ SELECT sumCount(x) from s_table;
 
 Result:
 
-``` text
+```text
 ┌─sumCount(x)─┐
 │ (190,20)    │
 └─────────────┘

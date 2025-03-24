@@ -27,13 +27,13 @@ Columns:
 
 Query:
 
-``` sql
+```sql
 SELECT * FROM system.asynchronous_inserts LIMIT 1 \G;
 ```
 
 Result:
 
-``` text
+```text
 Row 1:
 ──────
 query:            INSERT INTO public.data_guess (user_id, datasource_id, timestamp, path, type, num, str) FORMAT CSV

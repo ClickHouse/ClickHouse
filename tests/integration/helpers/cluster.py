@@ -1574,6 +1574,7 @@ class ClickHouseCluster:
         with_nginx=False,
         with_redis=False,
         with_minio=False,
+        with_remote_database_disk=False,  # Currently, there is no remote storage can be used for the database disk. We disabled it as default.
         with_azurite=False,
         with_cassandra=False,
         with_ldap=False,
@@ -1635,6 +1636,16 @@ class ClickHouseCluster:
 
         if tag is None:
             tag = DOCKER_BASE_TAG
+        else:
+            if with_remote_database_disk:
+                raise Exception(
+                    f"Can't add instance '{name}': not support remote database disk with the old version {tag}"
+                )
+            with_remote_database_disk = False
+
+        if with_remote_database_disk is None:
+            with_remote_database_disk = False
+
         if not env_variables:
             env_variables = {}
         self.use_keeper = use_keeper
@@ -1681,6 +1692,7 @@ class ClickHouseCluster:
             with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
+            with_remote_database_disk=with_remote_database_disk,
             with_azurite=with_azurite,
             with_jdbc_bridge=with_jdbc_bridge,
             with_hive=with_hive,
@@ -3364,6 +3376,7 @@ class ClickHouseInstance:
         with_mongo,
         with_redis,
         with_minio,
+        with_remote_database_disk,
         with_azurite,
         with_jdbc_bridge,
         with_hive,
@@ -3460,6 +3473,7 @@ class ClickHouseInstance:
         )
         self.with_redis = with_redis
         self.with_minio = with_minio
+        self.with_remote_database_disk = with_remote_database_disk
         self.with_azurite = with_azurite
         self.with_cassandra = with_cassandra
         self.with_ldap = with_ldap

@@ -1115,6 +1115,9 @@ CREATE TABLE system.tables
     `create_table_query` String,
     `engine_full` String,
     `as_select` String,
+    `parametrized_view_paramters` Array(Tuple(
+        name String,
+        type String)),
     `partition_key` String,
     `sorting_key` String,
     `primary_key` String,

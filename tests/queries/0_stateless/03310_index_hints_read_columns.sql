@@ -18,7 +18,7 @@ SELECT sum(b) FROM t_index_hint WHERE a >= 100 AND a < 200 AND b >= 100 AND b < 
 SYSTEM DROP MARK CACHE;
 SELECT sum(b) FROM t_index_hint WHERE indexHint(a >= 100 AND a < 200) AND b >= 100 AND b < 200 SETTINGS max_threads = 1, force_primary_key = 1;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     ProfileEvents['FileOpen'],
@@ -46,20 +46,17 @@ INSERT INTO t_index_hint (a, s) VALUES (1, 'Text with my_token') (2, 'Another te
 
 SYSTEM DROP MARK CACHE;
 SYSTEM DROP INDEX MARK CACHE;
-SYSTEM DROP SKIPPING INDEX CACHE;
 SELECT count() FROM t_index_hint WHERE s LIKE '%my_token%' SETTINGS max_threads = 1;
 
 SYSTEM DROP MARK CACHE;
 SYSTEM DROP INDEX MARK CACHE;
-SYSTEM DROP SKIPPING INDEX CACHE;
 SELECT count() FROM t_index_hint WHERE has(s_tokens, 'my_token') AND s LIKE '%my_token%' SETTINGS max_threads = 1, force_data_skipping_indices = 'idx_tokens';
 
 SYSTEM DROP MARK CACHE;
 SYSTEM DROP INDEX MARK CACHE;
-SYSTEM DROP SKIPPING INDEX CACHE;
 SELECT count() FROM t_index_hint WHERE indexHint(has(s_tokens, 'my_token')) AND s LIKE '%my_token%' SETTINGS max_threads = 1, force_data_skipping_indices = 'idx_tokens';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     ProfileEvents['FileOpen'],

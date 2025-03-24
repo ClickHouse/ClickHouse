@@ -32,7 +32,7 @@ StorageFileCluster::StorageFileCluster(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_)
-    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageFileCluster (" + table_id_.table_name + ")"))
+    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageFileCluster (" + table_id_.getFullTableName() + ")"))
     , filename(filename_)
     , format_name(format_name_)
 {

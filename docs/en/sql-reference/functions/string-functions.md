@@ -20,7 +20,7 @@ The function is also available for [arrays](/sql-reference/functions/array-funct
 
 **Syntax**
 
-``` sql
+```sql
 empty(x)
 ```
 
@@ -54,7 +54,7 @@ The function is also available for [arrays](/sql-reference/functions/array-funct
 
 **Syntax**
 
-``` sql
+```sql
 notEmpty(x)
 ```
 
@@ -175,7 +175,7 @@ Returns a substring of string `s` with a specified `offset` starting from the le
 
 **Syntax**
 
-``` sql
+```sql
 left(s, offset)
 ```
 
@@ -222,7 +222,7 @@ Returns a substring of a UTF-8 encoded string `s` with a specified `offset` star
 
 **Syntax**
 
-``` sql
+```sql
 leftUTF8(s, offset)
 ```
 
@@ -269,7 +269,7 @@ Pads a string from the left with spaces or with a specified string (multiple tim
 
 **Syntax**
 
-``` sql
+```sql
 leftPad(string, length[, pad_string])
 ```
 
@@ -287,7 +287,7 @@ Alias: `LPAD`
 
 **Example**
 
-``` sql
+```sql
 SELECT leftPad('abc', 7, '*'), leftPad('def', 7);
 ```
 
@@ -305,7 +305,7 @@ Pads the string from the left with spaces or a specified string (multiple times,
 
 **Syntax**
 
-``` sql
+```sql
 leftPadUTF8(string, length[, pad_string])
 ```
 
@@ -321,7 +321,7 @@ leftPadUTF8(string, length[, pad_string])
 
 **Example**
 
-``` sql
+```sql
 SELECT leftPadUTF8('абвг', 7, '*'), leftPadUTF8('дежз', 7);
 ```
 
@@ -339,7 +339,7 @@ Returns a substring of string `s` with a specified `offset` starting from the ri
 
 **Syntax**
 
-``` sql
+```sql
 right(s, offset)
 ```
 
@@ -386,7 +386,7 @@ Returns a substring of UTF-8 encoded string `s` with a specified `offset` starti
 
 **Syntax**
 
-``` sql
+```sql
 rightUTF8(s, offset)
 ```
 
@@ -433,7 +433,7 @@ Pads a string from the right with spaces or with a specified string (multiple ti
 
 **Syntax**
 
-``` sql
+```sql
 rightPad(string, length[, pad_string])
 ```
 
@@ -451,7 +451,7 @@ Alias: `RPAD`
 
 **Example**
 
-``` sql
+```sql
 SELECT rightPad('abc', 7, '*'), rightPad('abc', 7);
 ```
 
@@ -469,7 +469,7 @@ Pads the string from the right with spaces or a specified string (multiple times
 
 **Syntax**
 
-``` sql
+```sql
 rightPadUTF8(string, length[, pad_string])
 ```
 
@@ -485,7 +485,7 @@ rightPadUTF8(string, length[, pad_string])
 
 **Example**
 
-``` sql
+```sql
 SELECT rightPadUTF8('абвг', 7, '*'), rightPadUTF8('абвг', 7);
 ```
 
@@ -543,7 +543,7 @@ Converts the ASCII Latin symbols in a string to lowercase.
 
 *Syntax**
 
-``` sql
+```sql
 lower(input)
 ```
 
@@ -577,7 +577,7 @@ Converts the ASCII Latin symbols in a string to uppercase.
 
 **Syntax**
 
-``` sql
+```sql
 upper(input)
 ```
 
@@ -595,11 +595,11 @@ Alias: `ucase`
 
 Query:
 
-``` sql
+```sql
 SELECT upper('clickhouse');
 ```
 
-``` response
+```response
 ┌─upper('clickhouse')─┐
 │ CLICKHOUSE          │
 └─────────────────────┘
@@ -631,13 +631,13 @@ lowerUTF8(input)
 
 Query:
 
-``` sql
+```sql
 SELECT lowerUTF8('MÜNCHEN') as Lowerutf8;
 ```
 
 Result:
 
-``` response
+```response
 ┌─Lowerutf8─┐
 │ münchen   │
 └───────────┘
@@ -653,7 +653,7 @@ Does not detect the language, e.g. for Turkish the result might not be exactly c
 
 **Syntax**
 
-``` sql
+```sql
 upperUTF8(input)
 ```
 
@@ -669,13 +669,13 @@ upperUTF8(input)
 
 Query:
 
-``` sql
+```sql
 SELECT upperUTF8('München') as Upperutf8;
 ```
 
 Result:
 
-``` response
+```response
 ┌─Upperutf8─┐
 │ MÜNCHEN   │
 └───────────┘
@@ -687,7 +687,7 @@ Returns 1, if the set of bytes constitutes valid UTF-8-encoded text, otherwise 0
 
 **Syntax**
 
-``` sql
+```sql
 isValidUTF8(input)
 ```
 
@@ -701,13 +701,13 @@ isValidUTF8(input)
 
 Query:
 
-``` sql
+```sql
 SELECT isValidUTF8('\xc3\xb1') AS valid, isValidUTF8('\xc3\x28') AS invalid;
 ```
 
 Result:
 
-``` response
+```response
 ┌─valid─┬─invalid─┐
 │     1 │       0 │
 └───────┴─────────┘
@@ -719,7 +719,7 @@ Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running i
 
 **Syntax**
 
-``` sql
+```sql
 toValidUTF8(input_string)
 ```
 
@@ -733,7 +733,7 @@ toValidUTF8(input_string)
 
 **Example**
 
-``` sql
+```sql
 SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
 ```
 
@@ -749,7 +749,7 @@ Concatenates a string as many times with itself as specified.
 
 **Syntax**
 
-``` sql
+```sql
 repeat(s, n)
 ```
 
@@ -766,7 +766,7 @@ A string containing string `s` repeated `n` times. If `n` &lt;= 0, the function 
 
 **Example**
 
-``` sql
+```sql
 SELECT repeat('abc', 10);
 ```
 
@@ -784,7 +784,7 @@ Concatenates a space (` `) as many times with itself as specified.
 
 **Syntax**
 
-``` sql
+```sql
 space(n)
 ```
 
@@ -802,13 +802,13 @@ The string containing string ` ` repeated `n` times. If `n` &lt;= 0, the functio
 
 Query:
 
-``` sql
+```sql
 SELECT space(3);
 ```
 
 Result:
 
-``` text
+```text
 ┌─space(3) ────┐
 │              │
 └──────────────┘
@@ -828,7 +828,7 @@ Concatenates the given arguments.
 
 **Syntax**
 
-``` sql
+```sql
 concat(s1, s2, ...)
 ```
 
@@ -848,7 +848,7 @@ If any of arguments is `NULL`, the function returns `NULL`.
 
 Query:
 
-``` sql
+```sql
 SELECT concat('Hello, ', 'World!');
 ```
 
@@ -886,7 +886,7 @@ A function is called injective if it returns for different arguments different r
 
 **Syntax**
 
-``` sql
+```sql
 concatAssumeInjective(s1, s2, ...)
 ```
 
@@ -904,7 +904,7 @@ If any of argument values is `NULL`, the function returns `NULL`.
 
 Input table:
 
-``` sql
+```sql
 CREATE TABLE key_val(`key1` String, `key2` String, `value` UInt32) ENGINE = TinyLog;
 INSERT INTO key_val VALUES ('Hello, ','World',1), ('Hello, ','World',2), ('Hello, ','World!',3), ('Hello',', World!',2);
 SELECT * from key_val;
@@ -919,7 +919,7 @@ SELECT * from key_val;
 └─────────┴──────────┴───────┘
 ```
 
-``` sql
+```sql
 SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2);
 ```
 
@@ -939,7 +939,7 @@ Concatenates the given strings with a given separator.
 
 **Syntax**
 
-``` sql
+```sql
 concatWithSeparator(sep, expr1, expr2, expr3...)
 ```
 
@@ -958,7 +958,7 @@ If any of the argument values is `NULL`, the function returns `NULL`.
 
 **Example**
 
-``` sql
+```sql
 SELECT concatWithSeparator('a', '1', '2', '3', '4')
 ```
 
@@ -1003,7 +1003,7 @@ A substring of `s` with `length` many bytes, starting at index `offset`. [String
 
 **Example**
 
-``` sql
+```sql
 SELECT 'database' AS db, substr(db, 5), substr(db, 5, 1)
 ```
 
@@ -1073,7 +1073,7 @@ Alias: `SUBSTRING_INDEX`
 
 **Example**
 
-``` sql
+```sql
 SELECT substringIndex('www.clickhouse.com', '.', 2)
 ```
 
@@ -1160,7 +1160,7 @@ base58Encode(plaintext)
 
 **Example**
 
-``` sql
+```sql
 SELECT base58Encode('Encoded');
 ```
 
@@ -1192,7 +1192,7 @@ base58Decode(encoded)
 
 **Example**
 
-``` sql
+```sql
 SELECT base58Decode('3dc8KtHrwM');
 ```
 
@@ -1258,7 +1258,7 @@ base64Encode(plaintext)
 
 **Example**
 
-``` sql
+```sql
 SELECT base64Encode('clickhouse');
 ```
 
@@ -1290,7 +1290,7 @@ base64URLEncode(url)
 
 **Example**
 
-``` sql
+```sql
 SELECT base64URLEncode('https://clickhouse.com');
 ```
 
@@ -1324,7 +1324,7 @@ base64Decode(encoded)
 
 **Example**
 
-``` sql
+```sql
 SELECT base64Decode('Y2xpY2tob3VzZQ==');
 ```
 
@@ -1356,7 +1356,7 @@ base64URLDecode(encodedUrl)
 
 **Example**
 
-``` sql
+```sql
 SELECT base64URLDecode('aHR0cDovL2NsaWNraG91c2UuY29t');
 ```
 
@@ -1454,7 +1454,7 @@ endsWithUTF8(str, suffix)
 
 **Example**
 
-``` sql
+```sql
 SELECT endsWithUTF8('中国', '\xbd'), endsWith('中国', '\xbd')
 ```
 
@@ -1478,7 +1478,7 @@ startsWith(str, prefix)
 
 **Example**
 
-``` sql
+```sql
 SELECT startsWith('Spider-Man', 'Spi');
 ```
 
@@ -1491,7 +1491,7 @@ Returns whether string `str` starts with `prefix`, the difference between `start
 
 **Example**
 
-``` sql
+```sql
 SELECT startsWithUTF8('中国', '\xe4'), startsWith('中国', '\xe4')
 ```
 
@@ -1509,7 +1509,7 @@ Removes the specified characters from the start or end of a string. If not speci
 
 **Syntax**
 
-``` sql
+```sql
 trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 ```
 
@@ -1524,7 +1524,7 @@ A string without leading and/or trailing specified characters. [String](../data-
 
 **Example**
 
-``` sql
+```sql
 SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )');
 ```
 
@@ -1542,7 +1542,7 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from the 
 
 **Syntax**
 
-``` sql
+```sql
 trimLeft(input_string[, trim_characters])
 ```
 
@@ -1559,7 +1559,7 @@ A string without leading common whitespaces. [String](../data-types/string.md).
 
 **Example**
 
-``` sql
+```sql
 SELECT trimLeft('     Hello, world!     ');
 ```
 
@@ -1577,7 +1577,7 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from the 
 
 **Syntax**
 
-``` sql
+```sql
 trimRight(input_string[, trim_characters])
 ```
 
@@ -1594,7 +1594,7 @@ A string without trailing common whitespaces. [String](../data-types/string.md).
 
 **Example**
 
-``` sql
+```sql
 SELECT trimRight('     Hello, world!     ');
 ```
 
@@ -1612,7 +1612,7 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from both
 
 **Syntax**
 
-``` sql
+```sql
 trimBoth(input_string[, trim_characters])
 ```
 
@@ -1629,7 +1629,7 @@ A string without leading and trailing common whitespaces. [String](../data-types
 
 **Example**
 
-``` sql
+```sql
 SELECT trimBoth('     Hello, world!     ');
 ```
 
@@ -1665,7 +1665,7 @@ Converts a string to [NFC normalized form](https://en.wikipedia.org/wiki/Unicode
 
 **Syntax**
 
-``` sql
+```sql
 normalizeUTF8NFC(words)
 ```
 
@@ -1679,7 +1679,7 @@ normalizeUTF8NFC(words)
 
 **Example**
 
-``` sql
+```sql
 SELECT length('â'), normalizeUTF8NFC('â') AS nfc, length(nfc) AS nfc_len;
 ```
 
@@ -1697,7 +1697,7 @@ Converts a string to [NFD normalized form](https://en.wikipedia.org/wiki/Unicode
 
 **Syntax**
 
-``` sql
+```sql
 normalizeUTF8NFD(words)
 ```
 
@@ -1711,7 +1711,7 @@ normalizeUTF8NFD(words)
 
 **Example**
 
-``` sql
+```sql
 SELECT length('â'), normalizeUTF8NFD('â') AS nfd, length(nfd) AS nfd_len;
 ```
 
@@ -1729,7 +1729,7 @@ Converts a string to [NFKC normalized form](https://en.wikipedia.org/wiki/Unicod
 
 **Syntax**
 
-``` sql
+```sql
 normalizeUTF8NFKC(words)
 ```
 
@@ -1743,7 +1743,7 @@ normalizeUTF8NFKC(words)
 
 **Example**
 
-``` sql
+```sql
 SELECT length('â'), normalizeUTF8NFKC('â') AS nfkc, length(nfkc) AS nfkc_len;
 ```
 
@@ -1761,7 +1761,7 @@ Converts a string to [NFKD normalized form](https://en.wikipedia.org/wiki/Unicod
 
 **Syntax**
 
-``` sql
+```sql
 normalizeUTF8NFKD(words)
 ```
 
@@ -1775,7 +1775,7 @@ normalizeUTF8NFKD(words)
 
 **Example**
 
-``` sql
+```sql
 SELECT length('â'), normalizeUTF8NFKD('â') AS nfkd, length(nfkd) AS nfkd_len;
 ```
 
@@ -1796,7 +1796,7 @@ Also see the [list of XML and HTML character entity references](https://en.wikip
 
 **Syntax**
 
-``` sql
+```sql
 encodeXMLComponent(x)
 ```
 
@@ -1810,7 +1810,7 @@ encodeXMLComponent(x)
 
 **Example**
 
-``` sql
+```sql
 SELECT encodeXMLComponent('Hello, "world"!');
 SELECT encodeXMLComponent('<123>');
 SELECT encodeXMLComponent('&clickhouse');
@@ -1834,7 +1834,7 @@ This function also replaces numeric character references with Unicode characters
 
 **Syntax**
 
-``` sql
+```sql
 decodeXMLComponent(x)
 ```
 
@@ -1848,7 +1848,7 @@ decodeXMLComponent(x)
 
 **Example**
 
-``` sql
+```sql
 SELECT decodeXMLComponent('&apos;foo&apos;');
 SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
 ```
@@ -1868,7 +1868,7 @@ This function also replaces numeric character references with Unicode characters
 
 **Syntax**
 
-``` sql
+```sql
 decodeHTMLComponent(x)
 ```
 
@@ -1882,7 +1882,7 @@ decodeHTMLComponent(x)
 
 **Example**
 
-``` sql
+```sql
 SELECT decodeHTMLComponent(''CH');
 SELECT decodeHTMLComponent('I&heartsuit;ClickHouse');
 ```
@@ -1921,7 +1921,7 @@ Note: tag without end is skipped to the end of input: `<hello   `
 
 **Syntax**
 
-``` sql
+```sql
 extractTextFromHTML(x)
 ```
 
@@ -1939,7 +1939,7 @@ The first example contains several tags and a comment and also shows whitespace 
 The second example shows `CDATA` and `script` tag processing.
 In the third example text is extracted from the full HTML response received by the [url](../../sql-reference/table-functions/url.md) function.
 
-``` sql
+```sql
 SELECT extractTextFromHTML(' <p> A text <i>with</i><b>tags</b>. <!-- comments --> </p> ');
 SELECT extractTextFromHTML('<![CDATA[The content within <b>CDATA</b>]]> <script>alert("Script");</script>');
 SELECT extractTextFromHTML(html) FROM url('http://www.donothingfor2minutes.com/', RawBLOB, 'html String');
@@ -1971,7 +1971,7 @@ Returns the [Soundex code](https://en.wikipedia.org/wiki/Soundex) of a string.
 
 **Syntax**
 
-``` sql
+```sql
 soundex(val)
 ```
 
@@ -1985,7 +1985,7 @@ soundex(val)
 
 **Example**
 
-``` sql
+```sql
 select soundex('aksel');
 ```
 
@@ -2004,7 +2004,7 @@ The string must be UTF8-encoded, otherwise the behavior is undefined.
 
 **Syntax**
 
-``` sql
+```sql
 punycodeEncode(val)
 ```
 
@@ -2018,7 +2018,7 @@ punycodeEncode(val)
 
 **Example**
 
-``` sql
+```sql
 select punycodeEncode('München');
 ```
 
@@ -2037,7 +2037,7 @@ If no valid Punycode-encoded string is given, an exception is thrown.
 
 **Syntax**
 
-``` sql
+```sql
 punycodeEncode(val)
 ```
 
@@ -2051,7 +2051,7 @@ punycodeEncode(val)
 
 **Example**
 
-``` sql
+```sql
 select punycodeDecode('Mnchen-3ya');
 ```
 
@@ -2089,7 +2089,7 @@ idnaEncode(val)
 
 **Example**
 
-``` sql
+```sql
 select idnaEncode('straße.münchen.de');
 ```
 
@@ -2127,7 +2127,7 @@ idnaDecode(val)
 
 **Example**
 
-``` sql
+```sql
 select idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de');
 ```
 
@@ -2151,13 +2151,13 @@ byteHammingDistance(string1, string2)
 
 **Examples**
 
-``` sql
+```sql
 SELECT byteHammingDistance('karolin', 'kathrin');
 ```
 
 Result:
 
-``` text
+```text
 ┌─byteHammingDistance('karolin', 'kathrin')─┐
 │                                         3 │
 └───────────────────────────────────────────┘
@@ -2177,13 +2177,13 @@ stringJaccardIndex(string1, string2)
 
 **Examples**
 
-``` sql
+```sql
 SELECT stringJaccardIndex('clickhouse', 'mouse');
 ```
 
 Result:
 
-``` text
+```text
 ┌─stringJaccardIndex('clickhouse', 'mouse')─┐
 │                                       0.4 │
 └───────────────────────────────────────────┘
@@ -2205,13 +2205,13 @@ editDistance(string1, string2)
 
 **Examples**
 
-``` sql
+```sql
 SELECT editDistance('clickhouse', 'mouse');
 ```
 
 Result:
 
-``` text
+```text
 ┌─editDistance('clickhouse', 'mouse')─┐
 │                                   6 │
 └─────────────────────────────────────┘
@@ -2231,13 +2231,13 @@ editDistanceUTF8(string1, string2)
 
 **Examples**
 
-``` sql
+```sql
 SELECT editDistanceUTF8('我是谁', '我是我');
 ```
 
 Result:
 
-``` text
+```text
 ┌─editDistanceUTF8('我是谁', '我是我')──┐
 │                                   1 │
 └─────────────────────────────────────┘
@@ -2257,13 +2257,13 @@ damerauLevenshteinDistance(string1, string2)
 
 **Examples**
 
-``` sql
+```sql
 SELECT damerauLevenshteinDistance('clickhouse', 'mouse');
 ```
 
 Result:
 
-``` text
+```text
 ┌─damerauLevenshteinDistance('clickhouse', 'mouse')─┐
 │                                                 6 │
 └───────────────────────────────────────────────────┘
@@ -2281,13 +2281,13 @@ jaroSimilarity(string1, string2)
 
 **Examples**
 
-``` sql
+```sql
 SELECT jaroSimilarity('clickhouse', 'click');
 ```
 
 Result:
 
-``` text
+```text
 ┌─jaroSimilarity('clickhouse', 'click')─┐
 │                    0.8333333333333333 │
 └───────────────────────────────────────┘
@@ -2305,13 +2305,13 @@ jaroWinklerSimilarity(string1, string2)
 
 **Examples**
 
-``` sql
+```sql
 SELECT jaroWinklerSimilarity('clickhouse', 'click');
 ```
 
 Result:
 
-``` text
+```text
 ┌─jaroWinklerSimilarity('clickhouse', 'click')─┐
 │                           0.8999999999999999 │
 └──────────────────────────────────────────────┘
