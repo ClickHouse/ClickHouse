@@ -15,6 +15,9 @@ public:
     ASTPtr engine_name;
     ASTPtr function_body;
 
+    bool or_replace = false;
+    bool if_not_exists = false;
+
     String getID(char delim) const override { return "CreateDriverFunctionQuery" + (delim + getFunctionName()); }
 
     ASTPtr clone() const override;

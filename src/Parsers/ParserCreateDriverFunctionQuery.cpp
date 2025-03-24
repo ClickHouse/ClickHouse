@@ -15,6 +15,8 @@ bool ParserCreateDriverFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
 {
     ParserKeyword s_create(Keyword::CREATE);
     ParserKeyword s_function(Keyword::FUNCTION);
+    ParserKeyword s_or_replace(Keyword::OR_REPLACE);
+    ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
     ParserIdentifier function_name_p;
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
@@ -34,11 +36,20 @@ bool ParserCreateDriverFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     ASTPtr engine_name;
     ASTPtr function_body;
 
+    bool or_replace = false;
+    bool if_not_exists = false;
+
     if (!s_create.ignore(pos, expected))
         return false;
 
+    if (s_or_replace.ignore(pos, expected))
+        or_replace = true;
+
     if (!s_function.ignore(pos, expected))
         return false;
+
+    if (!or_replace && s_if_not_exists.ignore(pos, expected))
+        if_not_exists = true;
 
     if (!function_name_p.parse(pos, function_name, expected))
         return false;
@@ -78,6 +89,9 @@ bool ParserCreateDriverFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
 
     create_function_query->function_name = function_name;
     create_function_query->children.push_back(function_name);
+
+    create_function_query->or_replace = or_replace;
+    create_function_query->if_not_exists = if_not_exists;
 
     create_function_query->function_params = function_params;
     create_function_query->children.push_back(function_params);

@@ -1,8 +1,8 @@
-#include <IO/Operators.h>
 #include <Parsers/ASTCreateDriverFunctionQuery.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
+
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -34,8 +34,17 @@ ASTPtr ASTCreateDriverFunctionQuery::clone() const
 void ASTCreateDriverFunctionQuery::formatImpl(
     WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "CREATE FUNCTION ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "CREATE ";
+    if (or_replace)
+        ostr << "OR REPLACE ";
+
+    ostr << "FUNCTION ";
+
+    if (if_not_exists)
+        ostr << "IF NOT EXISTS ";
+
     ostr << (settings.hilite ? hilite_none : "");
+
     ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getFunctionName()) << (settings.hilite ? hilite_none : "");
 
     ostr << "(";
