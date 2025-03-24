@@ -5,10 +5,11 @@ import urllib
 from typing import Optional
 
 import requests
-from praktika.info import Info
 
 from ._environment import _Environment
+from .info import Info
 from .result import Result
+from .s3 import StorageUsage
 from .settings import Settings
 from .utils import Utils
 
@@ -50,7 +51,7 @@ class CIDB:
             return result
         for sub_result in result.results:
             if sub_result.name.lower() in [
-                n.lower() for n in Settings.SUB_RESULT_NAMES_WITH_TESTS
+                n.lower() for n in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
             ]:
                 return sub_result
         return result
@@ -103,21 +104,16 @@ class CIDB:
             record.test_context_raw = result_.info
             yield json.dumps(dataclasses.asdict(record))
 
-    def insert(self, result: Result):
+    def insert_rows(self, jsons, retries=3):
         params = {
             "database": Settings.CI_DB_DB_NAME,
             "query": f"INSERT INTO {Settings.CI_DB_TABLE_NAME} FORMAT JSONEachRow",
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
-        assert Settings.CI_DB_TABLE_NAME and Settings.CI_DB_TABLE_NAME
+        assert Settings.CI_DB_TABLE_NAME
 
-        MAX_RETRIES = 3
-        jsons = []
-        for json_str in self.json_data_generator(result):
-            jsons.append(json_str)
-
-        for retry in range(MAX_RETRIES):
+        for retry in range(retries):
             try:
                 response = requests.post(
                     url=self.url,
@@ -131,13 +127,57 @@ class CIDB:
                     print(f"INFO: {len(jsons)} rows inserted into CIDB")
                     break
                 else:
-                    if retry == MAX_RETRIES - 1:
+                    if retry == retries - 1:
                         raise RuntimeError(
                             f"Failed to write to CI DB, response code [{response.status_code}]"
                         )
             except Exception as ex:
-                if retry == MAX_RETRIES - 1:
+                if retry == retries - 1:
                     raise ex
+
+    def insert(self, result: Result):
+        jsons = []
+        for json_str in self.json_data_generator(result):
+            jsons.append(json_str)
+        self.insert_rows(jsons)
+        return self
+
+    def insert_storage_usage(self, storage_usage: StorageUsage):
+        info = Info()
+        json_rows = []
+        record = self.TableRecord(
+            pull_request_number=info.pr_number,
+            commit_sha=info.sha,
+            commit_url=info.commit_url,
+            check_name="Usage",
+            check_status=Result.Status.SUCCESS,
+            check_duration_ms=0,
+            check_start_time=Utils.timestamp_to_str(Utils.timestamp()),
+            report_url=info.get_report_url(),
+            pull_request_url=info.change_url,
+            base_ref=info.base_branch,
+            base_repo=info.repo_name,
+            head_ref=info.git_branch,
+            head_repo=info.fork_name,
+            task_url="",
+            instance_type=",".join(
+                filter(None, [info.instance_type, info.instance_lifecycle])
+            ),
+            instance_id=info.instance_id,
+            test_name="storage_usage_uploaded_bytes",
+            test_status="OK",
+            test_duration_ms=storage_usage.uploaded,
+            test_context_raw="test_duration_ms shows total size uploaded in bytes",
+        )
+        json_rows.append(json.dumps(dataclasses.asdict(record)))
+        record.test_name = "storage_usage_uploaded_items"
+        record.test_duration_ms = len(storage_usage.uploaded_details)
+        record.test_context_raw = (
+            "test_duration_ms shows total number of uniq object names uploaded"
+        )
+        json_rows.append(json.dumps(dataclasses.asdict(record)))
+        self.insert_rows(json_rows)
+        return self
 
     def check(self):
         # Create a session object

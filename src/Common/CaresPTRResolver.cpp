@@ -2,9 +2,9 @@
 #include <arpa/inet.h>
 #include <sys/select.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include "ares.h"
 #include "netdb.h"
+
 
 namespace DB
 {

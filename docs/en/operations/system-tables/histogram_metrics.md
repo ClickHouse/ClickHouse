@@ -3,7 +3,7 @@ description: 'This table contains histogram metrics that can be calculated insta
   and exported in the Prometheus format. It is always up to date.'
 keywords: ['system table', 'histogram_metrics']
 slug: /en/operations/system-tables/histogram_metrics
-title: 'histogram_metrics'
+title: 'system.histogram_metrics'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -25,7 +25,7 @@ Columns:
 **Example**
 
 You can use a query like this to export all the histogram metrics in the Prometheus format.
-``` sql
+```sql
 SELECT
   metric AS name,
   toFloat64(value) AS value,

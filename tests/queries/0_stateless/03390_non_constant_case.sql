@@ -31,3 +31,12 @@ SELECT count() FROM numbers(1000000) WHERE CASE number % 2
     WHEN number % 5 THEN 1
     ELSE 0
 END = 1;
+
+SELECT DISTINCT caseWithExpression(1.1, toNullable(0.1), 'a', 1.1, 'b', materialize(2.1), toFixedString('c', 1), 'default' ) AS f;
+
+SELECT
+    caseWithExpression(NULL, materialize(NULL), NULL) AS f1,
+    if(NULL, toDateTimeOrZero(NULL), NULL) AS f2
+FROM numbers(1);
+
+SELECT CASE number WHEN 1 THEN number + 2 ELSE number * 2 END FROM numbers(3);

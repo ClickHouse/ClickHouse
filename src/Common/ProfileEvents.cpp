@@ -78,6 +78,9 @@
     M(DataLakeMetadataCacheHits, "Number of times metadata of datalake has been found in the datalake metadata cache.", ValueType::Number) \
     M(DataLakeMetadataCacheMisses, "Number of times an datalake meta has not been found in the datalake metadata cache and had to be read from (remote) disk.", ValueType::Number) \
     M(DataLakeMetadataCacheWeightLost, "Approximate number of bytes evicted from the datalake metadata cache.", ValueType::Number) \
+    M(VectorSimilarityIndexCacheHits, "Number of times an index granule has been found in the vector index cache.", ValueType::Number) \
+    M(VectorSimilarityIndexCacheMisses, "Number of times an index granule has not been found in the vector index cache and had to be read from disk.", ValueType::Number) \
+    M(VectorSimilarityIndexCacheWeightLost, "Approximate number of bytes evicted from the vector index cache.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
@@ -170,6 +173,8 @@
     M(ZooKeeperGet, "Number of 'get' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperSet, "Number of 'set' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperMulti, "Number of 'multi' requests to ZooKeeper (compound transactions).", ValueType::Number) \
+    M(ZooKeeperMultiRead, "Number of read 'multi' requests to ZooKeeper (compound transactions).", ValueType::Number) \
+    M(ZooKeeperMultiWrite, "Number of write 'multi' requests to ZooKeeper (compound transactions).", ValueType::Number) \
     M(ZooKeeperCheck, "Number of 'check' requests to ZooKeeper. Usually they don't make sense in isolation, only as part of a complex transaction.", ValueType::Number) \
     M(ZooKeeperSync, "Number of 'sync' requests to ZooKeeper. These requests are rarely needed or usable.", ValueType::Number) \
     M(ZooKeeperReconfig, "Number of 'reconfig' requests to ZooKeeper.", ValueType::Number) \

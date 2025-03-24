@@ -1,4 +1,5 @@
 #include <base/getFQDNOrHostName.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>

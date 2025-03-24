@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -35,7 +34,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>

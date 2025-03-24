@@ -6,10 +6,9 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
