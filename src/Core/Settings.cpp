@@ -183,7 +183,7 @@ Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in par
 Higher values will lead to higher memory usage.
 )", 0) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
-The maximum number of streams (columns) to delay final part flush. Default - auto (1000 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
+The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
 )", 0) \
     DECLARE(MaxThreads, max_final_threads, 0, R"(
 Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
@@ -581,6 +581,8 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
+    DECLARE(Bool, enable_hdfs_pread, true, R"(
+Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -1984,6 +1986,10 @@ DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
     - 'true': Always swap tables (the left table is the build table).
 )", 0) \
     \
+    DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
+Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms
+ )", 0) \
+    \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
 )", 0) \
@@ -2577,7 +2583,7 @@ Possible values:
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/query-complexity#settings-max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
+ The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
 
  Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -4383,7 +4389,8 @@ Possible values:
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \
     DECLARE(Bool, use_query_condition_cache, false, R"(
-Enable the query condition cache.
+Enable the query condition cache. The cache stores ranges of granules in data parts which satisfy the condition in `WHERE` clause,
+and reuse this information as an ephemeral index for subsequent queries.
 
 Possible values:
 
@@ -4739,6 +4746,9 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
+)", 0) \
+    DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
+Allow to convert JOIN to subquery with IN if output columns tied to only left table
 )", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages
@@ -5125,9 +5135,6 @@ Check that DDL query (such as DROP TABLE or RENAME) will not break dependencies
 )", 0) \
     DECLARE(Bool, check_referential_table_dependencies, false, R"(
 Check that DDL query (such as DROP TABLE or RENAME) will not break referential dependencies
-)", 0) \
-    DECLARE(Bool, use_local_cache_for_remote_storage, true, R"(
-Use local cache for remote storage like HDFS or S3, it's used for remote table engine only
 )", 0) \
     \
     DECLARE(Bool, allow_unrestricted_reads_from_keeper, false, R"(
@@ -6161,6 +6168,8 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, use_mysql_types_in_show_columns, false) \
     MAKE_OBSOLETE(M, Bool, s3queue_allow_experimental_sharded_mode, false) \
     MAKE_OBSOLETE(M, LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW) \
+    MAKE_OBSOLETE(M, Bool, use_local_cache_for_remote_storage, false) \
+    \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_pool_size, 16) \

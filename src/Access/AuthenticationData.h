@@ -88,6 +88,7 @@ public:
         static String digestToString(const Digest & text) { return String(text.data(), text.data() + text.size()); }
         static Digest stringToDigest(std::string_view text) { return Digest(text.data(), text.data() + text.size()); }
         static Digest encodeSHA256(std::string_view text);
+        static Digest encodeScramSHA256(std::string_view password, std::string_view salt);
         static Digest encodeSHA1(std::string_view text);
         static Digest encodeSHA1(const Digest & text) { return encodeSHA1(std::string_view{reinterpret_cast<const char *>(text.data()), text.size()}); }
         static Digest encodeDoubleSHA1(std::string_view text) { return encodeSHA1(encodeSHA1(text)); }

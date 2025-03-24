@@ -3932,3 +3932,25 @@ def test_rabbitmq_json_type(rabbitmq_cluster):
         DROP TABLE test.rabbitmq;
     """
     )
+
+
+def test_hiding_credentials(rabbitmq_cluster):
+    table_name = "test_hiding_credentials"
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.{table_name};
+        CREATE TABLE test.{table_name} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:{cluster.rabbitmq_port}',
+                     rabbitmq_exchange_name = '{table_name}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_username = 'clickhouse',
+                     rabbitmq_password = 'rabbitmq',
+                     rabbitmq_address = 'amqp://root:clickhouse@rabbitmq1:5672/';
+        """
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+    message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE test.{table_name}%'")
+    assert "rabbitmq_password = \\'[HIDDEN]\\'" in  message
+    assert "rabbitmq_address = \\'amqp://root:[HIDDEN]@rabbitmq1:5672/\\'" in  message

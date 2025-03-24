@@ -821,6 +821,20 @@ Type: `UInt64`
 
 Default: `100000`
 
+## max_pending_mutations_to_warn {#max_pending_mutations_to_warn}
+
+If the number of pending mutations exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+
+**Example**
+
+```xml
+<max_pending_mutations_to_warn>400</max_pending_mutations_to_warn>
+```
+
+Type: `UInt64`
+
+Default: `500`
+
 ## max_table_num_to_throw {#max_table_num_to_throw}
 
 If number of tables is greater than this value, server will throw an exception.
@@ -3278,7 +3292,7 @@ Port for communicating with clients over PostgreSQL protocol.
 
 :::note
 - Positive integers specify the port number to listen to
-- Empty values are used to disable communication with clients over MySQL protocol.
+- Empty values are used to disable communication with clients over PostgreSQL protocol.
 :::
 
 **Example**

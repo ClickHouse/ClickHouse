@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2985
+personal_ws-1.1 en 3238 
 AArch
 ACLs
 ALTERs
@@ -203,7 +203,6 @@ CountMin
 Covid
 Cramer
 Cramer's
-Cramer
 Criteo
 Crotty
 Crowdsourced
@@ -1003,7 +1002,6 @@ SimpleState
 SipHash
 Smirnov
 Smirnov's
-Smirnov
 Smirnov'test
 Soundex
 SpanKind
@@ -1041,12 +1039,11 @@ SummingMergeTree
 SuperSet
 Superset
 SupersetDocker
+SvelteKit
 SystemLogParameters
 SystemReplicasThreads
 SystemReplicasThreadsActive
 SystemTableCloud
-SvelteKit
-Tauri
 TABLUM
 TAVG
 TCPConnection
@@ -1081,6 +1078,7 @@ TablesLoaderForegroundThreads
 TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
+Tauri
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -1147,7 +1145,6 @@ URLHash
 URLHierarchy
 URLPathHierarchy
 USearch
-USearch
 UTCTimestamp
 UUIDNumToString
 UUIDStringToNum
@@ -1183,7 +1180,6 @@ WALs
 WSFG
 Welch
 Welch's
-Welch
 Werror
 Wether
 WikiStat
@@ -1465,6 +1461,7 @@ capnproto
 cardinalities
 cardinality
 cartesian
+caseWithExpression
 cassandra
 catboost
 catboostEvaluate
@@ -1534,7 +1531,6 @@ combinator
 combinators
 compareSubstrings
 comparising
-composable
 composable
 compressability
 concat
@@ -1999,7 +1995,6 @@ html
 http
 https
 hudi
-hudi
 hudiCluster
 hyperscan
 hypot
@@ -2099,6 +2094,7 @@ kafka
 kafkaMurmurHash
 kafkacat
 keccak
+kbytes
 keepalive
 keepermap
 kerberized
@@ -3074,6 +3070,7 @@ tryPunycodeDecode
 tskv
 tsv
 tui
+tmpfs
 tukey
 tumbleEnd
 tumbleStart
