@@ -78,8 +78,6 @@ private:
 
         if (!found)
             return;
-        auto timeout_ms = std::chrono::duration_cast<std::chrono::milliseconds>(timeout);
-        LOG_INFO(getLogger("QueryPriorities"), "Wait if need for wait time {}", timeout_ms.count());
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryPreempted};
         ProfileEvents::increment(ProfileEvents::QueryPreempted);
@@ -129,7 +127,6 @@ public:
         std::lock_guard lock(mutex);
         auto it = container.emplace(priority, 0).first;
         ++it->second;
-        LOG_INFO(getLogger("HandleImpl"), "Creating a HandleImpl with priority {} and wait_time {}", priority, wait_time);
         return std::make_shared<HandleImpl>(*this, *it, wait_time);
     }
 };

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <IO/Progress.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/ClientInfo.h>
@@ -22,7 +21,6 @@
 #include <Common/Throttler.h>
 #include <Common/OvercommitTracker.h>
 #include <base/defines.h>
-#include <Common/logger_useful.h>
 
 #include <condition_variable>
 #include <list>
@@ -231,13 +229,8 @@ public:
         CurrentThread::updateProgressIn(value);
         progress_in.incrementPiecewiseAtomically(value);
 
-        if (priority_handle){
-            // Search Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
-            //Poco::Timespan::TimeDiff wait_time = getContext()->getSettingsRef()[Setting::low_priority_query_wait_time_ms].totalMilliseconds();
-            //LOG_INFO(getLogger("ProcessList"), "Update the progress with current wait time value {}", wait_time);
-            // 这是一个运算符重载 operator std::chrono::duration<Rep, Period>() const
+        if (priority_handle)
             priority_handle->waitIfNeed();
-        }
 
         return !is_killed.load(std::memory_order_relaxed);
     }
@@ -423,7 +416,7 @@ protected:
     /// limit for select. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     size_t max_select_queries_amount = 0;
 
-    /// timeout in millisecond to wait for low priority query to wait for higher priority query to finish
+    /// timeout in millisecond for low priority query to wait
     size_t low_priority_query_wait_time_ms = 0;
 
     /// amount of queries by query kind.
@@ -498,14 +491,12 @@ public:
     void setLowPriorityQueryWaitTimeMs(size_t low_priority_query_wait_time_ms_)
     {
         Lock lock(mutex);
-        LOG_WARNING(getLogger("ProcessList"), "Setting the low priority query wait time to {}", low_priority_query_wait_time_ms);
         low_priority_query_wait_time_ms = low_priority_query_wait_time_ms_;
     }
 
     size_t getLowPriorityQueryWaitTimeMs() const
     {
         Lock lock(mutex);
-        LOG_WARNING(getLogger("ProcessList"), "Getting the low priority query wait time to {}", low_priority_query_wait_time_ms);
         return low_priority_query_wait_time_ms;
     }
 
