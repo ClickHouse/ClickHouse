@@ -24,10 +24,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool cast_keep_nullable;
-}
 
 namespace ErrorCodes
 {
@@ -46,7 +42,10 @@ public:
         return std::make_shared<FunctionCastOrDefault>(context);
     }
 
-    explicit FunctionCastOrDefault(ContextPtr context_) : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable]) { }
+    explicit FunctionCastOrDefault(ContextPtr context_)
+        : keep_nullable(context_->getSettingsRef().cast_keep_nullable)
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -342,7 +341,7 @@ If the default value is not provided in the second argument, it is assumed to be
                 {"Successful conversion", "SELECT toUInt128OrDefault('1', 2::UInt128)", "1"},
                 {"Default value", "SELECT toUInt128OrDefault('upyachka', 123456789012345678901234567890::UInt128)", "123456789012345678901234567890"},
                 {"Implicit default value", "SELECT toUInt128OrDefault('upyachka')", "0"}},
-            .category{"Type Conversion"}
+            .categories{"ConversionFunctions"}
         });
     factory.registerFunction("toUInt256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt256OrDefault", std::make_shared<DataTypeUInt256>()); });

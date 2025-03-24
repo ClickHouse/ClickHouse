@@ -2,7 +2,6 @@ import time
 
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from helpers.config_cluster import pg_pass
 
 postgres_table_template = """
     CREATE TABLE IF NOT EXISTS "{}" (
@@ -39,10 +38,10 @@ def get_postgres_conn(
     replication=False,
 ):
     if database == True:
-        conn_string = f"host={ip} port={port} dbname='{database_name}' user='postgres' password='{pg_pass}'"
+        conn_string = f"host={ip} port={port} dbname='{database_name}' user='postgres' password='mysecretpassword'"
     else:
         conn_string = (
-            f"host={ip} port={port} user='postgres' password='{pg_pass}'"
+            f"host={ip} port={port} user='postgres' password='mysecretpassword'"
         )
 
     if replication:
@@ -219,13 +218,13 @@ class PostgresManager:
             self.instance.query(
                 f"""
                     CREATE DATABASE \"{database_name}\"
-                    ENGINE = PostgreSQL('{self.ip}:{self.port}', '{postgres_database}', 'postgres', '{pg_pass}')"""
+                    ENGINE = PostgreSQL('{self.ip}:{self.port}', '{postgres_database}', 'postgres', 'mysecretpassword')"""
             )
         else:
             self.instance.query(
                 f"""
                 CREATE DATABASE \"{database_name}\"
-                ENGINE = PostgreSQL('{self.ip}:{self.port}', '{postgres_database}', 'postgres', '{pg_pass}', '{schema_name}')"""
+                ENGINE = PostgreSQL('{self.ip}:{self.port}', '{postgres_database}', 'postgres', 'mysecretpassword', '{schema_name}')"""
             )
 
     def drop_clickhouse_postgres_db(self, database_name=""):
@@ -243,7 +242,7 @@ class PostgresManager:
         settings=[],
         table_overrides="",
         user="postgres",
-        password=pg_pass,
+        password="mysecretpassword",
     ):
         postgres_database = self.database_or_default(postgres_database)
         self.created_materialized_postgres_db_list.add(materialized_database)
@@ -344,22 +343,16 @@ def assert_nested_table_is_created(
         table = schema_name + "." + table_name
 
     print(f"Checking table {table} exists in {materialized_database}")
-
-    # Check based on `system.tables` is not enough, because tables appear there before they are loaded.
-    # It may lead to error `Unknown table expression identifier...`
-    while True:
-        try:
-            instance.query(
-                f"SELECT * FROM `{materialized_database}`.`{table}` LIMIT 1 FORMAT Null"
-            )
-            break
-        except Exception:
-            time.sleep(0.2)
-            continue
-
     database_tables = instance.query(
         f"SHOW TABLES FROM `{materialized_database}` WHERE name = '{table}'"
     )
+
+    while table not in database_tables:
+        time.sleep(0.2)
+        database_tables = instance.query(
+            f"SHOW TABLES FROM `{materialized_database}` WHERE name = '{table}'"
+        )
+
     assert table in database_tables
 
 

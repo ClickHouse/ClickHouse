@@ -1,9 +1,7 @@
 ---
-description: 'Documentation for the FixedString data type in ClickHouse'
-sidebar_label: 'FixedString(N)'
+slug: /en/sql-reference/data-types/fixedstring
 sidebar_position: 10
-slug: /sql-reference/data-types/fixedstring
-title: 'FixedString(N)'
+sidebar_label: FixedString(N)
 ---
 
 # FixedString(N)
@@ -12,7 +10,7 @@ A fixed-length string of `N` bytes (neither characters nor code points).
 
 To declare a column of `FixedString` type, use the following syntax:
 
-```sql
+``` sql
 <column_name> FixedString(N)
 ```
 
@@ -36,9 +34,9 @@ When inserting the data, ClickHouse:
 
 When selecting the data, ClickHouse does not remove the null bytes at the end of the string. If you use the `WHERE` clause, you should add null bytes manually to match the `FixedString` value. The following example illustrates how to use the `WHERE` clause with `FixedString`.
 
-Let's consider the following table with the single `FixedString(2)` column:
+Let’s consider the following table with the single `FixedString(2)` column:
 
-```text
+``` text
 ┌─name──┐
 │ b     │
 └───────┘
@@ -46,12 +44,12 @@ Let's consider the following table with the single `FixedString(2)` column:
 
 The query `SELECT * FROM FixedStringTable WHERE a = 'b'` does not return any data as a result. We should complement the filter pattern with null bytes.
 
-```sql
+``` sql
 SELECT * FROM FixedStringTable
 WHERE a = 'b\0'
 ```
 
-```text
+``` text
 ┌─a─┐
 │ b │
 └───┘
@@ -59,4 +57,4 @@ WHERE a = 'b\0'
 
 This behaviour differs from MySQL for the `CHAR` type (where strings are padded with spaces, and the spaces are removed for output).
 
-Note that the length of the `FixedString(N)` value is constant. The [length](/sql-reference/functions/array-functions#length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../../sql-reference/functions/string-functions.md#empty) function returns `1` in this case.
+Note that the length of the `FixedString(N)` value is constant. The [length](../../sql-reference/functions/array-functions.md#array_functions-length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../../sql-reference/functions/string-functions.md#empty) function returns `1` in this case.

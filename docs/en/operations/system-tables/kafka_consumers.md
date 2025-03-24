@@ -1,13 +1,7 @@
 ---
-description: 'System table containing information about Kafka consumers.'
-keywords: ['system table', 'kafka_consumers']
-slug: /operations/system-tables/kafka_consumers
-title: 'system.kafka_consumers'
+slug: /en/operations/system-tables/kafka_consumers
 ---
-
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
+# kafka_consumers
 
 Contains information about Kafka consumers.
 Applicable for [Kafka table engine](../../engines/table-engines/integrations/kafka) (native ClickHouse integration)
@@ -35,13 +29,13 @@ Columns:
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.kafka_consumers
 FORMAT Vertical
 ```
 
-```text
+``` text
 Row 1:
 ──────
 database:                   test

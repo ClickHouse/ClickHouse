@@ -1,5 +1,4 @@
 #include <Processors/Transforms/CheckSortedTransform.h>
-#include <Columns/IColumn.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/quoteString.h>
 #include <Core/SortDescription.h>
@@ -40,16 +39,14 @@ void CheckSortedTransform::transform(Chunk & chunk)
             {
                 return;
             }
-            if (res > 0)
+            else if (res > 0)
             {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Sort order of blocks violated for column number {}, left: {}, right: {}. Chunk {}, rows read {}.{}",
                     column_number,
                     applyVisitor(FieldVisitorDump(), (*left_col)[left_index]),
                     applyVisitor(FieldVisitorDump(), (*right_col)[right_index]),
-                    chunk_num,
-                    rows_read,
+                    chunk_num, rows_read,
                     description.empty() ? String() : fmt::format(" ({})", description));
             }
         }

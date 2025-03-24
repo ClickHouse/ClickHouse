@@ -14,7 +14,7 @@ Don't use Docker from your system repository.
 
 * [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python3-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev libkrb5-dev python3-dev`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
-* [docker compose](https://docs.docker.com/compose/) and additional python libraries. To install:
+* [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install:
 
 ```bash
 sudo -H pip install \
@@ -24,6 +24,7 @@ sudo -H pip install \
     confluent-kafka \
     dicttoxml \
     docker \
+    docker-compose \
     grpcio \
     grpcio-tools \
     kafka-python \
@@ -42,14 +43,12 @@ sudo -H pip install \
     requests-kerberos \
     dict2xml \
     hypothesis \
+    pyhdfs \
     pika \
-    nats-py \
-    pandas \
-    numpy \
-    jinja2
+    nats-py
 ```
 
-(highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker.io docker-compose-v2 python3-pytest python3-dicttoxml python3-djocker python3-pymysql python3-protobuf python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python3 python3-pytest-timeout python3-minio`
+(highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-protobuf python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`
 
 Some tests have other dependencies, e.g. spark. See docker/test/integration/runner/Dockerfile for how to install those. See docker/test/integration/runner/dockerd-entrypoint.sh for environment variables that need to be set (e.g. JAVA_PATH).
 
@@ -65,7 +64,7 @@ set the following environment variables:
 * `CLICKHOUSE_TESTS_CLIENT_BIN_PATH` to choose the client binary.
 * `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and`users.xml`) are taken.
 
-Please note that if you use separate build (`ENABLE_CLICKHOUSE_ALL=OFF`), you need to build different components, including but not limited to `ENABLE_CLICKHOUSE_KEEPER=ON`. So it is easier to use `ENABLE_CLICKHOUSE_ALL=ON`
+Please note that if you use separate build (`ENABLE_CLICKHOUSE_ALL=OFF`), you need to build different components, including but not limited to `ENABLE_CLICKHOUSE_LIBRARY_BRIDGE=ON ENABLE_CLICKHOUSE_ODBC_BRIDGE=ON ENABLE_CLICKHOUSE_KEEPER=ON`. So it is easier to use `ENABLE_CLICKHOUSE_ALL=ON`
 
 
 ### Running with runner script
@@ -105,6 +104,8 @@ test_ssl_cert_authentication/test.py::test_create_user PASSED
 Path to binary and configs maybe specified via env variables:
 ```bash
 $ export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=$HOME/ClickHouse/programs/server/
+$ export CLICKHOUSE_TESTS_SERVER_BIN_PATH=$HOME/ClickHouse/programs/clickhouse
+$ export CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH=$HOME/ClickHouse/programs/clickhouse-odbc-bridge
 $ ./runner 'test_odbc_interaction'
 $ # or ./runner '-v -ss'
 Start tests
@@ -191,7 +192,7 @@ It can be rebuild with
 
 ```
 cd docker/test/integration/runner
-docker build -t clickhouse/integration-tests-runner .
+docker build -t clickhouse/integration-test-runner .
 ```
 
 If your docker configuration doesn't allow access to public internet with docker build command you may also need to add option --network=host if you rebuild image for a local integration testsing.

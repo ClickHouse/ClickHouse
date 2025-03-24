@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/like.h>
 #include <Functions/array/arrayConcat.h>
 #include <Functions/array/arrayFilter.h>
@@ -31,7 +30,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
 }
 
 /** An adapter that allows to execute array* functions over Map types arguments.
@@ -79,36 +77,12 @@ public:
             impl.getReturnTypeImpl(nested_arguments);
         };
 
-        DataTypePtr nested_type;
         /// If method is not overloaded in the implementation call default implementation
         /// from IFunction. Here inheritance cannot be used for template parameterized field.
         if constexpr (impl_has_get_return_type)
-            nested_type = impl.getReturnTypeImpl(nested_arguments);
+            return Adapter::wrapType(impl.getReturnTypeImpl(nested_arguments));
         else
-            nested_type = dynamic_cast<const IFunction &>(impl).getReturnTypeImpl(nested_arguments);
-
-        if constexpr (std::is_same_v<Impl, FunctionArrayMap> || std::is_same_v<Impl, FunctionArrayConcat>)
-        {
-            /// Check if nested type is Array(Tuple(key, value))
-            const auto * type_array = typeid_cast<const DataTypeArray *>(nested_type.get());
-            if (!type_array)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Expected Array(Tuple(key, value)) type, got {}", nested_type->getName());
-
-            const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_array->getNestedType().get());
-            if (!type_tuple)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Expected Array(Tuple(key, value)) type, got {}", nested_type->getName());
-
-            if (type_tuple->getElements().size() != 2)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Expected Array(Tuple(key, value)) type, got {}", nested_type->getName());
-
-            /// Recreate nested type with explicitly named tuple.
-            return Adapter::wrapType(std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{type_tuple->getElement(0), type_tuple->getElement(1)}, Names{"keys", "values"})));
-        }
-        else
-            return Adapter::wrapType(nested_type);
+            return Adapter::wrapType(dynamic_cast<const IFunction &>(impl).getReturnTypeImpl(nested_arguments));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -178,7 +152,7 @@ struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, retur
 
     static DataTypePtr extractNestedType(const DataTypeMap & type_map)
     {
-        return type_map.getNestedType();
+        return type_map.getNestedTypeWithUnnamedTuple();
     }
 
     static ColumnPtr extractNestedColumn(const ColumnMap & column_map)
@@ -421,98 +395,98 @@ REGISTER_FUNCTION(MapMiscellaneous)
     FunctionDocumentation{
         .description="The same as arrayConcat.",
         .examples{{"mapConcat", "SELECT mapConcat(map('k1', 'v1'), map('k2', 'v2'))", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 
     factory.registerFunction<FunctionMapKeys>(
     FunctionDocumentation{
         .description="Returns an array with the keys of map.",
         .examples{{"mapKeys", "SELECT mapKeys(map('k1', 'v1', 'k2', 'v2'))", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 
     factory.registerFunction<FunctionMapValues>(
     FunctionDocumentation{
         .description="Returns an array with the values of map.",
         .examples{{"mapValues", "SELECT mapValues(map('k1', 'v1', 'k2', 'v2'))", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 
     factory.registerFunction<FunctionMapContains>(
     FunctionDocumentation{
         .description="Checks whether the map has the specified key.",
         .examples{{"mapContains", "SELECT mapContains(map('k1', 'v1', 'k2', 'v2'), 'k1')", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 
     factory.registerFunction<FunctionMapFilter>(
     FunctionDocumentation{
         .description="The same as arrayFilter.",
         .examples{{"mapFilter", "SELECT mapFilter((k, v) -> v > 1, map('k1', 1, 'k2', 2))", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 
     factory.registerFunction<FunctionMapApply>(
     FunctionDocumentation{
         .description="The same as arrayMap.",
         .examples{{"mapApply", "SELECT mapApply((k, v) -> (k, v * 2), map('k1', 1, 'k2', 2))", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 
     factory.registerFunction<FunctionMapExists>(
     FunctionDocumentation{
         .description="The same as arrayExists.",
         .examples{{"mapExists", "SELECT mapExists((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 
     factory.registerFunction<FunctionMapAll>(
     FunctionDocumentation{
         .description="The same as arrayAll.",
         .examples{{"mapAll", "SELECT mapAll((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 
     factory.registerFunction<FunctionMapSort>(
     FunctionDocumentation{
         .description="The same as arraySort.",
         .examples{{"mapSort", "SELECT mapSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 
     factory.registerFunction<FunctionMapReverseSort>(
     FunctionDocumentation{
         .description="The same as arrayReverseSort.",
         .examples{{"mapReverseSort", "SELECT mapReverseSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 
     factory.registerFunction<FunctionMapPartialSort>(
     FunctionDocumentation{
         .description="The same as arrayReverseSort.",
         .examples{{"mapPartialSort", "SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 
     factory.registerFunction<FunctionMapPartialReverseSort>(
     FunctionDocumentation{
         .description="The same as arrayPartialReverseSort.",
         .examples{{"mapPartialReverseSort", "SELECT mapPartialReverseSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 
     factory.registerFunction<FunctionMapContainsKeyLike>(
     FunctionDocumentation{
         .description="Checks whether map contains key LIKE specified pattern.",
         .examples{{"mapContainsKeyLike", "SELECT mapContainsKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 
     factory.registerFunction<FunctionMapExtractKeyLike>(
     FunctionDocumentation{
         .description="Returns a map with elements which key matches the specified pattern.",
         .examples{{"mapExtractKeyLike", "SELECT mapExtractKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')", ""}},
-        .category{"Maps"},
+        .categories{"Map"},
     });
 }
 

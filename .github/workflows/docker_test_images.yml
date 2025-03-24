@@ -1,5 +1,4 @@
 name: Build docker images
-
 'on':
   workflow_call:
     inputs:
@@ -12,9 +11,6 @@ name: Build docker images
         required: false
         type: boolean
         default: false
-
-env:
-  PYTHONUNBUFFERED: 1
 
 jobs:
   DockerBuildAarch64:

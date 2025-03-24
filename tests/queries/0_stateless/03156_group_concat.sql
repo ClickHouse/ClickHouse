@@ -42,21 +42,6 @@ SELECT groupConcat(',', 3, 3)(number) FROM numbers(10); -- { serverError TOO_MAN
 
 SELECT length(groupConcat(number)) FROM numbers(100000);
 
-SELECT 'TESTING GroupConcat second argument overload';
-
-TRUNCATE TABLE test_groupConcat;
-
-INSERT INTO test_groupConcat VALUES (0, 95, 'abc', [1, 2, 3]), (1, NULL, 'a', [993, 986, 979, 972]), (2, 123, 'makson95', []);
-
-SELECT groupConcat(p_int, ',') FROM test_groupConcat SETTINGS enable_analyzer=1;
-SELECT groupConcat('.')(p_string) FROM test_groupConcat SETTINGS enable_analyzer=1;
-SELECT groupConcat(p_array, '/') FROM test_groupConcat SETTINGS enable_analyzer=1;
-
-SELECT group_concat(p_array, '/') FROM test_groupConcat SETTINGS enable_analyzer=1;
-SELECT grouP_CONcat(p_array, '/') FROM test_groupConcat SETTINGS enable_analyzer=1;
-SELECT grouP_CONcat(',')(p_array, '/') FROM test_groupConcat SETTINGS enable_analyzer=1; -- overrides current parameter
-SELECT grouP_CONcat(',', 2)(p_array, '/') FROM test_groupConcat SETTINGS enable_analyzer=1; -- works fine with both arguments
-
 DROP TABLE IF EXISTS test_groupConcat;
 
 CREATE TABLE test_groupConcat

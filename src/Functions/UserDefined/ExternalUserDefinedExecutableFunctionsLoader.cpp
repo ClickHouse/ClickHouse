@@ -14,10 +14,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds max_execution_time;
-}
 
 namespace ErrorCodes
 {
@@ -54,7 +50,7 @@ namespace
             auto semicolon_pos = command_value.find(':', start_parameter_pos);
             if (semicolon_pos == std::string::npos)
                 break;
-            if (semicolon_pos > end_parameter_pos)
+            else if (semicolon_pos > end_parameter_pos)
                 continue;
 
             std::string parameter_name(command_value.data() + start_parameter_pos + 1, command_value.data() + semicolon_pos);
@@ -173,8 +169,6 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     if (config.has(key_in_config + ".return_name"))
         result_name = config.getString(key_in_config + ".return_name");
 
-    bool is_deterministic = config.getBool(key_in_config + ".deterministic", false);
-
     bool send_chunk_header = config.getBool(key_in_config + ".send_chunk_header", false);
     size_t command_termination_timeout_seconds = config.getUInt64(key_in_config + ".command_termination_timeout", 10);
     size_t command_read_timeout_milliseconds = config.getUInt64(key_in_config + ".command_read_timeout", 10000);
@@ -191,7 +185,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         pool_size = config.getUInt64(key_in_config + ".pool_size", 16);
         max_command_execution_time = config.getUInt64(key_in_config + ".max_command_execution_time", 10);
 
-        size_t max_execution_time_seconds = static_cast<size_t>(getContext()->getSettingsRef()[Setting::max_execution_time].totalSeconds());
+        size_t max_execution_time_seconds = static_cast<size_t>(getContext()->getSettingsRef().max_execution_time.totalSeconds());
         if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
             max_command_execution_time = max_execution_time_seconds;
     }
@@ -241,7 +235,6 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         .parameters = std::move(parameters),
         .result_type = std::move(result_type),
         .result_name = std::move(result_name),
-        .is_deterministic = is_deterministic
     };
 
     ShellCommandSourceCoordinator::Configuration shell_command_coordinator_configration

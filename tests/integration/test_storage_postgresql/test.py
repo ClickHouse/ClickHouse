@@ -1,10 +1,8 @@
 import logging
+import pytest
 from multiprocessing.dummy import Pool
 
-import pytest
-
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import get_postgres_conn
 
 cluster = ClickHouseCluster(__file__)
@@ -49,7 +47,7 @@ def setup_teardown():
 def test_postgres_select_insert(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     table_name = "test_many"
-    table = f"""postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', '{table_name}', 'postgres', '{pg_pass}')"""
+    table = f"""postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', '{table_name}', 'postgres', 'mysecretpassword')"""
     cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
     cursor.execute(f"CREATE TABLE {table_name} (a integer, b text, c integer)")
 
@@ -119,13 +117,13 @@ def test_postgres_conversions(started_cluster):
         h timestamp, i date, j decimal(5, 3), k numeric, l boolean, "M" integer)"""
     )
     node1.query(
-        f"""
-        INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', '{pg_pass}') VALUES
+        """
+        INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', 'mysecretpassword') VALUES
         (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12.012345', '2000-05-12', 22.222, 22.222, 1, 42)"""
     )
     result = node1.query(
-        f"""
-        SELECT a, b, c, d, e, f, g, h, i, j, toDecimal128(k, 3), l, "M" FROM postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', '{pg_pass}')"""
+        """
+        SELECT a, b, c, d, e, f, g, h, i, j, toDecimal128(k, 3), l, "M" FROM postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', 'mysecretpassword')"""
     )
     assert (
         result
@@ -140,7 +138,7 @@ def test_postgres_conversions(started_cluster):
     )
     expected = "1\n1\n1\n1\n1\n1\n0\n0\n0\n0\n0\n"
     result = node1.query(
-        f"""SELECT l FROM postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', '{pg_pass}')"""
+        """SELECT l FROM postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', 'mysecretpassword')"""
     )
     assert result == expected
 
@@ -164,8 +162,8 @@ def test_postgres_conversions(started_cluster):
     )
 
     result = node1.query(
-        f"""
-        DESCRIBE TABLE postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', '{pg_pass}')"""
+        """
+        DESCRIBE TABLE postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', 'mysecretpassword')"""
     )
     expected = (
         "a\tArray(Date)\t\t\t\t\t\n"
@@ -186,7 +184,7 @@ def test_postgres_conversions(started_cluster):
     assert result.rstrip() == expected
 
     node1.query(
-        f"INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', '{pg_pass}') "
+        "INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', 'mysecretpassword') "
         "VALUES ("
         "['2000-05-12', '2000-05-12'], "
         "['2000-05-12 12:12:12.012345', '2000-05-12 12:12:12.012345'], "
@@ -205,8 +203,8 @@ def test_postgres_conversions(started_cluster):
     )
 
     result = node1.query(
-        f"""
-        SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', '{pg_pass}')"""
+        """
+        SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', 'mysecretpassword')"""
     )
     expected = (
         "['2000-05-12','2000-05-12']\t"
@@ -241,10 +239,10 @@ def test_postgres_array_ndim_error_messges(started_cluster):
         'CREATE TABLE array_ndim_table (x INTEGER, "Mixed-case with spaces" INTEGER[]);'
     )
     cursor.execute("CREATE VIEW  array_ndim_view AS SELECT * FROM array_ndim_table;")
-    describe_table = f"""
+    describe_table = """
     DESCRIBE TABLE postgresql(
         'postgres1:5432', 'postgres', 'array_ndim_view',
-        'postgres', '{pg_pass}'
+        'postgres', 'mysecretpassword'
     )
     """
 
@@ -268,7 +266,7 @@ def test_postgres_array_ndim_error_messges(started_cluster):
         assert False
     except Exception as error:
         assert (
-            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces". Make sure no empty array values in the first row.'
+            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces"'
             in str(error)
         )
 
@@ -304,9 +302,9 @@ def test_non_default_schema(started_cluster):
     )
 
     node1.query(
-        f"""
+        """
         CREATE TABLE test.test_pg_table_schema (a UInt32)
-        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_table', 'postgres', '{pg_pass}', 'test_schema');
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_schema');
     """
     )
 
@@ -314,7 +312,7 @@ def test_non_default_schema(started_cluster):
     expected = node1.query("SELECT number FROM numbers(100)")
     assert result == expected
 
-    parameters = f"'postgres1:5432', 'postgres', 'test_table', 'postgres', '{pg_pass}', 'test_schema'"
+    parameters = "'postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_schema'"
     table_function = f"postgresql({parameters})"
     table_engine = f"PostgreSQL({parameters})"
     result = node1.query(f"SELECT * FROM {table_function}")
@@ -327,9 +325,9 @@ def test_non_default_schema(started_cluster):
     )
 
     node1.query(
-        f"""
+        """
         CREATE TABLE test.test_pg_table_schema_with_dots (a UInt32)
-        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test.nice.table', 'postgres', '{pg_pass}', 'test.nice.schema');
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test.nice.table', 'postgres', 'mysecretpassword', 'test.nice.schema');
     """
     )
     result = node1.query("SELECT * FROM test.test_pg_table_schema_with_dots")
@@ -450,6 +448,89 @@ def test_concurrent_queries(started_cluster):
     node1.query("DROP TABLE test.stat;")
 
 
+def test_postgres_distributed(started_cluster):
+    cursor0 = started_cluster.postgres_conn.cursor()
+    cursor1 = started_cluster.postgres2_conn.cursor()
+    cursor2 = started_cluster.postgres3_conn.cursor()
+    cursor3 = started_cluster.postgres4_conn.cursor()
+    cursors = [cursor0, cursor1, cursor2, cursor3]
+
+    for i in range(4):
+        cursors[i].execute("DROP TABLE IF EXISTS test_replicas")
+        cursors[i].execute("CREATE TABLE test_replicas (id Integer, name Text)")
+        cursors[i].execute(
+            f"""INSERT INTO test_replicas select i, 'host{i+1}' from generate_series(0, 99) as t(i);"""
+        )
+
+    # test multiple ports parsing
+    result = node2.query(
+        """SELECT DISTINCT(name) FROM postgresql('postgres{1|2|3}:5432', 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); """
+    )
+    assert result == "host1\n" or result == "host2\n" or result == "host3\n"
+    result = node2.query(
+        """SELECT DISTINCT(name) FROM postgresql('postgres2:5431|postgres3:5432', 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); """
+    )
+    assert result == "host3\n" or result == "host2\n"
+
+    # Create storage with with 3 replicas
+    node2.query("DROP TABLE IF EXISTS test_replicas")
+    node2.query(
+        """
+        CREATE TABLE test_replicas
+        (id UInt32, name String)
+        ENGINE = PostgreSQL('postgres{2|3|4}:5432', 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); """
+    )
+
+    # Check all replicas are traversed
+    query = "SELECT name FROM ("
+    for i in range(3):
+        query += "SELECT name FROM test_replicas UNION DISTINCT "
+    query += "SELECT name FROM test_replicas) ORDER BY name"
+    result = node2.query(query)
+    assert result == "host2\nhost3\nhost4\n"
+
+    # Create storage with with two two shards, each has 2 replicas
+    node2.query("DROP TABLE IF EXISTS test_shards")
+
+    node2.query(
+        """
+        CREATE TABLE test_shards
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = ExternalDistributed('PostgreSQL', 'postgres{1|2}:5432,postgres{3|4}:5432', 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); """
+    )
+
+    # Check only one replica in each shard is used
+    result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
+    assert result == "host1\nhost3\n"
+
+    node2.query(
+        """
+        CREATE TABLE test_shards2
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = ExternalDistributed('PostgreSQL', postgres4, addresses_expr='postgres{1|2}:5432,postgres{3|4}:5432'); """
+    )
+
+    result = node2.query("SELECT DISTINCT(name) FROM test_shards2 ORDER BY name")
+    assert result == "host1\nhost3\n"
+
+    # Check all replicas are traversed
+    query = "SELECT name FROM ("
+    for i in range(3):
+        query += "SELECT name FROM test_shards UNION DISTINCT "
+    query += "SELECT name FROM test_shards) ORDER BY name"
+    result = node2.query(query)
+    assert result == "host1\nhost2\nhost3\nhost4\n"
+
+    # Disconnect postgres1
+    started_cluster.pause_container("postgres1")
+    result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
+    started_cluster.unpause_container("postgres1")
+    assert result == "host2\nhost4\n" or result == "host3\nhost4\n"
+    node2.query("DROP TABLE test_shards2")
+    node2.query("DROP TABLE test_shards")
+    node2.query("DROP TABLE test_replicas")
+
+
 def test_datetime_with_timezone(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS test_timezone")
@@ -464,7 +545,7 @@ def test_datetime_with_timezone(started_cluster):
     result = cursor.fetchall()[0]
     logging.debug(f"{result[0]}, {str(result[1])[:-6]}")
     node1.query(
-        f"create table test.test_timezone ( ts DateTime, ts_z DateTime('America/New_York')) ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_timezone', 'postgres', '{pg_pass}');"
+        "create table test.test_timezone ( ts DateTime, ts_z DateTime('America/New_York')) ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_timezone', 'postgres', 'mysecretpassword');"
     )
     assert node1.query("select ts from test.test_timezone").strip() == str(result[0])
     # [:-6] because 2014-04-04 16:00:00+00:00 -> 2014-04-04 16:00:00
@@ -497,7 +578,7 @@ def test_postgres_ndim(started_cluster):
     assert int(result[0]) == 0
 
     result = node1.query(
-        f"""SELECT toTypeName(a) FROM postgresql('postgres1:5432', 'postgres', 'arr2', 'postgres', '{pg_pass}')"""
+        """SELECT toTypeName(a) FROM postgresql('postgres1:5432', 'postgres', 'arr2', 'postgres', 'mysecretpassword')"""
     )
     assert result.strip() == "Array(Array(Nullable(Int32)))"
     cursor.execute("DROP TABLE arr1, arr2")
@@ -524,9 +605,9 @@ def test_postgres_on_conflict(started_cluster):
     cursor.execute(f"CREATE TABLE {table} (a integer PRIMARY KEY, b text, c integer)")
 
     node1.query(
-        f"""
+        """
         CREATE TABLE test.test_conflict (a UInt32, b String, c Int32)
-        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_conflict', 'postgres', '{pg_pass}', '', 'ON CONFLICT DO NOTHING');
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_conflict', 'postgres', 'mysecretpassword', '', 'ON CONFLICT DO NOTHING');
     """
     )
     node1.query(
@@ -539,7 +620,7 @@ def test_postgres_on_conflict(started_cluster):
     check1 = f"SELECT count() FROM test.{table}"
     assert (node1.query(check1)).rstrip() == "100"
 
-    table_func = f"""postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', '{table}', 'postgres', '{pg_pass}', '', 'ON CONFLICT DO NOTHING')"""
+    table_func = f"""postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', '{table}', 'postgres', 'mysecretpassword', '', 'ON CONFLICT DO NOTHING')"""
     node1.query(
         f"""INSERT INTO TABLE FUNCTION {table_func} SELECT number, concat('name_', toString(number)), 3 from numbers(100)"""
     )
@@ -652,15 +733,15 @@ def test_where_false(started_cluster):
     cursor.execute("INSERT INTO test SELECT 1")
 
     result = node1.query(
-        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', '{pg_pass}') WHERE 1=0"
+        "SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', 'mysecretpassword') WHERE 1=0"
     )
     assert int(result) == 0
     result = node1.query(
-        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', '{pg_pass}') WHERE 0"
+        "SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', 'mysecretpassword') WHERE 0"
     )
     assert int(result) == 0
     result = node1.query(
-        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', '{pg_pass}') WHERE 1=1"
+        "SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', 'mysecretpassword') WHERE 1=1"
     )
     assert int(result) == 1
     cursor.execute("DROP TABLE test")
@@ -746,7 +827,7 @@ def test_literal_escaping(started_cluster):
     cursor.execute(f"DROP TABLE IF EXISTS escaping")
     cursor.execute(f"CREATE TABLE escaping(text varchar(255))")
     node1.query(
-        f"CREATE TABLE default.escaping (text String) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'escaping', 'postgres', '{pg_pass}')"
+        "CREATE TABLE default.escaping (text String) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'escaping', 'postgres', 'mysecretpassword')"
     )
     node1.query("SELECT * FROM escaping WHERE text = ''''")  # ' -> ''
     node1.query("SELECT * FROM escaping WHERE text = '\\''")  # ' -> ''
@@ -768,22 +849,19 @@ def test_filter_pushdown(started_cluster):
         "INSERT INTO test_filter_pushdown.test_table VALUES (1, 10), (1, 110), (2, 0), (3, 33), (4, 0)"
     )
 
-    node1.query("DROP TABLE IF EXISTS test_filter_pushdown_pg_table")
     node1.query(
-        f"""
+        """
         CREATE TABLE test_filter_pushdown_pg_table (id UInt32, value UInt32)
-        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_table', 'postgres', '{pg_pass}', 'test_filter_pushdown');
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_filter_pushdown');
     """
     )
 
-    node1.query("DROP TABLE IF EXISTS test_filter_pushdown_local_table")
     node1.query(
         """
         CREATE TABLE test_filter_pushdown_local_table (id UInt32, value UInt32) ENGINE Memory AS SELECT * FROM test_filter_pushdown_pg_table
     """
     )
 
-    node1.query("DROP TABLE IF EXISTS ch_table")
     node1.query(
         "CREATE TABLE ch_table (id UInt32, pg_id UInt32) ENGINE MergeTree ORDER BY id"
     )
@@ -827,7 +905,7 @@ def test_fixed_string_type(started_cluster):
 
     node1.query("DROP TABLE IF EXISTS test_fixed_string")
     node1.query(
-        f"CREATE TABLE test_fixed_string(contact_id Int64, email Nullable(FixedString(3))) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string', 'postgres', '{pg_pass}')"
+        "CREATE TABLE test_fixed_string(contact_id Int64, email Nullable(FixedString(3))) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string', 'postgres', 'mysecretpassword')"
     )
 
     result = node1.query("SELECT * FROM test_fixed_string format TSV")
@@ -849,12 +927,12 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
     table = "test_parameters_validation_for_postgresql_function_exception"
     _create_and_fill_table(table)
     error = node1.query_and_get_error(
-        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', \"whatever')) TO STDOUT; END; DROP TABLE IF EXISTS {table};--\", 'postgres', '{pg_pass}')"
+        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', \"whatever')) TO STDOUT; END; DROP TABLE IF EXISTS {table};--\", 'postgres', 'mysecretpassword')"
     )
     assert "PostgreSQL table whatever" in error and "does not exist" in error
 
     result = node1.query(
-        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', '{table}', 'postgres', '{pg_pass}')"
+        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', '{table}', 'postgres', 'mysecretpassword')"
     )
     assert int(result) == 1
     cursor.execute(f"DROP TABLE {table}")
@@ -863,7 +941,7 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
     table = "test_parameters_validation_for_postgresql_function_success"
     _create_and_fill_table(f'"{table}\'"')
     result = node1.query(
-        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', '{table}''', 'postgres', '{pg_pass}')"
+        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', '{table}''', 'postgres', 'mysecretpassword')"
     )
     assert int(result) == 1
     cursor.execute(f'DROP TABLE "{table}\'"')

@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <base/int8_to_string.h>
+#include <Core/Defines.h>
 
 
 namespace DB

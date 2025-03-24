@@ -28,12 +28,6 @@
 #define NO_INLINE __attribute__((__noinline__))
 #define MAY_ALIAS __attribute__((__may_alias__))
 
-#if defined(__x86_64__) || defined(__aarch64__)
-#    define PRESERVE_MOST __attribute__((preserve_most))
-#else
-#    define PRESERVE_MOST
-#endif
-
 #if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !defined(__s390x__) && !(defined(__loongarch64)) && !(defined(__riscv) && (__riscv_xlen == 64))
 #    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress), s390x (work in progress), loongarch64 (experimental) and RISC-V 64 (experimental)"
 #endif
@@ -113,7 +107,6 @@
 #    if defined(DEBUG_OR_SANITIZER_BUILD)
         // clang-format off
         #include <base/types.h>
-        #include <stdlib.h>
         namespace DB
         {
             [[noreturn]] void abortOnFailedAssertion(const String & description);
@@ -152,7 +145,6 @@
 #define TSA_TRY_ACQUIRE_SHARED(...) __attribute__((try_acquire_shared_capability(__VA_ARGS__)))  /// function tries to acquire a shared capability and returns a boolean value indicating success or failure
 #define TSA_RELEASE_SHARED(...) __attribute__((release_shared_capability(__VA_ARGS__)))          /// function releases the given shared capability
 #define TSA_SCOPED_LOCKABLE __attribute__((scoped_lockable)) /// object of a class has scoped lockable capability
-#define TSA_RETURN_CAPABILITY(...) __attribute__((lock_returned(__VA_ARGS__)))             /// to return capabilities in functions
 
 /// Macros for suppressing TSA warnings for specific reads/writes (instead of suppressing it for the whole function)
 /// They use a lambda function to apply function attribute to a single statement. This enable us to suppress warnings locally instead of

@@ -1,130 +1,62 @@
 #include <Interpreters/HashJoin/AddedColumns.h>
-#include <DataTypes/NullableUtils.h>
+#include <Interpreters/NullableUtils.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-JoinOnKeyColumns::JoinOnKeyColumns(
-    const ScatteredBlock & block_, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
-    : block(block_)
-    , key_names(key_names_)
-    /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
-    , materialized_keys_holder(JoinCommon::materializeColumns(block.getSourceBlock(), key_names))
+JoinOnKeyColumns::JoinOnKeyColumns(const Block & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
+    : key_names(key_names_)
+    , materialized_keys_holder(JoinCommon::materializeColumns(
+          block, key_names)) /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
     , key_columns(JoinCommon::getRawPointers(materialized_keys_holder))
     , null_map(nullptr)
     , null_map_holder(extractNestedColumnsAndNullMap(key_columns, null_map))
-    , join_mask_column(JoinCommon::getColumnAsMask(block.getSourceBlock(), cond_column_name))
+    , join_mask_column(JoinCommon::getColumnAsMask(block, cond_column_name))
     , key_sizes(key_sizes_)
 {
 }
 
-template<>
-void AddedColumns<false>::buildOutput() {}
-
-template<>
-void AddedColumns<false>::buildJoinGetOutput() {}
-
-template<>
-template<bool from_row_list>
-void AddedColumns<false>::buildOutputFromBlocks() {}
-
-template<>
-void AddedColumns<true>::buildOutputFromRowRefLists();
+template<> void AddedColumns<false>::buildOutput()
+{
+}
 
 template<>
 void AddedColumns<true>::buildOutput()
 {
-    if (!output_by_row_list)
-        buildOutputFromBlocks<false>();
-    else
-    {
-        if (join_data_avg_perkey_rows < output_by_row_list_threshold)
-            buildOutputFromBlocks<true>();
-        else
-            buildOutputFromRowRefLists();
-    }
-}
-
-template<>
-void AddedColumns<true>::buildOutputFromRowRefLists()
-{
-    const size_t output_row_count = lazy_output.getRowCount();
-
     for (size_t i = 0; i < this->size(); ++i)
     {
-        auto & col = columns[i];
-        col->reserve(col->size() + output_row_count);
-        col->fillFromRowRefs(type_name[i].type, right_indexes[i], lazy_output.getRowRefs(), join_data_sorted);
-    }
-}
-
-template<>
-void AddedColumns<true>::buildJoinGetOutput()
-{
-    for (size_t i = 0; i < this->size(); ++i)
-    {
-        auto & col = columns[i];
-        for (auto row_ref_i : lazy_output.getRowRefs())
+        auto& col = columns[i];
+        size_t default_count = 0;
+        auto apply_default = [&]()
         {
-            if (!row_ref_i)
+            if (default_count > 0)
             {
-                type_name[i].type->insertDefaultInto(*col);
+                JoinCommon::addDefaultValues(*col, type_name[i].type, default_count);
+                default_count = 0;
+            }
+        };
+
+        for (size_t j = 0; j < lazy_output.blocks.size(); ++j)
+        {
+            if (!lazy_output.blocks[j])
+            {
+                default_count++;
                 continue;
             }
-            const auto * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
-            const auto & column_from_block = row_ref->block->getByPosition(right_indexes[i]);
-            if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get()); nullable_col && !column_from_block.column->isNullable())
-                nullable_col->insertFromNotNullable(*column_from_block.column, row_ref->row_num);
-            else
-                col->insertFrom(*column_from_block.column, row_ref->row_num);
-        }
-    }
-}
-
-template<>
-template<bool from_row_list>
-void AddedColumns<true>::buildOutputFromBlocks()
-{
-    if (this->size() == 0)
-        return;
-    std::vector<const Block *> blocks;
-    std::vector<UInt32> row_nums;
-    blocks.reserve(lazy_output.getRowCount());
-    row_nums.reserve(lazy_output.getRowCount());
-    for (auto row_ref_i : lazy_output.getRowRefs())
-    {
-        if (row_ref_i)
-        {
-            if constexpr (from_row_list)
+            apply_default();
+            const auto & column_from_block = reinterpret_cast<const Block *>(lazy_output.blocks[j])->getByPosition(right_indexes[i]);
+            /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
+            if (is_join_get)
             {
-                const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-                for (auto it = row_ref_list->begin(); it.ok(); ++it)
+                if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get());
+                    nullable_col && !column_from_block.column->isNullable())
                 {
-                    blocks.emplace_back(it->block);
-                    row_nums.emplace_back(it->row_num);
+                    nullable_col->insertFromNotNullable(*column_from_block.column, lazy_output.row_nums[j]);
+                    continue;
                 }
             }
-            else
-            {
-                const RowRef * row_ref = reinterpret_cast<const RowRefList *>(row_ref_i);
-                blocks.emplace_back(row_ref->block);
-                row_nums.emplace_back(row_ref->row_num);
-            }
+            col->insertFrom(*column_from_block.column, lazy_output.row_nums[j]);
         }
-        else
-        {
-            blocks.emplace_back(nullptr);
-            row_nums.emplace_back(0);
-        }
-    }
-    for (size_t i = 0; i < this->size(); ++i)
-    {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], blocks, row_nums);
+        apply_default();
     }
 }
 
@@ -140,27 +72,29 @@ void AddedColumns<false>::applyLazyDefaults()
 }
 
 template<>
-void AddedColumns<true>::applyLazyDefaults() {}
+void AddedColumns<true>::applyLazyDefaults()
+{
+}
 
 template <>
-void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has_defaults)
+void AddedColumns<false>::appendFromBlock(const Block & block, size_t row_num,const bool has_defaults)
 {
     if (has_defaults)
         applyLazyDefaults();
 
 #ifndef NDEBUG
-    checkBlock(*row_ref->block);
+    checkBlock(block);
 #endif
     if (is_join_get)
     {
         size_t right_indexes_size = right_indexes.size();
         for (size_t j = 0; j < right_indexes_size; ++j)
         {
-            const auto & column_from_block = row_ref->block->getByPosition(right_indexes[j]);
+            const auto & column_from_block = block.getByPosition(right_indexes[j]);
             if (auto * nullable_col = nullable_column_ptrs[j])
-                nullable_col->insertFromNotNullable(*column_from_block.column, row_ref->row_num);
+                nullable_col->insertFromNotNullable(*column_from_block.column, row_num);
             else
-                columns[j]->insertFrom(*column_from_block.column, row_ref->row_num);
+                columns[j]->insertFrom(*column_from_block.column, row_num);
         }
     }
     else
@@ -168,44 +102,24 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
         size_t right_indexes_size = right_indexes.size();
         for (size_t j = 0; j < right_indexes_size; ++j)
         {
-            const auto & column_from_block = row_ref->block->getByPosition(right_indexes[j]);
-            columns[j]->insertFrom(*column_from_block.column, row_ref->row_num);
+            const auto & column_from_block = block.getByPosition(right_indexes[j]);
+            columns[j]->insertFrom(*column_from_block.column, row_num);
         }
     }
 }
 
 template <>
-__attribute__((noreturn)) void AddedColumns<false>::appendFromBlock(const RowRefList *, bool)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for RowRefList in non-lazy mode");
-}
-
-
-template <>
-void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
+void AddedColumns<true>::appendFromBlock(const Block & block, size_t row_num, bool)
 {
 #ifndef NDEBUG
-    checkBlock(*row_ref->block);
+    checkBlock(block);
 #endif
     if (has_columns_to_add)
     {
-        lazy_output.addRowRef(row_ref);
+        lazy_output.blocks.emplace_back(reinterpret_cast<UInt64>(&block));
+        lazy_output.row_nums.emplace_back(static_cast<uint32_t>(row_num));
     }
 }
-
-template <>
-void AddedColumns<true>::appendFromBlock(const RowRefList * row_ref_list, bool)
-{
-#ifndef NDEBUG
-    checkBlock(*row_ref_list->block);
-#endif
-    if (has_columns_to_add)
-    {
-        lazy_output.addRowRefList(row_ref_list);
-    }
-}
-
-
 template<>
 void AddedColumns<false>::appendDefaultRow()
 {
@@ -217,7 +131,8 @@ void AddedColumns<true>::appendDefaultRow()
 {
     if (has_columns_to_add)
     {
-        lazy_output.addDefault();
+        lazy_output.blocks.emplace_back(0);
+        lazy_output.row_nums.emplace_back(0);
     }
 }
 }

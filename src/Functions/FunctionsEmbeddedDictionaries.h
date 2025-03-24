@@ -14,6 +14,7 @@
 #include <Dictionaries/Embedded/RegionsHierarchy.h>
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
+#include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
 
@@ -121,8 +122,9 @@ struct IdentityDictionaryGetter
     static Dst & get(Src & src, const std::string & key)
     {
         if (key.empty())
-            return src;  /// NOLINT(bugprone-return-const-ref-from-parameter)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary doesn't support 'point of view' keys.");
+            return src;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary doesn't support 'point of view' keys.");
     }
 };
 
@@ -210,8 +212,9 @@ public:
 
             return col_to;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), name);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), name);
     }
 };
 
@@ -306,7 +309,7 @@ public:
 
             return col_to;
         }
-        if (col_vec1 && col_const2)
+        else if (col_vec1 && col_const2)
         {
             auto col_to = ColumnUInt8::create();
 
@@ -320,7 +323,7 @@ public:
 
             return col_to;
         }
-        if (col_const1 && col_vec2)
+        else if (col_const1 && col_vec2)
         {
             auto col_to = ColumnUInt8::create();
 
@@ -334,18 +337,14 @@ public:
 
             return col_to;
         }
-        if (col_const1 && col_const2)
+        else if (col_const1 && col_const2)
         {
-            return DataTypeUInt8().createColumnConst(
-                col_const1->size(),
+            return DataTypeUInt8().createColumnConst(col_const1->size(),
                 toField(Transform::apply(col_const1->template getValue<T>(), col_const2->template getValue<T>(), dict)));
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal columns {} and {} of arguments of function {}",
-            arguments[0].column->getName(),
-            arguments[1].column->getName(),
-            name);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {} and {} of arguments of function {}",
+                    arguments[0].column->getName(), arguments[1].column->getName(), name);
     }
 };
 
@@ -445,8 +444,9 @@ public:
 
             return ColumnArray::create(std::move(col_values), std::move(col_offsets));
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), name);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(), name);
     }
 };
 
@@ -599,11 +599,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
@@ -639,11 +634,9 @@ public:
 
             return col_to;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal column {} of the first argument of function {}",
-            arguments[0].column->getName(),
-            getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of the first argument of function {}",
+                    arguments[0].column->getName(), getName());
     }
 };
 

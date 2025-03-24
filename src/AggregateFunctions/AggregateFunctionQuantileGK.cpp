@@ -138,9 +138,7 @@ public:
     {
         if (other.count == 0)
             return;
-
-        /// NOLINTBEGIN(readability-else-after-return)
-        if (count == 0)
+        else if (count == 0)
         {
             compress_threshold = other.compress_threshold;
             relative_error = other.relative_error;
@@ -239,7 +237,6 @@ public:
             doCompress(2 * merged_relative_error * merged_count);
             compressed = true;
         }
-        /// NOLINTEND(readability-else-after-return)
     }
 
     void write(WriteBuffer & buf) const
@@ -295,10 +292,12 @@ private:
             Int64 max_rank = min_rank + curr_sample.delta;
             if (max_rank - target_error <= rank && rank <= min_rank + target_error)
                 return {i, min_rank, curr_sample.value};
-
-            ++i;
-            curr_sample = sampled[i];
-            min_rank += curr_sample.g;
+            else
+            {
+                ++i;
+                curr_sample = sampled[i];
+                min_rank += curr_sample.g;
+            }
         }
         return {sampled.size() - 1, 0, sampled.back().value};
     }

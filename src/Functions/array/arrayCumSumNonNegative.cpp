@@ -129,7 +129,8 @@ struct ArrayCumSumNonNegativeImpl
             || executeType<Decimal32, Decimal128>(mapped, array, res) || executeType<Decimal64, Decimal128>(mapped, array, res)
             || executeType<Decimal128, Decimal128>(mapped, array, res) || executeType<Decimal256, Decimal256>(mapped, array, res))
             return res;
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayCumSumNonNegativeImpl: {}", mapped->getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayCumSumNonNegativeImpl: {}", mapped->getName());
     }
 };
 

@@ -1,6 +1,6 @@
-#include <Common/PoolId.h>
-#include <Common/ThreadPool.h>
 #include <Common/thread_local_rng.h>
+#include <Common/ThreadPool.h>
+#include <Common/PoolId.h>
 
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -20,16 +20,13 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 
-#include <Core/Settings.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
-#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include "IO/ReadSettings.h"
+#include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
+#include <Core/Settings.h>
 
 #include <filesystem>
-
-#include <fmt/ranges.h>
 
 #define ORDINARY_TO_ATOMIC_PREFIX ".tmp_convert."
 
@@ -37,12 +34,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_deprecated_database_ordinary;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-}
 
 namespace ErrorCodes
 {
@@ -69,13 +60,8 @@ static void executeCreateQuery(
     const Settings & settings = context->getSettingsRef();
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(
-        parser,
-        query.data(),
-        query.data() + query.size(),
-        "in file " + file_name,
-        0,
-        settings[Setting::max_parser_depth],
-        settings[Setting::max_parser_backtracks]);
+        parser, query.data(), query.data() + query.size(), "in file " + file_name,
+        0, settings.max_parser_depth, settings.max_parser_backtracks);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
     ast_create_query.setDatabase(database);
@@ -107,11 +93,11 @@ static void loadDatabase(
     String database_attach_query;
     String database_metadata_file = database_path + ".sql";
 
-    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
-    if (db_disk->existsFile(fs::path(database_metadata_file)))
+    if (fs::exists(fs::path(database_metadata_file)))
     {
         /// There is .sql file with database creation statement.
-        database_attach_query = readMetadataFile(db_disk, database_metadata_file);
+        ReadBufferFromFile in(database_metadata_file, 1024);
+        readStringUntilEOF(database_attach_query, in);
     }
     else
     {
@@ -131,12 +117,11 @@ static void loadDatabase(
     }
 }
 
-static void checkUnsupportedVersion(ContextMutablePtr, const String & database_name)
+static void checkUnsupportedVersion(ContextMutablePtr context, const String & database_name)
 {
-    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
     /// Produce better exception message
-    auto metadata_path = fs::path("metadata") / database_name;
-    if (db_disk->existsDirectory(metadata_path))
+    String metadata_path = context->getPath() + "metadata/" + database_name;
+    if (fs::exists(fs::path(metadata_path)))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data directory for {} database exists, but metadata file does not. "
                                                      "Probably you are trying to upgrade from version older than 20.7. "
                                                      "If so, you should upgrade through intermediate version.", database_name);
@@ -147,10 +132,8 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
     if (context->getConfigRef().has("allow_reserved_database_name_tmp_convert"))
         return;
 
-    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
-
     auto convert_flag_path = fs::path(context->getFlagsPath()) / "convert_ordinary_to_atomic";
-    if (!db_disk->existsFile(convert_flag_path))
+    if (!fs::exists(convert_flag_path))
         return;
 
     /// Flag exists. Let's check if we had an unsuccessful conversion attempt previously
@@ -177,20 +160,20 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
 
 LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name, bool async_load_databases)
 {
-    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
-
     LoggerPtr log = getLogger("loadMetadata");
+
+    String path = context->getPath() + "metadata";
 
     /// There may exist 'force_restore_data' file, which means skip safety threshold
     /// on difference of data parts while initializing tables.
     /// This file is immediately deleted i.e. "one-shot".
     auto force_restore_data_flag_file = fs::path(context->getFlagsPath()) / "force_restore_data";
-    bool has_force_restore_data_flag = db_disk->existsFile(force_restore_data_flag_file);
+    bool has_force_restore_data_flag = fs::exists(force_restore_data_flag_file);
     if (has_force_restore_data_flag)
     {
         try
         {
-            db_disk->removeFileIfExists(force_restore_data_flag_file);
+            fs::remove(force_restore_data_flag_file);
         }
         catch (...)
         {
@@ -199,39 +182,34 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     }
 
 
-    auto metadata_dir_path = fs::path("metadata");
-
     /// Loop over databases.
     std::map<String, String> databases;
-    for (const auto it = db_disk->iterateDirectory(metadata_dir_path); it->isValid(); it->next())
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator it(path); it != dir_end; ++it)
     {
-        auto sub_path = fs::path(it->path());
-        if (sub_path.filename().empty())
-            sub_path = sub_path.parent_path();
-
-        if (db_disk->isSymlinkSupported() && db_disk->isSymlink(sub_path))
+        if (it->is_symlink())
             continue;
 
-        if (db_disk->existsDirectory(sub_path))
+        if (it->is_directory())
             continue;
 
-        const auto current_file = sub_path.filename().string();
+        const auto current_file = it->path().filename().string();
 
         /// TODO: DETACH DATABASE PERMANENTLY ?
         if (fs::path(current_file).extension() == ".sql")
         {
             String db_name = fs::path(current_file).stem();
             if (!isSystemOrInformationSchema(db_name))
-                databases.emplace(unescapeForFileName(db_name), metadata_dir_path / db_name);
+                databases.emplace(unescapeForFileName(db_name), fs::path(path) / db_name);
         }
 
         /// Temporary fails may be left from previous server runs.
         if (fs::path(current_file).extension() == ".tmp")
         {
-            LOG_WARNING(log, "Removing temporary file {}", sub_path.string());
+            LOG_WARNING(log, "Removing temporary file {}", it->path().string());
             try
             {
-                db_disk->removeFileIfExists(sub_path);
+                fs::remove(it->path());
             }
             catch (...)
             {
@@ -250,7 +228,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     if (create_default_db_if_not_exists && !metadata_dir_for_default_db_already_exists)
     {
         checkUnsupportedVersion(context, default_database_name);
-        databases.emplace(default_database_name, metadata_dir_path / escapeForFileName(default_database_name));
+        databases.emplace(default_database_name, std::filesystem::path(path) / escapeForFileName(default_database_name));
     }
 
     TablesLoader::Databases loaded_databases;
@@ -281,34 +259,28 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         // Do NOT wait, just return tasks for continuation or later wait.
         return joinTasks(load_tasks, startup_tasks);
     }
-
-    // NOTE: some tables can still be started up in the "loading" phase if they are required by dependencies during loading of other tables
-    LOG_INFO(log, "Start synchronous loading of databases");
-    waitLoad(TablesLoaderForegroundPoolId, load_tasks); // First prioritize, schedule and wait all the load table tasks
-    LOG_INFO(log, "Start synchronous startup of databases");
-    waitLoad(TablesLoaderForegroundPoolId, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
-    return {};
+    else
+    {
+        // NOTE: some tables can still be started up in the "loading" phase if they are required by dependencies during loading of other tables
+        LOG_INFO(log, "Start synchronous loading of databases");
+        waitLoad(TablesLoaderForegroundPoolId, load_tasks); // First prioritize, schedule and wait all the load table tasks
+        LOG_INFO(log, "Start synchronous startup of databases");
+        waitLoad(TablesLoaderForegroundPoolId, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
+        return {};
+    }
 }
 
 static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & database_name, const String & default_engine)
 {
-    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
+    String path = context->getPath() + "metadata/" + database_name;
+    String metadata_file = path + ".sql";
+    if (fs::exists(metadata_file + ".tmp"))
+        fs::remove(metadata_file + ".tmp");
 
-    String database_name_escaped = escapeForFileName(database_name);
-    auto metadata_dir_path = fs::path("metadata");
-    auto database_dir_path = metadata_dir_path / database_name_escaped;
-    auto metadata_file = metadata_dir_path / (database_name_escaped + ".sql");
-    auto metadata_file_tmp = metadata_dir_path / (database_name_escaped + ".sql" + ".tmp");
-    db_disk->removeFileIfExists(metadata_file_tmp);
-    LOG_DEBUG(
-        getLogger("loadSystemDatabase"),
-        "metadata_file_path {}, existsFile {}",
-        metadata_file,
-        db_disk->existsFile(fs::path(metadata_file)));
-    if (db_disk->existsFile(fs::path(metadata_file)))
+    if (fs::exists(fs::path(metadata_file)))
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-        loadDatabase(context, database_name, database_dir_path, true);
+        loadDatabase(context, database_name, path, true);
     }
     else
     {
@@ -399,7 +371,7 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
 
 /// Converts database with Ordinary engine to Atomic. Does nothing if database is not Ordinary.
 /// Can be called only during server startup when there are no queries from users.
-static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const String & database_name, const LoadTaskPtrs & load_system_metadata_tasks = {})
+static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const String & database_name, LoadTaskPtrs * startup_tasks = nullptr)
 {
     LoggerPtr log = getLogger("loadMetadata");
 
@@ -426,8 +398,12 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
     try
     {
-        /// It's not quite correct to run DDL queries while database is not started up.
-        waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
+        if (startup_tasks) // NOTE: only for system database
+        {
+            /// It's not quite correct to run DDL queries while database is not started up.
+            waitLoad(TablesLoaderForegroundPoolId, *startup_tasks);
+            startup_tasks->clear();
+        }
 
         auto local_context = Context::createCopy(context);
 
@@ -467,7 +443,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         for (const auto & uuid : tables_uuids)
             DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
 
-        auto path = fs::path(context->getPath()) / "metadata" / escapeForFileName(database_name);
+        String path = context->getPath() + "metadata/" + escapeForFileName(database_name);
         /// force_restore_data is needed to re-create metadata symlinks
         loadDatabase(context, database_name, path, /* force_restore_data */ true);
 
@@ -477,7 +453,13 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         };
         TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
         waitLoad(TablesLoaderForegroundPoolId, loader.loadTablesAsync());
-        waitLoad(TablesLoaderForegroundPoolId, loader.startupTablesAsync());
+
+        /// Startup tables if they were started before conversion and detach/attach
+        if (startup_tasks) // NOTE: only for system database
+            *startup_tasks = loader.startupTablesAsync(); // We have loaded old database(s), replace tasks to startup new database
+        else
+            // An old database was already loaded, so we should load new one as well
+            waitLoad(TablesLoaderForegroundPoolId, loader.startupTablesAsync());
     }
     catch (Exception & e)
     {
@@ -489,21 +471,19 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
     }
 }
 
-void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & load_system_metadata_tasks)
+void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & system_startup_tasks)
 {
     /// TODO remove this check, convert system database unconditionally
-    if (context->getSettingsRef()[Setting::allow_deprecated_database_ordinary])
+    if (context->getSettingsRef().allow_deprecated_database_ordinary)
         return;
 
-    maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, load_system_metadata_tasks);
+    maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, &system_startup_tasks);
 }
 
 void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMutablePtr context)
 {
-    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
-
     auto convert_flag_path = fs::path(context->getFlagsPath()) / "convert_ordinary_to_atomic";
-    if (!db_disk->existsFile(convert_flag_path))
+    if (!fs::exists(convert_flag_path))
         return;
 
     LOG_INFO(getLogger("loadMetadata"), "Found convert_ordinary_to_atomic file in flags directory, "
@@ -517,10 +497,10 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
             maybeConvertOrdinaryDatabaseToAtomic(context, name);
 
     LOG_INFO(getLogger("loadMetadata"), "Conversion finished, removing convert_ordinary_to_atomic flag");
-    db_disk->removeFileIfExists(convert_flag_path);
+    fs::remove(convert_flag_path);
 }
 
-LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database)
+LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context)
 {
     loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE, "Atomic");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");
@@ -533,28 +513,11 @@ LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_syste
         {DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE)},
     };
     TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
+    auto tasks = loader.loadTablesAsync();
+    waitLoad(TablesLoaderForegroundPoolId, tasks);
 
-    auto load_tasks = loader.loadTablesAsync();
-    auto startup_tasks = loader.startupTablesAsync();
-
-    if (async_load_system_database)
-    {
-        scheduleLoad(load_tasks);
-        scheduleLoad(startup_tasks);
-
-        // Do NOT wait, just return tasks for continuation or later wait.
-        return joinTasks(load_tasks, startup_tasks);
-    }
-    else
-    {
-        waitLoad(TablesLoaderForegroundPoolId, load_tasks);
-
-        /// This has to be done before the initialization of system logs `initializeSystemLogs()`,
-        /// otherwise there is a race condition between the system database initialization
-        /// and creation of new tables in the database.
-        waitLoad(TablesLoaderForegroundPoolId, startup_tasks);
-        return {};
-    }
+    /// Will startup tables in system database after all databases are loaded.
+    return loader.startupTablesAsync();
 }
 
 }

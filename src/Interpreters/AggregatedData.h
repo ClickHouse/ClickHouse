@@ -1,16 +1,12 @@
 #pragma once
-
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 #include <Common/HashTable/TwoLevelStringHashMap.h>
-
-
 namespace DB
 {
-
 /** Different data structures that can be used for aggregation
   * For efficiency, the aggregation data itself is put into the pool.
   * Data and pool ownership (states of aggregate functions)

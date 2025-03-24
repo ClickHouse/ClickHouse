@@ -1,5 +1,6 @@
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 
@@ -22,9 +23,9 @@ ASTPtr ASTShowGrantsQuery::clone() const
 }
 
 
-void ASTShowGrantsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTShowGrantsQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "SHOW GRANTS"
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW GRANTS"
                   << (settings.hilite ? hilite_none : "");
 
     if (for_roles->current_user && !for_roles->all && for_roles->names.empty() && for_roles->except_names.empty()
@@ -33,21 +34,9 @@ void ASTShowGrantsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSetting
     }
     else
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " FOR "
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FOR "
                       << (settings.hilite ? hilite_none : "");
-        for_roles->format(ostr, settings);
-    }
-
-    if (with_implicit)
-    {
-        ostr << (settings.hilite ? hilite_keyword : "") << " WITH IMPLICIT"
-                      << (settings.hilite ? hilite_none : "");
-    }
-
-    if (final)
-    {
-        ostr << (settings.hilite ? hilite_keyword : "") << " FINAL"
-                      << (settings.hilite ? hilite_none : "");
+        for_roles->format(settings);
     }
 }
 }

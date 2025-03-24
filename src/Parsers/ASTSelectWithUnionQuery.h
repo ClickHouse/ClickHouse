@@ -15,7 +15,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Select; }
 
@@ -33,8 +33,6 @@ public:
     bool hasNonDefaultUnionMode() const;
 
     bool hasQueryParameters() const;
-
-    NameToNameMap getQueryParameters() const;
 
 private:
     /// This variable is optional as we want to set it on the first call to hasQueryParameters

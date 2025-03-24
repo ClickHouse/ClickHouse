@@ -1,42 +1,36 @@
 #include <Columns/IColumn.h>
 
+#include <Columns/IColumnDummy.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnObject.h>
 #include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/IColumnDummy.h>
-#include <Columns/IColumn_fwd.h>
 #include <Core/Field.h>
-#include <Core/Block.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Interpreters/RowRefs.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int BAD_COLLATION;
-extern const int CANNOT_GET_SIZE_OF_FIELD;
-extern const int LOGICAL_ERROR;
-extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 String IColumn::dumpStructure() const
@@ -99,125 +93,20 @@ size_t IColumn::estimateCardinalityInPermutedRange(const IColumn::Permutation & 
     return equal_range.size();
 }
 
-IColumn::MutablePtr IColumn::cloneResized(size_t /*size*/) const
+void IColumn::forEachSubcolumn(ColumnCallback callback) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cloneResized() column {}", getName());
+    const_cast<IColumn*>(this)->forEachSubcolumn([&callback](WrappedPtr & subcolumn)
+    {
+        callback(std::as_const(subcolumn));
+    });
 }
 
-UInt64 IColumn::get64(size_t /*n*/) const
+void IColumn::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get64 is not supported for {}", getName());
-}
-
-Float64 IColumn::getFloat64(size_t /*n*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat64 is not supported for {}", getName());
-}
-
-Float32 IColumn::getFloat32(size_t /*n*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat32 is not supported for {}", getName());
-}
-
-UInt64 IColumn::getUInt(size_t /*n*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getUInt is not supported for {}", getName());
-}
-
-Int64 IColumn::getInt(size_t /*n*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getInt is not supported for {}", getName());
-}
-
-bool IColumn::getBool(size_t /*n*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getBool is not supported for {}", getName());
-}
-
-StringRef IColumn::serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArena is not supported for {}", getName());
-}
-
-char * IColumn::serializeValueIntoMemory(size_t /* n */, char * /* memory */) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
-}
-
-StringRef
-IColumn::serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArenaWithNull is not supported for {}", getName());
-}
-
-char * IColumn::serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemoryWithNull is not supported for {}", getName());
-}
-
-void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method collectSerializedValueSizes is not supported for {}", getName());
-}
-
-#if USE_EMBEDDED_COMPILER
-llvm::Value * IColumn::compileComparator(
-    llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compileComparator is not supported for {}", getName());
-}
-#endif
-
-int IColumn::compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const
-{
-    throw Exception(
-        ErrorCodes::BAD_COLLATION,
-        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
-        "or for Array or Tuple, containing it.");
-}
-
-void IColumn::getPermutationWithCollation(
-    const Collator & /*collator*/,
-    PermutationSortDirection /*direction*/,
-    PermutationSortStability /*stability*/,
-    size_t /*limit*/,
-    int /*nan_direction_hint*/,
-    Permutation & /*res*/) const
-{
-    throw Exception(
-        ErrorCodes::BAD_COLLATION,
-        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
-        "or for Array or Tuple, containing them.");
-}
-
-void IColumn::updatePermutationWithCollation(
-    const Collator & /*collator*/,
-    PermutationSortDirection /*direction*/,
-    PermutationSortStability /*stability*/,
-    size_t /*limit*/,
-    int /*nan_direction_hint*/,
-    Permutation & /*res*/,
-    EqualRanges & /*equal_ranges*/) const
-{
-    throw Exception(
-        ErrorCodes::BAD_COLLATION,
-        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
-        "or for Array or Tuple, containing them.");
-}
-
-bool IColumn::structureEquals(const IColumn &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method structureEquals is not supported for {}", getName());
-}
-
-std::string_view IColumn::getRawData() const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column {} is not a contiguous block of memory", getName());
-}
-
-size_t IColumn::sizeOfValueIfFixed() const
-{
-    throw Exception(ErrorCodes::CANNOT_GET_SIZE_OF_FIELD, "Values of column {} are not fixed size.", getName());
+    const_cast<IColumn*>(this)->forEachSubcolumnRecursively([&callback](IColumn & subcolumn)
+    {
+        callback(std::as_const(subcolumn));
+    });
 }
 
 bool isColumnNullable(const IColumn & column)
@@ -443,82 +332,6 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
     }
 }
 
-/// Fills column values from RowRefList
-/// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
-template <bool row_refs_are_ranges, typename ColumnType>
-static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, const size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs)
-{
-    for (UInt64 row_ref_i : row_refs)
-    {
-        if (row_ref_i)
-        {
-            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-            if constexpr (row_refs_are_ranges)
-            {
-                row_ref_list->assertIsRange();
-                col->insertRangeFrom(*row_ref_list->block->getByPosition(source_column_index_in_block).column, row_ref_list->row_num, row_ref_list->rows);
-            }
-            else
-            {
-                for (auto it = row_ref_list->begin(); it.ok(); ++it)
-                    col->insertFrom(*it->block->getByPosition(source_column_index_in_block).column, it->row_num);
-            }
-        }
-        else
-            type->insertDefaultInto(*col);
-    }
-}
-
-/// Fills column values from RowRefsList
-void IColumn::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges)
-{
-    if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(this, type, source_column_index_in_block, row_refs);
-    else
-        fillColumnFromRowRefs<false>(this, type, source_column_index_in_block, row_refs);
-}
-
-/// Fills column values from RowRefsList
-template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges)
-{
-    auto & self = static_cast<Derived &>(*this);
-    if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(&self, type, source_column_index_in_block, row_refs);
-    else
-        fillColumnFromRowRefs<false>(&self, type, source_column_index_in_block, row_refs);
-}
-
-/// Fills column values from list of blocks and row numbers
-/// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
-template <typename ColumnType>
-static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
-{
-    chassert(blocks.size() == row_nums.size());
-    col->reserve(col->size() + blocks.size());
-    for (size_t j = 0; j < blocks.size(); ++j)
-    {
-        if (blocks[j])
-            col->insertFrom(*blocks[j]->getByPosition(source_column_index_in_block).column, row_nums[j]);
-        else
-            type->insertDefaultInto(*col);
-    }
-}
-
-/// Fills column values from list of blocks and row numbers
-void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
-{
-    fillColumnFromBlocksAndRowNumbers(this, type, source_column_index_in_block, blocks, row_nums);
-}
-
-/// Fills column values from list of blocks and row numbers
-template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
-{
-    auto & self = static_cast<Derived &>(*this);
-    fillColumnFromBlocksAndRowNumbers(&self, type, source_column_index_in_block, blocks, row_nums);
-}
-
 template <typename Derived, typename Parent>
 StringRef
 IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const
@@ -540,8 +353,10 @@ IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena 
         self.serializeValueIntoMemory(n, memory + 1);
         return {memory, sz};
     }
-
-    return self.serializeValueIntoArena(n, arena, begin);
+    else
+    {
+        return self.serializeValueIntoArena(n, arena, begin);
+    }
 }
 
 template <typename Derived, typename Parent>
@@ -630,7 +445,6 @@ template class IColumnHelper<ColumnVector<Int32>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int128>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int256>, ColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<BFloat16>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Float32>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Float64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UUID>, ColumnFixedSizeHelper>;
@@ -663,16 +477,4 @@ template class IColumnHelper<ColumnObject, IColumn>;
 
 template class IColumnHelper<IColumnDummy, IColumn>;
 
-
-void intrusive_ptr_add_ref(const IColumn * c)
-{
-    BOOST_ASSERT(c != nullptr);
-    boost::sp_adl_block::intrusive_ptr_add_ref(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
-}
-
-void intrusive_ptr_release(const IColumn * c)
-{
-    BOOST_ASSERT(c != nullptr);
-    boost::sp_adl_block::intrusive_ptr_release(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
-}
 }

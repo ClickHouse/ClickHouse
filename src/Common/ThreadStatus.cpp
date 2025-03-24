@@ -16,6 +16,7 @@
 
 namespace DB
 {
+
 thread_local ThreadStatus constinit * current_thread = nullptr;
 
 #if !defined(SANITIZER)
@@ -68,7 +69,6 @@ static thread_local bool has_alt_stack = false;
 
 ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
-    , memory_spill_scheduler(false)
 {}
 
 ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
@@ -78,7 +78,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
 
     last_rusage = std::make_unique<RUsageCounters>();
 
-    memory_tracker.setDescription("Thread");
+    memory_tracker.setDescription("(for thread)");
     log = getLogger("ThreadStatus");
 
     current_thread = this;
@@ -202,16 +202,6 @@ bool ThreadStatus::isQueryCanceled() const
     if (local_data.query_is_canceled_predicate)
         return local_data.query_is_canceled_predicate();
     return false;
-}
-
-size_t ThreadStatus::getNextPlanStepIndex() const
-{
-    return local_data.plan_step_index->fetch_add(1);
-}
-
-size_t ThreadStatus::getNextPipelineProcessorIndex() const
-{
-    return local_data.pipeline_processor_index->fetch_add(1);
 }
 
 ThreadStatus::~ThreadStatus()

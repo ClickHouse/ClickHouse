@@ -88,17 +88,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserStorageOrderByClause : public IParserBase
-{
-public:
-    explicit ParserStorageOrderByClause(bool allow_order_) : allow_order(allow_order_) {}
-
-protected:
-    bool allow_order;
-
-    const char * getName() const override { return "storage order by clause"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
 template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase
@@ -248,7 +237,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             null_modifier.emplace(true);
     }
 
-    bool is_comment = false;
     /// Collate is also allowed after NULL/NOT NULL
     if (!collation_expression && s_collate.ignore(pos, expected)
         && !collation_parser.parse(pos, collation_expression, expected))
@@ -266,9 +254,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     else if (s_ephemeral.ignore(pos, expected))
     {
         default_specifier = s_ephemeral.getName();
-        if (s_comment.ignore(pos, expected))
-            is_comment = true;
-        if ((is_comment || !expr_parser.parse(pos, default_expression, expected)) && type)
+        if (!expr_parser.parse(pos, default_expression, expected) && type)
         {
             ephemeral_default = true;
 
@@ -303,22 +289,19 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
 
-    if (!is_comment)
+    if ((type || default_expression) && allow_null_modifiers && !null_modifier.has_value())
     {
-        if ((type || default_expression) && allow_null_modifiers && !null_modifier.has_value())
+        if (s_not.ignore(pos, expected))
         {
-            if (s_not.ignore(pos, expected))
-            {
-                if (!s_null.ignore(pos, expected))
-                    return false;
-                null_modifier.emplace(false);
-            }
-            else if (s_null.ignore(pos, expected))
-                null_modifier.emplace(true);
+            if (!s_null.ignore(pos, expected))
+                return false;
+            null_modifier.emplace(false);
         }
+        else if (s_null.ignore(pos, expected))
+            null_modifier.emplace(true);
     }
 
-    if (is_comment || s_comment.ignore(pos, expected))
+    if (s_comment.ignore(pos, expected))
     {
         /// should be followed by a string literal
         if (!string_literal_parser.parse(pos, comment_expression, expected))

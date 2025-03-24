@@ -57,7 +57,6 @@ SELECT
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON a = t2_00826.a
 WHERE a = t2_00826.a
-ORDER BY ALL ASC
 --- cross nullable ---
 SELECT
     a,
@@ -67,7 +66,6 @@ SELECT
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON a = t2_00826.a
 WHERE a = t2_00826.a
-ORDER BY ALL ASC
 --- cross nullable vs not nullable ---
 SELECT
     a,
@@ -77,7 +75,6 @@ SELECT
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON a = t2_00826.b
 WHERE a = t2_00826.b
-ORDER BY ALL ASC
 --- cross self ---
 SELECT
     a,
@@ -87,7 +84,6 @@ SELECT
 FROM t1_00826 AS x
 ALL INNER JOIN t1_00826 AS y ON (a = y.a) AND (b = y.b)
 WHERE (a = y.a) AND (b = y.b)
-ORDER BY ALL ASC
 --- cross one table expr ---
 SELECT
     a,
@@ -97,7 +93,6 @@ SELECT
 FROM t1_00826
 CROSS JOIN t2_00826
 WHERE a = b
-ORDER BY ALL ASC
 --- cross multiple ands ---
 SELECT
     a,
@@ -107,7 +102,6 @@ SELECT
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (b = t2_00826.b)
 WHERE (a = t2_00826.a) AND (b = t2_00826.b)
-ORDER BY ALL ASC
 --- cross and inside and ---
 SELECT
     a,
@@ -117,7 +111,6 @@ SELECT
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (a = t2_00826.a) AND (a = t2_00826.a) AND (b = t2_00826.b)
 WHERE (a = t2_00826.a) AND ((a = t2_00826.a) AND ((a = t2_00826.a) AND (b = t2_00826.b)))
-ORDER BY ALL ASC
 --- cross split conjunction ---
 SELECT
     a,
@@ -127,7 +120,6 @@ SELECT
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (b = t2_00826.b)
 WHERE (a = t2_00826.a) AND (b = t2_00826.b) AND (a >= 1) AND (t2_00826.b > 0)
-ORDER BY ALL ASC
 --- and or ---
 SELECT
     a,
@@ -137,7 +129,6 @@ SELECT
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (b = t2_00826.b)
 WHERE (a = t2_00826.a) AND (b = t2_00826.b) AND ((a >= 1) OR (t2_00826.b = 1))
-ORDER BY ALL ASC
 --- arithmetic expr ---
 SELECT
     a,
@@ -147,7 +138,6 @@ SELECT
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON (a + 1) = (t2_00826.a + t2_00826.b)
 WHERE ((a + 1) = (t2_00826.a + t2_00826.b)) AND ((((a + b) + t2_00826.a) + t2_00826.b) > 5)
-ORDER BY ALL ASC
 --- is null or ---
 SELECT
     a,
@@ -157,13 +147,11 @@ SELECT
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON b = t2_00826.a
 WHERE (b = t2_00826.a) AND ((t2_00826.b IS NULL) OR (t2_00826.b > t2_00826.a))
-ORDER BY ALL ASC
 --- do not rewrite alias ---
 SELECT a AS b
 FROM t1_00826
 CROSS JOIN t2_00826
 WHERE (b = t2_00826.a) AND (b > 0)
-ORDER BY ALL ASC
 --- comma ---
 SELECT
     a,
@@ -173,7 +161,6 @@ SELECT
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON a = t2_00826.a
 WHERE a = t2_00826.a
-ORDER BY ALL ASC
 --- comma nullable ---
 SELECT
     a,
@@ -183,7 +170,6 @@ SELECT
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON b = t2_00826.b
 WHERE b = t2_00826.b
-ORDER BY ALL ASC
 --- comma and or ---
 SELECT
     a,
@@ -193,4 +179,3 @@ SELECT
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON a = t2_00826.a
 WHERE (a = t2_00826.a) AND ((t2_00826.b IS NULL) OR (t2_00826.b < 2))
-ORDER BY ALL ASC

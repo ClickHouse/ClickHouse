@@ -1,9 +1,7 @@
 ---
-description: 'Documentation for the Date data type in ClickHouse'
-sidebar_label: 'Date'
-sidebar_position: 34
-slug: /sql-reference/data-types/date
-title: 'Date'
+slug: /en/sql-reference/data-types/date
+sidebar_position: 12
+sidebar_label: Date
 ---
 
 # Date
@@ -18,7 +16,7 @@ The date value is stored without the time zone.
 
 Creating a table with a `Date`-type column and inserting data into it:
 
-```sql
+``` sql
 CREATE TABLE dt
 (
     `timestamp` Date,
@@ -27,7 +25,7 @@ CREATE TABLE dt
 ENGINE = TinyLog;
 ```
 
-```sql
+``` sql
 -- Parse Date
 -- - from string,
 -- - from 'small' integer interpreted as number of days since 1970-01-01, and
@@ -37,7 +35,7 @@ INSERT INTO dt VALUES ('2019-01-01', 1), (17897, 2), (1546300800, 3);
 SELECT * FROM dt;
 ```
 
-```text
+``` text
 ┌──timestamp─┬─event_id─┐
 │ 2019-01-01 │        1 │
 │ 2019-01-01 │        2 │
@@ -48,5 +46,5 @@ SELECT * FROM dt;
 **See Also**
 
 - [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
-- [Operators for working with dates and times](../../sql-reference/operators#operators-for-working-with-dates-and-times)
+- [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
 - [`DateTime` data type](../../sql-reference/data-types/datetime.md)

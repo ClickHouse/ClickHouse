@@ -3,7 +3,6 @@
 #include <Core/Settings.h>
 #include <Core/Block.h>
 #include <Interpreters/ClientInfo.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <base/types.h>
 #include <string>
 

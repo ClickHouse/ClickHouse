@@ -215,7 +215,7 @@ SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 
 ### SYSTEM UNFREEZE {#query_language-system-unfreeze}
 
-Удаляет с диска все "замороженные" партиции данного бэкапа. Про удаление партиций по отдельности смотрите запрос [ALTER TABLE table_name UNFREEZE WITH NAME ](/sql-reference/statements/alter/partition#unfreeze-partition)
+Удаляет с диска все "замороженные" партиции данного бэкапа. Про удаление партиций по отдельности смотрите запрос [ALTER TABLE table_name UNFREEZE WITH NAME ](alter/partition.md#alter_unfreeze-partition)
 
 ``` sql
 SYSTEM UNFREEZE WITH NAME <backup_name>
@@ -280,7 +280,7 @@ SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge
 Ждет когда таблица семейства `ReplicatedMergeTree` будет синхронизирована с другими репликами в кластере, но не более `receive_timeout` секунд:
 
 ``` sql
-SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name [STRICT | LIGHTWEIGHT [FROM 'srcReplica1'[, 'srcReplica2'[, ...]]] | PULL]
+SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name [STRICT | LIGHTWEIGHT [FROM 'srcReplica1'[, 'srcReplica2'[, ...]]] | PULL]
 ```
 
 После выполнения этого запроса таблица `[db.]replicated_merge_tree_family_table_name` загружает команды из общего реплицированного лога в свою собственную очередь репликации. Затем запрос ждет, пока реплика не обработает все загруженные команды. Поддерживаются следующие модификаторы:

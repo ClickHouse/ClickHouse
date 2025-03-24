@@ -1,9 +1,6 @@
 ---
-description: 'Guide to configuring and using SQL startup scripts in ClickHouse for
-  automatic schema creation and migrations'
-sidebar_label: 'Startup Scripts'
-slug: /operations/startup-scripts
-title: 'Startup Scripts'
+slug: /en/operations/startup-scripts
+sidebar_label: Startup Scripts
 ---
 
 # Startup Scripts
@@ -19,10 +16,6 @@ ClickHouse can run arbitrary SQL queries from the server configuration during st
         <scripts>
             <query>CREATE TABLE TestTable (id UInt64) ENGINE=TinyLog</query>
             <condition>SELECT 1;</condition>
-        </scripts>
-        <scripts>
-            <query>CREATE DICTIONARY test_dict (...) SOURCE(CLICKHOUSE(...))</query>
-            <user>default</user>
         </scripts>
     </startup_scripts>
 </clickhouse>

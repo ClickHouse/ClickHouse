@@ -1,10 +1,17 @@
 #pragma once
 
+#include <algorithm>
+#include <cassert>
+#include <list>
+#include <mutex>
 #include <optional>
+#include <variant>
 
-#include <Columns/IColumn_fwd.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/IColumn.h>
 #include <Core/Joins.h>
-#include <Core/TypeId.h>
+#include <base/sort.h>
 #include <Common/Arena.h>
 
 
@@ -115,18 +122,9 @@ struct RowRefList : RowRef
     };
 
     RowRefList() {} /// NOLINT
-    RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_), rows(1) {}
-    RowRefList(const Block * block_, size_t row_start_, size_t rows_) : RowRef(block_, row_start_), rows(static_cast<SizeT>(rows_)) {}
+    RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
 
     ForwardIterator begin() const { return ForwardIterator(this); }
-
-    /// Check that RowRefList represent a range of consecutive rows
-    /// In this case there must be no next element
-    void assertIsRange() const
-    {
-        chassert(rows >= 1, "RowRefList should have at least one row");
-        chassert(next == nullptr, "When RowRefList represent range, it should not have next element");
-    }
 
     /// insert element after current one
     void insert(RowRef && row_ref, Arena & pool)
@@ -137,11 +135,8 @@ struct RowRefList : RowRef
             *next = Batch(nullptr);
         }
         next = next->insert(std::move(row_ref), pool);
-        ++rows;
     }
 
-public:
-    SizeT rows = 0;
 private:
     Batch * next = nullptr;
 };
@@ -163,7 +158,7 @@ struct SortedLookupVectorBase
     virtual void insert(const IColumn &, const Block *, size_t) = 0;
 
     // This needs to be synchronized internally
-    virtual RowRef * findAsof(const IColumn &, size_t) = 0;
+    virtual RowRef findAsof(const IColumn &, size_t) = 0;
 };
 
 

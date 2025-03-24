@@ -1,11 +1,13 @@
 #pragma once
 
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/Passes/CNFAtomicFormula.h>
+
+#include <Common/SipHash.h>
 
 #include <Interpreters/Context_fwd.h>
 
-#include <set>
+#include <unordered_set>
 
 namespace DB::Analyzer
 {
@@ -13,8 +15,17 @@ namespace DB::Analyzer
 class CNF
 {
 public:
+    struct AtomicFormula
+    {
+        bool negative = false;
+        QueryTreeNodePtrWithHash node_with_hash;
+
+        bool operator==(const AtomicFormula & rhs) const;
+        bool operator<(const AtomicFormula & rhs) const;
+    };
+
     // Different hash is generated for different order, so we use std::set
-    using OrGroup = std::set<CNFAtomicFormula>;
+    using OrGroup = std::set<AtomicFormula>;
     using AndGroup = std::set<OrGroup>;
 
     std::string dump() const;
@@ -22,11 +33,11 @@ public:
     static constexpr size_t DEFAULT_MAX_GROWTH_MULTIPLIER = 20;
     static constexpr size_t MAX_ATOMS_WITHOUT_CHECK = 200;
 
-    CNF & transformAtoms(std::function<CNFAtomicFormula(const CNFAtomicFormula &)> fn);
+    CNF & transformAtoms(std::function<AtomicFormula(const AtomicFormula &)> fn);
     CNF & transformGroups(std::function<OrGroup(const OrGroup &)> fn);
 
     CNF & filterAlwaysTrueGroups(std::function<bool(const OrGroup &)> predicate);
-    CNF & filterAlwaysFalseAtoms(std::function<bool(const CNFAtomicFormula &)> predicate);
+    CNF & filterAlwaysFalseAtoms(std::function<bool(const AtomicFormula &)> predicate);
 
     CNF & reduce();
 
@@ -36,7 +47,7 @@ public:
     CNF & pushNotIntoFunctions(const ContextPtr & context);
     CNF & pullNotOutFunctions(const ContextPtr & context);
 
-    static CNFAtomicFormula pushNotIntoFunction(const CNFAtomicFormula & atom, const ContextPtr & context);
+    static AtomicFormula pushNotIntoFunction(const AtomicFormula & atom, const ContextPtr & context);
 
     explicit CNF(AndGroup statements_);
 
