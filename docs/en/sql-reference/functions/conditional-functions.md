@@ -275,7 +275,7 @@ The CASE expression in ClickHouse provides conditional logic similar to SQL’s 
 ClickHouse supports two forms of CASE:
 
 1. `CASE WHEN ... THEN ... ELSE ... END`
-
+<br/>
 This form allows full flexibility and is internally implemented using the [multiIf](#multiif-multiif) function. Each condition is evaluated independently, and expressions can include non-constant values.
 
 ```sql
@@ -308,7 +308,7 @@ WHERE number < 5
 ```
 
 2. `CASE <expr> WHEN <val1> THEN ... WHEN <val2> THEN ... ELSE ... END`
-
+<br/>
 This more compact form is optimized for constant value matching and internally uses `caseWithExpression()`. However, it has limitations:
 
 - All return expressions must be constants or deterministic expressions not depending on the input.
