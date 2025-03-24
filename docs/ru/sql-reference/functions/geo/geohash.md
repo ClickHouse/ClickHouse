@@ -11,7 +11,7 @@ sidebar_label: "Функции для работы с системой Geohash"
 
 ## geohashEncode {#geohashencode}
 
-Кодирует широту и долготу в строку [geohash](#geohash).
+Кодирует широту и долготу в строку [geohash](/ru/sql-reference/functions/geo/geohash).
 
 ``` sql
 geohashEncode(longitude, latitude, [precision])
@@ -41,7 +41,7 @@ SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
 
 ## geohashDecode {#geohashdecode}
 
-Декодирует любую строку, закодированную в [geohash](#geohash), на долготу и широту.
+Декодирует любую строку, закодированную в [geohash](/ru/sql-reference/functions/geo/geohash), на долготу и широту.
 
 ``` sql
 geohashDecode(geohash_string)
@@ -69,7 +69,7 @@ SELECT geohashDecode('ezs42') AS res;
 
 ## geohashesInBox {#geohashesinbox}
 
-Формирует массив участков, которые находятся внутри или пересекают границу заданного участка на поверхности. Каждый участок описывается строкой [geohash](#geohash) заданной точности.
+Формирует массив участков, которые находятся внутри или пересекают границу заданного участка на поверхности. Каждый участок описывается строкой [geohash](/ru/sql-reference/functions/geo/geohash) заданной точности.
 
 **Синтаксис**
 

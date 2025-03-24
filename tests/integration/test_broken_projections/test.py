@@ -1,10 +1,13 @@
-import time
-import pytest
 import logging
-import string
 import random
-from helpers.cluster import ClickHouseCluster
+import string
+import time
+import uuid
 from multiprocessing.dummy import Pool
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -234,29 +237,19 @@ def check(
             f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection_name = 'proj1'"
         )
     else:
-        query_id = node.query(
-            f"SELECT queryID() FROM (SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection_name = 'proj1')"
+        query_id = uuid.uuid4().hex
+        node.query(
+            f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection_name = 'proj1'",
+            query_id=query_id,
         ).strip()
-        for _ in range(10):
-            node.query("SYSTEM FLUSH LOGS")
-            res = node.query(
-                f"""
-            SELECT query, splitByChar('.', arrayJoin(projections))[-1]
-            FROM system.query_log
-            WHERE query_id='{query_id}' AND type='QueryFinish'
-            """
-            )
-            if res != "":
-                break
-        if res == "":
-            res = node.query(
-                """
-                SELECT query_id, query, splitByChar('.', arrayJoin(projections))[-1]
-                FROM system.query_log ORDER BY query_start_time_microseconds DESC
-            """
-            )
-            print(f"Looked for query id {query_id}, but to no avail: {res}")
-            assert False
+        node.query("SYSTEM FLUSH LOGS")
+        res = node.query(
+            f"""
+        SELECT splitByChar('.', arrayJoin(projections))[-1]
+        FROM system.query_log
+        WHERE query_id='{query_id}' AND type='QueryFinish'
+        """
+        )
         assert "proj1" in res
 
     if expect_broken_part == "proj2":
@@ -264,29 +257,19 @@ def check(
             f"SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection_name = 'proj2'"
         )
     else:
-        query_id = node.query(
-            f"SELECT queryID() FROM (SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection_name = 'proj2')"
+        query_id = uuid.uuid4().hex
+        node.query(
+            f"SELECT queryID() FROM (SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection_name = 'proj2')",
+            query_id=query_id,
         ).strip()
-        for _ in range(10):
-            node.query("SYSTEM FLUSH LOGS")
-            res = node.query(
-                f"""
-            SELECT query, splitByChar('.', arrayJoin(projections))[-1]
-            FROM system.query_log
-            WHERE query_id='{query_id}' AND type='QueryFinish'
-            """
-            )
-            if res != "":
-                break
-        if res == "":
-            res = node.query(
-                """
-                SELECT query_id, query, splitByChar('.', arrayJoin(projections))[-1]
-                FROM system.query_log ORDER BY query_start_time_microseconds DESC
-            """
-            )
-            print(f"Looked for query id {query_id}, but to no avail: {res}")
-            assert False
+        node.query("SYSTEM FLUSH LOGS")
+        res = node.query(
+            f"""
+        SELECT splitByChar('.', arrayJoin(projections))[-1]
+        FROM system.query_log
+        WHERE query_id='{query_id}' AND type='QueryFinish'
+        """
+        )
         assert "proj2" in res
 
     if do_check_command:
@@ -405,7 +388,7 @@ def test_materialize_broken_projection(cluster):
     assert "NO_FILE_IN_DATA_PART" in get_broken_projections_info(
         node, table_name, part="all_1_1_0", projection="proj1"
     )
-    assert "Part all_1_1_0 has a broken projection proj1" in check_table_full(
+    assert "Part `all_1_1_0` has broken projection `proj1`" in check_table_full(
         node, table_name
     )
 
@@ -415,13 +398,13 @@ def test_materialize_broken_projection(cluster):
     assert "FILE_DOESNT_EXIST" in get_broken_projections_info(
         node, table_name, part="all_1_1_0", projection="proj2"
     )
-    assert "Part all_1_1_0 has a broken projection proj2" in check_table_full(
+    assert "Part `all_1_1_0` has broken projection `proj2`" in check_table_full(
         node, table_name
     )
 
     materialize_projection(node, table_name, "proj1")
 
-    assert "has a broken projection" not in check_table_full(node, table_name)
+    assert "has broken projection" not in check_table_full(node, table_name)
 
 
 def test_broken_ignored_replicated(cluster):
@@ -443,13 +426,13 @@ def test_broken_ignored_replicated(cluster):
     check(node, table_name2, 1)
 
     break_projection(node, table_name, "proj1", "all_0_0_0", "data")
-    assert "Part all_0_0_0 has a broken projection proj1" in check_table_full(
+    assert "Part `all_0_0_0` has broken projection `proj1`" in check_table_full(
         node, table_name
     )
 
     break_part(node, table_name, "all_0_0_0")
     node.query(f"SYSTEM SYNC REPLICA {table_name}")
-    assert "has a broken projection" not in check_table_full(node, table_name)
+    assert "has broken projection" not in check_table_full(node, table_name)
 
 
 def get_random_string(string_length=8):
@@ -528,7 +511,7 @@ def test_broken_projections_in_backups_3(cluster):
     check(node, table_name, 1)
 
     break_projection(node, table_name, "proj1", "all_1_1_0", "part")
-    assert "Part all_1_1_0 has a broken projection proj1" in check_table_full(
+    assert "Part `all_1_1_0` has broken projection `proj1`" in check_table_full(
         node, table_name
     )
     assert "FILE_DOESNT_EXIST" in get_broken_projections_info(
@@ -735,11 +718,14 @@ def test_mutation_with_broken_projection(cluster):
         f"ALTER TABLE {table_name} DELETE WHERE _part == 'all_0_0_0_4' SETTINGS mutations_sync = 1"
     )
 
+    parts = get_parts(node, table_name)
     # All parts changes because this is how alter delete works,
     # but all parts apart from the first have only hardlinks to files in previous part.
-    assert ["all_0_0_0_5", "all_1_1_0_5", "all_2_2_0_5", "all_3_3_0_5"] == get_parts(
-        node, table_name
-    ) or ["all_1_1_0_5", "all_2_2_0_5", "all_3_3_0_5"] == get_parts(node, table_name)
+    assert ["all_0_0_0_5", "all_1_1_0_5", "all_2_2_0_5", "all_3_3_0_5"] == parts or [
+        "all_1_1_0_5",
+        "all_2_2_0_5",
+        "all_3_3_0_5",
+    ] == parts
 
     # Still broken because it was hardlinked.
     broken = get_broken_projections_info(node, table_name)
@@ -752,11 +738,13 @@ def test_mutation_with_broken_projection(cluster):
         f"ALTER TABLE {table_name} DELETE WHERE c == 13 SETTINGS mutations_sync = 1"
     )
 
-    assert ["all_1_1_0_6", "all_2_2_0_6", "all_3_3_0_6"] == get_parts(
-        node, table_name
-    ) or ["all_0_0_0_6", "all_1_1_0_6", "all_2_2_0_6", "all_3_3_0_6"] == get_parts(
-        node, table_name
-    )
+    parts = get_parts(node, table_name)
+    assert ["all_1_1_0_6", "all_2_2_0_6", "all_3_3_0_6"] == parts or [
+        "all_0_0_0_6",
+        "all_1_1_0_6",
+        "all_2_2_0_6",
+        "all_3_3_0_6",
+    ] == parts
 
     # Not broken anymore.
     assert not get_broken_projections_info(node, table_name)

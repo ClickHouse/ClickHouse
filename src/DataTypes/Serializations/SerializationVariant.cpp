@@ -43,6 +43,16 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
 {
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> variant_states;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<DeserializeBinaryBulkStateVariant>();
+        new_state->discriminators_state = discriminators_state ? discriminators_state->clone() : nullptr;
+        new_state->variant_states.reserve(variant_states.size());
+        for (const auto & variant_state : variant_states)
+            new_state->variant_states.push_back(variant_state ? variant_state->clone() : nullptr);
+        return new_state;
+    }
 };
 
 void SerializationVariant::enumerateStreams(
@@ -272,7 +282,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
         return;
     }
     /// If column has only NULLs, just serialize NULL discriminators.
-    else if (col.hasOnlyNulls())
+    if (col.hasOnlyNulls())
     {
         /// In compact mode write single NULL_DISCRIMINATOR.
         if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::COMPACT)
@@ -859,7 +869,7 @@ bool SerializationVariant::tryDeserializeImpl(
             column_variant.getOffsets().push_back(prev_size);
             return true;
         }
-        else if (variant_column.size() > prev_size)
+        if (variant_column.size() > prev_size)
         {
             variant_column.popBack(1);
         }

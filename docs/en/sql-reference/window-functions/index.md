@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/window-functions/
-sidebar_label: Window Functions
+description: 'Overview page for window functions'
+sidebar_label: 'Window Functions'
 sidebar_position: 1
+slug: /sql-reference/window-functions/
+title: 'Window Functions'
 ---
 
 # Window Functions 
@@ -9,7 +11,7 @@ sidebar_position: 1
 Windows functions let you perform calculations across a set of rows that are related to the current row.
 Some of the calculations that you can do are similar to those that can be done with an aggregate function, but a window function doesn't cause rows to be grouped into a single output - the individual rows are still returned.
 
-## Standard Window Functions
+## Standard Window Functions {#standard-window-functions}
 
 ClickHouse supports the standard grammar for defining windows and window functions. The table below indicates whether a feature is currently supported.
 
@@ -28,11 +30,11 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `lag/lead(value, offset)`                                                          | ❌ <br/> You can use one of the following workarounds:<br/> 1) `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead` <br/> 2) `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following`                                                                 |
 | ntile(buckets) | ✅ <br/> Specify window like, (partition by x order by y rows between unbounded preceding and unrounded following). |
 
-## ClickHouse-specific Window Functions
+## ClickHouse-specific Window Functions {#clickhouse-specific-window-functions}
 
 There is also the following ClickHouse specific window function:
 
-### nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])
+### nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS]) {#nonnegativederivativemetric_column-timestamp_column-interval-x-units}
 
 Finds non-negative derivative for given `metric_column` by `timestamp_column`. 
 `INTERVAL` can be omitted, default is `INTERVAL 1 SECOND`.
@@ -40,14 +42,14 @@ The computed value is the following for each row:
 - `0` for 1st row,
 - ${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}}  * \text{interval}$ for $i_{th}$ row.
 
-## Syntax
+## Syntax {#syntax}
 
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
         [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
-WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]])
 ```
 
 - `PARTITION BY` - defines how to break a resultset into groups.
@@ -72,7 +74,7 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 └─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
 ```
 
-### Functions
+### Functions {#functions}
 
 These functions can be used only as a window function.
 
@@ -85,11 +87,11 @@ These functions can be used only as a window function.
 - [`lagInFrame(x)`](./lagInFrame.md) - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
 - [`leadInFrame(x)`](./leadInFrame.md) - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
-## Examples
+## Examples {#examples}
 
 Let's have a look at some examples of how window functions can be used.
 
-### Numbering rows
+### Numbering rows {#numbering-rows}
 
 ```sql
 CREATE TABLE salaries
@@ -110,8 +112,10 @@ INSERT INTO salaries FORMAT Values
 ```
 
 ```sql
-SELECT player, salary, 
-       row_number() OVER (ORDER BY salary) AS row
+SELECT
+    player,
+    salary,
+    row_number() OVER (ORDER BY salary ASC) AS row
 FROM salaries;
 ```
 
@@ -126,10 +130,12 @@ FROM salaries;
 ```
 
 ```sql
-SELECT player, salary, 
-       row_number() OVER (ORDER BY salary) AS row,
-       rank() OVER (ORDER BY salary) AS rank,
-       dense_rank() OVER (ORDER BY salary) AS denseRank
+SELECT
+    player,
+    salary,
+    row_number() OVER (ORDER BY salary ASC) AS row,
+    rank() OVER (ORDER BY salary ASC) AS rank,
+    dense_rank() OVER (ORDER BY salary ASC) AS denseRank
 FROM salaries;
 ```
 
@@ -143,14 +149,17 @@ FROM salaries;
 └─────────────────┴────────┴─────┴──────┴───────────┘
 ```
 
-### Aggregation functions
+### Aggregation functions {#aggregation-functions}
 
 Compare each player's salary to the average for their team.
 
 ```sql
-SELECT player, salary, team,
-       avg(salary) OVER (PARTITION BY team) AS teamAvg,
-       salary - teamAvg AS diff
+SELECT
+    player,
+    salary,
+    team,
+    avg(salary) OVER (PARTITION BY team) AS teamAvg,
+    salary - teamAvg AS diff
 FROM salaries;
 ```
 
@@ -167,14 +176,17 @@ FROM salaries;
 Compare each player's salary to the maximum for their team.
 
 ```sql
-SELECT player, salary, team,
-       max(salary) OVER (PARTITION BY team) AS teamAvg,
-       salary - teamAvg AS diff
+SELECT
+    player,
+    salary,
+    team,
+    max(salary) OVER (PARTITION BY team) AS teamMax,
+    salary - teamMax AS diff
 FROM salaries;
 ```
 
 ```text
-┌─player──────────┬─salary─┬─team──────────────────────┬─teamAvg─┬───diff─┐
+┌─player──────────┬─salary─┬─team──────────────────────┬─teamMax─┬───diff─┐
 │ Charles Juarez  │ 190000 │ New Coreystad Archdukes   │  190000 │      0 │
 │ Scott Harrison  │ 150000 │ New Coreystad Archdukes   │  190000 │ -40000 │
 │ Gary Chen       │ 195000 │ Port Elizabeth Barbarians │  195000 │      0 │
@@ -183,7 +195,7 @@ FROM salaries;
 └─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
 ```
 
-### Partitioning by column
+### Partitioning by column {#partitioning-by-column}
 
 ```sql
 CREATE TABLE wf_partition
@@ -216,7 +228,7 @@ ORDER BY
 └──────────┴───────┴───────┴──────────────┘
 ```
 
-### Frame bounding
+### Frame bounding {#frame-bounding}
 
 ```sql
 CREATE TABLE wf_frame
@@ -240,7 +252,7 @@ SELECT
     groupArray(value) OVER (
         PARTITION BY part_key 
         ORDER BY order ASC
-        Rows BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
     ) AS frame_values
 FROM wf_frame
 ORDER BY
@@ -257,23 +269,27 @@ ORDER BY
 ```
 
 ```sql
--- short form - no bound expression, no order by
+-- short form - no bound expression, no order by,
+-- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
     order,
-    groupArray(value) OVER (PARTITION BY part_key) AS frame_values
+    groupArray(value) OVER (PARTITION BY part_key) AS frame_values_short,
+    groupArray(value) OVER (PARTITION BY part_key
+         ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS frame_values
 FROM wf_frame
 ORDER BY
     part_key ASC,
     value ASC;
-┌─part_key─┬─value─┬─order─┬─frame_values─┐
-│        1 │     1 │     1 │ [1,2,3,4,5]  │
-│        1 │     2 │     2 │ [1,2,3,4,5]  │
-│        1 │     3 │     3 │ [1,2,3,4,5]  │
-│        1 │     4 │     4 │ [1,2,3,4,5]  │
-│        1 │     5 │     5 │ [1,2,3,4,5]  │
-└──────────┴───────┴───────┴──────────────┘
+┌─part_key─┬─value─┬─order─┬─frame_values_short─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     2 │     2 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     3 │     3 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     4 │     4 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     5 │     5 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴────────────────────┴──────────────┘
 ```
 
 ```sql
@@ -285,7 +301,7 @@ SELECT
     groupArray(value) OVER (
         PARTITION BY part_key 
         ORDER BY order ASC
-        Rows BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS frame_values
 FROM wf_frame
 ORDER BY
@@ -303,22 +319,27 @@ ORDER BY
 
 ```sql
 -- short form (frame is bounded by the beginning of a partition and the current row)
+-- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
     order,
-    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC) AS frame_values
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC) AS frame_values_short,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC
+       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS frame_values
 FROM wf_frame
 ORDER BY
     part_key ASC,
     value ASC;
-┌─part_key─┬─value─┬─order─┬─frame_values─┐
-│        1 │     1 │     1 │ [1]          │
-│        1 │     2 │     2 │ [1,2]        │
-│        1 │     3 │     3 │ [1,2,3]      │
-│        1 │     4 │     4 │ [1,2,3,4]    │
-│        1 │     5 │     5 │ [1,2,3,4,5]  │
-└──────────┴───────┴───────┴──────────────┘
+
+┌─part_key─┬─value─┬─order─┬─frame_values_short─┬─frame_values─┐
+│        1 │     1 │     1 │ [1]                │ [1]          │
+│        1 │     2 │     2 │ [1,2]              │ [1,2]        │
+│        1 │     3 │     3 │ [1,2,3]            │ [1,2,3]      │
+│        1 │     4 │     4 │ [1,2,3,4]          │ [1,2,3,4]    │
+│        1 │     5 │     5 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴────────────────────┴──────────────┘
 ```
 
 ```sql
@@ -332,6 +353,7 @@ FROM wf_frame
 ORDER BY
     part_key ASC,
     value ASC;
+
 ┌─part_key─┬─value─┬─order─┬─frame_values─┐
 │        1 │     1 │     1 │ [5,4,3,2,1]  │
 │        1 │     2 │     2 │ [5,4,3,2]    │
@@ -350,7 +372,7 @@ SELECT
     groupArray(value) OVER (
         PARTITION BY part_key 
         ORDER BY order ASC
-        Rows BETWEEN 1 PRECEDING AND CURRENT ROW
+        ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
     ) AS frame_values
 FROM wf_frame
 ORDER BY
@@ -367,7 +389,7 @@ ORDER BY
 ```
 
 ```sql
--- sliding frame - Rows BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING 
+-- sliding frame - ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING 
 SELECT
     part_key,
     value,
@@ -375,12 +397,13 @@ SELECT
     groupArray(value) OVER (
         PARTITION BY part_key 
         ORDER BY order ASC
-        Rows BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING
+        ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING
     ) AS frame_values
 FROM wf_frame
 ORDER BY
     part_key ASC,
     value ASC;
+
 ┌─part_key─┬─value─┬─order─┬─frame_values─┐
 │        1 │     1 │     1 │ [1,2,3,4,5]  │
 │        1 │     2 │     2 │ [1,2,3,4,5]  │
@@ -407,11 +430,12 @@ WINDOW
     w2 AS (
         PARTITION BY part_key 
         ORDER BY order DESC 
-        Rows BETWEEN 1 PRECEDING AND CURRENT ROW
+        ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
     )
 ORDER BY
     part_key ASC,
     value ASC;
+
 ┌─part_key─┬─value─┬─order─┬─frame_values─┬─rn_1─┬─rn_2─┬─rn_3─┬─rn_4─┐
 │        1 │     1 │     1 │ [5,4,3,2,1]  │    5 │    5 │    5 │    2 │
 │        1 │     2 │     2 │ [5,4,3,2]    │    4 │    4 │    4 │    2 │
@@ -433,10 +457,11 @@ SELECT
 FROM wf_frame
 WINDOW
     w1 AS (PARTITION BY part_key ORDER BY order ASC),
-    w2 AS (PARTITION BY part_key ORDER BY order ASC Rows BETWEEN 1 PRECEDING AND CURRENT ROW)
+    w2 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
 ORDER BY
     part_key ASC,
     value ASC;
+
 ┌─frame_values_1─┬─first_value_1─┬─last_value_1─┬─frame_values_2─┬─first_value_2─┬─last_value_2─┐
 │ [1]            │             1 │            1 │ [1]            │             1 │            1 │
 │ [1,2]          │             1 │            2 │ [1,2]          │             1 │            2 │
@@ -452,10 +477,11 @@ SELECT
     groupArray(value) OVER w1 AS frame_values_1,
     nth_value(value, 2) OVER w1 AS second_value
 FROM wf_frame
-WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC Rows BETWEEN 3 PRECEDING AND CURRENT ROW)
+WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
 ORDER BY
     part_key ASC,
-    value ASC
+    value ASC;
+
 ┌─frame_values_1─┬─second_value─┐
 │ [1]            │            0 │
 │ [1,2]          │            2 │
@@ -471,10 +497,11 @@ SELECT
     groupArray(value) OVER w1 AS frame_values_1,
     nth_value(toNullable(value), 2) OVER w1 AS second_value
 FROM wf_frame
-WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC Rows BETWEEN 3 PRECEDING AND CURRENT ROW)
+WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
 ORDER BY
     part_key ASC,
-    value ASC
+    value ASC;
+
 ┌─frame_values_1─┬─second_value─┐
 │ [1]            │         ᴺᵁᴸᴸ │
 │ [1,2]          │            2 │
@@ -484,11 +511,11 @@ ORDER BY
 └────────────────┴──────────────┘
 ```
 
-## Real world examples
+## Real world examples {#real-world-examples}
 
 The following examples solve common real-world problems.
 
-### Maximum/total salary per department
+### Maximum/total salary per department {#maximumtotal-salary-per-department}
 
 ```sql
 CREATE TABLE employees
@@ -544,7 +571,7 @@ FROM
 └────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
 ```
 
-### Cumulative sum
+### Cumulative sum {#cumulative-sum}
 
 ```sql
 CREATE TABLE warehouse
@@ -585,7 +612,7 @@ ORDER BY
 └───────┴─────────────────────┴───────┴───────────────┘
 ```
 
-### Moving / Sliding Average (per 3 rows)
+### Moving / Sliding Average (per 3 rows) {#moving--sliding-average-per-3-rows}
 
 ```sql
 CREATE TABLE sensors
@@ -614,7 +641,7 @@ SELECT
     avg(value) OVER (
         PARTITION BY metric 
         ORDER BY ts ASC 
-        Rows BETWEEN 2 PRECEDING AND CURRENT ROW
+        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
     ) AS moving_avg_temp
 FROM sensors
 ORDER BY
@@ -633,7 +660,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴───────────────────┘
 ```
 
-### Moving / Sliding Average (per 10 seconds)
+### Moving / Sliding Average (per 10 seconds) {#moving--sliding-average-per-10-seconds}
 
 ```sql
 SELECT
@@ -659,7 +686,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴────────────────────────────┘
 ```
 
-### Moving / Sliding Average (per 10 days)
+### Moving / Sliding Average (per 10 days) {#moving--sliding-average-per-10-days}
 
 Temperature is stored with second precision, but using `Range` and `ORDER BY toDate(ts)` we form a frame with the size of 10 units, and because of `toDate(ts)` the unit is a day.
 
@@ -714,15 +741,15 @@ ORDER BY
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
 
-## References
+## References {#references}
 
-### GitHub Issues
+### GitHub Issues {#github-issues}
 
 The roadmap for the initial support of window functions is [in this issue](https://github.com/ClickHouse/ClickHouse/issues/18097).
 
 All GitHub issues related to window functions have the [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) tag.
 
-### Tests
+### Tests {#tests}
 
 These tests contain the examples of the currently supported grammar:
 
@@ -730,7 +757,7 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window_fu
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/01591_window_functions.sql
 
-### Postgres Docs
+### Postgres Docs {#postgres-docs}
 
 https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 
@@ -740,7 +767,7 @@ https://www.postgresql.org/docs/devel/functions-window.html
 
 https://www.postgresql.org/docs/devel/tutorial-window.html
 
-### MySQL Docs
+### MySQL Docs {#mysql-docs}
 
 https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 
@@ -749,7 +776,7 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
 
-## Related Content
+## Related Content {#related-content}
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 - Blog: [Window and array functions for Git commit sequences](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)

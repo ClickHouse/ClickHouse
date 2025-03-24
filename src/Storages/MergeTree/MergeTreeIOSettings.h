@@ -1,7 +1,7 @@
 #pragma once
 #include <cstddef>
-#include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 
 
@@ -36,6 +36,8 @@ struct MergeTreeReaderSettings
     CompactPartsReadMethod compact_parts_read_method = CompactPartsReadMethod::SingleBuffer;
     /// True if we read stream for dictionary of LowCardinality type.
     bool is_low_cardinality_dictionary = false;
+    /// True if we read stream for structure of Dynamic/Object type.
+    bool is_dynamic_or_object_structure = false;
     /// True if data may be compressed by different codecs in one stream.
     bool allow_different_codecs = false;
     /// Deleted mask is applied to all reads except internal select from mutate some part columns.
@@ -44,10 +46,16 @@ struct MergeTreeReaderSettings
     bool use_asynchronous_read_from_pool = false;
     /// If PREWHERE has multiple conditions combined with AND, execute them in separate read/filtering steps.
     bool enable_multiple_prewhere_read_steps = false;
+    /// In case of multiple prewhere steps, execute filtering earlier to support short-circuit properly.
+    bool force_short_circuit_execution = false;
     /// If true, try to lower size of read buffer according to granule size and compressed block size.
     bool adjust_read_buffer_size = true;
     /// If true, it's allowed to read the whole part without reading marks.
     bool can_read_part_without_marks = false;
+    /// If we should write/read to/from the query condition cache.
+    bool use_query_condition_cache = false;
+    bool use_deserialization_prefixes_cache = false;
+    bool use_prefixes_deserialization_thread_pool = false;
 };
 
 struct MergeTreeWriterSettings
@@ -60,7 +68,9 @@ struct MergeTreeWriterSettings
         const MergeTreeSettingsPtr & storage_settings,
         bool can_use_adaptive_granularity_,
         bool rewrite_primary_key_,
-        bool blocks_are_granules_size_ = false);
+        bool save_marks_in_cache_,
+        bool save_primary_index_in_memory_,
+        bool blocks_are_granules_size_);
 
     size_t min_compress_block_size;
     size_t max_compress_block_size;
@@ -74,12 +84,17 @@ struct MergeTreeWriterSettings
 
     bool can_use_adaptive_granularity;
     bool rewrite_primary_key;
+    bool save_marks_in_cache;
+    bool save_primary_index_in_memory;
     bool blocks_are_granules_size;
     WriteSettings query_write_settings;
 
     size_t low_cardinality_max_dictionary_size;
     bool low_cardinality_use_single_dictionary_for_part;
     bool use_compact_variant_discriminators_serialization;
+    bool use_v1_object_and_dynamic_serialization;
+    bool use_adaptive_write_buffer_for_dynamic_subcolumns;
+    size_t adaptive_write_buffer_initial_size;
 };
 
 }

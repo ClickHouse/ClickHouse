@@ -1,13 +1,14 @@
-#include "config.h"
 #include <string_view>
-#include <Common/Exception.h>
-#include <base/types.h>
-#include <IO/VarInt.h>
-#include <Compression/CompressionFactory.h>
+#include <base/MemorySanitizer.h>
 #include <Compression/CompressionCodecEncrypted.h>
-#include <Poco/Logger.h>
+#include <Compression/CompressionFactory.h>
+#include <IO/VarInt.h>
+#include <Parsers/IAST.h>
+#include <base/types.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
+#include "config.h"
 
 #if USE_SSL
 #    include <openssl/err.h>
@@ -29,10 +30,9 @@ EncryptionMethod toEncryptionMethod(const std::string & name)
 {
     if (name == "AES_128_GCM_SIV")
         return AES_128_GCM_SIV;
-    else if (name == "AES_256_GCM_SIV")
+    if (name == "AES_256_GCM_SIV")
         return AES_256_GCM_SIV;
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", name);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", name);
 }
 
 namespace
@@ -43,10 +43,9 @@ String getMethodName(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
         return "AES_128_GCM_SIV";
-    else if (Method == AES_256_GCM_SIV)
+    if (Method == AES_256_GCM_SIV)
         return "AES_256_GCM_SIV";
-    else
-        return "";
+    return "";
 }
 
 /// Get method code (used for codec, to understand which one we are using)
@@ -54,10 +53,9 @@ uint8_t getMethodCode(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
         return static_cast<uint8_t>(CompressionMethodByte::AES_128_GCM_SIV);
-    else if (Method == AES_256_GCM_SIV)
+    if (Method == AES_256_GCM_SIV)
         return static_cast<uint8_t>(CompressionMethodByte::AES_256_GCM_SIV);
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
 }
 
 } // end of namespace
@@ -89,10 +87,9 @@ UInt64 methodKeySize(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
         return 16;
-    else if (Method == AES_256_GCM_SIV)
+    if (Method == AES_256_GCM_SIV)
         return 32;
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
 }
 
 /// Get human-readable string representation of last error
@@ -309,11 +306,9 @@ inline char* writeNonce(const String& nonce, char* dest)
         dest += copied_symbols;
         return dest;
     }
-    else
-    {
-        *dest = 0;
-        return ++dest;
-    }
+
+    *dest = 0;
+    return ++dest;
 }
 
 /// Firstly, read a byte, which shows if the nonce will be put in text (if it was defined in config)
@@ -440,19 +435,24 @@ bool CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::Abstrac
 
 void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    /// Try to create new parameters and fill them from config.
-    /// If there will be some errors, throw error
-    std::unique_ptr<Params> new_params(new Params);
-    if (config.has(config_prefix + ".aes_128_gcm_siv"))
+    /// Try to create new parameters and fill them from config, if any encryption method parameter is found
+    /// In case of an error, throw exception
+    std::unique_ptr<Params> new_params;
+    static constexpr std::pair<std::string_view, EncryptionMethod> config_encryption_methods[] =
+        {{".aes_128_gcm_siv", AES_128_GCM_SIV}, {".aes_256_gcm_siv", AES_256_GCM_SIV}};
+    for (const auto& config_encryption_method : config_encryption_methods)
     {
-        loadImpl(config, config_prefix + ".aes_128_gcm_siv", AES_128_GCM_SIV, new_params);
-    }
-    if (config.has(config_prefix + ".aes_256_gcm_siv"))
-    {
-        loadImpl(config, config_prefix + ".aes_256_gcm_siv", AES_256_GCM_SIV, new_params);
+        auto encryption_method_key = config_prefix + config_encryption_method.first.data();
+        if (config.has(encryption_method_key))
+        {
+            if (!new_params)
+                new_params = std::make_unique<Params>();
+            loadImpl(config, encryption_method_key, config_encryption_method.second, new_params);
+        }
     }
 
-    params.set(std::move(new_params));
+    if (new_params)
+        params.set(std::move(new_params));
 }
 
 void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, String &current_key, String & nonce) const
@@ -538,7 +538,8 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
 
     /// Get key and nonce for encryption
     UInt64 current_key_id;
-    String current_key, nonce;
+    String current_key;
+    String nonce;
     Configuration::instance().getCurrentKeyAndNonce(encryption_method, current_key_id, current_key, nonce);
 
     /// Write current key id to support multiple keys.

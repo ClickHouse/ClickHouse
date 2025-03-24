@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
 import datetime
+import logging
 import os
+import urllib.parse
 import uuid
+import bson
 import warnings
 
 import cassandra.cluster
 import pymongo
 import pymysql.cursors
 import redis
-import logging
+import urllib
 
 
 class ExternalSource(object):
@@ -170,6 +173,7 @@ class SourceMongo(ExternalSource):
         user,
         password,
         secure=False,
+        legacy=False,
     ):
         ExternalSource.__init__(
             self,
@@ -182,8 +186,15 @@ class SourceMongo(ExternalSource):
             password,
         )
         self.secure = secure
+        self.legacy = legacy
 
     def get_source_str(self, table_name):
+        options = ""
+        if self.secure and self.legacy:
+            options = "<options>ssl=true</options>"
+        if self.secure and not self.legacy:
+            options = "<options>tls=true&amp;tlsAllowInvalidCertificates=true</options>"
+
         return """
             <mongodb>
                 <host>{host}</host>
@@ -200,7 +211,7 @@ class SourceMongo(ExternalSource):
             user=self.user,
             password=self.password,
             tbl=table_name,
-            options="<options>ssl=true</options>" if self.secure else "",
+            options=options,
         )
 
     def prepare(self, structure, table_name, cluster):
@@ -208,7 +219,7 @@ class SourceMongo(ExternalSource):
             host=self.internal_hostname,
             port=self.internal_port,
             user=self.user,
-            password=self.password,
+            password=urllib.parse.quote_plus(self.password),
         )
         if self.secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
@@ -216,20 +227,22 @@ class SourceMongo(ExternalSource):
         self.converters = {}
         for field in structure.get_all_fields():
             if field.field_type == "Date":
-                self.converters[field.name] = lambda x: datetime.datetime.strptime(
-                    x, "%Y-%m-%d"
-                )
+                self.converters[field.name] = lambda x: datetime.datetime.strptime(x, "%Y-%m-%d")
             elif field.field_type == "DateTime":
-
-                def converter(x):
-                    return datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S")
-
-                self.converters[field.name] = converter
+                self.converters[field.name] = lambda x: datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S")
+            elif field.field_type == "UUID":
+                self.converters[field.name] = lambda x: bson.Binary(uuid.UUID(x).bytes, subtype=4)
             else:
                 self.converters[field.name] = lambda x: x
 
         self.db = self.connection["test"]
-        self.db.add_user(self.user, self.password)
+        user_info = self.db.command("usersInfo", self.user)
+        if user_info["users"]:
+            self.db.command("updateUser", self.user, pwd=self.password)
+        else:
+            self.db.command(
+                "createUser", self.user, pwd=self.password, roles=["readWrite"]
+            )
         self.prepared = True
 
     def load_data(self, data, table_name):
@@ -252,18 +265,24 @@ class SourceMongoURI(SourceMongo):
         return layout.name == "flat"
 
     def get_source_str(self, table_name):
+        options = ""
+        if self.secure and self.legacy:
+            options = "ssl=true"
+        if self.secure and not self.legacy:
+            options = "tls=true&amp;tlsAllowInvalidCertificates=true"
+
         return """
             <mongodb>
-                <uri>mongodb://{user}:{password}@{host}:{port}/test{options}</uri>
+                <uri>mongodb://{user}:{password}@{host}:{port}/test?{options}</uri>
                 <collection>{tbl}</collection>
             </mongodb>
         """.format(
             host=self.docker_hostname,
             port=self.docker_port,
             user=self.user,
-            password=self.password,
+            password=urllib.parse.quote_plus(self.password),
             tbl=table_name,
-            options="?ssl=true" if self.secure else "",
+            options=options,
         )
 
 

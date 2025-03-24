@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-s3-storage, long
-# ^ no-s3-storage: too memory hungry
+# Tags: no-fasttest, no-object-storage, long
+# ^ no-object-storage: too memory hungry
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,12 +16,12 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ghdata WHERE NOT ignore(*)"
 
 ${CLICKHOUSE_CLIENT} -q \
 "SELECT data.repo.name, count() AS stars FROM ghdata \
-    WHERE data.type = 'WatchEvent' GROUP BY data.repo.name ORDER BY stars DESC, data.repo.name LIMIT 5"
+    WHERE data.type = 'WatchEvent' GROUP BY data.repo.name ORDER BY stars DESC, data.repo.name LIMIT 5" --allow_suspicious_types_in_order_by 1 --allow_suspicious_types_in_group_by 1
 
 ${CLICKHOUSE_CLIENT} --enable_analyzer=1 -q \
 "SELECT data.payload.commits[].author.name AS name, count() AS c FROM ghdata \
     ARRAY JOIN data.payload.commits[].author.name \
-    GROUP BY name ORDER BY c DESC, name LIMIT 5"
+    GROUP BY name ORDER BY c DESC, name LIMIT 5" --allow_suspicious_types_in_order_by 1 --allow_suspicious_types_in_group_by 1
 
 ${CLICKHOUSE_CLIENT} -q "SELECT max(data.payload.pull_request.assignees[].size0) FROM ghdata"
 

@@ -1,6 +1,7 @@
-#include <Core/SettingsEnums.h>
-#include <magic_enum.hpp>
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Common/Exception.h>
+#include <Core/SettingsEnums.h>
+#include <base/EnumReflection.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -68,6 +69,14 @@ IMPLEMENT_SETTING_ENUM(OverflowMode, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
     {{"throw", OverflowMode::THROW},
      {"break", OverflowMode::BREAK}})
 
+IMPLEMENT_SETTING_ENUM(DistributedCacheLogMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"nothing", DistributedCacheLogMode::LOG_NOTHING},
+     {"on_error", DistributedCacheLogMode::LOG_ON_ERROR},
+     {"all", DistributedCacheLogMode::LOG_ALL}})
+
+IMPLEMENT_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit, ErrorCodes::BAD_ARGUMENTS,
+    {{"wait", DistributedCachePoolBehaviourOnLimit::WAIT},
+     {"allocate_bypassing_pool", DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL}});
 
 IMPLEMENT_SETTING_ENUM(OverflowModeGroupBy, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
     {{"throw", OverflowMode::THROW},
@@ -82,15 +91,15 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
      {"allow",  DistributedProductMode::ALLOW}})
 
 
-IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw",  QueryCacheNondeterministicFunctionHandling::Throw},
-     {"save",   QueryCacheNondeterministicFunctionHandling::Save},
-     {"ignore", QueryCacheNondeterministicFunctionHandling::Ignore}})
+IMPLEMENT_SETTING_ENUM(QueryResultCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryResultCacheNondeterministicFunctionHandling::Throw},
+     {"save",   QueryResultCacheNondeterministicFunctionHandling::Save},
+     {"ignore", QueryResultCacheNondeterministicFunctionHandling::Ignore}})
 
-IMPLEMENT_SETTING_ENUM(QueryCacheSystemTableHandling, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw",  QueryCacheSystemTableHandling::Throw},
-     {"save",   QueryCacheSystemTableHandling::Save},
-     {"ignore", QueryCacheSystemTableHandling::Ignore}})
+IMPLEMENT_SETTING_ENUM(QueryResultCacheSystemTableHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryResultCacheSystemTableHandling::Throw},
+     {"save",   QueryResultCacheSystemTableHandling::Save},
+     {"ignore", QueryResultCacheSystemTableHandling::Ignore}})
 
 IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
@@ -168,7 +177,6 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql}})
 
-
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
      {"range", ParallelReplicasCustomKeyFilterType::RANGE}})
@@ -179,9 +187,17 @@ IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUME
      {"rebuild", LightweightMutationProjectionMode::REBUILD}})
 
 IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw", DeduplicateMergeProjectionMode::THROW},
+    {{"ignore", DeduplicateMergeProjectionMode::IGNORE},
+     {"throw", DeduplicateMergeProjectionMode::THROW},
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
+
+IMPLEMENT_SETTING_ENUM(ParallelReplicasMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", ParallelReplicasMode::AUTO},
+     {"read_tasks", ParallelReplicasMode::READ_TASKS},
+     {"custom_key_sampling", ParallelReplicasMode::CUSTOM_KEY_SAMPLING},
+     {"custom_key_range", ParallelReplicasMode::CUSTOM_KEY_RANGE},
+     {"sampling_key", ParallelReplicasMode::SAMPLING_KEY}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS)
 
@@ -245,9 +261,29 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
 
-IMPLEMENT_SETTING_ENUM(IdentifierQuotingStyle, ErrorCodes::BAD_ARGUMENTS,
-    {{"None", IdentifierQuotingStyle::None},
-     {"Backticks", IdentifierQuotingStyle::Backticks},
+IMPLEMENT_SETTING_ENUM(
+    IdentifierQuotingStyle,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"Backticks", IdentifierQuotingStyle::Backticks},
      {"DoubleQuotes", IdentifierQuotingStyle::DoubleQuotes},
      {"BackticksMySQL", IdentifierQuotingStyle::BackticksMySQL}})
+
+IMPLEMENT_SETTING_ENUM(
+    IdentifierQuotingRule,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"user_display", IdentifierQuotingRule::UserDisplay},
+     {"when_necessary", IdentifierQuotingRule::WhenNecessary},
+     {"always", IdentifierQuotingRule::Always}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeSelectorAlgorithm,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"Simple", MergeSelectorAlgorithm::SIMPLE},
+     {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE},
+     {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
+
+IMPLEMENT_SETTING_ENUM(DatabaseDataLakeCatalogType, ErrorCodes::BAD_ARGUMENTS,
+                       {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
+                        {"unity", DatabaseDataLakeCatalogType::UNITY}})
+
 }

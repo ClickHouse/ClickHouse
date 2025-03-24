@@ -53,13 +53,15 @@ private:
 template <typename ProfilerImpl>
 class QueryProfilerBase
 {
+    friend ProfilerImpl;
+
 public:
-    QueryProfilerBase(UInt64 thread_id, int clock_type, UInt64 period, int pause_signal_);
     ~QueryProfilerBase();
 
     void setPeriod(UInt64 period_);
 
 private:
+    QueryProfilerBase(UInt64 thread_id, int clock_type, UInt64 period, int pause_signal_);
     void cleanup();
 
     LoggerPtr log;

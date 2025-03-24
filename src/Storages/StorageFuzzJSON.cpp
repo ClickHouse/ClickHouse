@@ -5,8 +5,10 @@
 #include <optional>
 #include <random>
 #include <string_view>
+#include <pcg_random.hpp>
 #include <unordered_set>
 #include <Columns/ColumnString.h>
+#include <IO/Operators.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
@@ -15,6 +17,8 @@
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/checkStackSize.h>
 #include <Common/escapeString.h>
+#include <Processors/ISource.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -63,20 +67,19 @@ JSONValue::Type JSONValue::getType(const JSONValue & v)
         assert(!v.object);
         return JSONValue::Type::Fixed;
     }
-    else if (v.array)
+    if (v.array)
     {
         assert(!v.fixed);
         assert(!v.object);
         return JSONValue::Type::Array;
     }
-    else if (v.object)
+    if (v.object)
     {
         assert(!v.fixed);
         assert(!v.array);
         return JSONValue::Type::Object;
     }
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to determine JSON node type.");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to determine JSON node type.");
 }
 
 // A node represents either a JSON field (a key-value pair) or a JSON value.
@@ -150,7 +153,6 @@ void traverse(const ParserImpl::Element & e, std::shared_ptr<JSONNode> node)
 
 std::shared_ptr<JSONNode> parseJSON(const String & json)
 {
-    std::string_view view{json.begin(), json.end()};
     ParserImpl::Element document;
     ParserImpl p;
 
@@ -682,6 +684,10 @@ StorageFuzzJSON::Configuration StorageFuzzJSON::getConfiguration(ASTs & engine_a
 
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
     {
+        /// Perform strict validation of ASTs in addition to name collection extraction.
+        for (auto * args_it = std::next(engine_args.begin()); args_it != engine_args.end(); ++args_it)
+            getKeyValueFromAST(*args_it, local_context);
+
         StorageFuzzJSON::processNamedCollectionResult(configuration, *named_collection);
     }
     else

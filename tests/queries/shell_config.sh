@@ -49,7 +49,6 @@ export CLICKHOUSE_BENCHMARK=${CLICKHOUSE_BENCHMARK:="$CLICKHOUSE_BENCHMARK_BINAR
 # others
 export CLICKHOUSE_OBFUSCATOR=${CLICKHOUSE_OBFUSCATOR:="${CLICKHOUSE_BINARY}-obfuscator"}
 export CLICKHOUSE_COMPRESSOR=${CLICKHOUSE_COMPRESSOR:="${CLICKHOUSE_BINARY}-compressor"}
-export CLICKHOUSE_GIT_IMPORT=${CLICKHOUSE_GIT_IMPORT="${CLICKHOUSE_BINARY}-git-import"}
 
 export CLICKHOUSE_CONFIG_DIR=${CLICKHOUSE_CONFIG_DIR:="/etc/clickhouse-server"}
 export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:="/etc/clickhouse-server/config.xml"}
@@ -141,7 +140,7 @@ export MYSQL_CLIENT_CLICKHOUSE_USER=${MYSQL_CLIENT_CLICKHOUSE_USER:="default"}
 [ -n "${CLICKHOUSE_HOST:-}" ] && MYSQL_CLIENT_OPT0+=" --host ${CLICKHOUSE_HOST} "
 [ -n "${CLICKHOUSE_PORT_MYSQL:-}" ] && MYSQL_CLIENT_OPT0+=" --port ${CLICKHOUSE_PORT_MYSQL} "
 [ -n "${CLICKHOUSE_DATABASE:-}" ] && MYSQL_CLIENT_OPT0+=" --database ${CLICKHOUSE_DATABASE} "
-MYSQL_CLIENT_OPT0+=" --user ${MYSQL_CLIENT_CLICKHOUSE_USER} "
+MYSQL_CLIENT_OPT0+=" --user ${MYSQL_CLIENT_CLICKHOUSE_USER} --no-auto-rehash "
 export MYSQL_CLIENT_OPT="${MYSQL_CLIENT_OPT0:-} ${MYSQL_CLIENT_OPT:-}"
 export MYSQL_CLIENT=${MYSQL_CLIENT:="$MYSQL_CLIENT_BINARY ${MYSQL_CLIENT_OPT:-}"}
 
@@ -157,7 +156,7 @@ function clickhouse_client_removed_host_parameter()
 function wait_for_queries_to_finish()
 {
     local max_tries="${1:-20}"
-    # Wait for all queries to finish (query may still be running if thread is killed by timeout)
+    # Wait for all queries to finish (query may still be running if a thread is killed by timeout)
     num_tries=0
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%'") -ne 0 ]]; do
         sleep 0.5;
@@ -175,7 +174,7 @@ function random_str()
     tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }
 
-function query_with_retry
+function query_with_retry()
 {
     local query="$1" && shift
 
@@ -193,4 +192,21 @@ function query_with_retry
         fi
     done
     echo "Query '$query' failed with '$result'"
+}
+
+function run_with_error()
+{
+    local cmd="$1"; shift
+
+    local stdout_tmp=""
+    stdout_tmp=$(mktemp -p ${CLICKHOUSE_TMP})
+    local stderr_tmp=""
+    stderr_tmp=$(mktemp -p ${CLICKHOUSE_TMP})
+
+    local retval=0
+    $cmd "$@" 1>${stdout_tmp} 2>${stderr_tmp} || retval="$?"
+
+    echo "${retval}" "${stdout_tmp}" "${stderr_tmp}"
+
+    return 0
 }

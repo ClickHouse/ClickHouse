@@ -9,6 +9,7 @@
 #include <Columns/ColumnArray.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 
 
 namespace DB
@@ -36,6 +37,9 @@ IMergeTreeReader::IMergeTreeReader(
     const ValueSizeMap & avg_value_size_hints_)
     : data_part_info_for_read(data_part_info_for_read_)
     , avg_value_size_hints(avg_value_size_hints_)
+    , part_columns(data_part_info_for_read->isWidePart()
+        ? data_part_info_for_read->getColumnsDescriptionWithCollectedNested()
+        : data_part_info_for_read->getColumnsDescription())
     , uncompressed_cache(uncompressed_cache_)
     , mark_cache(mark_cache_)
     , settings(settings_)
@@ -48,9 +52,6 @@ IMergeTreeReader::IMergeTreeReader(
     , requested_columns(data_part_info_for_read->isWidePart()
         ? Nested::convertToSubcolumns(columns_)
         : columns_)
-    , part_columns(data_part_info_for_read->isWidePart()
-        ? data_part_info_for_read->getColumnsDescriptionWithCollectedNested()
-        : data_part_info_for_read->getColumnsDescription())
     , virtual_fields(virtual_fields_)
 {
     columns_to_read.reserve(requested_columns.size());
@@ -60,6 +61,13 @@ IMergeTreeReader::IMergeTreeReader(
     {
         columns_to_read.emplace_back(getColumnInPart(column));
         serializations.emplace_back(getSerializationInPart(column));
+
+        if (column.isSubcolumn())
+        {
+            auto name_in_storage = column.getNameInStorage();
+            auto type_in_storage = column.getTypeInStorage();
+            serializations_of_full_columns.emplace(name_in_storage, getSerializationInPart({name_in_storage, type_in_storage}));
+        }
     }
 }
 
@@ -156,13 +164,21 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         auto it = original_requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++it)
         {
-            auto name_in_storage = it->getNameInStorage();
-
-            if (full_requested_columns_set.emplace(name_in_storage).second)
-                full_requested_columns.emplace_back(name_in_storage, it->getTypeInStorage());
-
             if (res_columns[pos])
+            {
+                /// If column is already read, request it as is.
+                if (full_requested_columns_set.emplace(it->name).second)
+                    full_requested_columns.emplace_back(it->name, it->type);
+
                 additional_columns.insert({res_columns[pos], it->type, it->name});
+            }
+            else
+            {
+                /// If column or subcolumn is missed, request full column for correct evaluation of defaults of subcolumns.
+                auto name_in_storage = it->getNameInStorage();
+                if (full_requested_columns_set.emplace(name_in_storage).second)
+                    full_requested_columns.emplace_back(name_in_storage, it->getTypeInStorage());
+            }
         }
 
         auto dag = DB::evaluateMissingDefaults(
@@ -172,10 +188,10 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
         if (dag)
         {
-            dag->addMaterializingOutputActions();
+            dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
             auto actions = std::make_shared<ExpressionActions>(
                 std::move(*dag),
-                ExpressionActionsSettings::fromSettings(data_part_info_for_read->getContext()->getSettingsRef()));
+                ExpressionActionsSettings(data_part_info_for_read->getContext()->getSettingsRef()));
             actions->execute(additional_columns);
         }
 
@@ -183,6 +199,12 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         it = original_requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++it)
         {
+            if (additional_columns.has(it->name))
+            {
+                res_columns[pos] = additional_columns.getByName(it->name).column;
+                continue;
+            }
+
             auto name_in_storage = it->getNameInStorage();
             res_columns[pos] = additional_columns.getByName(name_in_storage).column;
 
@@ -303,7 +325,8 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
     }
 }
 
-IMergeTreeReader::ColumnNameLevel IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) const
+std::optional<IMergeTreeReader::ColumnForOffsets>
+IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) const
 {
     auto get_offsets_streams = [](const auto & serialization, const auto & name_in_storage)
     {
@@ -325,7 +348,7 @@ IMergeTreeReader::ColumnNameLevel IMergeTreeReader::findColumnForOffsets(const N
     auto required_offsets_streams = get_offsets_streams(getSerializationInPart(required_column), required_name_in_storage);
 
     size_t max_matched_streams = 0;
-    ColumnNameLevel name_level;
+    std::optional<ColumnForOffsets> result;
 
     /// Find column that has maximal number of matching
     /// offsets columns with required_column.
@@ -335,7 +358,8 @@ IMergeTreeReader::ColumnNameLevel IMergeTreeReader::findColumnForOffsets(const N
         if (name_in_storage != required_name_in_storage)
             continue;
 
-        auto offsets_streams = get_offsets_streams(data_part_info_for_read->getSerialization(part_column), name_in_storage);
+        auto serialization = data_part_info_for_read->getSerialization(part_column);
+        auto offsets_streams = get_offsets_streams(serialization, name_in_storage);
         NameToIndexMap offsets_streams_map(offsets_streams.begin(), offsets_streams.end());
 
         size_t i = 0;
@@ -348,14 +372,14 @@ IMergeTreeReader::ColumnNameLevel IMergeTreeReader::findColumnForOffsets(const N
             it = current_it;
         }
 
-        if (i && (!name_level || i > max_matched_streams))
+        if (i && (!result || i > max_matched_streams))
         {
             max_matched_streams = i;
-            name_level.emplace(part_column.name, it->second);
+            result.emplace(ColumnForOffsets{part_column, serialization, it->second});
         }
     }
 
-    return name_level;
+    return result;
 }
 
 void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const

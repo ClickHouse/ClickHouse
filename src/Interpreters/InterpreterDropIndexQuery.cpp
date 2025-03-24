@@ -12,6 +12,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -43,7 +47,7 @@ BlockIO InterpreterDropIndexQuery::execute()
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, current_context);
+        return database->tryEnqueueReplicatedDDL(query_ptr, current_context, {});
     }
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, current_context);
@@ -61,7 +65,7 @@ BlockIO InterpreterDropIndexQuery::execute()
 
     alter_commands.emplace_back(std::move(command));
 
-    auto alter_lock = table->lockForAlter(current_context->getSettingsRef().lock_acquire_timeout);
+    auto alter_lock = table->lockForAlter(current_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
     alter_commands.validate(table, current_context);
     alter_commands.prepare(metadata);

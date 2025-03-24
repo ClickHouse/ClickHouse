@@ -80,6 +80,7 @@ class ClickHouseVersion:
             self._tweak = 1
         else:
             self._major += 1
+            self._minor = 1
             self._revision += 1
             self._patch = 1
             self._tweak = 1
@@ -164,6 +165,11 @@ class ClickHouseVersion:
         """our X.3 and X.8 are LTS"""
         return self.minor % 5 == 3
 
+    @property
+    def is_supported(self) -> bool:
+        "we can support only versions with VersionType STABLE or LTS"
+        return self.description in (VersionType.STABLE, VersionType.LTS)
+
     def get_stable_release_type(self) -> str:
         if self.is_lts:
             return VersionType.LTS
@@ -222,7 +228,7 @@ class ClickHouseVersion:
         for part in ("major", "minor", "patch", "tweak"):
             if getattr(self, part) < getattr(other, part):
                 return True
-            elif getattr(self, part) > getattr(other, part):
+            if getattr(self, part) > getattr(other, part):
                 return False
 
         return False
@@ -365,7 +371,7 @@ def get_supported_versions(
         versions = list(versions)
     else:
         # checks that repo is not shallow in background
-        versions = get_tagged_versions()
+        versions = [v for v in get_tagged_versions() if v.is_supported]
     versions.sort()
     versions.reverse()
     for version in versions:

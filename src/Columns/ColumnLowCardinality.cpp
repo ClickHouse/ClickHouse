@@ -117,15 +117,13 @@ namespace
     {
         if (auto * data_uint8 = getIndexesData<UInt8>(column))
             return mapUniqueIndexImpl(*data_uint8);
-        else if (auto * data_uint16 = getIndexesData<UInt16>(column))
+        if (auto * data_uint16 = getIndexesData<UInt16>(column))
             return mapUniqueIndexImpl(*data_uint16);
-        else if (auto * data_uint32 = getIndexesData<UInt32>(column))
+        if (auto * data_uint32 = getIndexesData<UInt32>(column))
             return mapUniqueIndexImpl(*data_uint32);
-        else if (auto * data_uint64 = getIndexesData<UInt64>(column))
+        if (auto * data_uint64 = getIndexesData<UInt64>(column))
             return mapUniqueIndexImpl(*data_uint64);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}",
-                            column.getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}", column.getName());
     }
 }
 
@@ -428,30 +426,90 @@ void ColumnLowCardinality::getPermutation(IColumn::PermutationSortDirection dire
     getPermutationImpl(direction, stability, limit, nan_direction_hint, res);
 }
 
+namespace
+{
+
+/// Comparator for sorting LowCardinality column with the help of sorted dictionary.
+/// NOTE: Dictionary itself must be sorted in ASC or DESC order depending on the requested direction.
+template <typename IndexColumn, bool stable>
+struct LowCardinalityComparator
+{
+    const IndexColumn & real_indexes;                   /// Indexes column
+    const PaddedPODArray<UInt64> & position_by_index;   /// Maps original dictionary index to position in sorted dictionary
+
+    inline bool operator () (size_t lhs, size_t rhs) const
+    {
+        int ret;
+
+        const UInt64 lhs_index = real_indexes.getUInt(lhs);
+        const UInt64 rhs_index = real_indexes.getUInt(rhs);
+
+        if (lhs_index == rhs_index)
+            ret = 0;
+        else
+            ret = CompareHelper<UInt64>::compare(position_by_index[lhs_index], position_by_index[rhs_index], 0);
+
+        if (stable && ret == 0)
+            return lhs < rhs;
+
+        return ret < 0;
+    }
+};
+
+}
+
+template <typename IndexColumn>
+void ColumnLowCardinality::updatePermutationWithIndexType(
+    IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
+    IColumn::Permutation & res, EqualRanges & equal_ranges) const
+{
+    /// Cast indexes column to the real type so that compareAt and getUInt methods can be inlined.
+    const IndexColumn * real_indexes = assert_cast<const IndexColumn *>(&getIndexes());
+
+    auto equal_comparator = [real_indexes](size_t lhs, size_t rhs)
+    {
+        return real_indexes->getUInt(lhs) == real_indexes->getUInt(rhs);
+    };
+
+    const bool stable = (stability == IColumn::PermutationSortStability::Stable);
+    if (stable)
+        updatePermutationImpl(limit, res, equal_ranges, LowCardinalityComparator<IndexColumn, true>{*real_indexes, position_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
+    else
+        updatePermutationImpl(limit, res, equal_ranges, LowCardinalityComparator<IndexColumn, false>{*real_indexes, position_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
+}
+
 void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                         size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
+    IColumn::Permutation dict_perm;
+    getDictionary().getNestedColumn()->getPermutation(direction, stability, 0, nan_direction_hint, dict_perm);
 
-    auto comparator = [this, ascending, stability, nan_direction_hint](size_t lhs, size_t rhs)
+    /// This is a paranoid check, but in other places in code empty permutation is used to indicate that no sorting is needed.
+    if (dict_perm.size() != getDictionary().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Dictionary permutation size {} is equal to dictionary size {}. It is a bug.",
+            dict_perm.size(), getDictionary().size());
+    PaddedPODArray<UInt64> position_by_index(dict_perm.size());
+    for (size_t i = 0; i < dict_perm.size(); ++i)
+        position_by_index[dict_perm[i]] = i;
+
+    /// Dispatch by index column type.
+    switch (idx.getSizeOfIndexType())
     {
-        int ret = getDictionary().compareAt(getIndexes().getUInt(lhs), getIndexes().getUInt(rhs), getDictionary(), nan_direction_hint);
-        if (unlikely(stability == IColumn::PermutationSortStability::Stable && ret == 0))
-            return lhs < rhs;
-
-        if (ascending)
-            return ret < 0;
-        else
-            return ret > 0;
-    };
-
-    auto equal_comparator = [this, nan_direction_hint](size_t lhs, size_t rhs)
-    {
-        int ret = getDictionary().compareAt(getIndexes().getUInt(lhs), getIndexes().getUInt(rhs), getDictionary(), nan_direction_hint);
-        return ret == 0;
-    };
-
-    updatePermutationImpl(limit, res, equal_ranges, comparator, equal_comparator, DefaultSort(), DefaultPartialSort());
+        case sizeof(UInt8):
+            updatePermutationWithIndexType<ColumnUInt8>(stability, limit, position_by_index, res, equal_ranges);
+            return;
+        case sizeof(UInt16):
+            updatePermutationWithIndexType<ColumnUInt16>(stability, limit, position_by_index, res, equal_ranges);
+            return;
+        case sizeof(UInt32):
+            updatePermutationWithIndexType<ColumnUInt32>(stability, limit, position_by_index, res, equal_ranges);
+            return;
+        case sizeof(UInt64):
+            updatePermutationWithIndexType<ColumnUInt64>(stability, limit, position_by_index, res, equal_ranges);
+            return;
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
+    }
 }
 
 void ColumnLowCardinality::getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -478,8 +536,7 @@ void ColumnLowCardinality::updatePermutationWithCollation(const Collator & colla
 
         if (ascending)
             return ret < 0;
-        else
-            return ret > 0;
+        return ret > 0;
     };
 
     auto equal_comparator = [this, &collator, nan_direction_hint](size_t lhs, size_t rhs)

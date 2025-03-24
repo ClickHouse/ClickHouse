@@ -66,7 +66,8 @@ namespace
 
 bool isNotFoundError(Aws::S3::S3Errors error)
 {
-    return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY;
+    return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY
+        || error == Aws::S3::S3Errors::NO_SUCH_BUCKET;
 }
 
 ObjectInfo getObjectInfo(
@@ -82,11 +83,13 @@ ObjectInfo getObjectInfo(
     {
         return *object_info;
     }
-    else if (throw_on_error)
+    if (throw_on_error)
     {
-        throw S3Exception(error.GetErrorType(),
+        throw S3Exception(
+            error.GetErrorType(),
             "Failed to get object info: {}. HTTP response code: {}",
-            error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
+            error.GetMessage(),
+            static_cast<size_t>(error.GetResponseCode()));
     }
     return {};
 }
@@ -115,8 +118,8 @@ bool objectExists(
         return false;
 
     throw S3Exception(error.GetErrorType(),
-        "Failed to check existence of key {} in bucket {}: {}",
-        key, bucket, error.GetMessage());
+        "Failed to check existence of key {} in bucket {}: {}. HTTP response code: {}, error type: {}",
+        key, bucket, error.GetMessage(), static_cast<size_t>(error.GetResponseCode()), error.GetErrorType());
 }
 
 void checkObjectExists(

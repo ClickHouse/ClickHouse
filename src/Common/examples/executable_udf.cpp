@@ -42,5 +42,7 @@ int main(int argc, char **argv)
         write_buffer.next();
     }
 
+    write_buffer.finalize();
+
     return 0;
 }

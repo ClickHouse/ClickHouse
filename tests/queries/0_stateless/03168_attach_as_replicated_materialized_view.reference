@@ -1,0 +1,7 @@
+6
+3
+hourly_data	ReplicatedMergeTree
+monthly_aggregated_data	ReplicatedAggregatingMergeTree
+monthly_aggregated_data_mv	MaterializedView
+12
+6

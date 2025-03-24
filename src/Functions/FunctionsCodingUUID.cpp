@@ -4,7 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
-#include <Common/BitHelpers.h>
+#include <Common/intExp10.h>
 #include <base/hex.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -40,7 +40,7 @@ std::pair<int, int> determineBinaryStartIndexWithIncrement(ptrdiff_t num_bytes, 
 {
     if (representation == Representation::BigEndian)
         return {0, 1};
-    else if (representation == Representation::LittleEndian)
+    if (representation == Representation::LittleEndian)
         return {num_bytes - 1, -1};
 
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "{} is not handled yet", magic_enum::enum_name(representation));
@@ -174,6 +174,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
@@ -214,9 +219,8 @@ public:
 
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                            arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 
@@ -291,12 +295,16 @@ public:
 
             return col_res;
         }
-        else if (const auto * col_in_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
+        if (const auto * col_in_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             if (col_in_fixed->getN() != uuid_text_length)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of column {} argument of function {}, expected FixedString({})",
-                                col_type_name.type->getName(), col_in_fixed->getName(), getName(), uuid_text_length);
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of column {} argument of function {}, expected FixedString({})",
+                    col_type_name.type->getName(),
+                    col_in_fixed->getName(),
+                    getName(),
+                    uuid_text_length);
 
             const auto & vec_in = col_in_fixed->getChars();
 
@@ -317,9 +325,8 @@ public:
 
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                            arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 
@@ -393,9 +400,8 @@ public:
 
             return col_res;
         }
-        else
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 
@@ -467,9 +473,8 @@ public:
 
             return col_res;
         }
-        else
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 
@@ -491,7 +496,7 @@ This function accepts a UUID and returns a FixedString(16) as its binary represe
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │ @</a];!~p{jTj={) │
 └──────────────────────────────────────┴──────────────────┴──────────────────┘
 )"}},
-            .categories{"UUID"}});
+            .category{"UUID"}});
 
 
     factory.registerFunction<FunctionUUIDv7ToDateTime>(
@@ -504,7 +509,7 @@ An optional second argument can be passed to specify a timezone for the timestam
             .examples{
                 {"uuid","select UUIDv7ToDateTime(generateUUIDv7())", ""},
                 {"uuid","select generateUUIDv7() as uuid, UUIDv7ToDateTime(uuid), UUIDv7ToDateTime(uuid, 'America/New_York')", ""}},
-            .categories{"UUID"}});
+            .category{"UUID"}});
 }
 
 }

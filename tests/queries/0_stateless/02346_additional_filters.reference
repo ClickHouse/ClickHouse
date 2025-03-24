@@ -101,7 +101,7 @@ select * from (select number from system.numbers limit 5 union all select x from
 4
 4
 5
-select number, x, y from (select number from system.numbers limit 5) f any left join (select x, y from table_1) s on f.number = s.x settings additional_table_filters={'system.numbers' : 'number != 3', 'table_1' : 'x != 2'};
+select number, x, y from (select number from system.numbers limit 5) f any left join (select x, y from table_1) s on f.number = s.x order by all settings additional_table_filters={'system.numbers' : 'number != 3', 'table_1' : 'x != 2'};
 0	0	
 1	1	a
 2	0	

@@ -57,8 +57,8 @@ $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(obj)) as 
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(obj.key_1[]))) as path FROM t_json_11 order by path;"
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(arrayJoin(obj.key_1[].key_3[])))) as path FROM t_json_11 order by path;"
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(arrayJoin(arrayJoin(obj.key_1[].key_3[].key_4[]))))) as path FROM t_json_11 order by path;"
-$CLICKHOUSE_CLIENT -q "SELECT obj FROM t_json_11 ORDER BY obj.id FORMAT JSONEachRow"
-$CLICKHOUSE_CLIENT -q "SELECT obj.key_1[].key_3 FROM t_json_11 ORDER BY obj.id FORMAT JSONEachRow"
-$CLICKHOUSE_CLIENT -q "SELECT obj.key_1[].key_3[].key_4[].key_5, obj.key_1[].key_3[].key_7 FROM t_json_11 ORDER BY obj.id"
+$CLICKHOUSE_CLIENT -q "SELECT obj FROM t_json_11 ORDER BY obj.id FORMAT JSONEachRow" --allow_suspicious_types_in_order_by 1
+$CLICKHOUSE_CLIENT -q "SELECT obj.key_1[].key_3 FROM t_json_11 ORDER BY obj.id FORMAT JSONEachRow" --allow_suspicious_types_in_order_by 1
+$CLICKHOUSE_CLIENT -q "SELECT obj.key_1[].key_3[].key_4[].key_5, obj.key_1[].key_3[].key_7 FROM t_json_11 ORDER BY obj.id" --allow_suspicious_types_in_order_by 1
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_json_11;"

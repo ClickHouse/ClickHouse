@@ -115,11 +115,6 @@ protected:
     template <typename ... TAllocatorParams>
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
-#if USE_GWP_ASAN
-        if (unlikely(GWPAsan::shouldForceSample()))
-            gwp_asan::getThreadLocals()->NextSampleCounter = 1;
-#endif
-
         char * allocated = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...));
 
         c_start = allocated + pad_left;
@@ -140,19 +135,14 @@ protected:
         TAllocator::free(c_start - pad_left, allocated_bytes());
     }
 
-    template <typename ... TAllocatorParams>
-    void realloc(size_t bytes, TAllocatorParams &&... allocator_params)
+    template <typename... TAllocatorParams>
+    void PRESERVE_MOST realloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
         if (c_start == null)
         {
             alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...);
             return;
         }
-
-#if USE_GWP_ASAN
-        if (unlikely(GWPAsan::shouldForceSample()))
-            gwp_asan::getThreadLocals()->NextSampleCounter = 1;
-#endif
 
         unprotect();
 
@@ -177,8 +167,8 @@ protected:
         return (stack_threshold > 0) && (allocated_bytes() <= stack_threshold);
     }
 
-    template <typename ... TAllocatorParams>
-    void reserveForNextSize(TAllocatorParams &&... allocator_params)
+    template <typename... TAllocatorParams>
+    void PRESERVE_MOST reserveForNextSize(TAllocatorParams &&... allocator_params)
     {
         if (empty())
         {
@@ -631,12 +621,12 @@ public:
         {
             return;
         }
-        else if (!this->isInitialized() && rhs.isInitialized())
+        if (!this->isInitialized() && rhs.isInitialized())
         {
             do_move(rhs, *this);
             return;
         }
-        else if (this->isInitialized() && !rhs.isInitialized())
+        if (this->isInitialized() && !rhs.isInitialized())
         {
             do_move(*this, rhs);
             return;

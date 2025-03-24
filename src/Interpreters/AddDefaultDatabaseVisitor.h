@@ -26,7 +26,7 @@
 namespace DB
 {
 
-/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
+/// Visitors consist of functions with unified interface 'void visit(Cast & x, ASTPtr & y)', there x is y, successfully cast to Cast.
 /// Both types and function could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
 
 /// Visits AST nodes, add default database to tables if not set. There's different logic for DDLs and selects.
@@ -121,7 +121,10 @@ private:
     {
         if (select.recursive_with)
             for (const auto & child : select.with()->children)
-                with_aliases.insert(child->as<ASTWithElement>()->name);
+            {
+                if (typeid_cast<ASTWithElement *>(child.get()))
+                    with_aliases.insert(child->as<ASTWithElement>()->name);
+            }
 
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());

@@ -10,6 +10,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSetOperationMode union_default_mode;
+}
 
 namespace ErrorCodes
 {
@@ -27,7 +31,7 @@ ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const Co
     res.if_not_exists = false;
     res.or_replace = false;
     FunctionNameNormalizer::visit(res.function_core.get());
-    NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef().union_default_mode};
+    NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
     NormalizeSelectWithUnionQueryVisitor{data}.visit(res.function_core);
     return ptr;
 }
@@ -101,7 +105,7 @@ bool UserDefinedSQLObjectsStorageBase::storeObject(
     {
         if (throw_if_exists)
             throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined object '{}' already exists", object_name);
-        else if (!replace_if_exists)
+        if (!replace_if_exists)
             return false;
     }
 
@@ -132,8 +136,7 @@ bool UserDefinedSQLObjectsStorageBase::removeObject(
     {
         if (throw_if_not_exists)
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "User-defined object '{}' doesn't exist", object_name);
-        else
-            return false;
+        return false;
     }
 
     bool removed = removeObjectImpl(

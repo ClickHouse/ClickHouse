@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/SelectQueryInfo.h>
@@ -13,8 +13,9 @@
 namespace DB
 {
 
+class Block;
+class Chunk;
 class NamesAndTypesList;
-
 
 namespace VirtualColumnUtils
 {
@@ -42,7 +43,10 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 /// Builds sets used by ActionsDAG inplace.
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
-/// Recursively checks if all functions used in DAG are deterministic in scope of query.
+/// Checks if all functions used in DAG are deterministic.
+bool isDeterministic(const ActionsDAG::Node * node);
+
+/// Checks recursively if all functions used in DAG are deterministic in scope of query.
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
 /// Extract a part of predicate that can be evaluated using only columns from input_names.
@@ -77,12 +81,12 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns);
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
 
 template <typename T>
-void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns)
+void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns);
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, context);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;

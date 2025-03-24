@@ -1,7 +1,12 @@
 ---
-slug: /en/operations/system-tables/parts_columns
+description: 'System table containing information about parts and columns of MergeTree
+  tables.'
+keywords: ['system table', 'parts_columns']
+slug: /operations/system-tables/parts_columns
+title: 'system.parts_columns'
 ---
-# parts_columns
+
+# system.parts_columns
 
 Contains information about parts and columns of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -9,7 +14,7 @@ Each row describes one data part.
 
 Columns:
 
-- `partition` ([String](../../sql-reference/data-types/string.md)) — The partition name. To learn what a partition is, see the description of the [ALTER](../../sql-reference/statements/alter/index.md#query_language_queries_alter) query.
+- `partition` ([String](../../sql-reference/data-types/string.md)) — The partition name. To learn what a partition is, see the description of the [ALTER](/sql-reference/statements/alter) query.
 
     Formats:
 
@@ -27,7 +32,7 @@ Columns:
 
     Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table.
 
-- `active` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging.
+- `active` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging.
 
 - `marks` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint does not work for adaptive granularity).
 

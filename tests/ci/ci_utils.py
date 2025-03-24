@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import subprocess
@@ -6,9 +7,13 @@ import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, List, Union, Optional, Sequence
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 
 import requests
+
+from env_helper import IS_CI
+
+logger = logging.getLogger(__name__)
 
 
 class Envs:
@@ -34,6 +39,34 @@ def cd(path: Union[Path, str]) -> Iterator[None]:
         yield
     finally:
         os.chdir(oldpwd)
+
+
+def kill_ci_runner(message: str) -> None:
+    """The function to kill the current process with all parents when it's possible.
+    Works only when run with the set `CI` environment"""
+    if not IS_CI:
+        logger.info("Running outside the CI, won't kill the runner")
+        return
+    print(f"::error::{message}")
+
+    def get_ppid_name(pid: int) -> Tuple[int, str]:
+        # Avoid using psutil, it's not in stdlib
+        stats = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split()
+        return int(stats[3]), stats[1]
+
+    pid = os.getpid()
+    pids = {}  # type: Dict[str, str]
+    while pid:
+        ppid, name = get_ppid_name(pid)
+        pids[str(pid)] = name
+        pid = ppid
+    logger.error(
+        "Sleeping 5 seconds and killing all possible processes from following:\n %s",
+        "\n ".join(f"{p}: {n}" for p, n in pids.items()),
+    )
+    time.sleep(5)
+    # The current process will be killed too
+    subprocess.run(f"kill -9 {' '.join(pids.keys())}", check=False, shell=True)
 
 
 class GH:
@@ -84,8 +117,7 @@ class GH:
         res = cls.get_workflow_results()
         if wf_job_name in res:
             return res[wf_job_name]["result"]  # type: ignore
-        else:
-            return None
+        return None
 
     @staticmethod
     def print_in_group(group_name: str, lines: Union[Any, List[Any]]) -> None:
@@ -127,6 +159,54 @@ class GH:
                 break
 
         return ""
+
+    @staticmethod
+    def get_failed_statuses(token: str, commit_sha: str) -> Optional[List]:
+        assert len(token) == 40
+        assert len(commit_sha) == 40
+        assert Utils.is_hex(commit_sha)
+        assert not Utils.is_hex(token)
+
+        status_dict = {}  # type: Dict[str, Dict]
+        url = f"https://api.github.com/repos/{Envs.GITHUB_REPOSITORY}/commits/{commit_sha}/statuses"
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+
+        while url:
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                statuses = response.json()
+                for status in statuses:
+                    context = status["context"]
+                    updated_at = status["updated_at"]
+                    state = status["state"]
+
+                    # Update if context is new or timestamp is newer
+                    if (
+                        context not in status_dict
+                        or status_dict[context]["updated_at"] < updated_at
+                    ):
+                        status_dict[context] = {
+                            "state": state,
+                            "updated_at": updated_at,
+                        }
+            else:
+                print("ERROR: Failed to get CI statuses")
+                return None
+
+            # Check if there is a next page
+            url = response.links.get("next", {}).get("url", "")
+
+        # Collect failed statuses
+        failed_statuses = [
+            context
+            for context, data in status_dict.items()
+            if data["state"] not in (GH.ActionStatuses.SUCCESS,)
+        ]
+
+        return failed_statuses
 
     @staticmethod
     def check_wf_completed(token: str, commit_sha: str) -> bool:
@@ -216,7 +296,7 @@ class Shell:
             return True
         if verbose:
             print(f"Run command [{command}]")
-        proc = subprocess.Popen(
+        with subprocess.Popen(
             command,
             shell=True,
             stderr=subprocess.STDOUT,
@@ -227,16 +307,17 @@ class Shell:
             bufsize=1,
             errors="backslashreplace",
             **kwargs,
-        )
-        if stdin_str:
-            proc.communicate(input=stdin_str)
-        elif proc.stdout:
-            for line in proc.stdout:
-                sys.stdout.write(line)
-        proc.wait()
-        if strict:
-            assert proc.returncode == 0
-        return proc.returncode == 0
+        ) as proc:
+            if stdin_str:
+                proc.communicate(input=stdin_str)
+            elif proc.stdout:
+                for line in proc.stdout:
+                    sys.stdout.write(line)
+            proc.wait()
+            retcode = proc.returncode
+            if strict:
+                assert retcode == 0
+        return retcode == 0
 
 
 class Utils:
@@ -280,6 +361,7 @@ class Utils:
             (",", "_"),
             ("/", "_"),
             ("-", "_"),
+            (":", "_"),
         ):
             res = res.replace(*r)
         return res

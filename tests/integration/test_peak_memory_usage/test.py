@@ -1,6 +1,7 @@
-import pytest
-import tempfile
 import re
+import tempfile
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.uclient import client, prompt
@@ -67,7 +68,8 @@ def get_memory_usage_from_client_output_and_close(client_output):
     for line in client_output:
         print(f"'{line}'\n")
         if not peek_memory_usage_str_found:
-            peek_memory_usage_str_found = "Peak memory usage" in line
+            # Can be both Peak/peak
+            peek_memory_usage_str_found = "eak memory usage" in line
 
         if peek_memory_usage_str_found:
             search_obj = re.search(r"[+-]?[0-9]+\.[0-9]+", line)
@@ -89,16 +91,14 @@ def test_clickhouse_client_max_peak_memory_usage_distributed(started_cluster):
     with client(name="client1>", log=client_output, command=command_text) as client1:
         client1.expect(prompt)
         client1.send(
-            "SELECT COUNT(*) FROM distributed_fixed_numbers JOIN fixed_numbers_2 ON distributed_fixed_numbers.number=fixed_numbers_2.number",
+            "SELECT COUNT(*) FROM distributed_fixed_numbers JOIN fixed_numbers_2 ON distributed_fixed_numbers.number=fixed_numbers_2.number SETTINGS query_plan_join_swap_table = 'false', join_algorithm='hash'",
         )
         client1.expect("Peak memory usage", timeout=60)
         client1.expect(prompt)
 
     peak_memory_usage = get_memory_usage_from_client_output_and_close(client_output)
     assert peak_memory_usage
-    assert shard_2.contains_in_log(
-        f"Peak memory usage (for query): {peak_memory_usage}"
-    )
+    assert shard_2.contains_in_log(f"Query peak memory usage: {peak_memory_usage}")
 
 
 def test_clickhouse_client_max_peak_memory_single_node(started_cluster):
@@ -117,6 +117,4 @@ def test_clickhouse_client_max_peak_memory_single_node(started_cluster):
 
     peak_memory_usage = get_memory_usage_from_client_output_and_close(client_output)
     assert peak_memory_usage
-    assert shard_1.contains_in_log(
-        f"Peak memory usage (for query): {peak_memory_usage}"
-    )
+    assert shard_1.contains_in_log(f"Query peak memory usage: {peak_memory_usage}")

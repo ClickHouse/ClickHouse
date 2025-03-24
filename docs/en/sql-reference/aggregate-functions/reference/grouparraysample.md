@@ -1,6 +1,10 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/grouparraysample
+description: 'Creates an array of sample argument values. The size of the resulting
+  array is limited to `max_size` elements. Argument values are selected and added
+  to the array randomly.'
 sidebar_position: 145
+slug: /sql-reference/aggregate-functions/reference/grouparraysample
+title: 'groupArraySample'
 ---
 
 # groupArraySample

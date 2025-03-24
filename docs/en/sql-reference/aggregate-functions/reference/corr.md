@@ -1,6 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/corr
+description: 'Calculates the Pearson correlation coefficient.'
 sidebar_position: 117
+slug: /sql-reference/aggregate-functions/reference/corr
+title: 'corr'
 ---
 
 # corr

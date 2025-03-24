@@ -1,7 +1,7 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.network import PartitionManager
-
 
 cluster = ClickHouseCluster(
     __file__, zookeeper_config_path="configs/zookeeper_load_balancing.xml"

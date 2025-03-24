@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -mn -q """
+$CLICKHOUSE_CLIENT -m -q """
 DROP TABLE IF EXISTS t1_02867;
 CREATE TABLE t1_02867 (x UInt64) ENGINE=Set();
 """
@@ -39,4 +39,4 @@ repeat_truncate_insert &
 
 sleep 10
 
-$CLICKHOUSE_CLIENT -mn -q "DROP TABLE IF EXISTS t1_02867;"
+$CLICKHOUSE_CLIENT -m -q "DROP TABLE IF EXISTS t1_02867;"

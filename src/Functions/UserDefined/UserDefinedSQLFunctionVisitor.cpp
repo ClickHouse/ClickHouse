@@ -1,138 +1,82 @@
 #include "UserDefinedSQLFunctionVisitor.h"
 
+#include <stack>
 #include <unordered_map>
 #include <unordered_set>
-#include <stack>
 
-#include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include "Parsers/ASTColumnDeclaration.h"
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
+#include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/QueryNormalizer.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool skip_redundant_aliases_in_udf;
+}
 
 namespace ErrorCodes
 {
-    extern const int UNSUPPORTED_METHOD;
+extern const int BAD_ARGUMENTS;
+extern const int UNSUPPORTED_METHOD;
 }
 
-void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
+void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 {
-    if (!ast)
-    {
-        chassert(false);
-        return;
-    }
-
-    /// FIXME: this helper should use updatePointerToChild(), but
-    /// forEachPointerToChild() is not implemented for ASTColumnDeclaration
-    /// (and also some members should be adjusted for this).
-    const auto visit_child_with_shared_ptr = [&](ASTPtr & child)
-    {
-        if (!child)
-            return;
-
-        auto * old_value = child.get();
-        visit(child);
-
-        // child did not change
-        if (old_value == child.get())
-            return;
-
-        // child changed, we need to modify it in the list of children of the parent also
-        for (auto & current_child : ast->children)
-        {
-            if (current_child.get() == old_value)
-                current_child = child;
-        }
-    };
-
-    if (auto * col_decl = ast->as<ASTColumnDeclaration>())
-    {
-        visit_child_with_shared_ptr(col_decl->default_expression);
-        visit_child_with_shared_ptr(col_decl->ttl);
-        return;
-    }
-
-    if (auto * storage = ast->as<ASTStorage>())
-    {
-        const auto visit_child = [&](IAST * & child)
-        {
-            if (!child)
-                return;
-
-            if (const auto * function = child->template as<ASTFunction>())
-            {
-                std::unordered_set<std::string> udf_in_replace_process;
-                auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
-                if (replace_result)
-                    ast->setOrReplace(child, replace_result);
-            }
-
-            visit(child);
-        };
-
-        visit_child(storage->partition_by);
-        visit_child(storage->primary_key);
-        visit_child(storage->order_by);
-        visit_child(storage->sample_by);
-        visit_child(storage->ttl_table);
-
-        return;
-    }
-
-    if (auto * alter = ast->as<ASTAlterCommand>())
-    {
-        /// It is OK to use updatePointerToChild() because ASTAlterCommand implements forEachPointerToChild()
-        const auto visit_child_update_parent = [&](ASTPtr & child)
-        {
-            if (!child)
-                return;
-
-            auto * old_ptr = child.get();
-            visit(child);
-            auto * new_ptr = child.get();
-
-            /// Some AST classes have naked pointers to children elements as members.
-            /// We have to replace them if the child was replaced.
-            if (new_ptr != old_ptr)
-                ast->updatePointerToChild(old_ptr, new_ptr);
-        };
-
-        for (auto & children : alter->children)
-            visit_child_update_parent(children);
-
-        return;
-    }
+    chassert(ast);
 
     if (const auto * function = ast->template as<ASTFunction>())
     {
         std::unordered_set<std::string> udf_in_replace_process;
-        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
+        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
         if (replace_result)
             ast = replace_result;
     }
 
     for (auto & child : ast->children)
-        visit(child);
+    {
+        if (!child)
+            return;
+
+        auto * old_ptr = child.get();
+        visit(child, context_);
+        auto * new_ptr = child.get();
+
+        /// Some AST classes have naked pointers to children elements as members.
+        /// We have to replace them if the child was replaced.
+        if (new_ptr != old_ptr)
+            ast->updatePointerToChild(old_ptr, new_ptr);
+    }
+
+    if (const auto * function = ast->template as<ASTFunction>())
+    {
+        std::unordered_set<std::string> udf_in_replace_process;
+        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
+        if (replace_result)
+            ast = replace_result;
+    }
 }
 
-void UserDefinedSQLFunctionVisitor::visit(IAST * ast)
+void UserDefinedSQLFunctionVisitor::visit(IAST * ast, ContextPtr context_)
 {
     if (!ast)
         return;
 
     for (auto & child : ast->children)
-        visit(child);
+        visit(child, context_);
 }
 
-ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process)
+ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_)
 {
     if (udf_in_replace_process.find(function.name) != udf_in_replace_process.end())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -159,6 +103,17 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
             identifiers_raw.size(),
             function_arguments.size());
 
+    for (auto & arg : function_arguments)
+    {
+        if (arg->as<ASTAsterisk>() || arg->as<ASTQualifiedAsterisk>() || arg->as<ASTColumnsRegexpMatcher>()
+            || arg->as<ASTColumnsListMatcher>() || arg->as<ASTQualifiedColumnsRegexpMatcher>() || arg->as<ASTQualifiedColumnsListMatcher>())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "It is not possible to replace a variadic argument '{}' in UDF {}",
+                arg->getColumnName(),
+                function.name);
+    }
+
     std::unordered_map<std::string, ASTPtr> identifier_name_to_function_argument;
 
     for (size_t parameter_index = 0; parameter_index < identifiers_raw.size(); ++parameter_index)
@@ -173,6 +128,20 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     auto [it, _] = udf_in_replace_process.emplace(function.name);
 
     auto function_body_to_update = function_core_expression->children.at(1)->clone();
+
+    if (context_->getSettingsRef()[Setting::skip_redundant_aliases_in_udf])
+    {
+        Aliases aliases;
+        QueryAliasesVisitor(aliases).visit(function_body_to_update);
+
+        /// Mark table ASTIdentifiers with not a column marker
+        MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
+        MarkTableIdentifiersVisitor(identifiers_data).visit(function_body_to_update);
+
+        /// Common subexpression elimination. Rewrite rules.
+        QueryNormalizer::Data normalizer_data(aliases, {}, true, context_->getSettingsRef(), true, false);
+        QueryNormalizer(normalizer_data).visit(function_body_to_update);
+    }
 
     auto expression_list = std::make_shared<ASTExpressionList>();
     expression_list->children.emplace_back(std::move(function_body_to_update));
@@ -189,7 +158,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         {
             if (auto * inner_function = child->as<ASTFunction>())
             {
-                auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process);
+                auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process, context_);
                 if (replace_result)
                     child = replace_result;
             }

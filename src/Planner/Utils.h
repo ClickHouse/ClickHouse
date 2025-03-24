@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/SelectUnionMode.h>
 
 #include <Interpreters/SelectQueryOptions.h>
@@ -25,10 +25,10 @@ namespace DB
 {
 
 /// Dump query plan
-String dumpQueryPlan(QueryPlan & query_plan);
+String dumpQueryPlan(const QueryPlan & query_plan);
 
 /// Dump query plan result pipeline
-String dumpQueryPipeline(QueryPlan & query_plan);
+String dumpQueryPipeline(const QueryPlan & query_plan);
 
 /// Build common header for UNION query
 Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode);

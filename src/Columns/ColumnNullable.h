@@ -55,6 +55,7 @@ public:
     bool isNullAt(size_t n) const override { return assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
     bool getBool(size_t n) const override { return isNullAt(n) ? false : nested_column->getBool(n); }
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
     Float64 getFloat64(size_t n) const override;
@@ -141,15 +142,33 @@ public:
     // Special function for nullable minmax index
     void getExtremesNullLast(Field & min, Field & max) const;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    ColumnCheckpointPtr getCheckpoint() const override;
+    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
+    void rollback(const ColumnCheckpoint & checkpoint) override;
+
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {
         callback(nested_column);
         callback(null_map);
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    {
+        callback(*nested_column);
+        nested_column->forEachMutableSubcolumnRecursively(callback);
+        callback(*null_map);
+        null_map->forEachMutableSubcolumnRecursively(callback);
+    }
+
+    void forEachSubcolumn(ColumnCallback callback) const override
+    {
+        callback(nested_column);
+        callback(null_map);
+    }
+
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
         callback(*nested_column);
         nested_column->forEachSubcolumnRecursively(callback);

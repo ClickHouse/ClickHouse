@@ -2,6 +2,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -15,7 +16,6 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
-extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 extern const int ILLEGAL_COLUMN;
 }
 
@@ -38,13 +38,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception(
-                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "Function {} needs at least one argument; passed {}.",
-                getName(),
-                arguments.size());
-
         DataTypes arguments_types;
         for (size_t index = 0; index < arguments.size(); ++index)
         {
@@ -68,9 +61,16 @@ public:
     }
 
     ColumnPtr
-    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         size_t num_arguments = arguments.size();
+        if (num_arguments == 0)
+        {
+            auto res_col = result_type->createColumn();
+            res_col->insertDefault();
+            return ColumnConst::create(std::move(res_col), input_rows_count);
+        }
+
         Columns holders(num_arguments);
         Columns tuple_columns(num_arguments);
 
@@ -107,9 +107,8 @@ public:
                     "The argument 1 and argument {} of function {} have different array sizes",
                     unaligned_index + 1,
                     getName());
-            else
-                return ColumnArray::create(
-                    ColumnTuple::create(std::move(tuple_columns)), static_cast<const ColumnArray &>(*holders[0]).getOffsetsPtr());
+            return ColumnArray::create(
+                ColumnTuple::create(std::move(tuple_columns)), static_cast<const ColumnArray &>(*holders[0]).getOffsetsPtr());
         }
         else
             return executeUnaligned(holders, tuple_columns, input_rows_count, has_unaligned);
@@ -176,7 +175,7 @@ REGISTER_FUNCTION(ArrayZip)
         {.description = R"(
 Combines multiple arrays into a single array. The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.
 )",
-         .categories{"String"}});
+         .category{"Arrays"}});
 
     factory.registerFunction<FunctionArrayZip<true>>(
         {.description = R"(
@@ -184,7 +183,7 @@ Combines multiple arrays into a single array, allowing for unaligned arrays. The
 
 If the arrays have different sizes, the shorter arrays will be padded with `null` values.
 )",
-         .categories{"String"}}
+         .category{"Arrays"}}
 
     );
 }

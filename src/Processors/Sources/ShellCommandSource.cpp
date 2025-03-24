@@ -15,8 +15,10 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <boost/circular_buffer.hpp>
+#include <fmt/ranges.h>
 
 #include <ranges>
+
 
 namespace DB
 {
@@ -173,9 +175,8 @@ public:
                     std::string_view str(stderr_read_buf.get(), res);
                     if (stderr_reaction == ExternalCommandStderrReaction::THROW)
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", str);
-                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
-                        LOG_WARNING(
-                            getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
+                    if (stderr_reaction == ExternalCommandStderrReaction::LOG)
+                        LOG_WARNING(getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
                     {
                         res = std::min(ssize_t(stderr_result_buf.reserve()), res);
@@ -358,6 +359,19 @@ namespace
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
         {
+            auto context_for_reading = Context::createCopy(context);
+            /// Currently parallel parsing input format cannot read exactly max_block_size rows from input,
+            /// so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
+            if (configuration.read_fixed_number_of_rows)
+                context_for_reading->setSetting("input_format_parallel_parsing", false);
+            /// Here header auto detection can only cause troubles, since if it
+            /// will find "header" the number of input and output rows will not
+            /// match.
+            context_for_reading->setSetting("input_format_csv_detect_header", false);
+            context_for_reading->setSetting("input_format_tsv_detect_header", false);
+            context_for_reading->setSetting("input_format_custom_detect_header", false);
+            context = context_for_reading;
+
             try
             {
                 for (auto && send_data_task : send_data_tasks)
@@ -383,13 +397,6 @@ namespace
 
                 if (configuration.read_fixed_number_of_rows)
                 {
-                    /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
-                    * so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
-                    */
-                    auto context_for_reading = Context::createCopy(context);
-                    context_for_reading->setSetting("input_format_parallel_parsing", false);
-                    context = context_for_reading;
-
                     if (configuration.read_number_of_rows_from_process_output)
                     {
                         /// Initialize executor in generate
@@ -610,8 +617,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
                 {
                     if (execute_direct)
                         return ShellCommand::executeDirect(command_config);
-                    else
-                        return ShellCommand::execute(command_config);
+                    return ShellCommand::execute(command_config);
                 };
 
                 return std::make_unique<ShellCommandHolder>(std::move(func));
@@ -667,7 +673,9 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             input_pipes[i].addTransform(std::move(transform));
         }
 
+        auto num_streams = input_pipes[i].maxParallelStreams();
         auto pipeline = std::make_shared<QueryPipeline>(std::move(input_pipes[i]));
+        pipeline->setNumThreads(num_streams);
         auto out = context->getOutputFormat(configuration.format, *timeout_write_buffer, materializeBlock(pipeline->getHeader()));
         out->setAutoFlush();
         pipeline->complete(std::move(out));

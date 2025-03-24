@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Formats/FormatFactory.h>
+#include <IO/ReadBuffer.h>
+#include <Formats/FormatSettings.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/ColumnsDescription.h>
 

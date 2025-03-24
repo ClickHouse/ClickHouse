@@ -181,6 +181,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
@@ -207,8 +212,8 @@ public:
             convert(charset_from, charset_to, col_from->getChars(), col_from->getOffsets(), col_to->getChars(), col_to->getOffsets(), input_rows_count);
             return col_to;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column passed as first argument of function {} (must be ColumnString).", getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column passed as first argument of function {} (must be ColumnString).", getName());
     }
 };
 

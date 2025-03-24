@@ -6,10 +6,10 @@ sidebar_label: "Настройки пользователей"
 
 # Настройки пользователей {#nastroiki-polzovatelei}
 
-Раздел `users` конфигурационного файла `user.xml` содержит настройки для пользователей.
+Раздел `users` конфигурационного файла `users.xml` содержит настройки для пользователей.
 
 :::note Информация
-Для управления пользователями рекомендуется использовать [SQL-ориентированный воркфлоу](../access-rights.md#access-control), который также поддерживается в ClickHouse.
+Для управления пользователями рекомендуется использовать [SQL-ориентированный воркфлоу](/operations/access-rights), который также поддерживается в ClickHouse.
 :::
 
 Структура раздела `users`:
@@ -30,7 +30,7 @@ sidebar_label: "Настройки пользователей"
         <profile>profile_name</profile>
 
         <quota>default</quota>
-        <default_database>default<default_database>
+        <default_database>default</default_database>
         <databases>
             <database_name>
                 <table_name>
@@ -85,7 +85,7 @@ sidebar_label: "Настройки пользователей"
 
 ### access_management {#access_management-user-setting}
 
-Включает или выключает SQL-ориентированное [управление доступом](../access-rights.md#access-control) для пользователя.
+Включает или выключает SQL-ориентированное [управление доступом](/operations/access-rights) для пользователя.
 
 Возможные значения:
 

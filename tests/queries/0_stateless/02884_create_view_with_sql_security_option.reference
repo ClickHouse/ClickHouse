@@ -11,6 +11,7 @@ OK
 OK
 2
 2
+1
 OK
 1
 ===== MaterializedView =====
@@ -28,6 +29,7 @@ OK
 100
 100
 OK
+Syntax error
 ===== TestGrants =====
 OK
 OK

@@ -18,10 +18,8 @@ public:
         JSON = 0,
     };
 
-    /// Don't change these constants, it can break backward compatibility.
+    /// Don't change this constant, it can break backward compatibility.
     static constexpr size_t DEFAULT_MAX_SEPARATELY_STORED_PATHS = 1024;
-    static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
-    static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;
 
     explicit DataTypeObject(
         const SchemaFormat & schema_format_,
@@ -42,13 +40,16 @@ public:
     Field getDefault() const override { return Object(); }
 
     bool isParametric() const override { return true; }
-    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return false; }
     bool canBeInsideSparseColumns() const override { return false; }
     bool isComparable() const override { return false; }
+    bool isComparableForEquality() const override { return true; }
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override;
+
+    void forEachChild(const ChildCallback &) const override;
 
     bool hasDynamicSubcolumnsData() const override { return true; }
     std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
@@ -63,7 +64,16 @@ public:
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
 
+    DataTypePtr getTypeOfNestedObjects() const;
+
+    /// Shared data has type Array(Tuple(String, String)).
+    static const DataTypePtr & getTypeOfSharedData();
+
 private:
+    /// Don't change these constants, it can break backward compatibility.
+    static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
+    static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;
+
     SchemaFormat schema_format;
     /// Set of paths with types that were specified in type declaration.
     std::unordered_map<String, DataTypePtr> typed_paths;

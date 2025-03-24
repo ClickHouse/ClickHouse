@@ -53,7 +53,7 @@ Connection: Close
 Content-Type: text/tab-separated-values; charset=UTF-8
 X-ClickHouse-Server-Display-Name: clickhouse.ru-central1.internal
 X-ClickHouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
-X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","real_time_microseconds":"0"}
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 
 1
 ```
@@ -174,7 +174,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 如果在URL中指定了`compress=1`，服务会返回压缩的数据。
 如果在URL中指定了`decompress=1`，服务会解压通过POST方法发送的数据。
 
-您也可以选择使用[HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression)。发送一个压缩的POST请求，附加请求头`Content-Encoding: compression_method`。为了使ClickHouse响应，您必须附加`Accept-Encoding: compression_method`。ClickHouse支持`gzip`，`br`和`deflate` [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens)。要启用HTTP压缩，必须使用ClickHouse[启用Http压缩](../operations/settings/settings.md#settings-enable_http_compression)配置。您可以在[Http zlib压缩级别](#settings-http_zlib_compression_level)设置中为所有压缩方法配置数据压缩级别。
+您也可以选择使用[HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression)。发送一个压缩的POST请求，附加请求头`Content-Encoding: compression_method`。为了使ClickHouse响应，您必须附加`Accept-Encoding: compression_method`。ClickHouse支持`gzip`，`br`和`deflate` [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens)。要启用HTTP压缩，必须使用ClickHouse[启用Http压缩](../operations/settings/settings.md#settings-enable_http_compression)配置。您可以在[Http zlib压缩级别](/operations/settings/settings#http_zlib_compression_level)设置中为所有压缩方法配置数据压缩级别。
 
 您可以使用它在传输大量数据时减少网络流量，或者创建立即压缩的转储。
 
@@ -363,7 +363,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < X-ClickHouse-Format: Template
 < X-ClickHouse-Timezone: Asia/Shanghai
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334", "real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 # HELP "Query" "Number of executing queries"
 # TYPE "Query" counter
@@ -420,7 +420,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 `query` 是一个预定义的`predefined_query_handler`查询，它由ClickHouse在匹配HTTP请求并返回查询结果时执行。这是一个必须的配置。
 
-以下是定义的[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_final_threads`设置， 然后查询系统表以检查这些设置是否设置成功。
+以下是定义的[max_threads](/operations/settings/settings#max_threads)和`max_final_threads`设置， 然后查询系统表以检查这些设置是否设置成功。
 
 示例:
 
@@ -461,7 +461,7 @@ max_threads	1
 
 ClickHouse提取并执行与HTTP请求URL中的`query_param_name`值对应的值。`query_param_name`的默认值是`/query`。这是一个可选的配置。如果配置文件中没有定义，则不会传入参数。
 
-为了试验这个功能，示例定义了[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_final_threads`，`queries`设置是否成功的值。
+为了试验这个功能，示例定义了[max_threads](/operations/settings/settings#max_threads)和`max_final_threads`，`queries`设置是否成功的值。
 
 示例:
 
@@ -524,7 +524,7 @@ $ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334", "real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
 Say Hi!%
@@ -564,7 +564,7 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 < Content-Type: text/plain; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
 <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
@@ -616,7 +616,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Absolute Path File</body></html>
 * Connection #0 to host localhost left intact
@@ -635,7 +635,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact

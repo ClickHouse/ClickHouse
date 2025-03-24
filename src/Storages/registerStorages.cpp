@@ -1,5 +1,5 @@
-#include <Storages/registerStorages.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/registerStorages.h>
 
 #include "config.h"
 
@@ -41,9 +41,10 @@ void registerStorageS3Queue(StorageFactory & factory);
 #if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory);
 #endif
+#endif
+
 #if USE_AVRO
 void registerStorageIceberg(StorageFactory & factory);
-#endif
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
@@ -64,7 +65,11 @@ void registerStorageJDBC(StorageFactory & factory);
 void registerStorageMySQL(StorageFactory & factory);
 #endif
 
+#if USE_MONGODB
 void registerStorageMongoDB(StorageFactory & factory);
+void registerStorageMongoDBPocoLegacy(StorageFactory & factory);
+#endif
+
 void registerStorageRedis(StorageFactory & factory);
 
 
@@ -89,10 +94,6 @@ void registerStoragePostgreSQL(StorageFactory & factory);
 void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 #endif
 
-#if USE_MYSQL || USE_LIBPQXX
-void registerStorageExternalDistributed(StorageFactory & factory);
-#endif
-
 #if USE_FILELOG
 void registerStorageFileLog(StorageFactory & factory);
 #endif
@@ -105,7 +106,7 @@ void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorageObjectStorage(StorageFactory & factory);
 
-void registerStorages()
+void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
 {
     auto & factory = StorageFactory::instance();
 
@@ -140,22 +141,22 @@ void registerStorages()
     registerStorageAzureQueue(factory);
 #endif
 
+#if USE_AVRO
+    registerStorageIceberg(factory);
+#endif
+
 #if USE_AWS_S3
     registerStorageHudi(factory);
     registerStorageS3Queue(factory);
 
-    #if USE_PARQUET
+    #if USE_PARQUET && USE_DELTA_KERNEL_RS
     registerStorageDeltaLake(factory);
     #endif
 
-    #if USE_AVRO
-    registerStorageIceberg(factory);
-    #endif
+#endif
 
-    #endif
-
-    #if USE_HDFS
-    #if USE_HIVE
+#if USE_HDFS
+#    if USE_HIVE
     registerStorageHive(factory);
     #endif
     #endif
@@ -167,7 +168,13 @@ void registerStorages()
     registerStorageMySQL(factory);
     #endif
 
-    registerStorageMongoDB(factory);
+    #if USE_MONGODB
+    if (use_legacy_mongodb_integration)
+        registerStorageMongoDBPocoLegacy(factory);
+    else
+        registerStorageMongoDB(factory);
+    #endif
+
     registerStorageRedis(factory);
 
     #if USE_RDKAFKA
@@ -193,10 +200,6 @@ void registerStorages()
     #if USE_LIBPQXX
     registerStoragePostgreSQL(factory);
     registerStorageMaterializedPostgreSQL(factory);
-    #endif
-
-    #if USE_MYSQL || USE_LIBPQXX
-    registerStorageExternalDistributed(factory);
     #endif
 
     #if USE_SQLITE

@@ -1,5 +1,7 @@
-import pytest
 import uuid
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -42,7 +44,7 @@ def test_access_rights_for_function():
     function_resolution_error = instance.query_and_get_error("SELECT MySum(1, 2)")
     assert (
         "Unknown function MySum" in function_resolution_error
-        or "Function with name 'MySum' does not exist." in function_resolution_error
+        or "Function with name `MySum` does not exist." in function_resolution_error
     )
 
     instance.query("REVOKE CREATE FUNCTION ON *.* FROM A")
@@ -64,9 +66,9 @@ def test_ignore_obsolete_grant_on_database():
             "bash",
             "-c",
             f"""
-        cat > /var/lib/clickhouse/access/{user_id}.sql << EOF
-ATTACH USER \`{user_id}\`;
-ATTACH GRANT CREATE FUNCTION, SELECT ON mydb.* TO \`{user_id}\`;
+        cat > /var/lib/clickhouse/access/{user_id}.sql << 'EOF'
+ATTACH USER `{user_id}`;
+ATTACH GRANT CREATE FUNCTION, SELECT ON mydb.* TO `{user_id}`;
 EOF""",
         ]
     )

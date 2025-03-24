@@ -1,13 +1,13 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
 
-#include <Parsers/ASTFunction.h>
+#include <Common/FieldAccurateComparison.h>
+#include <Common/quoteString.h>
 
-#include <Poco/Logger.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Columns/ColumnNullable.h>
+
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -145,9 +145,9 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
         else
         {
             hyperrectangle[i].left
-                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].left, field_min) ? hyperrectangle[i].left : field_min;
+                = accurateLess(hyperrectangle[i].left, field_min) ? hyperrectangle[i].left : field_min;
             hyperrectangle[i].right
-                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].right, field_max) ? field_max : hyperrectangle[i].right;
+                = accurateLess(hyperrectangle[i].right, field_max) ? field_max : hyperrectangle[i].right;
         }
     }
 
@@ -205,9 +205,9 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
 
 MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
 {
-    if (data_part_storage.exists(relative_path_prefix + ".idx2"))
+    if (data_part_storage.existsFile(relative_path_prefix + ".idx2"))
         return {2, ".idx2"};
-    else if (data_part_storage.exists(relative_path_prefix + ".idx"))
+    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
         return {1, ".idx"};
     return {0 /* unknown */, ""};
 }
@@ -229,6 +229,14 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Data type of argument for minmax index must be comparable, got {} type for column {} instead",
+                column.type->getName(), column.name);
+        }
+
+        if (isDynamic(column.type) || isVariant(column.type))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "{} data type of column {} is not allowed in minmax index because the column of that type can contain values with different data "
+                "types. Consider using typed subcolumns or cast column to a specific data type",
                 column.type->getName(), column.name);
         }
     }

@@ -89,8 +89,7 @@ public:
                     /// A more understandable error message.
                     if (e.code() == DB::ErrorCodes::CANNOT_READ_ALL_DATA || e.code() == DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
                         throw DB::Exception(e.code(), "File {} is empty. You must fill it manually with appropriate value.", path);
-                    else
-                        throw;
+                    throw;
                 }
             }
             else
@@ -105,6 +104,7 @@ public:
                 wb.truncate(0);
                 DB::writeIntText(res, wb);
                 DB::writeChar('\n', wb);
+                wb.finalize();
                 wb.sync();
             }
 
@@ -112,12 +112,12 @@ public:
         }
         catch (...)
         {
-            int err = close(fd);
+            [[maybe_unused]] int err = close(fd);
             chassert(!err || errno == EINTR);
             throw;
         }
 
-        int err = close(fd);
+        [[maybe_unused]] int err = close(fd);
         chassert(!err || errno == EINTR);
         return res;
     }
@@ -177,17 +177,18 @@ public:
                 wb.truncate(0);
                 DB::writeIntText(value, wb);
                 DB::writeChar('\n', wb);
+                wb.finalize();
                 wb.sync();
             }
         }
         catch (...)
         {
-            int err = close(fd);
+            [[maybe_unused]] int err = close(fd);
             chassert(!err || errno == EINTR);
             throw;
         }
 
-        int err = close(fd);
+        [[maybe_unused]] int err = close(fd);
         chassert(!err || errno == EINTR);
     }
 

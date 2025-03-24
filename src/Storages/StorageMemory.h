@@ -4,10 +4,9 @@
 #include <optional>
 #include <mutex>
 
-#include <Core/NamesAndTypes.h>
+#include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
-#include <Storages/MemorySettings.h>
 
 #include <Common/MultiVersion.h>
 
@@ -15,6 +14,7 @@ namespace DB
 {
 class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
+struct MemorySettings;
 
 /** Implements storage in the RAM.
   * Suitable for temporary data.
@@ -31,7 +31,9 @@ public:
         ColumnsDescription columns_description_,
         ConstraintsDescription constraints_,
         const String & comment,
-        const MemorySettings & memory_settings_ = MemorySettings());
+        const MemorySettings & memory_settings_);
+
+    ~StorageMemory() override;
 
     String getName() const override { return "Memory"; }
 
@@ -47,7 +49,7 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
-    const MemorySettings & getMemorySettingsRef() const { return memory_settings; }
+    const MemorySettings & getMemorySettingsRef() const { return *memory_settings; }
 
     void read(
         QueryPlan & query_plan,
@@ -139,7 +141,7 @@ private:
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;
 
-    MemorySettings memory_settings;
+    std::unique_ptr<MemorySettings> memory_settings;
 
     friend class ReadFromMemoryStorageStep;
 };

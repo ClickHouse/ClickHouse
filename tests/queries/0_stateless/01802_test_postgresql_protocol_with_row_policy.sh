@@ -17,7 +17,7 @@ INSERT INTO db01802.postgresql SELECT number FROM numbers(10);
 
 SELECT 'before row policy';
 SELECT * FROM db01802.postgresql;
-" | $CLICKHOUSE_CLIENT -n
+" | $CLICKHOUSE_CLIENT
 
 
 echo "
@@ -28,7 +28,7 @@ CREATE ROW POLICY IF NOT EXISTS test_policy ON db01802.postgresql FOR SELECT USI
 
 SELECT '';
 SELECT 'after row policy with no password';
-" | $CLICKHOUSE_CLIENT -n
+" | $CLICKHOUSE_CLIENT
 
 psql --host localhost --port ${CLICKHOUSE_PORT_POSTGRESQL} db01802 --user postgresql_user -c "SELECT * FROM postgresql;"
 
@@ -40,7 +40,7 @@ GRANT SELECT(val) ON db01802.postgresql TO postgresql_user;
 CREATE ROW POLICY IF NOT EXISTS test_policy ON db01802.postgresql FOR SELECT USING val = 2 TO postgresql_user;
 
 SELECT 'after row policy with plaintext_password';
-" | $CLICKHOUSE_CLIENT -n
+" | $CLICKHOUSE_CLIENT
 
 psql "postgresql://postgresql_user:qwerty@localhost:${CLICKHOUSE_PORT_POSTGRESQL}/db01802" -c "SELECT * FROM postgresql;"
 

@@ -27,16 +27,16 @@ public:
         ImplPtr impl_,
         IAsynchronousReader & reader_,
         const ReadSettings & settings_,
+        size_t buffer_size_,
+        size_t min_bytes_for_seek_,
         AsyncReadCountersPtr async_read_counters_ = nullptr,
         FilesystemReadPrefetchesLogPtr prefetches_log_ = nullptr);
 
     ~AsynchronousBoundedReadBuffer() override;
 
-    String getFileName() const override { return impl->getFileName(); }
+    String getFileName() const override { return file_name; }
 
-    std::optional<size_t> tryGetFileSize() override { return impl->tryGetFileSize(); }
-
-    String getInfoForLog() override { return impl->getInfoForLog(); }
+    String getInfoForLog() override;
 
     off_t seek(off_t offset_, int whence) override;
 
@@ -53,6 +53,9 @@ public:
 private:
     const ImplPtr impl;
     const ReadSettings read_settings;
+    const size_t buffer_size;
+    const size_t min_bytes_for_seek;
+    const String file_name;
     IAsynchronousReader & reader;
 
     size_t file_offset_of_buffer_end = 0;

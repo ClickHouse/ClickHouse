@@ -40,30 +40,30 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        updateAliasesIfNeeded(node, false /*is_lambda_node*/);
+        updateAliasesIfNeeded(node);
     }
 
     bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
     {
-        if (auto * lambda_node = child->as<LambdaNode>())
+        if (auto * /*lambda_node*/ _ = child->as<LambdaNode>())
         {
-            updateAliasesIfNeeded(child, true /*is_lambda_node*/);
+            updateAliasesIfNeeded(child);
             return false;
         }
-        else if (auto * query_tree_node = child->as<QueryNode>())
+        if (auto * query_tree_node = child->as<QueryNode>())
         {
             if (query_tree_node->isCTE())
                 return false;
 
-            updateAliasesIfNeeded(child, false /*is_lambda_node*/);
+            updateAliasesIfNeeded(child);
             return false;
         }
-        else if (auto * union_node = child->as<UnionNode>())
+        if (auto * union_node = child->as<UnionNode>())
         {
             if (union_node->isCTE())
                 return false;
 
-            updateAliasesIfNeeded(child, false /*is_lambda_node*/);
+            updateAliasesIfNeeded(child);
             return false;
         }
 
@@ -72,45 +72,59 @@ public:
 private:
     void addDuplicatingAlias(const QueryTreeNodePtr & node)
     {
-        aliases.nodes_with_duplicated_aliases.emplace(node);
-        auto cloned_node = node->clone();
-        aliases.cloned_nodes_with_duplicated_aliases.emplace_back(cloned_node);
-        aliases.nodes_with_duplicated_aliases.emplace(cloned_node);
+        aliases.nodes_with_duplicated_aliases.emplace_back(node);
     }
 
-    void updateAliasesIfNeeded(const QueryTreeNodePtr & node, bool is_lambda_node)
+    void updateAliasesIfNeeded(const QueryTreeNodePtr & node)
     {
         if (!node->hasAlias())
             return;
 
+        auto node_type = node->getNodeType();
+
         // We should not resolve expressions to WindowNode
-        if (node->getNodeType() == QueryTreeNodeType::WINDOW)
+        if (node_type == QueryTreeNodeType::WINDOW)
             return;
 
         const auto & alias = node->getAlias();
+        auto cloned_alias_node = node->clone();
 
-        if (is_lambda_node)
+        switch (node_type)
         {
-            if (aliases.alias_name_to_expression_node->contains(alias))
-                addDuplicatingAlias(node);
+        case QueryTreeNodeType::LAMBDA:
+            {
+                auto [_, inserted] = aliases.alias_name_to_lambda_node.emplace(alias, cloned_alias_node);
+                if (!inserted || aliases.alias_name_to_expression_node.contains(alias))
+                    addDuplicatingAlias(cloned_alias_node);
+                break;
+            }
+        case QueryTreeNodeType::IDENTIFIER:
+            {
+                auto [_1, inserted_expression] = aliases.alias_name_to_expression_node.emplace(alias, cloned_alias_node);
+                bool inserted_lambda           = true; // Avoid adding to duplicating aliases if identifier is compound.
+                bool inserted_table_expression = true; // Avoid adding to duplicating aliases if identifier is compound.
 
-            auto [_, inserted] = aliases.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
-            if (!inserted)
-             addDuplicatingAlias(node);
+                // Alias to compound identifier cannot reference table expression or lambda.
+                // Example: SELECT x.b as x FROM (SELECT 1 as a, 2 as b) as x
+                auto * identifier_node = node->as<IdentifierNode>();
+                if (identifier_node->getIdentifier().isShort())
+                {
+                    inserted_lambda = aliases.alias_name_to_lambda_node.emplace(alias, cloned_alias_node).second;
+                    inserted_table_expression = aliases.alias_name_to_table_expression_node.emplace(alias, cloned_alias_node).second;
+                }
 
-            return;
+                if (!inserted_expression || !inserted_lambda || !inserted_table_expression)
+                    addDuplicatingAlias(cloned_alias_node);
+                break;
+            }
+        default:
+            {
+                auto [_, inserted] = aliases.alias_name_to_expression_node.emplace(alias, cloned_alias_node);
+                if (!inserted || aliases.alias_name_to_lambda_node.contains(alias))
+                    addDuplicatingAlias(cloned_alias_node);
+                break;
+            }
         }
-
-        if (aliases.alias_name_to_lambda_node.contains(alias))
-            addDuplicatingAlias(node);
-
-        auto [_, inserted] = aliases.alias_name_to_expression_node->insert(std::make_pair(alias, node));
-        if (!inserted)
-            addDuplicatingAlias(node);
-
-        /// If node is identifier put it into transitive aliases map.
-        if (const auto * identifier = typeid_cast<const IdentifierNode *>(node.get()))
-            aliases.transitive_aliases.insert(std::make_pair(alias, identifier->getIdentifier()));
     }
 
     ScopeAliases & aliases;

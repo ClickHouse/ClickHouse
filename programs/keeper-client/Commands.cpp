@@ -1,5 +1,6 @@
 
 #include "Commands.h"
+#include <Common/StringUtils.h>
 #include <queue>
 #include "KeeperClient.h"
 #include "Parsers/CommonParsers.h"
@@ -113,13 +114,21 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     int mode = zkutil::CreateMode::Persistent;
 
     if (ParserKeyword(Keyword::PERSISTENT).ignore(pos, expected))
-        mode = zkutil::CreateMode::Persistent;
+    {
+        ParserToken{TokenType::Whitespace}.ignore(pos);
+        if (ParserKeyword(Keyword::SEQUENTIAL).ignore(pos, expected))
+            mode = zkutil::CreateMode::PersistentSequential;
+        else
+            mode = zkutil::CreateMode::Persistent;
+    }
     else if (ParserKeyword(Keyword::EPHEMERAL).ignore(pos, expected))
-        mode = zkutil::CreateMode::Ephemeral;
-    else if (ParserKeyword(Keyword::EPHEMERAL_SEQUENTIAL).ignore(pos, expected))
-        mode = zkutil::CreateMode::EphemeralSequential;
-    else if (ParserKeyword(Keyword::PERSISTENT_SEQUENTIAL).ignore(pos, expected))
-        mode = zkutil::CreateMode::PersistentSequential;
+    {
+        ParserToken{TokenType::Whitespace}.ignore(pos);
+        if (ParserKeyword(Keyword::SEQUENTIAL).ignore(pos, expected))
+            mode = zkutil::CreateMode::EphemeralSequential;
+        else
+            mode = zkutil::CreateMode::Ephemeral;
+    }
 
     node->args.push_back(std::move(mode));
 
@@ -506,14 +515,23 @@ bool RMRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
         return false;
     node->args.push_back(std::move(path));
 
+    ASTPtr remove_nodes_limit;
+    if (ParserUnsignedInteger{}.parse(pos, remove_nodes_limit, expected))
+        node->args.push_back(remove_nodes_limit->as<ASTLiteral &>().value);
+    else
+        node->args.push_back(UInt64(100));
+
     return true;
 }
 
 void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     String path = client->getAbsolutePath(query->args[0].safeGet<String>());
+    UInt64 remove_nodes_limit = query->args[1].safeGet<UInt64>();
+
     client->askConfirmation(
-        "You are going to recursively delete path " + path, [client, path] { client->zookeeper->removeRecursive(path); });
+        "You are going to recursively delete path " + path,
+        [client, path, remove_nodes_limit] { client->zookeeper->removeRecursive(path, static_cast<UInt32>(remove_nodes_limit)); });
 }
 
 bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
@@ -549,7 +567,7 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
     String leaving;
     String new_members;
 
-    auto operation = query->args[0].safeGet<ReconfigCommand::Operation>();
+    auto operation = query->args[0].safeGet<UInt8>();
     switch (operation)
     {
         case static_cast<UInt8>(ReconfigCommand::Operation::ADD):

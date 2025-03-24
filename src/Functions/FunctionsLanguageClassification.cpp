@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <Common/isValidUTF8.h>
 #include <DataTypes/DataTypeMap.h>
@@ -18,6 +19,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_nlp_functions;
+}
+
 /* Determine language of Unicode UTF-8 text.
  * Uses the cld2 library https://github.com/CLD2Owners/cld2
  */
@@ -114,7 +120,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        if (!context->getSettingsRef().allow_experimental_nlp_functions)
+        if (!context->getSettingsRef()[Setting::allow_experimental_nlp_functions])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Natural language processing function '{}' is experimental. "
                             "Set `allow_experimental_nlp_functions` setting to enable it", name);

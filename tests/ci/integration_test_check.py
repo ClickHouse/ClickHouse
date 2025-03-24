@@ -5,11 +5,15 @@ import csv
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import integration_tests_runner as runner
 from build_download_helper import download_all_deb_packages
+from ci_config import CI
+from ci_utils import Utils
 from docker_images_helper import DockerImage, get_docker_image
 from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
@@ -17,19 +21,15 @@ from integration_test_images import IMAGES
 from pr_info import PRInfo
 from report import (
     ERROR,
+    FAILURE,
     SUCCESS,
-    StatusType,
     JobReport,
+    StatusType,
     TestResult,
     TestResults,
     read_test_results,
-    FAILURE,
 )
 from stopwatch import Stopwatch
-
-import integration_tests_runner as runner
-from ci_config import CI
-from ci_utils import Utils
 
 
 def get_json_params_dict(
@@ -61,15 +61,11 @@ def get_env_for_runner(
     work_path: Path,
 ) -> Dict[str, str]:
     binary_path = build_path / "clickhouse"
-    odbc_bridge_path = build_path / "clickhouse-odbc-bridge"
-    library_bridge_path = build_path / "clickhouse-library-bridge"
 
     my_env = os.environ.copy()
     my_env["CLICKHOUSE_TESTS_BUILD_PATH"] = build_path.as_posix()
     my_env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = binary_path.as_posix()
     my_env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = binary_path.as_posix()
-    my_env["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = odbc_bridge_path.as_posix()
-    my_env["CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH"] = library_bridge_path.as_posix()
     my_env["CLICKHOUSE_TESTS_REPO_PATH"] = repo_path.as_posix()
     my_env["CLICKHOUSE_TESTS_RESULT_PATH"] = result_path.as_posix()
     my_env["CLICKHOUSE_TESTS_BASE_CONFIG_DIR"] = f"{repo_path}/programs/server"
@@ -159,12 +155,16 @@ def main():
     ), "Check name must be provided in --check-name input option or in CHECK_NAME env"
     validate_bugfix_check = args.validate_bugfix
 
-    if "RUN_BY_HASH_NUM" in os.environ:
-        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
-        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
-    else:
-        run_by_hash_num = 0
-        run_by_hash_total = 0
+    run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
+    run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
+
+    match = re.search(r"\(.*?\)", check_name)
+    options = match.group(0)[1:-1].split(",") if match else []
+    for option in options:
+        if "/" in option:
+            run_by_hash_num = int(option.split("/")[0]) - 1
+            run_by_hash_total = int(option.split("/")[1])
+            break
 
     is_flaky_check = "flaky" in check_name
 
@@ -249,7 +249,7 @@ def main():
             failed_cnt
             and failed_cnt <= CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI
         ):
-            print(f"Won't block the CI workflow")
+            print("Won't block the CI workflow")
             should_block_ci = False
 
     if should_block_ci:

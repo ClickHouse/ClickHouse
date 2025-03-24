@@ -8,7 +8,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Poco/String.h>
 
 #include <boost/algorithm/string/join.hpp>
@@ -39,11 +38,9 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
         auto level_literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
         return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal)), {});
     }
-    else
-    {
-        auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
-        return get(makeASTFunction("CODEC", identifier), {});
-    }
+
+    auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
+    return get(makeASTFunction("CODEC", identifier), {});
 }
 
 CompressionCodecPtr CompressionCodecFactory::get(const String & compression_codec) const
@@ -96,13 +93,12 @@ CompressionCodecPtr CompressionCodecFactory::get(
 
         if (codecs.size() == 1)
             return codecs.back();
-        else if (codecs.size() > 1)
+        if (codecs.size() > 1)
             return std::make_shared<CompressionCodecMultiple>(codecs);
-        else
-            return std::make_shared<CompressionCodecNone>();
+        return std::make_shared<CompressionCodecNone>();
     }
 
-    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", queryToString(ast));
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", ast->formatForErrorMessage());
 }
 
 

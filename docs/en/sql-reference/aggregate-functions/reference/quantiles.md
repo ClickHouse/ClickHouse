@@ -1,17 +1,19 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/quantiles
+description: 'quantiles, quantilesExactExclusive, quantilesExactInclusive, quantilesGK'
 sidebar_position: 177
+slug: /sql-reference/aggregate-functions/reference/quantiles
+title: 'quantiles Functions'
 ---
 
 # quantiles Functions
 
-## quantiles
+## quantiles {#quantiles}
 
 Syntax: `quantiles(level1, level2, ...)(x)`
 
-All the quantile functions also have corresponding quantiles functions: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantileInterpolatedWeighted`, `quantilesTDigest`, `quantilesBFloat16`, `quantilesDD`. These functions calculate all the quantiles of the listed levels in one pass, and return an array of the resulting values.
+All the quantile functions also have corresponding quantiles functions: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantileExactWeightedInterpolated`, `quantileInterpolatedWeighted`, `quantilesTDigest`, `quantilesBFloat16`, `quantilesDD`. These functions calculate all the quantiles of the listed levels in one pass, and return an array of the resulting values.
 
-## quantilesExactExclusive
+## quantilesExactExclusive {#quantilesexactexclusive}
 
 Exactly computes the [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -29,7 +31,7 @@ quantilesExactExclusive(level1, level2, ...)(expr)
 
 **Arguments**
 
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Parameters**
 
@@ -63,7 +65,7 @@ Result:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## quantilesExactInclusive
+## quantilesExactInclusive {#quantilesexactinclusive}
 
 Exactly computes the [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -81,7 +83,7 @@ quantilesExactInclusive(level1, level2, ...)(expr)
 
 **Arguments**
 
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Parameters**
 
@@ -115,7 +117,7 @@ Result:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## quantilesGK
+## quantilesGK {#quantilesgk}
 
 `quantilesGK` works similarly with `quantileGK` but allows us to calculate quantities at different levels simultaneously and returns an array.
 

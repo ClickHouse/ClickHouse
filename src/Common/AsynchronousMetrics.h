@@ -1,15 +1,14 @@
 #pragma once
 
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
+#include <Common/SharedMutex.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
-#include <map>
-#include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 #include <optional>
 #include <unordered_map>
@@ -69,7 +68,10 @@ public:
 
     AsynchronousMetrics(
         unsigned update_period_seconds,
-        const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
+        const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+        bool update_jemalloc_epoch_,
+        bool update_rss_,
+        const ContextPtr & context_);
 
     virtual ~AsynchronousMetrics();
 
@@ -89,7 +91,9 @@ protected:
     LoggerPtr log;
 private:
     virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
-    virtual void logImpl(AsynchronousMetricValues &) {}
+    virtual void logImpl(AsynchronousMetricValues &) { }
+    static auto tryGetMetricValue(const AsynchronousMetricValues & values, const String & metric, size_t default_value = 0);
+    void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
@@ -99,6 +103,7 @@ private:
     std::condition_variable wait_cond;
     bool quit TSA_GUARDED_BY(thread_mutex) = false;
 
+    /// Protects all raw data and serializes multiple updates.
     mutable std::mutex data_mutex;
 
     /// Some values are incremental and we have to calculate the difference.
@@ -106,11 +111,24 @@ private:
     bool first_run TSA_GUARDED_BY(data_mutex) = true;
     TimePoint previous_update_time TSA_GUARDED_BY(data_mutex);
 
-    AsynchronousMetricValues values TSA_GUARDED_BY(data_mutex);
+    /// Protects saved values.
+    mutable SharedMutex values_mutex;
+    /// Values store the result of the last update prepared for reading.
+    AsynchronousMetricValues values TSA_GUARDED_BY(values_mutex);
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS memory_stat TSA_GUARDED_BY(data_mutex);
 #endif
+
+    [[maybe_unused]] const bool update_jemalloc_epoch;
+    [[maybe_unused]] const bool update_rss;
+    ContextPtr context;
+
+
+    Int64 prev_cpu_wait_microseconds = 0;
+    Int64 prev_cpu_virtual_time_microseconds = 0;
+
+    double getCPUOverloadMetric();
 
 #if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);
@@ -232,7 +250,6 @@ private:
         double num_cpus_to_normalize,
         const ProcStatValuesCPU & delta_values_all_cpus,
         double multiplier);
-
 #endif
 
     void run();

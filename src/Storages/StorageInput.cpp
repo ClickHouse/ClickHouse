@@ -64,7 +64,7 @@ public:
         Block sample_block,
         Pipe pipe_,
         StorageInput & storage_)
-        : ISourceStep(DataStream{.header = std::move(sample_block)})
+        : ISourceStep(std::move(sample_block))
         , pipe(std::move(pipe_))
         , storage(storage_)
     {

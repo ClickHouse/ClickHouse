@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/BlockNameMap.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -43,6 +43,7 @@ private:
 
     size_t countRows(size_t max_block_size) override;
     bool supportsCountRows() const override { return true; }
+    bool supportsCustomSerializations() const override { return true; }
 
     const String & columnName(size_t i) const;
     size_t columnIndex(StringRef name, size_t key_index);
@@ -73,10 +74,10 @@ private:
     /// for row like {..., "non-nullable column name" : null, ...}
 
     /// Hash table match `field name -> position in the block`. NOTE You can use perfect hash map.
-    Block::NameMap name_map;
+    BlockNameMap name_map;
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
-    std::vector<Block::NameMap::const_iterator> prev_positions;
+    std::vector<BlockNameMap::const_iterator> prev_positions;
 
     bool yield_strings;
 

@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <shared_mutex>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -266,6 +267,10 @@ public:
 
     void triggerReloadDisksTask(const Strings & new_added_disks);
 
+    void stopReplicatedDDLQueries();
+    void startReplicatedDDLQueries();
+    bool canPerformReplicatedDDLQueries() const;
+
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -361,6 +366,8 @@ private:
     std::mutex reload_disks_mutex;
     std::set<String> disks_to_reload;
     static constexpr time_t DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC = 5;
+
+    std::atomic<bool> replicated_ddl_queries_enabled = false;
 };
 
 

@@ -1,10 +1,9 @@
 #pragma once
 
-#include <base/types.h>
-#include <Parsers/IAST.h>
-#include <Storages/IStorage_fwd.h>
 #include <Databases/IDatabase.h>
-#include <mutex>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage_fwd.h>
+#include <base/types.h>
 
 
 /// General functionality for several different database engines.
@@ -12,14 +11,17 @@
 namespace DB
 {
 
-void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata);
+class IDisk;
+
+void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context);
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
     uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error);
 
 /// Cleans a CREATE QUERY from temporary flags like "IF NOT EXISTS", "OR REPLACE", "AS SELECT" (for non-views), etc.
 void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query);
 
-class Context;
+String readMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path);
+void writeMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path, std::string_view content, bool fsync_metadata);
 
 /// A base class for databases that manage their own list of tables.
 class DatabaseWithOwnTablesBase : public IDatabase, protected WithContext
@@ -50,6 +52,7 @@ public:
 protected:
     Tables tables TSA_GUARDED_BY(mutex);
     SnapshotDetachedTables snapshot_detached_tables TSA_GUARDED_BY(mutex);
+    std::shared_ptr<IDisk> db_disk;
     LoggerPtr log;
 
     DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);

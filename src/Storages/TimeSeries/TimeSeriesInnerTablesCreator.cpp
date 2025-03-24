@@ -22,6 +22,14 @@
 namespace DB
 {
 
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsBool aggregate_min_time_and_max_time;
+    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsMap tags_to_columns;
+    extern const TimeSeriesSettingsBool use_all_tags_column_to_generate_id;
+}
+
 TimeSeriesInnerTablesCreator::TimeSeriesInnerTablesCreator(ContextPtr context_,
                                                            StorageID time_series_storage_id_,
                                                            std::reference_wrapper<const ColumnsDescription> time_series_columns_,
@@ -70,10 +78,10 @@ ColumnsDescription TimeSeriesInnerTablesCreator::getInnerTableColumnsDescription
             columns.add(time_series_columns.get(TimeSeriesColumnNames::MetricName));
 
             /// Columns corresponding to specific tags specified in the "tags_to_columns" setting.
-            const Map & tags_to_columns = time_series_settings.tags_to_columns;
+            const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
             for (const auto & tag_name_and_column_name : tags_to_columns)
             {
-                const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+                const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
                 const auto & column_name = tuple.at(1).safeGet<String>();
                 columns.add(time_series_columns.get(column_name));
             }
@@ -82,7 +90,7 @@ ColumnsDescription TimeSeriesInnerTablesCreator::getInnerTableColumnsDescription
             columns.add(time_series_columns.get(TimeSeriesColumnNames::Tags));
 
             /// Column "all_tags".
-            if (time_series_settings.use_all_tags_column_to_generate_id)
+            if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
             {
                 ColumnDescription all_tags_column = time_series_columns.get(TimeSeriesColumnNames::AllTags);
                 /// Column "all_tags" is here only to calculate the identifier of a time series for the "id" column, so it can be ephemeral.
@@ -96,11 +104,11 @@ ColumnsDescription TimeSeriesInnerTablesCreator::getInnerTableColumnsDescription
             }
 
             /// Columns "min_time" and "max_time".
-            if (time_series_settings.store_min_time_and_max_time)
+            if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time])
             {
                 auto min_time_column = time_series_columns.get(TimeSeriesColumnNames::MinTime);
                 auto max_time_column = time_series_columns.get(TimeSeriesColumnNames::MaxTime);
-                if (time_series_settings.aggregate_min_time_and_max_time)
+                if (time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
                 {
                     AggregateFunctionProperties properties;
                     auto min_function = AggregateFunctionFactory::instance().get("min", NullsAction::EMPTY, {min_time_column.type}, {}, properties);

@@ -45,8 +45,8 @@ SLRUFileCachePriority::SLRUFileCachePriority(
     LOG_DEBUG(
         log, "Probationary queue {} in size and {} in elements. "
         "Protected queue {} in size and {} in elements",
-        probationary_queue.max_size, probationary_queue.max_elements,
-        protected_queue.max_size, protected_queue.max_elements);
+        probationary_queue.max_size.load(), probationary_queue.max_elements.load(),
+        protected_queue.max_size.load(), protected_queue.max_elements.load());
 }
 
 size_t SLRUFileCachePriority::getSize(const CachePriorityGuard::Lock & lock) const
@@ -84,11 +84,9 @@ bool SLRUFileCachePriority::canFit( /// NOLINT
         const auto * slru_iterator = assert_cast<SLRUIterator *>(reservee.get());
         if (slru_iterator->is_protected)
             return protected_queue.canFit(size, elements, lock);
-        else
-            return probationary_queue.canFit(size, elements, lock);
-    }
-    else
         return probationary_queue.canFit(size, elements, lock);
+    }
+    return probationary_queue.canFit(size, elements, lock);
 }
 
 IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
@@ -308,8 +306,7 @@ IFileCachePriority::CollectStatus SLRUFileCachePriority::collectCandidatesForEvi
 
     if (probationary_desired_size_status == CollectStatus::SUCCESS)
         return protected_desired_size_status;
-    else
-        return probationary_desired_size_status;
+    return probationary_desired_size_status;
 }
 
 void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityGuard::Lock & lock)
@@ -534,11 +531,11 @@ std::string SLRUFileCachePriority::getStateInfoForLog(const CachePriorityGuard::
     return fmt::format("total size {}/{}, elements {}/{}, "
                        "probationary queue size {}/{}, elements {}/{}, "
                        "protected queue size {}/{}, elements {}/{}",
-                       getSize(lock), max_size, getElementsCount(lock), max_elements,
-                       probationary_queue.getSize(lock), probationary_queue.max_size,
-                       probationary_queue.getElementsCount(lock), probationary_queue.max_elements,
-                       protected_queue.getSize(lock), protected_queue.max_size,
-                       protected_queue.getElementsCount(lock), protected_queue.max_elements);
+                       getSize(lock), max_size.load(), getElementsCount(lock), max_elements.load(),
+                       probationary_queue.getSize(lock), probationary_queue.max_size.load(),
+                       probationary_queue.getElementsCount(lock), probationary_queue.max_elements.load(),
+                       protected_queue.getSize(lock), protected_queue.max_size.load(),
+                       protected_queue.getElementsCount(lock), protected_queue.max_elements.load());
 }
 
 void SLRUFileCachePriority::check(const CachePriorityGuard::Lock & lock) const

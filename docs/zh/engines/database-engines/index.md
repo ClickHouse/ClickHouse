@@ -14,8 +14,6 @@ sidebar_position: 27
 
 -   [MySQL](../../engines/database-engines/mysql.md)
 
--   [MaterializeMySQL](../../engines/database-engines/materialized-mysql.md)
-
 -   [Lazy](../../engines/database-engines/lazy.md)
 
 -   [Atomic](../../engines/database-engines/atomic.md)

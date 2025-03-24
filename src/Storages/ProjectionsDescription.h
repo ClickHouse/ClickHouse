@@ -4,18 +4,16 @@
 
 #include <memory>
 #include <vector>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 
-#include <boost/multi_index/member.hpp>
-#include <boost/multi_index/ordered_index.hpp>
-#include <boost/multi_index/sequenced_index.hpp>
-#include <boost/multi_index_container.hpp>
-
 namespace DB
 {
+
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 

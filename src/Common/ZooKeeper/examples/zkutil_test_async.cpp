@@ -1,5 +1,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <IO/ReadHelpers.h>
+#include <iostream>
 
 
 int main(int argc, char ** argv)
@@ -17,6 +18,8 @@ try
 
     size_t num_threads = DB::parse<size_t>(argv[1]);
     std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+
     for (size_t i = 0; i < num_threads; ++i)
     {
         threads.emplace_back([&]

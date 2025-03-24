@@ -51,20 +51,6 @@ def pre_build(repo_path: Path, env_variables: List[str]) -> None:
         current_branch = subprocess.check_output(
             "git branch --show-current", shell=True, encoding="utf-8"
         ).strip()
-        is_shallow = (
-            subprocess.check_output(
-                "git rev-parse --is-shallow-repository", shell=True, encoding="utf-8"
-            )
-            == "true\n"
-        )
-        if is_shallow:
-            # I've spent quite some time on looking around the problem, and my
-            # conclusion is: in the current state the easiest way to go is to force
-            # unshallow repository for performance artifacts.
-            # To change it we need to rework our performance tests docker image
-            raise BuildException(
-                "shallow repository is not suitable for performance builds"
-            )
         if current_branch != "master":
             cmd = (
                 f"git -C {repo_path} fetch --no-recurse-submodules "
@@ -107,7 +93,7 @@ def run_docker_image_with_env(
     cmd = (
         f"docker run --network=host --user={user} --rm {ccache_mount} "
         f"--volume={output_dir}:/output --volume={ch_root}:/build {env_part} "
-        f"--volume={cargo_cache_dir}:/rust/cargo/registry {interactive} {image_name}"
+        f"--volume={cargo_cache_dir}:/rust/cargo/registry {interactive} {image_name} /build/docker/packager/binary-builder/build.sh"
     )
 
     logging.info("Will build ClickHouse pkg with cmd: '%s'", cmd)
@@ -140,6 +126,7 @@ def parse_env_variables(
     with_profiler: bool,
     with_coverage: bool,
     with_binaries: str,
+    with_buzzhouse: bool,
 ) -> List[str]:
     DARWIN_SUFFIX = "-darwin"
     DARWIN_ARM_SUFFIX = "-darwin-aarch64"
@@ -269,10 +256,6 @@ def parse_env_variables(
         cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
         # Reduce linking and building time by avoid *install/all dependencies
         cmake_flags.append("-DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON")
-        # Add bridges to the build target
-        build_target = (
-            f"{build_target} clickhouse-odbc-bridge clickhouse-library-bridge"
-        )
         if is_release_build(debug_build, package_type, sanitizer, coverage):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
@@ -353,10 +336,12 @@ def parse_env_variables(
         cmake_flags.append("-DENABLE_CLANG_TIDY=1")
         cmake_flags.append("-DENABLE_TESTS=1")
         cmake_flags.append("-DENABLE_EXAMPLES=1")
+        cmake_flags.append("-DENABLE_UTILS=1")
+        cmake_flags.append("-DENABLE_RUST=0")
+
         # Don't stop on first error to find more clang-tidy errors in one run.
         result.append("NINJA_FLAGS=-k0")
 
-        cmake_flags.append("-DENABLE_UTILS=1")
         # utils are not included into clickhouse-bundle, so build everything
         build_target = "all"
 
@@ -365,6 +350,9 @@ def parse_env_variables(
 
     if with_coverage:
         cmake_flags.append("-DWITH_COVERAGE=1")
+
+    if with_buzzhouse:
+        cmake_flags.append("-DENABLE_BUZZHOUSE=1")
 
     if version:
         result.append(f"VERSION_STRING='{version}'")
@@ -407,20 +395,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-18",
-            "clang-18-darwin",
-            "clang-18-darwin-aarch64",
-            "clang-18-aarch64",
-            "clang-18-aarch64-v80compat",
-            "clang-18-ppc64le",
-            "clang-18-riscv64",
-            "clang-18-s390x",
-            "clang-18-loongarch64",
-            "clang-18-amd64-compat",
-            "clang-18-amd64-musl",
-            "clang-18-freebsd",
+            "clang-19",
+            "clang-19-darwin",
+            "clang-19-darwin-aarch64",
+            "clang-19-aarch64",
+            "clang-19-aarch64-v80compat",
+            "clang-19-ppc64le",
+            "clang-19-riscv64",
+            "clang-19-s390x",
+            "clang-19-loongarch64",
+            "clang-19-amd64-compat",
+            "clang-19-amd64-musl",
+            "clang-19-freebsd",
         ),
-        default="clang-18",
+        default="clang-19",
         help="a compiler to use",
     )
     parser.add_argument(
@@ -474,6 +462,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--additional-pkgs", action="store_true")
     parser.add_argument("--with-profiler", action="store_true")
     parser.add_argument("--with-coverage", action="store_true")
+    parser.add_argument("--with-buzzhouse", action="store_true")
     parser.add_argument(
         "--with-binaries", choices=("programs", "tests", ""), default=""
     )
@@ -540,6 +529,7 @@ def main() -> None:
         args.with_profiler,
         args.with_coverage,
         args.with_binaries,
+        args.with_buzzhouse,
     )
 
     pre_build(args.clickhouse_repo_path, env_prepared)

@@ -11,6 +11,9 @@
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/MemoryWorker.h>
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
@@ -80,7 +83,7 @@ int mainEntryClickHouseKeeper(int argc, char ** argv)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
         auto code = DB::getCurrentExceptionCode();
-        return code ? code : 1;
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }
 
@@ -362,7 +365,7 @@ try
     std::filesystem::create_directories(path);
 
     /// Check that the process user id matches the owner of the data.
-    assertProcessUserMatchesDataOwner(path, [&](const std::string & message){ LOG_WARNING(log, fmt::runtime(message)); });
+    assertProcessUserMatchesDataOwner(path, [&](const PreformattedMessage & message){ LOG_WARNING(log, fmt::runtime(message.text)); });
 
     DB::ServerUUID::load(path + "/uuid", log);
 
@@ -383,6 +386,10 @@ try
         GlobalThreadPool::instance().shutdown();
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
+
+    MemoryWorker memory_worker(
+        config().getUInt64("memory_worker_period_ms", 0), config().getBool("memory_worker_correct_memory_tracker", false), /*use_cgroup*/ true, /*page_cache*/ nullptr);
+    memory_worker.start();
 
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
@@ -425,8 +432,9 @@ try
             for (const auto & server : *servers)
                 metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
             return metrics;
-        }
-    );
+        },
+        /*update_jemalloc_epoch_=*/memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc,
+        /*update_rss_=*/memory_worker.getSource() == MemoryWorker::MemoryUsageSource::None);
 
     std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
@@ -606,6 +614,7 @@ try
 
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
+            CertificateReloader::instance().tryLoadClient(*config);
 #endif
         });
 
@@ -676,7 +685,6 @@ try
     GWPAsan::initFinished();
 #endif
 
-
     LOG_INFO(log, "Ready for connections.");
 
     waitForTerminationRequest();
@@ -688,7 +696,7 @@ catch (...)
     /// Poco does not provide stacktrace.
     tryLogCurrentException("Application");
     auto code = getCurrentExceptionCode();
-    return code ? code : -1;
+    return static_cast<UInt8>(code) ? code : -1;
 }
 
 

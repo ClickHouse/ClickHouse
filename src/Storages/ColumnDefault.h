@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 
 #include <string>
 #include <unordered_map>

@@ -14,7 +14,6 @@
 #define SYSTEM_LOG_ELEMENTS(M) \
     M(AsynchronousMetricLogElement) \
     M(CrashLogElement) \
-    M(MetricLogElement) \
     M(OpenTelemetrySpanLogElement) \
     M(PartLogElement) \
     M(QueryLogElement) \
@@ -32,7 +31,7 @@
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
-    M(ErrorLogElement)
+    M(QueryMetricLogElement)
 
 namespace Poco
 {
@@ -65,7 +64,7 @@ public:
     virtual Index getLastLogIndex() = 0;
     /// Call this method to wake up the flush thread and flush the data in the background. It is non blocking call
     virtual void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway) = 0;
-    /// Call this method to wait intill the logs are flushed up to expected_flushed_index. It is blocking call.
+    /// Call this method to wait until the logs are flushed up to expected_flushed_index. It is blocking call.
     virtual void flush(Index expected_flushed_index, bool should_prepare_tables_anyway) = 0;
 
     virtual void prepareTable() = 0;
@@ -208,6 +207,7 @@ public:
 
     String getName() const override { return LogElement::name(); }
 
+    static const char * getDefaultPartitionBy() { return "toYYYYMM(event_date)"; }
     static const char * getDefaultOrderBy() { return "event_date, event_time"; }
     static consteval size_t getDefaultMaxSize() { return 1048576; }
     static consteval size_t getDefaultReservedSize() { return 8192; }

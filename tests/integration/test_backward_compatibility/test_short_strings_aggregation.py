@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION, is_arm
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster, is_arm
 
 # For arm version see https://github.com/ClickHouse/ClickHouse/pull/59132
 cluster = ClickHouseCluster(__file__)

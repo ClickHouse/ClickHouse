@@ -1,42 +1,47 @@
 ---
-slug: /en/engines/table-engines/integrations/s3queue
+description: 'This engine provides integration with the Amazon S3 ecosystem and allows
+  streaming imports. Similar to the Kafka and RabbitMQ engines, but provides S3-specific
+  features.'
+sidebar_label: 'S3Queue'
 sidebar_position: 181
-sidebar_label: S3Queue
+slug: /engines/table-engines/integrations/s3queue
+title: 'S3Queue Table Engine'
 ---
 
+import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
+
 # S3Queue Table Engine
+
 This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) engines, but provides S3-specific features.
 
 ## Create Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
-    ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression])
+    ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression], [headers])
     [SETTINGS]
     [mode = '',]
     [after_processing = 'keep',]
     [keeper_path = '',]
-    [s3queue_loading_retries = 0,]
-    [s3queue_processing_threads_num = 1,]
-    [s3queue_enable_logging_to_s3queue_log = 0,]
-    [s3queue_polling_min_timeout_ms = 1000,]
-    [s3queue_polling_max_timeout_ms = 10000,]
-    [s3queue_polling_backoff_ms = 0,]
-    [s3queue_tracked_file_ttl_sec = 0,]
-    [s3queue_tracked_files_limit = 1000,]
-    [s3queue_cleanup_interval_min_ms = 10000,]
-    [s3queue_cleanup_interval_max_ms = 30000,]
+    [loading_retries = 0,]
+    [processing_threads_num = 1,]
+    [enable_logging_to_s3queue_log = 0,]
+    [polling_min_timeout_ms = 1000,]
+    [polling_max_timeout_ms = 10000,]
+    [polling_backoff_ms = 0,]
+    [tracked_file_ttl_sec = 0,]
+    [tracked_files_limit = 1000,]
+    [cleanup_interval_min_ms = 10000,]
+    [cleanup_interval_max_ms = 30000,]
 ```
 
-Starting with `24.7` settings without `s3queue_` prefix are also supported.
+:::warning
+Before `24.7`, it is required to use `s3queue_` prefix for all settings apart from `mode`, `after_processing` and `keeper_path`.
+:::
 
 **Engine parameters**
 
-- `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
-- `NOSIGN` - If this keyword is provided in place of credentials, all the requests will not be signed.
-- `format` — The [format](../../../interfaces/formats.md#formats) of the file.
-- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](../mergetree-family/mergetree.md#table_engine-mergetree-s3).
-- `compression` — Compression type. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Parameter is optional. By default, it will autodetect compression by file extension.
+`S3Queue` parameters are the same as `S3` table engine supports. See parameters section [here](../../../engines/table-engines/integrations/s3.md#parameters).
 
 **Example**
 
@@ -69,6 +74,8 @@ SETTINGS
 ```
 
 ## Settings {#settings}
+
+To get a list of settings, configured for the table, use `system.s3_queue_settings` table. Available from `24.10`.
 
 ### mode {#mode}
 
@@ -121,7 +128,7 @@ Default value: `0`.
 
 ### s3queue_polling_min_timeout_ms {#polling_min_timeout_ms}
 
-Minimal timeout before next polling (in milliseconds).
+Specifies the minimum time, in milliseconds, that ClickHouse waits before making the next polling attempt.
 
 Possible values:
 
@@ -131,7 +138,7 @@ Default value: `1000`.
 
 ### s3queue_polling_max_timeout_ms {#polling_max_timeout_ms}
 
-Maximum timeout before next polling (in milliseconds).
+Defines the maximum time, in milliseconds, that ClickHouse waits before initiating the next polling attempt.
 
 Possible values:
 
@@ -141,7 +148,7 @@ Default value: `10000`.
 
 ### s3queue_polling_backoff_ms {#polling_backoff_ms}
 
-Polling backoff (in milliseconds).
+Determines the additional wait time added to the previous polling interval when no new files are found. The next poll occurs after the sum of the previous interval and this backoff value, or the maximum interval, whichever is lower.
 
 Possible values:
 
@@ -191,6 +198,36 @@ For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Q
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](../../../engines/table-engines/integrations/s3.md).
 
+## S3 role-based access {#s3-role-based-access}
+
+<ScalePlanFeatureBadge feature="S3 Role-Based Access" />
+
+The s3Queue table engine supports role-based access.
+Refer to the documentation [here](/cloud/security/secure-s3) for steps to configure a role to access your bucket.
+
+Once the role is configured, a `roleARN` can be passed via an `extra_credentials` parameter as shown below:
+```sql
+CREATE TABLE s3_table
+(
+    ts DateTime,
+    value UInt64
+)
+ENGINE = S3Queue(
+                'https://<your_bucket>/*.csv', 
+                extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/<your_role>')
+                ,'CSV')
+SETTINGS 
+    ...
+```
+
+## S3Queue Ordered mode {#ordered-mode}
+
+`S3Queue` processing mode allows to store less metadata in ZooKeeper, but has a limitation that files, which added later by time, are required to have alphanumerically bigger names.
+
+`S3Queue` `ordered` mode, as well as `unordered`, supports `(s3queue_)processing_threads_num` setting (`s3queue_` prefix is optional), which allows to control number of threads, which would do processing of `S3` files locally on the server.
+In addition, `ordered` mode also introduces another setting called `(s3queue_)buckets` which means "logical threads". It means that in distributed scenario, when there are several servers with `S3Queue` table replicas, where this setting defines the number of processing units. E.g. each processing thread on each `S3Queue` replica will try to lock a certain `bucket` for processing, each `bucket` is attributed to certain files by hash of the file name. Therefore, in distributed scenario it is highly recommended to have `(s3queue_)buckets` setting to be at least equal to the number of replicas or bigger. This is fine to have the number of buckets bigger than the number of replicas. The most optimal scenario would be for `(s3queue_)buckets` setting to equal a multiplication of `number_of_replicas` and `(s3queue_)processing_threads_num`.
+The setting `(s3queue_)processing_threads_num` is not recommended for usage before version `24.6`.
+The setting `(s3queue_)buckets` is available starting with version `24.6`.
 
 ## Description {#description}
 

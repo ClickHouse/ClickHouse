@@ -9,7 +9,7 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-18}
+export LLVM_VERSION=${LLVM_VERSION:-19}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
@@ -152,12 +152,12 @@ function clone_submodules
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
-            contrib/expected
             contrib/simdjson
             contrib/liburing
             contrib/libfiu
             contrib/incbin
             contrib/yaml-cpp
+            contrib/corrosion
         )
 
         git submodule sync
@@ -233,10 +233,8 @@ function build
         ) | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_result.txt"
 
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
-            mkdir -p "$FASTTEST_OUTPUT/binaries/"
-            cp programs/clickhouse "$FASTTEST_OUTPUT/binaries/clickhouse"
-
-            zstd --threads=0 programs/clickhouse-stripped -o "$FASTTEST_OUTPUT/binaries/clickhouse-stripped.zst"
+            cp programs/clickhouse /build/clickhouse
+            zstd --threads=0 programs/clickhouse-stripped -o /build/clickhouse-stripped.zst
         fi
         ccache_status
         ccache --evict-older-than 1d ||:
@@ -250,7 +248,7 @@ function configure
 
     mkdir -p "$FASTTEST_DATA"{,/client-config}
     cp -a "$FASTTEST_SOURCE/programs/server/"{config,users}.xml "$FASTTEST_DATA"
-    "$FASTTEST_SOURCE/tests/config/install.sh" "$FASTTEST_DATA" "$FASTTEST_DATA/client-config"
+    "$FASTTEST_SOURCE/tests/config/install.sh" "$FASTTEST_DATA" "$FASTTEST_DATA/client-config" --fast-test
     cp -a "$FASTTEST_SOURCE/programs/server/config.d/log_to_console.xml" "$FASTTEST_DATA/config.d"
     # doesn't support SSL
     rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
@@ -289,7 +287,9 @@ function run_tests
         --order random
         --print-time
         --report-logs-stats
+        --no-stateful
         --jobs "${NPROC}"
+        --timeout 45 # We don't want slow test being introduced again in this check
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
@@ -325,7 +325,7 @@ case "$stage" in
     ;&
 "run_tests")
     run_tests ||:
-    /repo/tests/docker_scripts/process_functional_tests_result.py --in-results-dir "$FASTTEST_OUTPUT/" \
+    "${FASTTEST_SOURCE}/tests/docker_scripts/process_functional_tests_result.py" --in-results-dir "$FASTTEST_OUTPUT/" \
         --out-results-file "$FASTTEST_OUTPUT/test_results.tsv" \
         --out-status-file "$FASTTEST_OUTPUT/check_status.tsv" || echo -e "failure\tCannot parse results" > "$FASTTEST_OUTPUT/check_status.tsv"
     ;;

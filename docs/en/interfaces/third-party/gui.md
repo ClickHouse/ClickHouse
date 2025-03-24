@@ -1,7 +1,9 @@
 ---
-slug: /en/interfaces/third-party/gui
+description: 'List of third-party GUI tools and applications for working with ClickHouse'
+sidebar_label: 'Visual Interfaces'
 sidebar_position: 28
-sidebar_label: Visual Interfaces
+slug: /interfaces/third-party/gui
+title: 'Visual Interfaces from Third-party Developers'
 ---
 
 # Visual Interfaces from Third-party Developers
@@ -18,6 +20,19 @@ Features:
 - Responsive Tab Management: Dynamically handle multiple tabs, such as query and table tabs.
 - Performance Optimizations: Utilizes Indexed DB for efficient caching and state management.
 - Local Data Storage: All data is stored locally in the browser, ensuring no data is sent anywhere else.
+
+### ChartDB {#chartdb}
+
+[ChartDB](https://chartdb.io) is a free and open-source tool for visualizing and designing database schemas, including ClickHouse, with a single query. Built with React, it provides a seamless and user-friendly experience, requiring no database credentials or signup to get started.
+
+Features:
+
+- Schema Visualization: Instantly import and visualize your ClickHouse schema, including ER diagrams with materialized views and standard views, showing references to tables.
+- AI-Powered DDL Export: Generate DDL scripts effortlessly for better schema management and documentation.
+- Multi-SQL Dialect Support: Compatible with a range of SQL dialects, making it versatile for various database environments.
+- No Signup or Credentials Needed: All functionality is accessible directly in the browser, keeping it frictionless and secure.
+
+[ChartDB Source Code](https://github.com/chartdb/chartdb).
 
 ### Tabix {#tabix}
 
@@ -127,7 +142,7 @@ Features:
 
 ### clickhouse-plantuml {#clickhouse-plantuml}
 
-[cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) is a script to generate [PlantUML](https://plantuml.com/) diagram of tables’ schemes.
+[cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) is a script to generate [PlantUML](https://plantuml.com/) diagram of tables' schemes.
 
 ### xeus-clickhouse {#xeus-clickhouse}
 
@@ -233,6 +248,16 @@ Features:
 - Useful tools: Zookeeper data exploration, query EXPLAIN, kill queries, etc.
 - Visualization metric charts: queries and resource usage, number of merges/mutation, merge performance, query performance, etc.
 
+### CKibana {#ckibana}
+
+[CKibana](https://github.com/TongchengOpenSource/ckibana) is a lightweight service that allows you to effortlessly search, explore, and visualize ClickHouse data using the native Kibana UI.
+
+Features:
+
+- Translates chart requests from the native Kibana UI into ClickHouse query syntax.
+- Supports advanced features such as sampling and caching to enhance query performance.
+- Minimizes the learning cost for users after migrating from ElasticSearch to ClickHouse.
+
 ## Commercial {#commercial}
 
 ### DataGrip {#datagrip}
@@ -285,7 +310,7 @@ Features:
 
 - Easy and agile development using LookML, a language which supports curated
     [Data Modeling](https://looker.com/platform/data-modeling) to support report writers and end-users.
-- Powerful workflow integration via Looker’s [Data Actions](https://looker.com/platform/actions).
+- Powerful workflow integration via Looker's [Data Actions](https://looker.com/platform/actions).
 
 [How to configure ClickHouse in Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 

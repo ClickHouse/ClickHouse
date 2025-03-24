@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 namespace
 {
-    template <typename Name>
+    template <typename Name, bool toUTC>
     class UTCTimestampTransform : public IFunction
     {
     public:
@@ -77,7 +77,7 @@ namespace
             if (!time_zone_const_col)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of 2nd argument of function {}. Excepted const(String).", arg2.column->getName(), name);
             String time_zone_val = time_zone_const_col->getDataAt(0).toString();
-            const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
+            const DateLUTImpl & time_zone = DateLUT::instance(time_zone_val);
             if (WhichDataType(arg1.type).isDateTime())
             {
                 const auto & date_time_col = checkAndGetColumn<ColumnDateTime>(*arg1.column);
@@ -87,13 +87,15 @@ namespace
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     UInt32 date_time_val = date_time_col.getElement(i);
-                    LocalDateTime date_time(date_time_val, Name::to ? utc_time_zone : DateLUT::instance(time_zone_val));
-                    time_t time_val = date_time.to_time_t(Name::from ? utc_time_zone : DateLUT::instance(time_zone_val));
-                    result_data[i] = static_cast<UInt32>(time_val);
+                    auto time_zone_offset = time_zone.timezoneOffset(date_time_val);
+                    if constexpr (toUTC)
+                        result_data[i] = date_time_val - static_cast<UInt32>(time_zone_offset);
+                    else
+                        result_data[i] = date_time_val + static_cast<UInt32>(time_zone_offset);
                 }
                 return result_column;
             }
-            else if (WhichDataType(arg1.type).isDateTime64())
+            if (WhichDataType(arg1.type).isDateTime64())
             {
                 const auto & date_time_col = checkAndGetColumn<ColumnDateTime64>(*arg1.column);
                 const DataTypeDateTime64 * date_time_type = static_cast<const DataTypeDateTime64 *>(arg1.type.get());
@@ -107,15 +109,18 @@ namespace
                     DateTime64 date_time_val = date_time_col.getElement(i);
                     Int64 seconds = date_time_val.value / scale_multiplier;
                     Int64 micros = date_time_val.value % scale_multiplier;
-                    LocalDateTime date_time(seconds, Name::to ? utc_time_zone : DateLUT::instance(time_zone_val));
-                    time_t time_val = date_time.to_time_t(Name::from ? utc_time_zone : DateLUT::instance(time_zone_val));
+                    auto time_zone_offset = time_zone.timezoneOffset(seconds);
+                    Int64 time_val = seconds;
+                    if constexpr (toUTC)
+                        time_val -= time_zone_offset;
+                    else
+                        time_val += time_zone_offset;
                     DateTime64 date_time_64(time_val * scale_multiplier + micros);
                     result_data[i] = date_time_64;
                 }
                 return result_column;
             }
-            else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be datetime/datatime64. ", name);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be DateTime/DateTime64. ", name);
         }
 
     };
@@ -123,19 +128,15 @@ namespace
     struct NameToUTCTimestamp
     {
         static constexpr auto name = "toUTCTimestamp";
-        static constexpr auto from = false;
-        static constexpr auto to = true;
     };
 
     struct NameFromUTCTimestamp
     {
         static constexpr auto name = "fromUTCTimestamp";
-        static constexpr auto from = true;
-        static constexpr auto to = false;
     };
 
-    using ToUTCTimestampFunction = UTCTimestampTransform<NameToUTCTimestamp>;
-    using FromUTCTimestampFunction = UTCTimestampTransform<NameFromUTCTimestamp>;
+    using ToUTCTimestampFunction = UTCTimestampTransform<NameToUTCTimestamp, true>;
+    using FromUTCTimestampFunction = UTCTimestampTransform<NameFromUTCTimestamp, false>;
 }
 
 REGISTER_FUNCTION(UTCTimestampTransform)

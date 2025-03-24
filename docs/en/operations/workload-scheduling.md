@@ -1,8 +1,9 @@
 ---
-slug: /en/operations/workload-scheduling
+description: 'Documentation for Workload Scheduling'
+sidebar_label: 'Workload scheduling'
 sidebar_position: 69
-sidebar_label: "Workload scheduling"
-title: "Workload scheduling"
+slug: /operations/workload-scheduling
+title: 'Workload scheduling'
 ---
 
 When ClickHouse execute multiple queries simultaneously, they may be using shared resources (e.g. disks). Scheduling constraints and policies can be applied to regulate how resources are utilized and shared between different workloads. For every resource a scheduling hierarchy can be configured. Hierarchy root represents a resource, while leafs are queues, holding requests that exceed resource capacity.
@@ -42,6 +43,20 @@ Example:
     </storage_configuration>
 </clickhouse>
 ```
+
+An alternative way to express which disks are used by a resource is SQL syntax:
+
+```sql
+CREATE RESOURCE resource_name (WRITE DISK disk1, READ DISK disk2)
+```
+
+Resource could be used for any number of disk for READ or WRITE or both for READ and WRITE. There a syntax allowing to use a resource for all the disks:
+
+```sql
+CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
+```
+
+Note that server configuration options have priority over SQL way to define resources.
 
 ## Workload markup {#workload_markup}
 
@@ -153,9 +168,55 @@ Example:
 </clickhouse>
 ```
 
-## See also
- - [system.scheduler](/docs/en/operations/system-tables/scheduler.md)
- - [merge_workload](/docs/en/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
- - [merge_workload](/docs/en/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
- - [mutation_workload](/docs/en/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
- - [mutation_workload](/docs/en/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
+## Workload hierarchy (SQL only) {#workloads}
+
+Defining resources and classifiers in XML could be challenging. ClickHouse provides SQL syntax that is much more convenient. All resources that were created with `CREATE RESOURCE` share the same structure of the hierarchy, but could differ in some aspects. Every workload created with `CREATE WORKLOAD` maintains a few automatically created scheduling nodes for every resource. A child workload can be created inside another parent workload. Here is the example that defines exactly the same hierarchy as XML configuration above:
+
+```sql
+CREATE RESOURCE network_write (WRITE DISK s3)
+CREATE RESOURCE network_read (READ DISK s3)
+CREATE WORKLOAD all SETTINGS max_requests = 100
+CREATE WORKLOAD development IN all
+CREATE WORKLOAD production IN all SETTINGS weight = 3
+```
+
+The name of a leaf workload without children could be used in query settings `SETTINGS workload = 'name'`. Note that workload classifiers are also created automatically when using SQL syntax.
+
+To customize workload the following settings could be used:
+* `priority` - sibling workloads are served according to static priority values (lower value means higher priority).
+* `weight` - sibling workloads having the same static priority share resources according to weights.
+* `max_requests` - the limit on the number of concurrent resource requests in this workload.
+* `max_cost` - the limit on the total inflight bytes count of concurrent resource requests in this workload.
+* `max_speed` - the limit on byte processing rate of this workload (the limit is independent for every resource).
+* `max_burst` - maximum number of bytes that could be processed by the workload without being throttled (for every resource independently).
+
+Note that workload settings are translated into a proper set of scheduling nodes. For more details, see the description of the scheduling node [types and options](#hierarchy).
+
+There is no way to specify different hierarchies of workloads for different resources. But there is a way to specify different workload setting value for a specific resource:
+
+```sql
+CREATE OR REPLACE WORKLOAD all SETTINGS max_requests = 100, max_speed = 1000000 FOR network_read, max_speed = 2000000 FOR network_write
+```
+
+Also note that workload or resource could not be dropped if it is referenced from another workload. To update a definition of a workload use `CREATE OR REPLACE WORKLOAD` query.
+
+## Workloads and resources storage {#workload_entity_storage}
+Definitions of all workloads and resources in the form of `CREATE WORKLOAD` and `CREATE RESOURCE` queries are stored persistently either on disk at `workload_path` or in ZooKeeper at `workload_zookeeper_path`. ZooKeeper storage is recommended to achieve consistency between nodes. Alternatively `ON CLUSTER` clause could be used along with disk storage.
+
+## Strict resource access {#strict-resource-access}
+To enforce all queries to follow resource scheduling policies there is a server setting `throw_on_unknown_workload`. If it is set to `true` then every query is required to use valid `workload` query setting, otherwise `RESOURCE_ACCESS_DENIED` exception is thrown. If it is set to `false` then such a query does not use resource scheduler, i.e. it will get unlimited access to any `RESOURCE`.
+
+:::note
+Do not set `throw_on_unknown_workload` to `true` unless `CREATE WORKLOAD default` is executed. It could lead to server startup issues if a query without explicit setting `workload` is executed during startup.
+:::
+
+## See also {#see-also}
+ - [system.scheduler](/operations/system-tables/scheduler.md)
+ - [system.workloads](/operations/system-tables/workloads.md)
+ - [system.resources](/operations/system-tables/resources.md)
+ - [merge_workload](/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
+ - [merge_workload](/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
+ - [mutation_workload](/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
+ - [mutation_workload](/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
+ - [workload_path](/operations/server-configuration-parameters/settings.md#workload_path) global server setting
+ - [workload_zookeeper_path](/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting

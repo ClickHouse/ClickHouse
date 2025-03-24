@@ -4,6 +4,7 @@ CREATE TABLE t_optimize_equal_ranges (a UInt64, b String, c UInt64) ENGINE = Mer
 
 SET max_block_size = 1024;
 SET max_bytes_before_external_group_by = 0;
+SET max_bytes_ratio_before_external_group_by = 0;
 SET optimize_aggregation_in_order = 0;
 SET optimize_use_projections = 0;
 

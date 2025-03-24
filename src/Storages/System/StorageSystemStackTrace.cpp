@@ -38,6 +38,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMilliseconds storage_system_stack_trace_pipe_read_timeout_ms;
+}
 
 namespace ErrorCodes
 {
@@ -164,8 +168,7 @@ bool wait(int timeout_ms)
         {
             if (notification_num == sequence_num.load(std::memory_order_relaxed))
                 return true;
-            else
-                continue;   /// Drain delayed notifications.
+            continue; /// Drain delayed notifications.
         }
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Read wrong number of bytes from pipe");
@@ -228,10 +231,11 @@ ThreadIdToName getFilteredThreadNames(const ActionsDAG::Node * predicate, Contex
 bool parseHexNumber(std::string_view sv, UInt64 & res)
 {
     errno = 0; /// Functions strto* don't clear errno.
-    char * pos_integer = const_cast<char *>(sv.begin());
-    res = std::strtoull(sv.begin(), &pos_integer, 16);
-    return (pos_integer == sv.begin() + sv.size() && errno != ERANGE);
+    char * pos_integer = const_cast<char *>(sv.data());
+    res = std::strtoull(sv.data(), &pos_integer, 16); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    return (pos_integer == sv.data() + sv.size() && errno != ERANGE);
 }
+
 bool isSignalBlocked(UInt64 tid, int signal)
 {
     String buffer;
@@ -288,7 +292,7 @@ public:
         , predicate(filter_dag ? filter_dag->getOutputs().at(0) : nullptr)
         , max_block_size(max_block_size_)
         , pipe_read_timeout_ms(
-              static_cast<int>(context->getSettingsRef().storage_system_stack_trace_pipe_read_timeout_ms.totalMilliseconds()))
+              static_cast<int>(context->getSettingsRef()[Setting::storage_system_stack_trace_pipe_read_timeout_ms].totalMilliseconds()))
         , log(log_)
         , proc_it("/proc/self/task")
         /// It shouldn't be possible to do concurrent reads from this table.
@@ -470,7 +474,7 @@ public:
     {
         Pipe pipe(std::make_shared<StackTraceSource>(
             column_names,
-            getOutputStream().header,
+            getOutputHeader(),
             std::move(filter_actions_dag),
             context,
             max_block_size,
@@ -486,7 +490,7 @@ public:
         Block sample_block,
         size_t max_block_size_,
         LoggerPtr log_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , column_names(column_names_)
         , max_block_size(max_block_size_)
         , log(log_)

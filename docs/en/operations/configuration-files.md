@@ -1,16 +1,32 @@
 ---
-slug: /en/operations/configuration-files
+description: 'This page explains how ClickHouse server can be configured with configuration
+  files in XML or YAML syntax.'
+sidebar_label: 'Configuration Files'
 sidebar_position: 50
-sidebar_label: Configuration Files
+slug: /operations/configuration-files
+title: 'Configuration Files'
 ---
 
-# Configuration Files
+:::note
+Please note that XML-based Settings Profiles and configuration files are currently not supported for ClickHouse Cloud. Therefore, in ClickHouse Cloud, you won't find a config.xml file. Instead, you should use SQL commands to manage settings through Settings Profiles.
 
-The ClickHouse server can be configured with configuration files in XML or YAML syntax. In most installation types, the ClickHouse server runs with `/etc/clickhouse-server/config.xml` as default configuration file, but it is also possible to specify the location of the configuration file manually at server startup using command line option `--config-file=` or `-C`. Additional configuration files may be placed into directory `config.d/` relative to the main configuration file, for example into directory `/etc/clickhouse-server/config.d/`. Files in this directory and the main configuration are merged in a preprocessing step before the configuration is applied in ClickHouse server. Configuration files are merged in alphabetical order. To simplify updates and improve modularization, it is best practice to keep the default `config.xml` file unmodified and place additional customization into `config.d/`.
-(The ClickHouse keeper configuration lives in `/etc/clickhouse-keeper/keeper_config.xml` and thus the additional files need to be placed in `/etc/clickhouse-keeper/keeper_config.d/` ) 
+For further details, see ["Configuring Settings"](/manage/settings)
+:::
+
+The ClickHouse server can be configured with configuration files in XML or YAML syntax.
+In most installation types, the ClickHouse server runs with `/etc/clickhouse-server/config.xml` as default configuration file, but it is also possible to specify the location of the configuration file manually at server startup using command line option `--config-file` or `-C`.
+Additional configuration files may be placed into directory `config.d/` relative to the main configuration file, for example into directory `/etc/clickhouse-server/config.d/`.
+Files in this directory and the main configuration are merged in a preprocessing step before the configuration is applied in ClickHouse server.
+Configuration files are merged in alphabetical order.
+To simplify updates and improve modularization, it is best practice to keep the default `config.xml` file unmodified and place additional customization into `config.d/`.
+The ClickHouse keeper configuration lives in `/etc/clickhouse-keeper/keeper_config.xml`.
+Thus, additional files need to be placed in `/etc/clickhouse-keeper/keeper_config.d/`.
 
 
-It is possible to mix XML and YAML configuration files, for example you could have a main configuration file `config.xml` and additional configuration files `config.d/network.xml`, `config.d/timezone.yaml` and `config.d/keeper.yaml`. Mixing XML and YAML within a single configuration file is not supported. XML configuration files should use `<clickhouse>...</clickhouse>` as top-level tag. In YAML configuration files, `clickhouse:` is optional, the parser inserts it implicitly if absent.
+It is possible to mix XML and YAML configuration files, for example you could have a main configuration file `config.xml` and additional configuration files `config.d/network.xml`, `config.d/timezone.yaml` and `config.d/keeper.yaml`.
+Mixing XML and YAML within a single configuration file is not supported.
+XML configuration files should use `<clickhouse>...</clickhouse>` as top-level tag.
+In YAML configuration files, `clickhouse:` is optional, if absent the parser inserts it automatically.
 
 ## Merging Configuration {#merging}
 
@@ -69,7 +85,7 @@ generates merged configuration file:
 </clickhouse>
 ```
 
-### Using from_env and from_zk
+### Substitution by Environment Variables and ZooKeeper Nodes {#from_env_zk}
 
 To specify that a value of an element should be replaced by the value of an environment variable, you can use attribute `from_env`.
 
@@ -97,7 +113,7 @@ which is equal to
 </clickhouse>
 ```
 
-The same is possible using `from_zk`:
+The same is possible using `from_zk` (ZooKeeper node):
 
 ``` xml
 <clickhouse>
@@ -105,7 +121,7 @@ The same is possible using `from_zk`:
 </clickhouse>
 ```
 
-```
+```shell
 # clickhouse-keeper-client
 / :) touch /zk_configs
 / :) create /zk_configs/postgresql_port "9005"
@@ -122,11 +138,13 @@ which is equal to
 </clickhouse>
 ```
 
-#### Default values for from_env and from_zk attributes
+#### Default Values {#default-values}
 
-It's possible to set the default value and substitute it only if the environment variable or zookeeper node is set using `replace="1"` (must be declared before from_env).
+An element with `from_env` or `from_zk` attribute may additionally have attribute `replace="1"` (the latter must appear before `from_env`/`from_zk`).
+In this case, the element may define a default value.
+The element takes on the value of the environment variable or ZooKeeper node if set, otherwise the default value.
 
-With previous example, but `MAX_QUERY_SIZE` is unset:
+Previous example but assuming `MAX_QUERY_SIZE` is not set:
 
 ``` xml
 <clickhouse>
@@ -138,7 +156,7 @@ With previous example, but `MAX_QUERY_SIZE` is unset:
 </clickhouse>
 ```
 
-will take the default value
+Result:
 
 ``` xml
 <clickhouse>
@@ -150,15 +168,15 @@ will take the default value
 </clickhouse>
 ```
 
-## Substituting Configuration {#substitution}
+## Substitution with File Content {#substitution-with-file-content}
 
-The config can define substitutions. There are two types of substitutions:
+It is also possible to replace parts of the configuration by file contents. This can be done in two ways:
 
-- If an element has the `incl` attribute, the corresponding substitution from the file will be used as the value. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [include_from](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-include_from) element in the server config. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify the `optional="true"` attribute (for example, settings for [macros](../operations/server-configuration-parameters/settings.md#macros)).
+- *Substituting Values*: If an element has attribute `incl`, its value will be replaced by the content of the referenced file. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [include_from](../operations/server-configuration-parameters/settings.md#include_from) element in the server config. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify attribute `optional="true"` (for example, settings for [macros](../operations/server-configuration-parameters/settings.md#macros)).
 
-- If you want to replace an entire element with a substitution, use `include` as the element name. Substitutions can also be performed from ZooKeeper by specifying attribute `from_zk = "/path/to/node"`. In this case, the element value is replaced with the contents of the Zookeeper node at `/path/to/node`. This also works with you store an entire XML subtree as a Zookeeper node, it will be fully inserted into the source element.
+- *Substituting elements*: If you want to replace the entire element with a substitution, use `include` as the element name. Element name `include` can be combined with attribute `from_zk = "/path/to/node"`. In this case, the element value is replaced by the contents of the ZooKeeper node at `/path/to/node`. This also works with you store an entire XML subtree as a Zookeeper node, it will be fully inserted into the source element.
 
-XML substitution example:
+Example:
 
 ```xml
 <clickhouse>
@@ -177,9 +195,11 @@ If you want to merge the substituting content with the existing configuration in
 
 ## Encrypting and Hiding Configuration {#encryption}
 
-You can use symmetric encryption to encrypt a configuration element, for example, a plaintext password or private key. To do so, first configure the [encryption codec](../sql-reference/statements/create/table.md#encryption-codecs), then add attribute `encrypted_by` with the name of the encryption codec as value to the element to encrypt.
+You can use symmetric encryption to encrypt a configuration element, for example, a plaintext password or private key.
+To do so, first configure the [encryption codec](../sql-reference/statements/create/table.md#encryption-codecs), then add attribute `encrypted_by` with the name of the encryption codec as value to the element to encrypt.
 
-Unlike attributes `from_zk`, `from_env` and `incl` (or element `include`), no substitution, i.e. decryption of the encrypted value, is performed in the preprocessed file. Decryption happens only at runtime in the server process.
+Unlike attributes `from_zk`, `from_env` and `incl`, or element `include`, no substitution (i.e. decryption of the encrypted value) is performed in the preprocessed file.
+Decryption happens only at runtime in the server process.
 
 Example:
 
@@ -200,6 +220,72 @@ Example:
 </clickhouse>
 ```
 
+The attributes [from_env](#from_env_zk) and [from_zk](#from_env_zk) can also be applied to ```encryption_codecs```:
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_env="CLICKHOUSE_KEY_HEX"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+Encryption keys and encrypted values can be defined in either config file.
+
+Example `config.xml`:
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+</clickhouse>
+```
+
+Example `users.xml`:
+
+```xml
+<clickhouse>
+
+    <users>
+        <test_user>
+            <password encrypted_by="AES_128_GCM_SIV">96280000000D000000000030D4632962295D46C6FA4ABF007CCEC9C1D0E19DA5AF719C1D9A46C446</password>
+            <profile>default</profile>
+        </test_user>
+    </users>
+
+</clickhouse>
+```
+
 To encrypt a value, you can use the (example) program `encrypt_decrypt`:
 
 Example:
@@ -212,7 +298,8 @@ Example:
 961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
 ```
 
-Even with encrypted configuration elements, encrypted elements still appear in the preprocessed configuration file. If this is a problem for your ClickHouse deployment, we suggest two alternatives: either set file permissions of the preprocessed file to 600 or use the `hide_in_preprocessed` attribute.
+Even with encrypted configuration elements, encrypted elements still appear in the preprocessed configuration file.
+If this is a problem for your ClickHouse deployment, we suggest two alternatives: Either set file permissions of the preprocessed file to 600 or use attribute `hide_in_preprocessed`.
 
 Example:
 
@@ -260,7 +347,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </clickhouse>
 ```
 
-## YAML examples {#example}
+## YAML examples {#example-1}
 
 Here you can see default config written in YAML: [config.yaml.example](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
 

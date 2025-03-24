@@ -1,11 +1,13 @@
 ---
-slug: /en/development/contrib
-sidebar_position: 73
-sidebar_label: Third-Party Libraries
-description: A list of third-party libraries used
+description: 'Page describing ClickHouse third-party usage and how to add and maintain
+  third-party libraries.'
+sidebar_label: 'Third-Party Libraries'
+sidebar_position: 60
+slug: /development/contrib
+title: 'Third-Party Libraries'
 ---
 
-# Third-Party Libraries Used
+# Third-Party Libraries
 
 ClickHouse utilizes third-party libraries for different purposes, e.g., to connect to other databases, to decode/encode data during load/save from/to disk, or to implement certain specialized SQL functions.
 To be independent of the available libraries in the target system, each third-party library is imported as a Git submodule into ClickHouse's source tree and compiled and linked with ClickHouse.
@@ -18,9 +20,9 @@ SELECT library_name, license_type, license_path FROM system.licenses ORDER BY li
 Note that the listed libraries are the ones located in the `contrib/` directory of the ClickHouse repository.
 Depending on the build options, some of the libraries may have not been compiled, and, as a result, their functionality may not be available at runtime.
 
-[Example](https://play.clickhouse.com/play?user=play#U0VMRUNUIGxpYnJhcnlfbmFtZSwgbGljZW5zZV90eXBlLCBsaWNlbnNlX3BhdGggRlJPTSBzeXN0ZW0ubGljZW5zZXMgT1JERVIgQlkgbGlicmFyeV9uYW1lIENPTExBVEUgJ2VuJw==)
+[Example](https://sql.clickhouse.com?query_id=478GCPU7LRTSZJBNY3EJT3)
 
-## Adding and maintaining third-party libraries
+## Adding and maintaining third-party libraries {#adding-and-maintaining-third-party-libraries}
 
 Each third-party library must reside in a dedicated directory under the `contrib/` directory of the ClickHouse repository.
 Avoid dumping copies of external code into the library directory.

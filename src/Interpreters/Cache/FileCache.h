@@ -6,8 +6,6 @@
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
 
-#include <IO/ReadSettings.h>
-
 #include <Common/callOnce.h>
 #include <Common/ThreadPool.h>
 #include <Common/StatusFile.h>
@@ -19,12 +17,13 @@
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/UserInfo.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <filesystem>
 
 
 namespace DB
 {
+struct ReadSettings;
 
 /// Track acquired space in cache during reservation
 /// to make error messages when no space left more informative.
@@ -88,8 +87,6 @@ public:
 
     const String & getBasePath() const;
 
-    static Key createKeyForPath(const String & path);
-
     static const UserInfo & getCommonUser();
 
     static const UserInfo & getInternalUser();
@@ -116,7 +113,8 @@ public:
         size_t file_size,
         const CreateFileSegmentSettings & settings,
         size_t file_segments_limit,
-        const UserInfo & user);
+        const UserInfo & user,
+        std::optional<size_t> boundary_alignment_ = std::nullopt);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -164,6 +162,10 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
+    size_t getBackgroundDownloadMaxFileSegmentSize() const { return background_download_max_file_segment_size.load(); }
+
+    size_t getBoundaryAlignment() const { return boundary_alignment; }
+
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,
@@ -202,13 +204,14 @@ private:
     std::atomic<size_t> max_file_segment_size;
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
+    std::atomic<size_t> background_download_max_file_segment_size;
     size_t load_metadata_threads;
     const bool load_metadata_asynchronously;
     std::atomic<bool> stop_loading_metadata = false;
     ThreadFromGlobalPool load_metadata_main_thread;
     const bool write_cache_per_user_directory;
 
-    BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;
+    BackgroundSchedulePoolTaskHolder keep_up_free_space_ratio_task;
     const double keep_current_size_to_max_ratio;
     const double keep_current_elements_to_max_ratio;
     const size_t keep_up_free_space_remove_batch;

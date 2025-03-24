@@ -2,12 +2,12 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
 {
+struct FormatSettings;
 
 /**
  * Column for storing Variant(...) type values.
@@ -173,6 +173,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override;
     bool isNullAt(size_t n) const override;
@@ -248,10 +249,15 @@ public:
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
     void protect() override;
-    void forEachSubcolumn(MutableColumnCallback callback) override;
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    ColumnCheckpointPtr getCheckpoint() const override;
+    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
+    void rollback(const ColumnCheckpoint & checkpoint) override;
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachSubcolumn(ColumnCallback callback) const override;
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     bool structureEquals(const IColumn & rhs) const override;
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
     UInt64 getNumberOfDefaultRows() const override;
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
@@ -314,6 +320,12 @@ public:
     /// Check if we have only 1 non-empty variant and no NULL values,
     /// and if so, return the discriminator of this non-empty column.
     std::optional<Discriminator> getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls() const;
+    std::optional<Discriminator> getGlobalDiscriminatorOfOneNoneEmptyVariantNoNulls() const;
+
+    /// Check if we have only 1 non-empty variant,
+    /// and if so, return the discriminator of this non-empty column.
+    std::optional<Discriminator> getGlobalDiscriminatorOfOneNoneEmptyVariant() const;
+
 
     /// Apply null map to a Variant column.
     /// Replace corresponding discriminators with NULL_DISCRIMINATOR
@@ -327,6 +339,7 @@ public:
     void extend(const std::vector<Discriminator> & old_to_new_global_discriminators, std::vector<std::pair<MutableColumnPtr, Discriminator>> && new_variants_and_discriminators);
 
     bool hasDynamicStructure() const override;
+    bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
 private:

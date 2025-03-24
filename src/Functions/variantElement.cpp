@@ -79,8 +79,7 @@ public:
 
             return return_type;
         }
-        else
-            return arguments[2].type;
+        return arguments[2].type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -182,7 +181,7 @@ SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantEleme
 │ [1,2,3]       │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ [1,2,3]                            │
 └───────────────┴─────────────────────────────┴─────────────────────────────┴────────────────────────────────────┘
 )"}}},
-        .categories{"Variant"},
+        .category{"Variants"},
     });
 }
 

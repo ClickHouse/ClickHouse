@@ -78,16 +78,27 @@ struct WindowFunction : public IAggregateFunctionHelper<WindowFunction>, public 
     }
 
     String getName() const override { return name; }
-    void create(AggregateDataPtr __restrict) const override { }
-    void destroy(AggregateDataPtr __restrict) const noexcept override { }
-    bool hasTrivialDestructor() const override { return true; }
-    size_t sizeOfData() const override { return 0; }
-    size_t alignOfData() const override { return 1; }
     void add(AggregateDataPtr __restrict, const IColumn **, size_t, Arena *) const override { fail(); }
     void merge(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override { fail(); }
     void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t>) const override { fail(); }
     void deserialize(AggregateDataPtr __restrict, ReadBuffer &, std::optional<size_t>, Arena *) const override { fail(); }
     void insertResultInto(AggregateDataPtr __restrict, IColumn &, Arena *) const override { fail(); }
+};
+
+struct StatelessWindowFunction : public WindowFunction
+{
+    StatelessWindowFunction(
+        const std::string & name_, const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
+        : WindowFunction(name_, argument_types_, parameters_, result_type_)
+    {
+    }
+
+    size_t sizeOfData() const override { return 0; }
+    size_t alignOfData() const override { return 1; }
+
+    void create(AggregateDataPtr __restrict) const override { }
+    void destroy(AggregateDataPtr __restrict) const noexcept override { }
+    bool hasTrivialDestructor() const override { return true; }
 };
 
 template <typename State>
@@ -100,7 +111,7 @@ struct StatefulWindowFunction : public WindowFunction
     }
 
     size_t sizeOfData() const override { return sizeof(State); }
-    size_t alignOfData() const override { return 1; }
+    size_t alignOfData() const override { return alignof(State); }
 
     void create(AggregateDataPtr __restrict place) const override { new (place) State(); }
 

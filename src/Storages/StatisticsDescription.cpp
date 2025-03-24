@@ -4,7 +4,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -48,11 +47,11 @@ static StatisticsType stringToStatisticsType(String type)
         return StatisticsType::TDigest;
     if (type == "uniq")
         return StatisticsType::Uniq;
-    if (type == "count_min")
+    if (type == "countmin")
         return StatisticsType::CountMinSketch;
     if (type == "minmax")
         return StatisticsType::MinMax;
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'count_min', 'minmax', 'tdigest' and 'uniq'.", type);
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
 }
 
 String SingleStatisticsDescription::getTypeName() const
@@ -64,11 +63,11 @@ String SingleStatisticsDescription::getTypeName() const
         case StatisticsType::Uniq:
             return "Uniq";
         case StatisticsType::CountMinSketch:
-            return "count_min";
+            return "countmin";
         case StatisticsType::MinMax:
             return "minmax";
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'count_min', 'minmax', 'tdigest' and 'uniq'.", type);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
     }
 }
 
@@ -108,7 +107,7 @@ void ColumnStatisticsDescription::merge(const ColumnStatisticsDescription & othe
         {
             throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics type name {} has existed in column {}", stats_type, merging_column_name);
         }
-        else if (!types_to_desc.contains(stats_type))
+        if (!types_to_desc.contains(stats_type))
             types_to_desc.emplace(stats_type, stats_desc);
     }
 }
@@ -169,7 +168,7 @@ ColumnStatisticsDescription ColumnStatisticsDescription::fromColumnDeclaration(c
 {
     const auto & stat_type_list_ast = column.statistics_desc->as<ASTFunction &>().arguments;
     if (stat_type_list_ast->children.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect at least one statistics type for column {}", queryToString(column));
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect at least one statistics type for column {}", column.formatForErrorMessage());
     ColumnStatisticsDescription stats;
     for (const auto & ast : stat_type_list_ast->children)
     {

@@ -2,6 +2,7 @@
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
@@ -12,6 +13,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Disks/IDisk.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils.h>
 #include <Common/SipHash.h>
@@ -23,10 +25,6 @@
 #include <Common/logger_useful.h>
 #include <Compression/CheckingCompressedReadBuffer.h>
 #include <IO/Operators.h>
-#include <base/hex.h>
-#include <boost/algorithm/string/find_iterator.hpp>
-#include <boost/algorithm/string/finder.hpp>
-#include <boost/range/adaptor/indexed.hpp>
 #include <filesystem>
 
 
@@ -48,6 +46,24 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool distributed_insert_skip_read_only_replicas;
+    extern const SettingsSeconds distributed_replica_error_half_life;
+    extern const SettingsUInt64 distributed_replica_error_cap;
+    extern const SettingsLoadBalancing load_balancing;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+}
+
+namespace DistributedSetting
+{
+    extern const DistributedSettingsUInt64 background_insert_batch;
+    extern const DistributedSettingsMilliseconds background_insert_max_sleep_time_ms;
+    extern const DistributedSettingsMilliseconds background_insert_sleep_time_ms;
+    extern const DistributedSettingsUInt64 background_insert_split_batch_on_failure;
+    extern const DistributedSettingsBool fsync_directories;
+}
 
 namespace ErrorCodes
 {
@@ -111,16 +127,16 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     , path(fs::path(disk->getPath()) / relative_path / "")
     , broken_relative_path(fs::path(relative_path) / "broken")
     , broken_path(fs::path(path) / "broken" / "")
-    , should_batch_inserts(storage.getDistributedSettingsRef().background_insert_batch)
-    , split_batch_on_failure(storage.getDistributedSettingsRef().background_insert_split_batch_on_failure)
-    , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
-    , min_batched_block_size_rows(storage.getContext()->getSettingsRef().min_insert_block_size_rows)
-    , min_batched_block_size_bytes(storage.getContext()->getSettingsRef().min_insert_block_size_bytes)
+    , should_batch_inserts(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_batch])
+    , split_batch_on_failure(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_split_batch_on_failure])
+    , dir_fsync(storage.getDistributedSettingsRef()[DistributedSetting::fsync_directories])
+    , min_batched_block_size_rows(storage.getContext()->getSettingsRef()[Setting::min_insert_block_size_rows])
+    , min_batched_block_size_bytes(storage.getContext()->getSettingsRef()[Setting::min_insert_block_size_bytes])
     , current_batch_file_path(path + "current_batch.txt")
     , pending_files(std::numeric_limits<size_t>::max())
-    , default_sleep_time(storage.getDistributedSettingsRef().background_insert_sleep_time_ms.totalMilliseconds())
+    , default_sleep_time(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_sleep_time_ms].totalMilliseconds())
     , sleep_time(default_sleep_time)
-    , max_sleep_time(storage.getDistributedSettingsRef().background_insert_max_sleep_time_ms.totalMilliseconds())
+    , max_sleep_time(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_max_sleep_time_ms].totalMilliseconds())
     , log(getLogger(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_bytes(CurrentMetrics::DistributedBytesToInsert, 0)
@@ -154,7 +170,7 @@ void DistributedAsyncInsertDirectoryQueue::flushAllData(const SettingsChanges & 
     std::lock_guard lock{mutex};
     if (!hasPendingFiles())
         return;
-    processFiles(settings_changes);
+    processFiles(/*force=*/true, settings_changes);
 }
 
 void DistributedAsyncInsertDirectoryQueue::shutdownAndDropAllData()
@@ -197,7 +213,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
         {
             try
             {
-                processFiles();
+                processFiles(/*force=*/false);
                 /// No errors while processing existing files.
                 /// Let's see maybe there are more files to process.
                 do_sleep = false;
@@ -286,10 +302,11 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
     auto pools = createPoolsForAddresses(addresses, pool_factory, storage.log);
 
     const auto & settings = storage.getContext()->getSettingsRef();
-    return std::make_shared<ConnectionPoolWithFailover>(std::move(pools),
-        settings.load_balancing,
-        settings.distributed_replica_error_half_life.totalSeconds(),
-        settings.distributed_replica_error_cap);
+    return std::make_shared<ConnectionPoolWithFailover>(
+        std::move(pools),
+        settings[Setting::load_balancing],
+        settings[Setting::distributed_replica_error_half_life].totalSeconds(),
+        settings[Setting::distributed_replica_error_cap]);
 }
 
 bool DistributedAsyncInsertDirectoryQueue::hasPendingFiles() const
@@ -364,18 +381,18 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         status.broken_bytes_count = broken_bytes_count;
     }
 }
-void DistributedAsyncInsertDirectoryQueue::processFiles(const SettingsChanges & settings_changes)
+void DistributedAsyncInsertDirectoryQueue::processFiles(bool force, const SettingsChanges & settings_changes)
 try
 {
     if (should_batch_inserts)
-        processFilesWithBatching(settings_changes);
+        processFilesWithBatching(force, settings_changes);
     else
     {
         /// Process unprocessed file.
         if (!current_file.empty())
             processFile(current_file, settings_changes);
 
-        while (!pending_files.isFinished() && pending_files.tryPop(current_file))
+        while ((force || !monitor_blocker.isCancelled()) && !pending_files.isFinished() && pending_files.tryPop(current_file))
             processFile(current_file, settings_changes);
     }
 
@@ -415,8 +432,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
         auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-        auto result = results.front();
-        pool->checkTryResultIsValid(result, insert_settings.distributed_insert_skip_read_only_replicas);
+        auto result = pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
         auto connection = std::move(result.entry);
 
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
@@ -468,7 +484,7 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
     Block header;
 
     BatchHeader(Settings settings_, String query_, ClientInfo client_info_, Block header_)
-        : settings(std::move(settings_))
+        : settings(settings_)
         , query(std::move(query_))
         , client_info(std::move(client_info_))
         , header(std::move(header_))
@@ -524,7 +540,7 @@ DistributedAsyncInsertDirectoryQueue::Status DistributedAsyncInsertDirectoryQueu
     return current_status;
 }
 
-void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const SettingsChanges & settings_changes)
+void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, const SettingsChanges & settings_changes)
 {
     /// Possibly, we failed to send a batch on the previous iteration. Try to send exactly the same batch.
     if (fs::exists(current_batch_file_path))
@@ -532,18 +548,10 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
         LOG_DEBUG(log, "Restoring the batch");
 
         DistributedAsyncInsertBatch batch(*this);
-        batch.deserialize();
+        if (batch.recoverBatch())
+            batch.send(settings_changes, /*update_current_batch=*/ false);
 
-        /// In case of recovery it is possible that some of files will be
-        /// missing, if server had been restarted abnormally
-        /// (between unlink(*.bin) and unlink(current_batch.txt)).
-        ///
-        /// But current_batch_file_path should be removed anyway, since if some
-        /// file was missing, then the batch is not complete and there is no
-        /// point in trying to pretend that it will not break deduplication.
-        if (batch.valid())
-            batch.send(settings_changes);
-
+        /// Remove the batch info unconditionally since it is either valid and sent or broken and should be re-created from scratch.
         auto dir_sync_guard = getDirectorySyncGuard(relative_path);
         fs::remove(current_batch_file_path);
     }
@@ -554,7 +562,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
 
     try
     {
-        while (pending_files.tryPop(file_path))
+        while ((force || !monitor_blocker.isCancelled()) && !pending_files.isFinished() && pending_files.tryPop(file_path))
         {
             if (!fs::exists(file_path))
             {
@@ -606,8 +614,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
                     tryLogCurrentException(log, "File is marked broken due to");
                     continue;
                 }
-                else
-                    throw;
+                throw;
             }
 
             BatchHeader batch_header(
@@ -623,15 +630,13 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
             batch.total_bytes += total_bytes;
 
             if (batch.isEnoughSize())
-            {
-                batch.send(settings_changes);
-            }
+                batch.send(settings_changes, /*update_current_batch=*/ true);
         }
 
         for (auto & kv : header_to_batch)
         {
             DistributedAsyncInsertBatch & batch = kv.second;
-            batch.send(settings_changes);
+            batch.send(settings_changes, /*update_current_batch=*/ true);
         }
     }
     catch (...)

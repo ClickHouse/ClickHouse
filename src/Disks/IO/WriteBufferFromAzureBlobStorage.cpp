@@ -30,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -53,13 +54,13 @@ BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureBlobStorage::R
 }
 
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
+    AzureClientPtr blob_container_client_,
     const String & blob_path_,
     size_t buf_size_,
     const WriteSettings & write_settings_,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_)
-    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+    : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
     , buffer_allocation_policy(createBufferAllocationPolicy(*settings_))
     , max_single_part_upload_size(settings_->max_single_part_upload_size)
@@ -71,7 +72,8 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
           std::make_unique<TaskTracker>(
               std::move(schedule_),
               settings_->max_inflight_parts_for_one_file,
-              limitedLog))
+              limited_log))
+    , check_objects_after_upload(settings_->check_objects_after_upload)
 {
     allocateBuffer();
 }
@@ -79,11 +81,23 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
 
 WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 {
-    LOG_TRACE(limitedLog, "Close WriteBufferFromAzureBlobStorage. {}.", blob_path);
+    LOG_TRACE(limited_log, "Close WriteBufferFromAzureBlobStorage. {}.", blob_path);
 
-    /// That destructor could be call with finalized=false in case of exceptions
-    if (!finalized)
+    if (canceled)
     {
+        if (!isEmpty())
+        {
+            LOG_INFO(
+                log,
+                "WriteBufferFromAzureBlobStorage was canceled."
+                "The file might not be written to AzureBlobStorage. "
+                "{}.",
+                blob_path);
+        }
+    }
+    else if (!finalized)
+    {
+        /// That destructor could be call with finalized=false in case of exceptions
         LOG_INFO(
             log,
             "WriteBufferFromAzureBlobStorage is not finalized in destructor. "
@@ -135,27 +149,38 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
 
     setFakeBufferWhenPreFinalized();
 
-    /// If there is only one block and size is less than or equal to max_single_part_upload_size
-    /// then we use single part upload instead of multi part upload
-    if (block_ids.empty() && detached_part_data.size() == 1 && detached_part_data.front().data_size <= max_single_part_upload_size)
+    if (block_ids.empty())
     {
         ProfileEvents::increment(ProfileEvents::AzureUpload);
-        if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
+        if (blob_container_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureUpload);
 
-        auto part_data = std::move(detached_part_data.front());
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
-        Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(part_data.memory.data()), part_data.data_size);
-        execWithRetry([&](){ block_blob_client.Upload(memory_stream); }, max_unexpected_write_error_retries, part_data.data_size);
-        LOG_TRACE(log, "Committed single block for blob `{}`", blob_path);
 
-        detached_part_data.pop_front();
-        return;
+        /// If there is only one block and size is less than or equal to max_single_part_upload_size
+        /// then we use single part upload instead of multi part upload
+        if (detached_part_data.size() == 1 && detached_part_data.front().data_size <= max_single_part_upload_size)
+        {
+            auto part_data = std::move(detached_part_data.front());
+            Azure::Core::IO::MemoryBodyStream memory_stream(
+                reinterpret_cast<const uint8_t *>(part_data.memory.data()), part_data.data_size);
+            execWithRetry([&]() { block_blob_client.Upload(memory_stream); }, max_unexpected_write_error_retries, part_data.data_size);
+            LOG_TRACE(log, "Committed single block for blob `{}`", blob_path);
+
+            detached_part_data.pop_front();
+            return;
+        }
+        /// Upload a single empty block
+        else if (detached_part_data.empty())
+        {
+            Azure::Core::IO::MemoryBodyStream memory_stream(nullptr, 0);
+            execWithRetry([&]() { block_blob_client.Upload(memory_stream); }, max_unexpected_write_error_retries, 0);
+            LOG_TRACE(log, "Committed single empty block for blob `{}`", blob_path);
+            return;
+        }
     }
-    else
-    {
-        writeMultipartUpload();
-    }
+
+    writeMultipartUpload();
 }
 
 void WriteBufferFromAzureBlobStorage::finalizeImpl()
@@ -174,11 +199,29 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
     {
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
         ProfileEvents::increment(ProfileEvents::AzureCommitBlockList);
-        if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
+        if (blob_container_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
 
         execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
         LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
+    }
+
+    if (check_objects_after_upload)
+    {
+        try
+        {
+            auto blob_client = blob_container_client->GetBlobClient(blob_path);
+            blob_client.GetProperties();
+        }
+        catch (const Azure::Storage::StorageException & e)
+        {
+            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                throw Exception(
+                        ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                        "Object {} not uploaded to azure blob storage, it's a bug in Azure Blob Storage or its API.",
+                        blob_path);
+            throw;
+        }
     }
 }
 
@@ -244,11 +287,21 @@ void WriteBufferFromAzureBlobStorage::allocateBuffer()
     buffer_allocation_policy->nextBuffer();
     chassert(0 == hidden_size);
 
-    auto size = buffer_allocation_policy->getBufferSize();
-
+    /// First buffer was already allocated in BufferWithOwnMemory constructor with buffer size provided in constructor.
+    /// It will be reallocated in subsequent nextImpl calls up to the desired buffer size from buffer_allocation_policy.
     if (buffer_allocation_policy->getBufferNumber() == 1)
-        size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size);
+    {
+        /// Reduce memory size if initial size was larger then desired size from buffer_allocation_policy.
+        /// Usually it doesn't happen but we have it in unit tests.
+        if (memory.size() > buffer_allocation_policy->getBufferSize())
+        {
+            memory.resize(buffer_allocation_policy->getBufferSize());
+            WriteBuffer::set(memory.data(), memory.size());
+        }
+        return;
+    }
 
+    auto size = buffer_allocation_policy->getBufferSize();
     memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
@@ -283,7 +336,7 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
         ProfileEvents::increment(ProfileEvents::AzureStageBlock);
-        if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
+        if (blob_container_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
 
         Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(std::get<1>(*worker_data).memory.data()), data_size);

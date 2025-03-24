@@ -10,6 +10,7 @@
 #include <IO/S3Settings.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/S3/BlobStorageLogWriter.h>
+#include <IO/S3/S3Capabilities.h>
 
 namespace DB
 {
@@ -22,7 +23,7 @@ public:
         const S3::URI & s3_uri_,
         const String & access_key_id_,
         const String & secret_access_key_,
-        bool allow_s3_native_copy,
+        std::optional<bool> allow_s3_native_copy,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const ContextPtr & context_,
@@ -31,7 +32,7 @@ public:
 
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
-    std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) override;
 
     void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
@@ -53,7 +54,7 @@ public:
         const S3::URI & s3_uri_,
         const String & access_key_id_,
         const String & secret_access_key_,
-        bool allow_s3_native_copy,
+        std::optional<bool> allow_s3_native_copy,
         const String & storage_class_name,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
@@ -76,14 +77,12 @@ public:
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
-    void removeFilesBatch(const Strings & file_names);
 
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
-    std::optional<bool> supports_batch_delete;
-
+    S3Capabilities s3_capabilities;
     BlobStorageLogWriterPtr blob_storage_log;
 };
 

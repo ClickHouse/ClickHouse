@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -n --query="
+$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --query="
   DROP DATABASE IF EXISTS 01053_db;
 
   CREATE DATABASE 01053_db;

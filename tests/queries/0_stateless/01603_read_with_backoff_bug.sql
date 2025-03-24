@@ -11,7 +11,7 @@ create table t (x UInt64, s String) engine = MergeTree order by x SETTINGS index
 INSERT INTO t SELECT
     number,
     if(number < (8129 * 1024), arrayStringConcat(arrayMap(x -> toString(x), range(number % 128)), ' '), '')
-FROM numbers_mt((8129 * 1024) * 3) settings max_insert_threads=8, max_rows_to_read=0;
+FROM numbers_mt((8129 * 1024) * 3) settings max_insert_threads=8, max_rows_to_read=0, max_memory_usage='10Gi';
 
 -- optimize table t final;
 

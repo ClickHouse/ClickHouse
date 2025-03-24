@@ -63,6 +63,9 @@ def create_tables():
 
 
 def test(started_cluster):
+    instance_with_dist_table.query(
+        "SYSTEM DISABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
+    )
     with PartitionManager() as pm:
         # Hinder replication between replicas of the same shard, but leave the possibility of distributed connection.
         pm.partition_instances(node_1_1, node_1_2, port=9009)
@@ -124,6 +127,9 @@ SELECT sum(x) FROM distributed WITH TOTALS SETTINGS
         else:
             raise Exception("Connection with zookeeper was not lost")
 
+        instance_with_dist_table.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
+        )
         # At this point all replicas are stale, but the query must still go to second replicas which are the least stale ones.
         assert (
             instance_with_dist_table.query(

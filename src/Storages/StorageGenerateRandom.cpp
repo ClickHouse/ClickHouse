@@ -28,16 +28,23 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/NestedUtils.h>
 
-#include <Common/SipHash.h>
-#include <Common/randomSeed.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Common/SipHash.h>
+#include <Common/intExp10.h>
+#include <Common/randomSeed.h>
 
 #include <Functions/FunctionFactory.h>
+
+#include <pcg_random.hpp>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 preferred_block_size_bytes;
+}
 
 namespace ErrorCodes
 {
@@ -65,25 +72,25 @@ void fillBufferWithRandomData(char * __restrict data, size_t limit, size_t size_
     {
         /// The loop can be further optimized.
         UInt64 number = rng();
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        unalignedStoreLittleEndian<UInt64>(data, number);
-#else
-        unalignedStore<UInt64>(data, number);
-#endif
+        if constexpr (std::endian::native == std::endian::big)
+            unalignedStoreLittleEndian<UInt64>(data, number);
+        else
+            unalignedStore<UInt64>(data, number);
         data += sizeof(UInt64); /// We assume that data has at least 7-byte padding (see PaddedPODArray)
     }
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    if (flip_bytes)
+    if constexpr (std::endian::native == std::endian::big)
     {
-        data = end - size;
-        while (data < end)
+        if (flip_bytes)
         {
-            char * rev_end = data + size_of_type;
-            std::reverse(data, rev_end);
-            data += size_of_type;
+            data = end - size;
+            while (data < end)
+            {
+                char * rev_end = data + size_of_type;
+                std::reverse(data, rev_end);
+                data += size_of_type;
+            }
         }
     }
-#endif
 }
 
 
@@ -146,6 +153,7 @@ size_t estimateValueSize(
     }
 }
 
+}
 
 ColumnPtr fillColumnWithRandomData(
     const DataTypePtr type,
@@ -535,6 +543,8 @@ ColumnPtr fillColumnWithRandomData(
     }
 }
 
+namespace
+{
 
 class GenerateSource : public ISource
 {
@@ -688,7 +698,7 @@ Pipe StorageGenerateRandom::read(
     }
 
     /// Correction of block size for wide tables.
-    size_t preferred_block_size_bytes = context->getSettingsRef().preferred_block_size_bytes;
+    size_t preferred_block_size_bytes = context->getSettingsRef()[Setting::preferred_block_size_bytes];
     if (preferred_block_size_bytes)
     {
         size_t estimated_row_size_bytes = estimateValueSize(std::make_shared<DataTypeTuple>(block_header.getDataTypes()), max_array_length, max_string_length);

@@ -18,12 +18,13 @@
 #if defined(OS_LINUX)
 #include <sys/prctl.h>
 #endif
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
-#include <unistd.h>
-#include <algorithm>
 #include <iostream>
 #include <memory>
+#include <sstream>
+#include <unistd.h>
 
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
@@ -34,6 +35,7 @@
 #include <Common/SignalHandlers.h>
 #include <base/argsToConfig.h>
 #include <base/coverage.h>
+#include <base/scope_guard.h>
 
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadHelpers.h>
@@ -263,7 +265,11 @@ void BaseDaemon::initialize(Application & self)
     }
     umask(umask_num);
 
-    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
+    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, ""
+#if USE_SSL
+    , true // skip loading encryption keys from ZK
+#endif
+    );
 
     /// Write core dump on crash.
     {
@@ -330,7 +336,7 @@ void BaseDaemon::initialize(Application & self)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
             {
-                int err = ::close(fd);
+                [[maybe_unused]] int err = ::close(fd);
                 chassert(!err || errno == EINTR);
             }
         }
@@ -439,17 +445,19 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     HandledSignals::instance().setupCommonDeadlySignalHandlers();
     HandledSignals::instance().setupCommonTerminateRequestSignalHandlers();
     HandledSignals::instance().addSignalHandler({SIGHUP}, closeLogsSignalHandler, true);
+    HandledSignals::instance().addSignalHandler({SIGCHLD}, childSignalHandler, true);
 
     /// Set up Poco ErrorHandler for Poco Threads.
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
     signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"));
-    signal_listener_thread.start(*signal_listener);
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     build_id = SymbolIndex::instance().getBuildIDHex();
 #endif
+
+    signal_listener_thread.start(*signal_listener);
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -629,8 +637,8 @@ void BaseDaemon::setupWatchdog()
             logger().setChannel(log);
         }
 
-        /// Cuncurrent writing logs to the same file from two threads is questionable on its own,
-        ///  but rotating them from two threads is disastrous.
+        /// Concurrent writing logs to the same file from two threads is questionable on its own,
+        /// but rotating them from two threads is disastrous.
         if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
         {
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
@@ -796,11 +804,9 @@ void systemdNotify(const std::string_view & command)
         {
             if (errno == EINTR)
                 continue;
-            else
-                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd, sendto returned error");
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd, sendto returned error");
         }
-        else
-            sent_bytes_total += sent_bytes;
+        sent_bytes_total += sent_bytes;
     }
 }
 #endif

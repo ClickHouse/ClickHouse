@@ -2,11 +2,11 @@
 
 #include "config.h"
 
-#include <Common/safe_cast.h>
-#include <Common/MemorySanitizer.h>
+#include <base/MemorySanitizer.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Common/safe_cast.h>
 
 #if USE_SSL
 #include <DataTypes/DataTypeString.h>
@@ -177,6 +177,11 @@ private:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         using namespace OpenSSLDetails;
@@ -241,10 +246,9 @@ private:
             {
                 return doEncryptImpl<CipherMode::RFC5116_AEAD_AES_GCM>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
             }
-            else
-            {
-                return doEncryptImpl<CipherMode::OpenSSLCompatibility>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
-            }
+
+            return doEncryptImpl<CipherMode::OpenSSLCompatibility>(
+                evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
         }
 
         return nullptr;
@@ -453,6 +457,11 @@ private:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         using namespace OpenSSLDetails;
@@ -517,10 +526,9 @@ private:
             {
                 return doDecryptImpl<CipherMode::RFC5116_AEAD_AES_GCM, use_null_when_decrypt_fail>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
             }
-            else
-            {
-                return doDecryptImpl<CipherMode::OpenSSLCompatibility, use_null_when_decrypt_fail>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
-            }
+
+            return doDecryptImpl<CipherMode::OpenSSLCompatibility, use_null_when_decrypt_fail>(
+                evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
         }
 
         return nullptr;

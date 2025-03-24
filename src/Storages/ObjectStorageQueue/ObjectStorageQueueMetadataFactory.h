@@ -1,7 +1,6 @@
 #pragma once
-#include <boost/noncopyable.hpp>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
@@ -13,25 +12,27 @@ public:
 
     static ObjectStorageQueueMetadataFactory & instance();
 
-    FilesMetadataPtr getOrCreate(const std::string & zookeeper_path, const ObjectStorageQueueSettings & settings);
+    FilesMetadataPtr getOrCreate(
+        const std::string & zookeeper_path,
+        ObjectStorageQueueMetadataPtr metadata,
+        const StorageID & storage_id);
 
-    void remove(const std::string & zookeeper_path);
+    void remove(const std::string & zookeeper_path, const StorageID & storage_id);
 
     std::unordered_map<std::string, FilesMetadataPtr> getAll();
 
 private:
-    struct Metadata
+    struct MetadataWithRefCount
     {
-        explicit Metadata(std::shared_ptr<ObjectStorageQueueMetadata> metadata_) : metadata(metadata_), ref_count(1) {}
-
+        explicit MetadataWithRefCount(std::shared_ptr<ObjectStorageQueueMetadata> metadata_) : metadata(metadata_) {}
         std::shared_ptr<ObjectStorageQueueMetadata> metadata;
-        /// TODO: the ref count should be kept in keeper, because of the case with distributed processing.
-        size_t ref_count = 0;
+        std::unique_ptr<std::atomic<size_t>> ref_count = std::make_unique<std::atomic<size_t>>(0);
     };
-    using MetadataByPath = std::unordered_map<std::string, Metadata>;
+    using MetadataByPath = std::unordered_map<std::string, MetadataWithRefCount>;
 
     MetadataByPath metadata_by_path;
     std::mutex mutex;
+    LoggerPtr log = getLogger("QueueMetadataFactory");
 };
 
 }

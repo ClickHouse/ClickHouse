@@ -71,12 +71,12 @@ INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_10 VALUES (1, 'Hello
 INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_11 VALUES (1, 'Hello');
 
 SELECT * FROM system.warnings where message in (
-    'The number of attached tables is more than 5',
-    'The number of attached views is more than 5',
-    'The number of attached dictionaries is more than 5',
-    'The number of attached databases is more than 2',
-    'The number of active parts is more than 10'
-);
+    'The number of attached tables is more than 5.',
+    'The number of attached views is more than 5.',
+    'The number of attached dictionaries is more than 5.',
+    'The number of attached databases is more than 2.',
+    'The number of active parts is more than 10.'
+) ORDER BY message;
 
 DROP DATABASE IF EXISTS test_max_num_to_warn_02931;
 DROP DATABASE IF EXISTS test_max_num_to_warn_1;

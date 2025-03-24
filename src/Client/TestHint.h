@@ -1,17 +1,17 @@
 #pragma once
 
+#include <Core/Types.h>
+
 #include <optional>
 #include <vector>
 
 #include <fmt/format.h>
-
-#include <Core/Types.h>
-#include <Common/Exception.h>
-
+#include <fmt/ranges.h>
 
 namespace DB
 {
 
+class Exception;
 class Lexer;
 
 /// Checks expected server and client error codes.
@@ -122,9 +122,8 @@ struct fmt::formatter<DB::TestHint::ErrorVector>
     {
         if (ErrorVector.empty())
             return fmt::format_to(ctx.out(), "{}", 0);
-        else if (ErrorVector.size() == 1)
+        if (ErrorVector.size() == 1)
             return fmt::format_to(ctx.out(), "{}", ErrorVector[0]);
-        else
-            return fmt::format_to(ctx.out(), "[{}]", fmt::join(ErrorVector, ", "));
+        return fmt::format_to(ctx.out(), "[{}]", fmt::join(ErrorVector, ", "));
     }
 };

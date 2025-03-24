@@ -100,7 +100,7 @@ TasksStatsCounters::MetricsProvider TasksStatsCounters::findBestAvailableProvide
             {
                 return MetricsProvider::Netlink;
             }
-            else if (ProcfsMetricsProvider::isAvailable())
+            if (ProcfsMetricsProvider::isAvailable())
             {
                 return MetricsProvider::Procfs;
             }

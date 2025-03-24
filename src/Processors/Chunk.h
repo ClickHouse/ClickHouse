@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
 #include <Common/CollectionOfDerived.h>
-#include <Columns/IColumn.h>
+#include <Core/Types_fwd.h>
+#include <Storages/MergeTree/MarkRange.h>
 
 #include <memory>
 
@@ -25,10 +27,13 @@ public:
 template <typename Derived>
 class ChunkInfoCloneable : public ChunkInfo
 {
-public:
+    friend Derived;
+
+private:
     ChunkInfoCloneable() = default;
     ChunkInfoCloneable(const ChunkInfoCloneable & other) = default;
 
+public:
     Ptr clone() const override
     {
         return std::static_pointer_cast<ChunkInfo>(std::make_shared<Derived>(*static_cast<const Derived*>(this)));
@@ -153,26 +158,24 @@ public:
 
 using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;
 
-/// Extension to support delayed defaults. AddingDefaultsProcessor uses it to replace missing values with column defaults.
-class ChunkMissingValues : public ChunkInfoCloneable<ChunkMissingValues>
+/// Lineage information: from which table, part and mark range does the chunk come from?
+/// This information is needed by the query condition cache.
+class MarkRangesInfo : public ChunkInfoCloneable<MarkRangesInfo>
 {
 public:
-    ChunkMissingValues(const ChunkMissingValues & other) = default;
+    MarkRangesInfo(UUID table_uuid_, const String & part_name_, size_t marks_count_, bool has_final_mark_, MarkRanges mark_ranges_)
+        : table_uuid(table_uuid_)
+        , part_name(part_name_)
+        , marks_count(marks_count_)
+        , has_final_mark(has_final_mark_)
+        , mark_ranges(std::move(mark_ranges_))
+    {}
 
-    using RowsBitMask = std::vector<bool>; /// a bit per row for a column
-
-    const RowsBitMask & getDefaultsBitmask(size_t column_idx) const;
-    void setBit(size_t column_idx, size_t row_idx);
-    bool empty() const { return rows_mask_by_column_id.empty(); }
-    size_t size() const { return rows_mask_by_column_id.size(); }
-    void clear() { rows_mask_by_column_id.clear(); }
-
-private:
-    using RowsMaskByColumnId = std::unordered_map<size_t, RowsBitMask>;
-
-    /// If rows_mask_by_column_id[column_id][row_id] is true related value in Block should be replaced with column default.
-    /// It could contain less columns and rows then related block.
-    RowsMaskByColumnId rows_mask_by_column_id;
+    UUID table_uuid;
+    String part_name;
+    size_t marks_count;
+    bool has_final_mark;
+    MarkRanges mark_ranges;
 };
 
 /// Converts all columns to full serialization in chunk.

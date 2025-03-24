@@ -4,8 +4,10 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 
-#include <Poco/JSON/Object.h>
-
+namespace Poco::JSON
+{
+class Object;
+}
 
 namespace DB
 {
@@ -39,6 +41,7 @@ public:
 
         void add(const IColumn & column);
         void add(const Data & other);
+        void remove(const Data & other);
         void addDefaults(size_t length);
     };
 
@@ -52,6 +55,7 @@ public:
 
     virtual void add(const IColumn & column);
     virtual void add(const SerializationInfo & other);
+    virtual void remove(const SerializationInfo & other);
     virtual void addDefaults(size_t length);
     virtual void replaceData(const SerializationInfo & other);
 
@@ -65,7 +69,7 @@ public:
     virtual void serialializeKindBinary(WriteBuffer & out) const;
     virtual void deserializeFromKindsBinary(ReadBuffer & in);
 
-    virtual Poco::JSON::Object toJSON() const;
+    virtual void toJSON(Poco::JSON::Object & object) const;
     virtual void fromJSON(const Poco::JSON::Object & object);
 
     void setKind(ISerialization::Kind kind_) { kind = kind_; }
@@ -99,6 +103,14 @@ public:
 
     void add(const Block & block);
     void add(const SerializationInfoByName & other);
+    void add(const String & name, const SerializationInfo & info);
+
+    void remove(const SerializationInfoByName & other);
+    void remove(const String & name, const SerializationInfo & info);
+
+    SerializationInfoPtr tryGet(const String & name) const;
+    MutableSerializationInfoPtr tryGet(const String & name);
+    ISerialization::Kind getKind(const String & column_name) const;
 
     /// Takes data from @other, but keeps current serialization kinds.
     /// If column exists in @other infos, but not in current infos,

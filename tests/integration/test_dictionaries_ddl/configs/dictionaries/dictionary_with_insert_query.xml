@@ -1,0 +1,40 @@
+<clickhouse>
+<dictionary>
+    <name>test.dictionary_with_insert_query</name>
+    <source>
+        <clickhouse>
+            <host>localhost</host>
+            <port>9000</port>
+            <user>default</user>
+            <password></password>
+            <query>insert into test.xml_dictionary_table values (432234, 28, 'smth')</query>
+        </clickhouse>
+    </source>
+
+    <lifetime>
+        <min>0</min>
+        <max>0</max>
+    </lifetime>
+
+    <layout>
+        <flat/>
+    </layout>
+
+    <structure>
+        <id>
+            <name>id</name>
+        </id>
+        <attribute>
+            <name>SomeValue1</name>
+            <type>UInt8</type>
+            <null_value>1</null_value>
+        </attribute>
+
+        <attribute>
+            <name>SomeValue2</name>
+            <type>String</type>
+            <null_value>''</null_value>
+        </attribute>
+    </structure>
+</dictionary>
+</clickhouse>

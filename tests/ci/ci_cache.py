@@ -1,24 +1,23 @@
 import json
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Optional, Any, Union, Sequence, List, Set
+from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
 from ci_config import CI
-
-from ci_utils import Utils, GH
+from ci_utils import GH, Utils
 from commit_status_helper import CommitStatusData
+from digest_helper import JobDigester
 from env_helper import (
-    TEMP_PATH,
     CI_CONFIG_PATH,
-    S3_BUILDS_BUCKET,
     GITHUB_RUN_URL,
     REPORT_PATH,
+    S3_BUILDS_BUCKET,
+    TEMP_PATH,
 )
 from report import BuildResult
 from s3_helper import S3Helper
-from digest_helper import JobDigester
 
 
 @dataclass
@@ -387,8 +386,7 @@ class CiCache:
         res = record_key in self.records[record_type]
         if release_branch:
             return res and self.records[record_type][record_key].release_branch
-        else:
-            return res
+        return res
 
     def push(
         self,
@@ -797,11 +795,12 @@ class CiCache:
             # start waiting for the next TIMEOUT seconds if there are more than X(=4) jobs to wait
             # wait TIMEOUT seconds in rounds. Y(=5) is the max number of rounds
             expired_sec = 0
-            start_at = int(time.time())
+            start_at = time.time()
             while expired_sec < TIMEOUT and self.jobs_to_wait:
                 await_finished: Set[str] = set()
                 if not dry_run:
-                    time.sleep(poll_interval_sec)
+                    # Do not sleep longer than required
+                    time.sleep(min(poll_interval_sec, TIMEOUT - expired_sec))
                 self.update()
                 for job_name, job_config in self.jobs_to_wait.items():
                     num_batches = job_config.num_batches
@@ -846,10 +845,12 @@ class CiCache:
                     del self.jobs_to_wait[job]
 
                 if not dry_run:
-                    expired_sec = int(time.time()) - start_at
-                    print(
-                        f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
-                    )
+                    expired_sec = int(time.time() - start_at)
+                    msg = f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
+                    if expired_sec >= TIMEOUT:
+                        # Avoid `seconds left [-3]`
+                        msg = f"awaiting for round {round_cnt} is finished"
+                    print(msg)
                 else:
                     # make up for 2 iterations in dry_run
                     expired_sec += int(TIMEOUT / 2) + 1
@@ -936,16 +937,6 @@ if __name__ == "__main__":
         "Builds": "f5dffeecb8",
         "Install packages (release)": "ba0c89660e",
         "Install packages (aarch64)": "ba0c89660e",
-        "Stateful tests (asan)": "32a9a1aba9",
-        "Stateful tests (tsan)": "32a9a1aba9",
-        "Stateful tests (msan)": "32a9a1aba9",
-        "Stateful tests (ubsan)": "32a9a1aba9",
-        "Stateful tests (debug)": "32a9a1aba9",
-        "Stateful tests (release)": "32a9a1aba9",
-        "Stateful tests (coverage)": "32a9a1aba9",
-        "Stateful tests (aarch64)": "32a9a1aba9",
-        "Stateful tests (release, ParallelReplicas)": "32a9a1aba9",
-        "Stateful tests (debug, ParallelReplicas)": "32a9a1aba9",
         "Stateless tests (asan)": "deb6778b88",
         "Stateless tests (tsan)": "deb6778b88",
         "Stateless tests (msan)": "deb6778b88",
@@ -955,6 +946,7 @@ if __name__ == "__main__":
         "Stateless tests (coverage)": "deb6778b88",
         "Stateless tests (aarch64)": "deb6778b88",
         "Stateless tests (release, old analyzer, s3, DatabaseReplicated)": "deb6778b88",
+        "Stateless tests (release, ParallelReplicas, s3 storage)": "deb6778b88",
         "Stateless tests (debug, s3 storage)": "deb6778b88",
         "Stateless tests (tsan, s3 storage)": "deb6778b88",
         "Stress test (debug)": "aa298abf10",
@@ -963,10 +955,10 @@ if __name__ == "__main__":
         "Integration tests (asan, old analyzer)": "42e58be3aa",
         "Integration tests (tsan)": "42e58be3aa",
         "Integration tests (aarch64)": "42e58be3aa",
-        "Integration tests flaky check (asan)": "42e58be3aa",
+        "Integration tests (asan, flaky check)": "42e58be3aa",
         "Compatibility check (release)": "ecb69d8c4b",
         "Compatibility check (aarch64)": "ecb69d8c4b",
-        "Unit tests (release)": "09d00b702e",
+        "Unit tests (binary)": "09d00b702e",
         "Unit tests (asan)": "09d00b702e",
         "Unit tests (msan)": "09d00b702e",
         "Unit tests (tsan)": "09d00b702e",
@@ -976,7 +968,12 @@ if __name__ == "__main__":
         "AST fuzzer (msan)": "c38ebf947f",
         "AST fuzzer (tsan)": "c38ebf947f",
         "AST fuzzer (ubsan)": "c38ebf947f",
-        "Stateless tests flaky check (asan)": "deb6778b88",
+        "BuzzHouse (debug)": "c38ebf947f",
+        "BuzzHouse (asan)": "c38ebf947f",
+        "BuzzHouse (msan)": "c38ebf947f",
+        "BuzzHouse (tsan)": "c38ebf947f",
+        "BuzzHouse (ubsan)": "c38ebf947f",
+        "Stateless tests (asan, flaky check)": "deb6778b88",
         "Performance Comparison (release)": "a8a7179258",
         "ClickBench (release)": "45c07c4aa6",
         "ClickBench (aarch64)": "45c07c4aa6",
@@ -985,7 +982,6 @@ if __name__ == "__main__":
         "Docs check": "4764154c62",
         "Fast test": "cb269133f2",
         "Style check": "ffffffffff",
-        "Stateful tests (ubsan, ParallelReplicas)": "32a9a1aba9",
         "Stress test (msan)": "aa298abf10",
         "Upgrade check (asan)": "5ce4d3ee02",
     }

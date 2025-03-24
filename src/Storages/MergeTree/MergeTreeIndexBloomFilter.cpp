@@ -1,36 +1,24 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/HashTable/ClearableHashMap.h>
-#include <Common/HashTable/Hash.h>
+#include <Common/FieldAccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <base/types.h>
 
 
 namespace DB
@@ -40,7 +28,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_QUERY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
@@ -98,9 +85,9 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, Merg
     for (auto & filter : bloom_filters)
     {
         filter->resize(bytes_size);
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    if constexpr (std::endian::native == std::endian::big)
         read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-#endif
+    else
         istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
     }
 }
@@ -116,10 +103,10 @@ void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
     size_t write_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
     for (const auto & bloom_filter : bloom_filters)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        write_size = bloom_filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-#endif
-        ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
+        if constexpr (std::endian::native == std::endian::big)
+            write_size = bloom_filter->getFilter().size() * sizeof(BloomFilter::UnderType);
+        else
+            ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
     }
 }
 
@@ -185,17 +172,9 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
                                                         hash_functions);
                            });
     }
-    else
-    {
-        return std::any_of(hashes.begin(),
-                           hashes.end(),
-                           [&](const auto& hash_row)
-                           {
-                               return hashMatchesFilter(bloom_filter,
-                                                        hash_row,
-                                                        hash_functions);
-                           });
-    }
+
+    return std::any_of(
+        hashes.begin(), hashes.end(), [&](const auto & hash_row) { return hashMatchesFilter(bloom_filter, hash_row, hash_functions); });
 }
 
 }
@@ -486,7 +465,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const auto & tuple_data_type = typeid_cast<const DataTypeTuple *>(type.get());
 
             if (tuple_data_type->getElements().size() != key_node_function_arguments_size || tuple_column->getColumns().size() != key_node_function_arguments_size)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
+                return false;
 
             bool match_with_subtype = false;
             const auto & sub_columns = tuple_column->getColumns();
@@ -593,9 +572,8 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
     {
         return true;
     }
-    else if (function_name == "equals" /// notEquals is not applicable
-        || function_name == "greater" || function_name == "greaterOrEquals"
-        || function_name == "less" || function_name == "lessOrEquals")
+    if (function_name == "equals" /// notEquals is not applicable
+        || function_name == "greater" || function_name == "greaterOrEquals" || function_name == "less" || function_name == "lessOrEquals")
     {
         size_t function_arguments_size = function.getArgumentsSize();
         if (function_arguments_size != 2)
@@ -624,24 +602,25 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
         }
 
         Field zero(0);
-        bool constant_equal_zero = applyVisitor(FieldVisitorAccurateEquals(), constant_value, zero);
+        bool constant_equal_zero = accurateEquals(constant_value, zero);
 
         if (function_name == "equals" && !constant_equal_zero)
         {
             /// indexOf(...) = c, c != 0
             return true;
         }
-        else if (function_name == "notEquals" && constant_equal_zero)
+        if (function_name == "notEquals" && constant_equal_zero)
         {
             /// indexOf(...) != c, c = 0
             return true;
         }
-        else if (function_name == (reversed ? "less" : "greater") && !applyVisitor(FieldVisitorAccurateLess(), constant_value, zero))
+        if (function_name == (reversed ? "less" : "greater") && !accurateLess(constant_value, zero))
         {
             /// indexOf(...) > c, c >= 0
             return true;
         }
-        else if (function_name == (reversed ? "lessOrEquals" : "greaterOrEquals") && applyVisitor(FieldVisitorAccurateLess(), zero, constant_value))
+        if (function_name == (reversed ? "lessOrEquals" : "greaterOrEquals")
+            && accurateLess(zero, constant_value))
         {
             /// indexOf(...) >= c, c > 0
             return true;
@@ -673,7 +652,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (function_name == "has" || function_name == "indexOf")
         {
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
+                return false;
 
             /// We can treat `indexOf` function similar to `has`.
             /// But it is little more cumbersome, compare: `has(arr, elem)` and `indexOf(arr, elem) != 0`.
@@ -692,10 +671,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         else if (function_name == "hasAny" || function_name == "hasAll")
         {
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
+                return false;
 
             if (value_field.getType() != Field::Types::Array)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be an array.", function_name);
+                return false;
 
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
             ColumnPtr column;
@@ -726,8 +705,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         else
         {
             if (array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "An array type of bloom_filter supports only has(), indexOf(), and hasAny() functions.");
+                return false;
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
@@ -774,11 +752,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         if (which.isTuple() && key_node_function_name == "tuple")
         {
-            const Tuple & tuple = value_field.safeGet<const Tuple &>();
+            const Tuple & tuple = value_field.safeGet<Tuple>();
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
             if (tuple.size() != key_node_function_arguments_size)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
+                return false;
 
             bool match_with_subtype = false;
             const DataTypes & subtypes = value_tuple_data_type->getElements();

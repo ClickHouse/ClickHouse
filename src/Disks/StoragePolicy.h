@@ -1,25 +1,21 @@
 #pragma once
 
 #include <Disks/IStoragePolicy.h>
-#include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
-#include <Disks/IVolume.h>
-#include <Disks/VolumeJBOD.h>
-#include <Disks/SingleDiskVolume.h>
-#include <IO/WriteHelpers.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Exception.h>
-#include <Common/formatReadable.h>
 
 #include <memory>
 #include <unordered_map>
-#include <unistd.h>
-#include <boost/noncopyable.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
+
+namespace Poco::Util
+{
+    class AbstractConfiguration;
+};
 
 
 namespace DB
 {
+class DiskSelector;
+using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 
 /**
  * Contains all information about volumes configuration for Storage.

@@ -16,6 +16,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
+#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -260,10 +261,11 @@ void ColumnDynamic::insert(const Field & x)
         /// We store values in shared variant in binary form with binary encoded type.
         auto & shared_variant = getSharedVariant();
         auto & chars = shared_variant.getChars();
-        WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
-        encodeDataType(field_data_type, value_buf);
-        getVariantSerialization(field_data_type, field_data_type_name)->serializeBinary(x, value_buf, getFormatSettings());
-        value_buf.finalize();
+        {
+            WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
+            encodeDataType(field_data_type, value_buf);
+            getVariantSerialization(field_data_type, field_data_type_name)->serializeBinary(x, value_buf, getFormatSettings());
+        }
         chars.push_back(0);
         shared_variant.getOffsets().push_back(chars.size());
         variant_col.getLocalDiscriminators().push_back(variant_col.localDiscriminatorByGlobal(shared_variant_discr));
@@ -292,6 +294,8 @@ void ColumnDynamic::get(size_t n, Field & res) const
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
     {
         variant_col.get(n, res);
+        if (!res.isNull())
+            res = convertFieldToType(res, *getTypeAt(n));
         return;
     }
 
@@ -303,6 +307,22 @@ void ColumnDynamic::get(size_t n, Field & res) const
     type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
 }
 
+std::pair<String, DataTypePtr> ColumnDynamic::getValueNameAndType(size_t n) const
+{
+    const auto & variant_col = getVariantColumn();
+    /// Check if value is not in shared variant.
+    if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
+        return variant_col.getValueNameAndType(n);
+
+    /// We should deeserialize value from shared variant.
+    const auto & shared_variant = getSharedVariant();
+    auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
+    ReadBufferFromMemory buf(value_data.data, value_data.size);
+    auto type = decodeDataType(buf);
+    const auto col = type->createColumn();
+    type->getDefaultSerialization()->deserializeBinary(*col, buf, getFormatSettings());
+    return col->getValueNameAndType(0);
+}
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnDynamic::insertFrom(const IColumn & src_, size_t n)
@@ -697,10 +717,11 @@ void ColumnDynamic::serializeValueIntoSharedVariant(
     size_t n)
 {
     auto & chars = shared_variant.getChars();
-    WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
-    encodeDataType(type, value_buf);
-    serialization->serializeBinary(src, n, value_buf, getFormatSettings());
-    value_buf.finalize();
+    {
+        WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
+        encodeDataType(type, value_buf);
+        serialization->serializeBinary(src, n, value_buf, getFormatSettings());
+    }
     chars.push_back(0);
     shared_variant.getOffsets().push_back(chars.size());
 }
@@ -816,6 +837,22 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
         return;
     }
 
+    /// If it's not null we update hash with the type name and the actual value.
+
+    /// If value in this row is in shared variant, deserialize type and value and
+    /// update hash with it.
+    if (discr == getSharedVariantDiscriminator())
+    {
+        auto value = getSharedVariant().getDataAt(variant_col.offsetAt(n));
+        ReadBufferFromMemory buf(value.data, value.size);
+        auto type = decodeDataType(buf);
+        hash.update(type->getName());
+        auto tmp_column = type->createColumn();
+        type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
+        tmp_column->updateHashWithValue(0, hash);
+        return;
+    }
+
     hash.update(variant_info.variant_names[discr]);
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
 }
@@ -838,9 +875,9 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
     /// Check if we have NULLs and return result based on nan_direction_hint.
     if (left_discr == ColumnVariant::NULL_DISCRIMINATOR && right_discr == ColumnVariant::NULL_DISCRIMINATOR)
         return 0;
-    else if (left_discr == ColumnVariant::NULL_DISCRIMINATOR)
+    if (left_discr == ColumnVariant::NULL_DISCRIMINATOR)
         return nan_direction_hint;
-    else if (right_discr == ColumnVariant::NULL_DISCRIMINATOR)
+    if (right_discr == ColumnVariant::NULL_DISCRIMINATOR)
         return -nan_direction_hint;
 
     /// Check if both values are in shared variant.
@@ -875,7 +912,7 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
         return tmp_column->compareAt(0, 1, *tmp_column, nan_direction_hint);
     }
     /// Check if only left value is in shared data.
-    else if (left_discr == left_shared_variant_discr)
+    if (left_discr == left_shared_variant_discr)
     {
         /// Extract left type name from the value.
         auto left_value = getSharedVariant().getDataAt(left_variant.offsetAt(n));
@@ -892,10 +929,11 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
         /// create temporary column, insert the value into it and compare.
         auto tmp_column = left_data_type->createColumn();
         left_data_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf_left, getFormatSettings());
-        return tmp_column->compareAt(0, right_variant.offsetAt(m), right_variant.getVariantByGlobalDiscriminator(right_discr), nan_direction_hint);
+        return tmp_column->compareAt(
+            0, right_variant.offsetAt(m), right_variant.getVariantByGlobalDiscriminator(right_discr), nan_direction_hint);
     }
     /// Check if only right value is in shared data.
-    else if (right_discr == right_shared_variant_discr)
+    if (right_discr == right_shared_variant_discr)
     {
         /// Extract right type name from the value.
         auto right_value = right_dynamic.getSharedVariant().getDataAt(right_variant.offsetAt(m));
@@ -912,18 +950,22 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
         /// create temporary column, insert the value into it and compare.
         auto tmp_column = right_data_type->createColumn();
         right_data_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf_right, getFormatSettings());
-        return left_variant.getVariantByGlobalDiscriminator(left_discr).compareAt(left_variant.offsetAt(n), 0, *tmp_column, nan_direction_hint);
+        return left_variant.getVariantByGlobalDiscriminator(left_discr)
+            .compareAt(left_variant.offsetAt(n), 0, *tmp_column, nan_direction_hint);
     }
     /// Otherwise both values are regular variants.
-    else
-    {
-        /// If rows have different types, we compare type names.
-        if (variant_info.variant_names[left_discr] != right_dynamic.variant_info.variant_names[right_discr])
-            return variant_info.variant_names[left_discr] < right_dynamic.variant_info.variant_names[right_discr] ? -1 : 1;
 
-        /// If rows have the same types, compare actual values from corresponding variants.
-        return left_variant.getVariantByGlobalDiscriminator(left_discr).compareAt(left_variant.offsetAt(n), right_variant.offsetAt(m), right_variant.getVariantByGlobalDiscriminator(right_discr), nan_direction_hint);
-    }
+    /// If rows have different types, we compare type names.
+    if (variant_info.variant_names[left_discr] != right_dynamic.variant_info.variant_names[right_discr])
+        return variant_info.variant_names[left_discr] < right_dynamic.variant_info.variant_names[right_discr] ? -1 : 1;
+
+    /// If rows have the same types, compare actual values from corresponding variants.
+    return left_variant.getVariantByGlobalDiscriminator(left_discr)
+        .compareAt(
+            left_variant.offsetAt(n),
+            right_variant.offsetAt(m),
+            right_variant.getVariantByGlobalDiscriminator(right_discr),
+            nan_direction_hint);
 }
 
 struct ColumnDynamic::ComparatorBase
@@ -968,15 +1010,65 @@ void ColumnDynamic::updatePermutation(IColumn::PermutationSortDirection directio
         updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
-ColumnPtr ColumnDynamic::compress() const
+ColumnPtr ColumnDynamic::compress(bool force_compression) const
 {
-    ColumnPtr variant_compressed = variant_column_ptr->compress();
+    ColumnPtr variant_compressed = variant_column_ptr->compress(force_compression);
     size_t byte_size = variant_compressed->byteSize();
     return ColumnCompressed::create(size(), byte_size,
         [my_variant_compressed = std::move(variant_compressed), my_variant_info = variant_info, my_max_dynamic_types = max_dynamic_types, my_global_max_dynamic_types = global_max_dynamic_types, my_statistics = statistics]() mutable
         {
             return ColumnDynamic::create(my_variant_compressed->decompress(), my_variant_info, my_max_dynamic_types, my_global_max_dynamic_types, my_statistics);
         });
+}
+
+void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    auto & nested = assert_cast<ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    const auto & variants = variant_column_ptr->getVariants();
+
+    size_t old_size = nested.size();
+    chassert(old_size <= variants.size());
+
+    for (size_t i = 0; i < old_size; ++i)
+    {
+        variants[i]->updateCheckpoint(*nested[i]);
+    }
+
+    /// If column has new variants since last checkpoint create checkpoints for them.
+    if (old_size < variants.size())
+    {
+        nested.resize(variants.size());
+        for (size_t i = old_size; i < variants.size(); ++i)
+            nested[i] = variants[i]->getCheckpoint();
+    }
+
+    checkpoint.size = size();
+}
+
+void ColumnDynamic::rollback(const ColumnCheckpoint & checkpoint)
+{
+    const auto & nested = assert_cast<const ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    chassert(nested.size() <= variant_column_ptr->getNumVariants());
+
+    /// The structure hasn't changed, so we can use generic rollback of Variant column
+    if (nested.size() == variant_column_ptr->getNumVariants())
+    {
+        variant_column_ptr->rollback(checkpoint);
+        return;
+    }
+
+    /// Manually rollback internals of Variant column
+    variant_column_ptr->getOffsets().resize_assume_reserved(checkpoint.size);
+    variant_column_ptr->getLocalDiscriminators().resize_assume_reserved(checkpoint.size);
+
+    auto & variants = variant_column_ptr->getVariants();
+    for (size_t i = 0; i < nested.size(); ++i)
+        variants[i]->rollback(*nested[i]);
+
+    /// Keep the structure of variant as is but rollback
+    /// to 0 variants that are not in the checkpoint.
+    for (size_t i = nested.size(); i < variants.size(); ++i)
+        variants[i] = variants[i]->cloneEmpty();
 }
 
 String ColumnDynamic::getTypeNameAt(size_t row_num) const
@@ -994,6 +1086,23 @@ String ColumnDynamic::getTypeNameAt(size_t row_num) const
     }
 
     return variant_info.variant_names[discr];
+}
+
+DataTypePtr ColumnDynamic::getTypeAt(size_t row_num) const
+{
+    const auto & variant_col = getVariantColumn();
+    const size_t discr = variant_col.globalDiscriminatorAt(row_num);
+    if (discr == ColumnVariant::NULL_DISCRIMINATOR)
+        return nullptr;
+
+    if (discr == getSharedVariantDiscriminator())
+    {
+        const auto value = getSharedVariant().getDataAt(variant_col.offsetAt(row_num));
+        ReadBufferFromMemory buf(value.data, value.size);
+        return decodeDataType(buf);
+    }
+
+    return assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants()[discr];
 }
 
 void ColumnDynamic::getAllTypeNamesInto(std::unordered_set<String> & names) const
@@ -1075,6 +1184,13 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns)
     /// Add variants from this dynamic column.
     add_variants(*this);
 
+    /// It might happen that current max_dynamic_types is less then global_max_dynamic_types
+    /// but the SharedVariant is empty. For example if this block was deserialized from Native format.
+    /// In this case we should set max_dynamic_types = global_max_dynamic_types, so during squashing we
+    /// will insert new types to SharedVariant only when the global limit is reached.
+    if (getSharedVariant().empty())
+        max_dynamic_types = global_max_dynamic_types;
+
     DataTypePtr result_variant_type;
     /// Check if the number of all variants exceeds the limit.
     if (!canAddNewVariants(0, all_variants.size()))
@@ -1135,6 +1251,15 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns)
 
         variant_col.getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns);
     }
+}
+
+bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
+{
+    if (const auto * rhs_concrete = typeid_cast<const ColumnDynamic *>(&rhs))
+        return max_dynamic_types == rhs_concrete->max_dynamic_types && global_max_dynamic_types == rhs_concrete->global_max_dynamic_types
+            && variant_info.variant_name == rhs_concrete->variant_info.variant_name
+            && variant_column->dynamicStructureEquals(*rhs_concrete->variant_column);
+    return false;
 }
 
 void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns)

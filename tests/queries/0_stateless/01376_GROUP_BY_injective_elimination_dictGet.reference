@@ -20,5 +20,5 @@ QUERY id: 0
           CONSTANT id: 9, constant_value: UInt64_2, constant_value_type: UInt8
   GROUP BY
     LIST id: 10, nodes: 1
-      COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+      COLUMN id: 11, column_name: number, result_type: UInt64, source_id: 7
   SETTINGS enable_analyzer=1

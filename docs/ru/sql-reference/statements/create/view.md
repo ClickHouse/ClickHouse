@@ -39,7 +39,7 @@ SELECT a, b, c FROM (SELECT ...)
 ## Материализованные представления {#materialized}
 
 ``` sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] 
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name] [ENGINE = engine] [POPULATE] 
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }] 
 AS SELECT ...
 ```
@@ -64,7 +64,7 @@ AS SELECT ...
 
 Выполнение запросов [ALTER](../../../sql-reference/statements/alter/view.md) над материализованными представлениями имеет свои особенности, поэтому эти запросы могут быть неудобными для использования. Если материализованное представление использует конструкцию `TO [db.]name`, то можно выполнить `DETACH` представления, `ALTER` для целевой таблицы и последующий `ATTACH` ранее отсоединенного (`DETACH`) представления.
 
-Обратите внимание, что работа материализованного представления находится под влиянием настройки [optimize_on_insert](../../../operations/settings/settings.md#optimize-on-insert). Перед вставкой данных в таблицу происходит их слияние.
+Обратите внимание, что работа материализованного представления находится под влиянием настройки [optimize_on_insert](/operations/settings/settings#optimize_on_insert). Перед вставкой данных в таблицу происходит их слияние.
 
 Представления выглядят так же, как обычные таблицы. Например, они перечисляются в результате запроса `SHOW TABLES`.
 

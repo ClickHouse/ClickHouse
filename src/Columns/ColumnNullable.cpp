@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -8,6 +10,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/MaskOperations.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -114,36 +117,40 @@ void ColumnNullable::get(size_t n, Field & res) const
         getNestedColumn().get(n, res);
 }
 
+std::pair<String, DataTypePtr> ColumnNullable::getValueNameAndType(size_t n) const
+{
+    if (isNullAt(n))
+        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
+
+    return getNestedColumn().getValueNameAndType(n);
+}
+
 Float64 ColumnNullable::getFloat64(size_t n) const
 {
     if (isNullAt(n))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getFloat64", getName(), n);
-    else
-        return getNestedColumn().getFloat64(n);
+    return getNestedColumn().getFloat64(n);
 }
 
 Float32 ColumnNullable::getFloat32(size_t n) const
 {
     if (isNullAt(n))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getFloat32", getName(), n);
-    else
-        return getNestedColumn().getFloat32(n);
+    return getNestedColumn().getFloat32(n);
 }
 
 UInt64 ColumnNullable::getUInt(size_t n) const
 {
     if (isNullAt(n))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getUInt", getName(), n);
-    else
-        return getNestedColumn().getUInt(n);
+    return getNestedColumn().getUInt(n);
 }
 
 Int64 ColumnNullable::getInt(size_t n) const
 {
     if (isNullAt(n))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getInt", getName(), n);
-    else
-        return getNestedColumn().getInt(n);
+    return getNestedColumn().getInt(n);
 }
 
 void ColumnNullable::insertData(const char * pos, size_t length)
@@ -305,6 +312,23 @@ void ColumnNullable::popBack(size_t n)
     getNullMapColumn().popBack(n);
 }
 
+ColumnCheckpointPtr ColumnNullable::getCheckpoint() const
+{
+    return std::make_shared<ColumnCheckpointWithNested>(size(), nested_column->getCheckpoint());
+}
+
+void ColumnNullable::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    checkpoint.size = size();
+    nested_column->updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
+void ColumnNullable::rollback(const ColumnCheckpoint & checkpoint)
+{
+    getNullMapData().resize_assume_reserved(checkpoint.size);
+    nested_column->rollback(*assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
 ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     ColumnPtr filtered_data = getNestedColumn().filter(filt, result_size_hint);
@@ -315,7 +339,8 @@ ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) 
 void ColumnNullable::expand(const IColumn::Filter & mask, bool inverted)
 {
     nested_column->expand(mask, inverted);
-    null_map->expand(mask, inverted);
+    /// Use 1 as default value so column will contain NULLs on rows where filter has 0.
+    expandDataByMask<UInt8>(getNullMapData(), mask, inverted, 1);
 }
 
 ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
@@ -399,8 +424,7 @@ int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int 
     {
         if (lval_is_null && rval_is_null)
             return 0;
-        else
-            return lval_is_null ? null_direction_hint : -null_direction_hint;
+        return lval_is_null ? null_direction_hint : -null_direction_hint;
     }
 
     const IColumn & nested_rhs = nullable_rhs.getNestedColumn();
@@ -528,7 +552,8 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
         return;
 
     /// We will sort nested columns into `new_ranges` and call updatePermutation in next columns with `null_ranges`.
-    EqualRanges new_ranges, null_ranges;
+    EqualRanges new_ranges;
+    EqualRanges null_ranges;
 
     bool reverse = direction == IColumn::PermutationSortDirection::Descending;
     const auto is_nulls_last = ((null_direction_hint > 0) != reverse);
@@ -759,10 +784,10 @@ void ColumnNullable::protect()
     getNullMapColumn().protect();
 }
 
-ColumnPtr ColumnNullable::compress() const
+ColumnPtr ColumnNullable::compress(bool force_compression) const
 {
-    ColumnPtr nested_compressed = nested_column->compress();
-    ColumnPtr null_map_compressed = null_map->compress();
+    ColumnPtr nested_compressed = nested_column->compress(force_compression);
+    ColumnPtr null_map_compressed = null_map->compress(force_compression);
 
     size_t byte_size = nested_column->byteSize() + null_map->byteSize();
 

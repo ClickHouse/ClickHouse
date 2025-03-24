@@ -1,6 +1,10 @@
 #include <Processors/Executors/ExecutingGraph.h>
-#include <stack>
 #include <Common/Stopwatch.h>
+#include <Common/CurrentThread.h>
+
+#include <shared_mutex>
+#include <stack>
+
 
 namespace DB
 {
@@ -181,7 +185,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(std::stack<uint6
     return UpdateNodeStatus::Done;
 }
 
-void ExecutingGraph::initializeExecution(Queue & queue)
+void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
 {
     std::stack<uint64_t> stack;
 
@@ -197,18 +201,12 @@ void ExecutingGraph::initializeExecution(Queue & queue)
         }
     }
 
-    Queue async_queue;
-
     while (!stack.empty())
     {
         uint64_t proc = stack.top();
         stack.pop();
 
         updateNode(proc, queue, async_queue);
-
-        if (!async_queue.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Async is only possible after work() call. Processor {}",
-                            async_queue.front()->processor->getName());
     }
 }
 
@@ -282,6 +280,8 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                     const auto last_status = node.last_processor_status;
                     IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                     node.last_processor_status = status;
+                    if (status == IProcessor::Status::Finished && CurrentThread::getGroup())
+                        CurrentThread::getGroup()->memory_spill_scheduler.remove(&processor);
 
                     if (profile_processors)
                     {

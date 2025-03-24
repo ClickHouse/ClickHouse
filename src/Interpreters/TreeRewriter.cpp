@@ -44,7 +44,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -65,6 +64,27 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool any_join_distinct_right_table_keys;
+    extern const SettingsString count_distinct_implementation;
+    extern const SettingsBool enable_order_by_all;
+    extern const SettingsBool enable_positional_arguments;
+    extern const SettingsJoinStrictness join_default_strictness;
+    extern const SettingsBool legacy_column_name_of_tuple_literal;
+    extern const SettingsBool normalize_function_names;
+    extern const SettingsBool optimize_if_chain_to_multiif;
+    extern const SettingsBool optimize_group_by_function_keys;
+    extern const SettingsUInt64 optimize_min_equality_disjunction_chain_length;
+    extern const SettingsBool optimize_move_to_prewhere;
+    extern const SettingsBool optimize_multiif_to_if;
+    extern const SettingsBool optimize_normalize_count_variants;
+    extern const SettingsBool optimize_respect_aliases;
+    extern const SettingsBool optimize_trivial_count_query;
+    extern const SettingsBool rewrite_count_distinct_if_with_count_distinct_implementation;
+    extern const SettingsBool transform_null_in;
+}
 
 namespace ErrorCodes
 {
@@ -703,7 +723,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
         if (any_keys_empty)
             throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                                 "Cannot get JOIN keys from JOIN ON section: '{}', found keys: {}",
-                                queryToString(table_join.on_expression), TableJoin::formatClauses(analyzed_join.getClauses()));
+                                table_join.on_expression->formatForErrorMessage(), TableJoin::formatClauses(analyzed_join.getClauses()));
 
         if (is_asof)
         {
@@ -1003,6 +1023,10 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         source_columns_ordinary = metadata_snapshot->getColumns().getOrdinary();
     }
+    else
+    {
+        source_columns_ordinary = source_columns;
+    }
 
     source_columns_set = removeDuplicateColumns(source_columns);
 }
@@ -1111,8 +1135,8 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             auto partition_columns = partition_desc.expression->getRequiredColumns();
             NameSet partition_columns_set(partition_columns.begin(), partition_columns.end());
 
-            const auto & parititon_virtuals = MergeTreeData::virtuals_useful_for_filter;
-            partition_columns_set.insert(parititon_virtuals.begin(), parititon_virtuals.end());
+            const auto & partition_virtuals = MergeTreeData::virtuals_useful_for_filter;
+            partition_columns_set.insert(partition_virtuals.begin(), partition_virtuals.end());
 
             optimize_trivial_count = true;
             for (const auto & required_column : required)
@@ -1189,23 +1213,20 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         }
     }
 
-    /// Check for dynamic subcolumns in unknown required columns.
-    if (!unknown_required_source_columns.empty())
+    /// Check for subcolumns in unknown required columns.
+    if (!unknown_required_source_columns.empty() && (!storage || storage->supportsSubcolumns()))
     {
         for (const NameAndTypePair & pair : source_columns_ordinary)
         {
-            if (!pair.type->hasDynamicSubcolumns())
-                continue;
-
             for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
             {
-                auto [column_name, dynamic_subcolumn_name] = Nested::splitName(*it);
+                auto [column_name, subcolumn_name] = Nested::splitName(*it);
 
                 if (column_name == pair.name)
                 {
-                    if (auto dynamic_subcolumn_type = pair.type->tryGetSubcolumnType(dynamic_subcolumn_name))
+                    if (auto subcolumn_type = pair.type->tryGetSubcolumnType(subcolumn_name))
                     {
-                        source_columns.emplace_back(*it, dynamic_subcolumn_type);
+                        source_columns.emplace_back(*it, subcolumn_type);
                         it = unknown_required_source_columns.erase(it);
                         continue;
                     }
@@ -1218,12 +1239,12 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
     if (!unknown_required_source_columns.empty())
     {
-        constexpr auto format_string = "Missing columns: {} while processing query: '{}', required columns:{}{}";
+        constexpr auto format_string = "Missing columns: {} while processing: '{}', required columns:{}{}";
         WriteBufferFromOwnString ss;
         ss << "Missing columns:";
         for (const auto & name : unknown_required_source_columns)
             ss << " '" << name << "'";
-        ss << " while processing query: '" << queryToString(query) << "'";
+        ss << " while processing: '" << query->formatWithSecretsOneLine() << "'";
 
         ss << ", required columns:";
         for (const auto & name : columns_context.requiredColumns())
@@ -1231,32 +1252,34 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (storage)
         {
-            std::vector<String> hint_name{};
-            std::set<String> helper_hint_name{};
-            for (const auto & name : columns_context.requiredColumns())
+            std::vector<String> hints;
+            std::set<String> used_hints;
+            for (const auto & col : columns_context.requiredColumns())
             {
-                auto hints = storage->getHints(name);
-                for (const auto & hint : hints)
+                for (const auto & hint : storage->getHints(col))
                 {
                     // We want to preserve the ordering of the hints
                     // (as they are ordered by Levenshtein distance)
-                    auto [_, inserted] = helper_hint_name.insert(hint);
+                    auto [_, inserted] = used_hints.insert(hint);
                     if (inserted)
-                        hint_name.push_back(hint);
+                        hints.push_back(hint);
                 }
             }
 
-            if (!hint_name.empty())
+            if (!hints.empty())
             {
                 ss << ", maybe you meant: ";
-                ss << toStringWithFinalSeparator(hint_name, " or ");
+                ss << toStringWithFinalSeparator(hints, " or ");
             }
         }
         else
         {
             if (!source_column_names.empty())
-                for (const auto & name : columns_context.requiredColumns())
+            {
+                ss << ", available columns:";
+                for (const auto & name : source_column_names)
                     ss << " '" << name << "'";
+            }
             else
                 ss << ", no source columns";
         }
@@ -1327,23 +1350,27 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         renameDuplicatedColumns(select_query);
 
     /// Perform it before analyzing JOINs, because it may change number of columns with names unique and break some logic inside JOINs
-    if (settings.optimize_normalize_count_variants)
+    if (settings[Setting::optimize_normalize_count_variants])
         TreeOptimizer::optimizeCountConstantAndSumOne(query, getContext());
 
     if (tables_with_columns.size() > 1)
     {
+        auto columns_from_left_table = tables_with_columns[0].columns;
         const auto & right_table = tables_with_columns[1];
         auto columns_from_joined_table = right_table.columns;
         /// query can use materialized or aliased columns from right joined table,
         /// we want to request it for right table
         columns_from_joined_table.insert(columns_from_joined_table.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
-        result.analyzed_join->setColumnsFromJoinedTable(std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix());
+        columns_from_left_table.insert(columns_from_left_table.end(), tables_with_columns[0].hidden_columns.begin(), tables_with_columns[0].hidden_columns.end());
+        result.analyzed_join->setColumnsFromJoinedTable(
+            std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix(), columns_from_left_table);
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
 
     /// Optimizes logical expressions.
-    LogicalExpressionsOptimizer(select_query, tables_with_columns, settings.optimize_min_equality_disjunction_chain_length.value).perform();
+    LogicalExpressionsOptimizer(select_query, tables_with_columns, settings[Setting::optimize_min_equality_disjunction_chain_length].value)
+        .perform();
 
     NameSet all_source_columns_set = source_columns_set;
     if (table_join)
@@ -1359,7 +1386,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         expandGroupByAll(select_query);
 
     // expand ORDER BY ALL
-    if (settings.enable_order_by_all && select_query->order_by_all)
+    if (settings[Setting::enable_order_by_all] && select_query->order_by_all)
         expandOrderByAll(select_query, tables_with_columns);
 
     /// Remove unneeded columns according to 'required_result_columns'.
@@ -1388,7 +1415,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             getContext()->getQueryContext()->addScalar(it.first, it.second);
     }
 
-    if (settings.legacy_column_name_of_tuple_literal)
+    if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
     /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
@@ -1399,8 +1426,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
         && !select_options.ignore_ast_optimizations;
 
-    bool optimize_multiif_to_if = ast_optimizations_allowed && settings.optimize_multiif_to_if;
-    TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif, optimize_multiif_to_if);
+    bool optimize_multiif_to_if_v = ast_optimizations_allowed && settings[Setting::optimize_multiif_to_if];
+    TreeOptimizer::optimizeIf(query, result.aliases, settings[Setting::optimize_if_chain_to_multiif], optimize_multiif_to_if_v);
 
     if (ast_optimizations_allowed)
         TreeOptimizer::apply(query, result, tables_with_columns, getContext());
@@ -1408,8 +1435,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
 
-    setJoinStrictness(
-        *select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys, result.analyzed_join);
+    setJoinStrictness(*select_query, settings[Setting::join_default_strictness], settings[Setting::any_join_distinct_right_table_keys], result.analyzed_join);
 
     auto * table_join_ast = select_query->join() ? select_query->join()->table_join->as<ASTTableJoin>() : nullptr;
     if (table_join_ast && tables_with_columns.size() >= 2)
@@ -1432,7 +1458,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     /// rewrite filters for select query, must go after getArrayJoinedColumns
     bool is_initiator = getContext()->getClientInfo().distributed_depth == 0;
-    if (settings.optimize_respect_aliases && result.storage_snapshot && is_initiator)
+    if (settings[Setting::optimize_respect_aliases] && result.storage_snapshot && is_initiator)
     {
         std::unordered_set<IAST *> excluded_nodes;
         {
@@ -1450,7 +1476,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         if (is_changed)
         {
             /// We should re-apply the optimization, because an expression substituted from alias column might be a function of a group key.
-            if (ast_optimizations_allowed && settings.optimize_group_by_function_keys)
+            if (ast_optimizations_allowed && settings[Setting::optimize_group_by_function_keys])
                 TreeOptimizer::optimizeGroupByFunctionKeys(select_query);
 
             result.aggregates = getAggregates(query, *select_query);
@@ -1470,10 +1496,9 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.ast_join = select_query->join();
 
     if (result.optimize_trivial_count)
-        result.optimize_trivial_count = settings.optimize_trivial_count_query &&
-            !select_query->groupBy() && !select_query->having() &&
-            !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final() &&
-            (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
+        result.optimize_trivial_count = settings[Setting::optimize_trivial_count_query] && !select_query->groupBy() && !select_query->having()
+            && !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final()
+            && (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
 
     // remove outer braces in order by
     RewriteOrderByVisitor::Data data;
@@ -1514,10 +1539,10 @@ TreeRewriterResultPtr TreeRewriter::analyze(
             getContext()->getQueryContext()->addScalar(it.first, it.second);
     }
 
-    if (settings.legacy_column_name_of_tuple_literal)
+    if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
-    TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif, false);
+    TreeOptimizer::optimizeIf(query, result.aliases, settings[Setting::optimize_if_chain_to_multiif], false);
 
     if (allow_aggregations)
     {
@@ -1551,33 +1576,33 @@ void TreeRewriter::normalize(
     ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_, bool is_create_parameterized_view)
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query);
+        UserDefinedSQLFunctionVisitor::visit(query, context_);
 
-    CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
+    CustomizeCountDistinctVisitor::Data data_count_distinct{settings[Setting::count_distinct_implementation]};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
 
-    CustomizeCountIfDistinctVisitor::Data data_count_if_distinct{settings.count_distinct_implementation.toString() + "If"};
+    CustomizeCountIfDistinctVisitor::Data data_count_if_distinct{settings[Setting::count_distinct_implementation].toString() + "If"};
     CustomizeCountIfDistinctVisitor(data_count_if_distinct).visit(query);
 
     CustomizeIfDistinctVisitor::Data data_distinct_if{"DistinctIf"};
     CustomizeIfDistinctVisitor(data_distinct_if).visit(query);
 
-    if (settings.rewrite_count_distinct_if_with_count_distinct_implementation)
+    if (settings[Setting::rewrite_count_distinct_if_with_count_distinct_implementation])
     {
-        CustomizeCountDistinctIfVisitor::Data data_count_distinct_if{settings.count_distinct_implementation.toString() + "If"};
+        CustomizeCountDistinctIfVisitor::Data data_count_distinct_if{settings[Setting::count_distinct_implementation].toString() + "If"};
         CustomizeCountDistinctIfVisitor(data_count_distinct_if).visit(query);
     }
 
     ExistsExpressionVisitor::Data exists;
     ExistsExpressionVisitor(exists).visit(query);
 
-    if (context_->getSettingsRef().enable_positional_arguments)
+    if (context_->getSettingsRef()[Setting::enable_positional_arguments])
     {
         ReplacePositionalArgumentsVisitor::Data data_replace_positional_arguments;
         ReplacePositionalArgumentsVisitor(data_replace_positional_arguments).visit(query);
     }
 
-    if (settings.transform_null_in)
+    if (settings[Setting::transform_null_in])
     {
         CustomizeInVisitor::Data data_null_in{"nullIn"};
         CustomizeInVisitor(data_null_in).visit(query);
@@ -1593,7 +1618,7 @@ void TreeRewriter::normalize(
     }
 
     /// Rewrite all aggregate functions to add -OrNull suffix to them
-    if (settings.aggregate_functions_null_for_empty)
+    if (settings[Setting::aggregate_functions_null_for_empty])
     {
         CustomizeAggregateFunctionsOrNullVisitor::Data data_or_null{"OrNull"};
         CustomizeAggregateFunctionsOrNullVisitor(data_or_null).visit(query);
@@ -1614,10 +1639,10 @@ void TreeRewriter::normalize(
     /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
     /// already normalized on initiator node, or not normalized and should remain unnormalized for
     /// compatibility.
-    if (context_->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && settings.normalize_function_names)
+    if (context_->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && settings[Setting::normalize_function_names])
         FunctionNameNormalizer::visit(query.get());
 
-    if (settings.optimize_move_to_prewhere)
+    if (settings[Setting::optimize_move_to_prewhere])
     {
         /// Required for PREWHERE
         ComparisonTupleEliminationVisitor::Data data_comparison_tuple_elimination;

@@ -1,17 +1,10 @@
 #pragma once
 
-#include <algorithm>
-#include <cassert>
-#include <list>
-#include <mutex>
 #include <optional>
-#include <variant>
 
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/Joins.h>
-#include <base/sort.h>
+#include <Core/TypeId.h>
 #include <Common/Arena.h>
 
 
@@ -123,6 +116,7 @@ struct RowRefList : RowRef
 
     RowRefList() {} /// NOLINT
     RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_), rows(1) {}
+    RowRefList(const Block * block_, size_t row_start_, size_t rows_) : RowRef(block_, row_start_), rows(static_cast<SizeT>(rows_)) {}
 
     ForwardIterator begin() const { return ForwardIterator(this); }
 

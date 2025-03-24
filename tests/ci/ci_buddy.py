@@ -1,15 +1,17 @@
 import argparse
 import json
 import os
-from typing import Union, Dict, List
+from typing import Dict, List, Union
 
-import boto3
 import requests
 from botocore.exceptions import ClientError
 
-from pr_info import PRInfo
 from ci_config import CI
 from ci_utils import WithIter
+from commit_status_helper import get_commit_filtered_statuses, get_repo
+from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from github_helper import GitHub
+from pr_info import PRInfo
 
 
 class Channels(metaclass=WithIter):
@@ -52,7 +54,8 @@ class CIBuddy:
         self.pr_number = pr_info.number
         self.head_ref = pr_info.head_ref
         self.commit_url = pr_info.commit_html_url
-        self.sha = pr_info.sha[:10]
+        self.sha_full = pr_info.sha
+        self.sha = self.sha_full[:10]
 
     def check_workflow(self):
         CI.GH.print_workflow_results()
@@ -61,27 +64,33 @@ class CIBuddy:
                 self.post_job_error(
                     f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
                 )
-        else:
-            res = CI.GH.get_workflow_job_result(CI.GH.ActionsNames.RunConfig)
-            if res != CI.GH.ActionStatuses.SUCCESS:
-                print(f"ERROR: RunConfig status is [{res}] - post report to slack")
-                self.post_job_error(
-                    f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
-                )
+            return
+
+        res = CI.GH.get_workflow_job_result(CI.GH.ActionsNames.RunConfig)
+        if res == CI.GH.ActionStatuses.SUCCESS:
+            # the normal case
+            return
+
+        gh = GitHub(get_best_robot_token())
+        commit = get_repo(gh).get_commit(self.sha_full)
+        statuses = get_commit_filtered_statuses(commit)
+        if any(True for st in statuses if st.context == CI.StatusNames.PR_CHECK):
+            print(
+                f"INFO: RunConfig status is [{res}], but it "
+                f'contains "{CI.StatusNames.PR_CHECK}" status, do not report error'
+            )
+            return
+
+        print(f"ERROR: RunConfig status is [{res}] - post report to slack")
+        self.post_job_error(f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True)
 
     @staticmethod
     def _get_webhooks():
         name = "ci_buddy_web_hooks"
 
-        session = boto3.Session(region_name="us-east-1")  # Replace with your region
-        ssm_client = session.client("ssm")
         json_string = None
         try:
-            response = ssm_client.get_parameter(
-                Name=name,
-                WithDecryption=True,  # Set to True if the parameter is a SecureString
-            )
-            json_string = response["Parameter"]["Value"]
+            json_string = get_parameter_from_ssm(name, decrypt=True)
         except ClientError as e:
             print(f"An error occurred: {e}")
 

@@ -10,6 +10,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_get_client_http_header;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -25,7 +30,7 @@ public:
     explicit FunctionGetClientHTTPHeader(ContextPtr context_)
         : WithContext(context_)
     {
-        if (!getContext()->getSettingsRef().allow_get_client_http_header)
+        if (!getContext()->getSettingsRef()[Setting::allow_get_client_http_header])
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "The function getClientHTTPHeader requires setting `allow_get_client_http_header` to be enabled.");
     }
 
@@ -91,7 +96,7 @@ If the function is used in the context of a distributed query, it returns non-em
             .syntax = "getClientHTTPHeader(name)",
             .arguments = {{"name", "The HTTP header name (String)"}},
             .returned_value = "The value of the header (String).",
-            .categories{"Miscellaneous"}});
+            .category{"Other"}});
 }
 
 }

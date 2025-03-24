@@ -1,14 +1,13 @@
 ---
-slug: /en/getting-started/example-datasets/ontime
-sidebar_label: OnTime Airline Flight Data
-description: Dataset containing the on-time performance of airline flights
+description: 'Dataset containing the on-time performance of airline flights'
+sidebar_label: 'OnTime Airline Flight Data'
+slug: /getting-started/example-datasets/ontime
+title: 'OnTime'
 ---
-
-# OnTime 
 
 This dataset contains data from Bureau of Transportation Statistics.
 
-## Creating a table
+## Creating a table {#creating-a-table}
 
 ``` sql
 CREATE TABLE `ontime`
@@ -142,11 +141,11 @@ ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | se
 
 (if you will have memory shortage or other issues on your server, remove the `-P $(nproc)` part)
 
-## Import from a saved copy
+## Import from a saved copy {#import-from-a-saved-copy}
 
 Alternatively, you can import data from a saved copy by the following query:
 
-```
+```sql
 INSERT INTO ontime SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/ontime/csv_by_year/*.csv.gz', CSVWithNames) SETTINGS max_insert_threads = 40;
 ```
 
@@ -386,7 +385,7 @@ ORDER BY c DESC
 LIMIT 10;
 ```
 
-You can also play with the data in Playground, [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIERheU9mV2VlaywgY291bnQoKikgQVMgYwpGUk9NIG9udGltZQpXSEVSRSBZZWFyPj0yMDAwIEFORCBZZWFyPD0yMDA4CkdST1VQIEJZIERheU9mV2VlawpPUkRFUiBCWSBjIERFU0M7Cg==).
+You can also play with the data in Playground, [example](https://sql.clickhouse.com?query_id=M4FSVBVMSHY98NKCQP8N4K).
 
 This performance test was created by Vadim Tkachenko. See:
 

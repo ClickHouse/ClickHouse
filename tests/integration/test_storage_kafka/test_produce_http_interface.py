@@ -1,11 +1,12 @@
-import time
 import logging
+import time
 
 import pytest
-from helpers.cluster import ClickHouseCluster, is_arm
-from helpers.test_tools import TSV
 from kafka import KafkaAdminClient
 from kafka.admin import NewTopic
+
+from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.test_tools import TSV
 
 if is_arm():
     pytestmark = pytest.mark.skip

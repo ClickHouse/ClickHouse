@@ -8,7 +8,7 @@ CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier};
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc01 (x int) AS postgresql('127.121.0.1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '124444');
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc02 (x int) AS mysql('127.123.0.1:3306', 'mysql_db', 'mysql_table', 'mysql_user','123123');
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc03 (a int) AS sqlite('db_path', 'table_name');
-CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc04 (a int) AS  mongodb('127.0.0.1:27017','test', 'my_collection', 'test_user', 'password', 'a Int');
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc04 (a int) AS mongodb('127.0.0.1:27017','test', 'my_collection', 'test_user', 'password', 'a Int');
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc05 (a int) AS redis('127.0.0.1:6379', 'key', 'key UInt32');
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc06 (a int) AS s3('http://some_addr:9000/cloud-storage-01/data.tsv', 'M9O7o0SX5I4udXhWxI12', '9ijqzmVN83fzD9XDkEAAAAAAAA', 'TSV');
 

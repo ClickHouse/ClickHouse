@@ -30,7 +30,7 @@ public:
         std::shared_ptr<IStorageSystemOneBlock> storage_,
         std::vector<UInt8> columns_mask_)
         : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -80,7 +80,7 @@ void IStorageSystemOneBlock::read(
 
 void ReadFromSystemOneBlock::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    const Block & sample_block = getOutputStream().header;
+    const Block & sample_block = getOutputHeader();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
     const ActionsDAG::Node * predicate = filter ? filter->getOutputs().at(0) : nullptr;
     storage->fillData(res_columns, context, predicate, std::move(columns_mask));

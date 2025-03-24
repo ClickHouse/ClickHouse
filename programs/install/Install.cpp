@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <boost/program_options.hpp>
 #include <Common/filesystemHelpers.h>
+#include <base/ask.h>
 
 #include <sys/stat.h>
 #include <pwd.h>
@@ -100,35 +101,22 @@ namespace fs = std::filesystem;
 static auto executeScript(const std::string & command, bool throw_on_error = false)
 {
     auto sh = ShellCommand::execute(command);
+
     WriteBufferFromFileDescriptor wb_stdout(STDOUT_FILENO);
-    WriteBufferFromFileDescriptor wb_stderr(STDERR_FILENO);
     copyData(sh->out, wb_stdout);
+    wb_stdout.finalize();
+
+    WriteBufferFromFileDescriptor wb_stderr(STDERR_FILENO);
     copyData(sh->err, wb_stderr);
+    wb_stderr.finalize();
 
     if (throw_on_error)
     {
         sh->wait();
         return 0;
     }
-    else
-        return sh->tryWait();
-}
 
-static bool ask(std::string question)
-{
-    while (true)
-    {
-        std::string answer;
-        std::cout << question;
-        std::getline(std::cin, answer);
-        if (!std::cin.good())
-            return false;
-
-        if (answer.empty() || answer == "n" || answer == "N")
-            return false;
-        if (answer == "y" || answer == "Y")
-            return true;
-    }
+    return sh->tryWait();
 }
 
 static bool filesEqual(std::string path1, std::string path2)
@@ -833,7 +821,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             char buf[1000] = {};
             std::string password;
-            if (auto * result = readpassphrase("Enter password for the default user: ", buf, sizeof(buf), 0))
+            if (auto * result = readpassphrase("Set up the password for the default user: ", buf, sizeof(buf), 0))
                 password = result;
 
             if (!password.empty())
@@ -1125,6 +1113,7 @@ namespace
 
             WriteBufferFromFileDescriptor std_err(STDERR_FILENO);
             copyData(sh->err, std_err);
+            std_err.finalize();
 
             sh->tryWait();
         }

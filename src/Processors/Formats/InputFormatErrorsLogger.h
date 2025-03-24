@@ -3,6 +3,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Context.h>
 
+#include <Core/Block.h>
+
 
 namespace DB
 {

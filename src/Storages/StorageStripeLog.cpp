@@ -3,13 +3,14 @@
 
 #include <optional>
 
-#include <Common/escapeForFileName.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/assert_cast.h>
 
 #include <Core/Settings.h>
 
 #include <IO/WriteBufferFromFileBase.h>
+#include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -48,6 +49,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_compress_block_size;
+    extern const SettingsSeconds max_execution_time;
+}
 
 namespace ErrorCodes
 {
@@ -175,8 +182,7 @@ class StripeLogSink final : public SinkToStorage
 public:
     using WriteLock = std::unique_lock<std::shared_timed_mutex>;
 
-    explicit StripeLogSink(
-        StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
+    explicit StripeLogSink(StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
@@ -291,7 +297,7 @@ StorageStripeLog::StorageStripeLog(
     , data_file_path(table_path + "data.bin")
     , index_file_path(table_path + "index.mrk")
     , file_checker(disk, table_path + "sizes.json")
-    , max_compress_block_size(context_->getSettingsRef().max_compress_block_size)
+    , max_compress_block_size(context_->getSettingsRef()[Setting::max_compress_block_size])
     , log(getLogger("StorageStripeLog"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -353,9 +359,9 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 static std::chrono::seconds getLockTimeout(ContextPtr local_context)
 {
     const Settings & settings = local_context->getSettingsRef();
-    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
-    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
-        lock_timeout = settings.max_execution_time.totalSeconds();
+    Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
+    if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
+        lock_timeout = settings[Setting::max_execution_time].totalSeconds();
     return std::chrono::seconds{lock_timeout};
 }
 
@@ -471,9 +477,9 @@ void StorageStripeLog::loadIndices(const WriteLock & lock /* already locked excl
     if (indices_loaded)
         return;
 
-    if (disk->exists(index_file_path))
+    if (disk->existsFile(index_file_path))
     {
-        CompressedReadBufferFromFile index_in(disk->readFile(index_file_path, ReadSettings{}.adjustBufferSize(4096)));
+        CompressedReadBufferFromFile index_in(disk->readFile(index_file_path, getContext()->getReadSettings().adjustBufferSize(4096)));
         indices.read(index_in);
     }
 
@@ -568,7 +574,9 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     disk->createDirectories(temp_dir);
 
     const auto & read_settings = backup_entries_collector.getReadSettings();
-    bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
+    const auto & backup_settings = backup_entries_collector.getBackupSettings();
+    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
+    bool allow_checksums_from_remote_paths = backup_settings.allow_checksums_from_remote_paths;
 
     /// data.bin
     {
@@ -577,7 +585,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file_path));
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file_path), allow_checksums_from_remote_paths);
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
     }
@@ -589,7 +597,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         String hardlink_file_path = temp_dir / index_file_name;
         disk->createHardLink(index_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(index_file_path));
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(index_file_path), allow_checksums_from_remote_paths);
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / index_file_name, std::move(backup_entry));
     }
@@ -692,7 +700,8 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 void registerStorageStripeLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
-        .supports_settings = true
+        .supports_settings = true,
+        .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
     };
 
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)

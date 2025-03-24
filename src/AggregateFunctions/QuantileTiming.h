@@ -736,14 +736,12 @@ public:
             tiny.prepare();
             return tiny.get(level);
         }
-        else if (kind == Kind::Medium)
+        if (kind == Kind::Medium)
         {
             return medium.get(level);
         }
-        else
-        {
-            return large->get(level);
-        }
+
+        return large->get(level);
     }
 
     /// Get the size values of the quantiles of the `levels` levels. Record `size` results starting with `result` address.

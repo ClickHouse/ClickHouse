@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
 #include <Common/Scheduler/SchedulerRoot.h>
@@ -101,6 +102,11 @@ struct MyRequest : public ResourceRequest
         if (on_execute)
             on_execute();
     }
+
+    void failed(const std::exception_ptr &) override
+    {
+        FAIL();
+    }
 };
 
 TEST(SchedulerRoot, Smoke)
@@ -108,14 +114,14 @@ TEST(SchedulerRoot, Smoke)
     ResourceTest t;
 
     ResourceHolder r1(t);
-    auto * fc1 = r1.add<ConstraintTest>("/", "<max_requests>1</max_requests>");
+    auto * fc1 = r1.add<SemaphoreConstraint>("/", "<max_requests>1</max_requests>");
     r1.add<PriorityPolicy>("/prio");
     auto a = r1.addQueue("/prio/A", "<priority>1</priority>");
     auto b = r1.addQueue("/prio/B", "<priority>2</priority>");
     r1.registerResource();
 
     ResourceHolder r2(t);
-    auto * fc2 = r2.add<ConstraintTest>("/", "<max_requests>1</max_requests>");
+    auto * fc2 = r2.add<SemaphoreConstraint>("/", "<max_requests>1</max_requests>");
     r2.add<PriorityPolicy>("/prio");
     auto c = r2.addQueue("/prio/C", "<priority>-1</priority>");
     auto d = r2.addQueue("/prio/D", "<priority>-2</priority>");
@@ -123,25 +129,25 @@ TEST(SchedulerRoot, Smoke)
 
     {
         ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), a);
-        EXPECT_TRUE(fc1->requests.contains(&rg.request));
+        EXPECT_TRUE(fc1->getInflights().first == 1);
         rg.consume(1);
     }
 
     {
         ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), b);
-        EXPECT_TRUE(fc1->requests.contains(&rg.request));
+        EXPECT_TRUE(fc1->getInflights().first == 1);
         rg.consume(1);
     }
 
     {
         ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), c);
-        EXPECT_TRUE(fc2->requests.contains(&rg.request));
+        EXPECT_TRUE(fc2->getInflights().first == 1);
         rg.consume(1);
     }
 
     {
         ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), d);
-        EXPECT_TRUE(fc2->requests.contains(&rg.request));
+        EXPECT_TRUE(fc2->getInflights().first == 1);
         rg.consume(1);
     }
 }
@@ -151,7 +157,7 @@ TEST(SchedulerRoot, Budget)
     ResourceTest t;
 
     ResourceHolder r1(t);
-    r1.add<ConstraintTest>("/", "<max_requests>1</max_requests>");
+    r1.add<SemaphoreConstraint>("/", "<max_requests>1</max_requests>");
     r1.add<PriorityPolicy>("/prio");
     auto a = r1.addQueue("/prio/A", "");
     r1.registerResource();
@@ -173,23 +179,25 @@ TEST(SchedulerRoot, Budget)
 
 TEST(SchedulerRoot, Cancel)
 {
+    // This barrier is used in the scheduler thread, so we should not destroy it before thread in ~ResourceTest
+    std::barrier destruct_sync(2);
+
     ResourceTest t;
 
     ResourceHolder r1(t);
-    auto * fc1 = r1.add<ConstraintTest>("/", "<max_requests>1</max_requests>");
+    auto * fc1 = r1.add<SemaphoreConstraint>("/", "<max_requests>1</max_requests>");
     r1.add<PriorityPolicy>("/prio");
     auto a = r1.addQueue("/prio/A", "<priority>1</priority>");
     auto b = r1.addQueue("/prio/B", "<priority>2</priority>");
     r1.registerResource();
 
-    std::barrier destruct_sync(2);
     std::barrier sync(2);
     std::thread consumer1([&]
     {
         MyRequest request(1,[&]
         {
             sync.arrive_and_wait(); // (A)
-            EXPECT_TRUE(fc1->requests.contains(&request));
+            EXPECT_TRUE(fc1->getInflights().first == 1);
             sync.arrive_and_wait(); // (B)
             request.finish();
             destruct_sync.arrive_and_wait(); // (C)
@@ -214,5 +222,5 @@ TEST(SchedulerRoot, Cancel)
     consumer1.join();
     consumer2.join();
 
-    EXPECT_TRUE(fc1->requests.empty());
+    EXPECT_TRUE(fc1->getInflights().first == 0);
 }

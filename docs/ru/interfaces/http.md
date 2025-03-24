@@ -50,7 +50,7 @@ Connection: Close
 Content-Type: text/tab-separated-values; charset=UTF-8
 X-ClickHouse-Server-Display-Name: clickhouse.ru-central1.internal
 X-ClickHouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
-X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334", "real_time_microseconds":"0"}
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 
 1
 ```
@@ -367,7 +367,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < X-ClickHouse-Format: Template
 < X-ClickHouse-Timezone: Asia/Shanghai
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0", "elapsed_ns":"662334", "real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
 <
 # HELP "Query" "Number of executing queries"
 # TYPE "Query" counter
@@ -426,7 +426,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 Значение `query` — это предопределенный запрос `predefined_query_handler`, который выполняется ClickHouse при совпадении HTTP-запроса и возврате результата запроса. Это обязательная настройка.
 
-В следующем примере определяются настройки [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_final_threads`, а затем запрашивается системная таблица, чтобы проверить, были ли эти параметры успешно установлены.
+В следующем примере определяются настройки [max_threads](/operations/settings/settings#max_threads) и `max_final_threads`, а затем запрашивается системная таблица, чтобы проверить, были ли эти параметры успешно установлены.
 
 :::note Предупреждение
 Чтобы сохранить стандартные `handlers` такие как `query`, `play`, `ping`, используйте правило `<defaults/>`.
@@ -469,7 +469,7 @@ max_threads	1
 
 ClickHouse извлекает и выполняет значение, соответствующее значению `query_param_name` URL-адресе HTTP-запроса. Значение по умолчанию `query_param_name` — это `/query` . Это необязательная настройка. Если в файле конфигурации нет определения, параметр не передается.
 
-Чтобы поэкспериментировать с этой функциональностью, в примере определяются значения [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_final_threads` и запрашивается, успешно ли были установлены настройки.
+Чтобы поэкспериментировать с этой функциональностью, в примере определяются значения [max_threads](/operations/settings/settings#max_threads) и `max_final_threads` и запрашивается, успешно ли были установлены настройки.
 
 Пример:
 
@@ -601,7 +601,7 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 < Content-Type: text/plain; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334", "real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
 <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
@@ -659,7 +659,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334", "real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Absolute Path File</body></html>
 * Connection #0 to host localhost left intact
@@ -678,7 +678,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334", "real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact

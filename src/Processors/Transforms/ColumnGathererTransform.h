@@ -84,12 +84,7 @@ private:
         size_t pos = 0;
         size_t size = 0;
 
-        void update(ColumnPtr column_)
-        {
-            column = std::move(column_);
-            size = column->size();
-            pos = 0;
-        }
+        void update(ColumnPtr column_);
     };
 
     MutableColumnPtr result_column;
@@ -115,7 +110,7 @@ public:
     ColumnGathererTransform(
         const Block & header,
         size_t num_inputs,
-        ReadBuffer & row_sources_buf_,
+        std::unique_ptr<ReadBuffer> row_sources_buf_,
         size_t block_preferred_size_rows_,
         size_t block_preferred_size_bytes_,
         bool is_result_sparse_);
@@ -124,6 +119,8 @@ public:
 
 protected:
     void onFinish() override;
+
+    std::unique_ptr<ReadBuffer> row_sources_buf_holder; /// Keep ownership of row_sources_buf while it's in use by ColumnGathererStream.
     LoggerPtr log;
 };
 
@@ -188,7 +185,7 @@ void ColumnGathererStream::gather(Column & column_res)
                 source_to_fully_copy = &source;
                 return;
             }
-            else if (len == 1)
+            if (len == 1)
                 column_res.insertFrom(*source.column, source.pos);
             else
                 column_res.insertRangeFrom(*source.column, source.pos, len);

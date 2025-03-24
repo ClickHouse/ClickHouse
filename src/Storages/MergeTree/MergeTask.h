@@ -5,6 +5,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
+#include <Formats/MarkInCompressedFile.h>
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
@@ -27,6 +28,7 @@
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/PartitionActionBlocker.h>
 
 namespace ProfileEvents
 {
@@ -40,6 +42,7 @@ namespace DB
 
 class MergeTask;
 using MergeTaskPtr = std::shared_ptr<MergeTask>;
+class RowsSourcesTemporaryFile;
 
 /**
  * Overview of the merge algorithm
@@ -85,7 +88,7 @@ public:
         MergeTreeTransactionPtr txn,
         MergeTreeData * data_,
         MergeTreeDataMergerMutator * mutator_,
-        ActionBlocker * merges_blocker_,
+        PartitionActionBlocker * merges_blocker_,
         ActionBlocker * ttl_merges_blocker_)
         {
             global_ctx = std::make_shared<GlobalRuntimeContext>();
@@ -100,6 +103,7 @@ public:
             global_ctx->context = std::move(context_);
             global_ctx->holder = &holder;
             global_ctx->space_reservation = std::move(space_reservation_);
+            global_ctx->disk = global_ctx->space_reservation->getDisk();
             global_ctx->deduplicate = std::move(deduplicate_);
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
             global_ctx->cleanup = std::move(cleanup_);
@@ -110,12 +114,10 @@ public:
             global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
             global_ctx->txn = std::move(txn);
             global_ctx->need_prefix = need_prefix;
+            global_ctx->suffix = std::move(suffix_);
+            global_ctx->merging_params = std::move(merging_params_);
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
-
-            prepare_stage_ctx->suffix = std::move(suffix_);
-            prepare_stage_ctx->merging_params = std::move(merging_params_);
-
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
         }
 
@@ -131,7 +133,16 @@ public:
         return nullptr;
     }
 
+    PlainMarksByName releaseCachedMarks() const
+    {
+        PlainMarksByName res;
+        std::swap(global_ctx->cached_marks, res);
+        return res;
+    }
+
     bool execute();
+
+    void cancel() noexcept;
 
 private:
     struct IStage;
@@ -146,6 +157,7 @@ private:
         virtual StageRuntimeContextPtr getContextForNextStage() = 0;
         virtual ProfileEvents::Event getTotalTimeProfileEvent() const = 0;
         virtual bool execute() = 0;
+        virtual void cancel() noexcept = 0;
         virtual ~IStage() = default;
     };
 
@@ -161,7 +173,7 @@ private:
         MergeListElement * merge_list_element_ptr{nullptr};
         MergeTreeData * data{nullptr};
         MergeTreeDataMergerMutator * mutator{nullptr};
-        ActionBlocker * merges_blocker{nullptr};
+        PartitionActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
         StorageSnapshotPtr storage_snapshot{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
@@ -172,6 +184,7 @@ private:
         ContextPtr context{nullptr};
         time_t time_of_merge{0};
         ReservationSharedPtr space_reservation{nullptr};
+        DiskPtr disk{nullptr};
         bool deduplicate{false};
         Names deduplicate_by_columns{};
         bool cleanup{false};
@@ -180,6 +193,7 @@ private:
         NamesAndTypesList merging_columns{};
         NamesAndTypesList storage_columns{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
+        ColumnsWithTypeAndName gathered_columns_samples{};
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
@@ -207,12 +221,20 @@ private:
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
+        PlainMarksByName cached_marks;
 
         MergeTreeTransactionPtr txn;
         bool need_prefix;
+        String suffix;
+        MergeTreeData::MergingParams merging_params{};
 
         scope_guard temporary_directory_lock;
+
         UInt64 prev_elapsed_ms{0};
+
+        // will throw an exception if merge was cancelled in any way.
+        void checkOperationIsNotCanceled() const;
+        bool isCancelled() const;
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
@@ -222,19 +244,10 @@ private:
     /// Proper initialization is responsibility of the author
     struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
     {
-        /// Dependencies
-        String suffix;
-        bool need_prefix;
-        MergeTreeData::MergingParams merging_params{};
-
-        TemporaryDataOnDiskPtr tmp_disk{nullptr};
-        DiskPtr disk{nullptr};
         bool need_remove_expired_values{false};
         bool force_ttl{false};
         CompressionCodecPtr compression_codec{nullptr};
-        size_t sum_input_rows_upper_bound{0};
-        std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
-        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
+        std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
         /// For projections to rebuild
@@ -251,7 +264,9 @@ private:
         std::function<bool()> is_cancelled{};
 
         /// Local variables for this stage
+        size_t sum_input_rows_upper_bound{0};
         size_t sum_compressed_bytes_upper_bound{0};
+        size_t sum_uncompressed_bytes_upper_bound{0};
         bool blocks_are_granules_size{false};
 
         LoggerPtr log{getLogger("MergeTask::PrepareStage")};
@@ -264,17 +279,17 @@ private:
 
     using ExecuteAndFinalizeHorizontalPartRuntimeContextPtr = std::shared_ptr<ExecuteAndFinalizeHorizontalPartRuntimeContext>;
 
-
     struct ExecuteAndFinalizeHorizontalPart : public IStage
     {
         bool execute() override;
+        void cancel() noexcept override;
 
-        bool prepare();
-        bool executeImpl();
+        bool prepare() const;
+        bool executeImpl() const;
         void finalize() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)(), 3>;
+        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 3>;
 
         const ExecuteAndFinalizeHorizontalPartSubtasks subtasks
         {
@@ -289,10 +304,10 @@ private:
         void calculateProjections(const Block & block) const;
         void finalizeProjections() const;
         void constructTaskForProjectionPartsMerge() const;
-        bool executeMergeProjections();
+        bool executeMergeProjections() const;
 
         MergeAlgorithm chooseMergeAlgorithm() const;
-        void createMergedStream();
+        void createMergedStream() const;
         void extractMergingAndGatheringColumns() const;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
@@ -314,11 +329,9 @@ private:
     struct VerticalMergeRuntimeContext : public IStageRuntimeContext
     {
         /// Begin dependencies from previous stage
-        std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
-        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
+        std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes;
         CompressionCodecPtr compression_codec;
-        TemporaryDataOnDiskPtr tmp_disk{nullptr};
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
         bool read_with_direct_io{false};
         bool need_sync{false};
@@ -334,23 +347,32 @@ private:
 
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
-        std::optional<Pipe> prepared_pipe;
+
+        /// Used for prefetching. Right before starting merge of a column we create a pipeline for the next column
+        /// and it initiates prefetching of the first range of that column.
+        struct PreparedColumnPipeline
+        {
+            QueryPipeline pipeline;
+            MergeTreeIndices indexes_to_recalc;
+        };
+
+        std::optional<PreparedColumnPipeline> prepared_pipeline;
         size_t max_delayed_streams = 0;
         bool use_prefetch = false;
         std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
-        std::unique_ptr<CompressedReadBufferFromFile> rows_sources_read_buf{nullptr};
         UInt64 elapsed_execute_ns{0};
     };
 
     using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;
 
-
     struct VerticalMergeStage : public IStage
     {
         bool execute() override;
+        void cancel() noexcept override;
+
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
             ctx = static_pointer_cast<VerticalMergeRuntimeContext>(local);
@@ -379,7 +401,7 @@ private:
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
 
-        Pipe createPipeForReadingOneColumn(const String & column_name) const;
+        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
@@ -406,6 +428,8 @@ private:
     struct MergeProjectionsStage : public IStage
     {
         bool execute() override;
+
+        void cancel() noexcept override;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {

@@ -14,8 +14,8 @@ namespace DB
 {
 
 class ASTCreateQuery;
+class ASTColumnDeclaration;
 class ASTExpressionList;
-class ASTConstraintDeclaration;
 class ASTStorage;
 class IDatabase;
 class DDLGuard;
@@ -71,17 +71,21 @@ public:
         is_restore_from_backup = is_restore_from_backup_;
     }
 
+    static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, LoadingStrictnessLevel mode, bool make_columns_nullable);
+
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false);
-    static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
+    static ConstraintsDescription
+    getConstraintsDescription(const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context);
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 
     /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
-    static void processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, bool skip_check_permissions = false);
+    static void processSQLSecurityOption(
+        ContextPtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, bool skip_check_permissions = false);
 
 private:
     struct TableProperties
@@ -116,6 +120,9 @@ private:
     void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
 
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
+
+    void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
+    void throwIfTooManyEntities(ASTCreateQuery & create, StoragePtr storage) const;
 
     ASTPtr query_ptr;
 

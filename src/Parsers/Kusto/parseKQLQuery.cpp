@@ -91,16 +91,14 @@ void writeQueryWithHighlightedErrorPositions(
             out << "\033[41;1m \033[0m";
             return;
         }
-        else
-        {
-            size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
 
-            /// Bright on red background.
-            out << "\033[41;1m";
-            out.write(current_position_to_hilite, bytes_to_hilite);
-            out << "\033[0m";
-            pos = current_position_to_hilite + bytes_to_hilite;
-        }
+        size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
+
+        /// Bright on red background.
+        out << "\033[41;1m";
+        out.write(current_position_to_hilite, bytes_to_hilite);
+        out << "\033[0m";
+        pos = current_position_to_hilite + bytes_to_hilite;
     }
     out.write(pos, end - pos);
 }
@@ -289,8 +287,7 @@ UnmatchedParentheses checkKQLUnmatchedParentheses(TokenIterator begin)
                 stack.push_back(*it);
                 return stack;
             }
-            else if (
-                (stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
+            if ((stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
                 || (stack.back().type == TokenType::OpeningSquareBracket && it->type == TokenType::ClosingSquareBracket))
             {
                 /// Valid match.

@@ -1,24 +1,34 @@
 #include <DataTypes/IDataType.h>
+#include <base/Decimal.h>
 #include <Common/TargetSpecific.h>
 #include <Common/findExtreme.h>
 
 #include <limits>
-#include <type_traits>
 
 namespace DB
 {
 
-template <has_find_extreme_implementation T>
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
 struct MinComparator
 {
     static ALWAYS_INLINE inline const T & cmp(const T & a, const T & b) { return std::min(a, b); }
 };
 
-template <has_find_extreme_implementation T>
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
 struct MaxComparator
 {
     static ALWAYS_INLINE inline const T & cmp(const T & a, const T & b) { return std::max(a, b); }
 };
+
+namespace detail
+{
+template <class Comparator> struct NativeComparatorT { using Type = Comparator; };
+template <underlying_has_find_extreme_implementation T> struct NativeComparatorT<MinComparator<T>> { using Type = MinComparator<NativeType<T>>; };
+template <underlying_has_find_extreme_implementation T> struct NativeComparatorT<MaxComparator<T>> { using Type = MaxComparator<NativeType<T>>; };
+template <class Comparator> using NativeComparator = typename NativeComparatorT<Comparator>::Type;
+}
 
 MULTITARGET_FUNCTION_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(
@@ -47,7 +57,7 @@ MULTITARGET_FUNCTION_AVX2_SSE42(
 
         /// Unroll the loop manually for floating point, since the compiler doesn't do it without fastmath
         /// as it might change the return value
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point<T>)
         {
             constexpr size_t unroll_block = 512 / sizeof(T); /// Chosen via benchmarks with AVX2 so YMMV
             size_t unrolled_end = i + (((count - i) / unroll_block) * unroll_block);
@@ -99,7 +109,6 @@ MULTITARGET_FUNCTION_AVX2_SSE42(
                 }
                 else
                 {
-                    static_assert(std::same_as<ComparatorClass, MaxComparator<T>>);
                     /// keep_number will be 0 or 1
                     bool keep_number = !condition_map[i] == add_if_cond_zero;
                     /// If keep_number = ptr[i] * 1 + 0 * lowest = ptr[i]
@@ -131,43 +140,63 @@ findExtreme(const T * __restrict ptr, const UInt8 * __restrict condition_map [[m
     return findExtremeImpl<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
 }
 
-template <has_find_extreme_implementation T>
+template <underlying_has_find_extreme_implementation T, class ComparatorClass, bool add_all_elements, bool add_if_cond_zero>
+static std::optional<T>
+findExtreme(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
+{
+    using U = NativeType<T>;
+    auto ret = findExtreme<U, detail::NativeComparator<ComparatorClass>, add_all_elements, add_if_cond_zero>(
+        reinterpret_cast<const U *>(ptr), condition_map, start, end);
+
+    if (ret.has_value())
+        return T(*ret);
+    return std::nullopt;
+}
+
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
 std::optional<T> findExtremeMin(const T * __restrict ptr, size_t start, size_t end)
 {
     return findExtreme<T, MinComparator<T>, true, false>(ptr, nullptr, start, end);
 }
 
-template <has_find_extreme_implementation T>
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
 std::optional<T> findExtremeMinNotNull(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
 {
     return findExtreme<T, MinComparator<T>, false, true>(ptr, condition_map, start, end);
 }
 
-template <has_find_extreme_implementation T>
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
 std::optional<T> findExtremeMinIf(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
 {
     return findExtreme<T, MinComparator<T>, false, false>(ptr, condition_map, start, end);
 }
 
-template <has_find_extreme_implementation T>
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
 std::optional<T> findExtremeMax(const T * __restrict ptr, size_t start, size_t end)
 {
     return findExtreme<T, MaxComparator<T>, true, false>(ptr, nullptr, start, end);
 }
 
-template <has_find_extreme_implementation T>
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
 std::optional<T> findExtremeMaxNotNull(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
 {
     return findExtreme<T, MaxComparator<T>, false, true>(ptr, condition_map, start, end);
 }
 
-template <has_find_extreme_implementation T>
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
 std::optional<T> findExtremeMaxIf(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
 {
     return findExtreme<T, MaxComparator<T>, false, false>(ptr, condition_map, start, end);
 }
 
-template <has_find_extreme_implementation T>
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
 std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start, size_t end)
 {
     /// This is implemented based on findNumericExtreme and not the other way around (or independently) because getting
@@ -186,7 +215,8 @@ std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start
     return std::nullopt;
 }
 
-template <has_find_extreme_implementation T>
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
 std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start, size_t end)
 {
     std::optional<T> opt = findExtremeMax(ptr, start, end);
@@ -217,5 +247,11 @@ std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start
     template std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start, size_t end);
 
 FOR_BASIC_NUMERIC_TYPES(INSTANTIATION)
+
+INSTANTIATION(Decimal32)
+INSTANTIATION(Decimal64)
+INSTANTIATION(DateTime64)
+
+
 #undef INSTANTIATION
 }

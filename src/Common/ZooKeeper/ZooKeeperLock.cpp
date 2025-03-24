@@ -81,7 +81,7 @@ void ZooKeeperLock::unlock()
         zookeeper->remove(lock_path, -1);
         LOG_TRACE(log, "Lock on path {} for session {} is unlocked", lock_path, zookeeper->getClientID());
     }
-    else if (result)
+    else if (result && throw_if_lost) /// NOTE: What if session expired exactly here?
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Lock is lost, it has another owner. Path: {}, message: {}, owner: {}, our id: {}",
                         lock_path, lock_message, stat.ephemeralOwner, zookeeper->getClientID());
     else if (throw_if_lost)

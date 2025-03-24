@@ -38,12 +38,18 @@ class ExecutorTasks
     /// Started thread count (allocated by `ConcurrencyControl`). Can increase during execution up to `num_threads`.
     size_t use_threads = 0;
 
+    /// Number of idle threads, changed with threads_queue.size().
+    std::atomic_size_t idle_threads = 0;
+
     /// This is the total number of waited async tasks which are not executed yet.
     /// sum(executor_contexts[i].async_tasks.size())
     size_t num_waiting_async_tasks = 0;
 
     /// A set of currently waiting threads.
     ThreadsQueue threads_queue;
+
+    /// Threshold found by rolling dice.
+    const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
 
 public:
     using Stack = std::stack<UInt64>;
@@ -62,10 +68,12 @@ public:
     void pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
     void init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
-    void fill(Queue & queue);
+    void fill(Queue & queue, Queue & async_queue);
     void upscale(size_t use_threads_);
 
     void processAsyncTasks();
+
+    bool shouldSpawn() const { return idle_threads <= TOO_MANY_IDLE_THRESHOLD; }
 
     ExecutionThreadContext & getThreadContext(size_t thread_num) { return *executor_contexts[thread_num]; }
 };

@@ -7,15 +7,18 @@
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperStorage.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Core/Field.h>
 #include <Disks/DiskLocal.h>
+#include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
@@ -78,20 +81,20 @@ namespace
             writeBinary(false, out);
 
         /// Serialize stat
-        writeBinary(node.czxid, out);
-        writeBinary(node.mzxid, out);
-        writeBinary(node.ctime(), out);
-        writeBinary(node.mtime, out);
-        writeBinary(node.version, out);
-        writeBinary(node.cversion, out);
-        writeBinary(node.aversion, out);
-        writeBinary(node.ephemeralOwner(), out);
+        writeBinary(node.stats.czxid, out);
+        writeBinary(node.stats.mzxid, out);
+        writeBinary(node.stats.ctime(), out);
+        writeBinary(node.stats.mtime, out);
+        writeBinary(node.stats.version, out);
+        writeBinary(node.stats.cversion, out);
+        writeBinary(node.stats.aversion, out);
+        writeBinary(node.stats.ephemeralOwner(), out);
         if (version < SnapshotVersion::V6)
-            writeBinary(static_cast<int32_t>(node.getData().size()), out);
-        writeBinary(node.numChildren(), out);
-        writeBinary(node.pzxid, out);
+            writeBinary(static_cast<int32_t>(node.stats.data_size), out);
+        writeBinary(node.stats.numChildren(), out);
+        writeBinary(node.stats.pzxid, out);
 
-        writeBinary(node.seqNum(), out);
+        writeBinary(node.stats.seqNum(), out);
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
             writeBinary(node.sizeInBytes(), out);
@@ -100,11 +103,11 @@ namespace
     template<typename Node>
     void readNode(Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
     {
-        readVarUInt(node.data_size, in);
-        if (node.data_size != 0)
+        readVarUInt(node.stats.data_size, in);
+        if (node.stats.data_size != 0)
         {
-            node.data = std::unique_ptr<char[]>(new char[node.data_size]);
-            in.readStrict(node.data.get(), node.data_size);
+            node.data = std::unique_ptr<char[]>(new char[node.stats.data_size]);
+            in.readStrict(node.data.get(), node.stats.data_size);
         }
 
         if (version >= SnapshotVersion::V1)
@@ -141,19 +144,19 @@ namespace
         }
 
         /// Deserialize stat
-        readBinary(node.czxid, in);
-        readBinary(node.mzxid, in);
+        readBinary(node.stats.czxid, in);
+        readBinary(node.stats.mzxid, in);
         int64_t ctime;
         readBinary(ctime, in);
-        node.setCtime(ctime);
-        readBinary(node.mtime, in);
-        readBinary(node.version, in);
-        readBinary(node.cversion, in);
-        readBinary(node.aversion, in);
+        node.stats.setCtime(ctime);
+        readBinary(node.stats.mtime, in);
+        readBinary(node.stats.version, in);
+        readBinary(node.stats.cversion, in);
+        readBinary(node.stats.aversion, in);
         int64_t ephemeral_owner = 0;
         readBinary(ephemeral_owner, in);
         if (ephemeral_owner != 0)
-            node.setEphemeralOwner(ephemeral_owner);
+            node.stats.setEphemeralOwner(ephemeral_owner);
 
         if (version < SnapshotVersion::V6)
         {
@@ -163,14 +166,14 @@ namespace
         int32_t num_children = 0;
         readBinary(num_children, in);
         if (ephemeral_owner == 0)
-            node.setNumChildren(num_children);
+            node.stats.setNumChildren(num_children);
 
-        readBinary(node.pzxid, in);
+        readBinary(node.stats.pzxid, in);
 
         int32_t seq_num = 0;
         readBinary(seq_num, in);
         if (ephemeral_owner == 0)
-            node.setSeqNum(seq_num);
+            node.stats.setSeqNum(seq_num);
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
         {
@@ -208,11 +211,11 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
         writeBinary(snapshot.zxid, out);
         if (keeper_context->digestEnabled())
         {
-            writeBinary(static_cast<uint8_t>(Storage::CURRENT_DIGEST_VERSION), out);
+            writeBinary(static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION), out);
             writeBinary(snapshot.nodes_digest, out);
         }
         else
-            writeBinary(static_cast<uint8_t>(Storage::NO_DIGEST), out);
+            writeBinary(static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST), out);
     }
 
     writeBinary(snapshot.session_id, out);
@@ -256,7 +259,7 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
         /// Benign race condition possible while taking snapshot: NuRaft decide to create snapshot at some log id
         /// and only after some time we lock storage and enable snapshot mode. So snapshot_container_size can be
         /// slightly bigger than required.
-        if (node.mzxid > snapshot.zxid)
+        if (node.stats.mzxid > snapshot.zxid)
             break;
         writeBinary(path, out);
         writeNode(node, snapshot.version, out);
@@ -306,7 +309,7 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
 }
 
 template<typename Storage>
-void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context)
+void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     uint8_t version;
     readBinary(version, in);
@@ -323,11 +326,11 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         readBinary(storage.zxid, in);
         uint8_t digest_version;
         readBinary(digest_version, in);
-        if (digest_version != Storage::DigestVersion::NO_DIGEST)
+        if (digest_version != static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST))
         {
             uint64_t nodes_digest;
             readBinary(nodes_digest, in);
-            if (digest_version == Storage::CURRENT_DIGEST_VERSION)
+            if (digest_version == static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION))
             {
                 storage.nodes_digest = nodes_digest;
                 recalculate_digest = false;
@@ -410,14 +413,13 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                 LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
                 continue;
             }
-            else
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "{}. Ignoring it can lead to data loss. "
-                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                    get_error_msg());
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "{}. Ignoring it can lead to data loss. "
+                "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
+                get_error_msg());
         }
-        else if (match_result == EXACT)
+        if (match_result == EXACT)
         {
             if (!node.empty())
             {
@@ -435,13 +437,13 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
             }
         }
 
-        auto ephemeral_owner = node.ephemeralOwner();
+        auto ephemeral_owner = node.stats.ephemeralOwner();
         if constexpr (!use_rocksdb)
-            if (!node.isEphemeral() && node.numChildren() > 0)
-                node.getChildren().reserve(node.numChildren());
+            if (!node.stats.isEphemeral() && node.stats.numChildren() > 0)
+                node.getChildren().reserve(node.stats.numChildren());
 
         if (ephemeral_owner != 0)
-            storage.ephemerals[node.ephemeralOwner()].insert(std::string{path});
+            storage.committed_ephemerals[node.stats.ephemeralOwner()].insert(std::string{path});
 
         if (recalculate_digest)
             storage.nodes_digest += node.getDigest(path);
@@ -467,16 +469,25 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         {
             if (itr.key != "/")
             {
-                if (itr.value.numChildren() != static_cast<int32_t>(itr.value.getChildren().size()))
+                if (itr.value.stats.numChildren() != static_cast<int32_t>(itr.value.getChildren().size()))
                 {
 #ifdef NDEBUG
                     /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
-                    LOG_ERROR(getLogger("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
-                                " is different from actual children size {} for node {}", itr.value.numChildren(), itr.value.getChildren().size(), itr.key);
+                    LOG_ERROR(
+                        getLogger("KeeperSnapshotManager"),
+                        "Children counter in stat.numChildren {}"
+                        " is different from actual children size {} for node {}",
+                        itr.value.stats.numChildren(),
+                        itr.value.getChildren().size(),
+                        itr.key.toView());
 #else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
-                                    " is different from actual children size {} for node {}",
-                                    itr.value.numChildren(), itr.value.getChildren().size(), itr.key);
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Children counter in stat.numChildren {}"
+                        " is different from actual children size {} for node {}",
+                        itr.value.stats.numChildren(),
+                        itr.value.getChildren().size(),
+                        itr.key.toView());
 #endif
                 }
             }
@@ -489,7 +500,8 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     size_t current_session_size = 0;
     while (current_session_size < active_sessions_size)
     {
-        int64_t active_session_id, timeout;
+        int64_t active_session_id;
+        int64_t timeout;
         readBinary(active_session_id, in);
         readBinary(timeout, in);
         storage.addSessionID(active_session_id, timeout);
@@ -503,7 +515,8 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
             size_t session_auth_counter = 0;
             while (session_auth_counter < session_auths_size)
             {
-                String scheme, id;
+                String scheme;
+                String id;
                 readBinary(scheme, in);
                 readBinary(id, in);
                 ids.emplace_back(typename Storage::AuthID{scheme, id});
@@ -511,7 +524,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                 session_auth_counter++;
             }
             if (!ids.empty())
-                storage.session_and_auth[active_session_id] = ids;
+                storage.committed_session_and_auth[active_session_id] = ids;
         }
         current_session_size++;
     }
@@ -527,6 +540,8 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         buffer->pos(0);
         deserialization_result.cluster_config = ClusterConfig::deserialize(*buffer);
     }
+
+    storage.updateStats();
 }
 
 template<typename Storage>
@@ -544,7 +559,7 @@ KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(Storage * storage_, uint64
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
-    session_and_auth = storage->session_and_auth;
+    session_and_auth = storage->committed_session_and_auth;
 }
 
 template<typename Storage>
@@ -563,7 +578,7 @@ KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
-    session_and_auth = storage->session_and_auth;
+    session_and_auth = storage->committed_session_and_auth;
 }
 
 template<typename Storage>
@@ -718,7 +733,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotB
 {
     const auto & [snapshot_path, snapshot_disk, size] = *existing_snapshots.at(up_to_log_idx);
     WriteBufferFromNuraftBuffer writer;
-    auto reader = snapshot_disk->readFile(snapshot_path);
+    auto reader = snapshot_disk->readFile(snapshot_path, getReadSettings());
     copyData(*reader, writer);
     return writer.getBuffer();
 }
@@ -903,7 +918,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getLatestSnapshotInfo() cons
 
         try
         {
-            if (disk->exists(path))
+            if (disk->existsFile(path))
                 return std::make_shared<SnapshotFileInfo>(path, disk);
         }
         catch (...)

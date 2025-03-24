@@ -99,10 +99,10 @@ void MergeTreeMutationEntry::removeFile()
 {
     if (!file_name.empty())
     {
-        if (!disk->exists(path_prefix + file_name))
+        if (!disk->existsFile(path_prefix + file_name))
             return;
 
-        disk->removeFile(path_prefix + file_name);
+        disk->removeFileIfExists(path_prefix + file_name);
         file_name.clear();
     }
 }
@@ -123,7 +123,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     , is_temp(false)
 {
     block_number = parseFileName(file_name);
-    auto buf = disk->readFile(path_prefix + file_name);
+    auto buf = disk->readFile(path_prefix + file_name, getReadSettings());
 
     *buf >> "format version: 1\n";
 

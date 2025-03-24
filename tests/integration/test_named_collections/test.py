@@ -1,10 +1,12 @@
 import logging
-import pytest
 import os
 import time
-from helpers.cluster import ClickHouseCluster
 from contextlib import nullcontext as does_not_raise
+
+import pytest
+
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NAMED_COLLECTIONS_CONFIG = os.path.join(
@@ -792,3 +794,17 @@ def test_keeper_storage_remove_on_cluster(cluster, ignore, expected_raise):
         node.query(
             f"DROP NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
         )
+
+
+@pytest.mark.parametrize(
+    "instance_name",
+    [("node"), ("node_with_keeper")],
+)
+def test_name_escaping(cluster, instance_name):
+    node = cluster.instances[instance_name]
+
+    node.query("DROP NAMED COLLECTION IF EXISTS `test_!strange/symbols!`;")
+    node.query("CREATE NAMED COLLECTION `test_!strange/symbols!` AS key1=1, key2=2")
+    node.restart_clickhouse()
+
+    node.query("DROP NAMED COLLECTION `test_!strange/symbols!`")

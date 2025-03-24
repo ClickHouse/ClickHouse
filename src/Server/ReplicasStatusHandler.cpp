@@ -1,9 +1,11 @@
 #include <Server/ReplicasStatusHandler.h>
 
+#include <Common/quoteString.h>
 #include <Core/ServerSettings.h>
 #include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
@@ -19,6 +21,12 @@
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 min_absolute_delay_to_close;
+    extern const MergeTreeSettingsUInt64 min_relative_delay_to_close;
+}
 
 ReplicasStatusHandler::ReplicasStatusHandler(IServer & server) : WithContext(server.context())
 {
@@ -74,8 +82,8 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 {
                     table_replicated->getReplicaDelays(absolute_delay, relative_delay);
 
-                    if ((settings.min_absolute_delay_to_close && absolute_delay >= static_cast<time_t>(settings.min_absolute_delay_to_close))
-                        || (settings.min_relative_delay_to_close && relative_delay >= static_cast<time_t>(settings.min_relative_delay_to_close)))
+                    if ((settings[MergeTreeSetting::min_absolute_delay_to_close] && absolute_delay >= static_cast<time_t>(settings[MergeTreeSetting::min_absolute_delay_to_close]))
+                        || (settings[MergeTreeSetting::min_relative_delay_to_close] && relative_delay >= static_cast<time_t>(settings[MergeTreeSetting::min_relative_delay_to_close])))
                         ok = false;
 
                     message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(iterator->name())

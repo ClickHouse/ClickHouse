@@ -1,4 +1,5 @@
 #include <memory>
+#include <IO/copyData.h>
 #include <Storages/StorageKeeperMap.h>
 
 #include <Columns/ColumnString.h>
@@ -15,6 +16,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/MutationsInterpreter.h>
 
+#include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
@@ -23,7 +25,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
 
 #include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -61,10 +62,21 @@
 
 #include <base/types.h>
 
-#include <boost/algorithm/string/classification.hpp>
+#include <boost/core/noncopyable.hpp>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 insert_keeper_max_retries;
+    extern const SettingsUInt64 insert_keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 insert_keeper_retry_max_backoff_ms;
+    extern const SettingsBool keeper_map_strict_mode;
+    extern const SettingsUInt64 keeper_max_retries;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 max_compress_block_size;
+}
 
 namespace FailPoints
 {
@@ -91,7 +103,7 @@ std::string formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    return serializeAST(*ast);
+    return ast->formatWithSecretsOneLine();
 }
 
 void verifyTableId(const StorageID & table_id)
@@ -165,10 +177,7 @@ public:
         }
     }
 
-    void onFinish() override
-    {
-        finalize<false>(/*strict*/ context->getSettingsRef().keeper_map_strict_mode);
-    }
+    void onFinish() override { finalize<false>(/*strict*/ context->getSettingsRef()[Setting::keeper_map_strict_mode]); }
 
     template <bool for_update>
     void finalize(bool strict)
@@ -179,10 +188,10 @@ public:
             getName(),
             getLogger(getName()),
             ZooKeeperRetriesInfo{
-                settings.insert_keeper_max_retries,
-                settings.insert_keeper_retry_initial_backoff_ms,
-                settings.insert_keeper_retry_max_backoff_ms},
-            context->getProcessListElement()};
+                settings[Setting::insert_keeper_max_retries],
+                settings[Setting::insert_keeper_retry_initial_backoff_ms],
+                settings[Setting::insert_keeper_retry_max_backoff_ms],
+                context->getProcessListElement()}};
 
         zk_retry.retryLoop([&]()
         {
@@ -405,6 +414,7 @@ StorageKeeperMap::StorageKeeperMap(
 
     zk_dropped_path = metadata_path_fs / "dropped";
     zk_dropped_lock_path = fs::path(zk_dropped_path) / "lock";
+    zk_dropped_lock_version_path = metadata_path_fs / "drop_lock_version";
 
     if (attach)
     {
@@ -416,8 +426,11 @@ StorageKeeperMap::StorageKeeperMap(
     ZooKeeperRetriesControl zk_retry{
         getName(),
         getLogger(getName()),
-        ZooKeeperRetriesInfo{settings.keeper_max_retries, settings.keeper_retry_initial_backoff_ms, settings.keeper_retry_max_backoff_ms},
-        context_->getProcessListElement()};
+        ZooKeeperRetriesInfo{
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            context_->getProcessListElement()}};
 
     zk_retry.retryLoop(
         [&]
@@ -432,7 +445,6 @@ StorageKeeperMap::StorageKeeperMap(
             }
         });
 
-    std::shared_ptr<zkutil::EphemeralNodeHolder> metadata_drop_lock;
     int32_t drop_lock_version = -1;
     for (size_t i = 0; i < 1000; ++i)
     {
@@ -441,6 +453,7 @@ StorageKeeperMap::StorageKeeperMap(
             [&]
             {
                 auto client = getClient();
+                std::shared_ptr<zkutil::EphemeralNodeHolder> metadata_drop_lock;
                 std::string stored_metadata_string;
                 auto exists = client->tryGet(zk_metadata_path, stored_metadata_string);
 
@@ -485,10 +498,11 @@ StorageKeeperMap::StorageKeeperMap(
                     LOG_INFO(log, "Removing leftover nodes");
 
                     bool drop_finished = false;
-                    if (zk_retry.isRetry() && metadata_drop_lock != nullptr && drop_lock_version != -1)
+                    if (zk_retry.isRetry() && drop_lock_version != -1)
                     {
                         /// if we have leftover lock from previous try, we need to recreate the ephemeral with our session
                         Coordination::Requests drop_lock_requests{
+                            zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, drop_lock_version),
                             zkutil::makeRemoveRequest(zk_dropped_lock_path, drop_lock_version),
                             zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
                         };
@@ -498,8 +512,6 @@ StorageKeeperMap::StorageKeeperMap(
                         if (lock_code == Coordination::Error::ZBADVERSION)
                         {
                             LOG_INFO(log, "Someone else is removing leftover nodes");
-                            metadata_drop_lock->setAlreadyRemoved();
-                            metadata_drop_lock.reset();
                             return;
                         }
 
@@ -507,29 +519,26 @@ StorageKeeperMap::StorageKeeperMap(
                         {
                             /// someone else removed metadata nodes or the previous ephemeral node expired
                             /// we will try creating dropped lock again to make sure
-                            metadata_drop_lock->setAlreadyRemoved();
-                            metadata_drop_lock.reset();
                         }
                         else if (lock_code == Coordination::Error::ZOK)
                         {
-                            metadata_drop_lock->setAlreadyRemoved();
                             metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);
-                            drop_lock_version = -1;
-                            Coordination::Stat lock_stat;
-                            client->get(zk_dropped_lock_path, &lock_stat);
-                            drop_lock_version = lock_stat.version;
+                            drop_lock_version = dynamic_cast<const Coordination::SetResponse &>(*drop_lock_responses[0]).stat.version;
                             if (!dropTable(client, metadata_drop_lock))
-                            {
-                                metadata_drop_lock.reset();
                                 return;
-                            }
                             drop_finished = true;
                         }
                     }
 
                     if (!drop_finished)
                     {
-                        auto code = client->tryCreate(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral);
+                        Coordination::Requests drop_lock_requests{
+                            zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
+                            zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1),
+                        };
+
+                        Coordination::Responses drop_lock_responses;
+                        auto code = client->tryMulti(drop_lock_requests, drop_lock_responses);
 
                         if (code == Coordination::Error::ZNONODE)
                         {
@@ -547,15 +556,9 @@ StorageKeeperMap::StorageKeeperMap(
                         else
                         {
                             metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);
-                            drop_lock_version = -1;
-                            Coordination::Stat lock_stat;
-                            client->get(zk_dropped_lock_path, &lock_stat);
-                            drop_lock_version = lock_stat.version;
+                            drop_lock_version = dynamic_cast<const Coordination::SetResponse &>(*drop_lock_responses[1]).stat.version;
                             if (!dropTable(client, metadata_drop_lock))
-                            {
-                                metadata_drop_lock.reset();
                                 return;
-                            }
                         }
                     }
                 }
@@ -563,6 +566,7 @@ StorageKeeperMap::StorageKeeperMap(
                 Coordination::Requests create_requests{
                     zkutil::makeCreateRequest(zk_metadata_path, metadata_string, zkutil::CreateMode::Persistent),
                     zkutil::makeCreateRequest(zk_data_path, metadata_string, zkutil::CreateMode::Persistent),
+                    zkutil::makeCreateRequest(zk_dropped_lock_version_path, "", zkutil::CreateMode::Persistent),
                     zkutil::makeCreateRequest(zk_tables_path, "", zkutil::CreateMode::Persistent),
                     zkutil::makeCreateRequest(zk_table_path, "", zkutil::CreateMode::Persistent),
                 };
@@ -575,10 +579,9 @@ StorageKeeperMap::StorageKeeperMap(
                         log, "It looks like a table on path {} was created by another server at the same moment, will retry", zk_root_path);
                     return;
                 }
-                else if (code != Coordination::Error::ZOK)
-                {
+
+                if (code != Coordination::Error::ZOK)
                     zkutil::KeeperMultiException::check(code, create_requests, create_responses);
-                }
 
                 table_status = TableStatus::VALID;
                 /// we are the first table created for the specified Keeper path, i.e. we are the first replica
@@ -661,10 +664,10 @@ Pipe StorageKeeperMap::read(
             getName(),
             getLogger(getName()),
             ZooKeeperRetriesInfo{
-                settings.keeper_max_retries,
-                settings.keeper_retry_initial_backoff_ms,
-                settings.keeper_retry_max_backoff_ms},
-            context_->getProcessListElement()};
+                settings[Setting::keeper_max_retries],
+                settings[Setting::keeper_retry_initial_backoff_ms],
+                settings[Setting::keeper_retry_max_backoff_ms],
+                context_->getProcessListElement()}};
 
         std::vector<std::string> children;
         zk_retry.retryLoop([&]
@@ -692,10 +695,10 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         getName(),
         getLogger(getName()),
         ZooKeeperRetriesInfo{
-            settings.keeper_max_retries,
-            settings.keeper_retry_initial_backoff_ms,
-            settings.keeper_retry_max_backoff_ms},
-        local_context->getProcessListElement()};
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            local_context->getProcessListElement()}};
 
     zk_retry.retryLoop([&]
     {
@@ -717,6 +720,7 @@ bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::E
     ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_path, -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zk_data_path, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_lock_version_path, -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zk_metadata_path, -1));
 
     Coordination::Responses responses;
@@ -779,6 +783,7 @@ void StorageKeeperMap::drop()
     ops.emplace_back(zkutil::makeRemoveRequest(zk_tables_path, -1));
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_path, "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral));
+    ops.emplace_back(zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1));
 
     auto code = client->tryMulti(ops, responses);
 
@@ -787,12 +792,12 @@ void StorageKeeperMap::drop()
         LOG_INFO(log, "Metadata is being removed by another table");
         return;
     }
-    else if (code == Coordination::Error::ZNOTEMPTY)
+    if (code == Coordination::Error::ZNOTEMPTY)
     {
         LOG_WARNING(log, "Another table is using the same path, metadata will not be deleted");
         return;
     }
-    else if (code != Coordination::Error::ZOK)
+    if (code != Coordination::Error::ZOK)
         zkutil::KeeperMultiException::check(code, ops, responses);
 
     auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);
@@ -842,7 +847,8 @@ private:
 
         auto data_file_path = temp_dir / fs::path{file_path}.filename();
         auto data_out_compressed = temp_disk->writeFile(data_file_path);
-        auto data_out = std::make_unique<CompressedWriteBuffer>(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
+        auto data_out = std::make_unique<CompressedWriteBuffer>(
+            *data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
         std::vector<std::string> data_children;
         {
             auto holder = with_retries->createRetriesControlHolder("getKeeperMapDataKeys");
@@ -883,7 +889,7 @@ private:
             }
         };
 
-        auto max_multiread_size = with_retries->getKeeperSettings().batch_size_for_keeper_multiread;
+        auto max_multiread_size = with_retries->getKeeperSettings().batch_size_for_multiread;
 
         auto keys_it = data_children.begin();
         while (keys_it != data_children.end())
@@ -929,15 +935,14 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         }
 
         auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
-        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef().max_compress_block_size;
+        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
 
         auto with_retries = std::make_shared<WithRetries>
         (
             getLogger(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
             [&] { return getClient(); },
-            WithRetries::KeeperSettings::fromContext(backup_entries_collector.getContext()),
-            backup_entries_collector.getContext()->getProcessListElement(),
-            [](WithRetries::FaultyKeeper &) {}
+            BackupKeeperSettings(backup_entries_collector.getContext()),
+            backup_entries_collector.getContext()->getProcessListElement()
         );
 
         backup_entries_collector.addBackupEntries(
@@ -966,9 +971,8 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
     (
         getLogger(fmt::format("StorageKeeperMapRestore ({})", getStorageID().getNameForLogs())),
         [&] { return getClient(); },
-        WithRetries::KeeperSettings::fromContext(restorer.getContext()),
-        restorer.getContext()->getProcessListElement(),
-        [](WithRetries::FaultyKeeper &) {}
+        BackupKeeperSettings(restorer.getContext()),
+        restorer.getContext()->getProcessListElement()
     );
 
     bool allow_non_empty_tables = restorer.isNonEmptyTableAllowed();
@@ -1022,16 +1026,16 @@ void StorageKeeperMap::restoreDataImpl(
     if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
     {
         temp_data_file.emplace(temporary_disk);
-        auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
-        copyData(*in, *out);
-        out.reset();
+        auto out = WriteBufferFromFile(temp_data_file->getAbsolutePath());
+        copyData(*in, out);
+        out.finalize();
         in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
     }
     std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
     CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
     fs::path data_path_fs(zk_data_path);
 
-    auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_keeper_multi;
+    auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_multi;
 
     Coordination::Requests create_requests;
     const auto flush_create_requests = [&]
@@ -1132,10 +1136,10 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
                 getName(),
                 getLogger(getName()),
                 ZooKeeperRetriesInfo{
-                    settings.keeper_max_retries,
-                    settings.keeper_retry_initial_backoff_ms,
-                    settings.keeper_retry_max_backoff_ms},
-                local_context->getProcessListElement()};
+                    settings[Setting::keeper_max_retries],
+                    settings[Setting::keeper_retry_initial_backoff_ms],
+                    settings[Setting::keeper_retry_max_backoff_ms],
+                    local_context->getProcessListElement()}};
 
             zk_retry.retryLoop([&]
             {
@@ -1246,10 +1250,10 @@ Chunk StorageKeeperMap::getBySerializedKeys(
         getName(),
         getLogger(getName()),
         ZooKeeperRetriesInfo{
-            settings.keeper_max_retries,
-            settings.keeper_retry_initial_backoff_ms,
-            settings.keeper_retry_max_backoff_ms},
-        local_context->getProcessListElement()};
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            local_context->getProcessListElement()}};
 
     zkutil::ZooKeeper::MultiTryGetResponse values;
     zk_retry.retryLoop([&]{
@@ -1333,7 +1337,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
     if (commands.empty())
         return;
 
-    bool strict = local_context->getSettingsRef().keeper_map_strict_mode;
+    bool strict = local_context->getSettingsRef()[Setting::keeper_map_strict_mode];
 
     chassert(commands.size() == 1);
 
@@ -1394,10 +1398,10 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                 getName(),
                 getLogger(getName()),
                 ZooKeeperRetriesInfo{
-                    settings.keeper_max_retries,
-                    settings.keeper_retry_initial_backoff_ms,
-                    settings.keeper_retry_max_backoff_ms},
-                local_context->getProcessListElement()};
+                    settings[Setting::keeper_max_retries],
+                    settings[Setting::keeper_retry_initial_backoff_ms],
+                    settings[Setting::keeper_retry_max_backoff_ms],
+                    local_context->getProcessListElement()}};
 
             Coordination::Error status;
             zk_retry.retryLoop([&]
@@ -1473,8 +1477,8 @@ StoragePtr create(const StorageFactory::Arguments & args)
             "zk_root_path: path in the Keeper where the values will be stored (required)\n"
             "keys_limit: number of keys allowed to be stored, 0 is no limit (default: 0)");
 
-    const auto zk_root_path_node = evaluateConstantExpressionAsLiteral(engine_args[0], args.getLocalContext());
-    auto zk_root_path = checkAndGetLiteralArgument<std::string>(zk_root_path_node, "zk_root_path");
+    engine_args[0] = evaluateConstantExpressionAsLiteral(engine_args[0], args.getLocalContext());
+    auto zk_root_path = checkAndGetLiteralArgument<std::string>(engine_args[0], "zk_root_path");
 
     UInt64 keys_limit = 0;
     if (engine_args.size() > 1)

@@ -8,7 +8,6 @@
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -50,20 +49,18 @@ TEST_P(ParserTest, parseQuery)
     {
         if (std::string(expected_ast).starts_with("throws"))
         {
-            EXPECT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
+            EXPECT_THROW(parseQuery(*parser, input_text.data(), input_text.data() + input_text.size(), 0, 0, 0), DB::Exception);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
         }
         else
         {
             ASTPtr ast;
-            ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0));
+            ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.data(), input_text.data() + input_text.size(), 0, 0, 0));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
             if (std::string("CREATE USER or ALTER USER query") != parser->getName()
                     && std::string("ATTACH access entity query") != parser->getName())
             {
                 ASTPtr ast_clone = ast->clone();
                 {
-                    WriteBufferFromOwnString buf;
-                    formatAST(*ast_clone, buf, false, false);
-                    String formatted_ast = buf.str();
+                    String formatted_ast = ast_clone->formatWithSecretsMultiLine();
                     EXPECT_EQ(expected_ast, formatted_ast);
                 }
 
@@ -77,9 +74,7 @@ TEST_P(ParserTest, parseQuery)
                 }
 
                 {
-                    WriteBufferFromOwnString buf;
-                    formatAST(*ast_clone, buf, false, false);
-                    String formatted_ast = buf.str();
+                    String formatted_ast = ast_clone->formatWithSecretsMultiLine();
                     EXPECT_EQ(expected_ast, formatted_ast);
                 }
             }
@@ -87,14 +82,12 @@ TEST_P(ParserTest, parseQuery)
             {
                 if (input_text.starts_with("ATTACH"))
                 {
-                    auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data)->getSalt().value_or("");
+                    auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->authentication_methods.back())->getSalt().value_or("");
                     EXPECT_TRUE(re2::RE2::FullMatch(salt, expected_ast));
                 }
                 else
                 {
-                    WriteBufferFromOwnString buf;
-                    formatAST(*ast->clone(), buf, false, false);
-                    String formatted_ast = buf.str();
+                    String formatted_ast = ast->clone()->formatWithSecretsMultiLine();
                     EXPECT_TRUE(re2::RE2::FullMatch(formatted_ast, expected_ast));
                 }
             }
@@ -102,7 +95,7 @@ TEST_P(ParserTest, parseQuery)
     }
     else
     {
-        ASSERT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
+        ASSERT_THROW(parseQuery(*parser, input_text.data(), input_text.data() + input_text.size(), 0, 0, 0), DB::Exception);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     }
 }
 
@@ -258,11 +251,11 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateDatabaseQuery, ParserTest,
             "CREATE DATABASE db\nTABLE OVERRIDE tbl\n(\n    COLUMNS\n    (\n        `created` DateTime CODEC(Delta)\n    )\n    PARTITION BY toYYYYMM(created)\n)"
         },
         {
-            "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1", 
+            "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1",
             "CREATE DATABASE db\nENGINE = Foo\nSETTINGS a = 1"
         },
         {
-            "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1, b = 2", 
+            "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1, b = 2",
             "CREATE DATABASE db\nENGINE = Foo\nSETTINGS a = 1, b = 2"
         },
         {
@@ -284,6 +277,18 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
             "CREATE USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'"
         },
         {
+            "CREATE USER user1 IDENTIFIED WITH no_password",
+            "CREATE USER user1 IDENTIFIED WITH no_password"
+        },
+        {
+            "CREATE USER user1",
+            "CREATE USER user1 IDENTIFIED WITH no_password"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123', sha256_password BY 'ghi123'",
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123', sha256_password BY 'ghi123'"
+        },
+        {
             "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'",
             "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'"
         },
@@ -292,12 +297,20 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
             "ALTER USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'"
         },
         {
+            "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123', sha256_password BY 'ghi123'",
+            "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123', sha256_password BY 'ghi123'"
+        },
+        {
             "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'",
             "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'"
         },
         {
             "CREATE USER user1 IDENTIFIED WITH sha256_password BY 'qwe123' SALT 'EFFD7F6B03B3EA68B8F86C1E91614DD50E42EB31EF7160524916444D58B5E264'",
             "throws Syntax error"
+        },
+        {
+            "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' IDENTIFIED WITH plaintext_password BY 'def123'",
+            "throws Only one identified with is permitted"
         }
 })));
 

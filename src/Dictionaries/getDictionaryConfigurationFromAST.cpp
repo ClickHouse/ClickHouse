@@ -5,9 +5,9 @@
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -56,7 +56,7 @@ String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_att
     if (const auto * literal = dict_attr->expression->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
         expression_str = convertFieldToString(literal->value);
     else
-        expression_str = queryToString(dict_attr->expression);
+        expression_str = dict_attr->expression->formatWithSecretsOneLine();
 
     return expression_str;
 }
@@ -275,7 +275,7 @@ void buildSingleAttribute(
     attribute_element->appendChild(name_element);
 
     AutoPtr<Element> type_element(doc->createElement("type"));
-    AutoPtr<Text> type(doc->createTextNode(queryToString(dict_attr->type)));
+    AutoPtr<Text> type(doc->createTextNode(dict_attr->type->formatWithSecretsOneLine()));
     type_element->appendChild(type);
     attribute_element->appendChild(type_element);
 
@@ -389,7 +389,7 @@ void buildPrimaryKeyConfiguration(
         AutoPtr<Element> type_element(doc->createElement("type"));
         id_element->appendChild(type_element);
 
-        AutoPtr<Text> type(doc->createTextNode(queryToString(dict_attr->type)));
+        AutoPtr<Text> type(doc->createTextNode(dict_attr->type->formatWithSecretsOneLine()));
         type_element->appendChild(type);
     }
     else
@@ -439,7 +439,7 @@ AttributeNameToConfiguration buildDictionaryAttributesConfiguration(
         if (!dict_attr->type)
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Dictionary attribute must has type");
 
-        AttributeConfiguration attribute_configuration {queryToString(dict_attr->type), getAttributeExpression(dict_attr)};
+        AttributeConfiguration attribute_configuration {dict_attr->type->formatWithSecretsOneLine(), getAttributeExpression(dict_attr)};
         attributes_name_to_configuration.emplace(dict_attr->name, std::move(attribute_configuration));
 
         if (std::find(key_columns.begin(), key_columns.end(), dict_attr->name) == key_columns.end())
@@ -484,8 +484,13 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             /// It's not possible to have a function in a dictionary definition since 22.10,
             /// because query must be normalized on dictionary creation. It's possible only when we load old metadata.
             /// For debug builds allow it only during server startup to avoid crash in BC check in Stress Tests.
-            assert(Context::getGlobalContextInstance()->getApplicationType() != Context::ApplicationType::SERVER
-                   || !Context::getGlobalContextInstance()->isServerCompletelyStarted());
+            if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER &&
+                Context::getGlobalContextInstance()->isServerCompletelyStarted())
+            {
+                throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                    "The dictionary definition contains unsupported elements. "
+                    "Please update the dictionary definition to remove function usage");
+            }
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
             auto function = builder->build({});
             function->prepare({});
@@ -493,7 +498,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             /// We assume that function will not take arguments and will return constant value like tcpPort or hostName
             /// Such functions will return column with size equal to input_rows_count.
             size_t input_rows_count = 1;
-            auto result = function->execute({}, function->getResultType(), input_rows_count);
+            auto result = function->execute({}, function->getResultType(), input_rows_count, /* dry_run = */ false);
 
             Field value;
             result->get(0, value);

@@ -4,12 +4,12 @@
 #include <base/constexpr_helpers.h>
 #include <base/demangle.h>
 
-#include <Common/scope_guard_safe.h>
+#include <base/MemorySanitizer.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/SharedMutex.h>
 #include <Common/SymbolIndex.h>
+#include <Common/scope_guard_safe.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -19,9 +19,10 @@
 #include <filesystem>
 #include <map>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
-#include <fmt/format.h>
 #include <libunwind.h>
+#include <fmt/format.h>
 
 #include <boost/algorithm/string/split.hpp>
 
@@ -55,22 +56,35 @@ bool shouldShowAddress(const void * addr)
 }
 }
 
+StackTrace::StackTrace()
+{
+    tryCapture();
+}
+
 void StackTrace::setShowAddresses(bool show)
 {
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
-std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
+static std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     using namespace std::string_literals;
     std::string address
         = info.si_addr == nullptr ? "NULL pointer"s : (shouldShowAddress(info.si_addr) ? fmt::format("{}", info.si_addr) : ""s);
 
     const std::string_view access =
-#if defined(__x86_64__) && !defined(OS_FREEBSD) && !defined(OS_DARWIN) && !defined(__arm__) && !defined(__powerpc__)
-        (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
+#if defined(__arm__)
+        "<not available on ARM>";
+#elif defined(__powerpc__)
+        "<not available on PowerPC>";
+#elif defined(OS_DARWIN)
+        "<not available on Darwin>";
+#elif defined(OS_FREEBSD)
+        "<not available on FreeBSD>";
+#elif !defined(__x86_64__)
+        "<not available>";
 #else
-        "";
+        (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
 #endif
 
     std::string_view message;
@@ -91,7 +105,7 @@ std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const uc
     return fmt::format("Address: {}. Access: {}. {}.", std::move(address), access, message);
 }
 
-constexpr std::string_view SigbusErrorString(int si_code)
+static constexpr std::string_view SigbusErrorString(int si_code)
 {
     switch (si_code)
     {
@@ -116,7 +130,7 @@ constexpr std::string_view SigbusErrorString(int si_code)
     }
 }
 
-constexpr std::string_view SigfpeErrorString(int si_code)
+static constexpr std::string_view SigfpeErrorString(int si_code)
 {
     switch (si_code)
     {
@@ -141,7 +155,7 @@ constexpr std::string_view SigfpeErrorString(int si_code)
     }
 }
 
-constexpr std::string_view SigillErrorString(int si_code)
+static constexpr std::string_view SigillErrorString(int si_code)
 {
     switch (si_code)
     {
@@ -428,7 +442,7 @@ struct StackTraceTriple
 template <class T>
 concept MaybeRef = std::is_same_v<T, StackTraceTriple> || std::is_same_v<T, StackTraceRefTriple>;
 
-constexpr bool operator<(const MaybeRef auto & left, const MaybeRef auto & right)
+static constexpr bool operator<(const MaybeRef auto & left, const MaybeRef auto & right)
 {
     return std::tuple{left.pointers, left.size, left.offset} < std::tuple{right.pointers, right.size, right.offset};
 }
@@ -534,7 +548,7 @@ static StackTraceCache cache;
 
 static DB::SharedMutex stacktrace_cache_mutex;
 
-String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
+static String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
 {
     const StackTraceRefTriple key{pointers, offset, size};
 

@@ -17,6 +17,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_hyperscan;
+    extern const SettingsUInt64 max_hyperscan_regexp_length;
+    extern const SettingsUInt64 max_hyperscan_regexp_total_length;
+    extern const SettingsBool reject_expensive_hyperscan_regexps;
+}
+
 /**
   * multiMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n])
@@ -54,7 +62,7 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         const auto & settings = context->getSettingsRef();
-        return std::make_shared<FunctionsMultiStringSearch>(settings.allow_hyperscan, settings.max_hyperscan_regexp_length, settings.max_hyperscan_regexp_total_length, settings.reject_expensive_hyperscan_regexps);
+        return std::make_shared<FunctionsMultiStringSearch>(settings[Setting::allow_hyperscan], settings[Setting::max_hyperscan_regexp_length], settings[Setting::max_hyperscan_regexp_total_length], settings[Setting::reject_expensive_hyperscan_regexps]);
     }
 
     FunctionsMultiStringSearch(bool allow_hyperscan_, size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_, bool reject_expensive_hyperscan_regexps_)

@@ -16,11 +16,11 @@ col5 Array(UInt64), col6 Array(Nullable(UInt64)),
 col7 Array(String), col8 Array(Nullable(String)),
 d Date) Engine = MergeTree(d, (col1, d), 8192);
 
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
+INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
 SELECT * FROM test1_00395 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8 ASC;
 
 
@@ -34,11 +34,11 @@ col5 Array(UInt64), col6 Array(Nullable(UInt64)),
 col7 Array(String), col8 Array(Nullable(String)),
 d Date) Engine = Memory;
 
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
+INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
 SELECT * FROM test1_00395 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8 ASC;
 
 SELECT '----- TinyLog engine -----';
@@ -51,11 +51,11 @@ col5 Array(UInt64), col6 Array(Nullable(UInt64)),
 col7 Array(String), col8 Array(Nullable(String)),
 d Date) Engine = TinyLog;
 
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
+INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
 SELECT * FROM test1_00395 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8 ASC;
 
 SELECT '----- Log engine -----';
@@ -68,11 +68,11 @@ col5 Array(UInt64), col6 Array(Nullable(UInt64)),
 col7 Array(String), col8 Array(Nullable(String)),
 d Date) Engine = Log;
 
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
+INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
 SELECT * FROM test1_00395 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8 ASC;
 
 SELECT '----- StripeLog engine -----';
@@ -85,11 +85,11 @@ col5 Array(UInt64), col6 Array(Nullable(UInt64)),
 col7 Array(String), col8 Array(Nullable(String)),
 d Date) Engine = StripeLog;
 
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01');
-INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
+INSERT INTO test1_00395 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01'),
+                               (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
 SELECT * FROM test1_00395 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8 ASC;
 
 
@@ -220,11 +220,11 @@ SELECT '----- variable arrays -----';
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Array(Nullable(UInt64))) Engine=TinyLog;
-INSERT INTO test1_00395(col1) VALUES([2,3,7,NULL]);
-INSERT INTO test1_00395(col1) VALUES([NULL,3,7,4]);
-INSERT INTO test1_00395(col1) VALUES([2,NULL,7,NULL]);
-INSERT INTO test1_00395(col1) VALUES([2,3,NULL,4]);
-INSERT INTO test1_00395(col1) VALUES([NULL,NULL,NULL,NULL]);
+INSERT INTO test1_00395(col1) VALUES([2,3,7,NULL]),
+                                    ([NULL,3,7,4]),
+                                    ([2,NULL,7,NULL]),
+                                    ([2,3,NULL,4]),
+                                    ([NULL,NULL,NULL,NULL]);
 
 SELECT arrayElement(col1, 1) FROM test1_00395;
 SELECT arrayElement(col1, 2) FROM test1_00395;
@@ -233,11 +233,11 @@ SELECT arrayElement(col1, 4) FROM test1_00395;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Array(Nullable(String))) Engine=TinyLog;
-INSERT INTO test1_00395(col1) VALUES(['a','bc','def',NULL]);
-INSERT INTO test1_00395(col1) VALUES([NULL,'bc','def','ghij']);
-INSERT INTO test1_00395(col1) VALUES(['a',NULL,'def',NULL]);
-INSERT INTO test1_00395(col1) VALUES(['a','bc',NULL,'ghij']);
-INSERT INTO test1_00395(col1) VALUES([NULL,NULL,NULL,NULL]);
+INSERT INTO test1_00395(col1) VALUES(['a','bc','def',NULL]),
+                                    ([NULL,'bc','def','ghij']),
+                                    (['a',NULL,'def',NULL]),
+                                    (['a','bc',NULL,'ghij']),
+                                    ([NULL,NULL,NULL,NULL]);
 
 SELECT arrayElement(col1, 1) FROM test1_00395;
 SELECT arrayElement(col1, 2) FROM test1_00395;
@@ -246,21 +246,21 @@ SELECT arrayElement(col1, 4) FROM test1_00395;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Array(Nullable(UInt64)), col2 UInt64) Engine=TinyLog;
-INSERT INTO test1_00395(col1,col2) VALUES([2,3,7,NULL], 1);
-INSERT INTO test1_00395(col1,col2) VALUES([NULL,3,7,4], 2);
-INSERT INTO test1_00395(col1,col2) VALUES([2,NULL,7,NULL], 3);
-INSERT INTO test1_00395(col1,col2) VALUES([2,3,NULL,4],4);
-INSERT INTO test1_00395(col1,col2) VALUES([NULL,NULL,NULL,NULL],3);
+INSERT INTO test1_00395(col1,col2) VALUES([2,3,7,NULL], 1),
+                                         ([NULL,3,7,4], 2),
+                                         ([2,NULL,7,NULL], 3),
+                                         ([2,3,NULL,4],4),
+                                         ([NULL,NULL,NULL,NULL],3);
 
 SELECT arrayElement(col1,col2) FROM test1_00395;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Array(Nullable(String)), col2 UInt64) Engine=TinyLog;
-INSERT INTO test1_00395(col1,col2) VALUES(['a','bc','def',NULL], 1);
-INSERT INTO test1_00395(col1,col2) VALUES([NULL,'bc','def','ghij'], 2);
-INSERT INTO test1_00395(col1,col2) VALUES(['a',NULL,'def','ghij'], 3);
-INSERT INTO test1_00395(col1,col2) VALUES(['a','bc',NULL,'ghij'],4);
-INSERT INTO test1_00395(col1,col2) VALUES([NULL,NULL,NULL,NULL],3);
+INSERT INTO test1_00395(col1,col2) VALUES(['a','bc','def',NULL], 1),
+                                         ([NULL,'bc','def','ghij'], 2),
+                                         (['a',NULL,'def','ghij'], 3),
+                                         (['a','bc',NULL,'ghij'],4),
+                                         ([NULL,NULL,NULL,NULL],3);
 
 SELECT arrayElement(col1,col2) FROM test1_00395;
 
@@ -307,11 +307,11 @@ SELECT '----- variable arrays -----';
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Array(Nullable(UInt64))) Engine=TinyLog;
-INSERT INTO test1_00395(col1) VALUES([2,3,7,NULL]);
-INSERT INTO test1_00395(col1) VALUES([NULL,3,7,4]);
-INSERT INTO test1_00395(col1) VALUES([2,NULL,7,NULL]);
-INSERT INTO test1_00395(col1) VALUES([2,3,NULL,4]);
-INSERT INTO test1_00395(col1) VALUES([NULL,NULL,NULL,NULL]);
+INSERT INTO test1_00395(col1) VALUES([2,3,7,NULL]),
+                                    ([NULL,3,7,4]),
+                                    ([2,NULL,7,NULL]),
+                                    ([2,3,NULL,4]),
+                                    ([NULL,NULL,NULL,NULL]);
 
 SELECT has(col1, 2) FROM test1_00395;
 SELECT has(col1, 3) FROM test1_00395;
@@ -322,11 +322,11 @@ SELECT has(col1, NULL) FROM test1_00395;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Array(Nullable(String))) Engine=TinyLog;
-INSERT INTO test1_00395(col1) VALUES(['a','bc','def',NULL]);
-INSERT INTO test1_00395(col1) VALUES([NULL,'bc','def','ghij']);
-INSERT INTO test1_00395(col1) VALUES(['a',NULL,'def',NULL]);
-INSERT INTO test1_00395(col1) VALUES(['a','bc',NULL,'ghij']);
-INSERT INTO test1_00395(col1) VALUES([NULL,NULL,NULL,NULL]);
+INSERT INTO test1_00395(col1) VALUES(['a','bc','def',NULL]),
+                                    ([NULL,'bc','def','ghij']),
+                                    (['a',NULL,'def',NULL]),
+                                    (['a','bc',NULL,'ghij']),
+                                    ([NULL,NULL,NULL,NULL]);
 
 SELECT has(col1, 'a') FROM test1_00395;
 SELECT has(col1, 'bc') FROM test1_00395;
@@ -336,39 +336,39 @@ SELECT has(col1,  NULL) FROM test1_00395;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Array(Nullable(UInt64)), col2 UInt64) Engine=TinyLog;
-INSERT INTO test1_00395(col1,col2) VALUES([2,3,7,NULL], 2);
-INSERT INTO test1_00395(col1,col2) VALUES([NULL,3,7,4], 3);
-INSERT INTO test1_00395(col1,col2) VALUES([2,NULL,7,NULL], 7);
-INSERT INTO test1_00395(col1,col2) VALUES([2,3,NULL,4],5);
+INSERT INTO test1_00395(col1,col2) VALUES([2,3,7,NULL], 2),
+                                         ([NULL,3,7,4], 3),
+                                         ([2,NULL,7,NULL], 7),
+                                         ([2,3,NULL,4],5);
 
 SELECT has(col1,col2) FROM test1_00395;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Array(Nullable(UInt64)), col2 Nullable(UInt64)) Engine=TinyLog;
-INSERT INTO test1_00395(col1,col2) VALUES([2,3,7,NULL], 2);
-INSERT INTO test1_00395(col1,col2) VALUES([NULL,3,7,4], 3);
-INSERT INTO test1_00395(col1,col2) VALUES([2,NULL,7,NULL], 7);
-INSERT INTO test1_00395(col1,col2) VALUES([2,3,NULL,4],5);
-INSERT INTO test1_00395(col1,col2) VALUES([NULL,NULL,NULL,NULL],NULL);
+INSERT INTO test1_00395(col1,col2) VALUES([2,3,7,NULL], 2),
+                                         ([NULL,3,7,4], 3),
+                                         ([2,NULL,7,NULL], 7),
+                                         ([2,3,NULL,4],5),
+                                         ([NULL,NULL,NULL,NULL],NULL);
 
 SELECT has(col1,col2) FROM test1_00395;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Array(Nullable(String)), col2 String) Engine=TinyLog;
-INSERT INTO test1_00395(col1,col2) VALUES(['a','bc','def',NULL], 'a');
-INSERT INTO test1_00395(col1,col2) VALUES([NULL,'bc','def','ghij'], 'bc');
-INSERT INTO test1_00395(col1,col2) VALUES(['a',NULL,'def','ghij'], 'def');
-INSERT INTO test1_00395(col1,col2) VALUES(['a','bc',NULL,'ghij'], 'ghij');
+INSERT INTO test1_00395(col1,col2) VALUES(['a','bc','def',NULL], 'a'),
+                                         ([NULL,'bc','def','ghij'], 'bc'),
+                                         (['a',NULL,'def','ghij'], 'def'),
+                                         (['a','bc',NULL,'ghij'], 'ghij');
 
 SELECT has(col1,col2) FROM test1_00395;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Array(Nullable(String)), col2 Nullable(String)) Engine=TinyLog;
-INSERT INTO test1_00395(col1,col2) VALUES(['a','bc','def',NULL], 'a');
-INSERT INTO test1_00395(col1,col2) VALUES([NULL,'bc','def','ghij'], 'bc');
-INSERT INTO test1_00395(col1,col2) VALUES(['a',NULL,'def','ghij'], 'def');
-INSERT INTO test1_00395(col1,col2) VALUES(['a','bc',NULL,'ghij'], 'ghij');
-INSERT INTO test1_00395(col1,col2) VALUES([NULL,NULL,NULL,NULL], NULL);
+INSERT INTO test1_00395(col1,col2) VALUES(['a','bc','def',NULL], 'a'),
+                                         ([NULL,'bc','def','ghij'], 'bc'),
+                                         (['a',NULL,'def','ghij'], 'def'),
+                                         (['a','bc',NULL,'ghij'], 'ghij'),
+                                         ([NULL,NULL,NULL,NULL], NULL);
 
 SELECT has(col1,col2) FROM test1_00395;
 
@@ -376,124 +376,124 @@ SELECT '----- Aggregation -----';
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Nullable(String), col2 Nullable(UInt8), col3 String) ENGINE=TinyLog;
-INSERT INTO test1_00395(col1,col2,col3) VALUES('A', 0, 'ABCDEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('A', 0, 'BACDEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('A', 1, 'BCADEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('A', 1, 'BCDAEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('B', 1, 'BCDEAFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('B', 1, 'BCDEFAGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('B', 1, 'BCDEFGAH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('B', 1, 'BCDEFGHA');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('C', 1, 'ACBDEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('C', NULL, 'ACDBEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('C', NULL, 'ACDEBFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('C', NULL, 'ACDEFBGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES(NULL, 1, 'ACDEFGBH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES(NULL, NULL, 'ACDEFGHB');
+INSERT INTO test1_00395(col1,col2,col3) VALUES('A', 0, 'ABCDEFGH'),
+                                              ('A', 0, 'BACDEFGH'),
+                                              ('A', 1, 'BCADEFGH'),
+                                              ('A', 1, 'BCDAEFGH'),
+                                              ('B', 1, 'BCDEAFGH'),
+                                              ('B', 1, 'BCDEFAGH'),
+                                              ('B', 1, 'BCDEFGAH'),
+                                              ('B', 1, 'BCDEFGHA'),
+                                              ('C', 1, 'ACBDEFGH'),
+                                              ('C', NULL, 'ACDBEFGH'),
+                                              ('C', NULL, 'ACDEBFGH'),
+                                              ('C', NULL, 'ACDEFBGH'),
+                                              (NULL, 1, 'ACDEFGBH'),
+                                              (NULL, NULL, 'ACDEFGHB');
 
 SELECT col1, col2, count() FROM test1_00395 GROUP BY col1, col2 ORDER BY col1, col2;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 String, col2 Nullable(UInt8), col3 String) ENGINE=TinyLog;
-INSERT INTO test1_00395(col1,col2,col3) VALUES('A', 0, 'ABCDEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('A', 0, 'BACDEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('A', 1, 'BCADEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('A', 1, 'BCDAEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('B', 1, 'BCDEAFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('B', 1, 'BCDEFAGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('B', 1, 'BCDEFGAH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('B', 1, 'BCDEFGHA');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('C', 1, 'ACBDEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('C', NULL, 'ACDBEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('C', NULL, 'ACDEBFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES('C', NULL, 'ACDEFBGH');
+INSERT INTO test1_00395(col1,col2,col3) VALUES('A', 0, 'ABCDEFGH'),
+                                              ('A', 0, 'BACDEFGH'),
+                                              ('A', 1, 'BCADEFGH'),
+                                              ('A', 1, 'BCDAEFGH'),
+                                              ('B', 1, 'BCDEAFGH'),
+                                              ('B', 1, 'BCDEFAGH'),
+                                              ('B', 1, 'BCDEFGAH'),
+                                              ('B', 1, 'BCDEFGHA'),
+                                              ('C', 1, 'ACBDEFGH'),
+                                              ('C', NULL, 'ACDBEFGH'),
+                                              ('C', NULL, 'ACDEBFGH'),
+                                              ('C', NULL, 'ACDEFBGH');
 
 SELECT col1, col2, count() FROM test1_00395 GROUP BY col1, col2 ORDER BY col1, col2;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Nullable(String), col2 String) ENGINE=TinyLog;
-INSERT INTO test1_00395(col1,col2) VALUES('A', 'ABCDEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES('A', 'BACDEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES('A', 'BCADEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES('A', 'BCDAEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES('B', 'BCDEAFGH');
-INSERT INTO test1_00395(col1,col2) VALUES('B', 'BCDEFAGH');
-INSERT INTO test1_00395(col1,col2) VALUES('B', 'BCDEFGAH');
-INSERT INTO test1_00395(col1,col2) VALUES('B', 'BCDEFGHA');
-INSERT INTO test1_00395(col1,col2) VALUES('C', 'ACBDEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES('C', 'ACDBEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES('C', 'ACDEBFGH');
-INSERT INTO test1_00395(col1,col2) VALUES('C', 'ACDEFBGH');
-INSERT INTO test1_00395(col1,col2) VALUES(NULL, 'ACDEFGBH');
-INSERT INTO test1_00395(col1,col2) VALUES(NULL, 'ACDEFGHB');
+INSERT INTO test1_00395(col1,col2) VALUES('A', 'ABCDEFGH'),
+                                         ('A', 'BACDEFGH'),
+                                         ('A', 'BCADEFGH'),
+                                         ('A', 'BCDAEFGH'),
+                                         ('B', 'BCDEAFGH'),
+                                         ('B', 'BCDEFAGH'),
+                                         ('B', 'BCDEFGAH'),
+                                         ('B', 'BCDEFGHA'),
+                                         ('C', 'ACBDEFGH'),
+                                         ('C', 'ACDBEFGH'),
+                                         ('C', 'ACDEBFGH'),
+                                         ('C', 'ACDEFBGH'),
+                                         (NULL, 'ACDEFGBH'),
+                                         (NULL, 'ACDEFGHB');
 
 SELECT col1, count() FROM test1_00395 GROUP BY col1 ORDER BY col1;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Nullable(UInt8), col2 String) ENGINE=TinyLog;
-INSERT INTO test1_00395(col1,col2) VALUES(0, 'ABCDEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES(0, 'BACDEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES(1, 'BCADEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES(1, 'BCDAEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES(1, 'BCDEAFGH');
-INSERT INTO test1_00395(col1,col2) VALUES(1, 'BCDEFAGH');
-INSERT INTO test1_00395(col1,col2) VALUES(1, 'BCDEFGAH');
-INSERT INTO test1_00395(col1,col2) VALUES(1, 'BCDEFGHA');
-INSERT INTO test1_00395(col1,col2) VALUES(1, 'ACBDEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES(NULL, 'ACDBEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES(NULL, 'ACDEBFGH');
-INSERT INTO test1_00395(col1,col2) VALUES(NULL, 'ACDEFBGH');
+INSERT INTO test1_00395(col1,col2) VALUES(0, 'ABCDEFGH'),
+                                         (0, 'BACDEFGH'),
+                                         (1, 'BCADEFGH'),
+                                         (1, 'BCDAEFGH'),
+                                         (1, 'BCDEAFGH'),
+                                         (1, 'BCDEFAGH'),
+                                         (1, 'BCDEFGAH'),
+                                         (1, 'BCDEFGHA'),
+                                         (1, 'ACBDEFGH'),
+                                         (NULL, 'ACDBEFGH'),
+                                         (NULL, 'ACDEBFGH'),
+                                         (NULL, 'ACDEFBGH');
 
 SELECT col1, count() FROM test1_00395 GROUP BY col1 ORDER BY col1;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Nullable(UInt64), col2 UInt64, col3 String) ENGINE=TinyLog;
-INSERT INTO test1_00395(col1,col2,col3) VALUES(0, 2, 'ABCDEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES(0, 3, 'BACDEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES(1, 5, 'BCADEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES(1, 2, 'BCDAEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES(1, 3, 'BCDEAFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES(1, 5, 'BCDEFAGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES(1, 2, 'BCDEFGAH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES(1, 3, 'BCDEFGHA');
-INSERT INTO test1_00395(col1,col2,col3) VALUES(1, 5, 'ACBDEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES(NULL, 2, 'ACDBEFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES(NULL, 3, 'ACDEBFGH');
-INSERT INTO test1_00395(col1,col2,col3) VALUES(NULL, 3, 'ACDEFBGH');
+INSERT INTO test1_00395(col1,col2,col3) VALUES(0, 2, 'ABCDEFGH'),
+                                              (0, 3, 'BACDEFGH'),
+                                              (1, 5, 'BCADEFGH'),
+                                              (1, 2, 'BCDAEFGH'),
+                                              (1, 3, 'BCDEAFGH'),
+                                              (1, 5, 'BCDEFAGH'),
+                                              (1, 2, 'BCDEFGAH'),
+                                              (1, 3, 'BCDEFGHA'),
+                                              (1, 5, 'ACBDEFGH'),
+                                              (NULL, 2, 'ACDBEFGH'),
+                                              (NULL, 3, 'ACDEBFGH'),
+                                              (NULL, 3, 'ACDEFBGH');
 
 SELECT col1, col2, count() FROM test1_00395 GROUP BY col1, col2 ORDER BY col1, col2;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Nullable(UInt64), col2 UInt64, col3 Nullable(UInt64), col4 String) ENGINE=TinyLog;
-INSERT INTO test1_00395(col1,col2,col3,col4) VALUES(0, 2, 1, 'ABCDEFGH');
-INSERT INTO test1_00395(col1,col2,col3,col4) VALUES(0, 3, NULL, 'BACDEFGH');
-INSERT INTO test1_00395(col1,col2,col3,col4) VALUES(1, 5, 1, 'BCADEFGH');
-INSERT INTO test1_00395(col1,col2,col3,col4) VALUES(1, 2, NULL, 'BCDAEFGH');
-INSERT INTO test1_00395(col1,col2,col3,col4) VALUES(1, 3, 1, 'BCDEAFGH');
-INSERT INTO test1_00395(col1,col2,col3,col4) VALUES(1, 5, NULL, 'BCDEFAGH');
-INSERT INTO test1_00395(col1,col2,col3,col4) VALUES(1, 2, 1, 'BCDEFGAH');
-INSERT INTO test1_00395(col1,col2,col3,col4) VALUES(1, 3, NULL, 'BCDEFGHA');
-INSERT INTO test1_00395(col1,col2,col3,col4) VALUES(1, 5, 1, 'ACBDEFGH');
-INSERT INTO test1_00395(col1,col2,col3,col4) VALUES(NULL, 2, NULL, 'ACDBEFGH');
-INSERT INTO test1_00395(col1,col2,col3,col4) VALUES(NULL, 3, 1, 'ACDEBFGH');
-INSERT INTO test1_00395(col1,col2,col3,col4) VALUES(NULL, 3, NULL, 'ACDEFBGH');
+INSERT INTO test1_00395(col1,col2,col3,col4) VALUES(0, 2, 1, 'ABCDEFGH'),
+                                                   (0, 3, NULL, 'BACDEFGH'),
+                                                   (1, 5, 1, 'BCADEFGH'),
+                                                   (1, 2, NULL, 'BCDAEFGH'),
+                                                   (1, 3, 1, 'BCDEAFGH'),
+                                                   (1, 5, NULL, 'BCDEFAGH'),
+                                                   (1, 2, 1, 'BCDEFGAH'),
+                                                   (1, 3, NULL, 'BCDEFGHA'),
+                                                   (1, 5, 1, 'ACBDEFGH'),
+                                                   (NULL, 2, NULL, 'ACDBEFGH'),
+                                                   (NULL, 3, 1, 'ACDEBFGH'),
+                                                   (NULL, 3, NULL, 'ACDEFBGH');
 
 SELECT col1, col2, col3, count() FROM test1_00395 GROUP BY col1, col2, col3 ORDER BY col1, col2, col3;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Array(Nullable(UInt8)), col2 String) ENGINE=TinyLog;
-INSERT INTO test1_00395(col1,col2) VALUES([0], 'ABCDEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES([0], 'BACDEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES([1], 'BCADEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES([1], 'BCDAEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES([1], 'BCDEAFGH');
-INSERT INTO test1_00395(col1,col2) VALUES([1], 'BCDEFAGH');
-INSERT INTO test1_00395(col1,col2) VALUES([1], 'BCDEFGAH');
-INSERT INTO test1_00395(col1,col2) VALUES([1], 'BCDEFGHA');
-INSERT INTO test1_00395(col1,col2) VALUES([1], 'ACBDEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES([NULL], 'ACDBEFGH');
-INSERT INTO test1_00395(col1,col2) VALUES([NULL], 'ACDEBFGH');
-INSERT INTO test1_00395(col1,col2) VALUES([NULL], 'ACDEFBGH');
+INSERT INTO test1_00395(col1,col2) VALUES([0], 'ABCDEFGH'),
+                                         ([0], 'BACDEFGH'),
+                                         ([1], 'BCADEFGH'),
+                                         ([1], 'BCDAEFGH'),
+                                         ([1], 'BCDEAFGH'),
+                                         ([1], 'BCDEFAGH'),
+                                         ([1], 'BCDEFGAH'),
+                                         ([1], 'BCDEFGHA'),
+                                         ([1], 'ACBDEFGH'),
+                                         ([NULL], 'ACDBEFGH'),
+                                         ([NULL], 'ACDEBFGH'),
+                                         ([NULL], 'ACDEFBGH');
 
 SELECT col1, count() FROM test1_00395 GROUP BY col1 ORDER BY col1;
 

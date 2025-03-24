@@ -50,15 +50,13 @@ std::optional<size_t> SingleValueDataBase::getSmallestIndex(const IColumn & colu
                 index = i;
         return {index};
     }
-    else
-    {
-        constexpr IColumn::PermutationSortDirection direction = IColumn::PermutationSortDirection::Ascending;
-        constexpr IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
-        IColumn::Permutation permutation;
-        constexpr UInt64 limit = 1;
-        column.getPermutation(direction, stability, limit, nan_null_direction_hint, permutation);
-        return {permutation[0]};
-    }
+
+    constexpr IColumn::PermutationSortDirection direction = IColumn::PermutationSortDirection::Ascending;
+    constexpr IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
+    IColumn::Permutation permutation;
+    constexpr UInt64 limit = 1;
+    column.getPermutation(direction, stability, limit, nan_null_direction_hint, permutation);
+    return {permutation[0]};
 }
 
 std::optional<size_t> SingleValueDataBase::getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const
@@ -77,15 +75,13 @@ std::optional<size_t> SingleValueDataBase::getGreatestIndex(const IColumn & colu
                 index = i;
         return {index};
     }
-    else
-    {
-        constexpr IColumn::PermutationSortDirection direction = IColumn::PermutationSortDirection::Descending;
-        constexpr IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
-        IColumn::Permutation permutation;
-        constexpr UInt64 limit = 1;
-        column.getPermutation(direction, stability, limit, nan_null_direction_hint, permutation);
-        return {permutation[0]};
-    }
+
+    constexpr IColumn::PermutationSortDirection direction = IColumn::PermutationSortDirection::Descending;
+    constexpr IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
+    IColumn::Permutation permutation;
+    constexpr UInt64 limit = 1;
+    column.getPermutation(direction, stability, limit, nan_null_direction_hint, permutation);
+    return {permutation[0]};
 }
 
 std::optional<size_t> SingleValueDataBase::getSmallestIndexNotNullIf(
@@ -163,7 +159,7 @@ void SingleValueDataBase::setGreatestNotNullIf(
 }
 
 template <typename T>
-void SingleValueDataFixed<T>::insertResultInto(IColumn & to) const
+void SingleValueDataFixed<T>::insertResultInto(IColumn & to, const DataTypePtr &) const
 {
     /// value is set to 0 in the constructor (also with JIT), so no need to check has_data()
     chassert(has() || value == T{});
@@ -247,8 +243,7 @@ bool SingleValueDataFixed<T>::setIfSmaller(const SingleValueDataFixed<T> & to, A
         set(to, arena);
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 template <typename T>
@@ -259,8 +254,7 @@ bool SingleValueDataFixed<T>::setIfGreater(const SingleValueDataFixed<T> & to, A
         set(to, arena);
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 template <typename T>
@@ -271,8 +265,7 @@ bool SingleValueDataFixed<T>::setIfSmaller(const IColumn & column, size_t row_nu
         set(column, row_num, arena);
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 template <typename T>
@@ -283,8 +276,7 @@ bool SingleValueDataFixed<T>::setIfGreater(const IColumn & column, size_t row_nu
         set(column, row_num, arena);
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 template <typename T>
@@ -294,7 +286,7 @@ void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_beg
         return;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt = findExtremeMin(vec.getData().data(), row_begin, row_end);
         if (opt.has_value())
@@ -314,7 +306,7 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
         return;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt = findExtremeMax(vec.getData().data(), row_begin, row_end);
         if (opt.has_value())
@@ -339,7 +331,7 @@ void SingleValueDataFixed<T>::setSmallestNotNullIf(
     chassert(if_map || null_map);
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -383,7 +375,7 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
     chassert(if_map || null_map);
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -422,7 +414,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         return findExtremeMinIndex(vec.getData().data(), row_begin, row_end);
     }
@@ -443,7 +435,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         return findExtremeMaxIndex(vec.getData().data(), row_begin, row_end);
     }
@@ -465,8 +457,9 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
+    const auto & vec_data = vec.getData();
 
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -476,7 +469,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 return opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (!null_map[i] && vec[i] == *opt)
+                if (!null_map[i] && vec_data[i] == *opt)
                     return {i};
             }
         }
@@ -487,7 +480,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 return opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (if_map[i] && vec[i] == *opt)
+                if (if_map[i] && vec_data[i] == *opt)
                     return {i};
             }
         }
@@ -499,7 +492,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 return std::nullopt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (final_flags[i] && vec[i] == *opt)
+                if (final_flags[i] && vec_data[i] == *opt)
                     return {i};
             }
         }
@@ -514,7 +507,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
             return std::nullopt;
 
         for (size_t i = index + 1; i < row_end; i++)
-            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec[i] < vec[index]))
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec_data[i] < vec_data[index]))
                 index = i;
         return {index};
     }
@@ -528,8 +521,9 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
+    const auto & vec_data = vec.getData();
 
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -539,35 +533,34 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
                 return opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (!null_map[i] && vec[i] == *opt)
+                if (!null_map[i] && vec_data[i] == *opt)
                     return {i};
             }
             return opt;
         }
-        else if (!null_map)
+        if (!null_map)
         {
             opt = findExtremeMaxIf(vec.getData().data(), if_map, row_begin, row_end);
             if (!opt.has_value())
                 return opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (if_map[i] && vec[i] == *opt)
+                if (if_map[i] && vec_data[i] == *opt)
                     return {i};
             }
             return opt;
         }
-        else
+
+        auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
+        opt = findExtremeMaxIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
+        if (!opt.has_value())
+            return std::nullopt;
+        for (size_t i = row_begin; i < row_end; i++)
         {
-            auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
-            opt = findExtremeMaxIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
-            if (!opt.has_value())
-                return std::nullopt;
-            for (size_t i = row_begin; i < row_end; i++)
-            {
-                if (final_flags[i] && vec[i] == *opt)
-                    return {i};
-            }
+            if (final_flags[i] && vec_data[i] == *opt)
+                return {i};
         }
+
         UNREACHABLE();
     }
     else
@@ -579,7 +572,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
             return std::nullopt;
 
         for (size_t i = index + 1; i < row_end; i++)
-            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec[i] > vec[index]))
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec_data[i] > vec_data[index]))
                 index = i;
         return {index};
     }
@@ -878,9 +871,9 @@ bool SingleValueDataNumeric<T>::has() const
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::insertResultInto(IColumn & to) const
+void SingleValueDataNumeric<T>::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
-    return memory.get().insertResultInto(to);
+    return memory.get().insertResultInto(to, type);
 }
 
 template <typename T>
@@ -1111,7 +1104,7 @@ void SingleValueDataString::changeImpl(StringRef value, Arena * arena)
     }
 }
 
-void SingleValueDataString::insertResultInto(DB::IColumn & to) const
+void SingleValueDataString::insertResultInto(DB::IColumn & to, const DataTypePtr &) const
 {
     if (has())
         StringValueCompatibility::insertDataWithTerminatingZero(assert_cast<ColumnString &>(to), getData(), size);
@@ -1218,8 +1211,7 @@ bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num,
         set(column, row_num, arena);
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Arena * arena)
@@ -1230,8 +1222,7 @@ bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Aren
         changeImpl(to.getStringRef(), arena);
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 
@@ -1243,8 +1234,7 @@ bool SingleValueDataString::setIfGreater(const IColumn & column, size_t row_num,
         set(column, row_num, arena);
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Arena * arena)
@@ -1255,16 +1245,15 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
         changeImpl(to.getStringRef(), arena);
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
-void SingleValueDataGeneric::insertResultInto(IColumn & to) const
+void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
     if (has())
         to.insert(value);
     else
-        to.insertDefault();
+        type->insertDefaultInto(to);
 }
 
 void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization) const
@@ -1317,18 +1306,15 @@ bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num
         set(column, row_num, arena);
         return true;
     }
-    else
+
+    Field new_value;
+    column.get(row_num, new_value);
+    if (new_value < value)
     {
-        Field new_value;
-        column.get(row_num, new_value);
-        if (new_value < value)
-        {
-            value = new_value;
-            return true;
-        }
-        else
-            return false;
+        value = new_value;
+        return true;
     }
+    return false;
 }
 
 bool SingleValueDataGeneric::setIfSmaller(const SingleValueDataBase & other, Arena *)
@@ -1339,8 +1325,7 @@ bool SingleValueDataGeneric::setIfSmaller(const SingleValueDataBase & other, Are
         value = to.value;
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
@@ -1350,18 +1335,15 @@ bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num
         set(column, row_num, arena);
         return true;
     }
-    else
+
+    Field new_value;
+    column.get(row_num, new_value);
+    if (new_value > value)
     {
-        Field new_value;
-        column.get(row_num, new_value);
-        if (new_value > value)
-        {
-            value = new_value;
-            return true;
-        }
-        else
-            return false;
+        value = new_value;
+        return true;
     }
+    return false;
 }
 
 bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Arena *)
@@ -1372,8 +1354,7 @@ bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Are
         value = to.value;
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBaseMemoryBlock & data)

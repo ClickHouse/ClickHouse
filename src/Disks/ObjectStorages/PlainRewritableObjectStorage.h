@@ -4,20 +4,21 @@
 #include <string>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/ObjectStorageKeyGenerator.h>
-#include "CommonPathPrefixKeyGenerator.h"
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
+
 template <typename BaseObjectStorage>
 class PlainRewritableObjectStorage : public BaseObjectStorage
 {
 public:
-    template <class... Args>
+    template <typename... Args>
     explicit PlainRewritableObjectStorage(MetadataStorageMetrics && metadata_storage_metrics_, Args &&... args)
         : BaseObjectStorage(std::forward<Args>(args)...)
         , metadata_storage_metrics(std::move(metadata_storage_metrics_))

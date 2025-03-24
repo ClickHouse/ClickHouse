@@ -4,6 +4,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Common/SipHash.h>
 #include <Interpreters/Context_fwd.h>
 
 #include "config.h"
@@ -34,6 +35,9 @@ namespace JSONBuilder
 }
 
 class SortDescription;
+
+struct SerializedSetsRegistry;
+struct DeserializedSetsRegistry;
 
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
@@ -90,6 +94,8 @@ public:
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
+        size_t getHash() const;
+        void updateHash(SipHash & hash_state) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -113,13 +119,10 @@ public:
 
     const Nodes & getNodes() const { return nodes; }
     static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
-    const NodeRawConstPtrs & getOutputs() const { return outputs; }
-    /** Output nodes can contain any column returned from DAG.
-      * You may manually change it if needed.
-      */
-    NodeRawConstPtrs & getOutputs() { return outputs; }
-
     const NodeRawConstPtrs & getInputs() const { return inputs; }
+    const NodeRawConstPtrs & getOutputs() const { return outputs; }
+    /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
+    NodeRawConstPtrs & getOutputs() { return outputs; }
 
     NamesAndTypesList getRequiredColumns() const;
     Names getRequiredColumnsNames() const;
@@ -129,6 +132,9 @@ public:
     Names getNames() const;
     std::string dumpNames() const;
     std::string dumpDAG() const;
+
+    void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
+    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
@@ -282,14 +288,13 @@ public:
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
-    void addMaterializingOutputActions();
+    void addMaterializingOutputActions(bool materialize_sparse);
 
     /// Apply materialize() function to node. Result node has the same name.
-    const Node & materializeNode(const Node & node);
+    const Node & materializeNode(const Node & node, bool materialize_sparse = true);
 
     enum class MatchColumnsMode : uint8_t
     {
-        /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
         Position,
         /// Find columns in source by their names. Allow excessive columns in source.
         Name,
@@ -299,14 +304,14 @@ public:
     /// It is needed to convert result from different sources to the same structure, e.g. for UNION query.
     /// Conversion should be possible with only usage of CAST function and renames.
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
-    /// @param add_casted_columns - Create new columns with converted values instead of replacing original.
-    /// @param new_names - Output parameter for new column names when add_casted_columns is used.
+    /// @param add_cast_columns - Create new columns with converted values instead of replacing original.
+    /// @param new_names - Output parameter for new column names when add_cast_columns is used.
     static ActionsDAG makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
         bool ignore_constant_values = false,
-        bool add_casted_columns = false,
+        bool add_cast_columns = false,
         NameToNameMap * new_names = nullptr);
 
     /// Create expression which add const column and then materialize it.
@@ -340,7 +345,7 @@ public:
     SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false, bool avoid_duplicate_inputs = false) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
-    SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
+    SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns) const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
     /// Outputs of initial actions must contain column_name.
@@ -442,6 +447,9 @@ public:
         NodeRawConstPtrs nodes,
         const std::unordered_set<const Node *> & allowed_inputs);
 
+    UInt64 getHash() const;
+    void updateHash(SipHash & hash_state) const;
+
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
 
@@ -486,18 +494,6 @@ class FindOriginalNodeForOutputName
 public:
     explicit FindOriginalNodeForOutputName(const ActionsDAG & actions);
     const ActionsDAG::Node * find(const String & output_name);
-
-private:
-    NameToNodeIndex index;
-};
-
-class FindAliasForInputName
-{
-    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
-
-public:
-    explicit FindAliasForInputName(const ActionsDAG & actions);
-    const ActionsDAG::Node * find(const String & name);
 
 private:
     NameToNodeIndex index;

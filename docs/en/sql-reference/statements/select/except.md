@@ -1,13 +1,20 @@
 ---
-slug: /en/sql-reference/statements/select/except
-sidebar_label: EXCEPT
+description: 'Documentation for EXCEPT Clause'
+sidebar_label: 'EXCEPT'
+slug: /sql-reference/statements/select/except
+title: 'EXCEPT Clause'
 ---
 
 # EXCEPT Clause
 
-The `EXCEPT` clause returns only those rows that result from the first query without the second. The queries must match the number of columns, order, and type. The result of `EXCEPT` can contain duplicate rows.
+The `EXCEPT` clause returns only those rows that result from the first query without the second. 
 
-Multiple `EXCEPT` statements are executed left to right if parenthesis are not specified. The `EXCEPT` operator has the same priority as the `UNION` clause and lower priority than the `INTERSECT` clause.
+- Both queries must have the same number of columns in the same order and data type.
+- The result of `EXCEPT` can contain duplicate rows. Use `EXCEPT DISTINCT` if this is not desirable.
+- Multiple `EXCEPT` statements are executed from left to right if parentheses are not specified. 
+- The `EXCEPT` operator has the same priority as the `UNION` clause and lower priority than the `INTERSECT` clause.
+
+## Syntax {#syntax}
 
 ``` sql
 SELECT column1 [, column2 ]
@@ -19,18 +26,33 @@ EXCEPT
 SELECT column1 [, column2 ]
 FROM table2
 [WHERE condition]
-
 ```
-The condition could be any expression based on your requirements.
+The condition could be any expression based on your requirements. 
 
-## Examples
+Additionally, `EXCEPT()` can be used to exclude columns from a result in the same table, as is possible with BigQuery (Google Cloud), using the following syntax:
+
+```sql
+SELECT column1 [, column2 ] EXCEPT (column3 [, column4]) 
+FROM table1 
+[WHERE condition]
+```
+
+## Examples {#examples}
+
+The examples in this section demonstrate usage of the `EXCEPT` clause.
+
+### Filtering Numbers Using the `EXCEPT` Clause {#filtering-numbers-using-the-except-clause}
 
 Here is a simple example that returns the numbers 1 to 10 that are _not_ a part of the numbers 3 to 8:
 
 Query:
 
 ``` sql
-SELECT number FROM numbers(1,10) EXCEPT SELECT number FROM numbers(3,6);
+SELECT number
+FROM numbers(1, 10)
+EXCEPT
+SELECT number
+FROM numbers(3, 8)
 ```
 
 Result:
@@ -44,7 +66,53 @@ Result:
 └────────┘
 ```
 
-`EXCEPT` and `INTERSECT` can often be used interchangeably with different Boolean logic, and they are both useful if you have two tables that share a common column (or columns). For example, suppose we have a few million rows of historical cryptocurrency data that contains trade prices and volume:
+### Excluding Specific Columns Using `EXCEPT()` {#excluding-specific-columns-using-except}
+
+`EXCEPT()` can be used to quickly exclude columns from a result. For instance if we want to select all columns from a table, except a few select columns as shown in the example below:
+
+Query:
+
+```sql
+SHOW COLUMNS IN system.settings
+
+SELECT * EXCEPT (default, alias_for, readonly, description)
+FROM system.settings
+LIMIT 5
+```
+
+Result:
+
+```response
+    ┌─field───────┬─type─────────────────────────────────────────────────────────────────────┬─null─┬─key─┬─default─┬─extra─┐
+ 1. │ alias_for   │ String                                                                   │ NO   │     │ ᴺᵁᴸᴸ    │       │
+ 2. │ changed     │ UInt8                                                                    │ NO   │     │ ᴺᵁᴸᴸ    │       │
+ 3. │ default     │ String                                                                   │ NO   │     │ ᴺᵁᴸᴸ    │       │
+ 4. │ description │ String                                                                   │ NO   │     │ ᴺᵁᴸᴸ    │       │
+ 5. │ is_obsolete │ UInt8                                                                    │ NO   │     │ ᴺᵁᴸᴸ    │       │
+ 6. │ max         │ Nullable(String)                                                         │ YES  │     │ ᴺᵁᴸᴸ    │       │
+ 7. │ min         │ Nullable(String)                                                         │ YES  │     │ ᴺᵁᴸᴸ    │       │
+ 8. │ name        │ String                                                                   │ NO   │     │ ᴺᵁᴸᴸ    │       │
+ 9. │ readonly    │ UInt8                                                                    │ NO   │     │ ᴺᵁᴸᴸ    │       │
+10. │ tier        │ Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12) │ NO   │     │ ᴺᵁᴸᴸ    │       │
+11. │ type        │ String                                                                   │ NO   │     │ ᴺᵁᴸᴸ    │       │
+12. │ value       │ String                                                                   │ NO   │     │ ᴺᵁᴸᴸ    │       │
+    └─────────────┴──────────────────────────────────────────────────────────────────────────┴──────┴─────┴─────────┴───────┘
+
+   ┌─name────────────────────┬─value──────┬─changed─┬─min──┬─max──┬─type────┬─is_obsolete─┬─tier───────┐
+1. │ dialect                 │ clickhouse │       0 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ Dialect │           0 │ Production │
+2. │ min_compress_block_size │ 65536      │       0 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ UInt64  │           0 │ Production │
+3. │ max_compress_block_size │ 1048576    │       0 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ UInt64  │           0 │ Production │
+4. │ max_block_size          │ 65409      │       0 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ UInt64  │           0 │ Production │
+5. │ max_insert_block_size   │ 1048449    │       0 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ UInt64  │           0 │ Production │
+   └─────────────────────────┴────────────┴─────────┴──────┴──────┴─────────┴─────────────┴────────────┘
+```
+
+### Using `EXCEPT` and `INTERSECT` with Cryptocurrency Data {#using-except-and-intersect-with-cryptocurrency-data}
+
+`EXCEPT` and `INTERSECT` can often be used interchangeably with different Boolean logic, and they are both useful if you have two tables that share a common column (or columns).
+For example, suppose we have a few million rows of historical cryptocurrency data that contains trade prices and volume:
+
+Query:
 
 ```sql
 CREATE TABLE crypto_prices
@@ -71,6 +139,8 @@ WHERE crypto_name = 'Bitcoin'
 ORDER BY trade_date DESC
 LIMIT 10;
 ```
+
+Result:
 
 ```response
 ┌─trade_date─┬─crypto_name─┬──────volume─┬────price─┬───market_cap─┬──change_1_day─┐
@@ -127,7 +197,7 @@ Result:
 
 This means of the four cryptocurrencies we own, only Bitcoin has never dropped below $10 (based on the limited data we have here in this example).
 
-## EXCEPT DISTINCT
+### Using `EXCEPT DISTINCT` {#using-except-distinct}
 
 Notice in the previous query we had multiple Bitcoin holdings in the result. You can add `DISTINCT` to `EXCEPT` to eliminate duplicate rows from the result:
 
@@ -146,8 +216,7 @@ Result:
 └─────────────┘
 ```
 
-
 **See Also**
 
-- [UNION](union.md#union-clause)
-- [INTERSECT](intersect.md#intersect-clause)
+- [UNION](/sql-reference/statements/select/union)
+- [INTERSECT](/sql-reference/statements/select/intersect)

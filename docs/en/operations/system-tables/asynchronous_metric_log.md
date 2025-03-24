@@ -1,7 +1,14 @@
 ---
-slug: /en/operations/system-tables/asynchronous_metric_log
+description: 'System table containing historical values for `system.asynchronous_metrics`,
+  which are saved once per time interval (one second by default)'
+keywords: ['system table', 'asynchronous_metric_log']
+slug: /operations/system-tables/asynchronous_metric_log
+title: 'system.asynchronous_metric_log'
 ---
-# asynchronous_metric_log
+
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+<SystemTableCloud/>
 
 Contains the historical values for `system.asynchronous_metrics`, which are saved once per time interval (one second by default). Enabled by default.
 
@@ -47,5 +54,6 @@ value:      0
 
 **See Also**
 
+- [asynchronous_metric_log setting](../../operations/server-configuration-parameters/settings.md#asynchronous_metric_log) — Enabling and disabling the setting.
 - [system.asynchronous_metrics](../system-tables/asynchronous_metrics.md) — Contains metrics, calculated periodically in the background.
 - [system.metric_log](../system-tables/metric_log.md) — Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.

@@ -1,7 +1,9 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Core/BackgroundSchedulePool.h>
 
 namespace CurrentMetrics
 {
@@ -10,6 +12,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsSeconds initialization_retry_period;
+}
 
 namespace ErrorCodes
 {
@@ -24,12 +31,17 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
     const auto storage_settings = storage.getSettings();
-    retry_period = storage_settings->initialization_retry_period.totalSeconds();
+    retry_period = (*storage_settings)[MergeTreeSetting::initialization_retry_period].totalSeconds();
 }
 
 ReplicatedMergeTreeAttachThread::~ReplicatedMergeTreeAttachThread()
 {
     shutdown();
+}
+
+void ReplicatedMergeTreeAttachThread::start()
+{
+    task->activateAndSchedule();
 }
 
 void ReplicatedMergeTreeAttachThread::shutdown()
@@ -160,50 +172,24 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     /// Just in case it was not removed earlier due to connection loss
     zookeeper->tryRemove(replica_path + "/flags/force_restore_data");
 
-    String replica_metadata_version;
-    const bool replica_metadata_version_exists = zookeeper->tryGet(replica_path + "/metadata_version", replica_metadata_version);
-    if (replica_metadata_version_exists)
-    {
-        storage.setInMemoryMetadata(metadata_snapshot->withMetadataVersion(parse<int>(replica_metadata_version)));
-    }
-    else
-    {
-        /// Table was created before 20.4 and was never altered,
-        /// let's initialize replica metadata version from global metadata version.
-        Coordination::Stat table_metadata_version_stat;
-        zookeeper->get(zookeeper_path + "/metadata", &table_metadata_version_stat);
-
-        Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/metadata", table_metadata_version_stat.version));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", toString(table_metadata_version_stat.version), zkutil::CreateMode::Persistent));
-
-        Coordination::Responses res;
-        auto code = zookeeper->tryMulti(ops, res);
-
-        if (code == Coordination::Error::ZBADVERSION)
-            throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED, "Failed to initialize metadata_version "
-                                                                "because table was concurrently altered, will retry");
-
-        zkutil::KeeperMultiException::check(code, ops, res);
-    }
-
-    storage.checkTableStructure(replica_path, metadata_snapshot);
+    /// Here `zookeeper_retries_info = {}` because the attach thread has its own retries (see ReplicatedMergeTreeAttachThread::run()).
+    storage.checkTableStructure(replica_path, metadata_snapshot, /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
     storage.checkParts(skip_sanity_checks);
 
     /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
     /// don't allow to reinitialize them, delete each of them immediately.
     storage.clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
 
-    storage.createNewZooKeeperNodes();
-    storage.syncPinnedPartUUIDs();
+    storage.createNewZooKeeperNodes(/* zookeeper_retries_info = */ {});
+    storage.syncPinnedPartUUIDs(/* zookeeper_retries_info = */ {});
 
     std::lock_guard lock(storage.table_shared_id_mutex);
-    storage.createTableSharedID();
+    storage.createTableSharedID(/* zookeeper_retries_info = */ {});
 };
 
 void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    storage.startupImpl(/* from_attach_thread */ true);
+    storage.startupImpl(/* from_attach_thread */ true, /* zookeeper_retries_info = */ {});
     storage.initialization_done = true;
     LOG_INFO(log, "Table is initialized");
 }

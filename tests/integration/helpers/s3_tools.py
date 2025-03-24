@@ -1,11 +1,10 @@
-from minio import Minio
 import glob
-import os
 import json
+import os
 import shutil
-
-
 from enum import Enum
+
+from minio import Minio
 
 
 class CloudUploader:
@@ -17,7 +16,7 @@ class CloudUploader:
         # for local_file in glob.glob(local_path + "/**"):
         #     print("Local file: {}", local_file)
         for local_file in glob.glob(local_path + "/**"):
-            result_local_path = os.path.join(local_path, local_file)
+            result_local_path = local_file
             result_remote_blob_path = os.path.join(remote_blob_path, local_file)
             if os.path.isfile(local_file):
                 self.upload_file(result_local_path, result_remote_blob_path, **kwargs)
@@ -88,6 +87,13 @@ def upload_directory(minio_client, bucket, local_path, remote_path):
     return S3Uploader(minio_client=minio_client, bucket_name=bucket).upload_directory(
         local_path, remote_path
     )
+
+
+def remove_directory(minio_client, bucket, remote_path):
+    for obj in minio_client.list_objects(
+        bucket, prefix=f"{remote_path}/", recursive=True
+    ):
+        minio_client.remove_object(bucket, obj.object_name)
 
 
 def get_file_contents(minio_client, bucket, s3_path):

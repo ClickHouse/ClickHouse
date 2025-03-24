@@ -38,7 +38,7 @@ tar xvf 2021_08_01_07_01_17_data.tgz
 
 ## 创建表 {#create-tables}
 
-使用 [Decimal](/docs/zh/sql-reference/data-types/decimal.md) 数据类型来存储价格。
+使用 [Decimal](/zh/sql-reference/data-types/decimal.md) 数据类型来存储价格。
 
 ```sql
 CREATE TABLE dish
@@ -114,17 +114,17 @@ clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_defa
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --date_time_input_format best_effort --query "INSERT INTO menu_item FORMAT CSVWithNames" < MenuItem.csv
 ```
 
-因为数据由带有标题的 CSV 表示，所以使用 [CSVWithNames](/docs/zh/interfaces/formats.md#csvwithnames) 格式。
+因为数据由带有标题的 CSV 表示，所以使用 [CSVWithNames](/zh/interfaces/formats.md#csvwithnames) 格式。
 
 因为只有双引号用于数据字段，单引号可以在值内，所以禁用了 `format_csv_allow_single_quotes` 以避免混淆 CSV 解析器。
 
-因为数据中没有 [NULL](/docs/zh/sql-reference/syntax.md#null-literal) 值，所以禁用 [input_format_null_as_default](/docs/zh/operations/settings/settings.md#settings-input-format-null-as-default)。不然 ClickHouse 将会尝试解析 `\N` 序列，并可能与数据中的 `\` 混淆。
+因为数据中没有 [NULL](/zh/sql-reference/syntax.md#null-literal) 值，所以禁用 [input_format_null_as_default](/zh/operations/settings/settings.md#settings-input-format-null-as-default)。不然 ClickHouse 将会尝试解析 `\N` 序列，并可能与数据中的 `\` 混淆。
 
-设置 [date_time_input_format best_effort](/docs/zh/operations/settings/settings.md#settings-date_time_input_format) 以便解析各种格式的 [DateTime](/docs/zh/sql-reference/data-types/datetime.md)字段。例如，识别像“2000-01-01 01:02”这样没有秒数的 ISO-8601 时间字符串。如果没有此设置，则仅允许使用固定的 DateTime 格式。
+设置 [date_time_input_format best_effort](/zh/operations/settings/settings.md#settings-date_time_input_format) 以便解析各种格式的 [DateTime](/zh/sql-reference/data-types/datetime.md)字段。例如，识别像“2000-01-01 01:02”这样没有秒数的 ISO-8601 时间字符串。如果没有此设置，则仅允许使用固定的 DateTime 格式。
 
 ## 非规范化数据 {#denormalize-data}
 
-数据以 [规范化形式] (https://en.wikipedia.org/wiki/Database_normalization#Normal_forms) 在多个表格中呈现。这意味着如果你想进行如查询菜单项中的菜名这类的查询，则必须执行 [JOIN](/docs/zh/sql-reference/statements/select/join.md#select-join)。在典型的分析任务中，预先处理联接的数据以避免每次都执行“联接”会更有效率。这中操作被称为“非规范化”数据。
+数据以 [规范化形式] (https://en.wikipedia.org/wiki/Database_normalization#Normal_forms) 在多个表格中呈现。这意味着如果你想进行如查询菜单项中的菜名这类的查询，则必须执行 [JOIN](/zh/sql-reference/statements/select/join.md#select-join)。在典型的分析任务中，预先处理联接的数据以避免每次都执行“联接”会更有效率。这中操作被称为“非规范化”数据。
 
 我们将创建一个表“menu_item_denorm”，其中将包含所有联接在一起的数据：
 
@@ -349,4 +349,4 @@ ORDER BY d ASC;
 
 ## 在线 Playground{#playground}
 
-此数据集已经上传到了 ClickHouse Playground 中，[example](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICByb3VuZCh0b1VJbnQzMk9yWmVybyhleHRyYWN0KG1lbnVfZGF0ZSwgJ15cXGR7NH0nKSksIC0xKSBBUyBkLAogICAgY291bnQoKSwKICAgIHJvdW5kKGF2ZyhwcmljZSksIDIpLAogICAgYmFyKGF2ZyhwcmljZSksIDAsIDUwLCAxMDApLAogICAgYW55KGRpc2hfbmFtZSkKRlJPTSBtZW51X2l0ZW1fZGVub3JtCldIRVJFIChtZW51X2N1cnJlbmN5IElOICgnRG9sbGFycycsICcnKSkgQU5EIChkID4gMCkgQU5EIChkIDwgMjAyMikgQU5EIChkaXNoX25hbWUgSUxJS0UgJyVjYXZpYXIlJykKR1JPVVAgQlkgZApPUkRFUiBCWSBkIEFTQw==)。
+此数据集已经上传到了 ClickHouse Playground 中，[example](https://sql.clickhouse.com?query_id=KB5KQJJFNBKHE5GBUJCP1B)。

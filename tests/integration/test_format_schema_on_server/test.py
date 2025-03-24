@@ -1,7 +1,9 @@
-import pytest
 import os
-from helpers.cluster import ClickHouseCluster
+
+import pytest
+
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance("instance", clickhouse_path_dir="clickhouse_path")

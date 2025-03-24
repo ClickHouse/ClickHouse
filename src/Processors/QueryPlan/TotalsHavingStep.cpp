@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -9,6 +12,17 @@
 
 namespace DB
 {
+
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsFloat totals_auto_threshold;
+    extern const QueryPlanSerializationSettingsTotalsMode totals_mode;
+}
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 static ITransformingStep::Traits getTraits(bool has_filter)
 {
@@ -26,24 +40,24 @@ static ITransformingStep::Traits getTraits(bool has_filter)
 }
 
 TotalsHavingStep::TotalsHavingStep(
-    const DataStream & input_stream_,
+    const Header & input_header_,
     const AggregateDescriptions & aggregates_,
     bool overflow_row_,
     std::optional<ActionsDAG> actions_dag_,
     const std::string & filter_column_,
     bool remove_filter_,
     TotalsMode totals_mode_,
-    double auto_include_threshold_,
+    float auto_include_threshold_,
     bool final_)
     : ITransformingStep(
-        input_stream_,
+        input_header_,
         TotalsHavingTransform::transformHeader(
-            input_stream_.header,
+            input_header_,
             actions_dag_ ? &*actions_dag_ : nullptr,
             filter_column_,
             remove_filter_,
             final_,
-            getAggregatesMask(input_stream_.header, aggregates_)),
+            getAggregatesMask(input_header_, aggregates_)),
         getTraits(!filter_column_.empty()))
     , aggregates(aggregates_)
     , overflow_row(overflow_row_)
@@ -129,19 +143,87 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void TotalsHavingStep::updateOutputStream()
+void TotalsHavingStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(
-        input_streams.front(),
+    output_header =
         TotalsHavingTransform::transformHeader(
-            input_streams.front().header,
+            input_headers.front(),
             getActions(),
             filter_column_name,
             remove_filter,
             final,
-            getAggregatesMask(input_streams.front().header, aggregates)),
-        getDataStreamTraits());
+            getAggregatesMask(input_headers.front(), aggregates));
 }
 
+void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+{
+    settings[QueryPlanSerializationSetting::totals_mode] = totals_mode;
+    settings[QueryPlanSerializationSetting::totals_auto_threshold] = auto_include_threshold;
+}
+
+void TotalsHavingStep::serialize(Serialization & ctx) const
+{
+    UInt8 flags = 0;
+    if (final)
+        flags |= 1;
+    if (overflow_row)
+        flags |= 2;
+    if (actions_dag)
+        flags |= 4;
+    if (actions_dag && remove_filter)
+        flags |= 8;
+
+    writeIntBinary(flags, ctx.out);
+
+    serializeAggregateDescriptions(aggregates, ctx.out);
+
+    if (actions_dag)
+    {
+        writeStringBinary(filter_column_name, ctx.out);
+        actions_dag->serialize(ctx.out, ctx.registry);
+    }
+}
+
+std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");
+
+    UInt8 flags;
+    readIntBinary(flags, ctx.in);
+
+    bool final = bool(flags & 1);
+    bool overflow_row = bool(flags & 2);
+    bool has_actions_dag = bool(flags & 4);
+    bool remove_filter_column = bool(flags & 8);
+
+    AggregateDescriptions aggregates;
+    deserializeAggregateDescriptions(aggregates, ctx.in);
+
+    std::optional<ActionsDAG> actions_dag;
+    String filter_column_name;
+    if (has_actions_dag)
+    {
+        readStringBinary(filter_column_name, ctx.in);
+
+        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+    }
+
+    return std::make_unique<TotalsHavingStep>(
+        ctx.input_headers.front(),
+        std::move(aggregates),
+        overflow_row,
+        std::move(actions_dag),
+        std::move(filter_column_name),
+        remove_filter_column,
+        ctx.settings[QueryPlanSerializationSetting::totals_mode],
+        ctx.settings[QueryPlanSerializationSetting::totals_auto_threshold],
+        final);
+}
+
+void registerTotalsHavingStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("TotalsHaving", TotalsHavingStep::deserialize);
+}
 
 }

@@ -1,5 +1,4 @@
 #include <type_traits>
-#include <boost/tti/has_member_function.hpp>
 
 #include <base/range.h>
 
@@ -44,6 +43,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_simdjson;
+}
 
 namespace ErrorCodes
 {
@@ -56,6 +59,22 @@ template <typename T>
 concept HasIndexOperator = requires (T t)
 {
     t[0];
+};
+
+template <typename T>
+concept Reservable = requires (T t)
+{
+    t.reserve(0);
+};
+
+template <typename T>
+concept Preparable = requires (T t)
+{
+    t.prepare(
+        std::declval<const char *>(),
+        std::declval<const ColumnsWithTypeAndName&>(),
+        std::declval<const DataTypePtr&>()
+    );
 };
 
 /// Functions to parse JSONs and extract values from it.
@@ -101,7 +120,7 @@ public:
 
             /// Preallocate memory in parser if necessary.
             JSONParser parser;
-            if constexpr (has_member_function_reserve<void (JSONParser::*)(size_t)>::value)
+            if constexpr (Reservable<JSONParser>)
             {
                 size_t max_size = calculateMaxSize(offsets);
                 if (max_size)
@@ -111,7 +130,7 @@ public:
             Impl<JSONParser> impl;
 
             /// prepare() does Impl-specific preparation before handling each row.
-            if constexpr (has_member_function_prepare<void (Impl<JSONParser>::*)(const char *, const ColumnsWithTypeAndName &, const DataTypePtr &)>::value)
+            if constexpr (Preparable<Impl<JSONParser>>)
                 impl.prepare(Name::name, arguments, result_type);
 
             using Element = typename JSONParser::Element;
@@ -154,9 +173,6 @@ public:
     };
 
 private:
-    BOOST_TTI_HAS_MEMBER_FUNCTION(reserve)
-    BOOST_TTI_HAS_MEMBER_FUNCTION(prepare)
-
     /// Represents a move of a JSON iterator described by a single argument passed to a JSON function.
     /// For example, the call JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1)
     /// contains two moves: {MoveType::ConstKey, "b"} and {MoveType::ConstIndex, 1}.
@@ -531,7 +547,7 @@ public:
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
         return std::make_unique<FunctionBaseFunctionJSON<Name, Impl>>(
-            null_presence, getContext()->getSettingsRef().allow_simdjson, argument_types, return_type, json_return_type, getFormatSettings(getContext()));
+            null_presence, getContext()->getSettingsRef()[Setting::allow_simdjson], argument_types, return_type, json_return_type, getFormatSettings(getContext()));
     }
 };
 
@@ -949,9 +965,10 @@ public:
     {
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
         auto & chars = col_str.getChars();
-        WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-        jsonElementToString<JSONParser>(element, buf, format_settings);
-        buf.finalize();
+        {
+            WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+            jsonElementToString<JSONParser>(element, buf, format_settings);
+        }
         chars.push_back(0);
         col_str.getOffsets().push_back(chars.size());
         return true;

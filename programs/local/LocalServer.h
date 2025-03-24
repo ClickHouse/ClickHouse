@@ -4,7 +4,6 @@
 #include <Client/LocalConnection.h>
 
 #include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Loggers/Loggers.h>
 #include <Common/InterruptListener.h>
@@ -39,9 +38,9 @@ protected:
 
     String getName() const override { return "local"; }
 
-    void printHelpMessage(const OptionsDescription & options_description, bool verbose) override;
+    void printHelpMessage(const OptionsDescription & options_description) override;
 
-    void addOptions(OptionsDescription & options_description) override;
+    void addExtraOptions(OptionsDescription & options_description) override;
 
     void processOptions(const OptionsDescription & options_description, const CommandLineOptions & options,
                         const std::vector<Arguments> &, const std::vector<Arguments> &) override;

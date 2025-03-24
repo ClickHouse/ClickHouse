@@ -9,29 +9,29 @@ import signal
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 from build_download_helper import download_all_deb_packages
+from ci_config import CI
+from ci_utils import Shell, Utils
 from clickhouse_helper import CiLogsCredentials
-from docker_images_helper import DockerImage, get_docker_image, pull_image
+from docker_images_helper import DockerImage, get_docker_image
 from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import (
     ERROR,
+    FAILURE,
     SUCCESS,
     JobReport,
     StatusType,
+    TestResult,
     TestResults,
     read_test_results,
-    FAILURE,
-    TestResult,
 )
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from ci_config import CI
-from ci_utils import Utils, Shell
 
 NO_CHANGES_MSG = "Nothing to run"
 
@@ -79,7 +79,7 @@ def get_additional_envs(
 
 
 def get_image_name(check_name: str) -> str:
-    if "stateless" in check_name.lower():
+    if "stateless" in check_name.lower() or "validation" in check_name.lower():
         return "clickhouse/stateless-test"
     if "stateful" in check_name.lower():
         return "clickhouse/stateful-test"
@@ -111,6 +111,7 @@ def get_run_command(
     envs = [
         # a static link, don't use S3_URL or S3_DOWNLOAD
         '-e S3_URL="https://s3.amazonaws.com/clickhouse-datasets"',
+        f"-e CHECK_NAME='{check_name}'",
     ]
 
     if flaky_check:
@@ -122,7 +123,7 @@ def get_run_command(
 
     if "stateful" in check_name.lower():
         run_script = "/repo/tests/docker_scripts/stateful_runner.sh"
-    elif "stateless" in check_name.lower():
+    elif "stateless" in check_name.lower() or "validation" in check_name.lower():
         run_script = "/repo/tests/docker_scripts/stateless_runner.sh"
     else:
         assert False
@@ -132,6 +133,7 @@ def get_run_command(
         # For dmesg and sysctl
         "--privileged "
         f"{ci_logs_args} "
+        "--tmpfs /tmp/clickhouse "
         f"--volume={repo_path}:/repo "
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
@@ -243,10 +245,11 @@ timeout_expired = False
 
 
 def handle_sigterm(signum, _frame):
+    # TODO: think on how to process it without globals
     print(f"WARNING: Received signal {signum}")
-    global timeout_expired
+    global timeout_expired  # pylint:disable=global-statement
     timeout_expired = True
-    Shell.check(f"docker exec func-tester pkill -f clickhouse-test", verbose=True)
+    Shell.check("docker exec func-tester pkill -f clickhouse-test", verbose=True)
 
 
 def main():
@@ -266,7 +269,7 @@ def main():
     repo_path = Path(REPO_COPY)
 
     args = parse_args()
-    check_name = args.check_name or os.getenv("CHECK_NAME")
+    check_name = os.getenv("CHECK_NAME") or os.getenv("JOB_NAME") or args.check_name
     assert (
         check_name
     ), "Check name must be provided as an input arg or in CHECK_NAME env"
@@ -283,16 +286,18 @@ def main():
     if run_changed_tests:
         tests_to_run = _get_statless_tests_to_run(pr_info)
 
-    if "RUN_BY_HASH_NUM" in os.environ:
-        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
-        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
-    else:
-        run_by_hash_num = 0
-        run_by_hash_total = 0
+    run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
+    run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
 
-    image_name = get_image_name(check_name)
+    docker_image = get_docker_image(get_image_name(check_name))
 
-    docker_image = pull_image(get_docker_image(image_name))
+    match = re.search(r"\(.*?\)", check_name)
+    options = match.group(0)[1:-1].split(",") if match else []
+    for option in options:
+        if "/" in option:
+            run_by_hash_num = int(option.split("/")[0]) - 1
+            run_by_hash_total = int(option.split("/")[1])
+            break
 
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
@@ -338,7 +343,7 @@ def main():
         logging.info("Going to run func tests: %s", run_command)
 
         with TeePopen(run_command, run_log_path) as process:
-            global test_process
+            global test_process  # pylint:disable=global-statement
             test_process = process
             retcode = process.wait()
             if retcode == 0:
@@ -400,7 +405,7 @@ def main():
             failed_cnt
             and failed_cnt <= CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI
         ):
-            print(f"Won't block the CI workflow")
+            print("Won't block the CI workflow")
             should_block_ci = False
 
     if should_block_ci:

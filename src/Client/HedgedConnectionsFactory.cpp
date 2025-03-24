@@ -281,7 +281,7 @@ int HedgedConnectionsFactory::getReadyFileDescriptor(bool blocking, AsyncCallbac
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::resumeConnectionEstablisher(int index, Connection *& connection_out)
 {
-    replicas[index].connection_establisher->resume();
+    replicas[index].connection_establisher->resumeConnectionWithForceOption(/*force_connected_*/ shuffled_pools[index].error_count != 0);
 
     if (replicas[index].connection_establisher->isCancelled())
         return State::CANNOT_CHOOSE;
@@ -327,7 +327,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
         ShuffledPool & shuffled_pool = shuffled_pools[index];
         LOG_INFO(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
 
-        shuffled_pool.error_count = std::min(pool->getMaxErrorCup(), shuffled_pool.error_count + 1);
+        shuffled_pool.error_count = std::min(pool->getMaxErrorCap(), shuffled_pool.error_count + 1);
         shuffled_pool.slowdown_count = 0;
 
         if (shuffled_pool.error_count >= max_tries)

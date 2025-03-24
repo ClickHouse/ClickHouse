@@ -1,16 +1,23 @@
-#include <Interpreters/PeriodicLog.h>
+#include <Common/setThreadName.h>
+#include <Common/SystemLogBase.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/PeriodicLog.h>
+#include <Interpreters/QueryMetricLog.h>
+#include <Interpreters/LatencyLog.h>
 
 namespace DB
 {
 
 template <typename LogElement>
-void PeriodicLog<LogElement>::startCollect(size_t collect_interval_milliseconds_)
+void PeriodicLog<LogElement>::startCollect(const String & thread_name, size_t collect_interval_milliseconds_)
 {
     collect_interval_milliseconds = collect_interval_milliseconds_;
     is_shutdown_metric_thread = false;
-    collecting_thread = std::make_unique<ThreadFromGlobalPool>([this] { threadFunction(); });
+    collecting_thread = std::make_unique<ThreadFromGlobalPool>([this, thread_name] {
+        setThreadName(thread_name.c_str());
+        threadFunction();
+    });
 }
 
 template <typename LogElement>
@@ -56,7 +63,7 @@ void PeriodicLog<LogElement>::threadFunction()
     }
 }
 
-#define INSTANTIATE_SYSTEM_LOG(ELEMENT) template class PeriodicLog<ELEMENT>;
-SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG)
+#define INSTANTIATE_PERIODIC_SYSTEM_LOG(ELEMENT) template class PeriodicLog<ELEMENT>;
+SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_PERIODIC_SYSTEM_LOG)
 
 }

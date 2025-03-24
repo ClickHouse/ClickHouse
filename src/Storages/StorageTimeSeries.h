@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/IStorage.h>
@@ -41,8 +41,7 @@ public:
 
     std::string getName() const override { return "TimeSeries"; }
 
-    TimeSeriesSettings getStorageSettings() const;
-    TimeSeriesSettingsPtr getStorageSettingsPtr() const { return storage_settings; }
+    const TimeSeriesSettings & getStorageSettings() const;
 
     StorageID getTargetTableId(ViewTarget::Kind target_kind) const;
     StoragePtr getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;

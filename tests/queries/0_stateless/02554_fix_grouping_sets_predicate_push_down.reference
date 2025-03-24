@@ -26,63 +26,59 @@ WHERE type_1 = \'all\'
 
 ---Explain Pipeline---
 (Expression)
-ExpressionTransform × 2
+ExpressionTransform × 8
   (Filter)
-  FilterTransform × 2
-    (Filter)
-    FilterTransform × 2
-      (Filter)
-      FilterTransform × 2
-        (Aggregating)
-        ExpressionTransform × 2
-          AggregatingTransform × 2
-            Copy 1 → 2
-              (Expression)
-              ExpressionTransform
-                (Expression)
-                ExpressionTransform
-                  (ReadFromMergeTree)
-                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-(Expression)
-ExpressionTransform × 2
-  (Filter)
-  FilterTransform × 2
+  FilterTransform × 24
     (Aggregating)
-    ExpressionTransform × 2
-      AggregatingTransform × 2
-        Copy 1 → 2
-          (Expression)
-          ExpressionTransform
+    Resize 2 → 8
+      ExpressionTransform × 2
+        AggregatingTransform × 2
+          Copy 1 → 2
             (Expression)
             ExpressionTransform
-              (ReadFromMergeTree)
-              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+              (Expression)
+              ExpressionTransform
+                (ReadFromMergeTree)
+                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+(Expression)
+ExpressionTransform × 8
+  (Filter)
+  FilterTransform × 8
+    (Aggregating)
+    Resize 2 → 8
+      ExpressionTransform × 2
+        AggregatingTransform × 2
+          Copy 1 → 2
+            (Expression)
+            ExpressionTransform
+              (Expression)
+              ExpressionTransform
+                (ReadFromMergeTree)
+                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 
 ---Result---
 2023-01-05	all
 
 ---Explain Pipeline---
 (Expression)
-ExpressionTransform × 2
+ExpressionTransform × 8
   (Aggregating)
-  ExpressionTransform × 2
-    AggregatingTransform × 2
-      Copy 1 → 2
-        (Filter)
-        FilterTransform
-          (Filter)
-          FilterTransform
-            (Expression)
-            ExpressionTransform
-              (ReadFromMergeTree)
-              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+  Resize 2 → 8
+    ExpressionTransform × 2
+      AggregatingTransform × 2
+        Copy 1 → 2
+          (Expression)
+          ExpressionTransform
+            (ReadFromMergeTree)
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 (Expression)
-ExpressionTransform × 2
+ExpressionTransform × 8
   (Aggregating)
-  ExpressionTransform × 2
-    AggregatingTransform × 2
-      Copy 1 → 2
-        (Expression)
-        ExpressionTransform
-          (ReadFromMergeTree)
-          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+  Resize 2 → 8
+    ExpressionTransform × 2
+      AggregatingTransform × 2
+        Copy 1 → 2
+          (Expression)
+          ExpressionTransform
+            (ReadFromMergeTree)
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1

@@ -1,5 +1,6 @@
--- Tags: long, replica, no-replicated-database
+-- Tags: long, replica, no-replicated-database, no-shared-merge-tree
 -- Tag no-replicated-database: Old syntax is not allowed
+-- no-shared-merge-tree -- old syntax not supported, for new syntax additional test
 
 SET optimize_on_insert = 0;
 

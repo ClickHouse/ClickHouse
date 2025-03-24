@@ -2,19 +2,22 @@
 
 #include <limits>
 #include <optional>
-#include <magic_enum.hpp>
-#include <fmt/format.h>
+
+#include <base/EnumReflection.h>
 #include <base/defines.h>
 #include <base/scope_guard.h>
+#include <fmt/format.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
-#include <Common/noexcept_scope.h>
-#include <Common/setThreadName.h>
-#include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/logger_useful.h>
+#include <Common/noexcept_scope.h>
+#include <Common/setThreadName.h>
+
+#include <fmt/ranges.h>
 
 
 namespace ProfileEvents
@@ -49,14 +52,14 @@ void logAboutProgress(LoggerPtr log, size_t processed, size_t total, AtomicStopw
 AsyncLoader::Pool::Pool(const AsyncLoader::PoolInitializer & init)
     : name(init.name)
     , priority(init.priority)
-    , max_threads(init.max_threads > 0 ? init.max_threads : getNumberOfPhysicalCPUCores())
+    , max_threads(init.max_threads > 0 ? init.max_threads : getNumberOfCPUCoresToUse())
     , thread_pool(std::make_unique<ThreadPool>(
-        init.metric_threads,
-        init.metric_active_threads,
-        init.metric_scheduled_threads,
-        /* max_threads = */ std::numeric_limits<size_t>::max(), // Unlimited number of threads, we do worker management ourselves
-        /* max_free_threads = */ 0, // We do not require free threads
-        /* queue_size = */0)) // Unlimited queue to avoid blocking during worker spawning
+          init.metric_threads,
+          init.metric_active_threads,
+          init.metric_scheduled_threads,
+          /* max_threads = */ ThreadPool::MAX_THEORETICAL_THREAD_COUNT, // Unlimited number of threads, we do worker management ourselves
+          /* max_free_threads = */ 0, // We do not require free threads
+          /* queue_size = */ 0)) // Unlimited queue to avoid blocking during worker spawning
 {}
 
 AsyncLoader::Pool::Pool(Pool&& o) noexcept
@@ -491,7 +494,7 @@ void AsyncLoader::remove(const LoadJobSet & jobs)
 void AsyncLoader::setMaxThreads(size_t pool, size_t value)
 {
     if (value == 0)
-        value = getNumberOfPhysicalCPUCores();
+        value = getNumberOfCPUCoresToUse();
     std::unique_lock lock{mutex};
     auto & p = pools[pool];
     // Note that underlying `ThreadPool` always has unlimited `queue_size` and `max_threads`.
@@ -579,8 +582,7 @@ String AsyncLoader::checkCycle(const LoadJobPtr & job, LoadJobSet & left, LoadJo
         {
             if (!visited.contains(job)) // Check for cycle end
                 throw Exception(ErrorCodes::ASYNC_LOAD_CYCLE, "Load job dependency cycle detected: {} -> {}", job->name, chain);
-            else
-                return fmt::format("{} -> {}", job->name, chain); // chain is not a cycle yet -- continue building
+            return fmt::format("{} -> {}", job->name, chain); // chain is not a cycle yet -- continue building
         }
     }
     left.erase(job);
@@ -725,14 +727,14 @@ void AsyncLoader::enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<
 //    (when high-priority job A function waits for a lower-priority job B, and B never starts due to its priority)
 // 4) Resolve "blocked pool" deadlocks -- spawn more workers
 //    (when job A in pool P waits for another ready job B in P, but B never starts because there are no free workers in P)
-thread_local LoadJob * current_load_job = nullptr;
+static thread_local LoadJob * current_load_job = nullptr;
 
 size_t currentPoolOr(size_t pool)
 {
     return current_load_job ? current_load_job->executionPool() : pool;
 }
 
-bool detectWaitDependentDeadlock(const LoadJobPtr & waited)
+bool static detectWaitDependentDeadlock(const LoadJobPtr & waited)
 {
     if (waited.get() == current_load_job)
         return true;
