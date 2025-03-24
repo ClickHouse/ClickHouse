@@ -9,6 +9,7 @@
 #include <vector>
 #include <array>
 
+#include <iostream>
 
 namespace Coordination
 {
@@ -101,6 +102,7 @@ void read(std::vector<T> & arr, ReadBuffer & in)
 {
     int32_t size = 0;
     read(size, in);
+    std::cerr << "SIZE " << size << '\n';
     if (size < 0)
         throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Negative size while reading array from ZooKeeper");
     if (size > MAX_STRING_OR_ARRAY_SIZE)

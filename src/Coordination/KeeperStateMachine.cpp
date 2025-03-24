@@ -495,53 +495,6 @@ void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession& req
     }
 }
 
-/*
-class Create2(namedtuple("Create2", "path data acl flags")):
-    type = 15
-
-    def serialize(self):
-        b = bytearray()
-        b.extend(write_string(self.path))
-        b.extend(write_buffer(self.data))
-        b.extend(int_struct.pack(len(self.acl)))
-        for acl in self.acl:
-            b.extend(
-                int_struct.pack(acl.perms)
-                + write_string(acl.id.scheme)
-                + write_string(acl.id.id)
-            )
-        b.extend(int_struct.pack(self.flags))
-        return b
-
-    @classmethod
-    def deserialize(cls, bytes, offset):
-        path, offset = read_string(bytes, offset)
-        stat = ZnodeStat._make(stat_struct.unpack_from(bytes, offset))
-        return path, stat
-
-class Create(namedtuple("Create", "path data acl flags")):
-    type = 1
-
-    def serialize(self):
-        b = bytearray()
-        b.extend(write_string(self.path))
-        b.extend(write_buffer(self.data))
-        b.extend(int_struct.pack(len(self.acl)))
-        for acl in self.acl:
-            b.extend(
-                int_struct.pack(acl.perms)
-                + write_string(acl.id.scheme)
-                + write_string(acl.id.id)
-            )
-        b.extend(int_struct.pack(self.flags))
-        return b
-
-    @classmethod
-    def deserialize(cls, bytes, offset):
-        return read_string(bytes, offset)[0]
-
-*/
-
 template<typename Storage>
 KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
     const KeeperRequestForSession & request_for_session)

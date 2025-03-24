@@ -7,6 +7,7 @@
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <Coordination/KeeperCommon.h>
+#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/SharedMutex.h>
 #include <Common/Concepts.h>
@@ -298,6 +299,8 @@ public:
     {
         std::string_view path;
         bool is_list_watch;
+        bool is_persistent;
+        bool trigger_on_exists;
 
         bool operator==(const WatchInfo &) const = default;
     };
@@ -385,6 +388,9 @@ public:
     /// Currently active watches (node_path -> subscribed sessions)
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).
+    Watches exist_watches;
+    Watches persistent_watches;
+    Watches persistent_recursive_watches;
 
     static bool checkDigest(const KeeperDigest & first, const KeeperDigest & second);
 
@@ -424,6 +430,18 @@ public:
     void dumpWatches(WriteBufferFromOwnString & buf) const;
     void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
     void dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const;
+
+    bool containsWatch(const String & path, Coordination::CheckWatchRequest::CheckWatchType check_type) const;
+    void addPersistentWatch(const String & path, Coordination::AddWatchRequest::AddWatchMode mode, int64_t session_id);
+
+    void setWatches(const std::vector<String> & watches_paths,
+        const std::vector<String> & list_watches_paths,
+        const std::vector<String> & exist_watches_paths,
+        const std::vector<String> & persistent_watches_paths,
+        const std::vector<String> & persistent_recursive_watches_paths,
+        int64_t session_id);
+    
+    void removePersistentWatch(const String& path, Coordination::RemoveWatchRequest::WatchType type, int64_t session_id);
 protected:
     KeeperStorageBase(int64_t tick_time_ms, const KeeperContextPtr & keeper_context, const String & superdigest_);
 

@@ -110,6 +110,7 @@ const char * errorMessage(Error code)
         case Error::ZNOTHING:                 return "(not error) no server responses to process";
         case Error::ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
         case Error::ZNOTREADONLY:             return "State-changing request is passed to read-only server";
+        case Error::ZNOWATCHER:               return "No watcher was found";
     }
 }
 

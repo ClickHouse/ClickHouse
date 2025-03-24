@@ -728,6 +728,10 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperGetRequest, "Number of get requests", ValueType::Number) \
     M(KeeperListRequest, "Number of list requests", ValueType::Number) \
     M(KeeperExistsRequest, "Number of exists requests", ValueType::Number) \
+    M(KeeperSetWatchRequest, "Number of set watches requests", ValueType::Number) \
+    M(KeeperAddWatchRequest, "Number of add watches requests", ValueType::Number) \
+    M(KeeperRemoveWatchRequest, "Number of remove watches requests", ValueType::Number) \
+    M(KeeperCheckWatchRequest, "Number of remove watches requests", ValueType::Number) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \

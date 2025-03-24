@@ -116,6 +116,7 @@ enum class Error : int32_t
     ZNOTHING = -117,                    /// (not error) no server responses to process
     ZSESSIONMOVED = -118,               /// Session moved to another server, so operation is ignored
     ZNOTREADONLY = -119,                /// State-changing request is passed to read-only server
+    ZNOWATCHER = -121                   /// No wathces were found
 };
 
 /// Network errors and similar. You should reinitialize ZooKeeper session in case of these errors
@@ -210,6 +211,80 @@ struct GetACLResponse : virtual Response
     size_t bytesSize() const override { return sizeof(Stat) + acl.size() * sizeof(ACL); }
 };
 
+struct CheckWatchRequest : virtual Request
+{
+    enum class CheckWatchType : int32_t 
+    {
+        ANY = 0,
+        DATA = 1,
+        CHILDREN = 2,
+    };
+
+    String path;
+    CheckWatchType type;
+
+    String getPath() const override { return path; }
+    void addRootPath(const String & root_path) override { path = root_path; }
+
+    size_t bytesSize() const override 
+    {
+        return path.size() + sizeof(type);
+    }
+};
+
+struct CheckWatchResponse : virtual Response
+{
+};
+
+struct RemoveWatchRequest : virtual Request
+{
+    String path;
+    enum class WatchType : int32_t
+    {
+        Children = 1,
+        Data = 2,
+        Persistent = 4,
+        PersistentRecursive = 5,
+        Any = 3
+    } type;
+
+    String getPath() const override { return path; }
+    void addRootPath(const String & root_path) override { path = root_path; }
+
+    size_t bytesSize() const override 
+    {
+        return path.size() + sizeof(type);
+    }
+};
+
+struct RemoveWatchResponse : virtual Response
+{
+};
+
+struct AddWatchRequest : virtual Request
+{
+    enum class AddWatchMode : int32_t
+    {
+        PERSISTENT = 0,
+        PERSISTENT_RECURSIVE = 1,
+    };
+
+    String path;
+    AddWatchMode mode;
+
+    String getPath() const override { return path; }
+    void addRootPath(const String & root_path) override { path = root_path; }
+
+    size_t bytesSize() const override 
+    {
+        return path.size() + sizeof(mode);
+    }
+};
+
+struct AddWatchResponse : virtual Response
+{
+};
+
 struct SetWatchRequest : virtual Request
 {
     int64_t zxid;
@@ -217,22 +292,50 @@ struct SetWatchRequest : virtual Request
 	std::vector<String> exist_watches;
 	std::vector<String> child_watches;
 
+    String getPath() const override { return data_watches[0]; }
+    void addRootPath(const String &) override {}
     size_t bytesSize() const override 
     {
         size_t result = sizeof(zxid);
-        result += sizeof(Int32);
-        for (const auto & elem : data_watches)
-            result += sizeof(Int32) + elem.size();
+        result += pathesSize(data_watches);
+        result += pathesSize(exist_watches);
+        result += pathesSize(child_watches);
 
-        result += sizeof(Int32);
-        for (const auto & elem : exist_watches)
-            result += sizeof(Int32) + elem.size();
-    
-        result += sizeof(Int32);
-        for (const auto & elem : child_watches)
-            result += sizeof(Int32) + elem.size();
         return result;  
     }
+
+protected:
+    static size_t pathesSize(const std::vector<String> & pathes)
+    {
+        size_t result = sizeof(Int32);
+        for (const auto & elem : pathes)
+            result += sizeof(Int32) + elem.size();
+        return result;
+    }
+};
+
+struct SetWatchesResponse : virtual Response
+{
+};
+
+struct SetWatch2Request : virtual SetWatchRequest
+{
+    std::vector<String> persistent_watches;
+    std::vector<String> persistent_recursive_watches;
+
+    String getPath() const override { return data_watches[0]; }
+    void addRootPath(const String &) override {}
+    size_t bytesSize() const override 
+    {
+        size_t result = SetWatchRequest::bytesSize();
+        result += pathesSize(persistent_watches);
+        result += pathesSize(persistent_recursive_watches);   
+        return result;  
+    }
+};
+
+struct SetWatches2Response : virtual Response
+{
 };
 
 struct CreateRequest : virtual Request

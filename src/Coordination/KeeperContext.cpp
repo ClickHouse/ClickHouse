@@ -13,6 +13,7 @@
 #include <Poco/Util/JSONConfiguration.h>
 #include <Coordination/KeeperConstants.h>
 #include <Server/CloudPlacementInfo.h>
+#include "Common/ZooKeeper/ZooKeeperConstants.h"
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
@@ -619,6 +620,11 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
         case Coordination::OpNum::Reconfig:
         case Coordination::OpNum::Auth:
         case Coordination::OpNum::SessionID:
+        case Coordination::OpNum::SetWatches:
+        case Coordination::OpNum::SetWatches2:
+        case Coordination::OpNum::AddWatch:
+        case Coordination::OpNum::CheckWatches:
+        case Coordination::OpNum::RemoveWatches:
             return true;
     }
 }
