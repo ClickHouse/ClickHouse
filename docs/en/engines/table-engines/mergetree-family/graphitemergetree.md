@@ -16,7 +16,7 @@ The engine inherits properties from [MergeTree](../../../engines/table-engines/m
 
 ## Creating a Table {#creating-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     Path String,
@@ -61,7 +61,7 @@ When creating a `GraphiteMergeTree` table, the same [clauses](../../../engines/t
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
 :::
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     EventDate Date,
@@ -107,7 +107,7 @@ Rollup configuration structure:
 
 Structure of the `patterns` section:
 
-``` text
+```text
 pattern
     rule_type
     regexp
@@ -158,7 +158,7 @@ Valid values:
 
 ### Configuration Example without rules types {#configuration-example}
 
-``` xml
+```xml
 <graphite_rollup>
     <version_column_name>Version</version_column_name>
     <pattern>
@@ -193,7 +193,7 @@ Valid values:
 
 ### Configuration Example with rules types {#configuration-typed-example}
 
-``` xml
+```xml
 <graphite_rollup>
     <version_column_name>Version</version_column_name>
     <pattern>

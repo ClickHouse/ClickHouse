@@ -21,13 +21,14 @@ Additional cache types:
 - DNS cache.
 - [Regexp](../interfaces/formats.md#data-format-regexp) cache.
 - Compiled expressions cache.
+- [Vector Similarity Index](../engines/table-engines/mergetree-family/annindexes.md) cache.
 - [Avro format](../interfaces/formats.md#data-format-avro) schemas cache.
 - [Dictionaries](../sql-reference/dictionaries/index.md) data cache.
 - Schema inference cache.
 - [Filesystem cache](storing-data.md) over S3, Azure, Local and other disks.
+- [Userspace page cache](/operations/userspace-page-cache)
 - [Query cache](query-cache.md).
+- [Query condition cache](query-condition-cache.md).
 - Format schema cache.
 
-To drop one of the caches, use [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md#drop-mark-cache) statements.
-
-To drop the format schema cache, use the [SYSTEM DROP FORMAT SCHEMA CACHE](/sql-reference/statements/system#system-drop-schema-format) statement.
+To drop one of the caches, use [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md) statements.

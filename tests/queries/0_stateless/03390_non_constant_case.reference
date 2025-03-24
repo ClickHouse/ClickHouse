@@ -1,0 +1,29 @@
+Numeric CASE
+0	Match Mod 3
+1	Match Mod 3
+2	No Match
+3	No Match
+4	Match Mod 4
+5	Match Mod 4
+6	Match Mod 3
+7	Match Mod 3
+8	Match Mod 4
+9	Match Mod 4
+String CASE
+Alice	No Match
+Bob	No Match
+Charlie	No Match
+David	No Match
+abba	Reversed match
+A	First letter
+Date CASE
+2024-03-10	Special day
+2024-03-11	Normal Day
+2024-03-12	Today
+1M Rows
+466666
+b
+\N	\N
+0
+3
+4
