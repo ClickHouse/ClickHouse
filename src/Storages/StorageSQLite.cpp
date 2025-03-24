@@ -2,7 +2,6 @@
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
@@ -58,7 +57,7 @@ StorageSQLite::StorageSQLite(
     , remote_table_name(remote_table_name_)
     , database_path(database_path_)
     , sqlite_db(sqlite_db_)
-    , log(getLogger("StorageSQLite (" + table_id_.getFullTableName() + ")"))
+    , log(getLogger("StorageSQLite (" + table_id_.table_name + ")"))
     , write_context(makeSQLiteWriteContext(getContext()))
 {
     StorageInMemoryMetadata storage_metadata;

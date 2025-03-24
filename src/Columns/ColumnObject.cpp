@@ -1,5 +1,3 @@
-#include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
@@ -7,7 +5,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/Arena.h>
-#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -32,23 +29,6 @@ const std::shared_ptr<SerializationDynamic> & getDynamicSerialization()
     static const std::shared_ptr<SerializationDynamic> dynamic_serialization = std::make_shared<SerializationDynamic>();
     return dynamic_serialization;
 }
-
-struct ColumnObjectCheckpoint : public ColumnCheckpoint
-{
-    using CheckpointsMap = std::unordered_map<std::string_view, ColumnCheckpointPtr>;
-
-    ColumnObjectCheckpoint(size_t size_, CheckpointsMap typed_paths_, CheckpointsMap dynamic_paths_, ColumnCheckpointPtr shared_data_)
-        : ColumnCheckpoint(size_)
-        , typed_paths(std::move(typed_paths_))
-        , dynamic_paths(std::move(dynamic_paths_))
-        , shared_data(std::move(shared_data_))
-    {
-    }
-
-    CheckpointsMap typed_paths;
-    CheckpointsMap dynamic_paths;
-    ColumnCheckpointPtr shared_data;
-};
 
 }
 
@@ -268,81 +248,6 @@ void ColumnObject::get(size_t n, Field & res) const
     res = (*this)[n];
 }
 
-std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n) const
-{
-    WriteBufferFromOwnString wb;
-    wb << '{';
-
-    bool first = true;
-
-    for (const auto & [path, column] : typed_paths)
-    {
-        const auto & [value, type] = column->getValueNameAndType(n);
-
-        if (first)
-            first = false;
-        else
-            wb << ", ";
-
-        writeDoubleQuoted(path, wb);
-        wb << ": " << value;
-    }
-
-    for (const auto & [path, column] : dynamic_paths_ptrs)
-    {
-        /// Output only non-null values from dynamic paths. We cannot distinguish cases when
-        /// dynamic path has Null value and when it's absent in the row and consider them equivalent.
-        if (column->isNullAt(n))
-            continue;
-
-        const auto & [value, type] = column->getValueNameAndType(n);
-
-        if (first)
-            first = false;
-        else
-            wb << ", ";
-
-        writeDoubleQuoted(path, wb);
-        wb << ": " << value;
-    }
-
-    const auto & shared_data_offsets = getSharedDataOffsets();
-    const auto [shared_paths, shared_values] = getSharedDataPathsAndValues();
-    size_t start = shared_data_offsets[static_cast<ssize_t>(n) - 1];
-    size_t end = shared_data_offsets[n];
-    for (size_t i = start; i != end; ++i)
-    {
-        if (first)
-            first = false;
-        else
-            wb << ", ";
-
-        String path = shared_paths->getDataAt(i).toString();
-        writeDoubleQuoted(path, wb);
-
-        auto value_data = shared_values->getDataAt(i);
-        ReadBufferFromMemory buf(value_data.data, value_data.size);
-        auto decoded_type = decodeDataType(buf);
-
-        if (isNothing(decoded_type))
-        {
-            wb << ": NULL";
-            continue;
-        }
-
-        const auto column = decoded_type->createColumn();
-        decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
-
-        const auto & [value, type] = column->getValueNameAndType(0);
-
-        wb << ": " << value;
-    }
-
-    wb << "}";
-
-    return {wb.str(), std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)};
-}
-
 bool ColumnObject::isDefaultAt(size_t n) const
 {
     for (const auto & [path, column] : typed_paths)
@@ -458,10 +363,9 @@ void ColumnObject::insert(const Field & x)
         {
             shared_data_paths->insertData(path.data(), path.size());
             auto & shared_data_values_chars = shared_data_values->getChars();
-            {
-                WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
-                getDynamicSerialization()->serializeBinary(value_field, value_buf, getFormatSettings());
-            }
+            WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
+            getDynamicSerialization()->serializeBinary(value_field, value_buf, getFormatSettings());
+            value_buf.finalize();
             shared_data_values_chars.push_back(0);
             shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
         }
@@ -518,7 +422,7 @@ bool ColumnObject::tryInsert(const Field & x)
                 column->popBack(column->size() - prev_size);
         }
 
-        if (shared_data_paths->size() != prev_paths_size)  /// NOLINT(clang-analyzer-core.NullDereference)
+        if (shared_data_paths->size() != prev_paths_size)
             shared_data_paths->popBack(shared_data_paths->size() - prev_paths_size);
         if (shared_data_values->size() != prev_values_size)
             shared_data_values->popBack(shared_data_values->size() - prev_values_size);
@@ -753,15 +657,14 @@ void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_dat
 
     shared_data_paths->insertData(path.data(), path.size());
     auto & shared_data_values_chars = shared_data_values->getChars();
-    {
-        WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
-        getDynamicSerialization()->serializeBinary(column, n, value_buf, getFormatSettings());
-    }
+    WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
+    getDynamicSerialization()->serializeBinary(column, n, value_buf, getFormatSettings());
+    value_buf.finalize();
     shared_data_values_chars.push_back(0);
     shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
 }
 
-void ColumnObject::deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column)
+void ColumnObject::deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column) const
 {
     auto value_data = shared_data_values->getDataAt(n);
     ReadBufferFromMemory buf(value_data.data, value_data.size);
@@ -793,77 +696,6 @@ void ColumnObject::popBack(size_t n)
     for (auto & [_, column] : dynamic_paths_ptrs)
         column->popBack(n);
     shared_data->popBack(n);
-}
-
-ColumnCheckpointPtr ColumnObject::getCheckpoint() const
-{
-    auto get_checkpoints = [](const auto & columns)
-    {
-        ColumnObjectCheckpoint::CheckpointsMap checkpoints;
-        for (const auto & [name, column] : columns)
-            checkpoints[name] = column->getCheckpoint();
-
-        return checkpoints;
-    };
-
-    return std::make_shared<ColumnObjectCheckpoint>(size(), get_checkpoints(typed_paths), get_checkpoints(dynamic_paths_ptrs), shared_data->getCheckpoint());
-}
-
-void ColumnObject::updateCheckpoint(ColumnCheckpoint & checkpoint) const
-{
-    auto & object_checkpoint = assert_cast<ColumnObjectCheckpoint &>(checkpoint);
-
-    auto update_checkpoints = [&](const auto & columns_map, auto & checkpoints_map)
-    {
-        for (const auto & [name, column] : columns_map)
-        {
-            auto & nested = checkpoints_map[name];
-            if (!nested)
-                nested = column->getCheckpoint();
-            else
-                column->updateCheckpoint(*nested);
-        }
-    };
-
-    checkpoint.size = size();
-    update_checkpoints(typed_paths, object_checkpoint.typed_paths);
-    update_checkpoints(dynamic_paths, object_checkpoint.dynamic_paths);
-    shared_data->updateCheckpoint(*object_checkpoint.shared_data);
-}
-
-void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
-{
-    const auto & object_checkpoint = assert_cast<const ColumnObjectCheckpoint &>(checkpoint);
-
-    auto rollback_columns = [&](auto & columns_map, const auto & checkpoints_map, bool is_dynamic_paths)
-    {
-        NameSet names_to_remove;
-
-        /// Rollback subcolumns and remove paths that were not in checkpoint.
-        for (auto & [name, column] : columns_map)
-        {
-            auto it = checkpoints_map.find(name);
-            if (it == checkpoints_map.end())
-                names_to_remove.insert(name);
-            else
-                column->rollback(*it->second);
-        }
-
-        for (const auto & name : names_to_remove)
-        {
-            if (is_dynamic_paths)
-            {
-                dynamic_paths_ptrs.erase(name);
-                sorted_dynamic_paths.erase(name);
-            }
-
-            columns_map.erase(name);
-        }
-    };
-
-    rollback_columns(typed_paths, object_checkpoint.typed_paths, false);
-    rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths, true);
-    shared_data->rollback(*object_checkpoint.shared_data);
 }
 
 StringRef ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
@@ -1264,7 +1096,7 @@ void ColumnObject::protect()
     shared_data->protect();
 }
 
-void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback callback)
+void ColumnObject::forEachSubcolumn(DB::IColumn::MutableColumnCallback callback)
 {
     for (auto & [_, column] : typed_paths)
         callback(column);
@@ -1276,44 +1108,18 @@ void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback ca
     callback(shared_data);
 }
 
-void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
+void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
 {
     for (auto & [_, column] : typed_paths)
     {
         callback(*column);
-        column->forEachMutableSubcolumnRecursively(callback);
+        column->forEachSubcolumnRecursively(callback);
     }
     for (auto & [path, column] : dynamic_paths)
     {
         callback(*column);
-        column->forEachMutableSubcolumnRecursively(callback);
+        column->forEachSubcolumnRecursively(callback);
         dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
-    }
-    callback(*shared_data);
-    shared_data->forEachMutableSubcolumnRecursively(callback);
-}
-
-void ColumnObject::forEachSubcolumn(DB::IColumn::ColumnCallback callback) const
-{
-    for (const auto & [_, column] : typed_paths)
-        callback(column);
-    for (const auto & [path, column] : dynamic_paths)
-        callback(column);
-
-    callback(shared_data);
-}
-
-void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveColumnCallback callback) const
-{
-    for (const auto & [_, column] : typed_paths)
-    {
-        callback(*column);
-        column->forEachSubcolumnRecursively(callback);
-    }
-    for (const auto & [path, column] : dynamic_paths)
-    {
-        callback(*column);
-        column->forEachSubcolumnRecursively(callback);
     }
     callback(*shared_data);
     shared_data->forEachSubcolumnRecursively(callback);
@@ -1336,14 +1142,14 @@ bool ColumnObject::structureEquals(const IColumn & rhs) const
     return true;
 }
 
-ColumnPtr ColumnObject::compress(bool force_compression) const
+ColumnPtr ColumnObject::compress() const
 {
     std::unordered_map<String, ColumnPtr> compressed_typed_paths;
     compressed_typed_paths.reserve(typed_paths.size());
     size_t byte_size = 0;
     for (const auto & [path, column] : typed_paths)
     {
-        auto compressed_column = column->compress(force_compression);
+        auto compressed_column = column->compress();
         byte_size += compressed_column->byteSize();
         compressed_typed_paths[path] = std::move(compressed_column);
     }
@@ -1352,12 +1158,12 @@ ColumnPtr ColumnObject::compress(bool force_compression) const
     compressed_dynamic_paths.reserve(dynamic_paths_ptrs.size());
     for (const auto & [path, column] : dynamic_paths_ptrs)
     {
-        auto compressed_column = column->compress(force_compression);
+        auto compressed_column = column->compress();
         byte_size += compressed_column->byteSize();
         compressed_dynamic_paths[path] = std::move(compressed_column);
     }
 
-    auto compressed_shared_data = shared_data->compress(force_compression);
+    auto compressed_shared_data = shared_data->compress();
     byte_size += compressed_shared_data->byteSize();
 
     auto decompress =
@@ -1534,31 +1340,6 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
         dynamic_paths_ptrs[path]->reserve(total_size);
         dynamic_paths_ptrs[path]->prepareVariantsForSquashing(source_dynamic_columns);
     }
-}
-
-bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
-{
-    const auto * rhs_object = typeid_cast<const ColumnObject *>(&rhs);
-    if (!rhs_object || typed_paths.size() != rhs_object->typed_paths.size()
-        || global_max_dynamic_paths != rhs_object->global_max_dynamic_paths || max_dynamic_types != rhs_object->max_dynamic_types
-        || dynamic_paths.size() != rhs_object->dynamic_paths.size())
-        return false;
-
-    for (const auto & [path, column] : typed_paths)
-    {
-        auto it = rhs_object->typed_paths.find(path);
-        if (it == rhs_object->typed_paths.end() || !it->second->dynamicStructureEquals(*column))
-            return false;
-    }
-
-    for (const auto & [path, column] : dynamic_paths)
-    {
-        auto it = rhs_object->dynamic_paths.find(path);
-        if (it == rhs_object->dynamic_paths.end() || !it->second->dynamicStructureEquals(*column))
-            return false;
-    }
-
-    return true;
 }
 
 void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
@@ -1760,113 +1541,6 @@ void ColumnObject::fillPathColumnFromSharedData(IColumn & path_column, StringRef
             path_column.insertDefault();
         }
     }
-}
-
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
-int ColumnObject::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
-#else
-int ColumnObject::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
-#endif
-{
-    /// We compare objects only for equality. So if something is not equal, we just return 1.
-    const ColumnObject & rhs_object = assert_cast<const ColumnObject &>(rhs);
-
-    /// First, check that values of all typed paths are equal.
-    for (const auto & [path, column] : typed_paths)
-    {
-        if (column->compareAt(n, m, *rhs_object.typed_paths.at(path), nan_direction_hint) != 0)
-            return 1;
-    }
-
-    /// Second, iterate over dynamic paths and shared data and try to find
-    /// the same path in the dynamic paths or shared data of the rhs column.
-    const auto [rhs_shared_data_paths, rhs_shared_data_values] = rhs_object.getSharedDataPathsAndValues();
-    const auto & rhs_shared_data_offsets = rhs_object.getSharedDataOffsets();
-    size_t rhs_shared_data_start = rhs_shared_data_offsets[m - 1];
-    size_t rhs_shared_data_end = rhs_shared_data_offsets[m];
-    /// Remember what dynamic paths from rhs column were found in this column
-    std::unordered_set<std::string_view> rhs_seen_dynamic_paths;
-    /// Remember how many shared data paths from rhs column were found.
-    size_t rhs_seen_shared_data_paths = 0;
-    for (const auto & [path, column] : dynamic_paths)
-    {
-        /// We consider null value as the absence of the key in the object.
-        if (column->isNullAt(n))
-            continue;
-
-        /// First try to find this path in the dynamic paths of rhs column.
-        if (auto it = rhs_object.dynamic_paths.find(path); it != rhs_object.dynamic_paths.end())
-        {
-            if (column->compareAt(n, m, *it->second, nan_direction_hint) != 0)
-                return 1;
-            rhs_seen_dynamic_paths.insert(path);
-        }
-        /// Otherwise try to find this path in the shared data of rhs column.
-        else
-        {
-            size_t lower_bound_path_index = findPathLowerBoundInSharedData(path, *rhs_shared_data_paths, rhs_shared_data_start, rhs_shared_data_end);
-            if (lower_bound_path_index != rhs_shared_data_end && rhs_shared_data_paths->getDataAt(lower_bound_path_index) == path)
-            {
-                auto tmp_column = ColumnDynamic::create(max_dynamic_types);
-                deserializeValueFromSharedData(rhs_shared_data_values, lower_bound_path_index, *tmp_column);
-                if (column->compareAt(n, 0, *tmp_column, nan_direction_hint) != 0)
-                    return 1;
-                ++rhs_seen_shared_data_paths;
-            }
-            /// If not found, objects are not equal.
-            else
-            {
-                return 1;
-            }
-        }
-    }
-
-    const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
-    const auto & shared_data_offsets = getSharedDataOffsets();
-    size_t shared_data_start = shared_data_offsets[n - 1];
-    size_t shared_data_end = shared_data_offsets[n];
-    for (size_t i = shared_data_start; i != shared_data_end; ++i)
-    {
-        auto path = shared_data_paths->getDataAt(i);
-        /// First try to find this path in the dynamic paths of rhs column.
-        if (auto it = rhs_object.dynamic_paths.find(path.toView()); it != rhs_object.dynamic_paths.end())
-        {
-            auto tmp_column = ColumnDynamic::create(max_dynamic_types);
-            deserializeValueFromSharedData(shared_data_values, i, *tmp_column);
-            if (tmp_column->compareAt(0, m, *it->second, nan_direction_hint) != 0)
-                return 1;
-            rhs_seen_dynamic_paths.insert(path.toView());
-        }
-        /// Otherwise try to find this path in the shared data of rhs column.
-        else
-        {
-            size_t lower_bound_path_index = findPathLowerBoundInSharedData(path, *rhs_shared_data_paths, rhs_shared_data_start, rhs_shared_data_end);
-            if (lower_bound_path_index != rhs_shared_data_end && rhs_shared_data_paths->getDataAt(lower_bound_path_index) == path)
-            {
-                if (shared_data_values->getDataAt(i) != rhs_shared_data_values->getDataAt(lower_bound_path_index))
-                    return 1;
-                ++rhs_seen_shared_data_paths;
-            }
-            /// If not found, objects are not equal.
-            else
-            {
-                return 1;
-            }
-        }
-    }
-
-    /// If there are not found paths in rhs shared data, objects are not equal.
-    if (rhs_seen_shared_data_paths != rhs_shared_data_end - rhs_shared_data_start)
-        return 1;
-
-    /// Iterate over not found paths in rhs dynamic paths and if there are non-null values, objects are not equal.
-    for (const auto & [path, column] : rhs_object.dynamic_paths)
-    {
-        if (!rhs_seen_dynamic_paths.contains(path) && !column->isNullAt(m))
-            return 1;
-    }
-
-    return 0;
 }
 
 }

@@ -1,15 +1,13 @@
 import os
-import re
 import shutil
-import threading
 import time
-
+import re
 import pytest
+import threading
 
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
-from helpers.database_disk import get_database_disk_name, replace_text_in_metadata
+from helpers.network import PartitionManager
 
 test_recover_staled_replica_run = 1
 
@@ -979,8 +977,8 @@ def test_recover_staled_replica(started_cluster):
 
 
 def test_recover_staled_replica_many_mvs(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
+    main_node.query("DROP DATABASE IF EXISTS recover_mvs")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs")
 
     main_node.query_with_retry(
         "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica1');"
@@ -1121,8 +1119,8 @@ def test_recover_staled_replica_many_mvs(started_cluster):
     query = "SELECT name FROM system.tables WHERE database='recover_mvs' ORDER BY name"
     assert main_node.query(query) == dummy_node.query(query)
 
-    main_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
+    main_node.query("DROP DATABASE IF EXISTS recover_mvs")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs")
 
 
 def test_startup_without_zk(started_cluster):
@@ -1141,10 +1139,8 @@ def test_startup_without_zk(started_cluster):
 
     main_node.query("INSERT INTO startup.rmt VALUES (42)")
     with PartitionManager() as pm:
-        pm.drop_instance_zk_connections(
-            main_node, action="REJECT --reject-with tcp-reset"
-        )
-        main_node.restart_clickhouse(stop_start_wait_sec=120)
+        pm.drop_instance_zk_connections(main_node)
+        main_node.restart_clickhouse(stop_start_wait_sec=60)
         assert main_node.query("SELECT (*,).1 FROM startup.rmt") == "42\n"
 
     # we need to wait until the table is not readonly
@@ -1239,11 +1235,6 @@ def test_sync_replica(started_cluster):
 
 
 def test_force_synchronous_settings(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS test_force_synchronous_settings SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS test_force_synchronous_settings SYNC")
-    snapshotting_node.query(
-        "DROP DATABASE IF EXISTS test_force_synchronous_settings SYNC"
-    )
     main_node.query(
         "CREATE DATABASE test_force_synchronous_settings ENGINE = Replicated('/clickhouse/databases/test2', 'shard1', 'replica1');"
     )
@@ -1308,8 +1299,8 @@ def test_force_synchronous_settings(started_cluster):
 
 
 def test_recover_digest_mismatch(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
+    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
 
     main_node.query(
         "CREATE DATABASE recover_digest_mismatch ENGINE = Replicated('/clickhouse/databases/recover_digest_mismatch', 'shard1', 'replica1');"
@@ -1323,30 +1314,12 @@ def test_recover_digest_mismatch(started_cluster):
     main_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
     dummy_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
 
-    db_disk_name = get_database_disk_name(dummy_node)
-    db_data_path = dummy_node.query(
-        f"SELECT metadata_path FROM system.databases WHERE database='recover_digest_mismatch'"
-    ).strip()
-
-    disk_cmd_prefix = f"/usr/bin/clickhouse disks -C /etc/clickhouse-server/config.xml --disk {db_disk_name} --save-logs --query "
-    db_disk_path = dummy_node.query(
-        "SELECT path FROM system.disks WHERE name='{db_disk_name}'"
-    ).strip()
-
-    print(f"db_data_path {db_data_path}")
-
-    mv1_metadata = dummy_node.exec_in_container(
-        ["bash", "-c", f"{disk_cmd_prefix} 'read --path-from {db_data_path}mv1.sql' "]
-    )
-    corrupted_mv1_metadata = (
-        mv1_metadata.replace("Int32", "String").replace("`", r"\`").replace('"', r"\"")
-    )
     ways_to_corrupt_metadata = [
-        f"{disk_cmd_prefix} 'move --path-from {db_data_path}t1.sql --path-to {db_data_path}m1.sql'",
-        f"""printf "%s" "{corrupted_mv1_metadata}" | {disk_cmd_prefix} 'write --path-to {db_data_path}mv1.sql'""",
-        f"{disk_cmd_prefix} 'remove {db_data_path}d1.sql'",
+        "mv /var/lib/clickhouse/metadata/recover_digest_mismatch/t1.sql /var/lib/clickhouse/metadata/recover_digest_mismatch/m1.sql",
+        "sed --follow-symlinks -i 's/Int32/String/' /var/lib/clickhouse/metadata/recover_digest_mismatch/mv1.sql",
+        "rm -f /var/lib/clickhouse/metadata/recover_digest_mismatch/d1.sql",
         "rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/",  # Will trigger "Directory already exists"
-        f"{disk_cmd_prefix} 'remove -r {db_disk_path}store/' && rm -rf /var/lib/clickhouse/store",  # Remove both metadata and data
+        "rm -rf /var/lib/clickhouse/store",
     ]
 
     for command in ways_to_corrupt_metadata:
@@ -1372,16 +1345,15 @@ def test_recover_digest_mismatch(started_cluster):
         dummy_node.start_clickhouse()
         assert_eq_with_retry(dummy_node, query, expected)
 
-    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
+    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
 
     print("Everything Okay")
 
 
 def test_replicated_table_structure_alter(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS table_structure SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS table_structure SYNC")
-    competing_node.query("DROP DATABASE IF EXISTS table_structure SYNC")
+    main_node.query("DROP DATABASE IF EXISTS table_structure")
+    dummy_node.query("DROP DATABASE IF EXISTS table_structure")
 
     main_node.query(
         "CREATE DATABASE table_structure ENGINE = Replicated('/clickhouse/databases/table_structure', 'shard1', 'replica1');"
@@ -1413,24 +1385,8 @@ def test_replicated_table_structure_alter(started_cluster):
     )
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
 
-    metadata_path = competing_node.query(
-        f"SELECT metadata_path FROM system.tables WHERE database='table_structure' AND name='mem'"
-    ).strip()
-    db_disk_name = get_database_disk_name(competing_node)
-    competing_node.exec_in_container(
-        [
-            "/usr/bin/clickhouse",
-            "disks",
-            "-C",
-            "/etc/clickhouse-server/config.xml",
-            "--disk",
-            f"{db_disk_name}",
-            "--save-logs",
-            "--query",
-            f"remove {metadata_path}",
-        ],
-        user="root",
-    )
+    command = "rm -f /var/lib/clickhouse/metadata/table_structure/mem.sql"
+    competing_node.exec_in_container(["bash", "-c", command])
     competing_node.restart_clickhouse(kill=True)
 
     dummy_node.query("ATTACH DATABASE table_structure")
@@ -1499,8 +1455,8 @@ def test_modify_comment(started_cluster):
 
 
 def test_table_metadata_corruption(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")
+    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
+    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
 
     main_node.query(
         "CREATE DATABASE table_metadata_corruption ENGINE = Replicated('/clickhouse/databases/table_metadata_corruption', 'shard1', 'replica1');"
@@ -1514,16 +1470,13 @@ def test_table_metadata_corruption(started_cluster):
     main_node.query("SYSTEM SYNC DATABASE REPLICA table_metadata_corruption")
     dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_metadata_corruption")
 
-    metadata_path = dummy_node.query(
-        f"SELECT metadata_path FROM system.tables WHERE database='table_metadata_corruption' AND name='rmt1'"
-    ).strip()
     # Server should handle this by throwing an exception during table loading, which should lead to server shutdown
+    corrupt = "sed --follow-symlinks -i 's/ReplicatedMergeTree/CorruptedMergeTree/' /var/lib/clickhouse/metadata/table_metadata_corruption/rmt1.sql"
 
-    print(f"Corrupting metadata {metadata_path}")
+    print(f"Corrupting metadata using `{corrupt}`")
     dummy_node.stop_clickhouse(kill=True)
-    replace_text_in_metadata(
-        dummy_node, metadata_path, "ReplicatedMergeTree", "CorruptedMergeTree"
-    )
+    dummy_node.exec_in_container(["bash", "-c", corrupt])
+
     query = (
         "SELECT name, uuid, create_table_query FROM system.tables WHERE database='table_metadata_corruption' AND name NOT LIKE '.inner_id.%' "
         "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"
@@ -1532,29 +1485,22 @@ def test_table_metadata_corruption(started_cluster):
 
     # We expect clickhouse server to shutdown without LOGICAL_ERRORs or deadlocks
     dummy_node.start_clickhouse(expected_to_fail=True)
-
     assert not dummy_node.contains_in_log("LOGICAL_ERROR")
 
-    print(f"Fix corrupted metadata")
-    replace_text_in_metadata(
-        dummy_node, metadata_path, "CorruptedMergeTree", "ReplicatedMergeTree"
-    )
+    fix_corrupt = "sed --follow-symlinks -i 's/CorruptedMergeTree/ReplicatedMergeTree/' /var/lib/clickhouse/metadata/table_metadata_corruption/rmt1.sql"
+    print(f"Fix corrupted metadata using `{fix_corrupt}`")
+    dummy_node.exec_in_container(["bash", "-c", fix_corrupt])
 
     dummy_node.start_clickhouse()
     assert_eq_with_retry(dummy_node, query, expected)
 
-    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")
+    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
+    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
 
 
 def test_auto_recovery(started_cluster):
-    dummy_node.query("DROP DATABASE IF EXISTS auto_recovery SYNC")
-    bad_settings_node.query(
-        "DROP DATABASE IF EXISTS auto_recovery",
-        settings={
-            "implicit_transaction": 0,
-        },
-    )
+    dummy_node.query("DROP DATABASE IF EXISTS auto_recovery")
+    bad_settings_node.query("DROP DATABASE IF EXISTS auto_recovery")
 
     dummy_node.query(
         "CREATE DATABASE auto_recovery ENGINE = Replicated('/clickhouse/databases/auto_recovery', 'shard1', 'replica1');"
@@ -1601,8 +1547,8 @@ def test_auto_recovery(started_cluster):
 
 
 def test_all_groups_cluster(started_cluster):
-    dummy_node.query("DROP DATABASE IF EXISTS db_cluster SYNC")
-    bad_settings_node.query("DROP DATABASE IF EXISTS db_cluster SYNC")
+    dummy_node.query("DROP DATABASE IF EXISTS db_cluster")
+    bad_settings_node.query("DROP DATABASE IF EXISTS db_cluster")
     dummy_node.query(
         "CREATE DATABASE db_cluster ENGINE = Replicated('/clickhouse/databases/all_groups_cluster', 'shard1', 'replica1');"
     )
@@ -1618,20 +1564,4 @@ def test_all_groups_cluster(started_cluster):
     )
     assert "bad_settings_node\ndummy_node\n" == bad_settings_node.query(
         "select host_name from system.clusters where name='all_groups.db_cluster' order by host_name"
-    )
-
-
-def test_detach_attach_table(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS detach_attach_db SYNC")
-    main_node.query(
-        "CREATE DATABASE detach_attach_db ENGINE = Replicated('/clickhouse/databases/detach_attach_db');"
-    )
-    main_node.query(
-        "CREATE TABLE detach_attach_db.detach_attach_table (k UInt64) ENGINE=ReplicatedMergeTree ORDER BY k;"
-    )
-    main_node.query("INSERT INTO detach_attach_db.detach_attach_table VALUES (1);")
-    main_node.query("DETACH TABLE detach_attach_db.detach_attach_table PERMANENTLY;")
-    main_node.query("ATTACH TABLE detach_attach_db.detach_attach_table;")
-    assert (
-        main_node.query("SELECT * FROM detach_attach_db.detach_attach_table;") == "1\n"
     )

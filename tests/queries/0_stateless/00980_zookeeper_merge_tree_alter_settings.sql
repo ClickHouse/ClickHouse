@@ -1,6 +1,5 @@
--- Tags: zookeeper, no-replicated-database, no-shared-merge-tree
+-- Tags: zookeeper, no-replicated-database
 -- Tag no-replicated-database: Unsupported type of ALTER query
--- Tag no-shared-merge-tree: for smt works
 
 DROP TABLE IF EXISTS replicated_table_for_alter1;
 DROP TABLE IF EXISTS replicated_table_for_alter2;

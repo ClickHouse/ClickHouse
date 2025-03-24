@@ -8,23 +8,6 @@ set -x -e
 DEST_SERVER_PATH="${1:-/etc/clickhouse-server}"
 DEST_CLIENT_PATH="${2:-/etc/clickhouse-client}"
 SRC_PATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
-if [ $# -ge 2 ]; then
-    shift 2
-fi
-
-FAST_TEST=0
-
-NO_AZURE=0
-
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        --fast-test) FAST_TEST=1 ;;
-        --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 ;;
-        --no-azure) NO_AZURE=1 ;;
-        *) echo "Unknown option: $1" ; exit 1 ;;
-    esac
-    shift
-done
 
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
 
@@ -32,7 +15,6 @@ mkdir -p $DEST_SERVER_PATH/config.d/
 mkdir -p $DEST_SERVER_PATH/users.d/
 mkdir -p $DEST_CLIENT_PATH
 
-ln -sf $SRC_PATH/config.d/tmp.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_write.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_num_to_warn.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/listen.xml $DEST_SERVER_PATH/config.d/
@@ -63,6 +45,7 @@ ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/CORS.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/logger_trace.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/named_collection.xml $DEST_SERVER_PATH/config.d/
@@ -83,14 +66,15 @@ ln -sf $SRC_PATH/config.d/backups.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/validate_tcp_client_information.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/block_number.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 
 # Not supported with fasttest.
-if [ "$FAST_TEST" != "1" ]; then
-   ln -sf "$SRC_PATH/config.d/legacy_geobase.xml" "$DEST_SERVER_PATH/config.d/"
+if [ "${DEST_SERVER_PATH}" = "/etc/clickhouse-server" ]
+then
+   ln -sf $SRC_PATH/config.d/legacy_geobase.xml $DEST_SERVER_PATH/config.d/
 fi
 
 ln -sf $SRC_PATH/users.d/log_queries.xml $DEST_SERVER_PATH/users.d/
@@ -110,7 +94,6 @@ ln -sf $SRC_PATH/users.d/prefetch_settings.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
-ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
 
 if [[ -n "$USE_OLD_ANALYZER" ]] && [[ "$USE_OLD_ANALYZER" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
@@ -131,7 +114,6 @@ ln -sf $SRC_PATH/test_function.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/top_level_domains $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/regions_hierarchy.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/regions_names_en.txt $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/regions_names_es.txt $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/ext-en.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/ext-ru.txt $DEST_SERVER_PATH/config.d/
@@ -169,9 +151,6 @@ sed --follow-symlinks -i "s|<latest_logs_cache_size_threshold>[[:digit:]]\+</lat
 value=$((($RANDOM + 100) * 2048))
 sed --follow-symlinks -i "s|<commit_logs_cache_size_threshold>[[:digit:]]\+</commit_logs_cache_size_threshold>|<commit_logs_cache_size_threshold>$value</commit_logs_cache_size_threshold>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
 
-value=$(($RANDOM % 2))
-sed --follow-symlinks -i "s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
-
 if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/polymorphic_parts.xml $DEST_SERVER_PATH/config.d/
 fi
@@ -204,10 +183,8 @@ elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
 fi
 
-if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
-    if [[ "$NO_AZURE" != "1" ]]; then
-      ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
-    fi
+if [[ -n "$EXPORT_S3_STORAGE_POLICIES" ]]; then
+    ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
@@ -216,15 +193,9 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/s3_cache_new.xml $DEST_SERVER_PATH/users.d/
 fi
 
-if [[ "$USE_PARALLEL_REPLICAS" == "1" ]]; then
-    ln -sf $SRC_PATH/users.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/users.d/
-    ln -sf $SRC_PATH/config.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/config.d/
-fi
-
-if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
-    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
     rm /etc/clickhouse-server/config.d/zookeeper.xml
     rm /etc/clickhouse-server/config.d/keeper_port.xml
 

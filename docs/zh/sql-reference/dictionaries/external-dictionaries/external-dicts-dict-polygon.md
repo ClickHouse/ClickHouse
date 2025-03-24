@@ -5,4 +5,4 @@ sidebar_label: Polygon Dictionaries With Grids
 title: "Polygon dictionaries"
 ---
 
-View the [english Dictionaries doc page for details](../../../../sql-reference/dictionaries/index.md).
+View the [english Dictionaries doc page for details](../../../../en/sql-reference/dictionaries/index.md).

@@ -8,21 +8,16 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Common/RemoteHostFilter.h>
 #include <Common/thread_local_rng.h>
 
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/Serializations/SerializationFixedString.h>
 
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
@@ -54,24 +49,12 @@
 
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
-#include <base/range.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool external_table_functions_use_nulls;
-    extern const SettingsUInt64 glob_expansion_max_elements;
-    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
-    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
-    extern const SettingsUInt64 postgresql_connection_pool_retries;
-    extern const SettingsUInt64 postgresql_connection_pool_size;
-    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
-}
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
@@ -92,7 +75,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     , remote_table_schema(remote_table_schema_)
     , on_conflict(on_conflict_)
     , pool(std::move(pool_))
-    , log(getLogger("StoragePostgreSQL (" + table_id_.getFullTableName() + ")"))
+    , log(getLogger("StoragePostgreSQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -115,7 +98,7 @@ ColumnsDescription StoragePostgreSQL::getTableStructureFromData(
     const String & schema,
     const ContextPtr & context_)
 {
-    const bool use_nulls = context_->getSettingsRef()[Setting::external_table_functions_use_nulls];
+    const bool use_nulls = context_->getSettingsRef().external_table_functions_use_nulls;
     auto connection_holder = pool_->get();
     auto columns_info = fetchPostgreSQLTableStructure(
             connection_holder->get(), table, schema, use_nulls).physical_columns;
@@ -142,7 +125,7 @@ public:
         String remote_table_schema_,
         String remote_table_name_,
         postgres::ConnectionHolderPtr connection_)
-        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
         , remote_table_schema(remote_table_schema_)
@@ -173,7 +156,7 @@ public:
             transform_query_limit);
         LOG_TRACE(logger, "Query: {}", query);
 
-        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(std::move(connection), query, getOutputHeader(), max_block_size)));
+        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(std::move(connection), query, getOutputStream().header, max_block_size)));
     }
 
     LoggerPtr logger;
@@ -220,70 +203,6 @@ void StoragePostgreSQL::read(
     query_plan.addStep(std::move(reading));
 }
 
-class SerializationPostgreSQLFixedString : public SerializationFixedString
-{
-private:
-    size_t size;
-
-public:
-    explicit SerializationPostgreSQLFixedString(size_t n_) : SerializationFixedString(n_), size(n_) {}
-
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override
-    {
-        const auto * nested_column = &column;
-        if (column.isNullable())
-        {
-            const auto * column_nullable = assert_cast<const ColumnNullable *>(&column);
-            nested_column = &column_nullable->getNestedColumn();
-        }
-
-        const auto column_type = nested_column->getDataType();
-        const char * data = nullptr;
-        if (isFixedString(column_type))
-        {
-            data = reinterpret_cast<const char *>(
-                &assert_cast<const ColumnFixedString *>(nested_column)->getChars()[size * row_num]);
-        }
-        else if (isString(column_type))
-            data = assert_cast<const ColumnString &>(column).getDataAt(row_num).data;
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't serialize type {} as a FixedString", nested_column->getName());
-
-        /// Write only the amount of UTF-8 characters actually used. PostgreSQL complains if we pass
-        /// any \0 because it doesn't interpret them as valid UTF-8. We assume that any ending \0 is
-        /// padding and replace any intermediate \0 with a whitespace. This is a trade-off we have
-        /// to make since PostgreSQL doesn't accept intermediate \0's.
-        std::string_view str(data, size);
-        const auto end_pos = str.find_last_not_of('\0');
-        auto write_size = end_pos != std::string::npos ? end_pos + 1 : size;
-        str = std::string_view(data, write_size);
-
-        /// Replace any intermediate \0 with a whitespace, allocating a new buffer only if needed.
-        /// Because of SSO, new_buffer will only allocate heap memory in case the size is not small.
-        std::string new_buffer;
-        if (str.find('\0') != std::string::npos)
-        {
-            new_buffer = str;
-            std::replace(new_buffer.begin(), new_buffer.end(), '\0', ' ');
-            data = new_buffer.data();
-        }
-        writeString(data, write_size, ostr);
-    }
-};
-
-static void changeSerializationForPostgreSQLFixedString(const ColumnPtr & column, DataTypePtr & data_type)
-{
-    /// pqxx throws an error when trying to ingest fixed-size strings padded with \0:
-    /// pqxx::data_exception: Failure during '[END COPY]': ERROR:  invalid byte sequence for encoding "UTF8": 0x00
-    auto non_nullable_type = removeNullable(data_type);
-    auto non_nullable_column = removeNullable(column);
-    if (isFixedString(non_nullable_type) && !data_type->getCustomSerialization())
-    {
-        auto n = assert_cast<const DataTypeFixedString &>(*non_nullable_type).getN();
-        auto custom_desc = std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>(fmt::format("FixedString({})", n)), std::make_shared<SerializationPostgreSQLFixedString>(n));
-        DataTypeFactory::setCustom(data_type, std::move(custom_desc));
-    }
-}
 
 class PostgreSQLSink : public SinkToStorage
 {
@@ -327,9 +246,8 @@ public:
         }
 
         const auto columns = block.getColumns();
-        const size_t num_rows = block.rows();
-        const size_t num_cols = block.columns();
-        auto data_types = block.getDataTypes();
+        const size_t num_rows = block.rows(), num_cols = block.columns();
+        const auto data_types = block.getDataTypes();
 
         /// std::optional lets libpqxx to know if value is NULL
         std::vector<std::optional<std::string>> row(num_cols);
@@ -352,7 +270,6 @@ public:
                     }
                     else
                     {
-                        changeSerializationForPostgreSQLFixedString(columns[j], data_types[j]);
                         data_types[j]->getDefaultSerialization()->serializeText(*columns[j], i, ostr, FormatSettings{});
                     }
 
@@ -415,7 +332,7 @@ public:
         array_column->insert(array_field);
 
         const IColumn & nested_column = array_column->getData();
-        const auto parent_type = nested_type;
+        const auto serialization = nested_type->getDefaultSerialization();
 
         FormatSettings settings;
         settings.pretty.charset = FormatSettings::Pretty::Charset::ASCII;
@@ -423,10 +340,8 @@ public:
         if (nested_type->isNullable())
             nested_type = static_cast<const DataTypeNullable *>(nested_type.get())->getNestedType();
 
-        /// We need to patch first the nested type in case the the parent is nullable because
-        /// getDefaultSerialization() takes the serialization used for the nested type
-        changeSerializationForPostgreSQLFixedString(nested_column.getPtr(), nested_type);
-        const auto serialization = parent_type->getDefaultSerialization();
+        /// UUIDs inside arrays are expected to be unquoted in PostgreSQL.
+        const bool quoted = !isUUID(nested_type);
 
         writeChar('{', ostr);
         for (size_t i = 0, size = array_field.size(); i < size; ++i)
@@ -434,7 +349,10 @@ public:
             if (i != 0)
                 writeChar(',', ostr);
 
-            serialization->serializeText(nested_column, i, ostr, settings);
+            if (quoted)
+                serialization->serializeTextQuoted(nested_column, i, ostr, settings);
+            else
+                serialization->serializeText(nested_column, i, ostr, settings);
         }
         writeChar('}', ostr);
     }
@@ -622,7 +540,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     }
     else
     {
-        size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
+        size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(
             configuration.addresses_expr, max_addresses, 5432);
     }
@@ -661,7 +579,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
-        size_t max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
+        size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
 
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 5432);
         if (configuration.addresses.size() == 1)
@@ -692,13 +610,12 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     {
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
         const auto & settings = args.getContext()->getSettingsRef();
-        auto pool = std::make_shared<postgres::PoolWithFailover>(
-            configuration,
-            settings[Setting::postgresql_connection_pool_size],
-            settings[Setting::postgresql_connection_pool_wait_timeout],
-            settings[Setting::postgresql_connection_pool_retries],
-            settings[Setting::postgresql_connection_pool_auto_close_connection],
-            settings[Setting::postgresql_connection_attempt_timeout]);
+        auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
+            settings.postgresql_connection_pool_size,
+            settings.postgresql_connection_pool_wait_timeout,
+            settings.postgresql_connection_pool_retries,
+            settings.postgresql_connection_pool_auto_close_connection,
+            settings.postgresql_connection_attempt_timeout);
 
         return std::make_shared<StoragePostgreSQL>(
             args.table_id,

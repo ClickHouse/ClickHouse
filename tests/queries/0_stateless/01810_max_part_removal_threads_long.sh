@@ -17,10 +17,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The number of threads removing data parts should be between 1 and 129.
 # Because max_parts_cleaning_thread_pool_size is 128 by default
 
-$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -m -q "create database ordinary_$CLICKHOUSE_DATABASE engine=Ordinary"
+$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -nm -q "create database ordinary_$CLICKHOUSE_DATABASE engine=Ordinary"
 
 # MergeTree
-$CLICKHOUSE_CLIENT -m -q """
+$CLICKHOUSE_CLIENT -nm -q """
     use ordinary_$CLICKHOUSE_DATABASE;
     drop table if exists data_01810;
 
@@ -32,7 +32,7 @@ $CLICKHOUSE_CLIENT -m -q """
 
     insert into data_01810 select * from numbers(100);
     drop table data_01810 settings log_queries=1;
-    system flush logs query_log;
+    system flush logs;
 
     -- sometimes the same thread can be used to remove part, due to ThreadPool,
     -- hence we cannot compare strictly.
@@ -47,7 +47,7 @@ $CLICKHOUSE_CLIENT -m -q """
 """
 
 # ReplicatedMergeTree
-$CLICKHOUSE_CLIENT -m -q """
+$CLICKHOUSE_CLIENT -nm -q """
     use ordinary_$CLICKHOUSE_DATABASE;
     drop table if exists rep_data_01810;
 
@@ -62,7 +62,7 @@ $CLICKHOUSE_CLIENT -m -q """
 
     insert into rep_data_01810 select * from numbers(100);
     drop table rep_data_01810 settings log_queries=1;
-    system flush logs query_log;
+    system flush logs;
 
     -- sometimes the same thread can be used to remove part, due to ThreadPool,
     -- hence we cannot compare strictly.
@@ -76,4 +76,4 @@ $CLICKHOUSE_CLIENT -m -q """
     format Null;
 """
 
-$CLICKHOUSE_CLIENT -m -q "drop database ordinary_$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT -nm -q "drop database ordinary_$CLICKHOUSE_DATABASE"

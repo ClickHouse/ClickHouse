@@ -7,9 +7,9 @@ sidebar_position: 200
 
 Приблизительно вычисляет [квантиль](https://ru.wikipedia.org/wiki/Квантиль) числовой последовательности.
 
-Функция использует алгоритм [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) с размером резервуара до 8192 и случайным генератором чисел для для сэмплирования. Результат не детерминирован. Чтобы получить точную квантиль используйте функцию [quantileExact](/ru/sql-reference/aggregate-functions/reference/quantileexact).
+Функция использует алгоритм [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) с размером резервуара до 8192 и случайным генератором чисел для для сэмплирования. Результат не детерминирован. Чтобы получить точную квантиль используйте функцию [quantileExact](#quantileexact).
 
-Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](/ru/sql-reference/aggregate-functions/reference/quantileexact), это повысит эффективность запроса.
+Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](#quantiles), это повысит эффективность запроса.
 
 **Синтаксис**
 
@@ -63,5 +63,5 @@ SELECT quantile(val) FROM t
 
 **Смотрите также**
 
--   [median](/ru/sql-reference/aggregate-functions/reference/median)
--   [quantiles](/ru/sql-reference/aggregate-functions/reference/quantiles)
+-   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
+-   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

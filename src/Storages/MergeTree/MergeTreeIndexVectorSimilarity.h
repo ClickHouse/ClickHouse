@@ -4,33 +4,24 @@
 
 #if USE_USEARCH
 
-#include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Common/Logger.h>
-
-/// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
-#if defined(__x86_64__) || defined(__i386__)
-#include <immintrin.h>
-#endif
-#include <usearch/index_dense.hpp>
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpass-failed"
+#  include <Storages/MergeTree/VectorSimilarityCondition.h>
+#  include <Common/Logger.h>
+#  include <usearch/index_dense.hpp>
+#pragma clang diagnostic pop
 
 namespace DB
 {
 
-/// Defaults for HNSW parameters. Instead of using the default parameters provided by USearch (default_connectivity(),
-/// default_expansion_add(), default_expansion_search()), we experimentally came up with our own default parameters. They provide better
-/// trade-offs with regards to index construction time, search precision and queries-per-second (speed).
-static constexpr size_t default_connectivity = 32;
-static constexpr size_t default_expansion_add = 128;
-static constexpr size_t default_expansion_search = 256;
-
-/// Parameters for HNSW index construction.
 struct UsearchHnswParams
 {
-    size_t connectivity = default_connectivity;
-    size_t expansion_add = default_expansion_add;
+    size_t m = unum::usearch::default_connectivity();
+    size_t ef_construction = unum::usearch::default_expansion_add();
+    size_t ef_search = unum::usearch::default_expansion_search();
 };
 
-using USearchIndex = unum::usearch::index_dense_t;
+using USearchIndex = unum::usearch::index_dense_gt</*key_at*/ uint32_t, /*compressed_slot_at*/ uint32_t>;
 
 class USearchIndexWithSerialization : public USearchIndex
 {
@@ -50,23 +41,16 @@ public:
     {
         size_t max_level;
         size_t connectivity;
-        size_t size;                /// number of indexed vectors
-        size_t capacity;            /// reserved number of indexed vectors
-        size_t memory_usage;        /// byte size (not exact)
+        size_t size;
+        size_t capacity;
+        size_t memory_usage;
+        /// advanced stats:
         size_t bytes_per_vector;
         size_t scalar_words;
-        size_t nodes;
-        size_t edges;
-        size_t max_edges;
-
-        std::vector<USearchIndex::stats_t> level_stats; /// for debugging, excluded from getStatistics()
-
-        String toString() const;
+        Base::stats_t statistics;
     };
 
     Statistics getStatistics() const;
-
-    size_t memoryUsageBytes() const;
 };
 
 using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization>;
@@ -76,12 +60,14 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
 {
     MergeTreeIndexGranuleVectorSimilarity(
         const String & index_name_,
+        const Block & index_sample_block_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         UsearchHnswParams usearch_hnsw_params_);
 
     MergeTreeIndexGranuleVectorSimilarity(
         const String & index_name_,
+        const Block & index_sample_block_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         UsearchHnswParams usearch_hnsw_params_,
@@ -94,9 +80,8 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
 
     bool empty() const override { return !index || index->size() == 0; }
 
-    size_t memoryUsageBytes() const override { return index->memoryUsageBytes(); }
-
     const String index_name;
+    const Block index_sample_block;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;
@@ -140,9 +125,9 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
 class MergeTreeIndexConditionVectorSimilarity final : public IMergeTreeIndexCondition
 {
 public:
-    explicit MergeTreeIndexConditionVectorSimilarity(
-        const std::optional<VectorSearchParameters> & parameters_,
-        const String & index_column_,
+    MergeTreeIndexConditionVectorSimilarity(
+        const IndexDescription & index_description,
+        const SelectQueryInfo & query,
         unum::usearch::metric_kind_t metric_kind_,
         ContextPtr context);
 
@@ -150,13 +135,11 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override;
-    std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
+    std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr granule) const override;
 
 private:
-    std::optional<VectorSearchParameters> parameters;
-    const String index_column;
+    const VectorSimilarityCondition vector_similarity_condition;
     const unum::usearch::metric_kind_t metric_kind;
-    const size_t expansion_search;
 };
 
 
@@ -173,8 +156,8 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const;
+    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG *, ContextPtr) const override;
     bool isVectorSimilarityIndex() const override { return true; }
 
 private:

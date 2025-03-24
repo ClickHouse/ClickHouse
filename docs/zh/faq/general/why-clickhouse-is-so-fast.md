@@ -9,7 +9,7 @@ sidebar_position: 8
 
 它被设计成一个快速的系统。在开发过程中，查询执行性能一直是首要考虑的优先级，但也考虑了其他重要特性，如用户友好性、可扩展性和安全性，使 ClickHouse 成为一个真正的生产系统。
 
-ClickHouse 最初是作为一个原型构建的，它的单一任务就是尽可能快速地过滤和聚合数据。这正是构建典型分析报告所需做的，也是典型 [GROUP BY](/sql-reference/statements/select/group-by) 查询所做的。ClickHouse 团队做出了几个高层次的决策，这些决策组合在一起使得实现这一任务成为可能：
+ClickHouse 最初是作为一个原型构建的，它的单一任务就是尽可能快速地过滤和聚合数据。这正是构建典型分析报告所需做的，也是典型 [GROUP BY](../../sql-reference/statements/select/group-by.md) 查询所做的。ClickHouse 团队做出了几个高层次的决策，这些决策组合在一起使得实现这一任务成为可能：
 
 列式存储
 :   源数据通常包含数百甚至数千列，而报告可能只使用其中的几列。系统需要避免读取不必要的列，否则大部分昂贵的磁盘读取操作将被浪费。
@@ -18,7 +18,7 @@ ClickHouse 最初是作为一个原型构建的，它的单一任务就是尽可
 :   ClickHouse 在内存中保留数据结构，允许不仅读取使用的列，而且只读取这些列的必要行范围。
 
 数据压缩
-:   将同一列的不同值存储在一起通常会导致更好的压缩比（与行式系统相比），因为在实际数据中列通常对相邻行有相同或不太多的不同值。除了通用压缩之外，ClickHouse 还支持 [专用编解码器](../../sql-reference/statements/create/table.mdx#column_compression_codec)，可以使数据更加紧凑。
+:   将同一列的不同值存储在一起通常会导致更好的压缩比（与行式系统相比），因为在实际数据中列通常对相邻行有相同或不太多的不同值。除了通用压缩之外，ClickHouse 还支持 [专用编解码器](../../sql-reference/statements/create/table.mdx/#create-query-specialized-codecs)，可以使数据更加紧凑。
 
 向量化查询执行
 :   ClickHouse 不仅以列的形式存储数据，而且以列的形式处理数据。这导致更好的 CPU 缓存利用率，并允许使用 [SIMD](https://en.wikipedia.org/wiki/SIMD) CPU 指令。

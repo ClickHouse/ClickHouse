@@ -3,8 +3,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/getStructureOfRemoteTable.h>
-#include <Columns/IColumn.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
@@ -17,7 +17,6 @@
 namespace DB
 {
 
-struct DistributedSettings;
 struct Settings;
 class Context;
 
@@ -218,7 +217,7 @@ private:
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
 
-    const DistributedSettings & getDistributedSettingsRef() const { return *distributed_settings; }
+    const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
 
     void delayInsertOrThrowIfNeeded() const;
 
@@ -260,7 +259,7 @@ private:
     /// Other volumes will be ignored. It's needed to allow using the same multi-volume policy both for Distributed and other engines.
     VolumePtr data_volume;
 
-    std::unique_ptr<DistributedSettings> distributed_settings;
+    DistributedSettings distributed_settings;
 
     struct ClusterNodeData
     {

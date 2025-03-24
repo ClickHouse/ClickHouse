@@ -1,14 +1,12 @@
 ---
-description: 'Documentation for Type Conversion Functions'
-sidebar_label: 'Type Conversion'
+slug: /en/sql-reference/functions/type-conversion-functions
 sidebar_position: 185
-slug: /sql-reference/functions/type-conversion-functions
-title: 'Type Conversion Functions'
+sidebar_label: Type Conversion
 ---
 
 # Type Conversion Functions
 
-## Common Issues with Data Conversion {#common-issues-with-data-conversion}
+## Common Issues with Data Conversion
 
 ClickHouse generally uses the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
@@ -51,56 +49,7 @@ SETTINGS cast_keep_nullable = 1
 └──────────────────┴─────────────────────┴──────────────────┘
 ```
 
-## toBool {#tobool}
-
-Converts an input value to a value of type [`Bool`](../data-types/boolean.md). Throws an exception in case of an error.
-
-**Syntax**
-
-```sql
-toBool(expr)
-```
-
-**Arguments**
-
-- `expr` — Expression returning a number or a string. [Expression](/sql-reference/syntax#expressions).
-
-Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
-- Values of type Float32/64.
-- Strings `true` or `false` (case-insensitive).
-
-**Returned value**
-
-- Returns `true` or `false` based on evaluation of the argument. [Bool](../data-types/boolean.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-    toBool(toUInt8(1)),
-    toBool(toInt8(-1)),
-    toBool(toFloat32(1.01)),
-    toBool('true'),
-    toBool('false'),
-    toBool('FALSE')
-FORMAT Vertical
-```
-
-Result:
-
-```response
-toBool(toUInt8(1)):      true
-toBool(toInt8(-1)):      true
-toBool(toFloat32(1.01)): true
-toBool('true'):          true
-toBool('false'):         false
-toBool('FALSE'):         false
-```
-
-## toInt8 {#toint8}
+## toInt8
 
 Converts an input value to a value of type [`Int8`](../data-types/int-uint.md). Throws an exception in case of an error.
 
@@ -112,7 +61,7 @@ toInt8(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values or string representations of type (U)Int8/16/32/64/128/256.
@@ -123,8 +72,8 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.
+If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.  
 For example: `SELECT toInt8(128) == -128;`.
 :::
 
@@ -161,10 +110,10 @@ toInt8('-8'): -8
 **See also**
 
 - [`toInt8OrZero`](#toint8orzero).
-- [`toInt8OrNull`](#toInt8OrNull).
+- [`toInt8OrNull`](#toint8ornull).
 - [`toInt8OrDefault`](#toint8ordefault).
 
-## toInt8OrZero {#toint8orzero}
+## toInt8OrZero
 
 Like [`toInt8`](#toint8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `0` in case of an error.
 
@@ -195,14 +144,14 @@ This is not considered an error.
 - 8-bit integer value if successful, otherwise `0`. [Int8](../data-types/int-uint.md).
 
 :::note
-The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers. 
 :::
 
 **Example**
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt8OrZero('-8'),
     toInt8OrZero('abc')
@@ -221,10 +170,10 @@ toInt8OrZero('abc'): 0
 **See also**
 
 - [`toInt8`](#toint8).
-- [`toInt8OrNull`](#toInt8OrNull).
+- [`toInt8OrNull`](#toint8ornull).
 - [`toInt8OrDefault`](#toint8ordefault).
 
-## toInt8OrNull {#toInt8OrNull}
+## toInt8OrNull
 
 Like [`toInt8`](#toint8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -262,7 +211,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt8OrNull('-8'),
     toInt8OrNull('abc')
@@ -284,7 +233,7 @@ toInt8OrNull('abc'): ᴺᵁᴸᴸ
 - [`toInt8OrZero`](#toint8orzero).
 - [`toInt8OrDefault`](#toint8ordefault).
 
-## toInt8OrDefault {#toint8ordefault}
+## toInt8OrDefault
 
 Like [`toInt8`](#toint8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -297,7 +246,7 @@ toInt8OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `default` (optional) — The default value to return if parsing to type `Int8` is unsuccessful. [Int8](../data-types/int-uint.md).
 
 Supported arguments:
@@ -326,7 +275,7 @@ This is not considered an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt8OrDefault('-8', CAST('-1', 'Int8')),
     toInt8OrDefault('abc', CAST('-1', 'Int8'))
@@ -346,9 +295,9 @@ toInt8OrDefault('abc', CAST('-1', 'Int8')): -1
 
 - [`toInt8`](#toint8).
 - [`toInt8OrZero`](#toint8orzero).
-- [`toInt8OrNull`](#toInt8OrNull).
+- [`toInt8OrNull`](#toint8orNull).
 
-## toInt16 {#toint16}
+## toInt16
 
 Converts an input value to a value of type [`Int16`](../data-types/int-uint.md). Throws an exception in case of an error.
 
@@ -360,7 +309,7 @@ toInt16(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values or string representations of type (U)Int8/16/32/64/128/256.
@@ -372,7 +321,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.
+This is not considered an error.  
 For example: `SELECT toInt16(32768) == -32768;`.
 :::
 
@@ -412,7 +361,7 @@ toInt16('-16'):  -16
 - [`toInt16OrNull`](#toint16ornull).
 - [`toInt16OrDefault`](#toint16ordefault).
 
-## toInt16OrZero {#toint16orzero}
+## toInt16OrZero
 
 Like [`toInt16`](#toint16), this function converts an input value to a value of type [Int16](../data-types/int-uint.md) but returns `0` in case of an error.
 
@@ -450,7 +399,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt16OrZero('-16'),
     toInt16OrZero('abc')
@@ -472,7 +421,7 @@ toInt16OrZero('abc'): 0
 - [`toInt16OrNull`](#toint16ornull).
 - [`toInt16OrDefault`](#toint16ordefault).
 
-## toInt16OrNull {#toint16ornull}
+## toInt16OrNull
 
 Like [`toInt16`](#toint16), this function converts an input value to a value of type [Int16](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -494,7 +443,7 @@ Unsupported arguments (return `\N`)
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -510,7 +459,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt16OrNull('-16'),
     toInt16OrNull('abc')
@@ -532,7 +481,7 @@ toInt16OrNull('abc'): ᴺᵁᴸᴸ
 - [`toInt16OrZero`](#toint16orzero).
 - [`toInt16OrDefault`](#toint16ordefault).
 
-## toInt16OrDefault {#toint16ordefault}
+## toInt16OrDefault
 
 Like [`toInt16`](#toint16), this function converts an input value to a value of type [Int16](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -545,7 +494,7 @@ toInt16OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `default` (optional) — The default value to return if parsing to type `Int16` is unsuccessful. [Int16](../data-types/int-uint.md).
 
 Supported arguments:
@@ -557,7 +506,7 @@ Arguments for which the default value is returned:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrDefault('0xc0fe', CAST('-1', 'Int16'));`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -574,7 +523,7 @@ This is not considered an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt16OrDefault('-16', CAST('-1', 'Int16')),
     toInt16OrDefault('abc', CAST('-1', 'Int16'))
@@ -596,7 +545,7 @@ toInt16OrDefault('abc', CAST('-1', 'Int16')): -1
 - [`toInt16OrZero`](#toint16orzero).
 - [`toInt16OrNull`](#toint16ornull).
 
-## toInt32 {#toint32}
+## toInt32
 
 Converts an input value to a value of type [`Int32`](../data-types/int-uint.md). Throws an exception in case of an error.
 
@@ -608,7 +557,7 @@ toInt32(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values or string representations of type (U)Int8/16/32/64/128/256.
@@ -619,8 +568,8 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), the result over or under flows. 
+This is not considered an error.  
 For example: `SELECT toInt32(2147483648) == -2147483648;`
 :::
 
@@ -660,7 +609,7 @@ toInt32('-32'):  -32
 - [`toInt32OrNull`](#toint32ornull).
 - [`toInt32OrDefault`](#toint32ordefault).
 
-## toInt32OrZero {#toint32orzero}
+## toInt32OrZero
 
 Like [`toInt32`](#toint32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns `0` in case of an error.
 
@@ -682,7 +631,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -698,7 +647,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt32OrZero('-32'),
     toInt32OrZero('abc')
@@ -719,7 +668,7 @@ toInt32OrZero('abc'): 0
 - [`toInt32OrNull`](#toint32ornull).
 - [`toInt32OrDefault`](#toint32ordefault).
 
-## toInt32OrNull {#toint32ornull}
+## toInt32OrNull
 
 Like [`toInt32`](#toint32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -741,7 +690,7 @@ Unsupported arguments (return `\N`)
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -757,7 +706,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt32OrNull('-32'),
     toInt32OrNull('abc')
@@ -779,7 +728,7 @@ toInt32OrNull('abc'): ᴺᵁᴸᴸ
 - [`toInt32OrZero`](#toint32orzero).
 - [`toInt32OrDefault`](#toint32ordefault).
 
-## toInt32OrDefault {#toint32ordefault}
+## toInt32OrDefault
 
 Like [`toInt32`](#toint32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -792,7 +741,7 @@ toInt32OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `default` (optional) — The default value to return if parsing to type `Int32` is unsuccessful. [Int32](../data-types/int-uint.md).
 
 Supported arguments:
@@ -804,7 +753,7 @@ Arguments for which the default value is returned:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrDefault('0xc0fe', CAST('-1', 'Int32'));`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -821,7 +770,7 @@ This is not considered an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt32OrDefault('-32', CAST('-1', 'Int32')),
     toInt32OrDefault('abc', CAST('-1', 'Int32'))
@@ -843,7 +792,7 @@ toInt32OrDefault('abc', CAST('-1', 'Int32')): -1
 - [`toInt32OrZero`](#toint32orzero).
 - [`toInt32OrNull`](#toint32ornull).
 
-## toInt64 {#toint64}
+## toInt64
 
 Converts an input value to a value of type [`Int64`](../data-types/int-uint.md). Throws an exception in case of an error.
 
@@ -855,7 +804,7 @@ toInt64(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values or string representations of type (U)Int8/16/32/64/128/256.
@@ -866,8 +815,8 @@ Unsupported types:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.
+If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), the result over or under flows. 
+This is not considered an error.  
 For example: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
 :::
 
@@ -907,7 +856,7 @@ toInt64('-64'):  -64
 - [`toInt64OrNull`](#toint64ornull).
 - [`toInt64OrDefault`](#toint64ordefault).
 
-## toInt64OrZero {#toint64orzero}
+## toInt64OrZero
 
 Like [`toInt64`](#toint64), this function converts an input value to a value of type [Int64](../data-types/int-uint.md) but returns `0` in case of an error.
 
@@ -929,7 +878,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -945,7 +894,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt64OrZero('-64'),
     toInt64OrZero('abc')
@@ -967,7 +916,7 @@ toInt64OrZero('abc'): 0
 - [`toInt64OrNull`](#toint64ornull).
 - [`toInt64OrDefault`](#toint64ordefault).
 
-## toInt64OrNull {#toint64ornull}
+## toInt64OrNull
 
 Like [`toInt64`](#toint64), this function converts an input value to a value of type [Int64](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -979,7 +928,7 @@ toInt64OrNull(x)
 
 **Arguments**
 
-- `x` — A String representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `x` — A String representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
@@ -989,7 +938,7 @@ Unsupported arguments (return `\N`)
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -1005,7 +954,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt64OrNull('-64'),
     toInt64OrNull('abc')
@@ -1027,7 +976,7 @@ toInt64OrNull('abc'): ᴺᵁᴸᴸ
 - [`toInt64OrZero`](#toint64orzero).
 - [`toInt64OrDefault`](#toint64ordefault).
 
-## toInt64OrDefault {#toint64ordefault}
+## toInt64OrDefault
 
 Like [`toInt64`](#toint64), this function converts an input value to a value of type [Int64](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -1040,7 +989,7 @@ toInt64OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `default` (optional) — The default value to return if parsing to type `Int64` is unsuccessful. [Int64](../data-types/int-uint.md).
 
 Supported arguments:
@@ -1069,7 +1018,7 @@ This is not considered an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt64OrDefault('-64', CAST('-1', 'Int64')),
     toInt64OrDefault('abc', CAST('-1', 'Int64'))
@@ -1091,7 +1040,7 @@ toInt64OrDefault('abc', CAST('-1', 'Int64')): -1
 - [`toInt64OrZero`](#toint64orzero).
 - [`toInt64OrNull`](#toint64ornull).
 
-## toInt128 {#toint128}
+## toInt128
 
 Converts an input value to a value of type [`Int128`](../data-types/int-uint.md). Throws an exception in case of an error.
 
@@ -1103,7 +1052,7 @@ toInt128(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values or string representations of type (U)Int8/16/32/64/128/256.
@@ -1114,7 +1063,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), the result over or under flows.
+If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), the result over or under flows. 
 This is not considered an error.
 :::
 
@@ -1154,7 +1103,7 @@ toInt128('-128'): -128
 - [`toInt128OrNull`](#toint128ornull).
 - [`toInt128OrDefault`](#toint128ordefault).
 
-## toInt128OrZero {#toint128orzero}
+## toInt128OrZero
 
 Like [`toInt128`](#toint128), this function converts an input value to a value of type [Int128](../data-types/int-uint.md) but returns `0` in case of an error.
 
@@ -1166,7 +1115,7 @@ toInt128OrZero(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
@@ -1192,7 +1141,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt128OrZero('-128'),
     toInt128OrZero('abc')
@@ -1214,7 +1163,7 @@ toInt128OrZero('abc'):  0
 - [`toInt128OrNull`](#toint128ornull).
 - [`toInt128OrDefault`](#toint128ordefault).
 
-## toInt128OrNull {#toint128ornull}
+## toInt128OrNull
 
 Like [`toInt128`](#toint128), this function converts an input value to a value of type [Int128](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -1226,7 +1175,7 @@ toInt128OrNull(x)
 
 **Arguments**
 
-- `x` — A String representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `x` — A String representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
@@ -1236,7 +1185,7 @@ Unsupported arguments (return `\N`)
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -1252,7 +1201,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt128OrNull('-128'),
     toInt128OrNull('abc')
@@ -1274,7 +1223,7 @@ toInt128OrNull('abc'):  ᴺᵁᴸᴸ
 - [`toInt128OrZero`](#toint128orzero).
 - [`toInt128OrDefault`](#toint128ordefault).
 
-## toInt128OrDefault {#toint128ordefault}
+## toInt128OrDefault
 
 Like [`toInt128`](#toint128), this function converts an input value to a value of type [Int128](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -1287,7 +1236,7 @@ toInt128OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `default` (optional) — The default value to return if parsing to type `Int128` is unsuccessful. [Int128](../data-types/int-uint.md).
 
 Supported arguments:
@@ -1300,7 +1249,7 @@ Arguments for which the default value is returned:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrDefault('0xc0fe', CAST('-1', 'Int128'));`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -1317,7 +1266,7 @@ This is not considered an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt128OrDefault('-128', CAST('-1', 'Int128')),
     toInt128OrDefault('abc', CAST('-1', 'Int128'))
@@ -1339,7 +1288,7 @@ toInt128OrDefault('abc', CAST('-1', 'Int128')):  -1
 - [`toInt128OrZero`](#toint128orzero).
 - [`toInt128OrNull`](#toint128ornull).
 
-## toInt256 {#toint256}
+## toInt256
 
 Converts an input value to a value of type [`Int256`](../data-types/int-uint.md). Throws an exception in case of an error.
 
@@ -1351,7 +1300,7 @@ toInt256(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values or string representations of type (U)Int8/16/32/64/128/256.
@@ -1362,7 +1311,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), the result over or under flows.
+If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), the result over or under flows. 
 This is not considered an error.
 :::
 
@@ -1402,7 +1351,7 @@ toInt256('-256'):   -256
 - [`toInt256OrNull`](#toint256ornull).
 - [`toInt256OrDefault`](#toint256ordefault).
 
-## toInt256OrZero {#toint256orzero}
+## toInt256OrZero
 
 Like [`toInt256`](#toint256), this function converts an input value to a value of type [Int256](../data-types/int-uint.md) but returns `0` in case of an error.
 
@@ -1424,7 +1373,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -1440,7 +1389,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt256OrZero('-256'),
     toInt256OrZero('abc')
@@ -1462,7 +1411,7 @@ toInt256OrZero('abc'):  0
 - [`toInt256OrNull`](#toint256ornull).
 - [`toInt256OrDefault`](#toint256ordefault).
 
-## toInt256OrNull {#toint256ornull}
+## toInt256OrNull
 
 Like [`toInt256`](#toint256), this function converts an input value to a value of type [Int256](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -1484,7 +1433,7 @@ Unsupported arguments (return `\N`)
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -1500,7 +1449,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt256OrNull('-256'),
     toInt256OrNull('abc')
@@ -1522,7 +1471,7 @@ toInt256OrNull('abc'):  ᴺᵁᴸᴸ
 - [`toInt256OrZero`](#toint256orzero).
 - [`toInt256OrDefault`](#toint256ordefault).
 
-## toInt256OrDefault {#toint256ordefault}
+## toInt256OrDefault
 
 Like [`toInt256`](#toint256), this function converts an input value to a value of type [Int256](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -1535,7 +1484,7 @@ toInt256OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `default` (optional) — The default value to return if parsing to type `Int256` is unsuccessful. [Int256](../data-types/int-uint.md).
 
 Supported arguments:
@@ -1564,7 +1513,7 @@ This is not considered an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toInt256OrDefault('-256', CAST('-1', 'Int256')),
     toInt256OrDefault('abc', CAST('-1', 'Int256'))
@@ -1586,7 +1535,7 @@ toInt256OrDefault('abc', CAST('-1', 'Int256')):  -1
 - [`toInt256OrZero`](#toint256orzero).
 - [`toInt256OrNull`](#toint256ornull).
 
-## toUInt8 {#touint8}
+## toUInt8
 
 Converts an input value to a value of type [`UInt8`](../data-types/int-uint.md). Throws an exception in case of an error.
 
@@ -1598,7 +1547,7 @@ toUInt8(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values or string representations of type (U)Int8/16/32/64/128/256.
@@ -1610,7 +1559,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.
+This is not considered an error.  
 For example: `SELECT toUInt8(256) == 0;`.
 :::
 
@@ -1650,7 +1599,7 @@ toUInt8('8'): 8
 - [`toUInt8OrNull`](#touint8ornull).
 - [`toUInt8OrDefault`](#touint8ordefault).
 
-## toUInt8OrZero {#touint8orzero}
+## toUInt8OrZero
 
 Like [`toUInt8`](#touint8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns `0` in case of an error.
 
@@ -1688,7 +1637,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt8OrZero('-8'),
     toUInt8OrZero('abc')
@@ -1710,7 +1659,7 @@ toUInt8OrZero('abc'): 0
 - [`toUInt8OrNull`](#touint8ornull).
 - [`toUInt8OrDefault`](#touint8ordefault).
 
-## toUInt8OrNull {#touint8ornull}
+## toUInt8OrNull
 
 Like [`toUInt8`](#touint8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -1748,7 +1697,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt8OrNull('8'),
     toUInt8OrNull('abc')
@@ -1770,7 +1719,7 @@ toUInt8OrNull('abc'): ᴺᵁᴸᴸ
 - [`toUInt8OrZero`](#touint8orzero).
 - [`toUInt8OrDefault`](#touint8ordefault).
 
-## toUInt8OrDefault {#touint8ordefault}
+## toUInt8OrDefault
 
 Like [`toUInt8`](#touint8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -1783,7 +1732,7 @@ toUInt8OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `default` (optional) — The default value to return if parsing to type `UInt8` is unsuccessful. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
@@ -1812,7 +1761,7 @@ This is not considered an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt8OrDefault('8', CAST('0', 'UInt8')),
     toUInt8OrDefault('abc', CAST('0', 'UInt8'))
@@ -1832,9 +1781,9 @@ toUInt8OrDefault('abc', CAST('0', 'UInt8')): 0
 
 - [`toUInt8`](#touint8).
 - [`toUInt8OrZero`](#touint8orzero).
-- [`toUInt8OrNull`](#touint8ornull).
+- [`toUInt8OrNull`](#touint8orNull).
 
-## toUInt16 {#touint16}
+## toUInt16
 
 Converts an input value to a value of type [`UInt16`](../data-types/int-uint.md). Throws an exception in case of an error.
 
@@ -1846,7 +1795,7 @@ toUInt16(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values or string representations of type (U)Int8/16/32/64/128/256.
@@ -1858,7 +1807,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.
+This is not considered an error.  
 For example: `SELECT toUInt16(65536) == 0;`.
 :::
 
@@ -1898,7 +1847,7 @@ toUInt16('16'):  16
 - [`toUInt16OrNull`](#touint16ornull).
 - [`toUInt16OrDefault`](#touint16ordefault).
 
-## toUInt16OrZero {#touint16orzero}
+## toUInt16OrZero
 
 Like [`toUInt16`](#touint16), this function converts an input value to a value of type [UInt16](../data-types/int-uint.md) but returns `0` in case of an error.
 
@@ -1936,7 +1885,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt16OrZero('16'),
     toUInt16OrZero('abc')
@@ -1958,7 +1907,7 @@ toUInt16OrZero('abc'): 0
 - [`toUInt16OrNull`](#touint16ornull).
 - [`toUInt16OrDefault`](#touint16ordefault).
 
-## toUInt16OrNull {#touint16ornull}
+## toUInt16OrNull
 
 Like [`toUInt16`](#touint16), this function converts an input value to a value of type [UInt16](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -1996,7 +1945,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt16OrNull('16'),
     toUInt16OrNull('abc')
@@ -2018,7 +1967,7 @@ toUInt16OrNull('abc'): ᴺᵁᴸᴸ
 - [`toUInt16OrZero`](#touint16orzero).
 - [`toUInt16OrDefault`](#touint16ordefault).
 
-## toUInt16OrDefault {#touint16ordefault}
+## toUInt16OrDefault
 
 Like [`toUInt16`](#touint16), this function converts an input value to a value of type [UInt16](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -2031,7 +1980,7 @@ toUInt16OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `default` (optional) — The default value to return if parsing to type `UInt16` is unsuccessful. [UInt16](../data-types/int-uint.md).
 
 Supported arguments:
@@ -2060,7 +2009,7 @@ This is not considered an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt16OrDefault('16', CAST('0', 'UInt16')),
     toUInt16OrDefault('abc', CAST('0', 'UInt16'))
@@ -2082,7 +2031,7 @@ toUInt16OrDefault('abc', CAST('0', 'UInt16')): 0
 - [`toUInt16OrZero`](#touint16orzero).
 - [`toUInt16OrNull`](#touint16ornull).
 
-## toUInt32 {#touint32}
+## toUInt32
 
 Converts an input value to a value of type [`UInt32`](../data-types/int-uint.md). Throws an exception in case of an error.
 
@@ -2094,7 +2043,7 @@ toUInt32(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values or string representations of type (U)Int8/16/32/64/128/256.
@@ -2106,7 +2055,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.
+This is not considered an error.  
 For example: `SELECT toUInt32(4294967296) == 0;`
 :::
 
@@ -2146,7 +2095,7 @@ toUInt32('32'):  32
 - [`toUInt32OrNull`](#touint32ornull).
 - [`toUInt32OrDefault`](#touint32ordefault).
 
-## toUInt32OrZero {#touint32orzero}
+## toUInt32OrZero
 
 Like [`toUInt32`](#touint32), this function converts an input value to a value of type [UInt32](../data-types/int-uint.md) but returns `0` in case of an error.
 
@@ -2185,7 +2134,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt32OrZero('32'),
     toUInt32OrZero('abc')
@@ -2206,7 +2155,7 @@ toUInt32OrZero('abc'): 0
 - [`toUInt32OrNull`](#touint32ornull).
 - [`toUInt32OrDefault`](#touint32ordefault).
 
-## toUInt32OrNull {#touint32ornull}
+## toUInt32OrNull
 
 Like [`toUInt32`](#touint32), this function converts an input value to a value of type [UInt32](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -2245,7 +2194,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt32OrNull('32'),
     toUInt32OrNull('abc')
@@ -2267,7 +2216,7 @@ toUInt32OrNull('abc'): ᴺᵁᴸᴸ
 - [`toUInt32OrZero`](#touint32orzero).
 - [`toUInt32OrDefault`](#touint32ordefault).
 
-## toUInt32OrDefault {#touint32ordefault}
+## toUInt32OrDefault
 
 Like [`toUInt32`](#touint32), this function converts an input value to a value of type [UInt32](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -2280,7 +2229,7 @@ toUInt32OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `default` (optional) — The default value to return if parsing to type `UInt32` is unsuccessful. [UInt32](../data-types/int-uint.md).
 
 Supported arguments:
@@ -2309,7 +2258,7 @@ This is not considered an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt32OrDefault('32', CAST('0', 'UInt32')),
     toUInt32OrDefault('abc', CAST('0', 'UInt32'))
@@ -2331,7 +2280,7 @@ toUInt32OrDefault('abc', CAST('0', 'UInt32')): 0
 - [`toUInt32OrZero`](#touint32orzero).
 - [`toUInt32OrNull`](#touint32ornull).
 
-## toUInt64 {#touint64}
+## toUInt64
 
 Converts an input value to a value of type [`UInt64`](../data-types/int-uint.md). Throws an exception in case of an error.
 
@@ -2343,7 +2292,7 @@ toUInt64(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values or string representations of type (U)Int8/16/32/64/128/256.
@@ -2355,7 +2304,7 @@ Unsupported types:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.
+This is not considered an error.  
 For example: `SELECT toUInt64(18446744073709551616) == 0;`
 :::
 
@@ -2395,7 +2344,7 @@ toUInt64('64'):  64
 - [`toUInt64OrNull`](#touint64ornull).
 - [`toUInt64OrDefault`](#touint64ordefault).
 
-## toUInt64OrZero {#touint64orzero}
+## toUInt64OrZero
 
 Like [`toUInt64`](#touint64), this function converts an input value to a value of type [UInt64](../data-types/int-uint.md) but returns `0` in case of an error.
 
@@ -2433,7 +2382,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt64OrZero('64'),
     toUInt64OrZero('abc')
@@ -2455,7 +2404,7 @@ toUInt64OrZero('abc'): 0
 - [`toUInt64OrNull`](#touint64ornull).
 - [`toUInt64OrDefault`](#touint64ordefault).
 
-## toUInt64OrNull {#touint64ornull}
+## toUInt64OrNull
 
 Like [`toUInt64`](#touint64), this function converts an input value to a value of type [UInt64](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -2467,7 +2416,7 @@ toUInt64OrNull(x)
 
 **Arguments**
 
-- `x` — A String representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `x` — A String representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
@@ -2493,7 +2442,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt64OrNull('64'),
     toUInt64OrNull('abc')
@@ -2515,7 +2464,7 @@ toUInt64OrNull('abc'): ᴺᵁᴸᴸ
 - [`toUInt64OrZero`](#touint64orzero).
 - [`toUInt64OrDefault`](#touint64ordefault).
 
-## toUInt64OrDefault {#touint64ordefault}
+## toUInt64OrDefault
 
 Like [`toUInt64`](#touint64), this function converts an input value to a value of type [UInt64](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -2528,7 +2477,7 @@ toUInt64OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `defauult` (optional) — The default value to return if parsing to type `UInt64` is unsuccessful. [UInt64](../data-types/int-uint.md).
 
 Supported arguments:
@@ -2557,7 +2506,7 @@ This is not considered an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt64OrDefault('64', CAST('0', 'UInt64')),
     toUInt64OrDefault('abc', CAST('0', 'UInt64'))
@@ -2579,7 +2528,7 @@ toUInt64OrDefault('abc', CAST('0', 'UInt64')): 0
 - [`toUInt64OrZero`](#touint64orzero).
 - [`toUInt64OrNull`](#touint64ornull).
 
-## toUInt128 {#touint128}
+## toUInt128
 
 Converts an input value to a value of type [`UInt128`](../data-types/int-uint.md). Throws an exception in case of an error.
 
@@ -2591,7 +2540,7 @@ toUInt128(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values or string representations of type (U)Int8/16/32/64/128/256.
@@ -2642,7 +2591,7 @@ toUInt128('128'): 128
 - [`toUInt128OrNull`](#touint128ornull).
 - [`toUInt128OrDefault`](#touint128ordefault).
 
-## toUInt128OrZero {#touint128orzero}
+## toUInt128OrZero
 
 Like [`toUInt128`](#touint128), this function converts an input value to a value of type [UInt128](../data-types/int-uint.md) but returns `0` in case of an error.
 
@@ -2654,7 +2603,7 @@ toUInt128OrZero(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
@@ -2680,7 +2629,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt128OrZero('128'),
     toUInt128OrZero('abc')
@@ -2702,7 +2651,7 @@ toUInt128OrZero('abc'): 0
 - [`toUInt128OrNull`](#touint128ornull).
 - [`toUInt128OrDefault`](#touint128ordefault).
 
-## toUInt128OrNull {#touint128ornull}
+## toUInt128OrNull
 
 Like [`toUInt128`](#touint128), this function converts an input value to a value of type [UInt128](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -2714,7 +2663,7 @@ toUInt128OrNull(x)
 
 **Arguments**
 
-- `x` — A String representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `x` — A String representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
@@ -2740,7 +2689,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt128OrNull('128'),
     toUInt128OrNull('abc')
@@ -2762,7 +2711,7 @@ toUInt128OrNull('abc'): ᴺᵁᴸᴸ
 - [`toUInt128OrZero`](#touint128orzero).
 - [`toUInt128OrDefault`](#touint128ordefault).
 
-## toUInt128OrDefault {#touint128ordefault}
+## toUInt128OrDefault
 
 Like [`toUInt128`](#toint128), this function converts an input value to a value of type [UInt128](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -2775,7 +2724,7 @@ toUInt128OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `default` (optional) — The default value to return if parsing to type `UInt128` is unsuccessful. [UInt128](../data-types/int-uint.md).
 
 Supported arguments:
@@ -2805,7 +2754,7 @@ This is not considered an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt128OrDefault('128', CAST('0', 'UInt128')),
     toUInt128OrDefault('abc', CAST('0', 'UInt128'))
@@ -2827,7 +2776,7 @@ toUInt128OrDefault('abc', CAST('0', 'UInt128')): 0
 - [`toUInt128OrZero`](#touint128orzero).
 - [`toUInt128OrNull`](#touint128ornull).
 
-## toUInt256 {#touint256}
+## toUInt256
 
 Converts an input value to a value of type [`UInt256`](../data-types/int-uint.md). Throws an exception in case of an error.
 
@@ -2839,7 +2788,7 @@ toUInt256(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values or string representations of type (U)Int8/16/32/64/128/256.
@@ -2890,7 +2839,7 @@ toUInt256('256'):   256
 - [`toUInt256OrNull`](#touint256ornull).
 - [`toUInt256OrDefault`](#touint256ordefault).
 
-## toUInt256OrZero {#touint256orzero}
+## toUInt256OrZero
 
 Like [`toUInt256`](#touint256), this function converts an input value to a value of type [UInt256](../data-types/int-uint.md) but returns `0` in case of an error.
 
@@ -2928,7 +2877,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt256OrZero('256'),
     toUInt256OrZero('abc')
@@ -2950,7 +2899,7 @@ toUInt256OrZero('abc'): 0
 - [`toUInt256OrNull`](#touint256ornull).
 - [`toUInt256OrDefault`](#touint256ordefault).
 
-## toUInt256OrNull {#touint256ornull}
+## toUInt256OrNull
 
 Like [`toUInt256`](#touint256), this function converts an input value to a value of type [UInt256](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -2988,7 +2937,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt256OrNull('256'),
     toUInt256OrNull('abc')
@@ -3010,7 +2959,7 @@ toUInt256OrNull('abc'): ᴺᵁᴸᴸ
 - [`toUInt256OrZero`](#touint256orzero).
 - [`toUInt256OrDefault`](#touint256ordefault).
 
-## toUInt256OrDefault {#touint256ordefault}
+## toUInt256OrDefault
 
 Like [`toUInt256`](#touint256), this function converts an input value to a value of type [UInt256](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -3023,7 +2972,7 @@ toUInt256OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `default` (optional) — The default value to return if parsing to type `UInt256` is unsuccessful. [UInt256](../data-types/int-uint.md).
 
 Supported arguments:
@@ -3052,7 +3001,7 @@ This is not considered an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toUInt256OrDefault('-256', CAST('0', 'UInt256')),
     toUInt256OrDefault('abc', CAST('0', 'UInt256'))
@@ -3074,7 +3023,7 @@ toUInt256OrDefault('abc', CAST('0', 'UInt256')):  0
 - [`toUInt256OrZero`](#touint256orzero).
 - [`toUInt256OrNull`](#touint256ornull).
 
-## toFloat32 {#tofloat32}
+## toFloat32
 
 Converts an input value to a value of type [`Float32`](../data-types/float.md). Throws an exception in case of an error.
 
@@ -3086,7 +3035,7 @@ toFloat32(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values of type (U)Int8/16/32/64/128/256.
@@ -3129,7 +3078,7 @@ toFloat32('NaN'):  nan
 - [`toFloat32OrNull`](#tofloat32ornull).
 - [`toFloat32OrDefault`](#tofloat32ordefault).
 
-## toFloat32OrZero {#tofloat32orzero}
+## toFloat32OrZero
 
 Like [`toFloat32`](#tofloat32), this function converts an input value to a value of type [Float32](../data-types/float.md) but returns `0` in case of an error.
 
@@ -3179,7 +3128,7 @@ toFloat32OrZero('abc'):  0
 - [`toFloat32OrNull`](#tofloat32ornull).
 - [`toFloat32OrDefault`](#tofloat32ordefault).
 
-## toFloat32OrNull {#tofloat32ornull}
+## toFloat32OrNull
 
 Like [`toFloat32`](#tofloat32), this function converts an input value to a value of type [Float32](../data-types/float.md) but returns `NULL` in case of an error.
 
@@ -3229,7 +3178,7 @@ toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
 - [`toFloat32OrZero`](#tofloat32orzero).
 - [`toFloat32OrDefault`](#tofloat32ordefault).
 
-## toFloat32OrDefault {#tofloat32ordefault}
+## toFloat32OrDefault
 
 Like [`toFloat32`](#tofloat32), this function converts an input value to a value of type [Float32](../data-types/float.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -3242,7 +3191,7 @@ toFloat32OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `default` (optional) — The default value to return if parsing to type `Float32` is unsuccessful. [Float32](../data-types/float.md).
 
 Supported arguments:
@@ -3284,7 +3233,7 @@ toFloat32OrDefault('abc', CAST('0', 'Float32')): 0
 - [`toFloat32OrZero`](#tofloat32orzero).
 - [`toFloat32OrNull`](#tofloat32ornull).
 
-## toFloat64 {#tofloat64}
+## toFloat64
 
 Converts an input value to a value of type [`Float64`](../data-types/float.md). Throws an exception in case of an error.
 
@@ -3296,7 +3245,7 @@ toFloat64(expr)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
 - Values of type (U)Int8/16/32/64/128/256.
@@ -3339,7 +3288,7 @@ toFloat64('NaN'):  nan
 - [`toFloat64OrNull`](#tofloat64ornull).
 - [`toFloat64OrDefault`](#tofloat64ordefault).
 
-## toFloat64OrZero {#tofloat64orzero}
+## toFloat64OrZero
 
 Like [`toFloat64`](#tofloat64), this function converts an input value to a value of type [Float64](../data-types/float.md) but returns `0` in case of an error.
 
@@ -3389,7 +3338,7 @@ toFloat64OrZero('abc'):  0
 - [`toFloat64OrNull`](#tofloat64ornull).
 - [`toFloat64OrDefault`](#tofloat64ordefault).
 
-## toFloat64OrNull {#tofloat64ornull}
+## toFloat64OrNull
 
 Like [`toFloat64`](#tofloat64), this function converts an input value to a value of type [Float64](../data-types/float.md) but returns `NULL` in case of an error.
 
@@ -3439,7 +3388,7 @@ toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
 - [`toFloat64OrZero`](#tofloat64orzero).
 - [`toFloat64OrDefault`](#tofloat64ordefault).
 
-## toFloat64OrDefault {#tofloat64ordefault}
+## toFloat64OrDefault
 
 Like [`toFloat64`](#tofloat64), this function converts an input value to a value of type [Float64](../data-types/float.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -3452,7 +3401,7 @@ toFloat64OrDefault(expr[, default])
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `default` (optional) — The default value to return if parsing to type `Float64` is unsuccessful. [Float64](../data-types/float.md).
 
 Supported arguments:
@@ -3494,159 +3443,7 @@ toFloat64OrDefault('abc', CAST('0', 'Float64')): 0
 - [`toFloat64OrZero`](#tofloat64orzero).
 - [`toFloat64OrNull`](#tofloat64ornull).
 
-## toBFloat16 {#tobfloat16}
-
-Converts an input value to a value of type [`BFloat16`](/sql-reference/data-types/float#bfloat16). 
-Throws an exception in case of an error.
-
-**Syntax**
-
-```sql
-toBFloat16(expr)
-```
-
-**Arguments**
-
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
-
-Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
-- String representations of (U)Int8/16/32/128/256.
-- Values of type Float32/64, including `NaN` and `Inf`.
-- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
-
-**Returned value**
-
-- 16-bit brain-float value. [BFloat16](/sql-reference/data-types/float#bfloat16).
-
-**Example**
-
-```sql
-SELECT toBFloat16(toFloat32(42.7))
-
-42.5
-
-SELECT toBFloat16(toFloat32('42.7'));
-
-42.5
-
-SELECT toBFloat16('42.7');
-
-42.5
-```
-
-**See also**
-
-- [`toBFloat16OrZero`](#tobfloat16orzero).
-- [`toBFloat16OrNull`](#tobfloat16ornull).
-
-## toBFloat16OrZero {#tobfloat16orzero}
-
-Converts a String input value to a value of type [`BFloat16`](/sql-reference/data-types/float#bfloat16).
-If the string does not represent a floating point value, the function returns zero.
-
-**Syntax**
-
-```sql
-toBFloat16OrZero(x)
-```
-
-**Arguments**
-
-- `x` — A String representation of a number. [String](../data-types/string.md).
-
-Supported arguments:
-
-- String representations of numeric values.
-
-Unsupported arguments (return `0`):
-
-- String representations of binary and hexadecimal values.
-- Numeric values.
-
-**Returned value**
-
-- 16-bit brain-float value, otherwise `0`. [BFloat16](/sql-reference/data-types/float#bfloat16).
-
-:::note
-The function allows a silent loss of precision while converting from the string representation.
-:::
-
-**Example**
-
-```sql
-SELECT toBFloat16OrZero('0x5E'); -- unsupported arguments
-
-0
-
-SELECT toBFloat16OrZero('12.3'); -- typical use
-
-12.25
-
-SELECT toBFloat16OrZero('12.3456789');
-
-12.3125 -- silent loss of precision
-```
-
-**See also**
-
-- [`toBFloat16`](#tobfloat16).
-- [`toBFloat16OrNull`](#tobfloat16ornull).
-
-## toBFloat16OrNull {#tobfloat16ornull}
-
-Converts a String input value to a value of type [`BFloat16`](/sql-reference/data-types/float#bfloat16) 
-but if the string does not represent a floating point value, the function returns `NULL`.
-
-**Syntax**
-
-```sql
-toBFloat16OrNull(x)
-```
-
-**Arguments**
-
-- `x` — A String representation of a number. [String](../data-types/string.md).
-
-Supported arguments:
-
-- String representations of numeric values.
-
-Unsupported arguments (return `NULL`):
-
-- String representations of binary and hexadecimal values.
-- Numeric values.
-
-**Returned value**
-
-- 16-bit brain-float value, otherwise `NULL` (`\N`). [BFloat16](/sql-reference/data-types/float#bfloat16).
-
-:::note
-The function allows a silent loss of precision while converting from the string representation.
-:::
-
-**Example**
-
-```sql
-SELECT toBFloat16OrNull('0x5E'); -- unsupported arguments
-
-\N
-
-SELECT toBFloat16OrNull('12.3'); -- typical use
-
-12.25
-
-SELECT toBFloat16OrNull('12.3456789');
-
-12.3125 -- silent loss of precision
-```
-
-**See also**
-
-- [`toBFloat16`](#tobfloat16).
-- [`toBFloat16OrZero`](#tobfloat16orzero).
-
-## toDate {#todate}
+## toDate
 
 Converts the argument to [Date](../data-types/date.md) data type.
 
@@ -3760,7 +3557,7 @@ SELECT
 ```
 
 
-## toDateOrZero {#todateorzero}
+## toDateOrZero
 
 The same as [toDate](#todate) but returns lower boundary of [Date](../data-types/date.md) if an invalid argument is received. Only [String](../data-types/string.md) argument is supported.
 
@@ -3768,7 +3565,7 @@ The same as [toDate](#todate) but returns lower boundary of [Date](../data-types
 
 Query:
 
-```sql
+``` sql
 SELECT toDateOrZero('2022-12-30'), toDateOrZero('');
 ```
 
@@ -3781,7 +3578,7 @@ Result:
 ```
 
 
-## toDateOrNull {#todateornull}
+## toDateOrNull
 
 The same as [toDate](#todate) but returns `NULL` if an invalid argument is received. Only [String](../data-types/string.md) argument is supported.
 
@@ -3789,7 +3586,7 @@ The same as [toDate](#todate) but returns `NULL` if an invalid argument is recei
 
 Query:
 
-```sql
+``` sql
 SELECT toDateOrNull('2022-12-30'), toDateOrNull('');
 ```
 
@@ -3802,13 +3599,13 @@ Result:
 ```
 
 
-## toDateOrDefault {#todateordefault}
+## toDateOrDefault
 
 Like [toDate](#todate) but if unsuccessful, returns a default value which is either the second argument (if specified), or otherwise the lower boundary of [Date](../data-types/date.md).
 
 **Syntax**
 
-```sql
+``` sql
 toDateOrDefault(expr [, default_value])
 ```
 
@@ -3816,7 +3613,7 @@ toDateOrDefault(expr [, default_value])
 
 Query:
 
-```sql
+``` sql
 SELECT toDateOrDefault('2022-12-30'), toDateOrDefault('', '2023-01-01'::Date);
 ```
 
@@ -3829,13 +3626,13 @@ Result:
 ```
 
 
-## toDateTime {#todatetime}
+## toDateTime
 
 Converts an input value to [DateTime](../data-types/datetime.md).
 
 **Syntax**
 
-```sql
+``` sql
 toDateTime(expr[, time_zone ])
 ```
 
@@ -3845,8 +3642,8 @@ toDateTime(expr[, time_zone ])
 - `time_zone` — Time zone. [String](../data-types/string.md).
 
 :::note
-If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).
-If `expr` is a [String](../data-types/string.md), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.
+If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).  
+If `expr` is a [String](../data-types/string.md), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.  
 Thus, parsing of short numbers' string representations (up to 4 digits) is explicitly disabled due to ambiguity, e.g. a string `'1999'` may be both a year (an incomplete string representation of Date / DateTime) or a unix timestamp. Longer numeric strings are allowed.
 :::
 
@@ -3858,7 +3655,7 @@ Thus, parsing of short numbers' string representations (up to 4 digits) is expli
 
 Query:
 
-```sql
+``` sql
 SELECT toDateTime('2022-12-30 13:44:17'), toDateTime(1685457500, 'UTC');
 ```
 
@@ -3871,7 +3668,7 @@ Result:
 ```
 
 
-## toDateTimeOrZero {#todatetimeorzero}
+## toDateTimeOrZero
 
 The same as [toDateTime](#todatetime) but returns lower boundary of [DateTime](../data-types/datetime.md) if an invalid argument is received. Only [String](../data-types/string.md) argument is supported.
 
@@ -3879,7 +3676,7 @@ The same as [toDateTime](#todatetime) but returns lower boundary of [DateTime](.
 
 Query:
 
-```sql
+``` sql
 SELECT toDateTimeOrZero('2022-12-30 13:44:17'), toDateTimeOrZero('');
 ```
 
@@ -3892,7 +3689,7 @@ Result:
 ```
 
 
-## toDateTimeOrNull {#todatetimeornull}
+## toDateTimeOrNull
 
 The same as [toDateTime](#todatetime) but returns `NULL` if an invalid argument is received. Only [String](../data-types/string.md) argument is supported.
 
@@ -3900,7 +3697,7 @@ The same as [toDateTime](#todatetime) but returns `NULL` if an invalid argument 
 
 Query:
 
-```sql
+``` sql
 SELECT toDateTimeOrNull('2022-12-30 13:44:17'), toDateTimeOrNull('');
 ```
 
@@ -3913,13 +3710,13 @@ Result:
 ```
 
 
-## toDateTimeOrDefault {#todatetimeordefault}
+## toDateTimeOrDefault
 
 Like [toDateTime](#todatetime) but if unsuccessful, returns a default value which is either the third argument (if specified), or otherwise the lower boundary of [DateTime](../data-types/datetime.md).
 
 **Syntax**
 
-```sql
+``` sql
 toDateTimeOrDefault(expr [, time_zone [, default_value]])
 ```
 
@@ -3927,7 +3724,7 @@ toDateTimeOrDefault(expr [, time_zone [, default_value]])
 
 Query:
 
-```sql
+``` sql
 SELECT toDateTimeOrDefault('2022-12-30 13:44:17'), toDateTimeOrDefault('', 'UTC', '2023-01-01'::DateTime('UTC'));
 ```
 
@@ -3940,13 +3737,13 @@ Result:
 ```
 
 
-## toDate32 {#todate32}
+## toDate32
 
 Converts the argument to the [Date32](../data-types/date32.md) data type. If the value is outside the range, `toDate32` returns the border values supported by [Date32](../data-types/date32.md). If the argument has [Date](../data-types/date.md) type, it's borders are taken into account.
 
 **Syntax**
 
-```sql
+``` sql
 toDate32(expr)
 ```
 
@@ -3962,7 +3759,7 @@ toDate32(expr)
 
 1. The value is within the range:
 
-```sql
+``` sql
 SELECT toDate32('1955-01-01') AS value, toTypeName(value);
 ```
 
@@ -3974,7 +3771,7 @@ SELECT toDate32('1955-01-01') AS value, toTypeName(value);
 
 2. The value is outside the range:
 
-```sql
+``` sql
 SELECT toDate32('1899-01-01') AS value, toTypeName(value);
 ```
 
@@ -3986,7 +3783,7 @@ SELECT toDate32('1899-01-01') AS value, toTypeName(value);
 
 3. With [Date](../data-types/date.md) argument:
 
-```sql
+``` sql
 SELECT toDate32(toDate('1899-01-01')) AS value, toTypeName(value);
 ```
 
@@ -3996,7 +3793,7 @@ SELECT toDate32(toDate('1899-01-01')) AS value, toTypeName(value);
 └────────────┴────────────────────────────────────────────┘
 ```
 
-## toDate32OrZero {#todate32orzero}
+## toDate32OrZero
 
 The same as [toDate32](#todate32) but returns the min value of [Date32](../data-types/date32.md) if an invalid argument is received.
 
@@ -4004,7 +3801,7 @@ The same as [toDate32](#todate32) but returns the min value of [Date32](../data-
 
 Query:
 
-```sql
+``` sql
 SELECT toDate32OrZero('1899-01-01'), toDate32OrZero('');
 ```
 
@@ -4016,7 +3813,7 @@ Result:
 └──────────────────────────────┴────────────────────┘
 ```
 
-## toDate32OrNull {#todate32ornull}
+## toDate32OrNull
 
 The same as [toDate32](#todate32) but returns `NULL` if an invalid argument is received.
 
@@ -4024,7 +3821,7 @@ The same as [toDate32](#todate32) but returns `NULL` if an invalid argument is r
 
 Query:
 
-```sql
+``` sql
 SELECT toDate32OrNull('1955-01-01'), toDate32OrNull('');
 ```
 
@@ -4036,7 +3833,7 @@ Result:
 └──────────────────────────────┴────────────────────┘
 ```
 
-## toDate32OrDefault {#todate32ordefault}
+## toDate32OrDefault
 
 Converts the argument to the [Date32](../data-types/date32.md) data type. If the value is outside the range, `toDate32OrDefault` returns the lower border value supported by [Date32](../data-types/date32.md). If the argument has [Date](../data-types/date.md) type, it's borders are taken into account. Returns default value if an invalid argument is received.
 
@@ -4044,7 +3841,7 @@ Converts the argument to the [Date32](../data-types/date32.md) data type. If the
 
 Query:
 
-```sql
+``` sql
 SELECT
     toDate32OrDefault('1930-01-01', toDate32('2020-01-01')),
     toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'));
@@ -4058,13 +3855,13 @@ Result:
 └─────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
 ```
 
-## toDateTime64 {#todatetime64}
+## toDateTime64
 
-Converts an input value to a value of type [DateTime64](../data-types/datetime64.md).
+Converts the argument to the [DateTime64](../data-types/datetime64.md) data type.
 
 **Syntax**
 
-```sql
+``` sql
 toDateTime64(expr, scale, [timezone])
 ```
 
@@ -4072,7 +3869,7 @@ toDateTime64(expr, scale, [timezone])
 
 - `expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
 - `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
-- `timezone` (optional) - Time zone of the specified datetime64 object.
+- `timezone` - Time zone of the specified datetime64 object.
 
 **Returned value**
 
@@ -4082,7 +3879,7 @@ toDateTime64(expr, scale, [timezone])
 
 1. The value is within the range:
 
-```sql
+``` sql
 SELECT toDateTime64('1955-01-01 00:00:00.000', 3) AS value, toTypeName(value);
 ```
 
@@ -4094,7 +3891,7 @@ SELECT toDateTime64('1955-01-01 00:00:00.000', 3) AS value, toTypeName(value);
 
 2. As decimal with precision:
 
-```sql
+``` sql
 SELECT toDateTime64(1546300800.000, 3) AS value, toTypeName(value);
 ```
 
@@ -4106,7 +3903,7 @@ SELECT toDateTime64(1546300800.000, 3) AS value, toTypeName(value);
 
 Without the decimal point the value is still treated as Unix Timestamp in seconds:
 
-```sql
+``` sql
 SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 ```
 
@@ -4119,7 +3916,7 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 
 3. With `timezone`:
 
-```sql
+``` sql
 SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
 ```
 
@@ -4129,140 +3926,13 @@ SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
 └─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
 ```
 
-## toDateTime64OrZero {#todatetime64orzero}
+## toDateTime64OrZero
 
-Like [toDateTime64](#todatetime64), this function converts an input value to a value of type [DateTime64](../data-types/datetime64.md) but returns the min value of [DateTime64](../data-types/datetime64.md) if an invalid argument is received.
+## toDateTime64OrNull
 
-**Syntax**
+## toDateTime64OrDefault
 
-```sql
-toDateTime64OrZero(expr, scale, [timezone])
-```
-
-**Arguments**
-
-- `expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
-- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
-- `timezone` (optional) - Time zone of the specified DateTime64 object.
-
-**Returned value**
-
-- A calendar date and time of day, with sub-second precision, otherwise the minimum value of `DateTime64`: `1970-01-01 01:00:00.000`. [DateTime64](../data-types/datetime64.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT toDateTime64OrZero('2008-10-12 00:00:00 00:30:30', 3) AS invalid_arg
-```
-
-Result:
-
-```response
-┌─────────────invalid_arg─┐
-│ 1970-01-01 01:00:00.000 │
-└─────────────────────────┘
-```
-
-**See also**
-
-- [toDateTime64](#todatetime64).
-- [toDateTime64OrNull](#todatetime64ornull).
-- [toDateTime64OrDefault](#todatetime64ordefault).
-
-## toDateTime64OrNull {#todatetime64ornull}
-
-Like [toDateTime64](#todatetime64), this function converts an input value to a value of type [DateTime64](../data-types/datetime64.md) but returns `NULL` if an invalid argument is received.
-
-**Syntax**
-
-```sql
-toDateTime64OrNull(expr, scale, [timezone])
-```
-
-**Arguments**
-
-- `expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
-- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
-- `timezone` (optional) - Time zone of the specified DateTime64 object.
-
-**Returned value**
-
-- A calendar date and time of day, with sub-second precision, otherwise `NULL`. [DateTime64](../data-types/datetime64.md)/[NULL](../data-types/nullable.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-    toDateTime64OrNull('1976-10-18 00:00:00.30', 3) AS valid_arg,
-    toDateTime64OrNull('1976-10-18 00:00:00 30', 3) AS invalid_arg
-```
-
-Result:
-
-```response
-┌───────────────valid_arg─┬─invalid_arg─┐
-│ 1976-10-18 00:00:00.300 │        ᴺᵁᴸᴸ │
-└─────────────────────────┴─────────────┘
-```
-
-**See also**
-
-- [toDateTime64](#todatetime64).
-- [toDateTime64OrZero](#todatetime64orzero).
-- [toDateTime64OrDefault](#todatetime64ordefault).
-
-## toDateTime64OrDefault {#todatetime64ordefault}
-
-Like [toDateTime64](#todatetime64), this function converts an input value to a value of type [DateTime64](../data-types/datetime64.md),
-but returns either the default value of [DateTime64](../data-types/datetime64.md)
-or the provided default if an invalid argument is received.
-
-**Syntax**
-
-```sql
-toDateTime64OrNull(expr, scale, [timezone, default])
-```
-
-**Arguments**
-
-- `expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
-- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
-- `timezone` (optional) - Time zone of the specified DateTime64 object.
-- `default` (optional) - Default value to return if an invalid argument is received. [DateTime64](../data-types/datetime64.md).
-
-**Returned value**
-
-- A calendar date and time of day, with sub-second precision, otherwise the minimum value of `DateTime64` or the `default` value if provided. [DateTime64](../data-types/datetime64.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-    toDateTime64OrDefault('1976-10-18 00:00:00 30', 3) AS invalid_arg,
-    toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2001-01-01 00:00:00.00',3)) AS invalid_arg_with_default
-```
-
-Result:
-
-```response
-┌─────────────invalid_arg─┬─invalid_arg_with_default─┐
-│ 1970-01-01 01:00:00.000 │  2000-12-31 23:00:00.000 │
-└─────────────────────────┴──────────────────────────┘
-```
-
-**See also**
-
-- [toDateTime64](#todatetime64).
-- [toDateTime64OrZero](#todatetime64orzero).
-- [toDateTime64OrNull](#todatetime64ornull).
-
-## toDecimal32 {#todecimal32}
+## toDecimal32
 
 Converts an input value to a value of type [`Decimal(9, S)`](../data-types/decimal.md) with scale of `S`. Throws an exception in case of an error.
 
@@ -4274,7 +3944,7 @@ toDecimal32(expr, S)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 - `S` — Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
@@ -4286,15 +3956,9 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32('0xc0fe', 1);`.
 
 :::note
-An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
-Excessive digits in a fraction are discarded (not rounded).
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`. 
+Excessive digits in a fraction are discarded (not rounded). 
 Excessive digits in the integer part will lead to an exception.
-:::
-
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal32(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal32('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -4332,7 +3996,7 @@ type_c: Decimal(9, 3)
 - [`toDecimal32OrNull`](#todecimal32ornull).
 - [`toDecimal32OrDefault`](#todecimal32ordefault).
 
-## toDecimal32OrZero {#todecimal32orzero}
+## toDecimal32OrZero
 
 Like [`toDecimal32`](#todecimal32), this function converts an input value to a value of type [Decimal(9, S)](../data-types/decimal.md) but returns `0` in case of an error.
 
@@ -4369,7 +4033,7 @@ Excessive digits in the integer part will lead to an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toDecimal32OrZero(toString(-1.111), 5) AS a,
     toTypeName(a),
@@ -4395,7 +4059,7 @@ toTypeName(b): Decimal(9, 5)
 - [`toDecimal32OrNull`](#todecimal32ornull).
 - [`toDecimal32OrDefault`](#todecimal32ordefault).
 
-## toDecimal32OrNull {#todecimal32ornull}
+## toDecimal32OrNull
 
 Like [`toDecimal32`](#todecimal32), this function converts an input value to a value of type [Nullable(Decimal(9, S))](../data-types/decimal.md) but returns `0` in case of an error.
 
@@ -4432,7 +4096,7 @@ Excessive digits in the integer part will lead to an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toDecimal32OrNull(toString(-1.111), 5) AS a,
     toTypeName(a),
@@ -4458,7 +4122,7 @@ toTypeName(b): Nullable(Decimal(9, 5))
 - [`toDecimal32OrZero`](#todecimal32orzero).
 - [`toDecimal32OrDefault`](#todecimal32ordefault).
 
-## toDecimal32OrDefault {#todecimal32ordefault}
+## toDecimal32OrDefault
 
 Like [`toDecimal32`](#todecimal32), this function converts an input value to a value of type [Decimal(9, S)](../data-types/decimal.md) but returns the default value in case of an error.
 
@@ -4488,12 +4152,6 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal32OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal32OrDefault('1.15', 2) = 1.15`
-:::
-
 **Returned value**
 
 - Value of type `Decimal(9, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal32(S)](../data-types/decimal.md).
@@ -4502,7 +4160,7 @@ You can use a String input so the operations use the underlying integer type: `t
 
 Query:
 
-```sql
+``` sql
 SELECT
     toDecimal32OrDefault(toString(0.0001), 5) AS a,
     toTypeName(a),
@@ -4528,7 +4186,7 @@ toTypeName(b): Decimal(9, 0)
 - [`toDecimal32OrZero`](#todecimal32orzero).
 - [`toDecimal32OrNull`](#todecimal32ornull).
 
-## toDecimal64 {#todecimal64}
+## toDecimal64
 
 Converts an input value to a value of type [`Decimal(18, S)`](../data-types/decimal.md) with scale of `S`. Throws an exception in case of an error.
 
@@ -4540,7 +4198,7 @@ toDecimal64(expr, S)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 - `S` — Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
@@ -4555,12 +4213,6 @@ Unsupported arguments:
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-:::
-
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal64(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal64('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -4598,7 +4250,7 @@ type_c: Decimal(18, 3)
 - [`toDecimal64OrNull`](#todecimal64ornull).
 - [`toDecimal64OrDefault`](#todecimal64ordefault).
 
-## toDecimal64OrZero {#todecimal64orzero}
+## toDecimal64OrZero
 
 Like [`toDecimal64`](#todecimal64), this function converts an input value to a value of type [Decimal(18, S)](../data-types/decimal.md) but returns `0` in case of an error.
 
@@ -4635,7 +4287,7 @@ Excessive digits in the integer part will lead to an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toDecimal64OrZero(toString(0.0001), 18) AS a,
     toTypeName(a),
@@ -4661,7 +4313,7 @@ toTypeName(b): Decimal(18, 18)
 - [`toDecimal64OrNull`](#todecimal64ornull).
 - [`toDecimal64OrDefault`](#todecimal64ordefault).
 
-## toDecimal64OrNull {#todecimal64ornull}
+## toDecimal64OrNull
 
 Like [`toDecimal64`](#todecimal64), this function converts an input value to a value of type [Nullable(Decimal(18, S))](../data-types/decimal.md) but returns `0` in case of an error.
 
@@ -4698,7 +4350,7 @@ Excessive digits in the integer part will lead to an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toDecimal64OrNull(toString(0.0001), 18) AS a,
     toTypeName(a),
@@ -4724,7 +4376,7 @@ toTypeName(b): Nullable(Decimal(18, 18))
 - [`toDecimal64OrZero`](#todecimal64orzero).
 - [`toDecimal64OrDefault`](#todecimal64ordefault).
 
-## toDecimal64OrDefault {#todecimal64ordefault}
+## toDecimal64OrDefault
 
 Like [`toDecimal64`](#todecimal64), this function converts an input value to a value of type [Decimal(18, S)](../data-types/decimal.md) but returns the default value in case of an error.
 
@@ -4754,12 +4406,6 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal64OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal64OrDefault('1.15', 2) = 1.15`
-:::
-
 **Returned value**
 
 - Value of type `Decimal(18, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal64(S)](../data-types/decimal.md).
@@ -4768,7 +4414,7 @@ You can use a String input so the operations use the underlying integer type: `t
 
 Query:
 
-```sql
+``` sql
 SELECT
     toDecimal64OrDefault(toString(0.0001), 18) AS a,
     toTypeName(a),
@@ -4794,7 +4440,7 @@ toTypeName(b): Decimal(18, 0)
 - [`toDecimal64OrZero`](#todecimal64orzero).
 - [`toDecimal64OrNull`](#todecimal64ornull).
 
-## toDecimal128 {#todecimal128}
+## toDecimal128
 
 Converts an input value to a value of type [`Decimal(38, S)`](../data-types/decimal.md) with scale of `S`. Throws an exception in case of an error.
 
@@ -4806,7 +4452,7 @@ toDecimal128(expr, S)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 - `S` — Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
@@ -4821,12 +4467,6 @@ Unsupported arguments:
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-:::
-
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal128(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal128('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -4864,7 +4504,7 @@ type_c: Decimal(38, 3)
 - [`toDecimal128OrNull`](#todecimal128ornull).
 - [`toDecimal128OrDefault`](#todecimal128ordefault).
 
-## toDecimal128OrZero {#todecimal128orzero}
+## toDecimal128OrZero
 
 Like [`toDecimal128`](#todecimal128), this function converts an input value to a value of type [Decimal(38, S)](../data-types/decimal.md) but returns `0` in case of an error.
 
@@ -4901,7 +4541,7 @@ Excessive digits in the integer part will lead to an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toDecimal128OrZero(toString(0.0001), 38) AS a,
     toTypeName(a),
@@ -4927,7 +4567,7 @@ toTypeName(b): Decimal(38, 38)
 - [`toDecimal128OrNull`](#todecimal128ornull).
 - [`toDecimal128OrDefault`](#todecimal128ordefault).
 
-## toDecimal128OrNull {#todecimal128ornull}
+## toDecimal128OrNull
 
 Like [`toDecimal128`](#todecimal128), this function converts an input value to a value of type [Nullable(Decimal(38, S))](../data-types/decimal.md) but returns `0` in case of an error.
 
@@ -4964,7 +4604,7 @@ Excessive digits in the integer part will lead to an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toDecimal128OrNull(toString(1/42), 38) AS a,
     toTypeName(a),
@@ -4990,7 +4630,7 @@ toTypeName(b): Nullable(Decimal(38, 38))
 - [`toDecimal128OrZero`](#todecimal128orzero).
 - [`toDecimal128OrDefault`](#todecimal128ordefault).
 
-## toDecimal128OrDefault {#todecimal128ordefault}
+## toDecimal128OrDefault
 
 Like [`toDecimal128`](#todecimal128), this function converts an input value to a value of type [Decimal(38, S)](../data-types/decimal.md) but returns the default value in case of an error.
 
@@ -5020,12 +4660,6 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal128OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal128OrDefault('1.15', 2) = 1.15`
-:::
-
 **Returned value**
 
 - Value of type `Decimal(38, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal128(S)](../data-types/decimal.md).
@@ -5034,7 +4668,7 @@ You can use a String input so the operations use the underlying integer type: `t
 
 Query:
 
-```sql
+``` sql
 SELECT
     toDecimal128OrDefault(toString(1/42), 18) AS a,
     toTypeName(a),
@@ -5060,7 +4694,7 @@ toTypeName(b): Decimal(38, 0)
 - [`toDecimal128OrZero`](#todecimal128orzero).
 - [`toDecimal128OrNull`](#todecimal128ornull).
 
-## toDecimal256 {#todecimal256}
+## toDecimal256
 
 Converts an input value to a value of type [`Decimal(76, S)`](../data-types/decimal.md) with scale of `S`. Throws an exception in case of an error.
 
@@ -5072,7 +4706,7 @@ toDecimal256(expr, S)
 
 **Arguments**
 
-- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 - `S` — Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
@@ -5087,12 +4721,6 @@ Unsupported arguments:
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-:::
-
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal256(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal256('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -5130,7 +4758,7 @@ type_c: Decimal(76, 3)
 - [`toDecimal256OrNull`](#todecimal256ornull).
 - [`toDecimal256OrDefault`](#todecimal256ordefault).
 
-## toDecimal256OrZero {#todecimal256orzero}
+## toDecimal256OrZero
 
 Like [`toDecimal256`](#todecimal256), this function converts an input value to a value of type [Decimal(76, S)](../data-types/decimal.md) but returns `0` in case of an error.
 
@@ -5167,7 +4795,7 @@ Excessive digits in the integer part will lead to an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toDecimal256OrZero(toString(0.0001), 76) AS a,
     toTypeName(a),
@@ -5193,7 +4821,7 @@ toTypeName(b): Decimal(76, 76)
 - [`toDecimal256OrNull`](#todecimal256ornull).
 - [`toDecimal256OrDefault`](#todecimal256ordefault).
 
-## toDecimal256OrNull {#todecimal256ornull}
+## toDecimal256OrNull
 
 Like [`toDecimal256`](#todecimal256), this function converts an input value to a value of type [Nullable(Decimal(76, S))](../data-types/decimal.md) but returns `0` in case of an error.
 
@@ -5230,7 +4858,7 @@ Excessive digits in the integer part will lead to an error.
 
 Query:
 
-```sql
+``` sql
 SELECT
     toDecimal256OrNull(toString(1/42), 76) AS a,
     toTypeName(a),
@@ -5256,7 +4884,7 @@ toTypeName(b): Nullable(Decimal(76, 76))
 - [`toDecimal256OrZero`](#todecimal256orzero).
 - [`toDecimal256OrDefault`](#todecimal256ordefault).
 
-## toDecimal256OrDefault {#todecimal256ordefault}
+## toDecimal256OrDefault
 
 Like [`toDecimal256`](#todecimal256), this function converts an input value to a value of type [Decimal(76, S)](../data-types/decimal.md) but returns the default value in case of an error.
 
@@ -5286,12 +4914,6 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal256OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal256OrDefault('1.15', 2) = 1.15`
-:::
-
 **Returned value**
 
 - Value of type `Decimal(76, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal256(S)](../data-types/decimal.md).
@@ -5300,7 +4922,7 @@ You can use a String input so the operations use the underlying integer type: `t
 
 Query:
 
-```sql
+``` sql
 SELECT
     toDecimal256OrDefault(toString(1/42), 76) AS a,
     toTypeName(a),
@@ -5326,12 +4948,12 @@ toTypeName(b): Decimal(76, 0)
 - [`toDecimal256OrZero`](#todecimal256orzero).
 - [`toDecimal256OrNull`](#todecimal256ornull).
 
-## toString {#tostring}
+## toString
 
 Functions for converting between numbers, strings (but not fixed strings), dates, and dates with times.
 All these functions accept one argument.
 
-When converting to or from a string, the value is formatted or parsed using the same rules as for the TabSeparated format (and almost all other text formats). If the string can't be parsed, an exception is thrown and the request is canceled.
+When converting to or from a string, the value is formatted or parsed using the same rules as for the TabSeparated format (and almost all other text formats). If the string can’t be parsed, an exception is thrown and the request is canceled.
 
 When converting dates to numbers or vice versa, the date corresponds to the number of days since the beginning of the Unix epoch.
 When converting dates with times to numbers or vice versa, the date with time corresponds to the number of seconds since the beginning of the Unix epoch.
@@ -5355,7 +4977,7 @@ Additionally, the toString function of the DateTime argument can take a second S
 
 Query:
 
-```sql
+``` sql
 SELECT
     now() AS ts,
     time_zone,
@@ -5384,57 +5006,20 @@ Result:
 
 Also see the `toUnixTimestamp` function.
 
-## toFixedString {#tofixedstring}
+## toFixedString(s, N)
 
 Converts a [String](../data-types/string.md) type argument to a [FixedString(N)](../data-types/fixedstring.md) type (a string of fixed length N).
 If the string has fewer bytes than N, it is padded with null bytes to the right. If the string has more bytes than N, an exception is thrown.
 
-**Syntax**
-
-```sql
-toFixedString(s, N)
-```
-
-**Arguments**
-
-- `s` — A String to convert to a fixed string. [String](../data-types/string.md).
-- `N` — Length N. [UInt8](../data-types/int-uint.md)
-
-**Returned value**
-
-- An N length fixed string of `s`. [FixedString](../data-types/fixedstring.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT toFixedString('foo', 8) AS s;
-```
-
-Result:
-
-```response
-┌─s─────────────┐
-│ foo\0\0\0\0\0 │
-└───────────────┘
-```
-
-## toStringCutToZero {#tostringcuttozero}
+## toStringCutToZero(s)
 
 Accepts a String or FixedString argument. Returns the String with the content truncated at the first zero byte found.
 
-**Syntax**
-
-```sql
-toStringCutToZero(s)
-```
-
 **Example**
 
 Query:
 
-```sql
+``` sql
 SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut;
 ```
 
@@ -5448,7 +5033,7 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut;
 ```
 
@@ -5460,13 +5045,13 @@ Result:
 └────────────┴───────┘
 ```
 
-## toDecimalString {#todecimalstring}
+## toDecimalString
 
 Converts a numeric value to String with the number of fractional digits in the output specified by the user.
 
 **Syntax**
 
-```sql
+``` sql
 toDecimalString(number, scale)
 ```
 
@@ -5486,7 +5071,7 @@ toDecimalString(number, scale)
 
 Query:
 
-```sql
+``` sql
 SELECT toDecimalString(CAST('64.32', 'Float64'), 5);
 ```
 
@@ -5498,9 +5083,9 @@ Result:
 └─────────────────────────────────────────────┘
 ```
 
-## reinterpretAsUInt8 {#reinterpretasuint8}
+## reinterpretAsUInt8
 
-Performs byte reinterpretation by treating the input value as a value of type UInt8. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type UInt8. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5514,7 +5099,7 @@ reinterpretAsUInt8(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as UInt8. [UInt8](/sql-reference/data-types/int-uint).
+- Reinterpreted value `x` as UInt8. [UInt8](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256).
 
 **Example**
 
@@ -5536,9 +5121,9 @@ Result:
 └───┴───────────────┴─────┴─────────────────┘
 ```
 
-## reinterpretAsUInt16 {#reinterpretasuint16}
+## reinterpretAsUInt16
 
-Performs byte reinterpretation by treating the input value as a value of type UInt16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type UInt16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5552,7 +5137,7 @@ reinterpretAsUInt16(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as UInt16. [UInt16](/sql-reference/data-types/int-uint).
+- Reinterpreted value `x` as UInt16. [UInt16](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256).
 
 **Example**
 
@@ -5574,7 +5159,7 @@ Result:
 └───┴───────────────┴─────┴─────────────────┘
 ```
 
-## reinterpretAsUInt32 {#reinterpretasuint32}
+## reinterpretAsUInt32
 
 Performs byte reinterpretation by treating the input value as a value of type UInt32. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
 
@@ -5590,7 +5175,7 @@ reinterpretAsUInt32(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as UInt32. [UInt32](/sql-reference/data-types/int-uint).
+- Reinterpreted value `x` as UInt32. [UInt32](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256).
 
 **Example**
 
@@ -5612,9 +5197,9 @@ Result:
 └─────┴───────────────┴─────┴─────────────────┘
 ```
 
-## reinterpretAsUInt64 {#reinterpretasuint64}
+## reinterpretAsUInt64
 
-Performs byte reinterpretation by treating the input value as a value of type UInt64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type UInt64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5628,7 +5213,7 @@ reinterpretAsUInt64(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as UInt64. [UInt64](/sql-reference/data-types/int-uint).
+- Reinterpreted value `x` as UInt64. [UInt64](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256).
 
 **Example**
 
@@ -5650,9 +5235,9 @@ Result:
 └─────┴───────────────┴─────┴─────────────────┘
 ```
 
-## reinterpretAsUInt128 {#reinterpretasuint128}
+## reinterpretAsUInt128
 
-Performs byte reinterpretation by treating the input value as a value of type UInt128. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type UInt128. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5666,7 +5251,7 @@ reinterpretAsUInt128(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as UInt128. [UInt128](/sql-reference/data-types/int-uint).
+- Reinterpreted value `x` as UInt128. [UInt128](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256).
 
 **Example**
 
@@ -5688,9 +5273,9 @@ Result:
 └─────┴───────────────┴─────┴─────────────────┘
 ```
 
-## reinterpretAsUInt256 {#reinterpretasuint256}
+## reinterpretAsUInt256
 
-Performs byte reinterpretation by treating the input value as a value of type UInt256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type UInt256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
 
 **Syntax**
 
@@ -5704,7 +5289,7 @@ reinterpretAsUInt256(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as UInt256. [UInt256](/sql-reference/data-types/int-uint).
+- Reinterpreted value `x` as UInt256. [UInt256](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256).
 
 **Example**
 
@@ -5726,9 +5311,9 @@ Result:
 └─────┴───────────────┴─────┴─────────────────┘
 ```
 
-## reinterpretAsInt8 {#reinterpretasint8}
+## reinterpretAsInt8
 
-Performs byte reinterpretation by treating the input value as a value of type Int8. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Int8. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5742,7 +5327,7 @@ reinterpretAsInt8(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as Int8. [Int8](/sql-reference/data-types/int-uint#integer-ranges).
+- Reinterpreted value `x` as Int8. [Int8](../data-types/int-uint.md/#int-ranges).
 
 **Example**
 
@@ -5764,9 +5349,9 @@ Result:
 └───┴───────────────┴─────┴─────────────────┘
 ```
 
-## reinterpretAsInt16 {#reinterpretasint16}
+## reinterpretAsInt16
 
-Performs byte reinterpretation by treating the input value as a value of type Int16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Int16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
 
 **Syntax**
 
@@ -5780,7 +5365,7 @@ reinterpretAsInt16(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as Int16. [Int16](/sql-reference/data-types/int-uint#integer-ranges).
+- Reinterpreted value `x` as Int16. [Int16](../data-types/int-uint.md/#int-ranges).
 
 **Example**
 
@@ -5802,9 +5387,9 @@ Result:
 └───┴───────────────┴─────┴─────────────────┘
 ```
 
-## reinterpretAsInt32 {#reinterpretasint32}
+## reinterpretAsInt32
 
-Performs byte reinterpretation by treating the input value as a value of type Int32. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Int32. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5818,7 +5403,7 @@ reinterpretAsInt32(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as Int32. [Int32](/sql-reference/data-types/int-uint#integer-ranges).
+- Reinterpreted value `x` as Int32. [Int32](../data-types/int-uint.md/#int-ranges).
 
 **Example**
 
@@ -5840,9 +5425,9 @@ Result:
 └─────┴───────────────┴─────┴─────────────────┘
 ```
 
-## reinterpretAsInt64 {#reinterpretasint64}
+## reinterpretAsInt64
 
-Performs byte reinterpretation by treating the input value as a value of type Int64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Int64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5856,7 +5441,7 @@ reinterpretAsInt64(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as Int64. [Int64](/sql-reference/data-types/int-uint#integer-ranges).
+- Reinterpreted value `x` as Int64. [Int64](../data-types/int-uint.md/#int-ranges).
 
 **Example**
 
@@ -5878,9 +5463,9 @@ Result:
 └─────┴───────────────┴─────┴─────────────────┘
 ```
 
-## reinterpretAsInt128 {#reinterpretasint128}
+## reinterpretAsInt128
 
-Performs byte reinterpretation by treating the input value as a value of type Int128. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Int128. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5894,7 +5479,7 @@ reinterpretAsInt128(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as Int128. [Int128](/sql-reference/data-types/int-uint#integer-ranges).
+- Reinterpreted value `x` as Int128. [Int128](../data-types/int-uint.md/#int-ranges).
 
 **Example**
 
@@ -5916,9 +5501,9 @@ Result:
 └─────┴───────────────┴─────┴─────────────────┘
 ```
 
-## reinterpretAsInt256 {#reinterpretasint256}
+## reinterpretAsInt256
 
-Performs byte reinterpretation by treating the input value as a value of type Int256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Int256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5932,7 +5517,7 @@ reinterpretAsInt256(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as Int256. [Int256](/sql-reference/data-types/int-uint#integer-ranges).
+- Reinterpreted value `x` as Int256. [Int256](../data-types/int-uint.md/#int-ranges).
 
 **Example**
 
@@ -5954,9 +5539,9 @@ Result:
 └─────┴───────────────┴─────┴─────────────────┘
 ```
 
-## reinterpretAsFloat32 {#reinterpretasfloat32}
+## reinterpretAsFloat32
 
-Performs byte reinterpretation by treating the input value as a value of type Float32. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Float32. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5988,9 +5573,9 @@ Result:
 └────────────┴─────────────────────────┘
 ```
 
-## reinterpretAsFloat64 {#reinterpretasfloat64}
+## reinterpretAsFloat64
 
-Performs byte reinterpretation by treating the input value as a value of type Float64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Float64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -6022,7 +5607,7 @@ Result:
 └─────────────────────┴─────────────────────────┘
 ```
 
-## reinterpretAsDate {#reinterpretasdate}
+## reinterpretAsDate
 
 Accepts a string, fixed string or numeric value and interprets the bytes as a number in host order (little endian). It returns a date from the interpreted number as the number of days since the beginning of the Unix Epoch.
 
@@ -6043,7 +5628,7 @@ reinterpretAsDate(x)
 **Implementation details**
 
 :::note
-If the provided string isn't long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
+If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. 
 :::
 
 **Example**
@@ -6062,7 +5647,7 @@ Result:
 └───────────────────────┴────────────────────────┘
 ```
 
-## reinterpretAsDateTime {#reinterpretasdatetime}
+## reinterpretAsDateTime
 
 These functions accept a string and interpret the bytes placed at the beginning of the string as a number in host order (little endian). Returns a date with time interpreted as the number of seconds since the beginning of the Unix Epoch.
 
@@ -6083,7 +5668,7 @@ reinterpretAsDateTime(x)
 **Implementation details**
 
 :::note
-If the provided string isn't long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
+If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. 
 :::
 
 **Example**
@@ -6102,7 +5687,7 @@ Result:
 └───────────────────────────┴────────────────────────────┘
 ```
 
-## reinterpretAsString {#reinterpretasstring}
+## reinterpretAsString
 
 This function accepts a number, date or date with time and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
 
@@ -6125,8 +5710,8 @@ reinterpretAsString(x)
 Query:
 
 ```sql
-SELECT
-    reinterpretAsString(toDateTime('1970-01-01 01:01:05')),
+SELECT 
+    reinterpretAsString(toDateTime('1970-01-01 01:01:05')), 
     reinterpretAsString(toDate('1970-03-07'));
 ```
 
@@ -6138,7 +5723,7 @@ Result:
 └────────────────────────────────────────────────────────┴───────────────────────────────────────────┘
 ```
 
-## reinterpretAsFixedString {#reinterpretasfixedstring}
+## reinterpretAsFixedString
 
 This function accepts a number, date or date with time and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
 
@@ -6161,8 +5746,8 @@ reinterpretAsFixedString(x)
 Query:
 
 ```sql
-SELECT
-    reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')),
+SELECT 
+    reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')), 
     reinterpretAsFixedString(toDate('1970-03-07'));
 ```
 
@@ -6174,27 +5759,27 @@ Result:
 └─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
 ```
 
-## reinterpretAsUUID {#reinterpretasuuid}
+## reinterpretAsUUID
 
 :::note
 In addition to the UUID functions listed here, there is dedicated [UUID function documentation](../functions/uuid-functions.md).
 :::
 
-Accepts a 16 byte string and returns a UUID by interpreting each 8-byte half in little-endian byte order. If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string is longer than 16 bytes, the extra bytes at the end are ignored.
+Accepts a 16 byte string and returns a UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string is longer than 16 bytes, the extra bytes at the end are ignored.
 
 **Syntax**
 
-```sql
+``` sql
 reinterpretAsUUID(fixed_string)
 ```
 
 **Arguments**
 
-- `fixed_string` — Big-endian byte string. [FixedString](/sql-reference/data-types/fixedstring).
+- `fixed_string` — Big-endian byte string. [FixedString](../data-types/fixedstring.md/#fixedstring).
 
 **Returned value**
 
-- The UUID type value. [UUID](/sql-reference/data-types/uuid).
+- The UUID type value. [UUID](../data-types/uuid.md/#uuid-data-type).
 
 **Examples**
 
@@ -6202,7 +5787,7 @@ String to UUID.
 
 Query:
 
-```sql
+``` sql
 SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')));
 ```
 
@@ -6218,7 +5803,7 @@ Going back and forth from String to UUID.
 
 Query:
 
-```sql
+``` sql
 WITH
     generateUUIDv4() AS uuid,
     identity(lower(hex(reverse(reinterpretAsString(uuid))))) AS str,
@@ -6234,13 +5819,13 @@ Result:
 └─────────────────────┘
 ```
 
-## reinterpret {#reinterpret}
+## reinterpret
 
 Uses the same source in-memory bytes sequence for `x` value and reinterprets it to destination type.
 
 **Syntax**
 
-```sql
+``` sql
 reinterpret(x, type)
 ```
 
@@ -6264,20 +5849,20 @@ SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
 
 Result:
 
-```text
+```
 ┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
 │         255 │        1e-45 │            49 │
 └─────────────┴──────────────┴───────────────┘
 ```
 
-## CAST {#cast}
+## CAST
 
 Converts an input value to the specified data type. Unlike the [reinterpret](#reinterpret) function, `CAST` tries to present the same value using the new data type. If the conversion can not be done then an exception is raised.
 Several syntax variants are supported.
 
 **Syntax**
 
-```sql
+``` sql
 CAST(x, T)
 CAST(x AS t)
 x::t
@@ -6310,7 +5895,7 @@ SELECT
 
 Result:
 
-```yaml
+```
 ┌─cast_int_to_uint─┬─cast_float_to_decimal─┬─cast_string_to_int─┐
 │              255 │                  1.50 │                  1 │
 └──────────────────┴───────────────────────┴────────────────────┘
@@ -6318,7 +5903,7 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT
     '2016-06-15 23:00:00' AS timestamp,
     CAST(timestamp AS DateTime) AS datetime,
@@ -6343,7 +5928,7 @@ Type conversion to [Nullable](../data-types/nullable.md) and back is supported.
 
 Query:
 
-```sql
+``` sql
 SELECT toTypeName(x) FROM t_null;
 ```
 
@@ -6358,7 +5943,7 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null;
 ```
 
@@ -6375,7 +5960,7 @@ Result:
 
 - [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting
 
-## accurateCast(x, T) {#accuratecastx-t}
+## accurateCast(x, T)
 
 Converts `x` to the `T` data type.
 
@@ -6385,7 +5970,7 @@ The difference from [cast](#cast) is that `accurateCast` does not allow overflow
 
 Query:
 
-```sql
+``` sql
 SELECT cast(-1, 'UInt8') as uint8;
 ```
 
@@ -6409,9 +5994,9 @@ Result:
 Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in column Int8 cannot be safely converted into type UInt8: While processing accurateCast(-1, 'UInt8') AS uint8.
 ```
 
-## accurateCastOrNull(x, T) {#accuratecastornullx-t}
+## accurateCastOrNull(x, T)
 
-Converts input value `x` to the specified data type `T`. Always returns [Nullable](../data-types/nullable.md) type and returns [NULL](/sql-reference/syntax#null) if the cast value is not representable in the target type.
+Converts input value `x` to the specified data type `T`. Always returns [Nullable](../data-types/nullable.md) type and returns [NULL](../syntax.md/#null-literal) if the casted value is not representable in the target type.
 
 **Syntax**
 
@@ -6432,7 +6017,7 @@ accurateCastOrNull(x, T)
 
 Query:
 
-```sql
+``` sql
 SELECT toTypeName(accurateCastOrNull(5, 'UInt8'));
 ```
 
@@ -6446,7 +6031,7 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT
     accurateCastOrNull(-1, 'UInt8') as uint8,
     accurateCastOrNull(128, 'Int8') as int8,
@@ -6462,9 +6047,9 @@ Result:
 ```
 
 
-## accurateCastOrDefault(x, T[, default_value]) {#accuratecastordefaultx-t-default_value}
+## accurateCastOrDefault(x, T[, default_value])
 
-Converts input value `x` to the specified data type `T`. Returns default type value or `default_value` if specified if the cast value is not representable in the target type.
+Converts input value `x` to the specified data type `T`. Returns default type value or `default_value` if specified if the casted value is not representable in the target type.
 
 **Syntax**
 
@@ -6486,7 +6071,7 @@ accurateCastOrDefault(x, T)
 
 Query:
 
-```sql
+``` sql
 SELECT toTypeName(accurateCastOrDefault(5, 'UInt8'));
 ```
 
@@ -6500,7 +6085,7 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT
     accurateCastOrDefault(-1, 'UInt8') as uint8,
     accurateCastOrDefault(-1, 'UInt8', 5) as uint8_default,
@@ -6518,422 +6103,62 @@ Result:
 └───────┴───────────────┴──────┴──────────────┴──────────────┴──────────────────────┘
 ```
 
-## toIntervalYear {#tointervalyear}
+## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second)
 
-Returns an interval of `n` years of data type [IntervalYear](../data-types/special-data-types/interval.md).
+Converts a Number type argument to an [Interval](../data-types/special-data-types/interval.md) data type.
 
 **Syntax**
 
-```sql
-toIntervalYear(n)
+``` sql
+toIntervalSecond(number)
+toIntervalMinute(number)
+toIntervalHour(number)
+toIntervalDay(number)
+toIntervalWeek(number)
+toIntervalMonth(number)
+toIntervalQuarter(number)
+toIntervalYear(number)
 ```
 
 **Arguments**
 
-- `n` — Number of years. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+- `number` — Duration of interval. Positive integer number.
 
 **Returned values**
 
-- Interval of `n` years. [IntervalYear](../data-types/special-data-types/interval.md).
+- The value in `Interval` data type.
 
 **Example**
 
 Query:
 
-```sql
+``` sql
 WITH
-    toDate('2024-06-15') AS date,
-    toIntervalYear(1) AS interval_to_year
-SELECT date + interval_to_year AS result
-```
-
-Result:
-
-```response
-┌─────result─┐
-│ 2025-06-15 │
-└────────────┘
-```
-
-## toIntervalQuarter {#tointervalquarter}
-
-Returns an interval of `n` quarters of data type [IntervalQuarter](../data-types/special-data-types/interval.md).
-
-**Syntax**
-
-```sql
-toIntervalQuarter(n)
-```
-
-**Arguments**
-
-- `n` — Number of quarters. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
-
-**Returned values**
-
-- Interval of `n` quarters. [IntervalQuarter](../data-types/special-data-types/interval.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH
-    toDate('2024-06-15') AS date,
-    toIntervalQuarter(1) AS interval_to_quarter
-SELECT date + interval_to_quarter AS result
-```
-
-Result:
-
-```response
-┌─────result─┐
-│ 2024-09-15 │
-└────────────┘
-```
-
-## toIntervalMonth {#tointervalmonth}
-
-Returns an interval of `n` months of data type [IntervalMonth](../data-types/special-data-types/interval.md).
-
-**Syntax**
-
-```sql
-toIntervalMonth(n)
-```
-
-**Arguments**
-
-- `n` — Number of months. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
-
-**Returned values**
-
-- Interval of `n` months. [IntervalMonth](../data-types/special-data-types/interval.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH
-    toDate('2024-06-15') AS date,
-    toIntervalMonth(1) AS interval_to_month
-SELECT date + interval_to_month AS result
-```
-
-Result:
-
-```response
-┌─────result─┐
-│ 2024-07-15 │
-└────────────┘
-```
-
-## toIntervalWeek {#tointervalweek}
-
-Returns an interval of `n` weeks of data type [IntervalWeek](../data-types/special-data-types/interval.md).
-
-**Syntax**
-
-```sql
-toIntervalWeek(n)
-```
-
-**Arguments**
-
-- `n` — Number of weeks. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
-
-**Returned values**
-
-- Interval of `n` weeks. [IntervalWeek](../data-types/special-data-types/interval.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH
-    toDate('2024-06-15') AS date,
+    toDate('2019-01-01') AS date,
+    INTERVAL 1 WEEK AS interval_week,
     toIntervalWeek(1) AS interval_to_week
-SELECT date + interval_to_week AS result
+SELECT
+    date + interval_week,
+    date + interval_to_week;
 ```
 
 Result:
 
 ```response
-┌─────result─┐
-│ 2024-06-22 │
-└────────────┘
+┌─plus(date, interval_week)─┬─plus(date, interval_to_week)─┐
+│                2019-01-08 │                   2019-01-08 │
+└───────────────────────────┴──────────────────────────────┘
 ```
 
-## toIntervalDay {#tointervalday}
-
-Returns an interval of `n` days of data type [IntervalDay](../data-types/special-data-types/interval.md).
-
-**Syntax**
-
-```sql
-toIntervalDay(n)
-```
-
-**Arguments**
-
-- `n` — Number of days. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
-
-**Returned values**
-
-- Interval of `n` days. [IntervalDay](../data-types/special-data-types/interval.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH
-    toDate('2024-06-15') AS date,
-    toIntervalDay(5) AS interval_to_days
-SELECT date + interval_to_days AS result
-```
-
-Result:
-
-```response
-┌─────result─┐
-│ 2024-06-20 │
-└────────────┘
-```
-
-## toIntervalHour {#tointervalhour}
-
-Returns an interval of `n` hours of data type [IntervalHour](../data-types/special-data-types/interval.md).
-
-**Syntax**
-
-```sql
-toIntervalHour(n)
-```
-
-**Arguments**
-
-- `n` — Number of hours. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
-
-**Returned values**
-
-- Interval of `n` hours. [IntervalHour](../data-types/special-data-types/interval.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH
-    toDate('2024-06-15') AS date,
-    toIntervalHour(12) AS interval_to_hours
-SELECT date + interval_to_hours AS result
-```
-
-Result:
-
-```response
-┌──────────────result─┐
-│ 2024-06-15 12:00:00 │
-└─────────────────────┘
-```
-
-## toIntervalMinute {#tointervalminute}
-
-Returns an interval of `n` minutes of data type [IntervalMinute](../data-types/special-data-types/interval.md).
-
-**Syntax**
-
-```sql
-toIntervalMinute(n)
-```
-
-**Arguments**
-
-- `n` — Number of minutes. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
-
-**Returned values**
-
-- Interval of `n` minutes. [IntervalMinute](../data-types/special-data-types/interval.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH
-    toDate('2024-06-15') AS date,
-    toIntervalMinute(12) AS interval_to_minutes
-SELECT date + interval_to_minutes AS result
-```
-
-Result:
-
-```response
-┌──────────────result─┐
-│ 2024-06-15 00:12:00 │
-└─────────────────────┘
-```
-
-## toIntervalSecond {#tointervalsecond}
-
-Returns an interval of `n` seconds of data type [IntervalSecond](../data-types/special-data-types/interval.md).
-
-**Syntax**
-
-```sql
-toIntervalSecond(n)
-```
-
-**Arguments**
-
-- `n` — Number of seconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
-
-**Returned values**
-
-- Interval of `n` seconds. [IntervalSecond](../data-types/special-data-types/interval.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH
-    toDate('2024-06-15') AS date,
-    toIntervalSecond(30) AS interval_to_seconds
-SELECT date + interval_to_seconds AS result
-```
-
-Result:
-
-```response
-┌──────────────result─┐
-│ 2024-06-15 00:00:30 │
-└─────────────────────┘
-```
-
-## toIntervalMillisecond {#tointervalmillisecond}
-
-Returns an interval of `n` milliseconds of data type [IntervalMillisecond](../data-types/special-data-types/interval.md).
-
-**Syntax**
-
-```sql
-toIntervalMillisecond(n)
-```
-
-**Arguments**
-
-- `n` — Number of milliseconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
-
-**Returned values**
-
-- Interval of `n` milliseconds. [IntervalMilliseconds](../data-types/special-data-types/interval.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH
-    toDateTime('2024-06-15') AS date,
-    toIntervalMillisecond(30) AS interval_to_milliseconds
-SELECT date + interval_to_milliseconds AS result
-```
-
-Result:
-
-```response
-┌──────────────────result─┐
-│ 2024-06-15 00:00:00.030 │
-└─────────────────────────┘
-```
-
-## toIntervalMicrosecond {#tointervalmicrosecond}
-
-Returns an interval of `n` microseconds of data type [IntervalMicrosecond](../data-types/special-data-types/interval.md).
-
-**Syntax**
-
-```sql
-toIntervalMicrosecond(n)
-```
-
-**Arguments**
-
-- `n` — Number of microseconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
-
-**Returned values**
-
-- Interval of `n` microseconds. [IntervalMicrosecond](../data-types/special-data-types/interval.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH
-    toDateTime('2024-06-15') AS date,
-    toIntervalMicrosecond(30) AS interval_to_microseconds
-SELECT date + interval_to_microseconds AS result
-```
-
-Result:
-
-```response
-┌─────────────────────result─┐
-│ 2024-06-15 00:00:00.000030 │
-└────────────────────────────┘
-```
-
-## toIntervalNanosecond {#tointervalnanosecond}
-
-Returns an interval of `n` nanoseconds of data type [IntervalNanosecond](../data-types/special-data-types/interval.md).
-
-**Syntax**
-
-```sql
-toIntervalNanosecond(n)
-```
-
-**Arguments**
-
-- `n` — Number of nanoseconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
-
-**Returned values**
-
-- Interval of `n` nanoseconds. [IntervalNanosecond](../data-types/special-data-types/interval.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH
-    toDateTime('2024-06-15') AS date,
-    toIntervalNanosecond(30) AS interval_to_nanoseconds
-SELECT date + interval_to_nanoseconds AS result
-```
-
-Result:
-
-```response
-┌────────────────────────result─┐
-│ 2024-06-15 00:00:00.000000030 │
-└───────────────────────────────┘
-```
-
-## parseDateTime {#parsedatetime}
+## parseDateTime
 
 Converts a [String](../data-types/string.md) to [DateTime](../data-types/datetime.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
 
-This function is the opposite operation of function [formatDateTime](/sql-reference/functions/date-time-functions#formatdatetime).
+This function is the opposite operation of function [formatDateTime](../functions/date-time-functions.md#date_time_functions-formatDateTime).
 
 **Syntax**
 
-```sql
+``` sql
 parseDateTime(str[, format[, timezone]])
 ```
 
@@ -6941,20 +6166,20 @@ parseDateTime(str[, format[, timezone]])
 
 - `str` — The String to be parsed
 - `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s` if not specified.
-- `timezone` — [Timezone](operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
 
 **Returned value(s)**
 
-Return a [DateTime](../data-types/datetime.md) value parsed from the input string according to a MySQL-style format string.
+Returns DateTime values parsed from input string according to a MySQL style format string.
 
 **Supported format specifiers**
 
-All format specifiers listed in [formatDateTime](/sql-reference/functions/date-time-functions#formatdatetime) except:
+All format specifiers listed in [formatDateTime](../functions/date-time-functions.md#date_time_functions-formatDateTime) except:
 - %Q: Quarter (1-4)
 
 **Example**
 
-```sql
+``` sql
 SELECT parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
 ┌─parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
@@ -6964,25 +6189,25 @@ SELECT parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
 Alias: `TO_TIMESTAMP`.
 
-## parseDateTimeOrZero {#parsedatetimeorzero}
+## parseDateTimeOrZero
 
 Same as for [parseDateTime](#parsedatetime) except that it returns zero date when it encounters a date format that cannot be processed.
 
-## parseDateTimeOrNull {#parsedatetimeornull}
+## parseDateTimeOrNull
 
 Same as for [parseDateTime](#parsedatetime) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 Alias: `str_to_date`.
 
-## parseDateTimeInJodaSyntax {#parsedatetimeinjodasyntax}
+## parseDateTimeInJodaSyntax
 
 Similar to [parseDateTime](#parsedatetime), except that the format string is in [Joda](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL syntax.
 
-This function is the opposite operation of function [formatDateTimeInJodaSyntax](/sql-reference/functions/date-time-functions#formatdatetimeinjodasyntax).
+This function is the opposite operation of function [formatDateTimeInJodaSyntax](../functions/date-time-functions.md#date_time_functions-formatDateTimeInJodaSyntax).
 
 **Syntax**
 
-```sql
+``` sql
 parseDateTimeInJodaSyntax(str[, format[, timezone]])
 ```
 
@@ -6990,22 +6215,22 @@ parseDateTimeInJodaSyntax(str[, format[, timezone]])
 
 - `str` — The String to be parsed
 - `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
-- `timezone` — [Timezone](operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
 
 **Returned value(s)**
 
-Return a [DateTime](../data-types/datetime.md) value parsed from the input string according to a Joda-style format string.
+Returns DateTime values parsed from input string according to a Joda style format.
 
 **Supported format specifiers**
 
-All format specifiers listed in [formatDateTimeInJoda](/sql-reference/functions/date-time-functions#formatdatetime) are supported, except:
+All format specifiers listed in [formatDateTimeInJoda](../functions/date-time-functions.md#date_time_functions-formatDateTime) are supported, except:
 - S: fraction of second
 - z: time zone
 - Z: time zone offset/id
 
 **Example**
 
-```sql
+``` sql
 SELECT parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', 'Europe/Minsk')
 
 ┌─parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', 'Europe/Minsk')─┐
@@ -7013,82 +6238,24 @@ SELECT parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', '
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## parseDateTimeInJodaSyntaxOrZero {#parsedatetimeinjodasyntaxorzero}
+## parseDateTimeInJodaSyntaxOrZero
 
 Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that it returns zero date when it encounters a date format that cannot be processed.
 
-## parseDateTimeInJodaSyntaxOrNull {#parsedatetimeinjodasyntaxornull}
+## parseDateTimeInJodaSyntaxOrNull
 
 Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
-## parseDateTime64 {#parsedatetime64}
+## parseDateTimeBestEffort
+## parseDateTime32BestEffort
 
-Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datetime64.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
+Converts a date and time in the [String](../data-types/string.md) representation to [DateTime](../data-types/datetime.md/#data_type-datetime) data type.
 
-**Syntax**
-
-```sql
-parseDateTime64(str[, format[, timezone]])
-```
-
-**Arguments**
-
-- `str` — The String to be parsed.
-- `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s.%f` if not specified.
-- `timezone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). Optional.
-
-**Returned value(s)**
-
-Return a [DateTime64](../data-types/datetime64.md) value parsed from the input string according to a MySQL-style format string.
-The precision of the returned value is 6.
-
-## parseDateTime64OrZero {#parsedatetime64orzero}
-
-Same as for [parseDateTime64](#parsedatetime64) except that it returns zero date when it encounters a date format that cannot be processed.
-
-## parseDateTime64OrNull {#parsedatetime64ornull}
-
-Same as for [parseDateTime64](#parsedatetime64) except that it returns `NULL` when it encounters a date format that cannot be processed.
-
-## parseDateTime64InJodaSyntax {#parsedatetime64injodasyntax}
-
-Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datetime64.md) according to a [Joda format string](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
+The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse’s and some other date and time formats.
 
 **Syntax**
 
-```sql
-parseDateTime64InJodaSyntax(str[, format[, timezone]])
-```
-
-**Arguments**
-
-- `str` — The String to be parsed.
-- `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
-- `timezone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). Optional.
-
-**Returned value(s)**
-
-Return a [DateTime64](../data-types/datetime64.md) value parsed from the input string according to a Joda-style format string.
-The precision of the returned value equal to the number of `S` placeholders in the format string (but at most 6).
-
-## parseDateTime64InJodaSyntaxOrZero {#parsedatetime64injodasyntaxorzero}
-
-Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except that it returns zero date when it encounters a date format that cannot be processed.
-
-## parseDateTime64InJodaSyntaxOrNull {#parsedatetime64injodasyntaxornull}
-
-Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
-
-## parseDateTimeBestEffort {#parsedatetimebesteffort}
-## parseDateTime32BestEffort {#parsedatetime32besteffort}
-
-Converts a date and time in the [String](../data-types/string.md) representation to [DateTime](/sql-reference/data-types/datetime) data type.
-
-The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
-
-**Syntax**
-
-```sql
+``` sql
 parseDateTimeBestEffort(time_string [, time_zone])
 ```
 
@@ -7117,7 +6284,7 @@ If the year is not specified, it is considered to be equal to the current year. 
 
 Query:
 
-```sql
+``` sql
 SELECT parseDateTimeBestEffort('23/10/2020 12:12:57')
 AS parseDateTimeBestEffort;
 ```
@@ -7132,7 +6299,7 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT parseDateTimeBestEffort('Sat, 18 Aug 2018 07:22:16 GMT', 'Asia/Istanbul')
 AS parseDateTimeBestEffort;
 ```
@@ -7147,7 +6314,7 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT parseDateTimeBestEffort('1284101485')
 AS parseDateTimeBestEffort;
 ```
@@ -7162,7 +6329,7 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT parseDateTimeBestEffort('2018-10-23 10:12:12')
 AS parseDateTimeBestEffort;
 ```
@@ -7177,7 +6344,7 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT toYear(now()) as year, parseDateTimeBestEffort('10 20:19');
 ```
 
@@ -7191,7 +6358,7 @@ Result:
 
 Query:
 
-```sql
+``` sql
 WITH
     now() AS ts_now,
     formatDateTime(ts_around, '%b %e %T') AS syslog_arg
@@ -7219,35 +6386,35 @@ Result:
 - [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
 - [RFC 3164](https://datatracker.ietf.org/doc/html/rfc3164#section-4.1.2)
 
-## parseDateTimeBestEffortUS {#parsedatetimebesteffortus}
+## parseDateTimeBestEffortUS
 
 This function behaves like [parseDateTimeBestEffort](#parsedatetimebesteffort) for ISO date formats, e.g. `YYYY-MM-DD hh:mm:ss`, and other date formats where the month and date components can be unambiguously extracted, e.g. `YYYYMMDDhhmmss`, `YYYY-MM`, `DD hh`, or `YYYY-MM-DD hh:mm:ss ±h:mm`. If the month and the date components cannot be unambiguously extracted, e.g. `MM/DD/YYYY`, `MM-DD-YYYY`, or `MM-DD-YY`, it prefers the US date format instead of `DD/MM/YYYY`, `DD-MM-YYYY`, or `DD-MM-YY`. As an exception from the latter, if the month is bigger than 12 and smaller or equal than 31, this function falls back to the behavior of [parseDateTimeBestEffort](#parsedatetimebesteffort), e.g. `15/08/2020` is parsed as `2020-08-15`.
 
-## parseDateTimeBestEffortOrNull {#parsedatetimebesteffortornull}
-## parseDateTime32BestEffortOrNull {#parsedatetime32besteffortornull}
+## parseDateTimeBestEffortOrNull
+## parseDateTime32BestEffortOrNull
 
 Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
-## parseDateTimeBestEffortOrZero {#parsedatetimebesteffortorzero}
-## parseDateTime32BestEffortOrZero {#parsedatetime32besteffortorzero}
+## parseDateTimeBestEffortOrZero
+## parseDateTime32BestEffortOrZero
 
 Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
 
-## parseDateTimeBestEffortUSOrNull {#parsedatetimebesteffortusornull}
+## parseDateTimeBestEffortUSOrNull
 
 Same as [parseDateTimeBestEffortUS](#parsedatetimebesteffortus) function except that it returns `NULL` when it encounters a date format that cannot be processed.
 
-## parseDateTimeBestEffortUSOrZero {#parsedatetimebesteffortusorzero}
+## parseDateTimeBestEffortUSOrZero
 
 Same as [parseDateTimeBestEffortUS](#parsedatetimebesteffortus) function except that it returns zero date (`1970-01-01`) or zero date with time (`1970-01-01 00:00:00`) when it encounters a date format that cannot be processed.
 
-## parseDateTime64BestEffort {#parsedatetime64besteffort}
+## parseDateTime64BestEffort
 
-Same as [parseDateTimeBestEffort](#parsedatetimebesteffort) function but also parse milliseconds and microseconds and returns [DateTime](/sql-reference/data-types/datetime) data type.
+Same as [parseDateTimeBestEffort](#parsedatetimebesteffort) function but also parse milliseconds and microseconds and returns [DateTime](../functions/type-conversion-functions.md/#data_type-datetime) data type.
 
 **Syntax**
 
-```sql
+``` sql
 parseDateTime64BestEffort(time_string [, precision [, time_zone]])
 ```
 
@@ -7255,7 +6422,7 @@ parseDateTime64BestEffort(time_string [, precision [, time_zone]])
 
 - `time_string` — String containing a date or date with time to convert. [String](../data-types/string.md).
 - `precision` — Required precision. `3` — for milliseconds, `6` — for microseconds. Default — `3`. Optional. [UInt8](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -7278,7 +6445,7 @@ FORMAT PrettyCompactMonoBlock;
 
 Result:
 
-```sql
+```
 ┌──────────────────────────a─┬─t──────────────────────────────┐
 │ 2021-01-01 01:01:00.123000 │ DateTime64(3)                  │
 │ 2021-01-01 00:00:00.000000 │ DateTime64(3)                  │
@@ -7287,27 +6454,27 @@ Result:
 └────────────────────────────┴────────────────────────────────┘
 ```
 
-## parseDateTime64BestEffortUS {#parsedatetime64besteffortus}
+## parseDateTime64BestEffortUS
 
 Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity.
 
-## parseDateTime64BestEffortOrNull {#parsedatetime64besteffortornull}
+## parseDateTime64BestEffortOrNull
 
 Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
-## parseDateTime64BestEffortOrZero {#parsedatetime64besteffortorzero}
+## parseDateTime64BestEffortOrZero
 
 Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
 
-## parseDateTime64BestEffortUSOrNull {#parsedatetime64besteffortusornull}
+## parseDateTime64BestEffortUSOrNull
 
 Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns `NULL` when it encounters a date format that cannot be processed.
 
-## parseDateTime64BestEffortUSOrZero {#parsedatetime64besteffortusorzero}
+## parseDateTime64BestEffortUSOrZero
 
 Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns zero date or zero date time when it encounters a date format that cannot be processed.
 
-## toLowCardinality {#tolowcardinality}
+## toLowCardinality
 
 Converts input parameter to the [LowCardinality](../data-types/lowcardinality.md) version of same data type.
 
@@ -7321,11 +6488,11 @@ toLowCardinality(expr)
 
 **Arguments**
 
-- `expr` — [Expression](/sql-reference/syntax#expressions) resulting in one of the [supported data types](/sql-reference/data-types).
+- `expr` — [Expression](../syntax.md/#syntax-expressions) resulting in one of the [supported data types](../data-types/index.md/#data_types).
 
 **Returned values**
 
-- Result of `expr`. [LowCardinality](../data-types/lowcardinality.md) of the type of `expr`.
+- Result of `expr`. [LowCardinality](../data-types/lowcardinality.md) of the type of `expr`. 
 
 **Example**
 
@@ -7343,46 +6510,7 @@ Result:
 └───────────────────────┘
 ```
 
-## toUnixTimestamp64Second {#tounixtimestamp64second}
-
-Converts a `DateTime64` to a `Int64` value with fixed second precision. The input value is scaled up or down appropriately depending on its precision.
-
-:::note
-The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
-:::
-
-**Syntax**
-
-```sql
-toUnixTimestamp64Second(value)
-```
-
-**Arguments**
-
-- `value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
-
-**Returned value**
-
-- `value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH toDateTime64('2009-02-13 23:31:31.011', 3, 'UTC') AS dt64
-SELECT toUnixTimestamp64Second(dt64);
-```
-
-Result:
-
-```response
-┌─toUnixTimestamp64Second(dt64)─┐
-│                    1234567891 │
-└───────────────────────────────┘
-```
-
-## toUnixTimestamp64Milli {#tounixtimestamp64milli}
+## toUnixTimestamp64Milli
 
 Converts a `DateTime64` to a `Int64` value with fixed millisecond precision. The input value is scaled up or down appropriately depending on its precision.
 
@@ -7421,7 +6549,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-## toUnixTimestamp64Micro {#tounixtimestamp64micro}
+## toUnixTimestamp64Micro
 
 Converts a `DateTime64` to a `Int64` value with fixed microsecond precision. The input value is scaled up or down appropriately depending on its precision.
 
@@ -7460,7 +6588,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-## toUnixTimestamp64Nano {#tounixtimestamp64nano}
+## toUnixTimestamp64Nano
 
 Converts a `DateTime64` to a `Int64` value with fixed nanosecond precision. The input value is scaled up or down appropriately depending on its precision.
 
@@ -7499,49 +6627,7 @@ Result:
 └─────────────────────────────┘
 ```
 
-## fromUnixTimestamp64Second {#fromunixtimestamp64second}
-
-Converts an `Int64` to a `DateTime64` value with fixed second precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
-
-:::note
-Please note that input value is treated as a UTC timestamp, not timestamp at the given (or implicit) timezone.
-:::
-
-**Syntax**
-
-```sql
-fromUnixTimestamp64Second(value[, timezone])
-```
-
-**Arguments**
-
-- `value` — value with any precision. [Int64](../data-types/int-uint.md).
-- `timezone` — (optional) timezone name of the result. [String](../data-types/string.md).
-
-**Returned value**
-
-- `value` converted to DateTime64 with precision `0`. [DateTime64](../data-types/datetime64.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH CAST(1733935988, 'Int64') AS i64
-SELECT
-    fromUnixTimestamp64Second(i64, 'UTC') AS x,
-    toTypeName(x);
-```
-
-Result:
-
-```response
-┌───────────────────x─┬─toTypeName(x)────────┐
-│ 2024-12-11 16:53:08 │ DateTime64(0, 'UTC') │
-└─────────────────────┴──────────────────────┘
-```
-
-## fromUnixTimestamp64Milli {#fromunixtimestamp64milli}
+## fromUnixTimestamp64Milli
 
 Converts an `Int64` to a `DateTime64` value with fixed millisecond precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
 
@@ -7551,7 +6637,7 @@ Please note that input value is treated as a UTC timestamp, not timestamp at the
 
 **Syntax**
 
-```sql
+``` sql
 fromUnixTimestamp64Milli(value[, timezone])
 ```
 
@@ -7568,8 +6654,8 @@ fromUnixTimestamp64Milli(value[, timezone])
 
 Query:
 
-```sql
-WITH CAST(1733935988123, 'Int64') AS i64
+``` sql
+WITH CAST(1234567891011, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Milli(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7579,11 +6665,11 @@ Result:
 
 ```response
 ┌───────────────────────x─┬─toTypeName(x)────────┐
-│ 2024-12-11 16:53:08.123 │ DateTime64(3, 'UTC') │
+│ 2009-02-13 23:31:31.011 │ DateTime64(3, 'UTC') │
 └─────────────────────────┴──────────────────────┘
 ```
 
-## fromUnixTimestamp64Micro {#fromunixtimestamp64micro}
+## fromUnixTimestamp64Micro
 
 Converts an `Int64` to a `DateTime64` value with fixed microsecond precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
 
@@ -7593,7 +6679,7 @@ Please note that input value is treated as a UTC timestamp, not timestamp at the
 
 **Syntax**
 
-```sql
+``` sql
 fromUnixTimestamp64Micro(value[, timezone])
 ```
 
@@ -7610,8 +6696,8 @@ fromUnixTimestamp64Micro(value[, timezone])
 
 Query:
 
-```sql
-WITH CAST(1733935988123456, 'Int64') AS i64
+``` sql
+WITH CAST(1234567891011, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Micro(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7621,13 +6707,13 @@ Result:
 
 ```response
 ┌──────────────────────────x─┬─toTypeName(x)────────┐
-│ 2024-12-11 16:53:08.123456 │ DateTime64(6, 'UTC') │
+│ 1970-01-15 06:56:07.891011 │ DateTime64(6, 'UTC') │
 └────────────────────────────┴──────────────────────┘
 ```
 
-## fromUnixTimestamp64Nano {#fromunixtimestamp64nano}
+## fromUnixTimestamp64Nano
 
-Converts an `Int64` to a `DateTime64` value with fixed nanosecond precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
+Converts an `Int64` to a `DateTime64` value with fixed nanosecond precision and optional timezone. The input value is scaled up or down appropriately depending on its precision. 
 
 :::note
 Please note that input value is treated as a UTC timestamp, not timestamp at the given (or implicit) timezone.
@@ -7635,7 +6721,7 @@ Please note that input value is treated as a UTC timestamp, not timestamp at the
 
 **Syntax**
 
-```sql
+``` sql
 fromUnixTimestamp64Nano(value[, timezone])
 ```
 
@@ -7652,8 +6738,8 @@ fromUnixTimestamp64Nano(value[, timezone])
 
 Query:
 
-```sql
-WITH CAST(1733935988123456789, 'Int64') AS i64
+``` sql
+WITH CAST(1234567891011, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Nano(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7663,23 +6749,23 @@ Result:
 
 ```response
 ┌─────────────────────────────x─┬─toTypeName(x)────────┐
-│ 2024-12-11 16:53:08.123456789 │ DateTime64(9, 'UTC') │
+│ 1970-01-01 00:20:34.567891011 │ DateTime64(9, 'UTC') │
 └───────────────────────────────┴──────────────────────┘
 ```
 
-## formatRow {#formatrow}
+## formatRow
 
 Converts arbitrary expressions into a string via given format.
 
 **Syntax**
 
-```sql
+``` sql
 formatRow(format, x, y, ...)
 ```
 
 **Arguments**
 
-- `format` — Text format. For example, [CSV](/interfaces/formats.md/#csv), [TSV](/interfaces/formats.md/#tabseparated).
+- `format` — Text format. For example, [CSV](/docs/en/interfaces/formats.md/#csv), [TSV](/docs/en/interfaces/formats.md/#tabseparated).
 - `x`,`y`, ... — Expressions.
 
 **Returned value**
@@ -7690,7 +6776,7 @@ formatRow(format, x, y, ...)
 
 Query:
 
-```sql
+``` sql
 SELECT formatRow('CSV', number, 'good')
 FROM numbers(3);
 ```
@@ -7714,7 +6800,7 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT formatRow('CustomSeparated', number, 'good')
 FROM numbers(3)
 SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>'
@@ -7725,32 +6811,32 @@ Result:
 ```response
 ┌─formatRow('CustomSeparated', number, 'good')─┐
 │ <prefix>
-0    good
+0	good
 <suffix>                   │
 │ <prefix>
-1    good
+1	good
 <suffix>                   │
 │ <prefix>
-2    good
+2	good
 <suffix>                   │
 └──────────────────────────────────────────────┘
 ```
 
 Note: Only row-based formats are supported in this function.
 
-## formatRowNoNewline {#formatrownonewline}
+## formatRowNoNewline
 
 Converts arbitrary expressions into a string via given format. Differs from formatRow in that this function trims the last `\n` if any.
 
 **Syntax**
 
-```sql
+``` sql
 formatRowNoNewline(format, x, y, ...)
 ```
 
 **Arguments**
 
-- `format` — Text format. For example, [CSV](/interfaces/formats.md/#csv), [TSV](/interfaces/formats.md/#tabseparated).
+- `format` — Text format. For example, [CSV](/docs/en/interfaces/formats.md/#csv), [TSV](/docs/en/interfaces/formats.md/#tabseparated).
 - `x`,`y`, ... — Expressions.
 
 **Returned value**
@@ -7761,7 +6847,7 @@ formatRowNoNewline(format, x, y, ...)
 
 Query:
 
-```sql
+``` sql
 SELECT formatRowNoNewline('CSV', number, 'good')
 FROM numbers(3);
 ```

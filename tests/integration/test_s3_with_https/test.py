@@ -1,7 +1,6 @@
 import logging
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 
@@ -24,8 +23,6 @@ def cluster():
             ],
             with_minio=True,
             minio_certs_dir="minio_certs",
-            # Disable `with_remote_database_disk` as the test uses S3 with http, which might cause the S3 unreachable with default settings
-            with_remote_database_disk=False,
         )
         logging.info("Starting cluster...")
         cluster.start()

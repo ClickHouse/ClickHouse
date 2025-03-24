@@ -45,7 +45,7 @@ public:
     {
         ColumnsWithTypeAndName is_finite_columns{arguments[0]};
         auto is_finite = FunctionFactory::instance().get("isFinite", context)->build(is_finite_columns);
-        auto res = is_finite->execute(is_finite_columns, is_finite->getResultType(), input_rows_count, /* dry_run = */ false);
+        auto res = is_finite->execute(is_finite_columns, is_finite->getResultType(), input_rows_count);
 
         ColumnsWithTypeAndName if_columns
         {
@@ -55,7 +55,7 @@ public:
         };
 
         auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns);
-        return func_if->execute(if_columns, result_type, input_rows_count, /* dry_run = */ false);
+        return func_if->execute(if_columns, result_type, input_rows_count);
     }
 
 private:

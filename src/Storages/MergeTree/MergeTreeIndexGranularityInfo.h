@@ -3,12 +3,13 @@
 #include <optional>
 #include <base/types.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Disks/IDisk.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
 
 namespace DB
 {
 
 class MergeTreeData;
-class IDataPartStorage;
 
 
 /** Various types of mark files are stored in files with various extensions:
@@ -48,7 +49,6 @@ public:
     MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MarkType mark_type_);
 
     MergeTreeIndexGranularityInfo(MergeTreeDataPartType type_, bool is_adaptive_, size_t index_granularity_, size_t index_granularity_bytes_);
-    MergeTreeIndexGranularityInfo(MarkType mark_type_, size_t index_granularity_, size_t index_granularity_bytes_);
 
     void changeGranularityIfRequired(const IDataPartStorage & data_part_storage);
 

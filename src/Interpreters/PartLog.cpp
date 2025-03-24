@@ -1,20 +1,21 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Common/ProfileEvents.h>
+#include <DataTypes/DataTypeMap.h>
 
 #include <Common/CurrentThread.h>
 
@@ -67,8 +68,6 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             {"RemovePart",    static_cast<Int8>(REMOVE_PART)},
             {"MutatePart",    static_cast<Int8>(MUTATE_PART)},
             {"MovePart",      static_cast<Int8>(MOVE_PART)},
-            {"MergePartsStart", static_cast<Int8>(MERGE_PARTS_START)},
-            {"MutatePartStart", static_cast<Int8>(MUTATE_PART_START)},
         }
     );
 
@@ -91,8 +90,6 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         }
     );
 
-    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-
     ColumnsWithTypeAndName columns_with_type_and_name;
 
     return ColumnsDescription
@@ -103,12 +100,10 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             "Type of the event that occurred with the data part. "
             "Can have one of the following values: "
             "NewPart — Inserting of a new data part, "
-            "MergePartsStart — Merging of data parts has started, "
-            "MergeParts — Merging of data parts has finished, "
+            "MergeParts — Merging of data parts, "
             "DownloadPart — Downloading a data part, "
-            "RemovePart — Removing or detaching a data part using [DETACH PARTITION](/sql-reference/statements/alter/partition#detach-partitionpart)."
-            "MutatePartStart — Mutating of a data part has started, "
-            "MutatePart — Mutating of a data part has finished, "
+            "RemovePart — Removing or detaching a data part using DETACH PARTITION, "
+            "MutatePart — Mutating of a data part, "
             "MovePart — Moving the data part from the one disk to another one."},
         {"merge_reason", std::move(merge_reason_datatype),
             "The reason for the event with type MERGE_PARTS. Can have one of the following values: "
@@ -147,7 +142,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"error", std::make_shared<DataTypeUInt16>(), "The error code of the occurred exception."},
         {"exception", std::make_shared<DataTypeString>(), "Text message of the occurred error."},
 
-        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
     };
 }
 
@@ -253,7 +248,10 @@ bool PartLog::addNewParts(
             elem.table_name = table_id.table_name;
             elem.table_uuid = table_id.uuid;
             elem.partition_id = part->info.partition_id;
-            elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
+            {
+                WriteBufferFromString out(elem.partition);
+                part->partition.serializeText(part->storage, out, {});
+            }
             elem.part_name = part->name;
             elem.disk_name = part->getDataPartStorage().getDiskName();
             elem.path_on_disk = part->getDataPartStorage().getFullPath();
@@ -280,9 +278,9 @@ bool PartLog::addNewParts(
     return true;
 }
 
-bool PartLog::addNewPart(ContextPtr context_, const PartLog::PartLogEntry & part, const ExecutionStatus & execution_status)
+bool PartLog::addNewPart(ContextPtr context, const PartLog::PartLogEntry & part, const ExecutionStatus & execution_status)
 {
-    return addNewParts(context_, {part}, execution_status);
+    return addNewParts(context, {part}, execution_status);
 }
 
 

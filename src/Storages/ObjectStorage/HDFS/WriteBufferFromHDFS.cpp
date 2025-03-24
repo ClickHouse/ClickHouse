@@ -30,32 +30,31 @@ extern const int CANNOT_FSYNC;
 struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
 {
     std::string hdfs_uri;
-    std::string hdfs_file_path;
     hdfsFile fout;
     HDFSFSPtr fs;
     WriteSettings write_settings;
 
     WriteBufferFromHDFSImpl(
             const std::string & hdfs_uri_,
-            const std::string & hdfs_file_path_,
             const Poco::Util::AbstractConfiguration & config_,
             int replication_,
             const WriteSettings & write_settings_,
             int flags)
         : HDFSErrorWrapper(hdfs_uri_, config_)
         , hdfs_uri(hdfs_uri_)
-        , hdfs_file_path(hdfs_file_path_)
+        , fs(createHDFSFS(builder.get()))
         , write_settings(write_settings_)
     {
-        fs = createHDFSFS(builder.get());
+        const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
+        const String path = hdfs_uri.substr(begin_of_path);
 
         /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
-        fout = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), flags, 0, replication_, 0);
+        fout = hdfsOpenFile(fs.get(), path.c_str(), flags, 0, replication_, 0);
 
         if (fout == nullptr)
         {
             throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Unable to open HDFS file: {} ({}) error: {}",
-                hdfs_file_path, hdfs_uri, std::string(hdfsGetLastError()));
+                path, hdfs_uri, std::string(hdfsGetLastError()));
         }
     }
 
@@ -66,12 +65,25 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
 
     int write(const char * start, size_t size)
     {
-        ResourceGuard rlock(ResourceGuard::Metrics::getIOWrite(), write_settings.io_scheduling.write_resource_link, size);
-        int bytes_written = wrapErr<tSize>(hdfsWrite, fs.get(), fout, start, safe_cast<int>(size));
-        rlock.unlock(std::max(0, bytes_written));
+        ResourceGuard rlock(write_settings.resource_link, size);
+        int bytes_written;
+        try
+        {
+            bytes_written = wrapErr<tSize>(hdfsWrite, fs.get(), fout, start, safe_cast<int>(size));
+        }
+        catch (...)
+        {
+            write_settings.resource_link.accumulate(size); // We assume no resource was used in case of failure
+            throw;
+        }
+        rlock.unlock();
 
         if (bytes_written < 0)
-            throw Exception(ErrorCodes::NETWORK_ERROR, "Fail to write HDFS file: {}, hdfs_uri: {}, {}", hdfs_file_path, hdfs_uri, std::string(hdfsGetLastError()));
+        {
+            write_settings.resource_link.accumulate(size); // We assume no resource was used in case of failure
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Fail to write HDFS file: {} {}", hdfs_uri, std::string(hdfsGetLastError()));
+        }
+        write_settings.resource_link.adjust(size, bytes_written);
 
         if (write_settings.remote_throttler)
             write_settings.remote_throttler->add(bytes_written, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
@@ -83,21 +95,20 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
     {
         int result = wrapErr<int>(hdfsSync, fs.get(), fout);
         if (result < 0)
-            throw ErrnoException(ErrorCodes::CANNOT_FSYNC, "Cannot HDFS sync {}, hdfs_url: {}, {}", hdfs_file_path, hdfs_uri, std::string(hdfsGetLastError()));
+            throw ErrnoException(ErrorCodes::CANNOT_FSYNC, "Cannot HDFS sync {} {}", hdfs_uri, std::string(hdfsGetLastError()));
     }
 };
 
 WriteBufferFromHDFS::WriteBufferFromHDFS(
-        const std::string & hdfs_uri_,
-        const std::string & hdfs_file_path_,
+        const std::string & hdfs_name_,
         const Poco::Util::AbstractConfiguration & config_,
         int replication_,
         const WriteSettings & write_settings_,
         size_t buf_size_,
         int flags_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, replication_, write_settings_, flags_))
-    , filename(hdfs_file_path_)
+    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, config_, replication_, write_settings_, flags_))
+    , filename(hdfs_name_)
 {
 }
 
