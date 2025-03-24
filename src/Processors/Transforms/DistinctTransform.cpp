@@ -6,6 +6,8 @@
 #include <Processors/Transforms/DistinctTransform.h>
 #include "Interpreters/BloomFilter.h"
 
+
+
 namespace DB
 {
 
@@ -165,10 +167,9 @@ void DistinctTransform::buildSetFilter(
     IColumnFilter & filter,
     const size_t rows,
     SetVariants & variants,
-    size_t & passed) const
+    size_t & passed_bf) const
 {
     typename Method::State state(columns, key_sizes, nullptr);
-    auto bf_lookup = !leaky;
 
     for (size_t i = 0; i < rows; ++i)
     {
