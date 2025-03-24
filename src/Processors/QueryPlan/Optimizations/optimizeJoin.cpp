@@ -87,7 +87,7 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
-        return reading->getStorage()->totalRows(Settings{});
+        return reading->getStorage()->totalRows({});
 
     if (node.children.size() != 1)
         return {};
