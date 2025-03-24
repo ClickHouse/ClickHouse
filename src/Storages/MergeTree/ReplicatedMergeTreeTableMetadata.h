@@ -79,13 +79,25 @@ struct ReplicatedMergeTreeTableMetadata
         StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
     };
 
-    void checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const;
+    void checkEquals(
+        const ReplicatedMergeTreeTableMetadata & from_zk,
+        const ColumnsDescription & columns,
+        const std::string & table_name_for_error_message,
+        ContextPtr context) const;
 
-    Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const;
+    Diff checkAndFindDiff(
+        const ReplicatedMergeTreeTableMetadata & from_zk,
+        const ColumnsDescription & columns,
+        const std::string & table_name_for_error_message,
+        ContextPtr context) const;
 
 private:
 
-    void checkImmutableFieldsEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const;
+    void checkImmutableFieldsEquals(
+        const ReplicatedMergeTreeTableMetadata & from_zk,
+        const ColumnsDescription & columns,
+        const std::string & table_name_for_error_message,
+        ContextPtr context) const;
 
     bool index_granularity_bytes_found_in_zk = false;
 };
