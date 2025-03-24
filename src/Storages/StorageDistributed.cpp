@@ -1160,6 +1160,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
+    /// For distributed INSERT SELECT FROM cluster* table functions, it need send and receive ReadTask
+    /// between coordinator and workers, while `receivePacketsExpectCancel` assume that the only package
+    /// received from client only can be 'Cancel', so we should disable it. Found when we use distributed
+    /// INSERT SELECT FROM hdfsCluster('lots of HDFS files'): 'Unknown packet from client 9'.
     query_context->setSetting("interactive_delay", Field(0));
 
     const auto & current_settings = query_context->getSettingsRef();
