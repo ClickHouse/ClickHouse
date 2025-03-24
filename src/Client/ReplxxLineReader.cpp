@@ -290,31 +290,25 @@ void ReplxxLineReader::setLastIsDelimiter(bool flag)
     replxx_last_is_delimiter = flag;
 }
 
-ReplxxLineReader::ReplxxLineReader(
-    Suggest & suggest,
-    const String & history_file_path_,
-    UInt32 history_max_entries_,
-    bool multiline_,
-    bool ignore_shell_suspend,
-    Patterns extenders_,
-    Patterns delimiters_,
-    const char word_break_characters_[],
-    replxx::Replxx::highlighter_callback_t highlighter_,
-    std::istream & input_stream_,
-    std::ostream & output_stream_,
-    int in_fd_,
-    int out_fd_,
-    int err_fd_
-)
-    : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_), input_stream_, output_stream_, in_fd_)
-    , rx(input_stream_, output_stream_, in_fd_, out_fd_, err_fd_)
-    , highlighter(std::move(highlighter_))
-    , word_break_characters(word_break_characters_)
+ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
+    : LineReader
+    (
+        options.history_file_path,
+        options.multiline,
+        std::move(options.extenders),
+        std::move(options.delimiters),
+        options.input_stream,
+        options.output_stream,
+        options.in_fd
+    )
+    , rx(options.input_stream, options.output_stream, options.in_fd, options.out_fd, options.err_fd)
+    , highlighter(std::move(options.highlighter))
+    , word_break_characters(options.word_break_characters.data())
     , editor(getEditor())
 {
     using Replxx = replxx::Replxx;
 
-    rx.set_max_history_size(static_cast<int>(history_max_entries_));
+    rx.set_max_history_size(static_cast<int>(options.history_max_entries));
 
     if (!history_file_path.empty())
     {
@@ -348,7 +342,7 @@ ReplxxLineReader::ReplxxLineReader(
 
     rx.install_window_change_handler();
 
-    auto callback = [&suggest, this] (const String & context, size_t context_size)
+    auto callback = [&suggest = options.suggest, this] (const String & context, size_t context_size)
     {
         return suggest.getCompletions(context, context_size, word_break_characters);
     };
@@ -368,7 +362,7 @@ ReplxxLineReader::ReplxxLineReader(
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
 
     /// We don't want the default, "suspend" behavior, it confuses people.
-    if (ignore_shell_suspend)
+    if (options.ignore_shell_suspend)
         rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
 
     auto commit_action = [this](char32_t code)
@@ -394,7 +388,9 @@ ReplxxLineReader::ReplxxLineReader(
     /// By default C-w is KILL_TO_BEGINING_OF_WORD, while in readline it is unix-word-rubout
     rx.bind_key(Replxx::KEY::control('W'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_WHITESPACE_ON_LEFT, code); });
 
-    rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
+    /// We don't want to allow opening EDITOR in the embedded mode.
+    if (!options.embedded_mode)
+        rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
 
     /// readline insert-comment
     auto insert_comment_action = [this](char32_t code)
@@ -426,40 +422,43 @@ ReplxxLineReader::ReplxxLineReader(
     rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
 
 #if USE_SKIM
-    auto interactive_history_search = [this](char32_t code)
+    if (!options.embedded_mode)
     {
-        std::vector<std::string> words;
+        auto interactive_history_search = [this](char32_t code)
         {
-            auto hs(rx.history_scan());
-            while (hs.next())
-                words.push_back(hs.get().text());
-        }
+            std::vector<std::string> words;
+            {
+                auto hs(rx.history_scan());
+                while (hs.next())
+                    words.push_back(hs.get().text());
+            }
 
-        std::string current_query(rx.get_state().text());
-        std::string new_query;
-        try
-        {
-            new_query = std::string(skim(current_query, words));
-        }
-        catch (const std::exception & e)
-        {
-            rx.print("skim failed: %s (consider using Ctrl-T for a regular non-fuzzy reverse search)\n", e.what());
-        }
+            std::string current_query(rx.get_state().text());
+            std::string new_query;
+            try
+            {
+                new_query = std::string(skim(current_query, words));
+            }
+            catch (const std::exception & e)
+            {
+                rx.print("skim failed: %s (consider using Ctrl-T for a regular non-fuzzy reverse search)\n", e.what());
+            }
 
-        /// REPAINT before to avoid prompt overlap by the query
-        rx.invoke(Replxx::ACTION::REPAINT, code);
+            /// REPAINT before to avoid prompt overlap by the query
+            rx.invoke(Replxx::ACTION::REPAINT, code);
 
-        if (!new_query.empty())
-            rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
+            if (!new_query.empty())
+                rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
 
-        if (bracketed_paste_enabled)
-            enableBracketedPaste();
+            if (bracketed_paste_enabled)
+                enableBracketedPaste();
 
-        rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
-        return rx.invoke(Replxx::ACTION::REPAINT, code);
-    };
+            rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
+            return rx.invoke(Replxx::ACTION::REPAINT, code);
+        };
 
-    rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
+        rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
+    }
 #endif
 
     /// Rebind regular incremental search to C-T.
@@ -489,6 +488,10 @@ ReplxxLineReader::~ReplxxLineReader()
 {
     if (history_file_fd >= 0 && close(history_file_fd))
         rx.print("Close of history file failed: %s\n", errnoToString().c_str());
+
+    /// Reset cursor blinking
+    if (overwrite_mode)
+        rx.print("%s", "\033[0 q");
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)

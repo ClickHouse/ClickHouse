@@ -20,7 +20,7 @@ Setting [short_circuit_function_evaluation](/operations/settings/settings#short_
 
 **Syntax**
 
-``` sql
+```sql
 and(val1, val2...)
 ```
 
@@ -40,13 +40,13 @@ Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sq
 
 **Example**
 
-``` sql
+```sql
 SELECT and(0, 1, -2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─and(0, 1, -2)─┐
 │             0 │
 └───────────────┘
@@ -54,13 +54,13 @@ Result:
 
 With `NULL`:
 
-``` sql
+```sql
 SELECT and(NULL, 1, 10, -2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─and(NULL, 1, 10, -2)─┐
 │                 ᴺᵁᴸᴸ │
 └──────────────────────┘
@@ -74,7 +74,7 @@ Setting [short_circuit_function_evaluation](/operations/settings/settings#short_
 
 **Syntax**
 
-``` sql
+```sql
 or(val1, val2...)
 ```
 
@@ -94,13 +94,13 @@ Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sq
 
 **Example**
 
-``` sql
+```sql
 SELECT or(1, 0, 0, 2, NULL);
 ```
 
 Result:
 
-``` text
+```text
 ┌─or(1, 0, 0, 2, NULL)─┐
 │                    1 │
 └──────────────────────┘
@@ -108,13 +108,13 @@ Result:
 
 With `NULL`:
 
-``` sql
+```sql
 SELECT or(0, NULL);
 ```
 
 Result:
 
-``` text
+```text
 ┌─or(0, NULL)─┐
 │        ᴺᵁᴸᴸ │
 └─────────────┘
@@ -126,7 +126,7 @@ Calculates the logical negation of a value.
 
 **Syntax**
 
-``` sql
+```sql
 not(val);
 ```
 
@@ -146,13 +146,13 @@ Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sq
 
 **Example**
 
-``` sql
+```sql
 SELECT NOT(1);
 ```
 
 Result:
 
-``` test
+```test
 ┌─not(1)─┐
 │      0 │
 └────────┘
@@ -164,7 +164,7 @@ Calculates the logical exclusive disjunction of two or more values. For more tha
 
 **Syntax**
 
-``` sql
+```sql
 xor(val1, val2...)
 ```
 
@@ -182,13 +182,13 @@ Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sq
 
 **Example**
 
-``` sql
+```sql
 SELECT xor(0, 1, 1);
 ```
 
 Result:
 
-``` text
+```text
 ┌─xor(0, 1, 1)─┐
 │            0 │
 └──────────────┘

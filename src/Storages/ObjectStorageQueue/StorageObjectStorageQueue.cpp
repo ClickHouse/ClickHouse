@@ -11,7 +11,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/formatAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
@@ -265,9 +264,17 @@ void StorageObjectStorageQueue::startup()
     /// Register the metadata in startup(), unregister in shutdown.
     /// (If startup is never called, shutdown also won't be called.)
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(temp_metadata), getStorageID());
-
-    if (task)
-        task->activateAndSchedule();
+    try
+    {
+        files_metadata->startup();
+        if (task)
+            task->activateAndSchedule();
+    }
+    catch (...)
+    {
+        files_metadata->shutdown();
+        throw;
+    }
 }
 
 void StorageObjectStorageQueue::shutdown(bool is_drop)
@@ -960,7 +967,7 @@ void StorageObjectStorageQueue::alter(
             changed_settings.push_back(setting);
         }
 
-        LOG_TEST(log, "New settings: {}", serializeAST(*new_metadata.settings_changes));
+        LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
 
         /// Alter settings which are stored in keeper.
         files_metadata->alterSettings(changed_settings, local_context);

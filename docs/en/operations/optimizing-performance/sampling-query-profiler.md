@@ -17,7 +17,7 @@ Query profiler is automatically enabled in ClickHouse Cloud and you can run a sa
 :::note If you are running the following query in ClickHouse Cloud, make sure to change `FROM system.trace_log` to `FROM clusterAllReplicas(default, system.trace_log)` to select from all nodes of the cluster
 :::
 
-``` sql
+```sql
 SELECT
     count(),
     arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
@@ -68,7 +68,7 @@ In this example we:
 
 <!-- -->
 
-``` sql
+```sql
 SELECT
     count(),
     arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym

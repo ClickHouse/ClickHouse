@@ -1,12 +1,9 @@
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <Common/shuffle.h>
@@ -14,7 +11,6 @@
 
 #include <pcg_random.hpp>
 
-#include <algorithm>
 #include <numeric>
 
 

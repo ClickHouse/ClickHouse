@@ -29,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_RMDIR;
 }
 
 
@@ -285,6 +286,27 @@ void DiskObjectStorage::replaceFile(const String & from_path, const String & to_
         moveFile(from_path, to_path);
 }
 
+void DiskObjectStorage::renameExchange(const std::string & old_path, const std::string & new_path)
+{
+    if (existsFile(new_path))
+    {
+        auto temp_old_path = old_path + "_tmp_rename_exchange";
+        auto transaction = createObjectStorageTransaction();
+        transaction->moveFile(old_path, temp_old_path);
+        transaction->moveFile(new_path, old_path);
+        transaction->moveFile(temp_old_path, new_path);
+        transaction->commit();
+    }
+    else
+        moveFile(old_path, new_path);
+}
+
+bool DiskObjectStorage::renameExchangeIfSupported(const std::string &, const std::string &)
+{
+    return false;
+}
+
+
 void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metadata_only)
 {
     auto transaction = createObjectStorageTransaction();
@@ -384,11 +406,20 @@ void DiskObjectStorage::clearDirectory(const String & path)
 
 void DiskObjectStorage::removeDirectory(const String & path)
 {
+    if (!isDirectoryEmpty(path))
+        throw Exception(ErrorCodes::CANNOT_RMDIR, "Unable to remove directory '{}', the directory is not empty", path);
+
     auto transaction = createObjectStorageTransaction();
     transaction->removeDirectory(path);
     transaction->commit();
 }
 
+void DiskObjectStorage::removeDirectoryIfExists(const String & path)
+{
+    if (!existsDirectory(path))
+        return;
+    removeDirectory(path);
+}
 
 DirectoryIteratorPtr DiskObjectStorage::iterateDirectory(const String & path) const
 {
@@ -723,8 +754,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         return object_storage->readObject(object_, read_settings, read_hint, file_size);
     };
 
-    /// Avoid cache fragmentation by choosing bigger buffer size.
+    /// Avoid cache fragmentation by choosing a bigger buffer size.
+    /// But don't use it if the cache is used passively (only for reading if data is already cached, such as during merges).
     bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
+        && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
         && object_storage->supportsCache()
         && read_settings.enable_filesystem_cache;
 
@@ -741,7 +774,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         std::move(read_buffer_creator),
         storage_objects,
         read_settings,
-        global_context->getFilesystemCacheLog(),
         use_external_buffer_for_gather,
         /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
 

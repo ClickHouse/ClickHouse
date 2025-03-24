@@ -258,7 +258,21 @@ class Runner:
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(cmd, timeout=job.timeout) as process:
+            start_time = Utils.timestamp()
+            if Path((Result.experimental_file_name_static())).exists():
+                # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
+                Path(Result.experimental_file_name_static()).unlink()
+
             exit_code = process.wait()
+
+            if Path(Result.experimental_file_name_static()).exists():
+                result = Result.experimental_from_fs(job.name)
+                if not result.start_time:
+                    print(
+                        "WARNING: no start_time set by the job - set job start_time/duration"
+                    )
+                    result.start_time = start_time
+                    result.dump()
 
             result = Result.from_fs(job.name)
             if exit_code != 0:
@@ -288,6 +302,7 @@ class Runner:
         info_errors = []
         env = _Environment.get()
         result_exist = Result.exist(job.name)
+        is_ok = True
 
         if setup_env_exit_code != 0:
             info = f"ERROR: {ResultInfo.SETUP_ENV_JOB_FAILED}"
@@ -326,6 +341,7 @@ class Runner:
             result = Result.from_fs(job.name)
         except Exception as e:  # json.decoder.JSONDecodeError
             print(f"ERROR: Failed to read Result json from fs, ex: [{e}]")
+            traceback.print_exc()
             result = Result.create_from(
                 status=Result.Status.ERROR,
                 info=f"Failed to read Result json, ex: [{e}]",
@@ -376,6 +392,7 @@ class Runner:
                             print(error)
                             info_errors.append(error)
                             result.set_status(Result.Status.ERROR)
+                            is_ok = False
                 if Settings.ENABLE_ARTIFACTS_REPORT and artifact_links:
                     artifact_report = {"build_urls": artifact_links}
                     print(
@@ -430,7 +447,7 @@ class Runner:
             if not GH.post_commit_status(
                 name=job.name,
                 status=result.status,
-                description=result.info[0:70],
+                description=result.info.splitlines()[0] if result.info else "",
                 url=report_url,
             ):
                 print(f"ERROR: Failed to post failed commit status for the job")
@@ -439,7 +456,7 @@ class Runner:
             # to make it visible in GH Actions annotations
             print(f"::notice ::Job report: {report_url}")
 
-        return True
+        return is_ok
 
     def run(
         self,

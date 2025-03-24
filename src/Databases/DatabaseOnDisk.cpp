@@ -21,7 +21,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
@@ -152,7 +151,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     auto * create = query_clone->as<ASTCreateQuery>();
 
     if (!create)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query->formatForErrorMessage());
 
     /// Clean the query from temporary flags.
     cleanupObjectDefinitionFromTemporaryFlags(*create);
@@ -168,7 +167,8 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
 
     WriteBufferFromOwnString statement_buf;
-    formatAST(*create, statement_buf, false);
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     return statement_buf.str();
 }
@@ -362,6 +362,8 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
             table->drop();
             table->is_dropped = true;
         }
+        std::lock_guard lock(mutex);
+        snapshot_detached_tables.erase(table_name);
     }
     catch (...)
     {
@@ -891,7 +893,8 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     create->if_not_exists = false;
 
     WriteBufferFromOwnString statement_buf;
-    formatAST(*create, statement_buf, false);
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 

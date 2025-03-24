@@ -1,4 +1,4 @@
-SET allow_experimental_json_type=1;
+SET enable_json_type=1;
 SET allow_experimental_analyzer=1;
 
 DROP TABLE IF EXISTS test_distr;
@@ -12,7 +12,7 @@ CREATE TABLE test
 ENGINE = MergeTree ORDER BY id;
 
 
-CREATE TABLE test_distr 
+CREATE TABLE test_distr
 (
     id Int64,
     data JSON(arr1 Array(String), arr2 Array(Int32))
@@ -28,4 +28,3 @@ WHERE has(right.data.arr1, 's3') AND has(right.data.arr2, 42);
 
 DROP TABLE test_distr;
 DROP TABLE test;
-

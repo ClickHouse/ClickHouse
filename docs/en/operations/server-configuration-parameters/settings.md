@@ -324,7 +324,7 @@ Default: `SLRU`
 
 ## index_mark_cache_size {#index_mark_cache_size}
 
-Size of cache for index marks.
+Maximum size of cache for index marks.
 
 :::note
 
@@ -339,7 +339,7 @@ Default: `0`
 
 ## index_mark_cache_size_ratio {#index_mark_cache_size_ratio}
 
-The size of the protected queue in the index mark cache relative to the cache's total size.
+The size of the protected queue (in case of SLRU policy) in the index mark cache relative to the cache's total size.
 
 Type: `Double`
 
@@ -355,7 +355,7 @@ Default: `SLRU`
 
 ## index_uncompressed_cache_size {#index_uncompressed_cache_size}
 
-Size of cache for uncompressed blocks of `MergeTree` indices.
+Maximum size of cache for uncompressed blocks of `MergeTree` indices.
 
 :::note
 A value of `0` means disabled.
@@ -369,11 +369,47 @@ Default: `0`
 
 ## index_uncompressed_cache_size_ratio {#index_uncompressed_cache_size_ratio}
 
-The size of the protected queue in the index uncompressed cache relative to the cache's total size.
+The size of the protected queue (in case of SLRU policy) in the index uncompressed cache relative to the cache's total size.
 
 Type: `Double`
 
 Default: `0.5`
+
+## vector_similarity_index_cache_policy {#vector_similarity_index_cache_policy}
+
+Vector similarity index cache policy name.
+
+Type: `String`
+
+Default: `SLRU`
+
+## vector_similarity_index_cache_size {#vector_similarity_index_cache_size}
+
+Size of cache for vector similarity indexes. Zero means disabled.
+
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
+Type: `UInt64`
+
+Default: `5368709120` (= 5 GiB)
+
+## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio}
+
+The size of the protected queue (in case of SLRU policy) in the vector similarity index cache relative to the cache's total size.
+
+Type: `Double`
+
+Default: `0.5`
+
+## vector_similarity_index_cache_max_entries {#vector_similarity_index_cache_max_entries}
+
+The maximum number of entries in the vector similarity index cache.
+
+Type: `UInt64`
+
+Default: `10000000`
 
 ## io_thread_pool_queue_size {#io_thread_pool_queue_size}
 
@@ -409,7 +445,7 @@ Default: `5368709120`
 
 ## mark_cache_size_ratio {#mark_cache_size_ratio}
 
-The size of the protected queue in the mark cache relative to the cache's total size.
+The size of the protected queue (in case of SLRU policy) in the mark cache relative to the cache's total size.
 
 Type: `Double`
 
@@ -1128,7 +1164,7 @@ Default: `SLRU`
 
 ## uncompressed_cache_size {#uncompressed_cache_size}
 
-Cache size (in bytes) for uncompressed data used by table engines from the MergeTree family.
+Maximum cache size (in bytes) for uncompressed data used by table engines from the MergeTree family.
 
 There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option use_uncompressed_cache is enabled.
 
@@ -1146,7 +1182,7 @@ Default: `0`
 
 ## uncompressed_cache_size_ratio {#uncompressed_cache_size_ratio}
 
-The size of the protected queue in the uncompressed cache relative to the cache's total size.
+The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.
 
 Type: Double
 
@@ -1885,7 +1921,7 @@ When new credentials are applied to all replicas, old credentials may be removed
 
 ## keep_alive_timeout {#keep_alive_timeout}
 
-The number of seconds that ClickHouse waits for incoming requests before closing the connection.
+The number of seconds that ClickHouse waits for incoming requests for HTTP protocol before closing the connection.
 
 **Example**
 
@@ -2595,7 +2631,7 @@ It is disabled by default.
 
 To manually turn on latency history collection [`system.latency_log`](../../operations/system-tables/latency_log.md), create `/etc/clickhouse-server/config.d/latency_log.xml` with the following content:
 
-``` xml
+```xml
 <clickhouse>
     <latency_log>
         <database>system</database>
@@ -2614,7 +2650,7 @@ To manually turn on latency history collection [`system.latency_log`](../../oper
 
 To disable `latency_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_latency_log.xml` with the following content:
 
-``` xml
+```xml
 <clickhouse>
 <latency_log remove="1" />
 </clickhouse>
@@ -2730,7 +2766,7 @@ Queries are logged in the [system.part_log](/operations/system-tables/part_log) 
 
 **Example**
 
-``` xml
+```xml
 <part_log>
     <database>system</database>
     <table>part_log</table>
@@ -3242,7 +3278,7 @@ Port for communicating with clients over PostgreSQL protocol.
 
 :::note
 - Positive integers specify the port number to listen to
-- Empty values are used to disable communication with clients over MySQL protocol.
+- Empty values are used to disable communication with clients over PostgreSQL protocol.
 :::
 
 **Example**
@@ -3997,14 +4033,6 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 **See Also**
 - [Workload Hierarchy](/operations/workload-scheduling.md#workloads)
 - [workload_path](#workload_path)
-
-## use_legacy_mongodb_integration {#use_legacy_mongodb_integration}
-
-Use the legacy MongoDB integration implementation. Deprecated.
-
-Type: `Bool`
-
-Default: `true`.
 
 ## max_authentication_methods_per_user {#max_authentication_methods_per_user}
 

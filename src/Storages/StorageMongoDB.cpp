@@ -62,7 +62,7 @@ StorageMongoDB::StorageMongoDB(
     const String & comment)
     : IStorage{table_id_}
     , configuration{std::move(configuration_)}
-    , log(getLogger("StorageMongoDB (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageMongoDB (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -111,8 +111,10 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
                 "host", "port", "user", "password", "database", "collection"}, {"options", "oid_columns"});
             String user = named_collection->get<String>("user");
             String auth_string;
+            String escaped_password;
+            Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
             if (!user.empty())
-                auth_string = fmt::format("{}:{}@", user, named_collection->get<String>("password"));
+                auth_string = fmt::format("{}:{}@", user, escaped_password);
             configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                           auth_string,
                                                           named_collection->get<String>("host"),
@@ -139,8 +141,10 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
 
             String user = checkAndGetLiteralArgument<String>(engine_args[3], "user");
             String auth_string;
+            String escaped_password;
+            Poco::URI::encode(checkAndGetLiteralArgument<String>(engine_args[4], "password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
             if (!user.empty())
-                auth_string = fmt::format("{}:{}@", user, checkAndGetLiteralArgument<String>(engine_args[4], "password"));
+                auth_string = fmt::format("{}:{}@", user, escaped_password);
             auto parsed_host_port = parseAddress(checkAndGetLiteralArgument<String>(engine_args[0], "host:port"), 27017);
             configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                               auth_string,
