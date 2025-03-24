@@ -105,7 +105,7 @@ public:
         String series_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
 
         if (series_name.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Series name cannot be empty");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of function {} (the series name) cannot be empty", name);
         series_name = escapeForFileName(series_name);
         if (series_name.size() > 100) /// Arbitrary safety threshold
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Series name '{}' is too long", series_name);
