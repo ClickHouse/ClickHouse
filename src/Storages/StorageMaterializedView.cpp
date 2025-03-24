@@ -854,22 +854,22 @@ bool StorageMaterializedView::supportsBackupPartition() const
     return false;
 }
 
-std::optional<UInt64> StorageMaterializedView::totalRows(const Settings & settings) const
+std::optional<UInt64> StorageMaterializedView::totalRows(ContextPtr query_context) const
 {
     if (hasInnerTable())
     {
         if (auto table = tryGetTargetTable())
-            return table->totalRows(settings);
+            return table->totalRows(query_context);
     }
     return {};
 }
 
-std::optional<UInt64> StorageMaterializedView::totalBytes(const Settings & settings) const
+std::optional<UInt64> StorageMaterializedView::totalBytes(ContextPtr query_context) const
 {
     if (hasInnerTable())
     {
         if (auto table = tryGetTargetTable())
-            return table->totalBytes(settings);
+            return table->totalBytes(query_context);
     }
     return {};
 }

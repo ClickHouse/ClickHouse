@@ -66,6 +66,7 @@ public:
     const JoinSettings & getJoinSettings() const { return join_settings; }
     const JoinInfo & getJoinInfo() const { return join_info; }
     JoinInfo & getJoinInfo() { return join_info; }
+    const Names & getRequiredOutpurColumns() const { return required_output_columns; }
 
     std::optional<ActionsDAG> getFilterActions(JoinTableSide side, String & filter_column_name);
 
@@ -85,6 +86,8 @@ public:
 
     const JoinSettings & getSettings() const { return join_settings; }
     bool useNulls() const { return use_nulls; }
+
+    void appendRequiredOutputsToActions(JoinActionRef & post_filter);
 
     void setHashTableCacheKeys(UInt64 left_key_hash, UInt64 right_key_hash)
     {

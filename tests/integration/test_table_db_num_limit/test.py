@@ -108,9 +108,17 @@ def test_table_db_limit(started_cluster):
         node.query("drop table t{} sync".format(i))
     for i in range(3):
         node2.query("drop table t{} sync".format(i))
-    node.query("system drop replica 'r1' from ZKPATH '/clickhouse/tables/tx'")
-    node.query("system drop replica 'r2' from ZKPATH '/clickhouse/tables/tx'")
     for i in range(9):
         node.query("drop database db{}".format(i))
     for i in range(10):
         node.query("drop dictionary d{}".format(i))
+
+
+def test_replicated_database(started_cluster):
+    node.query("CREATE DATABASE db_replicated ENGINE = Replicated('/clickhouse/db_replicated', '{replica}');")
+    for i in range(10):
+        node.query(f"CREATE TABLE db_replicated.t{i} (a Int32) ENGINE = Log;")
+    assert "TOO_MANY_TABLES" in node.query_and_get_error(
+        "CREATE TABLE db_replicated.tx (a Int32) ENGINE = Log;"
+    )
+    node.query("DROP DATABASE db_replicated SYNC;")

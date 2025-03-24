@@ -1044,3 +1044,39 @@ def test_password_leak(started_cluster):
         assert "clickhouse" not in clickhouse_node.query(
             "SHOW CREATE test_database.test_table"
         )
+
+
+def test_mysql_database_engine_comment(started_cluster):
+    with contextlib.closing(
+        MySQLNodeInstance(
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_database")
+        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+        clickhouse_node.query(
+            f"CREATE DATABASE test_database ENGINE = MySQL('mysql80:3306', 'test_database', 'root', '{mysql_pass}') \
+            comment 'test mysql database engine comment'"
+        )
+        assert "test_database" in clickhouse_node.query("SHOW DATABASES")
+
+        assert (
+            clickhouse_node.query("SELECT comment FROM system.databases WHERE name='test_database'").rstrip()
+            == "test mysql database engine comment"
+        )
+
+        clickhouse_node.query(
+           "ALTER DATABASE test_database MODIFY COMMENT 'new comment on mysql database engine'"
+        )
+
+        assert (
+            clickhouse_node.query("SELECT comment FROM system.databases WHERE name='test_database'").rstrip()
+            == "new comment on mysql database engine"
+        )
+
+        clickhouse_node.query("DROP DATABASE test_database")
+        assert "test_database" not in clickhouse_node.query("SHOW DATABASES")
+
+        mysql_node.query("DROP DATABASE test_database")
