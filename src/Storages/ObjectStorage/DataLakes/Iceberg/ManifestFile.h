@@ -36,6 +36,15 @@ struct DataFileEntry
     String file_name;
 };
 
+struct ColumnInfo
+{
+    std::optional<Int64> rows_count;
+    std::optional<Int64> bytes_size;
+    std::optional<Int64> nulls_count;
+    std::optional<DB::Field> lower_bound;
+    std::optional<DB::Field> upper_bound;
+};
+
 using FileEntry = std::variant<DataFileEntry>; // In the future we will add PositionalDeleteFileEntry and EqualityDeleteFileEntry here
 
 /// Description of Data file in manifest file
@@ -46,6 +55,7 @@ struct ManifestFileEntry
 
     FileEntry file;
     DB::Row partition_key_value;
+    std::unordered_map<Int32, ColumnInfo> columns_infos;
 };
 
 /**
@@ -96,6 +106,11 @@ public:
     const std::vector<Int32> & getPartitionKeyColumnIDs() const;
     Poco::JSON::Object::Ptr getSchemaObject() const { return schema_object; }
     size_t getMemoryBytes() const;
+
+    /// Fields with rows count in manifest files are optional
+    /// they can be absent.
+    std::optional<Int64> getRowsCountInAllDataFilesExcludingDeleted() const;
+    std::optional<Int64> getBytesCountInAllDataFiles() const;
 private:
 
     Int32 schema_id;
