@@ -49,6 +49,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -90,7 +91,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 
-#include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
 
 #include <base/insertAtEnd.h>
@@ -303,7 +303,7 @@ static void checkSuspiciousIndices(const ASTFunction * index_function)
     std::unordered_set<UInt64> unique_index_expression_hashes;
     for (const auto & child : index_function->arguments->children)
     {
-        const IAST::Hash hash = child->getTreeHash(/*ignore_aliases=*/ true);
+        const IASTHash hash = child->getTreeHash(/*ignore_aliases=*/ true);
         const auto & first_half_of_hash = hash.low64;
 
         if (!unique_index_expression_hashes.emplace(first_half_of_hash).second)
@@ -6800,6 +6800,20 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
 
         LOG_DEBUG(log, "{} of them are active", active_parts.size());
 
+        /// Take care to process parts in the correct order. This is needed for Replacing and other special MergeTree variants.
+        std::erase_if(detached_parts, [&](const auto & part_info)
+        {
+            String containing_part = active_parts.getContainingPart(part_info.dir_name);
+            return containing_part.empty();
+        });
+
+        std::sort(detached_parts.begin(), detached_parts.end(), [&](const auto & a, const auto & b)
+        {
+            MergeTreePartInfo info_a = MergeTreePartInfo::fromPartName(active_parts.getContainingPart(a), format_version);
+            MergeTreePartInfo info_b = MergeTreePartInfo::fromPartName(active_parts.getContainingPart(b), format_version);
+            return info_a < info_b;
+        });
+
         /// Inactive parts are renamed so they can not be attached in case of repeated ATTACH.
         for (const auto & part_info : detached_parts)
         {
@@ -6816,7 +6830,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
                 renamed_parts.addPart(part_info.dir_name, "attaching_" + part_info.dir_name, part_info.disk);
         }
     }
-
 
     /// Try to rename all parts before attaching to prevent race with DROP DETACHED and another ATTACH.
     renamed_parts.tryRenameAll();

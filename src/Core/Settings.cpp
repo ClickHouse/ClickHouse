@@ -183,7 +183,7 @@ Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in par
 Higher values will lead to higher memory usage.
 )", 0) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
-The maximum number of streams (columns) to delay final part flush. Default - auto (1000 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
+The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
 )", 0) \
     DECLARE(MaxThreads, max_final_threads, 0, R"(
 Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
@@ -581,6 +581,8 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
+    DECLARE(Bool, enable_hdfs_pread, true, R"(
+Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -1606,7 +1608,7 @@ Possible values:
 
 Can be used to limit which entities will go to `query_log`, say you are interested only in errors, then you can use `EXCEPTION_WHILE_PROCESSING`:
 
-``` text
+```text
 log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 )", 0) \
@@ -1697,7 +1699,7 @@ Possible values:
 
 **Example**
 
-``` xml
+```xml
 <max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 )", 0) \
@@ -1983,6 +1985,10 @@ DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
     - 'false': Never swap tables (the right table is the build table).
     - 'true': Always swap tables (the left table is the build table).
 )", 0) \
+    \
+    DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
+Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms
+ )", 0) \
     \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
@@ -2862,7 +2868,7 @@ Possible values:
 
 **Example**
 
-``` text
+```text
 log_query_threads=1
 ```
 )", 0) \
@@ -2873,7 +2879,7 @@ When a query run by ClickHouse with this setting enabled has associated views (m
 
 Example:
 
-``` text
+```text
 log_query_views=1
 ```
 )", 0) \
@@ -2890,7 +2896,7 @@ Possible values:
 
 Query:
 
-``` sql
+```sql
 SET log_comment = 'log_comment test', log_queries = 1;
 SELECT 1;
 SYSTEM FLUSH LOGS;
@@ -2899,7 +2905,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Result:
 
-``` text
+```text
 ┌─type────────┬─query─────┐
 │ QueryStart  │ SELECT 1; │
 │ QueryFinish │ SELECT 1; │
@@ -3750,7 +3756,7 @@ Possible values:
 
 Consider the `null_in` table:
 
-``` text
+```text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
@@ -3760,13 +3766,13 @@ Consider the `null_in` table:
 
 Query:
 
-``` sql
+```sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
 ```
 
 Result:
 
-``` text
+```text
 ┌──idx─┬────i─┐
 │    1 │    1 │
 └──────┴──────┘
@@ -3774,13 +3780,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 ```
 
 Result:
 
-``` text
+```text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
@@ -3798,7 +3804,7 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 
 **Example**
 
-``` xml
+```xml
 <profiles>
     <default>
         <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
@@ -4017,7 +4023,7 @@ Possible values:
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
 SET optimize_syntax_fuse_functions = 1;
 EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
@@ -4025,7 +4031,7 @@ EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
 
 Result:
 
-``` text
+```text
 SELECT
     sum(a),
     sumCount(b).1,
@@ -4050,7 +4056,7 @@ If the setting is set to `0`, it is possible to use an arbitrary level of nestin
 
 Query:
 
-``` sql
+```sql
 SET flatten_nested = 1;
 CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
@@ -4059,7 +4065,7 @@ SHOW CREATE TABLE t_nest;
 
 Result:
 
-``` text
+```text
 ┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.t_nest
 (
@@ -4074,7 +4080,7 @@ SETTINGS index_granularity = 8192 │
 
 Query:
 
-``` sql
+```sql
 SET flatten_nested = 0;
 
 CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
@@ -4084,7 +4090,7 @@ SHOW CREATE TABLE t_nest;
 
 Result:
 
-``` text
+```text
 ┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.t_nest
 (
@@ -4158,7 +4164,7 @@ SELECT * FROM test2;
 
 Result:
 
-``` text
+```text
 ┌─FirstTable─┐
 │          0 │
 │          1 │
@@ -4383,7 +4389,8 @@ Possible values:
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \
     DECLARE(Bool, use_query_condition_cache, false, R"(
-Enable the query condition cache.
+Enable the query condition cache. The cache stores ranges of granules in data parts which satisfy the condition in `WHERE` clause,
+and reuse this information as an ephemeral index for subsequent queries.
 
 Possible values:
 
@@ -4411,7 +4418,7 @@ If `insert_shard_id` value is incorrect, the server will throw an exception.
 
 To get the number of shards on `requested_cluster`, you can check server config or use this query:
 
-``` sql
+```sql
 SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
 ```
 
@@ -4433,7 +4440,7 @@ SELECT * FROM x_dist ORDER BY number ASC;
 
 Result:
 
-``` text
+```text
 ┌─number─┐
 │      0 │
 │      0 │
@@ -4879,21 +4886,21 @@ Possible values:
 
 Input table:
 
-``` sql
+```sql
 CREATE TABLE test (i UInt64) ENGINE = MergeTree() ORDER BY i;
 INSERT INTO test SELECT number FROM numbers(500);
 ```
 
 Query:
 
-``` sql
+```sql
 SET limit = 5;
 SET offset = 7;
 SELECT * FROM test LIMIT 10 OFFSET 100;
 ```
 Result:
 
-``` text
+```text
 ┌───i─┐
 │ 107 │
 │ 108 │
@@ -5126,9 +5133,6 @@ Check that DDL query (such as DROP TABLE or RENAME) will not break dependencies
     DECLARE(Bool, check_referential_table_dependencies, false, R"(
 Check that DDL query (such as DROP TABLE or RENAME) will not break referential dependencies
 )", 0) \
-    DECLARE(Bool, use_local_cache_for_remote_storage, true, R"(
-Use local cache for remote storage like HDFS or S3, it's used for remote table engine only
-)", 0) \
     \
     DECLARE(Bool, allow_unrestricted_reads_from_keeper, false, R"(
 Allow unrestricted (without condition on path) reads from system.zookeeper table, can be handy, but is not safe for zookeeper
@@ -5189,7 +5193,7 @@ from the specified table.
 
 **Example**
 
-``` sql
+```sql
 INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 SELECT * FROM table_1;
 ```
@@ -5220,7 +5224,7 @@ This setting is not applied to any subquery.
 
 **Example**
 
-``` sql
+```sql
 INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 SElECT * FROM table_1;
 ```
@@ -5706,6 +5710,12 @@ When the ratio of rows containing NULL values to the total number of rows exceed
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
 Only has an effect in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for Replicated-/SharedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
+    DECLARE(Int64, iceberg_timestamp_ms, 0, R"(
+Query Iceberg table using the snapshot that was current at a specific timestamp.
+)", 0) \
+    DECLARE(Int64, iceberg_snapshot_id, 0, R"(
+Query Iceberg table using the specific snapshot id.
+)", 0) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
@@ -5829,7 +5839,7 @@ The analyzer should be enabled to use parallel replicas. With disabled analyzer 
 )", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.
 )", IMPORTANT) ALIAS(enable_analyzer) \
@@ -5904,7 +5914,7 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
-If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.
+If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
 )", 0) \
     DECLARE(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
@@ -5926,15 +5936,15 @@ Enable pushing user roles from originator to other nodes while performing a quer
 Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
 )", 0) \
     \
-    DECLARE(Bool, allow_experimental_variant_type, false, R"(
+    DECLARE(Bool, allow_experimental_variant_type, true, R"(
 Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.
-)", BETA) ALIAS(enable_variant_type) \
-    DECLARE(Bool, allow_experimental_dynamic_type, false, R"(
+)", 0) ALIAS(enable_variant_type) \
+    DECLARE(Bool, allow_experimental_dynamic_type, true, R"(
 Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data type.
-)", BETA) ALIAS(enable_dynamic_type) \
-    DECLARE(Bool, allow_experimental_json_type, false, R"(
+)", 0) ALIAS(enable_dynamic_type) \
+    DECLARE(Bool, allow_experimental_json_type, true, R"(
 Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
-)", BETA) ALIAS(enable_json_type) \
+)", 0) ALIAS(enable_json_type) \
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
@@ -6155,6 +6165,8 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, use_mysql_types_in_show_columns, false) \
     MAKE_OBSOLETE(M, Bool, s3queue_allow_experimental_sharded_mode, false) \
     MAKE_OBSOLETE(M, LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW) \
+    MAKE_OBSOLETE(M, Bool, use_local_cache_for_remote_storage, false) \
+    \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_pool_size, 16) \

@@ -3,9 +3,7 @@ set -x -e
 
 exec &> >(ts)
 
-ccache_status () {
-    ccache --show-config ||:
-    ccache --show-stats ||:
+sccache_status () {
     SCCACHE_NO_DAEMON=1 sccache --show-stats ||:
 }
 
@@ -15,11 +13,6 @@ if [ "$EXTRACT_TOOLCHAIN_DARWIN" = "1" ]; then
   mkdir -p /build/cmake/toolchain/darwin-x86_64
   tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1
   ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64
-
-  if [ "$EXPORT_SOURCES_WITH_SUBMODULES" = "1" ]; then
-    cd /build
-    tar --exclude-vcs-ignores --exclude-vcs --exclude build --exclude build_docker --exclude debian --exclude .git --exclude .github --exclude .cache --exclude docs --exclude tests/integration -c . | pigz -9 > /output/source_sub.tar.gz
-  fi
 fi
 
 
@@ -39,9 +32,7 @@ if [ -n "$MAKE_DEB" ]; then
 fi
 
 
-ccache_status
-# clear cache stats
-ccache --zero-stats ||:
+sccache_status
 
 function check_prebuild_exists() {
   local path="$1"
@@ -98,12 +89,12 @@ cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUI
 ninja $NINJA_FLAGS $BUILD_TARGET
 
 # We don't allow dirty files in the source directory after build
-git ls-files --others --exclude-standard | grep . && echo "^ Dirty files in the working copy after build" && exit 1
-git submodule foreach --quiet git ls-files --others --exclude-standard | grep . && echo "^ Dirty files in submodules after build" && exit 1
+git ls-files --others --exclude build_docker\* | grep . && echo "^ Dirty files in the working copy after build" && exit 1
+git submodule foreach --quiet git ls-files --others | grep . && echo "^ Dirty files in submodules after build" && exit 1
 
 ls -la ./programs
 
-ccache_status
+sccache_status
 
 if [ -n "$MAKE_DEB" ]; then
   # No quotes because I want it to expand to nothing if empty.
@@ -192,20 +183,6 @@ then
     mv "$COMBINED_OUTPUT.tar.zst" /output
 fi
 
-ccache_status
-ccache --evict-older-than 1d
-
-if [ "${CCACHE_DEBUG:-}" == "1" ]
-then
-    find . -name '*.ccache-*' -print0 \
-        | tar -c -I pixz -f /output/ccache-debug.txz --null -T -
-fi
-
-if [ -n "$CCACHE_LOGFILE" ]
-then
-    # Compress the log as well, or else the CI will try to compress all log
-    # files in place, and will fail because this directory is not writable.
-    tar -cv -I pixz -f /output/ccache.log.txz "$CCACHE_LOGFILE"
-fi
+sccache_status
 
 ls -l /output

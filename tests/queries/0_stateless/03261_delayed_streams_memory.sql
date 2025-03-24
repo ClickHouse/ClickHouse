@@ -11,7 +11,7 @@ SET max_insert_delayed_streams_for_parallel_write = 55;
 
 INSERT INTO t_100_columns (id) SELECT number FROM numbers(100);
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if (memory_usage < 300000000, 'Ok', format('Fail: memory usage {}', formatReadableSize(memory_usage)))
 FROM system.query_log

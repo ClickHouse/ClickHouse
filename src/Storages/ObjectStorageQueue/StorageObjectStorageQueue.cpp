@@ -265,9 +265,17 @@ void StorageObjectStorageQueue::startup()
     /// (If startup is never called, shutdown also won't be called.)
     startup_called = true;
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(temp_metadata), getStorageID());
-
-    if (task)
-        task->activateAndSchedule();
+    try
+    {
+        files_metadata->startup();
+        if (task)
+            task->activateAndSchedule();
+    }
+    catch (...)
+    {
+        files_metadata->shutdown();
+        throw;
+    }
 }
 
 void StorageObjectStorageQueue::shutdown(bool is_drop)

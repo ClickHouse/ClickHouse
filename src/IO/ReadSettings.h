@@ -93,6 +93,7 @@ struct ReadSettings
     bool read_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;
     std::optional<FileCacheUserInfo> filecache_user_info;
+    bool enable_hdfs_pread = true;
 
     ReadSettings adjustBufferSize(size_t file_size) const
     {

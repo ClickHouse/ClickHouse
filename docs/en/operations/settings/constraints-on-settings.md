@@ -76,7 +76,7 @@ otherwise settings are not allowed to be changed in `readonly=1` mode.
 `changeable_in_readonly` is supported only if `settings_constraints_replace_previous`
 is enabled:
 
-``` xml
+```xml
 <access_control_improvements>
   <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
 </access_control_improvements>

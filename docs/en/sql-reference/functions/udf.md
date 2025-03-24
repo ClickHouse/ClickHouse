@@ -73,13 +73,13 @@ File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with defaul
 
 Query:
 
-``` sql
+```sql
 SELECT test_function_sum(2, 2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─test_function_sum(2, 2)─┐
 │                       4 │
 └─────────────────────────┘
@@ -122,13 +122,13 @@ if __name__ == '__main__':
 
 Query:
 
-``` sql
+```sql
 SELECT test_function_python(toUInt64(2));
 ```
 
 Result:
 
-``` text
+```text
 ┌─test_function_python(2)─┐
 │ Value 2                 │
 └─────────────────────────┘
@@ -179,13 +179,13 @@ if __name__ == '__main__':
 
 Query:
 
-``` sql
+```sql
 SELECT test_function_sum_json(2, 2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─test_function_sum_json(2, 2)─┐
 │                            4 │
 └──────────────────────────────┘
@@ -226,13 +226,13 @@ if __name__ == "__main__":
 
 Query:
 
-``` sql
+```sql
 SELECT test_function_parameter_python(1)(2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─test_function_parameter_python(1)(2)─┐
 │ Parameter 1 value 2                  │
 └──────────────────────────────────────┘
@@ -272,13 +272,13 @@ done
 
 Query:
 
-``` sql
+```sql
 SELECT test_shell(number) FROM numbers(10);
 ```
 
 Result:
 
-``` text
+```text
     ┌─test_shell(number)─┐
  1. │ 0                  │
  2. │ 2                  │

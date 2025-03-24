@@ -209,7 +209,8 @@ def test_upgrade_3(started_cluster):
 
 
 @pytest.mark.parametrize("setting_prefix", ["", "s3queue_"])
-def test_migration(started_cluster, setting_prefix):
+@pytest.mark.parametrize("buckets_num", [3, 1])
+def test_migration(started_cluster, setting_prefix, buckets_num):
     node1 = started_cluster.instances["instance_24.5"]
     node2 = started_cluster.instances["instance2_24.5"]
 
@@ -220,7 +221,7 @@ def test_migration(started_cluster, setting_prefix):
     table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
     mv_name = f"{table_name}_mv"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    keeper_path = f"/clickhouse/test_{table_name}_{buckets_num}"
     files_path = f"{table_name}_data"
 
     for node in [node1, node2]:
@@ -281,7 +282,7 @@ def test_migration(started_cluster, setting_prefix):
             )
 
         last_processed_path[0] = f"{use_prefix}_{expected_rows[0] - 1}.csv"
-        for _ in range(20):
+        for _ in range(50):
             if expected_rows[0] == get_count():
                 break
             time.sleep(1)
@@ -303,7 +304,6 @@ def test_migration(started_cluster, setting_prefix):
             )
         )
 
-    buckets_num = 3
     assert (
         "Changing setting buckets is not allowed only with detached dependencies"
         in node1.query_and_get_error(
@@ -321,34 +321,47 @@ def test_migration(started_cluster, setting_prefix):
         )
     )
 
-    node1.query(
-        f"ALTER TABLE r.{table_name} MODIFY SETTING {setting_prefix}buckets={buckets_num} SETTINGS s3queue_migrate_old_metadata_to_buckets = 1"
-    )
-
-    for node in [node1, node2]:
-        assert buckets_num == int(
-            node.query(
-                f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'buckets'"
-            )
+    def migrate_to_buckets(value):
+        node1.query(
+            f"ALTER TABLE r.{table_name} MODIFY SETTING {setting_prefix}buckets={value} SETTINGS s3queue_migrate_old_metadata_to_buckets = 1"
         )
 
-    metadata = json.loads(zk.get(f"{keeper_path}/metadata/")[0])
-    assert buckets_num == metadata["buckets"]
+    def check_keeper_state_changed():
+        for node in [node1, node2]:
+            assert buckets_num == int(
+                node.query(
+                    f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'buckets'"
+                )
+            )
 
-    try:
-        zk.get(f"{keeper_path}/processed")
-        assert False
-    except NoNodeError:
-        pass
+        metadata = json.loads(zk.get(f"{keeper_path}/metadata/")[0])
+        assert buckets_num == metadata["buckets"]
 
-    buckets = zk.get_children(f"{keeper_path}/buckets/")
+        try:
+            zk.get(f"{keeper_path}/processed")
+            assert False
+        except NoNodeError:
+            pass
 
-    assert len(buckets) == buckets_num
-    assert sorted(buckets) == [str(i) for i in range(buckets_num)]
+        buckets = zk.get_children(f"{keeper_path}/buckets/")
 
-    for i in range(buckets_num):
-        metadata = json.loads(zk.get(f"{keeper_path}/buckets/{i}/processed")[0])
-        assert metadata["file_path"].endswith(last_processed_path[0])
+        assert len(buckets) == buckets_num
+        assert sorted(buckets) == [str(i) for i in range(buckets_num)]
+
+        for i in range(buckets_num):
+            path = f"{keeper_path}/buckets/{i}/processed"
+            print(f"Checking {path}")
+            metadata = json.loads(zk.get(path)[0])
+            assert metadata["file_path"].endswith(last_processed_path[0])
+
+    migrate_to_buckets(buckets_num)
+    check_keeper_state_changed()
+
+    if buckets_num == 1:
+        correct_value = 3
+        migrate_to_buckets(correct_value)
+        buckets_num = correct_value
+        check_keeper_state_changed()
 
     for node in [node1, node2]:
         node.query(f"ATTACH TABLE {mv_name}")

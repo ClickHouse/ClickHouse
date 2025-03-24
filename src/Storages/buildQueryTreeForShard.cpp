@@ -16,7 +16,6 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <IO/WriteHelpers.h>
 #include <Planner/PlannerContext.h>
-#include <Planner/Utils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -26,8 +25,10 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 
+
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
@@ -40,6 +41,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
 }
 
@@ -380,7 +382,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             else
             {
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Unexpected join kind: {}", join_kind);
+                    ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Unexpected join kind: {}", join_kind);
             }
 
             auto subquery_node
