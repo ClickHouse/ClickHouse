@@ -2,7 +2,6 @@
 #include "Interpreters/BloomFilter.h"
 
 
-
 namespace DB
 {
 
