@@ -23,7 +23,7 @@ The table can be configured with these settings:
 [max_dictionary_num_to_warn](../server-configuration-parameters/settings.md#max_dictionary_num_to_warn)
 [max_view_num_to_warn](../server-configuration-parameters/settings.md#max_view_num_to_warn)
 [max_part_num_to_warn](../server-configuration-parameters/settings.md#max_part_num_to_warn)
-[max_pending_mutations_to_warn](../server-configuration-parameters/settings.md#max_pending_mutations_to_warm)
+[max_pending_mutations_to_warn](../server-configuration-parameters/settings.md#max_pending_mutations_to_warn)
 
 Columns:
 
