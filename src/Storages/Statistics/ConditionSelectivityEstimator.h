@@ -16,7 +16,7 @@ class ConditionSelectivityEstimator
 public:
     /// TODO: Support the condition consists of CNF/DNF like (cond1 and cond2) or (cond3) ...
     /// Right now we only support simple conditions like col = val / col < val, or a conjunction of those like (cond1 and cond2 and ...)
-    Float64 estimateRowCount(const RPNBuilderTreeNode & node, const std::unordered_map<std::string, ColumnWithTypeAndName> & unqualifiedColumnsNames = {}) const;
+    Float64 estimateRowCount(const RPNBuilderTreeNode & node, const std::unordered_map<std::string, ColumnWithTypeAndName> & unqualified_column_names = {}) const;
 
     void addStatistics(String part_name, ColumnStatisticsPartPtr column_stat);
     void incrementRowCount(UInt64 rows);
@@ -32,9 +32,9 @@ private:
 
         void addStatistics(String part_name, ColumnStatisticsPartPtr stats);
 
-        Float64 estimateLess(const Field & val, Float64 rows, std::optional<Float64> & calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const;
-        Float64 estimateGreater(const Field & val, Float64 rows, std::optional<Float64> & calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const;
-        Float64 estimateEqual(const Field & val, Float64 rows, std::optional<Float64> & calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const;
+        Float64 estimateLess(const Field & val, Float64 rows, std::optional<Float64> left_bound, std::optional<Float64> right_bound, std::optional<Float64> & val_as_float_to_return) const;
+        Float64 estimateGreater(const Field & val, Float64 rows, std::optional<Float64> left_bound, std::optional<Float64> right_bound, std::optional<Float64> & val_as_float_to_return) const;
+        Float64 estimateEqual(const Field & val, Float64 rows, std::optional<Float64> left_bound, std::optional<Float64> right_bound, std::optional<Float64> & val_as_float_to_return) const;
     };
 
     bool extractOperators(const RPNBuilderTreeNode & node, const String & qualified_column_name, std::vector<std::pair<String, Field>> & result) const;

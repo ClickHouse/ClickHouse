@@ -16,8 +16,8 @@ public:
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
 
-    Float64 estimateLess(const Field & val, std::optional<Float64> & calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const override;
-    Float64 estimateEqual(const Field & val, std::optional<Float64> & calculated_val) const override;
+    Float64 estimateLess(const Field & val, std::optional<Float64> left_bound, std::optional<Float64> right_bound, std::optional<Float64> & val_as_float_to_return) const override;
+    Float64 estimateEqual(const Field & val, std::optional<Float64> & val_as_float_to_return) const override;
 
 private:
     QuantileTDigest<Float64> t_digest;

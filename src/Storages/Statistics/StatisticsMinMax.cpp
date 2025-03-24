@@ -50,15 +50,15 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf)
     readFloatBinary(max, buf);
 }
 
-Float64 StatisticsMinMax::estimateLess(const Field & val, std::optional<Float64> & calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
+Float64 StatisticsMinMax::estimateLess(const Field & val, std::optional<Float64> left_bound, std::optional<Float64> right_bound, std::optional<Float64> & val_as_float_to_return) const
 {
-    Float64 used_min = custom_min.has_value() ? *custom_min : min;
-    Float64 used_max = custom_max.has_value() ? *custom_max : max;
+    Float64 used_min = left_bound.has_value() ? *left_bound : min;
+    Float64 used_max = right_bound.has_value() ? *right_bound : max;
     if (row_count == 0)
         return 0;
 
     auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
-    calculated_val = val_as_float;
+    val_as_float_to_return = val_as_float;
     if (!val_as_float.has_value())
         return 0;
 
