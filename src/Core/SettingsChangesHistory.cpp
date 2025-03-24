@@ -86,6 +86,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_timestamp_ms", 0, 0, "New setting."},
             {"iceberg_snapshot_id", 0, 0, "New setting."},
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
+            {"parallel_block_marshaling_threads", 1, 8, "New setting."},
+            {"parallel_block_marshaling_queue_size", 1, 8, "New setting."},
+
             /// Release closed. Please use 25.4
             {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
         });
