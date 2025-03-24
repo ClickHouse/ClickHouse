@@ -309,10 +309,8 @@ WHERE number < 5
 
 2. `CASE <expr> WHEN <val1> THEN ... WHEN <val2> THEN ... ELSE ... END`
 <br/>
-This more compact form is optimized for constant value matching and internally uses `caseWithExpression()`. However, it has limitations:
+This more compact form is optimized for constant value matching and internally uses `caseWithExpression()`.
 
-- All return expressions must be constants or deterministic expressions not depending on the input.
-- Using expressions like number + 1 or timezone-aware functions will result in an error.
 
 For example, the following is valid:
 
@@ -344,7 +342,7 @@ WHERE number < 3
 3 rows in set. Elapsed: 0.002 sec.
 ```
 
-Conversely, the following is invalid:
+This form also does not require return expressions to be constants.
 
 ```sql
 SELECT
@@ -365,11 +363,13 @@ SELECT
 FROM system.numbers
 WHERE number < 3
 
-Elapsed: 0.001 sec.
+┌─number─┬─caseWithExpr⋯0), number)─┐
+│      0 │                        1 │
+│      1 │                       10 │
+│      2 │                        2 │
+└────────┴──────────────────────────┘
 
-Received exception:
-Code: 44. DB::Exception: Argument at index 2 for function transform must be constant. (ILLEGAL_COLUMN)
-
+3 rows in set. Elapsed: 0.001 sec.
 ```
 
 ### Caveats  {#caveats}
@@ -377,8 +377,8 @@ Code: 44. DB::Exception: Argument at index 2 for function transform must be cons
 ClickHouse determines the result type of a CASE expression (or its internal equivalent, such as `multiIf`) before evaluating any conditions. This is important when the return expressions differ in type, such as different timezones or numeric types.
 
 - The result type is selected based on the largest compatible type among all branches.
-- Once this type is selected, all other branches are implicitly cast to it—even if their logic would never be executed at runtime.
-- For types like [DateTime64](/sql-reference/data-types/datetime64), where the timezone is part of the type signature, this can lead to surprising behavior: the first encountered timezone may be used for all branches, even when other branches specify different timezones.
+- Once this type is selected, all other branches are implicitly cast to it - even if their logic would never be executed at runtime.
+- For types like DateTime64, where the timezone is part of the type signature, this can lead to surprising behavior: the first encountered timezone may be used for all branches, even when other branches specify different timezones.
 
 For example, below all rows return the timestamp in the timezone of the first matched branch i.e. `Asia/Kolkata`
 
