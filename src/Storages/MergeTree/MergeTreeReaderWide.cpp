@@ -110,7 +110,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
         return;
 
     if (deserialize_prefixes)
-        deserializePrefixForAllColumnsWithPrefetch(num_columns, current_task_last_mark, priority);
+        deserializePrefixForAllColumnsWithPrefetch(num_columns, from_mark, current_task_last_mark, priority);
 
     /// Request reading of data in advance,
     /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
@@ -151,7 +151,7 @@ size_t MergeTreeReaderWide::readRows(
             return max_rows_to_read;
 
         prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading, /*deserialize_prefixes=*/ true);
-        deserializePrefixForAllColumns(num_columns, current_task_last_mark);
+        deserializePrefixForAllColumns(num_columns, from_mark, current_task_last_mark);
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -337,6 +337,7 @@ ReadBuffer * MergeTreeReaderWide::getStream(
 void MergeTreeReaderWide::deserializePrefix(
     const SerializationPtr & serialization,
     const NameAndTypePair & name_and_type,
+    size_t from_mark,
     size_t current_task_last_mark,
     DeserializeBinaryBulkStateMap & deserialize_state_map,
     ISerialization::SubstreamsCache & cache,
@@ -378,7 +379,7 @@ void MergeTreeReaderWide::deserializePrefix(
     }
 }
 
-void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns, size_t current_task_last_mark, StreamCallbackGetter prefixes_prefetch_callback_getter)
+void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns, size_t from_mark, size_t current_task_last_mark, StreamCallbackGetter prefixes_prefetch_callback_getter)
 {
     /// Check if we already deserialized prefixes.
     if (!deserialize_binary_bulk_state_map.empty())
@@ -396,6 +397,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
                 deserializePrefix(
                     serializations[pos],
                     columns_to_read[pos],
+                    from_mark,
                     current_task_last_mark,
                     deserialize_state_map,
                     cache,
@@ -420,12 +422,12 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         deserialize_binary_bulk_state_map = deserialize();
 }
 
-void MergeTreeReaderWide::deserializePrefixForAllColumns(size_t num_columns, size_t current_task_last_mark)
+void MergeTreeReaderWide::deserializePrefixForAllColumns(size_t num_columns, size_t from_mark, size_t current_task_last_mark)
 {
-    deserializePrefixForAllColumnsImpl(num_columns, current_task_last_mark, {});
+    deserializePrefixForAllColumnsImpl(num_columns, from_mark, current_task_last_mark, {});
 }
 
-void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_columns, size_t current_task_last_mark, Priority priority)
+void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_columns, size_t from_mark, size_t current_task_last_mark, Priority priority)
 {
     auto prefixes_prefetch_callback_getter = [&](const NameAndTypePair & name_and_type)
     {
@@ -443,7 +445,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_
         };
     };
 
-    deserializePrefixForAllColumnsImpl(num_columns, current_task_last_mark, prefixes_prefetch_callback_getter);
+    deserializePrefixForAllColumnsImpl(num_columns, from_mark, current_task_last_mark, prefixes_prefetch_callback_getter);
 }
 
 void MergeTreeReaderWide::prefetchForColumn(
@@ -503,7 +505,7 @@ void MergeTreeReaderWide::readData(
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.avg_value_size_hint = avg_value_size_hint;
 
-    deserializePrefix(serialization, name_and_type, current_task_last_mark, deserialize_binary_bulk_state_map, cache, deserialize_states_cache, {});
+    deserializePrefix(serialization, name_and_type, from_mark, current_task_last_mark, deserialize_binary_bulk_state_map, cache, deserialize_states_cache, {});
 
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
