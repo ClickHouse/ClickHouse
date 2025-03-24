@@ -628,9 +628,9 @@ std::optional<size_t> IcebergMetadata::totalRows() const
     }
 
     Int64 result = 0;
-    for (const auto & manifest_list_entry : *(relevant_snapshot->manifest_list_iterator))
+    for (const auto & manifest_list_entry : *(relevant_snapshot->manifest_list))
     {
-        auto count = manifest_list_entry.manifest_file->getRowsCountInAllDataFilesExcludingDeleted();
+        auto count = manifest_list_entry->getRowsCountInAllDataFilesExcludingDeleted();
         if (!count.has_value())
             return {};
 
@@ -657,9 +657,9 @@ std::optional<size_t> IcebergMetadata::totalBytes() const
         return relevant_snapshot->total_bytes;
 
     Int64 result = 0;
-    for (const auto & manifest_list_entry : *(relevant_snapshot->manifest_list_iterator))
+    for (const auto & manifest_list_entry : *(relevant_snapshot->manifest_list))
     {
-        auto count = manifest_list_entry.manifest_file->getBytesCountInAllDataFiles();
+        auto count = manifest_list_entry->getBytesCountInAllDataFiles();
         if (!count.has_value())
             return {};
 
