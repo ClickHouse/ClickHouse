@@ -13,7 +13,7 @@ namespace DB
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context);
 
 
-StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & unique_task_id, const String & serialized_query_plan, const DistributedQueryTask & task, const String & unique_temp_file_path)
+StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path)
 {
     ContextPtr context = Context::getGlobalContextInstance();
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(unique_temp_file_path, context);
@@ -27,9 +27,9 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         tasks[unique_task_id] = task_state;
     }
 
-    auto task_function = [serialized_query_plan, task, object_storage, object_storage_path, context, task_promise]() mutable
+    auto task_function = [task_description, object_storage, object_storage_path, context, task_promise]() mutable
     {
-        doExecuteTask(serialized_query_plan, task, object_storage, object_storage_path, context);
+        doExecuteTask(task_description, object_storage, object_storage_path, context);
         task_promise->set_value();
     };
 

@@ -57,14 +57,14 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     return s;
 }
 
-void serializeTask(const DistributedQueryTask & task, const String & serialized_query_plan, WriteBuffer & out);
+void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out);
 
 
-String sendTask(const String & endpoint_uri, const String & unique_task_id, const String & serialized_query_plan, const DistributedQueryTask & task, const String & unique_temp_file_path, const ContextPtr & context)
+String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const ContextPtr & context)
 {
-    auto task_serializer = [serialized_query_plan, task] (WriteBuffer & buf)
+    auto task_serializer = [task_description] (WriteBuffer & buf)
     {
-        serializeTask(task, serialized_query_plan, buf);
+        serializeTask(task_description, buf);
     };
 
     return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, context);

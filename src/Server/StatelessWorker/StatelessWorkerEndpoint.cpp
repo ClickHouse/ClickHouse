@@ -7,6 +7,7 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
 #include "Processors/QueryPlan/QueryPlan.h"
+#include "QueryPipeline/DistributedPlanExecutor.h"
 
 namespace DB
 {
@@ -28,10 +29,12 @@ std::string StatelessWorkerEndpoint::getId(const std::string & path) const
     return endpoint_name + path;
 }
 
-void serializeTask(const DistributedQueryTask & task, const String & serialized_query_plan, WriteBuffer & out)
+void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out)
 {
+    const auto & task = task_description.task;
+
     writeStringBinary(task.task_id, out);
-    writeStringBinary(serialized_query_plan, out);
+    writeStringBinary(task_description.serialized_query_plan, out);
 
     writeVarUInt(task.parameters.parameters.size(), out);
     for (const auto & [name, field] : task.parameters.parameters)
@@ -40,19 +43,31 @@ void serializeTask(const DistributedQueryTask & task, const String & serialized_
         writeFieldBinary(field, out);
     }
 
-    writeVarUInt(task.input_temporary_files.size(), out);
-    for (const auto & file : task.input_temporary_files)
+    writeVarUInt(task.input_exchange_streams.size(), out);
+    for (const auto & file : task.input_exchange_streams)
         writeStringBinary(file, out);
 
-    writeVarUInt(task.output_temporary_files.size(), out);
-    for (const auto & file : task.output_temporary_files)
+    writeVarUInt(task.output_exchange_streams.size(), out);
+    for (const auto & file : task.output_exchange_streams)
         writeStringBinary(file, out);
+
+    writeVarUInt(task_description.exchanges.size(), out);
+    for (const auto & [name, exchange] : task_description.exchanges)
+    {
+        chassert(name == exchange.name);
+        writeStringBinary(exchange.name, out);
+        writeVarUInt(static_cast<size_t>(exchange.kind), out);
+        writeVarUInt(exchange.source_bucket_count, out);
+        writeVarUInt(exchange.destination_bucket_count, out);
+    }
 }
 
-void deserializeTask(DistributedQueryTask & task, String & serialized_query_plan, ReadBuffer & in)
+void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuffer & in)
 {
+    auto & task = task_description.task;
+
     readStringBinary(task.task_id, in);
-    readStringBinary(serialized_query_plan, in);
+    readStringBinary(task_description.serialized_query_plan, in);
 
     size_t parameters_size;
     readVarUInt(parameters_size, in);
@@ -66,15 +81,30 @@ void deserializeTask(DistributedQueryTask & task, String & serialized_query_plan
 
     size_t input_files_size;
     readVarUInt(input_files_size, in);
-    task.input_temporary_files.resize(input_files_size);
+    task.input_exchange_streams.resize(input_files_size);
     for (size_t i = 0; i < input_files_size; ++i)
-        readStringBinary(task.input_temporary_files[i], in);
+        readStringBinary(task.input_exchange_streams[i], in);
 
     size_t output_files_size;
     readVarUInt(output_files_size, in);
-    task.output_temporary_files.resize(output_files_size);
+    task.output_exchange_streams.resize(output_files_size);
     for (size_t i = 0; i < output_files_size; ++i)
-        readStringBinary(task.output_temporary_files[i], in);
+        readStringBinary(task.output_exchange_streams[i], in);
+
+    size_t exchanges_size;
+    readVarUInt(exchanges_size, in);
+    for (size_t i = 0; i < exchanges_size; ++i)
+    {
+        String name;
+        readStringBinary(name, in);
+        ExchangeDescription exchange;
+        UInt64 kind;
+        readVarUInt(kind, in);
+        exchange.kind = static_cast<ExchangeDescription::Kind>(kind);
+        readVarUInt(exchange.source_bucket_count, in);
+        readVarUInt(exchange.destination_bucket_count, in);
+        task_description.exchanges[name] = exchange;
+    }
 }
 
 void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response)
@@ -86,13 +116,12 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBuffer &
     {
         auto unique_temp_file_path = params.get("temp_path");
         /// Deserialize task fields from the request body
-        DistributedQueryTask task_parameters;
-        String serialized_query_plan;
-        deserializeTask(task_parameters, serialized_query_plan, body);
+        DistributedQueryTaskDescription task_description;
+        deserializeTask(task_description, body);
         body.eof();
 
         /// Pass it to the runner to start execution
-        task_runner->startTask(task_id, serialized_query_plan, task_parameters, unique_temp_file_path);
+        task_runner->startTask(task_id, task_description, unique_temp_file_path);
     }
     else if (operation == "get_status")
     {

@@ -7,11 +7,11 @@
 #include <unordered_map>
 #include <base/types.h>
 #include <base/defines.h>
+#include "QueryPipeline/DistributedPlanExecutor.h"
 
 namespace DB
 {
 
-struct DistributedQueryTask;
 
 class StatelessTaskExecutor
 {
@@ -34,7 +34,7 @@ public:
         String message;
     };
 
-    Result startTask(const String & unique_task_id, const String & serialized_query_plan, const DistributedQueryTask & task, const String & unique_temp_file_path);
+    Result startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task, const String & unique_temp_file_path);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
     Result cancelTask(const String & task_id);
     Result forgetTask(const String & task_id);

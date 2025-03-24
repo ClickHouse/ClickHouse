@@ -30,7 +30,7 @@ public:
 
 /// TODO: move to proper place
 template <typename SourceBucketId, typename DestinationBucketId>
-String fileNameForExchange(const String & exchange_id, const SourceBucketId & source_bucket, const DestinationBucketId & destination_bucket)
+String streamNameForExchange(const String & exchange_id, const SourceBucketId & source_bucket, const DestinationBucketId & destination_bucket)
 {
     return exchange_id + "__" + toString(source_bucket) + "_" + toString(destination_bucket);
 }

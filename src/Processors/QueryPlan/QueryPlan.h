@@ -236,6 +236,23 @@ std::string debugExplainStep(IQueryPlanStep & step);
 std::string debugExplainPlan(const QueryPlan & plan);
 
 
+struct ExchangeDescription
+{
+    enum class Kind
+    {
+        Persisted = 1,  /// Exchange data between tasks using temporary files
+        Streaming = 2,  /// Exchange data between tasks using network
+    };
+
+    String name;
+    Kind kind;
+    size_t source_bucket_count;
+    size_t destination_bucket_count;
+};
+
+using ExchangeDescriptions = std::unordered_map<String, ExchangeDescription>;
+
+
 /// Stores named parameters for query plan.
 /// This is aimed to share the same plan with different values of parameters like bucket id for shuffle.
 struct QueryPlanParamaters
@@ -248,8 +265,8 @@ struct DistributedQueryTask
 {
     String task_id;
     QueryPlanParamaters parameters;
-    std::vector<String> input_temporary_files;
-    std::vector<String> output_temporary_files;
+    std::vector<String> input_exchange_streams;
+    std::vector<String> output_exchange_streams;
 };
 
 /// A group of tasks with the same plan fragment and differenet parameters
@@ -265,7 +282,10 @@ struct DistributedQueryStage
 struct DistributedQueryPlan
 {
     std::unordered_map<String, DistributedQueryStage> stages;
-    std::unordered_map<String, std::unordered_set<String>> stage_depends_on;    /// Maps stage name to stages it depends on
+    /// Maps stage name to stages it depends on and the corresponding exchange_id
+    std::unordered_map<String, std::unordered_map<String, String>> stage_depends_on;
+    /// Maps exchange_id to exchange description
+    ExchangeDescriptions exchange_descriptions;
 };
 
 }

@@ -1,3 +1,4 @@
+#include <condition_variable>
 #include <future>
 #include <memory>
 #include <QueryPipeline/DistributedPlanExecutor.h>
@@ -25,6 +26,7 @@
 #include <Interpreters/Context.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include "Core/Types.h"
 #include <Core/Settings.h>
 
 
@@ -116,19 +118,202 @@ public:
 
     std::shared_ptr<ISink> createSink(const Header & input_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
     {
-        auto file_name = fileNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
+        auto file_name = streamNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
         return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name));
     }
 
     std::shared_ptr<ISource> createSource(const Header & output_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
     {
-        auto file_name = fileNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
+        auto file_name = streamNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
         return std::make_shared<NativeCompressedSource>(output_header, temporary_files->getTemporaryFileForReading(file_name));
     }
 
 private:
     TemporaryFileLookupPtr temporary_files;
+};
+
+class InMemoryExchange : boost::noncopyable
+{
+public:
+    explicit InMemoryExchange(const String & name_)
+        : name(name_)
+    {
+    }
+
+    void appendChunk(Chunk chunk)
+    {
+        LOG_TEST(log, "Appending chunk to exchange '{}', rows {}", name, chunk.getNumRows());
+
+        std::lock_guard lock(mutex);
+        chunks.emplace_back(std::move(chunk));
+        has_data.notify_one();
+    }
+
+    Chunk getChunk()
+    {
+        Chunk chunk;
+        {
+            std::unique_lock lock(mutex);
+            has_data.wait(lock, [this] { return !chunks.empty(); });
+            chunk = std::move(chunks.front());
+            chunks.pop_front();
+        }
+
+        LOG_TEST(log, "Getting chunk from exchange '{}', rows {}", name, chunk.getNumRows());
+
+        return chunk;
+    }
+
+private:
+    LoggerPtr log = getLogger("InMemoryExchange");
+    String name;
+    std::mutex mutex;
+    std::condition_variable has_data;
+    std::deque<Chunk> chunks;
+};
+
+using InMemoryExchangePtr = std::shared_ptr<InMemoryExchange>;
+
+class InMemoryExchanges : boost::noncopyable
+{
+public:
+    InMemoryExchangePtr getExchange(const String & query_id, const String & exchange_id)
+    {
+        std::lock_guard lock(mutex);
+        auto & element = exchanges_by_query_id[query_id][exchange_id];
+        if (!element)
+            element = std::make_shared<InMemoryExchange>(exchange_id);
+        return element;
+    }
+
+private:
+    using InMemoryExchangeMap = std::unordered_map<String, InMemoryExchangePtr>;
+
+    std::unordered_map<String, InMemoryExchangeMap> exchanges_by_query_id TSA_GUARDED_BY(mutex);
+    std::mutex mutex;
+};
+
+InMemoryExchanges in_memory_exchanges;
+
+
+class ExchangeViaChunks : public IExchangeLookup
+{
+public:
+    explicit ExchangeViaChunks(const String & query_id_)
+        : query_id(query_id_)
+    {
+    }
+
+    std::shared_ptr<ISink> createSink(const Header & input_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
+    {
+        auto file_name = streamNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
+        auto exchange = in_memory_exchanges.getExchange(query_id, file_name);
+        return std::make_shared<SinkFromInMemoryExchange>(input_header, exchange);
+    }
+
+    std::shared_ptr<ISource> createSource(const Header & output_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
+    {
+        auto file_name = streamNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
+        auto exchange = in_memory_exchanges.getExchange(query_id, file_name);
+        return std::make_shared<SourceFromInMemoryExchange>(output_header, exchange);
+    }
+
+private:
+    class SinkFromInMemoryExchange final : public ISink
+    {
+    public:
+        SinkFromInMemoryExchange(const Header & header_, InMemoryExchangePtr exchange_)
+            : ISink(header_)
+            , exchange(std::move(exchange_))
+        {
+        }
+
+        String getName() const override { return "SinkFromInMemoryExchange"; }
+
+        void consume(Chunk chunk) override
+        {
+            exchange->appendChunk(std::move(chunk));
+        }
+
+        void onFinish() override
+        {
+            exchange->appendChunk({});
+        }
+
+    private:
+        InMemoryExchangePtr exchange;
+    };
+
+    class SourceFromInMemoryExchange final : public ISource
+    {
+    public:
+        SourceFromInMemoryExchange(const Header & header_, InMemoryExchangePtr exchange_)
+            : ISource(header_)
+            , exchange(std::move(exchange_))
+        {
+        }
+
+        String getName() const override { return "SourceFromInMemoryExchange"; }
+
+        Chunk generate() override
+        {
+            return exchange->getChunk();
+        }
+    private:
+        InMemoryExchangePtr exchange;
+    };
+
+    const String query_id;
+};
+
+
+/// A wrapper that looks up exchanges by their kind and delegates to the corresponding exchange lookup: Perssitent or Streaming
+class AllKinkdsExchangeLookup : public IExchangeLookup
+{
+public:
+    AllKinkdsExchangeLookup(
+        const std::unordered_map<String, ExchangeDescription> & exchanges_,
+        ExchangeLookupPtr persistent_exchange_lookup_,
+        ExchangeLookupPtr streaming_exchange_lookup_)
+        : exchanges(exchanges_)
+        , persistent_exchange_lookup(std::move(persistent_exchange_lookup_))
+        , streaming_exchange_lookup(std::move(streaming_exchange_lookup_))
+    {
+    }
+
+    std::shared_ptr<ISink> createSink(const Header & input_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
+    {
+        auto it = exchanges.find(exchange_id);
+        if (it == exchanges.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_id);
+
+        if (it->second.kind == ExchangeDescription::Kind::Persisted)
+            return persistent_exchange_lookup->createSink(input_header, exchange_id, source_bucket_id, destination_bucket_id);
+        else if (it->second.kind == ExchangeDescription::Kind::Streaming)
+            return streaming_exchange_lookup->createSink(input_header, exchange_id, source_bucket_id, destination_bucket_id);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
+    }
+
+    std::shared_ptr<ISource> createSource(const Header & output_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
+    {
+        auto it = exchanges.find(exchange_id);
+        if (it == exchanges.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_id);
+
+        if (it->second.kind == ExchangeDescription::Kind::Persisted)
+            return persistent_exchange_lookup->createSource(output_header, exchange_id, source_bucket_id, destination_bucket_id);
+        else if (it->second.kind == ExchangeDescription::Kind::Streaming)
+            return streaming_exchange_lookup->createSource(output_header, exchange_id, source_bucket_id, destination_bucket_id);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
+    }
+
+private:
+    const std::unordered_map<String, ExchangeDescription> exchanges;
+    ExchangeLookupPtr persistent_exchange_lookup;
+    ExchangeLookupPtr streaming_exchange_lookup;
 };
 
 /// Cleans up temporary files produced by distributed query execution.
@@ -197,7 +382,8 @@ protected:
     {
     }
 
-    virtual void executeStage(const DistributedQueryStage & stage) = 0;
+    virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
+    virtual void waitForStage(const String & stage_name) = 0;
 
     const UUID unique_query_id;
     const DistributedQueryPlan & distributed_query_plan;
@@ -212,6 +398,14 @@ TemporaryFileLookupPtr createTemporaryFilesLookup(ObjectStoragePtr object_storag
     return std::make_shared<TemporaryFilesInObjectStorage>(object_storage_, object_storage_path_, input_temporary_files_, output_temporary_files_);
 }
 
+ExchangeLookupPtr createExchangeLookup(const String & query_id, const std::unordered_map<String, ExchangeDescription> & exchanges_, TemporaryFileLookupPtr temporary_files_)
+{
+    auto persisted_exchanges = std::make_shared<ExchangeViaTemporaryFiles>(temporary_files_);
+    auto streaming_exchanges = std::make_shared<ExchangeViaChunks>(query_id);
+    return std::make_shared<AllKinkdsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges); 
+}
+
+
 String serializeQueryPlan(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString out;
@@ -225,21 +419,23 @@ QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr 
     return QueryPlan::deserialize(in, context).plan;
 }
 
-void doExecuteTask(const String & serialized_query_plan, const DistributedQueryTask & task, ObjectStoragePtr object_storage, const String & object_storage_path, ContextPtr context)
+void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage, const String & object_storage_path, ContextPtr context)
 {
-    QueryPlan query_plan = deserializeQueryPlan(serialized_query_plan, context);
+    const auto & task = task_description.task;
+
+    QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
 
     auto logger = Poco::Logger::getShared("executeDistributedQuery");
-    LOG_TRACE(logger, "Task '{}' temporary files:\ninput: {}\noutput: {}",
-        task.task_id, fmt::join(task.input_temporary_files, ", "), fmt::join(task.output_temporary_files, ", "));
+    LOG_TRACE(logger, "Task '{}' exchange streams:\ninput: {}\noutput: {}",
+        task.task_id, fmt::join(task.input_exchange_streams, ", "), fmt::join(task.output_exchange_streams, ", "));
 
     auto temporary_files = createTemporaryFilesLookup(
-        object_storage, object_storage_path, task.input_temporary_files, task.output_temporary_files);
+        object_storage, object_storage_path, task.input_exchange_streams, task.output_exchange_streams);
 
     auto pipeline_settings = BuildQueryPipelineSettings(context);
     pipeline_settings.temporary_file_lookup = temporary_files;
     pipeline_settings.parameter_lookup = std::make_shared<TaskParameters>(task.parameters);
-    pipeline_settings.exchange_lookup = std::make_shared<ExchangeViaTemporaryFiles>(temporary_files);
+    pipeline_settings.exchange_lookup = createExchangeLookup(object_storage_path, task_description.exchanges, temporary_files);
 
     auto optimization_settings = QueryPlanOptimizationSettings(context);
 
@@ -274,11 +470,11 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     return {object_storage, object_storage_path};
 }
 
-void executeTask(const UUID & unique_query_id, const String & serialized_query_plan, const DistributedQueryTask & task, ContextPtr context)
+void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescription & task, ContextPtr context)
 {
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(toString(unique_query_id), context);
 
-    doExecuteTask(serialized_query_plan, task, object_storage, object_storage_path, context);
+    doExecuteTask(task, object_storage, object_storage_path, context);
 }
 
 /// Runs tasks in local threads. Useful for testing and debugging.
@@ -299,18 +495,16 @@ protected:
         return new_context;
     }
 
-    std::future<void> startTask(const QueryPlan & query_plan, const DistributedQueryTask & task)
+    std::future<void> startTask(const DistributedQueryTaskDescription & task_description)
     {
-        const String serialized_query_plan = serializeQueryPlan(query_plan);
-
         std::promise<void> task_promise;
         std::future<void> future = task_promise.get_future();
 
-        std::thread([promise = std::move(task_promise), query_id = unique_query_id, serialized_query_plan, task, ctx = context]() mutable
+        std::thread([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context]() mutable
         {
             try
             {
-                executeTask(query_id, serialized_query_plan, task, ctx);
+                executeTask(query_id, task_description, ctx);
                 promise.set_value();
             }
             catch (...)
@@ -322,21 +516,41 @@ protected:
         return future;
     }
 
-    void executeStage(const DistributedQueryStage & stage) override
+    void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
         std::vector<std::future<void>> started_tasks;
         started_tasks.reserve(stage.tasks.size());
+        DistributedQueryTaskDescription task_description;
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
+        task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
+
         for (const auto & task : stage.tasks)
-            started_tasks.emplace_back(startTask(stage.query_plan_fragment, task));
+        {
+            task_description.task = task;
+            started_tasks.emplace_back(startTask(task_description));
+        }
+
+        stage_tasks[stage_name] = std::move(started_tasks);
+    }
+
+    void waitForStage(const String & stage_name) override
+    {
+        auto & started_tasks = stage_tasks[stage_name];
 
         /// TODO: periodically check for cancellation
-        for (const auto & task : started_tasks)
+        for (auto & task : started_tasks)
             task.wait();
 
+        auto tasks = std::move(started_tasks);
+        started_tasks.clear();
+
         /// Throw exception if any task failed
-        for (auto & task : started_tasks)
+        for (auto & task : tasks)
             task.get();
     }
+
+private:
+    std::unordered_map<String, std::vector<std::future<void>>> stage_tasks;
 };
 
 
@@ -388,10 +602,10 @@ protected:
         String task_id;
     };
 
-    RunningTaskInfo startTask(const QueryPlan & query_plan, const DistributedQueryTask & task)
+    RunningTaskInfo startTask(const DistributedQueryTaskDescription & task_description)
     {
-        const String serialized_query_plan = serializeQueryPlan(query_plan);
-
+        String host = hostnames[current_host];
+        current_host = (current_host + 1) % hostnames.size();
         String stateless_worker_endpoint_uri;
         if (context->getConfigRef().getBool("stateless_worker_client.enabled", true))
         {
@@ -408,21 +622,34 @@ protected:
             stateless_worker_endpoint_uri = stateless_worker_uri.toString();
         }
 
-        String unique_task_id = toString(unique_query_id) + "::" + task.task_id;
+        String unique_task_id = toString(unique_query_id) + "::" + task_description.task.task_id;
         String unique_temp_file_path = toString(unique_query_id);
 
         LOG_DEBUG(logger, "Sending task {} to host {}", unique_task_id, host);
 
-        sendTask(stateless_worker_endpoint_uri, unique_task_id, serialized_query_plan, task, unique_temp_file_path, context);
+        sendTask(stateless_worker_endpoint_uri, unique_task_id, task_description, unique_temp_file_path, context);
 
         return {stateless_worker_endpoint_uri, unique_task_id};
     }
 
-    void executeStage(const DistributedQueryStage & stage) override
+    void startStage(const String & start_name, const DistributedQueryStage & stage) override
     {
         std::deque<RunningTaskInfo> started_tasks;
+        DistributedQueryTaskDescription task_description;
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
+        task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         for (const auto & task : stage.tasks)
-            started_tasks.emplace_back(startTask(stage.query_plan_fragment, task));
+        {
+            task_description.task = task;
+            started_tasks.emplace_back(startTask(task_description));
+        }
+
+        stage_tasks[start_name] = std::move(started_tasks);
+    }
+
+    void waitForStage(const String & stage_name) override
+    {
+        auto & started_tasks = stage_tasks[stage_name];
 
         /// TODO: periodically check for cancellation
         String error_message;
@@ -442,6 +669,10 @@ protected:
         if (!error_message.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Failures: {}", error_message);
     }
+
+    std::unordered_map<String, std::deque<RunningTaskInfo>> stage_tasks;
+    Strings hostnames;
+    size_t current_host = 0;    /// Chose host in round-robin manner
 };
 
 void DistributedQueryPlanExecutor::execute()
@@ -450,15 +681,26 @@ void DistributedQueryPlanExecutor::execute()
 
     /// Execute stages in topological order
     std::unordered_set<String> executed_stages;
-    std::function<void(const String &)> execute_stage = [&](const String & stage_name)
+    std::function<void(const String &)> start_stage = [&](const String & stage_name)
     {
         if (executed_stages.contains(stage_name))
             return;
 
         if (distributed_query_plan.stage_depends_on.contains(stage_name))
         {
-            for (const auto & dependency : distributed_query_plan.stage_depends_on.at(stage_name))
-                execute_stage(dependency);
+            Strings dependencies_to_wait;
+
+            for (const auto & [dependency, exchange_id] : distributed_query_plan.stage_depends_on.at(stage_name))
+            {
+                start_stage(dependency);
+
+                /// If exchange data is persistent then we will need to wait for stage to finish
+                if (distributed_query_plan.exchange_descriptions.at(exchange_id).kind == ExchangeDescription::Kind::Persisted)
+                    dependencies_to_wait.push_back(dependency);
+            }
+
+            for (const auto & dependency : dependencies_to_wait)
+                waitForStage(dependency);
         }
 
         const auto & stage = distributed_query_plan.stages.at(stage_name);
@@ -467,12 +709,16 @@ void DistributedQueryPlanExecutor::execute()
             "PLAN:\n{}\nTASKS: {}\n"
             "==========================================================================",
             stage_name, dumpQueryPlan(stage.query_plan_fragment), stage.tasks.size());
-        executeStage(stage);
+        startStage(stage_name, stage);
         executed_stages.insert(stage_name);
     };
 
     for (const auto & [stage_name, _] : distributed_query_plan.stages)
-        execute_stage(stage_name);
+        start_stage(stage_name);
+
+    /// Wait for all stages to finish
+    for (const auto & [stage_name, _] : distributed_query_plan.stages)
+        waitForStage(stage_name);
 }
 
 void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context)
