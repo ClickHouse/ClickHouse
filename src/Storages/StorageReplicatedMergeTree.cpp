@@ -7,6 +7,7 @@
 
 #include <base/hex.h>
 #include <base/interpolate.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/MemoryTracker.h>
@@ -70,14 +71,12 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
 
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -94,6 +93,7 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -1652,7 +1652,7 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(fs::path(zookeeper_prefix) / "metadata", &metadata_stat);
     auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
-    old_metadata.checkEquals(metadata_from_zk, metadata_snapshot->getColumns(), getContext());
+    old_metadata.checkEquals(metadata_from_zk, metadata_snapshot->getColumns(), getStorageID().getNameForLogs(), getContext());
 
     if (metadata_version)
         *metadata_version = metadata_stat.version;
@@ -5903,8 +5903,9 @@ void StorageReplicatedMergeTree::foreachActiveParts(Func && func, bool select_se
     }
 }
 
-std::optional<UInt64> StorageReplicatedMergeTree::totalRows(const Settings & settings) const
+std::optional<UInt64> StorageReplicatedMergeTree::totalRows(ContextPtr query_context) const
 {
+    const auto & settings = query_context->getSettingsRef();
     UInt64 res = 0;
     foreachActiveParts([&res](auto & part) { res += part->rows_count; }, settings[Setting::select_sequential_consistency]);
     return res;
@@ -5917,8 +5918,9 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(
     return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, parts);
 }
 
-std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(const Settings & settings) const
+std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(ContextPtr query_context) const
 {
+    const auto & settings = query_context->getSettingsRef();
     UInt64 res = 0;
     foreachActiveParts([&res](auto & part) { res += part->getBytesOnDisk(); }, settings[Setting::select_sequential_consistency]);
     return res;
@@ -6368,7 +6370,8 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
-        auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, getInMemoryMetadataPtr()).checkAndFindDiff(metadata_from_entry, getInMemoryMetadataPtr()->getColumns(), getContext());
+        const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, getInMemoryMetadataPtr());
+        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, getInMemoryMetadataPtr()->getColumns(), getStorageID().getNameForLogs(), getContext());
         setTableStructure(table_id, alter_context, std::move(columns_from_entry), metadata_diff, entry.alter_version);
 
         current_metadata = getInMemoryMetadataPtr();
@@ -6465,7 +6468,7 @@ void StorageReplicatedMergeTree::alter(
     {
         if (!query)
             return "";
-        return queryToString(query);
+        return query->formatWithSecretsOneLine();
     };
 
     const auto zookeeper = getZooKeeperAndAssertNotReadonly();
@@ -6513,19 +6516,19 @@ void StorageReplicatedMergeTree::alter(
             /// list here and we cannot change this representation for compatibility. Also we have preparsed AST `sorting_key.expression_list_ast`
             /// in KeyDescription, but it contain version column for VersionedCollapsingMergeTree, which shouldn't be defined as a part of key definition AST.
             /// So the best compatible way is just to convert definition_ast to list and serialize it. In all other places key.expression_list_ast should be used.
-            future_metadata_in_zk.sorting_key = serializeAST(*extractKeyExpressionList(future_metadata.sorting_key.definition_ast));
+            future_metadata_in_zk.sorting_key = extractKeyExpressionList(future_metadata.sorting_key.definition_ast)->formatWithSecretsOneLine();
         }
 
         if (ast_to_str(future_metadata.sampling_key.definition_ast) != ast_to_str(current_metadata->sampling_key.definition_ast))
-            future_metadata_in_zk.sampling_expression = serializeAST(*extractKeyExpressionList(future_metadata.sampling_key.definition_ast));
+            future_metadata_in_zk.sampling_expression = extractKeyExpressionList(future_metadata.sampling_key.definition_ast)->formatWithSecretsOneLine();
 
         if (ast_to_str(future_metadata.partition_key.definition_ast) != ast_to_str(current_metadata->partition_key.definition_ast))
-            future_metadata_in_zk.partition_key = serializeAST(*extractKeyExpressionList(future_metadata.partition_key.definition_ast));
+            future_metadata_in_zk.partition_key = extractKeyExpressionList(future_metadata.partition_key.definition_ast)->formatWithSecretsOneLine();
 
         if (ast_to_str(future_metadata.table_ttl.definition_ast) != ast_to_str(current_metadata->table_ttl.definition_ast))
         {
             if (future_metadata.table_ttl.definition_ast)
-                future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.table_ttl.definition_ast);
+                future_metadata_in_zk.ttl_table = future_metadata.table_ttl.definition_ast->formatWithSecretsOneLine();
             else /// TTL was removed
                 future_metadata_in_zk.ttl_table = "";
         }
@@ -10885,7 +10888,8 @@ void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_quer
         auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
 
         auto current_metadata = getInMemoryMetadataPtr();
-        auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, current_metadata).checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getContext());
+        const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
+        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getStorageID().getNameForLogs(), getContext());
         auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);
         applyMetadataChangesToCreateQuery(create_query, adjusted_metadata, getContext());
     }

@@ -1,12 +1,14 @@
 ---
-slug: /sql-reference/statements/alter/apply-deleted-mask
+description: 'Documentation for Apply mask of deleted rows'
+sidebar_label: 'APPLY DELETED MASK'
 sidebar_position: 46
-sidebar_label: APPLY DELETED MASK
+slug: /sql-reference/statements/alter/apply-deleted-mask
+title: 'Apply mask of deleted rows'
 ---
 
 # Apply mask of deleted rows
 
-``` sql
+```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION partition_id]
 ```
 

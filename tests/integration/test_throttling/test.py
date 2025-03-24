@@ -45,6 +45,8 @@ node = cluster.add_instance(
     ],
     with_minio=True,
     minio_certs_dir="minio_certs",
+    # Disable `with_remote_database_disk` as the instances does not use the default minIO
+    with_remote_database_disk=False,
 )
 
 

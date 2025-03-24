@@ -4,6 +4,7 @@ from multiprocessing.dummy import Pool
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import get_postgres_conn
 
 cluster = ClickHouseCluster(__file__)
@@ -48,7 +49,7 @@ def setup_teardown():
 def test_postgres_select_insert(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     table_name = "test_many"
-    table = f"""postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', '{table_name}', 'postgres', 'mysecretpassword')"""
+    table = f"""postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', '{table_name}', 'postgres', '{pg_pass}')"""
     cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
     cursor.execute(f"CREATE TABLE {table_name} (a integer, b text, c integer)")
 
@@ -118,13 +119,13 @@ def test_postgres_conversions(started_cluster):
         h timestamp, i date, j decimal(5, 3), k numeric, l boolean, "M" integer)"""
     )
     node1.query(
-        """
-        INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', 'mysecretpassword') VALUES
+        f"""
+        INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', '{pg_pass}') VALUES
         (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12.012345', '2000-05-12', 22.222, 22.222, 1, 42)"""
     )
     result = node1.query(
-        """
-        SELECT a, b, c, d, e, f, g, h, i, j, toDecimal128(k, 3), l, "M" FROM postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', 'mysecretpassword')"""
+        f"""
+        SELECT a, b, c, d, e, f, g, h, i, j, toDecimal128(k, 3), l, "M" FROM postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', '{pg_pass}')"""
     )
     assert (
         result
@@ -139,7 +140,7 @@ def test_postgres_conversions(started_cluster):
     )
     expected = "1\n1\n1\n1\n1\n1\n0\n0\n0\n0\n0\n"
     result = node1.query(
-        """SELECT l FROM postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', 'mysecretpassword')"""
+        f"""SELECT l FROM postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', '{pg_pass}')"""
     )
     assert result == expected
 
@@ -154,17 +155,19 @@ def test_postgres_conversions(started_cluster):
                 f integer[][][] NOT NULL,                   -- Int32
                 g Text[][][][][] NOT NULL,                  -- String
                 h Integer[][][],                            -- Nullable(Int32)
-                i Char(2)[][][][],                          -- Nullable(String)
-                j Char(2)[],                                -- Nullable(String)
+                i Char(2)[][][][],                          -- Nullable(FixedString(2))
+                j Char(2)[],                                -- Nullable(FixedString(2))
                 k UUID[],                                   -- Nullable(UUID)
                 l UUID[][],                                 -- Nullable(UUID)
-                "M" integer[] NOT NULL                      -- Int32 (mixed-case identifier)
+                "M" integer[] NOT NULL,                     -- Int32 (mixed-case identifier)
+                n BPCHAR(2),                                -- Nullable(FixedString(2))
+                o CHARACTER(2)                              -- Nullable(FixedString(2))
            )"""
     )
 
     result = node1.query(
-        """
-        DESCRIBE TABLE postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', 'mysecretpassword')"""
+        f"""
+        DESCRIBE TABLE postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', '{pg_pass}')"""
     )
     expected = (
         "a\tArray(Date)\t\t\t\t\t\n"
@@ -175,17 +178,19 @@ def test_postgres_conversions(started_cluster):
         "f\tArray(Array(Array(Int32)))\t\t\t\t\t\n"
         "g\tArray(Array(Array(Array(Array(String)))))\t\t\t\t\t\n"
         "h\tArray(Array(Array(Nullable(Int32))))\t\t\t\t\t\n"
-        "i\tArray(Array(Array(Array(Nullable(String)))))\t\t\t\t\t\n"
-        "j\tArray(Nullable(String))\t\t\t\t\t\n"
+        "i\tArray(Array(Array(Array(Nullable(FixedString(2))))))\t\t\t\t\t\n"
+        "j\tArray(Nullable(FixedString(2)))\t\t\t\t\t\n"
         "k\tArray(Nullable(UUID))\t\t\t\t\t\n"
         "l\tArray(Array(Nullable(UUID)))\t\t\t\t\t\n"
-        "M\tArray(Int32)"
+        "M\tArray(Int32)\t\t\t\t\t\n"
+        "n\tNullable(FixedString(2))\t\t\t\t\t\n"
+        "o\tNullable(FixedString(2))"
         ""
     )
     assert result.rstrip() == expected
 
     node1.query(
-        "INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', 'mysecretpassword') "
+        f"INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', '{pg_pass}') "
         "VALUES ("
         "['2000-05-12', '2000-05-12'], "
         "['2000-05-12 12:12:12.012345', '2000-05-12 12:12:12.012345'], "
@@ -199,13 +204,15 @@ def test_postgres_conversions(started_cluster):
         "[], "
         "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', '42209d53-d641-4d73-a8b6-c038db1e75d6', NULL], "
         "[[NULL, '42209d53-d641-4d73-a8b6-c038db1e75d6'], ['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', NULL], [NULL, NULL]],"
-        "[42, 42, 42]"
+        "[42, 42, 42], "
+        "'tu', "
+        "'yo'"
         ")"
     )
 
     result = node1.query(
-        """
-        SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', 'mysecretpassword')"""
+        f"""
+        SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', '{pg_pass}')"""
     )
     expected = (
         "['2000-05-12','2000-05-12']\t"
@@ -220,7 +227,9 @@ def test_postgres_conversions(started_cluster):
         "[]\t"
         "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a','42209d53-d641-4d73-a8b6-c038db1e75d6',NULL]\t"
         "[[NULL,'42209d53-d641-4d73-a8b6-c038db1e75d6'],['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a',NULL],[NULL,NULL]]\t"
-        "[42,42,42]\n"
+        "[42,42,42]\t"
+        "tu\t"
+        "yo\n"
     )
     assert result == expected
 
@@ -240,10 +249,10 @@ def test_postgres_array_ndim_error_messges(started_cluster):
         'CREATE TABLE array_ndim_table (x INTEGER, "Mixed-case with spaces" INTEGER[]);'
     )
     cursor.execute("CREATE VIEW  array_ndim_view AS SELECT * FROM array_ndim_table;")
-    describe_table = """
+    describe_table = f"""
     DESCRIBE TABLE postgresql(
         'postgres1:5432', 'postgres', 'array_ndim_view',
-        'postgres', 'mysecretpassword'
+        'postgres', '{pg_pass}'
     )
     """
 
@@ -303,9 +312,9 @@ def test_non_default_schema(started_cluster):
     )
 
     node1.query(
-        """
+        f"""
         CREATE TABLE test.test_pg_table_schema (a UInt32)
-        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_schema');
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_table', 'postgres', '{pg_pass}', 'test_schema');
     """
     )
 
@@ -313,7 +322,7 @@ def test_non_default_schema(started_cluster):
     expected = node1.query("SELECT number FROM numbers(100)")
     assert result == expected
 
-    parameters = "'postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_schema'"
+    parameters = f"'postgres1:5432', 'postgres', 'test_table', 'postgres', '{pg_pass}', 'test_schema'"
     table_function = f"postgresql({parameters})"
     table_engine = f"PostgreSQL({parameters})"
     result = node1.query(f"SELECT * FROM {table_function}")
@@ -326,9 +335,9 @@ def test_non_default_schema(started_cluster):
     )
 
     node1.query(
-        """
+        f"""
         CREATE TABLE test.test_pg_table_schema_with_dots (a UInt32)
-        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test.nice.table', 'postgres', 'mysecretpassword', 'test.nice.schema');
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test.nice.table', 'postgres', '{pg_pass}', 'test.nice.schema');
     """
     )
     result = node1.query("SELECT * FROM test.test_pg_table_schema_with_dots")
@@ -463,7 +472,7 @@ def test_datetime_with_timezone(started_cluster):
     result = cursor.fetchall()[0]
     logging.debug(f"{result[0]}, {str(result[1])[:-6]}")
     node1.query(
-        "create table test.test_timezone ( ts DateTime, ts_z DateTime('America/New_York')) ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_timezone', 'postgres', 'mysecretpassword');"
+        f"create table test.test_timezone ( ts DateTime, ts_z DateTime('America/New_York')) ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_timezone', 'postgres', '{pg_pass}');"
     )
     assert node1.query("select ts from test.test_timezone").strip() == str(result[0])
     # [:-6] because 2014-04-04 16:00:00+00:00 -> 2014-04-04 16:00:00
@@ -496,7 +505,7 @@ def test_postgres_ndim(started_cluster):
     assert int(result[0]) == 0
 
     result = node1.query(
-        """SELECT toTypeName(a) FROM postgresql('postgres1:5432', 'postgres', 'arr2', 'postgres', 'mysecretpassword')"""
+        f"""SELECT toTypeName(a) FROM postgresql('postgres1:5432', 'postgres', 'arr2', 'postgres', '{pg_pass}')"""
     )
     assert result.strip() == "Array(Array(Nullable(Int32)))"
     cursor.execute("DROP TABLE arr1, arr2")
@@ -523,9 +532,9 @@ def test_postgres_on_conflict(started_cluster):
     cursor.execute(f"CREATE TABLE {table} (a integer PRIMARY KEY, b text, c integer)")
 
     node1.query(
-        """
+        f"""
         CREATE TABLE test.test_conflict (a UInt32, b String, c Int32)
-        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_conflict', 'postgres', 'mysecretpassword', '', 'ON CONFLICT DO NOTHING');
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_conflict', 'postgres', '{pg_pass}', '', 'ON CONFLICT DO NOTHING');
     """
     )
     node1.query(
@@ -538,7 +547,7 @@ def test_postgres_on_conflict(started_cluster):
     check1 = f"SELECT count() FROM test.{table}"
     assert (node1.query(check1)).rstrip() == "100"
 
-    table_func = f"""postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', '{table}', 'postgres', 'mysecretpassword', '', 'ON CONFLICT DO NOTHING')"""
+    table_func = f"""postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', '{table}', 'postgres', '{pg_pass}', '', 'ON CONFLICT DO NOTHING')"""
     node1.query(
         f"""INSERT INTO TABLE FUNCTION {table_func} SELECT number, concat('name_', toString(number)), 3 from numbers(100)"""
     )
@@ -651,15 +660,15 @@ def test_where_false(started_cluster):
     cursor.execute("INSERT INTO test SELECT 1")
 
     result = node1.query(
-        "SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', 'mysecretpassword') WHERE 1=0"
+        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', '{pg_pass}') WHERE 1=0"
     )
     assert int(result) == 0
     result = node1.query(
-        "SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', 'mysecretpassword') WHERE 0"
+        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', '{pg_pass}') WHERE 0"
     )
     assert int(result) == 0
     result = node1.query(
-        "SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', 'mysecretpassword') WHERE 1=1"
+        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', '{pg_pass}') WHERE 1=1"
     )
     assert int(result) == 1
     cursor.execute("DROP TABLE test")
@@ -745,7 +754,7 @@ def test_literal_escaping(started_cluster):
     cursor.execute(f"DROP TABLE IF EXISTS escaping")
     cursor.execute(f"CREATE TABLE escaping(text varchar(255))")
     node1.query(
-        "CREATE TABLE default.escaping (text String) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'escaping', 'postgres', 'mysecretpassword')"
+        f"CREATE TABLE default.escaping (text String) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'escaping', 'postgres', '{pg_pass}')"
     )
     node1.query("SELECT * FROM escaping WHERE text = ''''")  # ' -> ''
     node1.query("SELECT * FROM escaping WHERE text = '\\''")  # ' -> ''
@@ -769,9 +778,9 @@ def test_filter_pushdown(started_cluster):
 
     node1.query("DROP TABLE IF EXISTS test_filter_pushdown_pg_table")
     node1.query(
-        """
+        f"""
         CREATE TABLE test_filter_pushdown_pg_table (id UInt32, value UInt32)
-        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_filter_pushdown');
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_table', 'postgres', '{pg_pass}', 'test_filter_pushdown');
     """
     )
 
@@ -826,7 +835,7 @@ def test_fixed_string_type(started_cluster):
 
     node1.query("DROP TABLE IF EXISTS test_fixed_string")
     node1.query(
-        "CREATE TABLE test_fixed_string(contact_id Int64, email Nullable(FixedString(3))) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string', 'postgres', 'mysecretpassword')"
+        f"CREATE TABLE test_fixed_string(contact_id Int64, email Nullable(FixedString(3))) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string', 'postgres', '{pg_pass}')"
     )
 
     result = node1.query("SELECT * FROM test_fixed_string format TSV")
@@ -834,6 +843,66 @@ def test_fixed_string_type(started_cluster):
     assert result.strip() == "1\tabc"
 
     node1.query("DROP TABLE test_fixed_string")
+
+
+def test_fixed_string_type_conversions(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+
+    cursor.execute("DROP TABLE IF EXISTS test_fixed_string_type_conversions")
+    cursor.execute(
+        "CREATE TABLE test_fixed_string_type_conversions (str CHAR(10))"
+    )
+    cursor.execute("INSERT INTO test_fixed_string_type_conversions VALUES ('123')")
+
+    # Reading PostgreSQL fixed-sized strings
+    result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') FORMAT TSV")
+    assert result == "123       \n"
+
+    node1.query("DROP TABLE IF EXISTS test_fixed_string_type_conversions")
+    node1.query(
+        "CREATE TABLE test_fixed_string_type_conversions(str FixedString(10)) Engine = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') FORMAT TSV"
+    )
+    result = node1.query("SELECT * FROM test_fixed_string_type_conversions")
+    assert result == "123       \n"
+
+    # Inserting into PostgreSQL fixed-sized strings
+    node1.query("INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') VALUES ('456')")
+    result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') FORMAT TSV")
+    assert result == "123       \n456       \n"
+
+    node1.query("INSERT INTO test_fixed_string_type_conversions VALUES ('7\09')")
+    result = node1.query("SELECT * FROM test_fixed_string_type_conversions FORMAT TSV")
+    assert result == "123       \n456       \n7 9       \n"
+
+    node1.query("DROP TABLE test_fixed_string_type_conversions")
+
+    cursor.execute("DROP TABLE IF EXISTS test_fixed_string_type_conversions_array")
+    cursor.execute(
+        "CREATE TABLE test_fixed_string_type_conversions_array (str CHAR(10)[])"
+    )
+    cursor.execute("INSERT INTO test_fixed_string_type_conversions_array VALUES (ARRAY['123', '123'])")
+
+    # Reading PostgreSQL fixed-sized strings
+    result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') FORMAT TSV")
+    assert result.strip() == "['123       ','123       ']"
+
+    node1.query("DROP TABLE IF EXISTS test_fixed_string_type_conversions_array")
+    node1.query(
+        "CREATE TABLE test_fixed_string_type_conversions_array(str Array(FixedString(10))) Engine = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') FORMAT TSV"
+    )
+    result = node1.query("SELECT * FROM test_fixed_string_type_conversions_array")
+    assert result.strip() == "['123       ','123       ']"
+
+    # Inserting into PostgreSQL fixed-sized strings
+    node1.query("INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') VALUES (['456', '456'])")
+    result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') FORMAT TSV")
+    assert result.strip() == "['123       ','123       ']\n['456       ','456       ']"
+
+    node1.query("INSERT INTO test_fixed_string_type_conversions_array VALUES (['7 9', '7 9'])")
+    result = node1.query("SELECT * FROM test_fixed_string_type_conversions_array FORMAT TSV")
+    assert result.strip() == "['123       ','123       ']\n['456       ','456       ']\n['7 9       ','7 9       ']"
+
+    node1.query("DROP TABLE test_fixed_string_type_conversions_array")
 
 
 def test_parameters_validation_for_postgresql_function(started_cluster):
@@ -848,12 +917,12 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
     table = "test_parameters_validation_for_postgresql_function_exception"
     _create_and_fill_table(table)
     error = node1.query_and_get_error(
-        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', \"whatever')) TO STDOUT; END; DROP TABLE IF EXISTS {table};--\", 'postgres', 'mysecretpassword')"
+        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', \"whatever')) TO STDOUT; END; DROP TABLE IF EXISTS {table};--\", 'postgres', '{pg_pass}')"
     )
     assert "PostgreSQL table whatever" in error and "does not exist" in error
 
     result = node1.query(
-        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', '{table}', 'postgres', 'mysecretpassword')"
+        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', '{table}', 'postgres', '{pg_pass}')"
     )
     assert int(result) == 1
     cursor.execute(f"DROP TABLE {table}")
@@ -862,7 +931,7 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
     table = "test_parameters_validation_for_postgresql_function_success"
     _create_and_fill_table(f'"{table}\'"')
     result = node1.query(
-        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', '{table}''', 'postgres', 'mysecretpassword')"
+        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', '{table}''', 'postgres', '{pg_pass}')"
     )
     assert int(result) == 1
     cursor.execute(f'DROP TABLE "{table}\'"')

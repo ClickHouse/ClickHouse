@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/argmax
+description: 'Calculates the `arg` value for a maximum `val` value.'
 sidebar_position: 109
-title: "argMax"
-description: "Calculates the `arg` value for a maximum `val` value."
+slug: /sql-reference/aggregate-functions/reference/argmax
+title: 'argMax'
 ---
 
 # argMax
@@ -12,7 +12,7 @@ Both parts the `arg` and the `max` behave as [aggregate functions](/sql-referenc
 
 **Syntax**
 
-``` sql
+```sql
 argMax(arg, val)
 ```
 
@@ -31,7 +31,7 @@ Type: matches `arg` type.
 
 Input table:
 
-``` text
+```text
 ┌─user─────┬─salary─┐
 │ director │   5000 │
 │ manager  │   3000 │
@@ -41,13 +41,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT argMax(user, salary) FROM salary;
 ```
 
 Result:
 
-``` text
+```text
 ┌─argMax(user, salary)─┐
 │ director             │
 └──────────────────────┘

@@ -5,12 +5,23 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Session.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/Base64.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/ParserPreparedStatement.h>
+#include <Poco/RandomStream.h>
+#include <Poco/SHA1Engine.h>
+#include <Access/Credentials.h>
 #include <unordered_map>
 #include <utility>
+
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
+#include <Access/AccessControl.h>
+#include <Access/User.h>
+#include <fmt/core.h>
 
 namespace DB
 {
@@ -130,6 +141,7 @@ enum class ColumnType : Int32
     INT4 = 23,
     FLOAT4 = 700,
     FLOAT8 = 701,
+    BPCHAR = 1042,
     VARCHAR = 1043,
     DATE = 1082,
     NUMERIC = 1700,
@@ -458,6 +470,106 @@ public:
     MessageType getMessageType() const override
     {
         return MessageType::AUTHENTICATION_CLEARTEXT_PASSWORD;
+    }
+};
+
+class AuthenticationSASL : public Messaging::BackendMessage
+{
+public:
+    static constexpr std::string_view supported_method = "SCRAM-SHA-256";
+
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('R');
+        writeBinaryBigEndian(size(), out);
+        writeBinaryBigEndian(static_cast<Int32>(10), out);
+        writeNullTerminatedString(String(supported_method), out);
+        out.write(0);
+    }
+
+    Int32 size() const override
+    {
+        return 4 + 4 + supported_method.size() + 1 + 1;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::AUTHENTICATION_SASL;
+    }
+};
+
+class SASLInitialResponse : public Messaging::FrontMessage
+{
+public:
+    String auth_method;
+    String sasl_mechanism;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        UInt8 message_type;
+        readBinaryBigEndian(message_type, in);
+        Int32 size;
+        readBinaryBigEndian(size, in);
+        readNullTerminated(auth_method, in);
+        Int32 size_sasl_mechanism;
+        readBinaryBigEndian(size_sasl_mechanism, in);
+        sasl_mechanism.resize(size_sasl_mechanism);
+        in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::SASL_INITIAL_RESPONSE;
+    }
+};
+
+class AuthenticationSASLContinue : public Messaging::BackendMessage
+{
+public:
+    String data;
+
+    explicit AuthenticationSASLContinue(const String & data_)
+        : data(data_)
+    {
+    }
+
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('R');
+        writeBinaryBigEndian(size(), out);
+        writeBinaryBigEndian(static_cast<Int32>(11), out);
+        out.write(data.data(), data.size());
+    }
+
+    Int32 size() const override
+    {
+        return 4 + 4 + static_cast<Int32>(data.size());
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::AUTHENTICATION_SASL_CONTINUE;
+    }
+};
+
+class SASLResponse : public Messaging::FrontMessage
+{
+public:
+    String sasl_mechanism;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        UInt8 message_type;
+        readBinaryBigEndian(message_type, in);
+        Int32 size;
+        readBinaryBigEndian(size, in);
+        sasl_mechanism.resize(size - 4);
+        in.readStrict(sasl_mechanism.data(), size - 4);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::SASL_RESPONSE;
     }
 };
 
@@ -1079,6 +1191,156 @@ public:
     AuthenticationType getType() const override
     {
         return AuthenticationType::PLAINTEXT_PASSWORD;
+    }
+};
+
+class ScrambleSHA256Auth : public AuthenticationMethod
+{
+    static size_t findPatternPosition(const String & key, const String & pattern)
+    {
+        size_t pos = key.size();
+        for (size_t i = 0; i + 1 < key.size(); ++i)
+        {
+            if (key.substr(i, 2) == pattern)
+            {
+                pos = i + 2;
+                break;
+            }
+        }
+        if (pos == key.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Client response should contain nonce");
+
+        return pos;
+    }
+
+    static String parseResponse(const String & key, const String & pattern)
+    {
+        String result;
+        auto pos = findPatternPosition(key, pattern);
+
+        while (pos < key.size() && key[pos] != ',')
+        {
+            result.push_back(key[pos]);
+            ++pos;
+        }
+        return result;
+    }
+
+    static String parseClientNonce(const String & key)
+    {
+        return parseResponse(key, "r=");
+    }
+
+    static String parseProof(const String & key)
+    {
+        return parseResponse(key, "p=");
+    }
+
+    static String parseUsername(const String & key)
+    {
+        return parseResponse(key, "n=");
+    }
+
+    static size_t findProofPosition(const String & key)
+    {
+        return findPatternPosition(key, "p=");
+    }
+
+public:
+    static String generateNonce()
+    {
+        static constexpr size_t nonce_length = 16;
+
+        String scramble;
+        scramble.resize(nonce_length + 1, 0);
+        Poco::RandomInputStream generator;
+
+        for (size_t i = 0; i < nonce_length; ++i)
+        {
+            generator >> scramble[i];
+            scramble[i] %= 13;
+            scramble[i] += 'n';
+        }
+
+        return base64Encode(scramble);
+    }
+
+    /**
+     * This function implements the client-side logic for the SCRAM-SHA-256
+     * authentication protocol. It exchanges messages with the server to
+     * establish a secure connection.
+     *
+     * The function constructs the authentication message (auth_message) by
+     * concatenating the client-first-message-bare, the server-first-message,
+     * and the client-final-message-without-proof.  The messages exchanged with the server are:
+     * - Messaging::AuthenticationSASL: Initial SASL authentication request.
+     * - Messaging::AuthenticationSASLContinue:  SASL continue message.
+     * - Messaging::SASLResponse: Generic SASL response from the server.
+     *
+     * **SCRAM-SHA-256 Message Formats:**
+     *
+     *  - **Client First Message:** y,,n=<username>,r=<client_nonce>
+     *    - n: Attribute for the username.
+     *    - r: Attribute for the client-generated nonce.
+     *
+     *  - **Server First Message:** r=<client_nonce><server_nonce>,s=<salt>,i=<iterations>
+     *    - r: Attribute for the combined client and server nonces.
+     *    - s: Attribute for the salt.
+     *    - i: Attribute for the number of iterations.
+     *
+     *  - **Client Final Message:** c=<channel_binding>,r=<combined_nonce>,p=<client_proof>
+     *    - c: Attribute for channel binding data (often empty).
+     *    - r: Attribute for the combined client and server nonces.
+     *    - p: Attribute for the client's computed proof.
+     *
+     * The function retrieves the salt from the user's authentication methods.
+     * It then computes the client proof and uses it to authenticate the session.
+     */
+    void authenticate(
+        const String & user_name,
+        Session & session,
+        Messaging::MessageTransport & mt,
+        const Poco::Net::SocketAddress & address) override
+    {
+        static constexpr int num_iterations = 4096;
+
+        String auth_message;
+
+        mt.send(Messaging::AuthenticationSASL(), true);
+        auto rsp = mt.receive<Messaging::SASLInitialResponse>();
+
+        auto server_nonce = generateNonce();
+        auto client_nonce = parseClientNonce(rsp->sasl_mechanism);
+        auth_message += fmt::format("n={},r={}", parseUsername(rsp->sasl_mechanism), client_nonce);
+        auto nonce = client_nonce + server_nonce;
+
+        String salt;
+        const auto& access_control = session.globalContext()->getAccessControl();
+        if (auto id = access_control.find<User>(user_name))
+        {
+            if (auto user = access_control.tryRead<User>(*id))
+            {
+                for (const auto & auth_method : user->authentication_methods)
+                {
+                    salt = auth_method.getSalt();
+                }
+            }
+        }
+        auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, salt, num_iterations);
+        mt.send(Messaging::AuthenticationSASLContinue(sasl_continue_message), true);
+        auth_message += "," + sasl_continue_message;
+        auto rsp_continue = mt.receive<Messaging::SASLResponse>();
+        auto proof = parseProof(rsp_continue->sasl_mechanism);
+        auto proof_position = findProofPosition(rsp_continue->sasl_mechanism);
+        auth_message += "," + rsp_continue->sasl_mechanism.substr(0, proof_position - 3);
+
+        auto credentials = ScramSHA256Credentials(user_name, proof, auth_message, num_iterations);
+        session.authenticate(credentials, address);
+    }
+
+    AuthenticationType getType() const override
+    {
+        return AuthenticationType::SCRAM_SHA256_PASSWORD;
     }
 };
 

@@ -1,10 +1,14 @@
 ---
-description: "System table containing metrics which can be calculated instantly, or have a current value."
+description: 'System table containing metrics which can be calculated instantly, or
+  have a current value.'
+keywords: ['system table', 'metrics']
 slug: /operations/system-tables/metrics
-title: "system.metrics"
-keywords: ["system table", "metrics"]
+title: 'system.metrics'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.metrics
 
 <SystemTableCloud/>
 
@@ -21,11 +25,11 @@ You can find all supported metrics in source file [src/Common/CurrentMetrics.cpp
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.metrics LIMIT 10
 ```
 
-``` text
+```text
 ┌─metric───────────────────────────────┬─value─┬─description────────────────────────────────────────────────────────────┐
 │ Query                                │     1 │ Number of executing queries                                            │
 │ Merge                                │     0 │ Number of executing background merges                                  │

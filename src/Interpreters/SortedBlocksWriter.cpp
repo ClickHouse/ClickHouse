@@ -68,7 +68,7 @@ TemporaryBlockStreamHolder flushToFile(const TemporaryDataOnDiskScopePtr & tmp_d
 }
 
 SortedBlocksWriter::SortedFiles flushToManyFiles(const TemporaryDataOnDiskScopePtr & tmp_data, QueryPipelineBuilder builder,
-                                                 std::function<void(const Block &)> callback = [](const Block &){})
+                                                 std::function<void(const Block &)> callback)
 {
     SortedBlocksWriter::SortedFiles files;
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
@@ -154,7 +154,7 @@ void SortedBlocksWriter::insert(Block && block)
     }
 }
 
-SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & blocks) const
+TemporaryBlockStreamHolder SortedBlocksWriter::flush(const BlocksList & blocks) const
 {
     Pipes pipes;
     pipes.reserve(blocks.size());
@@ -182,6 +182,42 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
     }
 
     return flushToFile(tmp_data, sample_block, std::move(pipeline));
+}
+
+class TemporaryFileLazySource : public ISource
+{
+public:
+    explicit TemporaryFileLazySource(TemporaryBlockStreamReaderHolder reader_)
+        : ISource(reader_->getHeader(), true)
+        , reader(std::move(reader_))
+        , done(false)
+    {}
+
+    String getName() const override { return "TemporaryFileLazySource"; }
+
+protected:
+    Chunk generate() override
+    {
+        if (done)
+            return {};
+
+        auto block = reader->read();
+        if (!block)
+        {
+            done = true;
+            reader.reset();
+        }
+        return Chunk(block.getColumns(), block.rows());
+    }
+
+private:
+    TemporaryBlockStreamReaderHolder reader;
+    bool done;
+};
+
+Pipe streamFromFile(const TemporaryBlockStreamHolder & file)
+{
+    return Pipe(std::make_shared<TemporaryFileLazySource>(file.getReadStream()));
 }
 
 SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
@@ -274,43 +310,6 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
 
     return flushToManyFiles(tmp_data, std::move(pipeline), callback);
 }
-
-class TemporaryFileLazySource : public ISource
-{
-public:
-    explicit TemporaryFileLazySource(TemporaryBlockStreamReaderHolder reader_)
-        : ISource(reader_->getHeader(), true)
-        , reader(std::move(reader_))
-        , done(false)
-    {}
-
-    String getName() const override { return "TemporaryFileLazySource"; }
-
-protected:
-    Chunk generate() override
-    {
-        if (done)
-            return {};
-
-        auto block = reader->read();
-        if (!block)
-        {
-            done = true;
-            reader.reset();
-        }
-        return Chunk(block.getColumns(), block.rows());
-    }
-
-private:
-    TemporaryBlockStreamReaderHolder reader;
-    bool done;
-};
-
-Pipe SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
-{
-    return Pipe(std::make_shared<TemporaryFileLazySource>(file.getReadStream()));
-}
-
 
 Block SortedBlocksBuffer::exchange(Block && block)
 {

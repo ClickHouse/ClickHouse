@@ -2,6 +2,7 @@
 #include <Interpreters/TextLog.h>
 
 #include <Common/ClickHouseRevision.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>

@@ -25,8 +25,7 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 struct SortedBlocksWriter
 {
-    using TmpFilePtr = TemporaryBlockStreamHolder;
-    using SortedFiles = std::vector<TmpFilePtr>;
+    using SortedFiles = std::vector<TemporaryBlockStreamHolder>;
 
     struct Blocks
     {
@@ -68,7 +67,7 @@ struct SortedBlocksWriter
     std::condition_variable flush_condvar;
     const SizeLimits & size_limits;
     TemporaryDataOnDiskScopePtr tmp_data;
-    std::vector<std::unique_ptr<TemporaryBlockStreamHolder>> stream_holders;
+
     Block sample_block;
     const SortDescription & sort_description;
     Blocks inserted_blocks;
@@ -95,12 +94,10 @@ struct SortedBlocksWriter
         sorted_files.emplace_back(flush(blocks.blocks));
     }
 
-    Pipe streamFromFile(const TmpFilePtr & file) const;
-
     void insert(Block && block);
-    TmpFilePtr flush(const BlocksList & blocks) const;
+    TemporaryBlockStreamHolder flush(const BlocksList & blocks) const;
     PremergedFiles premerge();
-    SortedFiles finishMerge(std::function<void(const Block &)> callback = [](const Block &){});
+    SortedFiles finishMerge(std::function<void(const Block &)> callback);
 };
 
 

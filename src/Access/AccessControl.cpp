@@ -21,7 +21,6 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
-#include <base/defines.h>
 #include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/re2.h>
@@ -580,11 +579,11 @@ AccessChangesNotifier & AccessControl::getChangesNotifier()
 }
 
 
-AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const String & forwarded_address) const
+AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ClientInfo & client_info) const
 {
     // NOTE: In the case where the user has never been logged in using LDAP,
     // Then user_id is not generated, and the authentication quota will always be nullptr.
-    auto authentication_quota = getAuthenticationQuota(credentials.getUserName(), address, forwarded_address);
+    auto authentication_quota = getAuthenticationQuota(credentials.getUserName(), address, client_info.getLastForwardedForHost());
     if (authentication_quota)
     {
         /// Reserve a single try from the quota to check whether we have another authentication try.
@@ -601,8 +600,8 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
 
     try
     {
-        const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, allow_no_password,
-                                                                     allow_plaintext_password);
+        const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, client_info,
+                                                                     allow_no_password, allow_plaintext_password);
         if (authentication_quota)
             authentication_quota->reset(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
 

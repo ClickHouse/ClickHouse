@@ -109,7 +109,7 @@ public:
         size_t /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
-    std::optional<UInt64> totalBytes(const Settings &) const override;
+    std::optional<UInt64> totalBytes(ContextPtr) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 

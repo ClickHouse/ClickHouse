@@ -61,9 +61,11 @@ struct QueryPlanOptimizationSettings
     bool optimize_sorting_by_input_stream_properties;
     bool aggregation_in_order;
     bool optimize_projection;
+    bool use_query_condition_cache = false;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
+    bool query_plan_join_shard_by_pk_ranges;
 
     /// ------------------------------------------------------
 
@@ -91,8 +93,6 @@ struct QueryPlanOptimizationSettings
 
     bool keep_logical_steps;
 
-    /// If query condition cache is enabled, the query condition cache needs to be updated in the WHERE stage.
-    bool use_query_condition_cache = false;
     bool is_explain;
 };
 

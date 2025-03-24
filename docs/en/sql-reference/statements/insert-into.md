@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/insert-into
+description: 'Documentation for INSERT INTO Statement'
+sidebar_label: 'INSERT INTO'
 sidebar_position: 33
-sidebar_label: INSERT INTO
+slug: /sql-reference/statements/insert-into
+title: 'INSERT INTO Statement'
 ---
 
 # INSERT INTO Statement
@@ -10,7 +12,7 @@ Inserts data into a table.
 
 **Syntax**
 
-``` sql
+```sql
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
@@ -18,7 +20,7 @@ You can specify a list of columns to insert using  the `(c1, c2, c3)`. You can a
 
 For example, consider the table:
 
-``` sql
+```sql
 SHOW CREATE insert_select_testtable;
 ```
 
@@ -33,17 +35,17 @@ ENGINE = MergeTree()
 ORDER BY a
 ```
 
-``` sql
+```sql
 INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1) ;
 ```
 
 If you want to insert data into all of the columns, except column `b`, you can do so using the `EXCEPT` keyword. With reference to the syntax above, you will need to ensure that you insert as many values (`VALUES (v11, v13)`) as you specify columns (`(c1, c3)`) :
 
-``` sql
+```sql
 INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2);
 ```
 
-``` sql
+```sql
 SELECT * FROM insert_select_testtable;
 ```
 
@@ -58,7 +60,7 @@ SELECT * FROM insert_select_testtable;
 
 In this example, we see that the second inserted row has `a` and `c` columns filled by the passed values, and `b` filled with value by default. It is also possible to use the `DEFAULT` keyword to insert default values:
 
-``` sql
+```sql
 INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
 ```
 
@@ -69,13 +71,13 @@ If a list of columns does not include all existing columns, the rest of the colu
 
 Data can be passed to the INSERT in any [format](/sql-reference/formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
-``` sql
+```sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
 ```
 
 For example, the following query format is identical to the basic version of `INSERT ... VALUES`:
 
-``` sql
+```sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
 ```
 
@@ -83,7 +85,7 @@ ClickHouse removes all spaces and one line feed (if there is one) before the dat
 
 Example:
 
-``` sql
+```sql
 INSERT INTO t FORMAT TabSeparated
 11  Hello, world!
 22  Qwerty
@@ -107,7 +109,7 @@ If a table has [constraints](../../sql-reference/statements/create/table.md#cons
 
 **Syntax**
 
-``` sql
+```sql
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ...
 ```
 
@@ -124,7 +126,7 @@ To insert a default value instead of `NULL` into a column with a non-nullable da
 
 `INSERT` also supports CTE (common table expression). For example, the following two statements are equivalent:
 
-``` sql
+```sql
 INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
 WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 ```
@@ -134,7 +136,7 @@ WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 
 **Syntax**
 
-``` sql
+```sql
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] [SETTINGS ...] [FORMAT format_name]
 ```
 
@@ -193,7 +195,7 @@ Data can be inserted into tables referenced by [table functions](../../sql-refer
 
 **Syntax**
 
-``` sql
+```sql
 INSERT INTO [TABLE] FUNCTION table_func ...
 ```
 
@@ -201,7 +203,7 @@ INSERT INTO [TABLE] FUNCTION table_func ...
 
 The [remote](/sql-reference/table-functions/remote) table function is used in the following queries:
 
-``` sql
+```sql
 CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
 INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table)
     VALUES (100, 'inserted via remote()');
@@ -210,7 +212,7 @@ SELECT * FROM simple_table;
 
 Result:
 
-``` text
+```text
 ┌──id─┬─text──────────────────┐
 │ 100 │ inserted via remote() │
 └─────┴───────────────────────┘

@@ -17,7 +17,6 @@
 
 #include <memory>
 #include <string>
-#include <unordered_map>
 
 #include <Common/ErrorCodes.h>
 
@@ -87,6 +86,15 @@ public:
         if (!current_metadata || !current_metadata->supportsPartitionPruning())
             return;
         BaseStorageConfiguration::setPaths(current_metadata->makePartitionPruning(filter_dag));
+    }
+
+
+    std::optional<size_t> totalRows() override
+    {
+        if (!current_metadata)
+            return {};
+
+        return current_metadata->totalRows();
     }
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
@@ -272,6 +280,10 @@ using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfi
 
 #if USE_PARQUET && USE_AWS_S3
 using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
+#endif
+
+#if USE_PARQUET
+using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadata>;
 #endif
 
 #if USE_AWS_S3

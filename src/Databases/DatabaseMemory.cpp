@@ -8,9 +8,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/formatAST.h>
 #include <Common/quoteString.h>
-#include "Storages/IStorage.h"
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -47,7 +46,7 @@ void DatabaseMemory::createTable(
         query_to_store = query->clone();
         auto * create = query_to_store->as<ASTCreateQuery>();
         if (!create)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query->formatForErrorMessage());
         cleanupObjectDefinitionFromTemporaryFlags(*create);
     }
 
@@ -210,6 +209,11 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     }
 
     return res;
+}
+
+void DatabaseMemory::alterDatabaseComment(const AlterCommand & command)
+{
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 void registerDatabaseMemory(DatabaseFactory & factory)

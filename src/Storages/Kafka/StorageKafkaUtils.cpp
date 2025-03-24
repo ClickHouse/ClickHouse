@@ -333,6 +333,75 @@ String getDefaultClientId(const StorageID & table_id)
     return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id.database_name, table_id.table_name);
 }
 
+void consumerGracefulStop(
+    cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
+{
+    // Note: librdkafka is very sensitive to the proper termination sequence and have some race conditions there.
+    // Before destruction, our objectives are:
+    //   (1) Process all outstanding callbacks by polling the event queue.
+    //   (2) Ensure that only special events (e.g. callbacks, rebalances) are polled (we don't want to poll regular messages).
+    //
+    // Previously, we performed an unsubscribe to stop message consumption and clear 'read' messages.
+    // However, unsubscribe triggers a rebalance that schedules additional background tasks, such as locking
+    // and removal of internal toppar queues. Meanwhile, polling to release callbacks may concurrently
+    // cause those same queues to be destroyed.
+    // This can lead to a situation where the background thread doing rebalance and the current thread doing polling access
+    // the toppar queues simultaneously, potentially locking them in a different order, which risks a deadlock.
+    //
+    // To mitigate this, we now:
+    //   (1) Avoid calling unsubscribe (letting rebalance occur naturally via consumer group timeout).
+    //   (2) Set up different rebalance callbacks to repeat (3) if a rebalance will occur before consumer destruction.
+    //   (3) Pause the consumer to stop processing new messages.
+    //   (4) Disconnect the toppar queues to reduce the risk of lock inversion (less cascading locks).
+    //   (5) Poll the event queue to process any remaining callbacks.
+
+    consumer.set_revocation_callback(
+        [](const cppkafka::TopicPartitionList &)
+        {
+            // we don't care during the destruction
+        });
+
+    consumer.set_assignment_callback(
+        [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
+        {
+            if (!topic_partitions.empty())
+            {
+                consumer.pause_partitions(topic_partitions);
+            }
+
+            // it's not clear if get_partition_queue will work in that context
+            // as just after processing the callback cppkafka will call run assign
+            // and that can reset the queues
+
+        });
+
+    try
+    {
+        auto assignment = consumer.get_assignment();
+
+        if (!assignment.empty())
+        {
+            consumer.pause_partitions(assignment);
+
+            for (const auto& partition : assignment)
+            {
+                // that call disables the forwarding of the messages to the customer queue
+                consumer.get_partition_queue(partition);
+            }
+        }
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Error during pause (consumerGracefulStop): {}", e.what());
+    }
+
+    drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
+}
+
+// Needed to drain rest of the messages / queued callback calls from the consumer after unsubscribe, otherwise consumer
+// will hang on destruction. Partition queues doesn't have to be attached as events are not handled by those queues.
+// see https://github.com/edenhill/librdkafka/issues/2077
+//     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
 void drainConsumer(
     cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
 {
@@ -371,7 +440,7 @@ void drainConsumer(
     }
 }
 
-void eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler error_handler)
+size_t eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler error_handler)
 {
     size_t skipped = std::erase_if(
         messages,
@@ -389,6 +458,8 @@ void eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler
 
     if (skipped)
         LOG_ERROR(log, "There were {} messages with an error", skipped);
+
+    return skipped;
 }
 
 SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const String & schema_name)

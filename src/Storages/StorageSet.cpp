@@ -213,7 +213,7 @@ size_t StorageSet::getSize(ContextPtr) const
     return current_set->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageSet::totalRows(const Settings &) const
+std::optional<UInt64> StorageSet::totalRows(ContextPtr) const
 {
     SetPtr current_set;
     {
@@ -223,7 +223,7 @@ std::optional<UInt64> StorageSet::totalRows(const Settings &) const
     return current_set->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
+std::optional<UInt64> StorageSet::totalBytes(ContextPtr) const
 {
     SetPtr current_set;
     {

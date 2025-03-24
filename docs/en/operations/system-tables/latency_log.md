@@ -1,7 +1,8 @@
 ---
+description: 'Contains the history of all latency buckets, periodically flushed to
+  disk.'
 slug: /operations/system-tables/latency_log
-title: "system.latency_log"
-description: "Contains the history of all latency buckets, periodically flushed to disk."
+title: 'system.latency_log'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -20,11 +21,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.latency_log LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 hostname:                                              clickhouse.eu-central1.internal

@@ -454,6 +454,7 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
+    const ClientInfo & /*client_info*/,
     bool throw_if_user_not_exists,
     bool /* allow_no_password */,
     bool /* allow_plaintext_password */) const
