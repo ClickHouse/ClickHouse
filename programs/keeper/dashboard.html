@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
@@ -139,7 +139,7 @@
 
         .monospace {
             /* Prefer fonts that have full hinting info. This is important for non-retina displays.
-               Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant). */
+               Also I personally dislike "Ubuntu" font due to the similarity of "r" and "г" (it looks very ignorant). */
             font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace;
         }
 
@@ -429,33 +429,33 @@
 
 <body>
     <div id="sidebar">
-        <div name="sidebar header">
+        <div id="sidebar-header">
             <a href="https://clickhouse.com/clickhouse/keeper">
                 <h1>ClickHouse Keeper</h1>
             </a>
         </div>
         <!-- TODO: add any desired info here-->
-        <div name="host info">
+        <div id="hostInfo">
             <h3>Host:</h3>
             <p id="displayHost" class="monospace">localhost:9182</p>
         </div>
-        <div name="role info">
+        <div id="roleInfo">
             <h3>Role:</h3>
             <p id="displayRole" class="monospace">--</p>
         </div>
-        <div name="avg latency">
+        <div id="avgLatency">
             <h3>Latency avg:</h3>
             <p id="displayLatencyAvg" class="monospace">--</p>
         </div>
-        <div name="connections">
+        <div id="connections">
             <h3>Connections:</h3>
             <p id="displayConnections" class="monospace">--</p>
         </div>
-        <div name="node count">
+        <div id="nodeCount">
             <h3>Node count:</h3>
             <p id="displayNodeCount" class="monospace">--</p>
         </div>
-        <div id="sidebar-version-display">
+        <div id="sidebarVersion">
             <p id="displayCHVersion" class="monospace">v00.0.0.0</p>
         </div>
     </div>
@@ -477,12 +477,6 @@
 
             <div class="tab__content">
                 <div style="display: flex; width: 100%;">
-
-                    <!-- Tree view side -->
-                    <div style="flex-basis: 40%; box-sizing: border-box; margin-right: 0.5rem;">
-                        <div id="storage-viewer-container"></div>
-                    </div>
-
                     <div style="flex: 1; box-sizing: border-box; margin-left: 0.5rem">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                             <div style="flex: 1; overflow-wrap: break-word;">
@@ -580,6 +574,8 @@
                 </div>
 
             </div>
+
+            <div id="error" style="display: flex; width: 100%;"></div>
         </div>
 
         <p id="logo-container">
@@ -627,6 +623,12 @@
 </body>
 
 <script type="text/javascript">
+    function renderError(message) {
+        document.getElementById("error").innerText = message;
+        document.getElementById("error").style.display = "block";
+        document.getElementById("logo-container").style.display = "none";
+    }
+
     class StorageViewer {
         constructor(container) {
             this.container = container;
@@ -645,12 +647,12 @@
 
         async loadRoot() {
             const server_url = new URL(window.location);
-            server_url.pathname = `/api/v1/storage/list/`;
+            server_url.pathname = "/api/v1/storage/list/";
 
             const res = await fetch(server_url.toString());
             const data = res.ok ? await res.json() : undefined;
 
-            return data ? new StorageNode('/', undefined, data.stat, data.child_node_names) : undefined;
+            return data ? new StorageNode("/", undefined, data.stat, data.child_node_names) : undefined;
         }
 
         reload() {
@@ -666,7 +668,7 @@
 
             this.container.classList.add("storage_viewer_container");
 
-            var cnt = document.createElement("ul");
+            let cnt = document.createElement("ul");
 
             cnt.appendChild(this.root.render());
 
@@ -686,41 +688,41 @@
 
         renderSelectedNodeData() {
             // path
-            document.getElementById('displayStoragePath').innerText = this.selected_node?.path ?? '--';
+            document.getElementById("displayStoragePath").innerText = this.selected_node?.path ?? "--";
             // stat
-            document.getElementById('displayStorageAVersion').innerText = this.selected_node?.stat?.aversion ?? '--';
-            document.getElementById('displayStorageCZxid').innerText = this.selected_node?.stat?.czxid ?? '--';
-            document.getElementById('displayStorageCVersion').innerText = this.selected_node?.stat?.cversion ?? '--';
-            document.getElementById('displayStorageDataLength').innerText = this.selected_node?.stat?.dataLength ?? '--';
-            document.getElementById('displayStorageEphemeralOwner').innerText = this.selected_node?.stat?.ephemeralOwner ?? '--';
-            document.getElementById('displayStorageMZxid').innerText = this.selected_node?.stat?.mzxid ?? '--';
-            document.getElementById('displayStorageNumChildren').innerText = this.selected_node?.stat?.numChildren ?? '--';
-            document.getElementById('displayStoragePZxid').innerText = this.selected_node?.stat?.pzxid ?? '--';
-            document.getElementById('displayStorageVersion').innerText = this.selected_node?.stat?.version ?? '--';
-            if (this.selected_node?.stat?.mtime != undefined) {
-                document.getElementById('displayStorageMtime').innerText = new Date(this.selected_node?.stat?.mtime).toLocaleString('en-US', { hour12: false });
+            document.getElementById("displayStorageAVersion").innerText = this.selected_node?.stat?.aversion ?? "--";
+            document.getElementById("displayStorageCZxid").innerText = this.selected_node?.stat?.czxid ?? "--";
+            document.getElementById("displayStorageCVersion").innerText = this.selected_node?.stat?.cversion ?? "--";
+            document.getElementById("displayStorageDataLength").innerText = this.selected_node?.stat?.dataLength ?? "--";
+            document.getElementById("displayStorageEphemeralOwner").innerText = this.selected_node?.stat?.ephemeralOwner ?? "--";
+            document.getElementById("displayStorageMZxid").innerText = this.selected_node?.stat?.mzxid ?? "--";
+            document.getElementById("displayStorageNumChildren").innerText = this.selected_node?.stat?.numChildren ?? "--";
+            document.getElementById("displayStoragePZxid").innerText = this.selected_node?.stat?.pzxid ?? "--";
+            document.getElementById("displayStorageVersion").innerText = this.selected_node?.stat?.version ?? "--";
+            if (this.selected_node?.stat?.mtime !== undefined) {
+                document.getElementById("displayStorageMtime").innerText = new Date(this.selected_node?.stat?.mtime).toLocaleString("en-US", { hour12: false });
             } else {
-                document.getElementById('displayStorageMtime').innerText = '--';
+                document.getElementById("displayStorageMtime").innerText = "--";
             }
-            if (this.selected_node?.stat?.mtime != undefined) {
-                document.getElementById('displayStorageCtime').innerText = new Date(this.selected_node?.stat?.mtime).toLocaleString('en-US', { hour12: false });
+            if (this.selected_node?.stat?.mtime !== undefined) {
+                document.getElementById("displayStorageCtime").innerText = new Date(this.selected_node?.stat?.mtime).toLocaleString("en-US", { hour12: false });
             } else {
-                document.getElementById('displayStorageCtime').innerText = '--';
+                document.getElementById("displayStorageCtime").innerText = "--";
             }
             // data
             if (this.selected_node && this.selected_node.data) {
-                document.getElementById('displayStorageData').value = new TextDecoder('utf-8').decode(this.selected_node.data);
+                document.getElementById("displayStorageData").value = new TextDecoder("utf-8").decode(this.selected_node.data);
             } else {
-                document.getElementById('displayStorageData').value = '';
+                document.getElementById("displayStorageData").value = "";
             }
             // buttons
-            var delete_button = document.getElementById('deleteButton');
+            let delete_button = document.getElementById("deleteButton");
             if (!this.selected_node || !this.selected_node.isLeaf() || this.selected_node.isRoot()) {
                 delete_button.disabled = true;
-                delete_button.setAttribute('title', 'Only nodes with no children can be deleted.');
+                delete_button.setAttribute("title", "Only nodes with no children can be deleted.");
             } else {
                 delete_button.disabled = false;
-                delete_button.removeAttribute('title');
+                delete_button.removeAttribute("title");
             }
         }
 
@@ -729,24 +731,24 @@
                 return;
             }
 
-            let data_to_save = document.getElementById('displayStorageData').value;
+            let data_to_save = document.getElementById("displayStorageData").value;
             let encoder = new TextEncoder();
 
-            var server_url = new URL(window.location);
+            let server_url = new URL(window.location);
             server_url.pathname = `/api/v1/storage/set${this.selected_node.path}`;
 
-            var request_url = server_url.toString();
-            request_url += '?' + new URLSearchParams({ version: this.selected_node.version })
+            let request_url = server_url.toString();
+            request_url += "?" + new URLSearchParams({ version: this.selected_node.version })
 
             const res = await fetch(request_url,
                 {
-                    method: 'POST',
+                    method: "POST",
                     body: encoder.encode(data_to_save)
                 });
             if (res.ok) {
                 await this.selected_node.reloadContent();
             } else {
-                // TODO render conflict error.
+                renderError(`Failed to save the node's data: ${res.statusText}`)
             }
 
             this.reload();
@@ -766,21 +768,21 @@
             }
             this.selected_node.parent.removeChild(this.selected_node.name());
 
-            var server_url = new URL(window.location);
+            let server_url = new URL(window.location);
             server_url.pathname = `/api/v1/storage/remove${this.selected_node.path}`;
 
-            var request_url = server_url.toString();
-            request_url += '?' + new URLSearchParams({ version: this.selected_node.version })
+            let request_url = server_url.toString();
+            request_url += "?" + new URLSearchParams({ version: this.selected_node.version })
 
             const res = await fetch(request_url,
                 {
-                    method: 'POST',
+                    method: "POST",
                 });
             if (res.ok) {
                 await this.selected_node.parent.reloadContent();
                 await this.selected_node.parent.select();
             } else {
-                // TODO render removal error.
+                renderError(`Failed to remove the node: ${res.statusText}`)
             }
 
             this.reload();
@@ -798,7 +800,7 @@
             this.reload();
 
             // focus on the input after everything is rendered
-            var stub_name_input = document.getElementsByClassName('storage_node_name_input')[0];
+            let stub_name_input = document.getElementsByClassName("storage_node_name_input")[0];
             stub_name_input.focus();
         }
     }
@@ -809,8 +811,8 @@
         }
 
         render() {
-            var result = document.createElement("li");
-            var input_field = document.createElement("input");
+            let result = document.createElement("li");
+            let input_field = document.createElement("input");
             input_field.className = "storage_node_name_input"; // setting a class to your input field
             input_field.storage_node = this;
 
@@ -822,14 +824,15 @@
 
             // trigger event if user press Enter
             input_field.addEventListener("keydown", async function (event) {
-                if (event.keyCode === 13) {
+                if (event.code === "Enter") {
                     event.preventDefault();
-                    if (input_field.value == '') {
+                    if (input_field.value === "") {
                         // need to destroy the stub as user discarded the input
                         this.storage_node.destroy();
                         storage_viewer.reload();
                         return;
                     }
+
                     await this.storage_node.parent.createChild(input_field.value);
                     this.storage_node.destroy(); // we replaced the stub with a real node
                     storage_viewer.reload();
@@ -862,17 +865,17 @@
         }
 
         isLeaf() {
-            return (this.children_names.length == 0 && this.stub_child == undefined);
+            return (this.children_names.length === 0 && this.stub_child === undefined);
         }
 
         isRoot() {
-            return this.path == '/';
+            return this.path === "/";
         }
 
         async reloadContent() {
-            var server_url = new URL(window.location);
+            let server_url = new URL(window.location);
 
-            var promises = [];
+            let promises = [];
             server_url.pathname = `/api/v1/storage/list${this.path}`;
             promises.push(fetch(server_url.toString())
                 .then(res => res.ok ? res.json() : undefined)
@@ -890,13 +893,13 @@
 
         async expand() {
             if (this.isLeaf()) {
-                console.warn('This node has no children.');
+                console.warn("This node has no children.");
                 return;
             }
 
-            var server_url = new URL(window.location);
+            let server_url = new URL(window.location);
             server_url.pathname = `/api/v1/storage/list`;
-            var list_url = server_url.toString();
+            let list_url = server_url.toString();
 
             const childNodeRequests = this.children_names.map(child_name =>
                 fetch(list_url + this.getPathOfChild(child_name))
@@ -919,19 +922,19 @@
         }
 
         render() {
-            var result = document.createElement("li");
-            var span_desc = document.createElement("span");
+            let result = document.createElement("li");
+            let span_desc = document.createElement("span");
             span_desc.className = "storage_node_description";
             span_desc.storage_node = this;
 
             span_desc.addEventListener("click", async function (e) {
-                var cur_el = e.target;
+                let cur_el = e.target;
 
                 while (typeof cur_el.storage_node === "undefined" || cur_el.classList.contains("storage_viewer_container")) {
                     cur_el = cur_el.parentElement;
                 }
 
-                var node_cur = cur_el.storage_node;
+                let node_cur = cur_el.storage_node;
 
                 if (typeof node_cur === "undefined") {
                     return;
@@ -950,27 +953,25 @@
             }
 
             if (this.isLeaf()) {
-                var ret = '';
-                span_desc.innerHTML = ret + this.name() + "</span>";
+                span_desc.innerHTML = this.name() + "</span>";
                 span_desc.classList.add("storage_leaf");
 
                 result.appendChild(span_desc);
             } else {
-                var ret = '';
-                var span_icon = document.createElement("span");
+                let span_icon = document.createElement("span");
                 span_icon.className = "storage_ui_icon";
                 span_icon.style.fontFamily = "monospace";
                 span_icon.innerHTML = this.expanded ? "<span>&#x25BE;</span>" : "<span>&#x25B8;</span>";
 
                 span_icon.addEventListener("click", async function (e) {
                     e.stopPropagation();
-                    var cur_el = e.target;
+                    let cur_el = e.target;
 
                     while (typeof cur_el.storage_node === "undefined" || cur_el.classList.contains("storage_viewer_container")) {
                         cur_el = cur_el.parentElement;
                     }
 
-                    var node_cur = cur_el.storage_node;
+                    let node_cur = cur_el.storage_node;
 
                     if (typeof node_cur === "undefined") {
                         return;
@@ -987,7 +988,7 @@
                 result.appendChild(span_desc);
 
                 if (this.expanded) {
-                    var ul_container = document.createElement("ul");
+                    let ul_container = document.createElement("ul");
 
                     if (this.stub_child) {
                         ul_container.appendChild(this.stub_child.render());
@@ -1009,7 +1010,7 @@
                 return;
             }
             if (this.expanded) {
-                this.collapse();
+                await this.collapse();
             } else {
                 await this.expand();
             }
@@ -1020,18 +1021,18 @@
         };
 
         name() {
-            if (this.path === '/') {
-                return '/';
+            if (this.path === "/") {
+                return "/";
             }
-            const split_path = this.path.split('/');
+            const split_path = this.path.split("/");
             if (!split_path[split_path.length - 1]) {
                 split_path.pop();
             }
-            return split_path.length > 0 ? split_path[split_path.length - 1] : 'unknown';
+            return split_path.length > 0 ? split_path[split_path.length - 1] : "unknown";
         }
 
         getPathOfChild(child_name) {
-            return (this.path == '/' ? '' : this.path) + `/${child_name}`;
+            return (this.path === "/" ? "" : this.path) + `/${child_name}`;
         }
 
         hasData() {
@@ -1039,7 +1040,7 @@
         }
 
         async loadData() {
-            var server_url = new URL(window.location);
+            let server_url = new URL(window.location);
             server_url.pathname = `/api/v1/storage/get`;
 
             const res = await fetch(server_url.toString() + this.path);
@@ -1061,25 +1062,25 @@
         }
 
         async createChild(child_name) {
-            var server_url = new URL(window.location);
+            let server_url = new URL(window.location);
             server_url.pathname = `/api/v1/storage/create`;
-            var create_url = server_url.toString();
+            let create_url = server_url.toString();
 
             const res = await fetch(create_url + this.getPathOfChild(child_name),
                 {
-                    method: 'POST'
+                    method: "POST"
                 });
 
             if (res.ok) {
                 this.children_names.push(child_name);
-                var new_child_node = new StorageNode(this.getPathOfChild(child_name), this, undefined, []);
+                let new_child_node = new StorageNode(this.getPathOfChild(child_name), this, undefined, []);
                 // load necessary data for a new node
                 await new_child_node.reloadContent();
                 await this.reloadContent()
                 this.children.push(new_child_node);
                 new_child_node.select();
             } else {
-                // TODO render creation error.
+                renderError(`Failed to create the node: ${res.statusText}`)
             }
         }
 
@@ -1089,22 +1090,22 @@
     }
 
     const current_url = new URL(window.location);
-    const opened_locally = location.protocol == 'file:';
+    const opened_locally = location.protocol === "file:";
 
     const server_host = window.location.hostname;
     if (server_host) {
-        document.getElementById('displayHost').innerText = server_host;
+        document.getElementById("displayHost").innerText = server_host;
     } else if (!opened_locally) {
         /// Substitute the address of the server where the page is served.
-        document.getElementById('displayHost').innerText = location.origin;
+        document.getElementById("displayHost").innerText = location.origin;
     }
 
     function fetchContentImpl() {
         const server_url = new URL(window.location);
-        server_url.pathname = '/dashboard/content';
+        server_url.pathname = "/dashboard/content";
 
         const xhr = new XMLHttpRequest;
-        xhr.open('GET', server_url.toString(), false);
+        xhr.open("GET", server_url.toString(), false);
         xhr.onreadystatechange = function () {
             if (this.readyState === XMLHttpRequest.DONE) {
                 renderContentResponse(this.status, this.response);
@@ -1117,73 +1118,70 @@
 
     function renderContentResponse(status, response) {
         if (status === 200) {
-            let json;
-            try { json = JSON.parse(response); } catch (e) { }
+            const json = JSON.parse(response);
 
             if (json !== undefined) {
                 if (json.ch_version !== undefined) {
-                    document.getElementById('displayCHVersion').innerText = json.ch_version;
+                    document.getElementById("displayCHVersion").innerText = json.ch_version;
                 }
-                document.getElementById('displayRole').innerText = json?.keeper_details?.role ?? '--';
-                document.getElementById('displayLatencyAvg').innerText = json?.keeper_details?.latency_avg ?? '--';
-                document.getElementById('displayConnections').innerText = json?.keeper_details?.alive_connections ?? '--';
-                document.getElementById('displayNodeCount').innerText = json?.keeper_details?.node_count ?? '--';
-            } else {
-                /// TODO: Proper rendering of parse errors.
+                document.getElementById("displayRole").innerText = json?.keeper_details?.role ?? "--";
+                document.getElementById("displayLatencyAvg").innerText = json?.keeper_details?.latency_avg ?? "--";
+                document.getElementById("displayConnections").innerText = json?.keeper_details?.alive_connections ?? "--";
+                document.getElementById("displayNodeCount").innerText = json?.keeper_details?.node_count ?? "--";
             }
         } else {
-            /// TODO: Proper rendering of network errors.
+            renderError(`HTTP Error: ${status}`)
         }
     }
 
-    /// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
-    let theme = current_url.searchParams.get('theme');
-    if (['dark', 'light'].indexOf(theme) === -1) {
-        theme = window.localStorage.getItem('theme');
+    /// First we check if theme is set via the "theme" GET parameter, if not, we check localStorage, otherwise we check OS preference.
+    let theme = current_url.searchParams.get("theme");
+    if (["dark", "light"].indexOf(theme) === -1) {
+        theme = window.localStorage.getItem("theme");
     }
     if (!theme) {
-        theme = 'dark';
+        theme = "dark";
     }
 
     function setColorTheme(new_theme, update_preference) {
         theme = new_theme;
         if (update_preference) {
-            window.localStorage.setItem('theme', theme);
+            window.localStorage.setItem("theme", theme);
         }
-        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.setAttribute("data-theme", theme);
     }
 
     if (theme) {
-        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.setAttribute("data-theme", theme);
     } else {
         /// Obtain system-level user preference
-        const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
+        const media_query_list = window.matchMedia("(prefers-color-scheme: dark)");
         if (media_query_list.matches) {
-            setColorTheme('dark');
+            setColorTheme("dark");
         }
 
         /// There is a rumor that on some computers, the theme is changing automatically on day/night.
-        media_query_list.addEventListener('change', function (e) {
-            setColorTheme(e.matches ? 'dark' : 'light');
+        media_query_list.addEventListener("change", function (e) {
+            setColorTheme(e.matches ? "dark" : "light");
         });
     }
 
-    document.getElementById('toggle-light').onclick = function () {
-        setColorTheme('light', true);
+    document.getElementById("toggle-light").onclick = function () {
+        setColorTheme("light", true);
     }
 
-    document.getElementById('toggle-dark').onclick = function () {
-        setColorTheme('dark', true);
+    document.getElementById("toggle-dark").onclick = function () {
+        setColorTheme("dark", true);
     }
 
     function setupCommandLine() {
-        var command_input = document.querySelector('#command');
-        var command_output = document.querySelector('#command-output');
-        var command_container = document.getElementById('command-scrolling-container');
+        let command_input = document.querySelector("#command");
+        let command_output = document.querySelector("#command-output");
+        let command_container = document.getElementById("command-scrolling-container");
 
         /// focus on command_input, but prevent losing the selection in command_output.
-        command_container.addEventListener('mouseup', function (e) {
-            if (e.target.id !== 'command-output') {
+        command_container.addEventListener("mouseup", function (e) {
+            if (e.target.id !== "command-output") {
                 command_input.focus();
             }
             else if (window.getSelection().toString().length === 0) {
@@ -1191,20 +1189,20 @@
             }
         });
 
-        command_input.addEventListener('keydown', function (event) {
-            if (event.keyCode === 13) {
+        command_input.addEventListener("keydown", function (event) {
+            if (event.code === "Enter") {
                 event.preventDefault(); // Prevents the normal form submission for Enter key
 
                 // Add command to history and clear input
-                var command = command_input.value;
-                command_input.value = '';
+                let command = command_input.value;
+                command_input.value = "";
                 command_output.append(`➜ ${command}\n`);
                 command_container.scrollTop = command_container.scrollHeight;
                 command_input.disabled = true;
 
                 const server_url = new URL(window.location);
-                server_url.pathname = '/api/v1/commands/';
-                var url = server_url.toString();
+                server_url.pathname = "/api/v1/commands/";
+                let url = server_url.toString();
                 fetch(url + command)
                     .then(response => response.json())
                     .then(data => {
@@ -1213,16 +1211,16 @@
                         } else if (data.message !== undefined) {
                             command_output.append(`${data.message}`);
                         } else {
-                            command_output.append('Unexpected error\n');
+                            command_output.append("Unexpected error\n");
                         }
-                        if (command_output.textContent.charAt(command_output.textContent.length - 1) !== '\n') {
-                            command_output.append('\n');
+                        if (command_output.textContent.charAt(command_output.textContent.length - 1) !== "\n") {
+                            command_output.append("\n");
                         }
                         command_input.disabled = false;
                         command_input.focus();
                     })
                     .catch(err => {
-                        command_output.append('Unexpected error\n');
+                        command_output.append(`Unexpected error: ${err}\n`);
                         command_input.disabled = false;
                         command_input.focus();
                     });
@@ -1240,11 +1238,11 @@
             setupCommandLine();
             loadContent();
         } catch (e) {
-            /// TODO: display error properly
+            renderError(`Failed to start: ${e}`)
         }
     }
 
-    var storage_viewer = new StorageViewer(document.getElementById("storage-viewer-container"));
+    let storage_viewer = new StorageViewer(document.getElementById("storage-viewer-container"));
     storage_viewer.init();
 
     start();

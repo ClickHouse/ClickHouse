@@ -30,17 +30,6 @@ void KeeperDashboardWebUIRequestHandler::handleRequest(
 {
     std::string html(reinterpret_cast<const char *>(gresource_keeper_dashboard_htmlData), gresource_keeper_dashboard_htmlSize);
 
-    /// Replace a link to external JavaScript file to embedded file.
-    /// This allows to open the HTML without running a server and to host it on server.
-    /// Note: we can embed the JavaScript file inline to the HTML,
-    /// but we don't do it to keep the "view-source" perfectly readable.
-
-    static re2::RE2 uplot_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.js)";
-    RE2::Replace(&html, uplot_url, "/js/uplot.js");
-
-    static re2::RE2 lz_string_url = R"(https://[^\s"'`]+lz-string[^\s"'`]*\.js)";
-    RE2::Replace(&html, lz_string_url, "/js/lz-string.js");
-
     response.setContentType("text/html; charset=UTF-8");
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
