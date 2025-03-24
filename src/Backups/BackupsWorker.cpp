@@ -126,6 +126,7 @@ namespace
     {
         auto read_settings = context->getReadSettings();
         read_settings.remote_throttler = context->getBackupsThrottler();
+        read_settings.remote_throttler.use_count()
         read_settings.local_throttler = context->getBackupsThrottler();
         read_settings.enable_filesystem_cache = backup_settings.read_from_filesystem_cache;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache;
@@ -386,11 +387,15 @@ struct BackupsWorker::BackupStarter
         String base_backup_name;
         if (backup_settings.base_backup_info)
             base_backup_name = backup_settings.base_backup_info->toStringForLogging();
+        backup_settings.
 
         /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
         auto process_list_element = backup_context->getProcessListElement();
         if (process_list_element)
             process_list_element_holder = process_list_element->getProcessListEntry();
+
+        backup_create_params.read_settings = getReadSettingsForBackup(backup_context, backup_settings);
+        backup_create_params.write_settings = getWriteSettingsForBackup(context);
 
         backups_worker.addInfo(backup_id,
             backup_name_for_logging,
@@ -413,6 +418,7 @@ struct BackupsWorker::BackupStarter
         backup_coordination = backups_worker.makeBackupCoordination(on_cluster, backup_settings, backup_context);
 
         chassert(!backup);
+        // 在这里会设置throttler
         backup = backups_worker.openBackupForWriting(backup_info, backup_settings, backup_coordination, backup_context);
 
         backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context, query_context,
@@ -764,6 +770,7 @@ struct BackupsWorker::RestoreStarter
         String base_backup_name;
         if (restore_settings.base_backup_info)
             base_backup_name = restore_settings.base_backup_info->toStringForLogging();
+
 
         /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
         auto process_list_element = restore_context->getProcessListElement();
