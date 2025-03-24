@@ -712,28 +712,6 @@
             });
         }
 
-        // Hover from chart to legend
-        canvas.addEventListener("mousemove", (event) => {
-            const rect = canvas.getBoundingClientRect();
-            const x = event.clientX - rect.left - centerX;
-            const y = event.clientY - rect.top - centerY;
-            const distance = Math.sqrt(x * x + y * y);
-            if (distance > radius) {
-                drawChart(null);
-                return;
-            }
-
-            const angle = Math.atan2(y, x);
-            const normalizedAngle = angle >= 0 ? angle : angle + 2 * Math.PI;
-
-            const hoveredSlice = sliceData.find(slice =>
-                normalizedAngle >= slice.startAngle && normalizedAngle <= slice.endAngle
-            );
-            drawChart(hoveredSlice?.label || null);
-        });
-
-        canvas.addEventListener("mouseleave", () => drawChart(null));
-
         drawChart(null); // Initial draw
 
         // Color utility
