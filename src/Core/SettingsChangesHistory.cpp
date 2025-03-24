@@ -68,6 +68,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.4",
         {
+            {"query_plan_convert_join_to_in", false, false, "New setting"},
             {"enable_hdfs_pread", true, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.3",
