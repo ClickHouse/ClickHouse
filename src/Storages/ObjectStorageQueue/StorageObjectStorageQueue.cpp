@@ -1053,12 +1053,9 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
     /// If startup() for a table was not called, results of getTableMetadata() might be empty, in which case
-    /// get the table metadata from temp_metadata. Also, use a startup_mutext to ensure that there is no race
-    /// between when the temp_metadata is reset during startup() and when we call getTableMetadata() below.
-    const auto table_metadata = [this]() -> ObjectStorageQueueTableMetadata
-    {
-        return startup_called ? getTableMetadata() : temp_metadata->getTableMetadata();
-    }();
+    /// get the table metadata from temp_metadata.
+    const auto & table_metadata = startup_called ? getTableMetadata() : temp_metadata->getTableMetadata();
+
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
     settings[ObjectStorageQueueSetting::keeper_path] = zk_path;
