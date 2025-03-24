@@ -35,13 +35,17 @@ def test_old_dirs_cleanup(start_cluster):
     node1.query("INSERT INTO test_table VALUES (toDate('2020-01-01'), 1, 10)")
     assert node1.query("SELECT count() FROM test_table") == "1\n"
 
+    data_path = node1.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='test_table'"
+    ).strip()
+
     node1.stop_clickhouse()
 
     node1.exec_in_container(
         [
             "bash",
             "-c",
-            "mv /var/lib/clickhouse/data/default/test_table/20200101_0_0_0 /var/lib/clickhouse/data/default/test_table/delete_tmp_20200101_0_0_0",
+            f"mv {data_path}/20200101_0_0_0 {data_path}/delete_tmp_20200101_0_0_0",
         ],
         privileged=True,
     )
@@ -49,7 +53,7 @@ def test_old_dirs_cleanup(start_cluster):
     node1.start_clickhouse()
 
     result = node1.exec_in_container(
-        ["bash", "-c", "ls /var/lib/clickhouse/data/default/test_table/"],
+        ["bash", "-c", f"ls {data_path}/"],
         privileged=True,
     )
 
