@@ -455,6 +455,9 @@ using FunctionMapContainsValueLike = FunctionMapToArrayAdapter<FunctionArrayExis
 struct NameMapExtractKeyLike { static constexpr auto name = "mapExtractKeyLike"; };
 using FunctionMapExtractKeyLike = FunctionMapToArrayAdapter<FunctionArrayFilter, MapLikeAdapter<NameMapExtractKeyLike, true, 0>, NameMapExtractKeyLike>;
 
+struct NameMapExtractValueLike { static constexpr auto name = "mapExtractValueLike"; };
+using FunctionMapExtractValueLike = FunctionMapToArrayAdapter<FunctionArrayFilter, MapLikeAdapter<NameMapExtractValueLike, true, 1>, NameMapExtractValueLike>;
+
 struct NameMapSort { static constexpr auto name = "mapSort"; };
 struct NameMapReverseSort { static constexpr auto name = "mapReverseSort"; };
 struct NameMapPartialSort { static constexpr auto name = "mapPartialSort"; };
@@ -580,6 +583,13 @@ REGISTER_FUNCTION(MapMiscellaneous)
         .examples{{"mapExtractKeyLike", "SELECT mapExtractKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')", ""}},
         .category{"Maps"},
     });
+
+    factory.registerFunction<FunctionMapExtractValueLike>(
+        FunctionDocumentation{
+            .description="Returns a map with elements which value matches the specified pattern.",
+            .examples{{"mapExtractValueLike", "SELECT mapExtractValueLike(map('k1-1', 'v1-1', 'k2-1', 'v2-1'), 'v1%')", ""}},
+            .category{"Maps"},
+        });
 }
 
 }
