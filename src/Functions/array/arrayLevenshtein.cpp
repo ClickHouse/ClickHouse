@@ -59,8 +59,7 @@ public:
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
             const DataTypePtr nested_type = array_type->getNestedType();
             nested_types.emplace_back(nested_type);
-            // TODO: extend to work with different types?
-            if (!WhichDataType(nested_type).isFloat64())
+            if (!(isFloat(nested_type) || isInteger(nested_type)))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Argument {} of function {} must be array of Float64. Found {} instead.",
@@ -140,13 +139,43 @@ private:
         return static_cast<UInt32>(v0[n]);
     }
 
-    template <typename N>
-    bool levenshteinString(std::vector<const ColumnArray *> columns, ColumnUInt32::Container & res_values) const
+    template <typename N, typename Result>
+    bool levenshteinString(std::vector<const ColumnArray *> columns, Result::Container & res_values) const
     {
         const N * from_data = checkAndGetColumn<N>(&columns[0]->getData());
         const N * to_data = checkAndGetColumn<N>(&columns[1]->getData());
         if (!from_data || !to_data)
             return false;
+        if (T::arguments == 4)
+        {
+            if constexpr (std::is_same_v<Result, ColumnFloat64>)
+            {
+                if (!(
+                    levenshteinWeightedString<N, UInt8>(columns, res_values)
+                    || levenshteinWeightedString<N, UInt16>(columns, res_values)
+                    || levenshteinWeightedString<N, UInt32>(columns, res_values)
+                    || levenshteinWeightedString<N, UInt64>(columns, res_values)
+                    || levenshteinWeightedString<N, UInt128>(columns, res_values)
+                    || levenshteinWeightedString<N, UInt256>(columns, res_values)
+                    || levenshteinWeightedString<N, Int8>(columns, res_values)
+                    || levenshteinWeightedString<N, Int16>(columns, res_values)
+                    || levenshteinWeightedString<N, Int32>(columns, res_values)
+                    || levenshteinWeightedString<N, Int64>(columns, res_values)
+                    || levenshteinWeightedString<N, Int128>(columns, res_values)
+                    || levenshteinWeightedString<N, Int256>(columns, res_values)
+                    || levenshteinWeightedString<N, Float32>(columns, res_values)
+                    || levenshteinWeightedString<N, Float64>(columns, res_values)))
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected code branch of function {}. No fitting levenshteinWeightedString",
+                        T::name);
+                return true;
+            }
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected code branch of function {}. Wrong expected result type in levenshteinString",
+                T::name);
+        }
         const ColumnArray::Offsets & from_offsets = columns[0]->getOffsets();
         ColumnArray::Offset prev_from_offset = 0;
 
@@ -178,13 +207,45 @@ private:
         return true;
     }
 
-    template <typename N>
-    bool levenshteinNumber(std::vector<const ColumnArray *> columns, ColumnUInt32::Container & res_values) const
+    template <typename N, typename Result>
+    bool levenshteinNumber(std::vector<const ColumnArray *> columns, Result::Container & res_values) const
     {
         const ColumnVectorOrDecimal<N> * column_from = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[0]->getData());
         const ColumnVectorOrDecimal<N> * column_to = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[1]->getData());
         if (!column_from || !column_to)
             return false;
+
+        if (T::arguments == 4)
+        {
+            if constexpr (std::is_same_v<Result, ColumnFloat64>)
+            {
+                if (!(
+                    levenshteinWeightedNumber<N, UInt8>(columns, res_values)
+                    || levenshteinWeightedNumber<N, UInt16>(columns, res_values)
+                    || levenshteinWeightedNumber<N, UInt32>(columns, res_values)
+                    || levenshteinWeightedNumber<N, UInt64>(columns, res_values)
+                    || levenshteinWeightedNumber<N, UInt128>(columns, res_values)
+                    || levenshteinWeightedNumber<N, UInt256>(columns, res_values)
+                    || levenshteinWeightedNumber<N, Int8>(columns, res_values)
+                    || levenshteinWeightedNumber<N, Int16>(columns, res_values)
+                    || levenshteinWeightedNumber<N, Int32>(columns, res_values)
+                    || levenshteinWeightedNumber<N, Int64>(columns, res_values)
+                    || levenshteinWeightedNumber<N, Int128>(columns, res_values)
+                    || levenshteinWeightedNumber<N, Int256>(columns, res_values)
+                    || levenshteinWeightedNumber<N, Float32>(columns, res_values)
+                    || levenshteinWeightedNumber<N, Float64>(columns, res_values)))
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected code branch of function {}. No fitting levenshteinWeightedNumber",
+                        T::name);
+                return true;
+            }
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected code branch of function {}. Wrong expected result type in levenshteinNumber",
+                T::name);
+        }
+
         const PaddedPODArray<N> & vec_from = column_from->getData();
         const ColumnArray::Offsets & from_offsets = columns[0]->getOffsets();
         ColumnArray::Offset prev_from_offset = 0;
@@ -205,8 +266,40 @@ private:
         return true;
     }
 
-    void levenshteinGeneric(std::vector<const ColumnArray *> columns, ColumnUInt32::Container & res_values) const
+    template<typename Result>
+    void levenshteinGeneric(std::vector<const ColumnArray *> columns, Result::Container & res_values) const
     {
+        if (T::arguments == 4)
+        {
+            if constexpr (std::is_same_v<Result, ColumnFloat64>)
+            {
+                if (!(
+                    levenshteinWeightedGeneric<UInt8>(columns, res_values)
+                    || levenshteinWeightedGeneric<UInt16>(columns, res_values)
+                    || levenshteinWeightedGeneric<UInt32>(columns, res_values)
+                    || levenshteinWeightedGeneric<UInt64>(columns, res_values)
+                    || levenshteinWeightedGeneric<UInt128>(columns, res_values)
+                    || levenshteinWeightedGeneric<UInt256>(columns, res_values)
+                    || levenshteinWeightedGeneric<Int8>(columns, res_values)
+                    || levenshteinWeightedGeneric<Int16>(columns, res_values)
+                    || levenshteinWeightedGeneric<Int32>(columns, res_values)
+                    || levenshteinWeightedGeneric<Int64>(columns, res_values)
+                    || levenshteinWeightedGeneric<Int128>(columns, res_values)
+                    || levenshteinWeightedGeneric<Int256>(columns, res_values)
+                    || levenshteinWeightedGeneric<Float32>(columns, res_values)
+                    || levenshteinWeightedGeneric<Float64>(columns, res_values)))
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected code branch of function {}. No fitting levenshteinWeightedGeneric",
+                        T::name);
+                return;
+            }
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected code branch of function {}. Wrong expected result type in levenshteinGeneric",
+                T::name);
+        }
+
         const ColumnArray * column_from = columns[0];
         const ColumnArray * column_to = columns[1];
         for (size_t row = 0; row < column_from->size(); row++)
@@ -266,7 +359,7 @@ private:
         return v0[m];
     }
 
-    template <typename N>
+    template <typename N, typename W>
     bool levenshteinWeightedString(std::vector<const ColumnArray *> columns, ColumnFloat64::Container & res_values) const
     {
         const N * from_data = checkAndGetColumn<N>(&columns[0]->getData());
@@ -279,18 +372,15 @@ private:
         const ColumnArray::Offsets & to_offsets = columns[1]->getOffsets();
         ColumnArray::Offset prev_to_offset = 0;
 
-        const ColumnVector<Float64> * column_from_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[2]->getData());
-        const ColumnVector<Float64> * column_to_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[3]->getData());
+        const ColumnVector<W> * column_from_weights = checkAndGetColumn<ColumnVector<W>>(&columns[2]->getData());
+        const ColumnVector<W> * column_to_weights = checkAndGetColumn<ColumnVector<W>>(&columns[3]->getData());
         if (!column_from_weights || !column_to_weights)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Function {} wrong type of weight columns",
-                getName());
-        const PaddedPODArray<Float64> & vec_from_weights = column_from_weights->getData();
+            return false;
+        const PaddedPODArray<W> & vec_from_weights = column_from_weights->getData();
         const ColumnArray::Offsets & from_weights_offsets = columns[2]->getOffsets();
         ColumnArray::Offset prev_from_weights_offset = 0;
 
-        const PaddedPODArray<Float64> & vec_to_weights = column_to_weights->getData();
+        const PaddedPODArray<W> & vec_to_weights = column_to_weights->getData();
         const ColumnArray::Offsets & to_weights_offsets = columns[3]->getOffsets();
         ColumnArray::Offset prev_to_weights_offset = 0;
 
@@ -325,7 +415,7 @@ private:
         return true;
     }
 
-    template <typename N>
+    template <typename N, typename W>
     bool levenshteinWeightedNumber(std::vector<const ColumnArray *> columns, ColumnFloat64::Container & res_values) const
     {
         const ColumnVectorOrDecimal<N> * column_from = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[0]->getData());
@@ -340,18 +430,15 @@ private:
         const ColumnArray::Offsets & to_offsets = columns[1]->getOffsets();
         ColumnArray::Offset prev_to_offset = 0;
 
-        const ColumnVector<Float64> * column_from_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[2]->getData());
-        const ColumnVector<Float64> * column_to_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[3]->getData());
+        const ColumnVector<W> * column_from_weights = checkAndGetColumn<ColumnVector<W>>(&columns[2]->getData());
+        const ColumnVector<W> * column_to_weights = checkAndGetColumn<ColumnVector<W>>(&columns[3]->getData());
         if (!column_from_weights || !column_to_weights)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Function {} wrong type of weight columns",
-                getName());
-        const PaddedPODArray<Float64> & vec_from_weights = column_from_weights->getData();
+            return false;
+        const PaddedPODArray<W> & vec_from_weights = column_from_weights->getData();
         const ColumnArray::Offsets & from_weights_offsets = columns[2]->getOffsets();
         ColumnArray::Offset prev_from_weights_offset = 0;
 
-        const PaddedPODArray<Float64> & vec_to_weights = column_to_weights->getData();
+        const PaddedPODArray<W> & vec_to_weights = column_to_weights->getData();
         const ColumnArray::Offsets & to_weights_offsets = columns[3]->getOffsets();
         ColumnArray::Offset prev_to_weights_offset = 0;
 
@@ -372,23 +459,21 @@ private:
         return true;
     }
 
-    void levenshteinWeightedGeneric(std::vector<const ColumnArray *> columns, ColumnFloat64::Container & res_values) const
+    template<typename W>
+    bool levenshteinWeightedGeneric(std::vector<const ColumnArray *> columns, ColumnFloat64::Container & res_values) const
     {
         const ColumnArray * column_from = columns[0];
         const ColumnArray * column_to = columns[1];
 
-        const ColumnVector<Float64> * column_from_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[2]->getData());
-        const ColumnVector<Float64> * column_to_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[3]->getData());
+        const ColumnVector<W> * column_from_weights = checkAndGetColumn<ColumnVector<W>>(&columns[2]->getData());
+        const ColumnVector<W> * column_to_weights = checkAndGetColumn<ColumnVector<W>>(&columns[3]->getData());
         if (!column_from_weights || !column_to_weights)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Function {} wrong type of weight columns",
-                getName());
-        const PaddedPODArray<Float64> & vec_from_weights = column_from_weights->getData();
+            return false;
+        const PaddedPODArray<W> & vec_from_weights = column_from_weights->getData();
         const ColumnArray::Offsets & from_weights_offsets = columns[2]->getOffsets();
         ColumnArray::Offset prev_from_weights_offset = 0;
 
-        const PaddedPODArray<Float64> & vec_to_weights = column_to_weights->getData();
+        const PaddedPODArray<W> & vec_to_weights = column_to_weights->getData();
         const ColumnArray::Offsets & to_weights_offsets = columns[3]->getOffsets();
         ColumnArray::Offset prev_to_weights_offset = 0;
 
@@ -407,9 +492,31 @@ private:
 
             res_values[row] = levenshteinDistanceWeighted<Field>(from_vec, to_vec, from_weights, to_weights);
         }
+        return true;
     }
 
-    MutableColumnPtr weightedLevenshteinImpl(std::vector<const ColumnArray *> columns) const
+    ColumnPtr levenshteinImpl(std::vector<const ColumnArray *> columns) const
+    {
+        auto res = ColumnUInt32::create();
+        ColumnUInt32::Container & res_values = res->getData();
+        res_values.resize(columns[0]->size());
+        if (levenshteinNumber<UInt8, ColumnUInt32>(columns, res_values) || levenshteinNumber<UInt16, ColumnUInt32>(columns, res_values)
+            || levenshteinNumber<UInt32, ColumnUInt32>(columns, res_values) || levenshteinNumber<UInt64, ColumnUInt32>(columns, res_values)
+            || levenshteinNumber<UInt128, ColumnUInt32>(columns, res_values) || levenshteinNumber<UInt256, ColumnUInt32>(columns, res_values)
+            || levenshteinNumber<Int8, ColumnUInt32>(columns, res_values) || levenshteinNumber<Int16, ColumnUInt32>(columns, res_values)
+            || levenshteinNumber<Int32, ColumnUInt32>(columns, res_values) || levenshteinNumber<Int64, ColumnUInt32>(columns, res_values)
+            || levenshteinNumber<Int128, ColumnUInt32>(columns, res_values) || levenshteinNumber<Int256, ColumnUInt32>(columns, res_values)
+            || levenshteinNumber<Float32, ColumnUInt32>(columns, res_values) || levenshteinNumber<Float64, ColumnUInt32>(columns, res_values)
+            || levenshteinNumber<Decimal32, ColumnUInt32>(columns, res_values) || levenshteinNumber<Decimal64, ColumnUInt32>(columns, res_values)
+            || levenshteinNumber<Decimal128, ColumnUInt32>(columns, res_values) || levenshteinNumber<Decimal256, ColumnUInt32>(columns, res_values)
+            || levenshteinNumber<DateTime64, ColumnUInt32>(columns, res_values)
+            || levenshteinString<ColumnString, ColumnUInt32>(columns, res_values) || levenshteinString<ColumnFixedString, ColumnUInt32>(columns, res_values))
+            return res;
+        levenshteinGeneric<ColumnUInt32>(columns, res_values);
+        return res;
+    }
+
+    ColumnPtr weightedLevenshteinImpl(std::vector<const ColumnArray *> columns) const
     {
         for (size_t i = 0; i < 2; i++)
         {
@@ -435,19 +542,19 @@ private:
         auto res = ColumnFloat64::create();
         ColumnFloat64::Container & res_values = res->getData();
         res_values.resize(columns[0]->size());
-        if (levenshteinWeightedNumber<UInt8>(columns, res_values) || levenshteinWeightedNumber<UInt16>(columns, res_values)
-            || levenshteinWeightedNumber<UInt32>(columns, res_values) || levenshteinWeightedNumber<UInt64>(columns, res_values)
-            || levenshteinWeightedNumber<UInt128>(columns, res_values) || levenshteinWeightedNumber<UInt256>(columns, res_values)
-            || levenshteinWeightedNumber<Int8>(columns, res_values) || levenshteinWeightedNumber<Int16>(columns, res_values)
-            || levenshteinWeightedNumber<Int32>(columns, res_values) || levenshteinWeightedNumber<Int64>(columns, res_values)
-            || levenshteinWeightedNumber<Int128>(columns, res_values) || levenshteinWeightedNumber<Int256>(columns, res_values)
-            || levenshteinWeightedNumber<Float32>(columns, res_values) || levenshteinWeightedNumber<Float64>(columns, res_values)
-            || levenshteinWeightedNumber<Decimal32>(columns, res_values) || levenshteinWeightedNumber<Decimal64>(columns, res_values)
-            || levenshteinWeightedNumber<Decimal128>(columns, res_values) || levenshteinWeightedNumber<Decimal256>(columns, res_values)
-            || levenshteinWeightedNumber<DateTime64>(columns, res_values)
-            || levenshteinWeightedString<ColumnString>(columns, res_values) || levenshteinWeightedString<ColumnFixedString>(columns, res_values))
+        if (levenshteinNumber<UInt8, ColumnFloat64>(columns, res_values) || levenshteinNumber<UInt16, ColumnFloat64>(columns, res_values)
+            || levenshteinNumber<UInt32, ColumnFloat64>(columns, res_values) || levenshteinNumber<UInt64, ColumnFloat64>(columns, res_values)
+            || levenshteinNumber<UInt128, ColumnFloat64>(columns, res_values) || levenshteinNumber<UInt256, ColumnFloat64>(columns, res_values)
+            || levenshteinNumber<Int8, ColumnFloat64>(columns, res_values) || levenshteinNumber<Int16, ColumnFloat64>(columns, res_values)
+            || levenshteinNumber<Int32, ColumnFloat64>(columns, res_values) || levenshteinNumber<Int64, ColumnFloat64>(columns, res_values)
+            || levenshteinNumber<Int128, ColumnFloat64>(columns, res_values) || levenshteinNumber<Int256, ColumnFloat64>(columns, res_values)
+            || levenshteinNumber<Float32, ColumnFloat64>(columns, res_values) || levenshteinNumber<Float64, ColumnFloat64>(columns, res_values)
+            || levenshteinNumber<Decimal32, ColumnFloat64>(columns, res_values) || levenshteinNumber<Decimal64, ColumnFloat64>(columns, res_values)
+            || levenshteinNumber<Decimal128, ColumnFloat64>(columns, res_values) || levenshteinNumber<Decimal256, ColumnFloat64>(columns, res_values)
+            || levenshteinNumber<DateTime64, ColumnFloat64>(columns, res_values)
+            || levenshteinString<ColumnString, ColumnFloat64>(columns, res_values) || levenshteinString<ColumnFixedString, ColumnFloat64>(columns, res_values))
             return res;
-        levenshteinWeightedGeneric(columns, res_values);
+        levenshteinGeneric<ColumnFloat64>(columns, res_values);
         return res;
     }
 };
@@ -474,23 +581,7 @@ DataTypePtr FunctionArrayLevenshtein<SimpleLevenshtein>::getReturnTypeImpl(const
 template <>
 ColumnPtr FunctionArrayLevenshtein<SimpleLevenshtein>::execute(std::vector<const ColumnArray *> columns) const
 {
-    auto res = ColumnUInt32::create();
-    ColumnUInt32::Container & res_values = res->getData();
-    res_values.resize(columns[0]->size());
-    if (levenshteinNumber<UInt8>(columns, res_values) || levenshteinNumber<UInt16>(columns, res_values)
-        || levenshteinNumber<UInt32>(columns, res_values) || levenshteinNumber<UInt64>(columns, res_values)
-        || levenshteinNumber<UInt128>(columns, res_values) || levenshteinNumber<UInt256>(columns, res_values)
-        || levenshteinNumber<Int8>(columns, res_values) || levenshteinNumber<Int16>(columns, res_values)
-        || levenshteinNumber<Int32>(columns, res_values) || levenshteinNumber<Int64>(columns, res_values)
-        || levenshteinNumber<Int128>(columns, res_values) || levenshteinNumber<Int256>(columns, res_values)
-        || levenshteinNumber<Float32>(columns, res_values) || levenshteinNumber<Float64>(columns, res_values)
-        || levenshteinNumber<Decimal32>(columns, res_values) || levenshteinNumber<Decimal64>(columns, res_values)
-        || levenshteinNumber<Decimal128>(columns, res_values) || levenshteinNumber<Decimal256>(columns, res_values)
-        || levenshteinNumber<DateTime64>(columns, res_values)
-        || levenshteinString<ColumnString>(columns, res_values) || levenshteinString<ColumnFixedString>(columns, res_values))
-        return res;
-    levenshteinGeneric(columns, res_values);
-    return res;
+    return levenshteinImpl(columns);
 }
 
 struct Weighted
@@ -514,7 +605,7 @@ struct Similarity
 template <>
 ColumnPtr FunctionArrayLevenshtein<Similarity>::execute(std::vector<const ColumnArray *> columns) const
 {
-     MutableColumnPtr distance = weightedLevenshteinImpl(columns);
+     ColumnPtr distance = weightedLevenshteinImpl(columns);
      auto result = ColumnFloat64::create();
      ColumnFloat64::Container & res_values = result->getData();
      res_values.resize(distance->size());
