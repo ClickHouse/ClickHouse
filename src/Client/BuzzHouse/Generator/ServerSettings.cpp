@@ -26,6 +26,15 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"compile_aggregate_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"compile_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"compile_sort_description", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"concurrent_threads_scheduler",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"'round_robin'", "'fair_round_robin'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'round_robin'", "'fair_round_robin'"},
+            false)},
        {"count_distinct_implementation",
         CHSetting(
             [](RandomGenerator & rg)
@@ -156,6 +165,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_enable_optimizations", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_execute_functions_after_sorting", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_filter_push_down", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_join_shard_by_pk_ranges", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_lift_up_array_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_lift_up_union", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_merge_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -210,6 +220,8 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"transform_null_in", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_concurrency_control", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_index_for_in_with_subqueries", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_page_cache_with_distributed_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_query_condition_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_skip_indexes", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_skip_indexes_if_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_uncompressed_cache", CHSetting(trueOrFalse, {"0", "1"}, false)}};
@@ -255,6 +267,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"compatibility_ignore_collation_in_create_table", CHSetting(trueOrFalse, {}, false)},
     {"composed_data_type_output_format_mode",
      CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'default'" : "'spark'"; }, {}, false)},
+    {"concurrent_threads_soft_limit_num", threadRange},
+    {"concurrent_threads_soft_limit_ratio_to_cores", CHSetting(probRange, {}, false)},
     {"convert_query_to_cnf", CHSetting(trueOrFalse, {}, false)},
     {"create_replicated_merge_tree_fault_injection_probability", CHSetting(probRange, {}, false)},
     {"create_table_empty_primary_key_by_default", CHSetting(trueOrFalse, {}, false)},
@@ -747,7 +761,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     /// {"parallel_replica_offset", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},
     {"parallel_replicas_allow_in_with_subquery", CHSetting(trueOrFalse, {"0", "1"}, false)},
     /// {"parallel_replicas_count", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},
-    {"parallel_replicas_for_non_replicated_merge_tree", CHSetting(trueOrFalse, {}, false)},
+    {"parallel_replicas_for_cluster_engines", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    {"parallel_replicas_for_non_replicated_merge_tree", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"parallel_replicas_index_analysis_only_on_coordinator", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"parallel_replicas_custom_key_range_lower", CHSetting(highRange, {}, false)},
     {"parallel_replicas_custom_key_range_upper", CHSetting(highRange, {}, false)},
