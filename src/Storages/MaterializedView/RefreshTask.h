@@ -5,6 +5,7 @@
 #include <Storages/MaterializedView/RefreshSettings.h>
 #include <Common/StopToken.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <IO/Progress.h>
 
 #include <random>
 

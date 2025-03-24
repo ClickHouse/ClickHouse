@@ -3,7 +3,6 @@
 #include <Access/IAccessEntity.h>
 #include <Access/AuthenticationData.h>
 #include <Core/Types.h>
-#include <Parsers/IParser.h>
 #include <Common/SettingsChanges.h>
 #include <Common/callOnce.h>
 #include <Interpreters/ClientInfo.h>
