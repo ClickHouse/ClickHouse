@@ -349,6 +349,7 @@ namespace
             normal_part_size = part_size;
         }
 
+        // UploadHelper::uploadPart
         void uploadPart(size_t part_number, size_t part_offset, size_t part_size)
         {
             LOG_TRACE(log, "Writing part #{} of {}. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", part_number, num_parts, dest_bucket, dest_key, multipart_upload_id, part_size);
@@ -421,7 +422,7 @@ namespace
                 part_tags.push_back(task.tag);
             }
         }
-
+        // UploadHelper::processUploadTask
         void processUploadTask(UploadPartTask & task)
         {
             if (multipart_upload_aborted)
@@ -469,6 +470,9 @@ namespace
     };
 
     /// Helper class to help implementing copyDataToS3File().
+    // UploadHelper
+    //   -- CopyFileHelper
+    //   -- CopyDataToFileHelper
     class CopyDataToFileHelper : public UploadHelper
     {
     public:
@@ -601,9 +605,10 @@ namespace
                     request.GetContentLength());
             }
         }
-
+        // CopyDataToFileHelper::performMultipartUpload()
+        // 这里调用父类的相关方法
         void performMultipartUpload() { UploadHelper::performMultipartUpload(offset, size); }
-
+        // 调用者是 UploadHelper::processUploadTask
         std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const override
         {
             auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
@@ -622,7 +627,8 @@ namespace
 
             return request;
         }
-
+        // 这个方法是从本地文件拷贝到S3 ， CopyDataToFileHelper::processUploadPartRequest
+        // 调用者是 UploadHelper::processUploadTask
         String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
         {
             auto & req = typeid_cast<S3::UploadPartRequest &>(request);
