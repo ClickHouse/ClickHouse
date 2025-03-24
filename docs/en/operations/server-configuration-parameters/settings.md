@@ -3278,7 +3278,7 @@ Port for communicating with clients over PostgreSQL protocol.
 
 :::note
 - Positive integers specify the port number to listen to
-- Empty values are used to disable communication with clients over MySQL protocol.
+- Empty values are used to disable communication with clients over PostgreSQL protocol.
 :::
 
 **Example**
