@@ -60,6 +60,7 @@ public:
         if (array_size == 0)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} is invalid ", getName());
         size_t fixed_string_length = array_size * Traits::multiplier / Traits::divider;
+        fixed_string_length = std::max(1ul, fixed_string_length);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
