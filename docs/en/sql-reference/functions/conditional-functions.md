@@ -276,7 +276,7 @@ ClickHouse supports two forms of CASE:
 
 1. `CASE WHEN ... THEN ... ELSE ... END`
 <br/>
-This form allows full flexibility and is internally implemented using the [multiIf](#multiif-multiif) function. Each condition is evaluated independently, and expressions can include non-constant values.
+This form allows full flexibility and is internally implemented using the [multiIf](/sql-reference/functions/conditional-functions#multiif) function. Each condition is evaluated independently, and expressions can include non-constant values.
 
 ```sql
 SELECT
