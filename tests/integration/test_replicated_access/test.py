@@ -36,13 +36,15 @@ def started_cluster():
 @pytest.fixture(scope="function", autouse=True)
 def prepare_test():
     node1.query("DROP USER IF EXISTS test")
+    node1.query("DROP TABLE IF EXISTS table")
+    node1.query("DROP TABLE IF EXISTS secret")
     node1.query("CREATE USER test")
+    node1.query("CREATE TABLE table ON CLUSTER default (x UInt64) ENGINE=MergeTree ORDER BY x")
+    node1.query("CREATE TABLE secret ON CLUSTER default (value String) ENGINE=MergeTree ORDER BY value")
     yield
 
 
 def test_initiator_user_in_ddl(started_cluster):
-    node1.query("CREATE TABLE table ON CLUSTER default (x UInt64) ENGINE=MergeTree ORDER BY x")
-    node1.query("CREATE TABLE secret ON CLUSTER default (value String) ENGINE=MergeTree ORDER BY value")
     node1.query("INSERT INTO secret VALUES ('super_secret')")
 
     node1.query("GRANT ALTER ON table TO test")
