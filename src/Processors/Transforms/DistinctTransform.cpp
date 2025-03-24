@@ -138,7 +138,7 @@ void DistinctTransform::transform(Chunk & chunk)
 
     new_passes = ((new_set_size - old_set_size) + (new_bf_size - old_bf_size));
 
-    use_bf = use_bf && new_passes > ((num_rows * 8) / 10) ? true: false;
+    use_bf = use_bf && new_passes > (num_rows * 0.05) ? true: false;
 
     chunk.setColumns(std::move(columns), new_passes);
 
