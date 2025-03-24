@@ -1054,8 +1054,10 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
     /// If startup() for a table was not called, just use the default queue settings
-    const auto & table_metadata = startup_finished ? getTableMetadata() : ObjectStorageQueueSettings{};
+    if (!startup_finished)
+        return settings;
 
+    const auto & table_metadata = getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
     settings[ObjectStorageQueueSetting::keeper_path] = zk_path;
