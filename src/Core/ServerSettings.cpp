@@ -1021,7 +1021,7 @@ namespace DB
     <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
     ```
     )", 0) \
-DECLARE(Bool, storage_shared_set_join_use_inner_uuid, false, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0)
+    DECLARE(Bool, storage_shared_set_join_use_inner_uuid, false, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0)
 
 // clang-format on
 
