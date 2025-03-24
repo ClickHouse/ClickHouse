@@ -230,7 +230,9 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         const auto & external_dictionaries = getContext()->getExternalDictionariesLoader();
 
         for (const auto & load_result : external_dictionaries.getLoadResults()) {
-            max_last_successful_update_time = std::max(max_last_successful_update_time, std::chrono::duration_cast<Duration>(current_time - load_result.last_successful_update_time));
+            if (load_result.status == ExternalLoaderStatus::LOADED || load_result.status == ExternalLoaderStatus::LOADED_AND_RELOADING) {
+                max_last_successful_update_time = std::max(max_last_successful_update_time, std::chrono::duration_cast<Duration>(current_time - load_result.last_successful_update_time));
+            }
             failed_counter += (load_result.status == ExternalLoaderStatus::FAILED || load_result.status == ExternalLoaderStatus::FAILED_AND_RELOADING);
         }
         new_values["DictMaxLastSuccessfulUpdateTime"] = {max_last_successful_update_time.count(), "The maximum duration of dictionary has been failed"};
