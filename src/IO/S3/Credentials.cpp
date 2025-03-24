@@ -700,17 +700,14 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
 
             if (!credentials_configuration.sts_endpoint_override.empty())
             {
-                const String & new_endpoint = Poco::toLower(credentials_configuration.sts_endpoint_override);
-                if (new_endpoint.starts_with("https"))
-                {
-                    sts_client_config.scheme = Aws::Http::Scheme::HTTPS;
-                    sts_client_config.endpointOverride = new_endpoint.substr(8);
-                }
-                else
-                {
-                    sts_client_config.scheme = Aws::Http::Scheme::HTTP;
-                    sts_client_config.endpointOverride = new_endpoint.substr(7);
-                }
+                auto endpoint_uri = Poco::URI(credentials_configuration.sts_endpoint_override);
+
+                String url_without_scheme = endpoint_uri.getHost();
+                if (endpoint_uri.getPort() != 0)
+                    url_without_scheme += ":" + std::to_string(endpoint_uri.getPort());
+
+                sts_client_config.endpointOverride = url_without_scheme;
+                sts_client_config.scheme = endpoint_uri.getScheme() == "https" ? Aws::Http::Scheme::HTTPS : Aws::Http::Scheme::HTTP;
             }
 
             AddProvider(std::make_shared<Aws::Auth::STSAssumeRoleCredentialsProvider>(
