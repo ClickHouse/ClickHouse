@@ -562,22 +562,19 @@
         const uploaded = usage_data.uploaded;
         const originalDetails = usage_data.uploaded_details;
 
-        // Group small files into 'other'
-        const groupedDetails = {};
-        let otherTotal = 0;
-        for (const [name, size] of Object.entries(originalDetails)) {
-            const percent = size / uploaded;
-            if (percent < 0.15) {
-                otherTotal += size;
-            } else {
-                groupedDetails[name] = size;
-            }
-        }
-        if (otherTotal > 0) {
-            groupedDetails["other"] = otherTotal;
-        }
+        // Group small files and sort
+        let sortedEntries = Object.entries(originalDetails)
+            .map(([name, size]) => [name, size])
+            .sort((a, b) => b[1] - a[1]);
 
-        const labels = Object.keys(groupedDetails);
+        // Take top 20, rest go to "other"
+        let grouped = sortedEntries.slice(0, 20);
+        const rest = sortedEntries.slice(20);
+        const otherTotal = rest.reduce((sum, [, value]) => sum + value, 0);
+        if (otherTotal > 0) grouped.push(["other", otherTotal]);
+
+        const labels = grouped.map(([label]) => label);
+        const values = grouped.map(([, value]) => value);
 
         const chartWrapper = document.createElement("div");
 
@@ -586,7 +583,7 @@
         title.textContent = "usage:";
         chartWrapper.appendChild(title);
 
-        // Total size row
+        // Total uploaded row
         const totalRow = document.createElement("div");
         totalRow.style.display = "flex";
         totalRow.style.justifyContent = "space-between";
@@ -594,7 +591,6 @@
 
         const totalLabel = document.createElement("span");
         totalLabel.textContent = "uploaded";
-
         const uploadedMB = (uploaded / (1024 * 1024)).toFixed(2);
         const totalSize = document.createElement("span");
         totalSize.textContent = `${uploadedMB} MB`;
@@ -609,7 +605,7 @@
         canvas.height = 400;
         canvas.style.width = "100%";
         canvas.style.maxWidth = "400px";
-        canvas.style.margin = 0;
+        canvas.style.margin = "0";
         chartWrapper.appendChild(canvas);
 
         const ctx = canvas.getContext("2d");
@@ -617,11 +613,19 @@
         const centerY = canvas.height / 2;
         const radius = 150;
 
+        const sliceData = [];
         let startAngle = 0;
-        labels.forEach((label) => {
-            const value = groupedDetails[label];
+        labels.forEach((label, index) => {
+            const value = values[index];
             const sliceAngle = (value / uploaded) * 2 * Math.PI;
             const color = stringToColor(label);
+
+            sliceData.push({
+                label,
+                startAngle,
+                endAngle: startAngle + sliceAngle,
+                color,
+            });
 
             ctx.beginPath();
             ctx.moveTo(centerX, centerY);
@@ -633,12 +637,12 @@
             startAngle += sliceAngle;
         });
 
-        // Legend
+        // Legend + label mapping
         const legend = document.createElement("div");
-        legend.style.marginTop = "10px";
+        const legendMap = {}; // label => element
 
-        labels.forEach((label) => {
-            const value = groupedDetails[label];
+        labels.forEach((label, index) => {
+            const value = values[index];
             const percent = ((value / uploaded) * 100).toFixed(1);
             const sizeMB = (value / (1024 * 1024)).toFixed(2);
             const color = stringToColor(label);
@@ -648,6 +652,7 @@
             row.style.alignItems = "center";
             row.style.justifyContent = "space-between";
             row.style.fontSize = "10px";
+            row.style.cursor = "pointer";
 
             const left = document.createElement("span");
             left.style.display = "flex";
@@ -657,6 +662,7 @@
             dot.style.display = "inline-block";
             dot.style.width = "8px";
             dot.style.height = "8px";
+            dot.style.flexShrink = "0";
             dot.style.marginRight = "6px";
             dot.style.backgroundColor = color;
 
@@ -672,12 +678,65 @@
             row.appendChild(left);
             row.appendChild(right);
             legend.appendChild(row);
+
+            legendMap[label] = row;
+
+            // Hover from legend to chart
+            row.addEventListener("mouseenter", () => drawChart(label));
+            row.addEventListener("mouseleave", () => drawChart(null));
         });
 
         chartWrapper.appendChild(legend);
         statusContainer.appendChild(chartWrapper);
 
-        // Helper: consistent color from string
+        function drawChart(hoveredLabel) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            sliceData.forEach((slice) => {
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius, slice.startAngle, slice.endAngle);
+                ctx.closePath();
+                ctx.fillStyle = slice.color;
+                ctx.fill();
+                if (slice.label === hoveredLabel) {
+                    ctx.strokeStyle = "#000";
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+
+                // Legend underline toggle
+                const row = legendMap[slice.label];
+                if (row) {
+                    row.style.textDecoration = slice.label === hoveredLabel ? "underline" : "none";
+                }
+            });
+        }
+
+        // Hover from chart to legend
+        canvas.addEventListener("mousemove", (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left - centerX;
+            const y = event.clientY - rect.top - centerY;
+            const distance = Math.sqrt(x * x + y * y);
+            if (distance > radius) {
+                drawChart(null);
+                return;
+            }
+
+            const angle = Math.atan2(y, x);
+            const normalizedAngle = angle >= 0 ? angle : angle + 2 * Math.PI;
+
+            const hoveredSlice = sliceData.find(slice =>
+                normalizedAngle >= slice.startAngle && normalizedAngle <= slice.endAngle
+            );
+            drawChart(hoveredSlice?.label || null);
+        });
+
+        canvas.addEventListener("mouseleave", () => drawChart(null));
+
+        drawChart(null); // Initial draw
+
+        // Color utility
         function stringToColor(str) {
             let hash = 0;
             for (let i = 0; i < str.length; i++) {

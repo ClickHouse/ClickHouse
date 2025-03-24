@@ -405,10 +405,11 @@ class Runner:
                     )
                     result.set_link(link)
 
+        ci_db = None
         if workflow.enable_cidb:
             print("Insert results to CIDB")
             try:
-                CIDB(
+                ci_db = CIDB(
                     url=workflow.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
                     user=workflow.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
                     passwd=workflow.get_secret(
@@ -433,12 +434,24 @@ class Runner:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
 
+        if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
+            # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
+            workflow_result = Result.from_fs(workflow.name)
+            workflow_storage_usage = StorageUsage.from_dict(
+                workflow_result.ext.get("storage_usage", {})
+            )
+            if workflow_storage_usage:
+                print(
+                    "NOTE: storage_usage is found in workflow Result - insert into CIDB"
+                )
+                ci_db.insert_storage_usage(workflow_storage_usage)
+
         report_url = Info().get_job_report_url(latest=False)
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
             if Settings.USE_CUSTOM_GH_AUTH:
-                from praktika.gh_auth_deprecated import GHAuth
+                from .gh_auth_deprecated import GHAuth
 
                 pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
                 app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
