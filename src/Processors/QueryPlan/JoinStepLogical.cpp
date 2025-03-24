@@ -752,6 +752,32 @@ bool JoinStepLogical::hasPreparedJoinStorage() const
     return prepared_join_storage;
 }
 
+/// Push down columns from the join condition to the input tables
+void JoinStepLogical::pushDownColumns(JoinTableSide side, ActionsDAG & previous)
+{
+    const auto & actions = side == JoinTableSide::Left ? expression_actions.left_pre_join_actions : expression_actions.right_pre_join_actions;
+
+    std::unordered_set<const ActionsDAG::Node *> columns_to_push;
+    for (const auto * required : previous.getInputs())
+    {
+        const auto * output = actions->tryFindInOutputs(required->result_name);
+        if (output == nullptr || output->type == ActionsDAG::ActionType::INPUT || output->type == ActionsDAG::ActionType::COLUMN)
+            continue;
+        previous.addOrReplaceInOutputs(*required);
+        columns_to_push.insert(output);
+    }
+
+    if (columns_to_push.empty())
+        return;
+    auto split_res = actions->split(columns_to_push);
+
+
+    *actions = std::move(split_res.second);
+    split_res.first.mergeInplace(std::move(previous));
+    previous = std::move(split_res.first);
+    updateInputHeader(previous.getResultColumns(), side == JoinTableSide::Left ? 0 : 1);
+}
+
 std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, String & filter_column_name)
 {
     if (join_info.strictness != JoinStrictness::All)
