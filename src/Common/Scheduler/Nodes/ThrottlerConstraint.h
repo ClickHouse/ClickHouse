@@ -89,20 +89,27 @@ public:
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
-        // Dequeue request from the child
-        auto [request, child_now_active] = child->dequeueRequest();
-        if (!request)
-            return {nullptr, false};
+        // Cycle is required to do deactivations in the case of canceled requests, when dequeueRequest returns `nullptr`
+        while (true)
+        {
+            // Dequeue request from the child
+            auto [request, child_now_active] = child->dequeueRequest();
 
-        // We don't do `request->addConstraint(this)` because `finishRequest()` is no-op
+            // Deactivate if necessary
+            child_active = child_now_active;
+            if (!active())
+                busy_periods++;
 
-        updateBucket(request->cost);
-
-        child_active = child_now_active;
-        if (!active())
-            busy_periods++;
-        incrementDequeued(request->cost);
-        return {request, active()};
+            if (request)
+            {
+                // We don't do `request->addConstraint(this)` because `finishRequest()` is no-op
+                updateBucket(request->cost);
+                incrementDequeued(request->cost);
+                return {request, active()};
+            }
+            else
+                return {nullptr, false};
+        }
     }
 
     void finishRequest(ResourceRequest *) override
