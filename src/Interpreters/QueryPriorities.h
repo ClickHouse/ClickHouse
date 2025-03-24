@@ -78,10 +78,11 @@ private:
 
         if (!found)
             return;
+        auto timeout_ms = std::chrono::duration_cast<std::chrono::milliseconds>(timeout);
+        LOG_INFO(getLogger("QueryPriorities"), "Wait if need for wait time {}", timeout_ms.count());
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryPreempted};
         ProfileEvents::increment(ProfileEvents::QueryPreempted);
-
         /// Spurious wakeups are Ok. We allow to wait less than requested.
         condvar.wait_for(lock, timeout);
     }
@@ -92,12 +93,10 @@ public:
     private:
         QueryPriorities & parent;
         QueryPriorities::Container::value_type & value;
+        // The wait time in millisecond
         Poco::Timespan::TimeDiff wait_time;
 
     public:
-        HandleImpl(QueryPriorities & parent_, QueryPriorities::Container::value_type & value_)
-            : parent(parent_), value(value_), wait_time(1000 * 1000) {}
-
         // Override constructor with customized wait time for low priority query
         HandleImpl(QueryPriorities & parent_, QueryPriorities::Container::value_type & value_, Poco::Timespan::TimeDiff wait_time_)
             : parent(parent_), value(value_), wait_time(wait_time_) {}
