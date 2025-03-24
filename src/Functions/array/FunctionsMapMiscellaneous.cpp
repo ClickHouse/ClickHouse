@@ -589,7 +589,7 @@ REGISTER_FUNCTION(MapMiscellaneous)
             .description="Returns a map with elements which value matches the specified pattern.",
             .examples{{"mapExtractValueLike", "SELECT mapExtractValueLike(map('k1-1', 'v1-1', 'k2-1', 'v2-1'), 'v1%')", ""}},
             .category{"Maps"},
-        });
+    });
 }
 
 }
