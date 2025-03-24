@@ -2,8 +2,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <unordered_set>
 
-#include <iostream>
-
 namespace Coordination
 {
 
