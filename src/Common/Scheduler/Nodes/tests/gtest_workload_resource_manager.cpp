@@ -555,42 +555,51 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingRoundRobin)
     t.query("CREATE RESOURCE cpu (WORKER THREAD)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 4");
 
-    std::vector<TestQueryPtr> queries;
-    for (int query = 0; query < 2; query++)
-        queries.push_back(std::make_shared<TestQuery>(t));
-
-    auto ensure = [&] (size_t q0_threads, size_t q1_threads)
+    // Do multiple iterations to check that:
+    // (a) scheduling is memoryless
+    // (b) resource request canceling works as expected
+    for (int iteration = 0; iteration < 4; ++iteration)
     {
-        if (q0_threads > 0)
-            queries[0]->waitStartedThreads(q0_threads);
-        if (q1_threads > 0)
-            queries[1]->waitStartedThreads(q1_threads);
-    };
+        std::vector<TestQueryPtr> queries;
+        for (int query = 0; query < 2; query++)
+            queries.push_back(std::make_shared<TestQuery>(t));
 
-    auto finish = [&] (size_t q0_threads, size_t q1_threads)
-    {
-        if (q0_threads > 0)
-            queries[0]->finishThread(q0_threads);
-        if (q1_threads > 0)
-            queries[1]->finishThread(q1_threads);
-    };
+        auto ensure = [&] (size_t q0_threads, size_t q1_threads)
+        {
+            if (q0_threads > 0)
+                queries[0]->waitStartedThreads(q0_threads);
+            if (q1_threads > 0)
+                queries[1]->waitStartedThreads(q1_threads);
+        };
 
-    // Note that thread with number 0 is noncompeting
-    queries[0]->start("all", 7);
-    ensure(5, 0); // Q0: 0 1 2 3 4; Q1: -
-    queries[1]->start("all", 8);
-    ensure(5, 1); // Q0: 0 1 2 3 4; Q1: 0
-    finish(2, 0); // Q0: 2 3 4; Q1: 0
-    ensure(6, 1); // Q0: 2 3 4 5; Q2: 0
-    finish(1, 0); // Q0: 3 4 5; Q1: 0
-    ensure(6, 2); // Q0: 3 4 5; Q1: 0 1
-    finish(1, 1); // Q0: 4 5; Q1: 1
-    ensure(7, 1); // Q0: 4 5 6; Q1: 1
-    finish(1, 0); // Q0: 5 6; Q1: 1
-    ensure(7, 3); // Q0: 5 6; Q1: 1 2
+        auto finish = [&] (size_t q0_threads, size_t q1_threads)
+        {
+            if (q0_threads > 0)
+                queries[0]->finishThread(q0_threads);
+            if (q1_threads > 0)
+                queries[1]->finishThread(q1_threads);
+        };
 
-    // Q0 - is done, Q1 still have pending resource requests, but we cancel it
-    queries.clear();
+        // Note that:
+        // * thread with number 0 is noncompeting (i.e. does not enqueue resource request)
+        // * every query enqueues at most 1 resource request to the scheduler queue
+        // * round-robin is emulated using FIFO queue: the query that enqueued it's request first is the next to receive the slot
+        queries[0]->start("all", 7);
+        ensure(5, 0); // Q0: 0 1 2 3 4; Q1: -
+        queries[1]->start("all", 8);
+        ensure(5, 1); // Q0: 0 1 2 3 4; Q1: 0
+        finish(2, 0); // Q0: 2 3 4; Q1: 0
+        ensure(6, 1); // Q0: 2 3 4 5; Q2: 0
+        finish(1, 0); // Q0: 3 4 5; Q1: 0
+        ensure(6, 2); // Q0: 3 4 5; Q1: 0 1
+        finish(1, 1); // Q0: 4 5; Q1: 1
+        ensure(7, 1); // Q0: 4 5 6; Q1: 1
+        finish(1, 0); // Q0: 5 6; Q1: 1
+        ensure(7, 3); // Q0: 5 6; Q1: 1 2
+
+        // Q0 - is done, Q1 still have pending resource requests, but we cancel it
+        queries.clear();
+    }
 
     t.wait();
 }
