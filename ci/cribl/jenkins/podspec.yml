@@ -1,0 +1,36 @@
+kind: Pod
+metadata:
+  name: jenkins-agent
+  annotations:
+    cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+  labels:
+    cribl.io/cluster: "k8s-devops"
+    cribl.io/environment: "aws"
+    cribl.io/platform: "linux"
+    cribl.io/arch: "arm64"
+spec:
+  nodeSelector:
+    cribl.io/instance-type: "c7g.8xlarge"
+  containers:
+    - name: builder
+      image: clickhouse/binary-builder:c9ab730d9265dda4ddbc
+      command:
+        - sleep
+      args:
+        - 99d
+      env:
+        - name: DOCKER_TLS_CERTDIR
+          value: ''
+      volumeMounts:
+        - name: docker-graph-storage
+          mountPath: /var/lib/docker
+      resources:
+        requests:
+          memory: "55Gi"
+          cpu: "31000m"
+  imagePullSecrets:
+  - name: regcred
+  terminationGracePeriodSeconds: 0
+  volumes:
+    - name: docker-graph-storage
+      emptyDir: {}
