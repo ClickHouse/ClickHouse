@@ -3,9 +3,6 @@
 #include <Access/IAccessEntity.h>
 #include <Access/AuthenticationData.h>
 #include <Core/Types.h>
-#include <Core/UUID.h>
-#include <Parsers/IParser.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Common/SettingsChanges.h>
 #include <Common/callOnce.h>
 #include <Interpreters/ClientInfo.h>
@@ -350,9 +347,6 @@ std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> IAccessStorage
     return entities;
 }
 
-inline bool parseAccessStorageName(IParser::Pos & pos, Expected & expected, String & storage_name)
-{
-    return parseIdentifierOrStringLiteral(pos, expected, storage_name);
-}
+bool parseAccessStorageName(IParser::Pos & pos, Expected & expected, String & storage_name);
 
 }
