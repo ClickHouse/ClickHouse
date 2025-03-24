@@ -461,10 +461,10 @@ namespace DB
     DECLARE(UInt64, primary_index_cache_size, DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE, R"(Maximum size of cache for primary index (index of MergeTree family of tables).)", 0) \
     DECLARE(Double, primary_index_cache_size_ratio, DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the primary index cache relative to the cache's total size.)", 0) \
     DECLARE(Double, primary_index_cache_prewarm_ratio, 0.95, R"(The ratio of total size of mark cache to fill during prewarm.)", 0) \
-    DECLARE(String, iceberg_metadata_files_cache_policy, DEFAULT_DATALAKE_METADATA_CACHE_POLICY, "DataLake metadata cache policy name.", 0) \
-    DECLARE(UInt64, iceberg_metadata_files_cache_size, DEFAULT_DATALAKE_METADATA_CACHE_MAX_SIZE, "Size of cache for datalake metadata in bytes. Zero means disabled.", 0) \
-    DECLARE(UInt64, iceberg_metadata_files_cache_max_entries, DEFAULT_DATALAKE_METADATA_CACHE_MAX_ENTRIES, "Size of cache for datalake metadata in entries. Zero means disabled.", 0) \
-    DECLARE(Double, iceberg_metadata_files_cache_size_ratio, DEFAULT_DATALAKE_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the datalake metadata cache relative to the cache's total size.", 0) \
+    DECLARE(String, iceberg_metadata_files_cache_policy, DEFAULT_ICEBERG_METADATA_CACHE_POLICY, "Iceberg metadata cache policy name.", 0) \
+    DECLARE(UInt64, iceberg_metadata_files_cache_size, DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE, "Size of cache for iceberg metadata in bytes. Zero means disabled.", 0) \
+    DECLARE(UInt64, iceberg_metadata_files_cache_max_entries, DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES, "Size of cache for iceberg metadata files in entries. Zero means disabled.", 0) \
+    DECLARE(Double, iceberg_metadata_files_cache_size_ratio, DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the iceberg metadata cache relative to the cache's total size.", 0) \
     DECLARE(String, vector_similarity_index_cache_policy, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_POLICY, "Vector similarity index cache policy name.", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_size, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_SIZE, "Size of cache for vector similarityindex in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_max_entries, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES, "Size of cache for vector similarity index in entries. Zero means disabled.", 0) \

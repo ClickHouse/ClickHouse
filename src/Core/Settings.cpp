@@ -4277,22 +4277,6 @@ The probability of a fault injection during table creation after creating metada
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
 )", 0) \
-    DECLARE(Bool, enable_writes_to_iceberg_metadata_files_cache, true, R"(
-If turned on, datalake metadata will be written to cache
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Bool, enable_reads_from_iceberg_metadata_files_cache, true, R"(
-If turned on, datalake metadata will be read from cache
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
     \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)

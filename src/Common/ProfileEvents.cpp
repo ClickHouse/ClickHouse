@@ -75,9 +75,9 @@
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.", ValueType::Number) \
     M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
-    M(IcebergMetadataFilesCacheHits, "Number of times metadata of datalake has been found in the datalake metadata cache.", ValueType::Number) \
-    M(IcebergMetadataFilesCacheMisses, "Number of times an datalake meta has not been found in the datalake metadata cache and had to be read from (remote) disk.", ValueType::Number) \
-    M(IcebergMetadataFilesCacheWeightLost, "Approximate number of bytes evicted from the datalake metadata cache.", ValueType::Number) \
+    M(IcebergMetadataFilesCacheHits, "Number of times iceberg metadata files have been found in the cache.", ValueType::Number) \
+    M(IcebergMetadataFilesCacheMisses, "Number of times an iceberg metadata files have not been found in the iceberg metadata cache and had to be read from (remote) disk.", ValueType::Number) \
+    M(IcebergMetadataFilesCacheWeightLost, "Approximate number of bytes evicted from the iceberg metadata cache.", ValueType::Number) \
     M(VectorSimilarityIndexCacheHits, "Number of times an index granule has been found in the vector index cache.", ValueType::Number) \
     M(VectorSimilarityIndexCacheMisses, "Number of times an index granule has not been found in the vector index cache and had to be read from disk.", ValueType::Number) \
     M(VectorSimilarityIndexCacheWeightLost, "Approximate number of bytes evicted from the vector index cache.", ValueType::Number) \

@@ -3641,8 +3641,8 @@ void Context::updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::Abs
     if (!shared->iceberg_metadata_files_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Datalake metadata cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("iceberg_metadata_files_cache_size", DEFAULT_DATALAKE_METADATA_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("iceberg_metadata_files_cache_max_entries", DEFAULT_DATALAKE_METADATA_CACHE_MAX_ENTRIES);
+    size_t max_size_in_bytes = config.getUInt64("iceberg_metadata_files_cache_size", DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("iceberg_metadata_files_cache_max_entries", DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES);
     shared->iceberg_metadata_files_cache->setMaxSizeInBytes(max_size_in_bytes);
     shared->iceberg_metadata_files_cache->setMaxCount(max_entries);
 }
