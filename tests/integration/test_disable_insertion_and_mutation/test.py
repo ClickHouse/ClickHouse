@@ -93,4 +93,4 @@ def test_disable_insertion_and_mutation(started_cluster):
 
     assert "new_column\tString" in writing_node.query("DESC my_table")
     
-    writing_node.query("DROP TABLE IF EXISTS my_table SYNC")
+    writing_node.query("DROP TABLE IF EXISTS my_table ON CLUSTER default SYNC")
