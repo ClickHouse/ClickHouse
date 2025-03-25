@@ -10,7 +10,7 @@ Creates a new [dictionary](../../../sql-reference/dictionaries/index.md) with gi
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 CREATE [OR REPLACE] DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 (
     key1 type1  [DEFAULT|EXPRESSION expr1] [IS_OBJECT_ID],
@@ -44,7 +44,7 @@ The source for a dictionary can be a:
 
 Input table `source_table`:
 
-``` text
+```text
 ┌─id─┬─value──┐
 │  1 │ First  │
 │  2 │ Second │
@@ -53,7 +53,7 @@ Input table `source_table`:
 
 Creating the dictionary:
 
-``` sql
+```sql
 CREATE DICTIONARY id_value_dictionary
 (
     id UInt64,
@@ -67,7 +67,7 @@ LIFETIME(MIN 0 MAX 1000)
 
 Output the dictionary:
 
-``` sql
+```sql
 SHOW CREATE DICTIONARY id_value_dictionary;
 ```
 
@@ -116,7 +116,7 @@ LIFETIME(MIN 0 MAX 1000);
 
 Input table (in the remote ClickHouse service) `source_table`:
 
-``` text
+```text
 ┌─id─┬─value──┐
 │  1 │ First  │
 │  2 │ Second │
@@ -125,7 +125,7 @@ Input table (in the remote ClickHouse service) `source_table`:
 
 Creating the dictionary:
 
-``` sql
+```sql
 CREATE DICTIONARY id_value_dictionary
 (
     id UInt64,
