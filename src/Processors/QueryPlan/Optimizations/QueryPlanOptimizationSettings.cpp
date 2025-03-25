@@ -41,6 +41,8 @@ namespace Setting
     extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 max_limit_for_ann_queries;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
+    extern const SettingsBool query_plan_optimize_lazy_materialization;
+    extern const SettingsUInt64 query_plan_max_limit_for_lazy_materialization;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
@@ -94,6 +96,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
     force_projection_name = optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
+
+    optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
+    max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
     max_limit_for_ann_queries = from[Setting::max_limit_for_ann_queries].value;
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
