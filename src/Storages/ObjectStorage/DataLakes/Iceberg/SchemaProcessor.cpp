@@ -22,7 +22,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
-#include <Common/logger_useful.h>
 
 #include <IO/ReadHelpers.h>
 
