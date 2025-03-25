@@ -91,6 +91,8 @@ public:
 
     bool supportsPartitionPruning() override { return true; }
 
+    std::vector<Iceberg::IcebergHistory> getHistory() const;
+
 private:
     using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFilePtr>;
     using ManifestFilesStorage = std::unordered_map<String, Iceberg::ManifestFilePtr>;

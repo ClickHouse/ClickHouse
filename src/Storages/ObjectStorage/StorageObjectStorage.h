@@ -139,6 +139,16 @@ public:
 
     void updateExternalDynamicMetadata(ContextPtr) override;
 
+    ConfigurationPtr getConfiguration() const
+    {
+        return configuration;
+    }
+
+    ObjectStoragePtr getObjectStorage() const
+    {
+        return object_storage;
+    }
+
 protected:
     String getPathSample(ContextPtr context);
 

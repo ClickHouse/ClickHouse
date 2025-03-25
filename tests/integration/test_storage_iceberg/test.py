@@ -411,6 +411,7 @@ def test_partition_by(started_cluster, format_version, storage_type):
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
+    assert int(instance.query("SELECT count() FROM system.iceberg_history")) != 0
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -745,12 +746,12 @@ def test_evolved_schema_simple(
     execute_spark_query(
         f"""
             CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                a int NOT NULL, 
-                b float, 
+                a int NOT NULL,
+                b float,
                 c decimal(9,2) NOT NULL,
                 d array<int>
             )
-            USING iceberg 
+            USING iceberg
             OPTIONS ('format-version'='{format_version}')
         """
     )
@@ -1085,6 +1086,8 @@ def test_evolved_schema_simple(
             ["\\N", "4", "7.12", "\\N"],
         ],
     )
+    print (instance.query("SELECT * FROM system.iceberg_history"))
+    assert instance.query("SELECT count() FROM system.iceberg_history") != 0
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -1120,12 +1123,12 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
     execute_spark_query(
         f"""
             CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                a int NOT NULL, 
-                b float, 
+                a int NOT NULL,
+                b float,
                 c decimal(9,2) NOT NULL,
                 d array<int>
             )
-            USING iceberg 
+            USING iceberg
             OPTIONS ('format-version'='{format_version}')
         """
     )
@@ -2130,7 +2133,7 @@ def test_schema_evolution_with_time_travel(
             CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
                 a int NOT NULL
             )
-            USING iceberg 
+            USING iceberg
             OPTIONS ('format-version'='{format_version}')
         """
     )
@@ -2300,7 +2303,7 @@ def get_last_snapshot(path_to_table):
                     last_timestamp = timestamp
                     last_snapshot_id = data.get('current-snapshot-id')
     return last_snapshot_id
-    
+
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -2428,4 +2431,3 @@ def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
         )
         == instance.query("SELECT number, toString(number + 1) FROM numbers(300)")
     )
-
