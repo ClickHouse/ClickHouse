@@ -997,30 +997,30 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
 
     while (selected_ranges_iter != selected_ranges.end() && rejected_ranges_iter != rejected_ranges.end())
     {
-        auto start_value1 = selected_ranges_iter->value;
-        auto end_value1 = index_access.getValue(selected_ranges_iter->part_index, selected_ranges_iter->range.end);
-        auto start_value2 = rejected_ranges_iter->value;
+        auto selected_range_start = selected_ranges_iter->value;
+        auto selected_range_end = index_access.getValue(selected_ranges_iter->part_index, selected_ranges_iter->range.end);
+        auto rejected_range_start = rejected_ranges_iter->value;
 
 
-        int result1 = compareValues(start_value2, start_value1, false);
-        int result2 = compareValues(start_value2, end_value1, false);
+        int result1 = compareValues(rejected_range_start, selected_range_start, false);
+        int result2 = compareValues(rejected_range_start, selected_range_end, false);
 
-        if (result1 == 0 || result2 == 0 || (result1 > 0 && result2 < 0)) /// start2 inside [start1, end1]
+        if (result1 == 0 || result2 == 0 || (result1 > 0 && result2 < 0)) /// rejected_range_start inside [selected_range]
         {
             result.addRange(rejected_ranges_iter->part_index, rejected_ranges_iter->range);
             rejected_ranges_iter++;
         }
-        else if (result1 > 0) /// start2 beyond [start1, end1]
+        else if (result1 > 0) /// rejected_range_start beyond [selected_range]
         {
             result.addRange(selected_ranges_iter->part_index, selected_ranges_iter->range);
             selected_ranges_iter++;
         }
         else
         {
-            auto end_value2 = index_access.getValue(rejected_ranges_iter->part_index, rejected_ranges_iter->range.end);
-            int result3 = compareValues(end_value2, start_value1, false);
-            int result4 = compareValues(end_value2, end_value1, false);
-            /// end2 inside [start1, end1] OR [start2, end2] is encompassing [start1, end1]
+            auto rejected_range_end = index_access.getValue(rejected_ranges_iter->part_index, rejected_ranges_iter->range.end);
+            int result3 = compareValues(rejected_range_end, selected_range_start, false);
+            int result4 = compareValues(rejected_range_end, selected_range_end, false);
+            /// rejected_range_end inside [selected range] OR [rejected range] encompasses [selected range]
             if (result3 == 0 || result4 == 0 || (result3 > 0 && result4 < 0) || (result1 < 0 && result4 > 0))
             {
                 result.addRange(rejected_ranges_iter->part_index, rejected_ranges_iter->range);
