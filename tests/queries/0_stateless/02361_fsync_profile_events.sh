@@ -28,7 +28,7 @@ for i in {1..100}; do
 
     read -r FileSync FileOpen DirectorySync FileSyncElapsedMicroseconds DirectorySyncElapsedMicroseconds <<<"$(
     $CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "
-        system flush logs;
+        system flush logs query_log;
 
         select
             ProfileEvents['FileSync'],

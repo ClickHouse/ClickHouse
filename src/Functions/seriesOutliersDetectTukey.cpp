@@ -198,7 +198,7 @@ Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wi
 
 **Syntax**
 
-``` sql
+```sql
 seriesOutliersDetectTukey(series);
 seriesOutliersDetectTukey(series, min_percentile, max_percentile, k);
 ```
@@ -222,13 +222,13 @@ Type: [Array](../../sql-reference/data-types/array.md).
 
 Query:
 
-``` sql
+```sql
 SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4, 5, 6]) AS print_0;
 ```
 
 Result:
 
-``` text
+```text
 ┌───────────print_0─────────────────┐
 │[0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
 └───────────────────────────────────┘
@@ -236,13 +236,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 0.2, 0.8, 1.5) AS print_0;
 ```
 
 Result:
 
-``` text
+```text
 ┌─print_0──────────────────────────────┐
 │ [0,0,0,0,0,0,0,0,0,19.5,0,0,0,0,0,0] │
 └──────────────────────────────────────┘

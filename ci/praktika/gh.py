@@ -1,6 +1,6 @@
 import json
 import time
-from typing import Any, List, Union
+from typing import Any
 
 from ._environment import _Environment
 from .result import Result
@@ -70,10 +70,43 @@ class GH:
 
     @classmethod
     def post_commit_status(cls, name, status, description, url):
+        """
+        Sets GH commit status
+        :param name: commit status name
+        :param status:
+        :param description:
+        :param url:
+        :param repo:
+        :return: True or False in case of error
+        """
+        status = cls.convert_to_gh_status(status)
+        repo = _Environment.get().REPOSITORY
+        command = (
+            f"gh api -X POST -H 'Accept: application/vnd.github.v3+json' "
+            f"/repos/{repo}/statuses/{_Environment.get().SHA} "
+            f"-f state='{status}' -f target_url='{url}' "
+            f"-f description='{description}' -f context='{name}'"
+        )
+        return cls.do_command_with_retries(command)
+
+    @classmethod
+    def post_foreign_commit_status(
+        cls, name, status, description, url, repo, commit_sha
+    ):
+        """
+        Sets GH commit status in foreign repo or commit
+        :param name: commit status name
+        :param status:
+        :param description:
+        :param url:
+        :param repo: Foreign repo
+        :param commit_sha: Commit in a foreign repo
+        :return: True or False in case of error
+        """
         status = cls.convert_to_gh_status(status)
         command = (
             f"gh api -X POST -H 'Accept: application/vnd.github.v3+json' "
-            f"/repos/{_Environment.get().REPOSITORY}/statuses/{_Environment.get().SHA} "
+            f"/repos/{repo}/statuses/{commit_sha} "
             f"-f state='{status}' -f target_url='{url}' "
             f"-f description='{description}' -f context='{name}'"
         )

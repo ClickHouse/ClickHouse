@@ -15,7 +15,7 @@ if __name__ == "__main__":
 
     # store docker digests
     image_to_digest_map = DockerDigester().get_all_digests()
-    info.store_custom_data(key="digest_dockers", value=image_to_digest_map)
+    info.store_custom_data(key="digest_dockers", value={})
 
     # store changed files
     if info.pr_number > 0:

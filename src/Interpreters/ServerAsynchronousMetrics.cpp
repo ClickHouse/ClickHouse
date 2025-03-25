@@ -6,16 +6,15 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cache/QueryCache.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-
-#include <Common/PageCache.h>
-#include <Common/quoteString.h>
 
 #include <Databases/IDatabase.h>
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
+#include <Common/PageCache.h>
+#include <Common/quoteString.h>
 
 #include "config.h"
 #if USE_AWS_S3
@@ -67,7 +66,7 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     bool update_jemalloc_epoch_,
     bool update_rss_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_)
+    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_, global_context_)
     , update_heavy_metrics(update_heavy_metrics_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
@@ -98,12 +97,12 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
     if (auto page_cache = getContext()->getPageCache())
     {
-        auto rss = page_cache->getResidentSetSize();
-        new_values["PageCacheBytes"] = { rss.page_cache_rss, "Userspace page cache memory usage in bytes" };
-        new_values["PageCachePinnedBytes"] = { page_cache->getPinnedSize(), "Userspace page cache memory that's currently in use and can't be evicted" };
-
-        if (rss.unreclaimable_rss.has_value())
-            new_values["UnreclaimableRSS"] = { *rss.unreclaimable_rss, "The amount of physical memory used by the server process, in bytes, excluding memory reclaimable by the OS (MADV_FREE)" };
+        new_values["PageCacheMaxBytes"] = { page_cache->maxSizeInBytes(),
+            "Current limit on the size of userspace page cache, in bytes." };
+        new_values["PageCacheBytes"] = { page_cache->sizeInBytes(),
+            "Total size of userspace page cache in bytes." };
+        new_values["PageCacheCells"] = { page_cache->count(),
+            "Total number of entries in the userspace page cache." };
     }
 
     if (auto uncompressed_cache = getContext()->getUncompressedCache())
@@ -136,10 +135,10 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             " The files opened with `mmap` are kept in the cache to avoid costly TLB flushes."};
     }
 
-    if (auto query_cache = getContext()->getQueryCache())
+    if (auto query_result_cache = getContext()->getQueryResultCache())
     {
-        new_values["QueryCacheBytes"] = { query_cache->sizeInBytes(), "Total size of the query cache in bytes." };
-        new_values["QueryCacheEntries"] = { query_cache->count(), "Total number of entries in the query cache." };
+        new_values["QueryCacheBytes"] = { query_result_cache->sizeInBytes(), "Total size of the query cache in bytes." };
+        new_values["QueryCacheEntries"] = { query_result_cache->count(), "Total number of entries in the query cache." };
     }
 
     {
@@ -438,9 +437,10 @@ void ServerAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
         asynchronous_metric_log->addValues(new_values);
 }
 
-void ServerAsynchronousMetrics::updateDetachedPartsStats()
+void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
 {
     DetachedPartsStats current_values{};
+    MutationStats current_mutation_stats{};
 
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
@@ -465,11 +465,19 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
 
                     ++current_values.count;
                 }
+
+                // mutation status
+                for (const auto & mutation_status : table_merge_tree->getMutationsStatus())
+                {
+                    if (!mutation_status.is_done)
+                        ++current_mutation_stats.pending_mutations;
+                }
             }
         }
     }
 
     detached_parts_stats = current_values;
+    mutation_stats = current_mutation_stats;
 }
 
 void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
@@ -487,7 +495,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
             heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count() / 1e6;
 
         /// Test shows that listing 100000 entries consuming around 0.15 sec.
-        updateDetachedPartsStats();
+        updateMutationAndDetachedPartsStats();
 
         watch.stop();
 
@@ -514,6 +522,8 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
 
     new_values["NumberOfDetachedParts"] = { detached_parts_stats.count, "The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts and they can be removed." };
     new_values["NumberOfDetachedByUserParts"] = { detached_parts_stats.detached_by_user, "The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed." };
+    new_values["NumberOfPendingMutations"] = { mutation_stats.pending_mutations, "The total number of mutations that are in left to be mutated." };
+    new_values["NumberOfStuckMutations"] = { mutation_stats.stuck_mutations, "The total number of mutations which have data part left to be mutated over the last 1 hour." };
 }
 
 }

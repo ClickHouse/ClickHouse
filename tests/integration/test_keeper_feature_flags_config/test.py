@@ -3,7 +3,6 @@
 import os
 
 import pytest
-from kazoo.client import KazooClient, KazooState
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -31,10 +30,7 @@ def started_cluster():
 
 
 def get_connection_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
+    _fake_zk_instance = keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
     return _fake_zk_instance
 
 
@@ -72,12 +68,12 @@ def test_keeper_feature_flags(started_cluster):
         for feature, is_enabled in feature_flags:
             node.wait_for_log_line(
                 f"ZooKeeperClient: Keeper feature flag {feature.upper()}: {'enabled' if is_enabled else 'disabled'}",
-                look_behind_lines=1000,
+                look_behind_lines=10000,
             )
 
             node.wait_for_log_line(
                 f"KeeperContext: Keeper feature flag {feature.upper()}: {'enabled' if is_enabled else 'disabled'}",
-                look_behind_lines=1000,
+                look_behind_lines=10000,
             )
 
             assert f"{feature}\t{1 if is_enabled else 0}" in res

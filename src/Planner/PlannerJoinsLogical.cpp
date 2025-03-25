@@ -26,15 +26,16 @@
 #include <Analyzer/JoinNode.h>
 
 #include <Dictionaries/IDictionary.h>
-#include <Interpreters/IKeyValueEntity.h>
-#include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/MergeJoin.h>
-#include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/ConcurrentHashJoin.h>
-#include <Interpreters/DirectJoin.h>
-#include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DirectJoin.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/GraceHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/MergeJoin.h>
 #include <Interpreters/PasteJoin.h>
 
 #include <Planner/PlannerActionsVisitor.h>
@@ -551,13 +552,16 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         build_context.result_join_info.expression.condition.predicates.push_back(std::move(predicate));
     }
 
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
     return std::make_unique<JoinStepLogical>(
         left_header,
         right_header,
         std::move(build_context.result_join_info),
         std::move(build_context.result_join_expression_actions),
         Names(outer_scope_columns.begin(), outer_scope_columns.end()),
-        planner_context->getQueryContext());
+        settings[Setting::join_use_nulls],
+        JoinSettings(settings),
+        SortingStep::Settings(settings));
 }
 
 PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expression, const PlannerContextPtr & planner_context)

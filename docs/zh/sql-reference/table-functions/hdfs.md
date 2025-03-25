@@ -15,7 +15,7 @@ hdfs(URI, format, structure)
 **输入参数**
 
 -   `URI` — HDFS中文件的相对URI。 在只读模式下，文件路径支持以下通配符: `*`, `?`, `{abc,def}` 和 `{N..M}` ，其中 `N`, `M` 是数字, \``'abc', 'def'` 是字符串。
--   `format` — 文件的[格式](../../interfaces/formats.md#formats)。
+-   `format` — 文件的[格式](/sql-reference/formats)。
 -   `structure` — 表的结构。格式  `'column1_name column1_type, column2_name column2_type, ...'`。
 
 **返回值**
@@ -98,4 +98,4 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 
 **另请参阅**
 
--   [虚拟列](/operations/table_engines/#table_engines-virtual_columns)
+-   [虚拟列](/engines/table-engines#table_engines-virtual_columns)

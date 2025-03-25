@@ -16,7 +16,6 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -24,7 +23,7 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <Common/atomicRename.h>
+#include <Common/assert_cast.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
@@ -36,6 +35,7 @@
 
 #include <base/isSharedPtrUnique.h>
 #include <boost/range/adaptor/map.hpp>
+#include <fmt/ranges.h>
 
 #include "config.h"
 
@@ -65,6 +65,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
+    extern const int TABLE_UUID_MISMATCH;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int DATABASE_NOT_EMPTY;
@@ -361,6 +362,17 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
+        else
+        {
+            const auto & table_storage_id = db_and_table.second->getStorageID();
+            if (db_and_table.first->getDatabaseName() != table_id.database_name ||
+                std::tie(table_storage_id.database_name, table_storage_id.table_name) != std::tie(table_id.database_name, table_id.table_name))
+            {
+                if (exception)
+                    exception->emplace(Exception(ErrorCodes::TABLE_UUID_MISMATCH, "Table {} does not match {}", table_id.getNameForLogs(), table_storage_id.getNameForLogs()));
+                return {};
+            }
+        }
 
         /// Wait for table to be started because we are going to return StoragePtr
         db_and_table.first->waitTableStarted(table_id.getTableName());
@@ -502,10 +514,12 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 
 void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
 {
+    if (database_name.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
+
     DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
-        assert(!database_name.empty());
         if (auto it = databases.find(database_name); it != databases.end())
             db = it->second;
     }
@@ -909,6 +923,8 @@ void DatabaseCatalog::updateViewDependency(const StorageID & old_source_table_id
 
 DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table)
 {
+    if (database.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot obtain lock for empty database");
     std::unique_lock lock(ddl_guards_mutex);
     /// TSA does not support unique_lock
     auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
@@ -1111,7 +1127,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             {
                 tryLogCurrentException(log, "Cannot load partially dropped table " + table_id.getNameForLogs() +
                                             " from: " + dropped_metadata_path +
-                                            ". Parsed query: " + serializeAST(*create) +
+                                            ". Parsed query: " + create->formatForLogging() +
                                             ". Will remove metadata and " + data_path +
                                             ". Garbage may be left in ZooKeeper.");
             }

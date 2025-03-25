@@ -19,7 +19,7 @@ url(URL, format, structure)
 **参数**
 
 - `URL` — HTTP或HTTPS服务器地址，它可以接受 `GET` 或 `POST` 请求 (对应于 `SELECT` 或 `INSERT` 查询)。类型: [String](../../sql-reference/data-types/string.md)。
-- `format` — 数据[格式](../../interfaces/formats.md#formats)。类型: [String](../../sql-reference/data-types/string.md)。
+- `format` — 数据[格式](/sql-reference/formats)。类型: [String](../../sql-reference/data-types/string.md)。
 - `structure` — 以 `'UserID UInt64, Name String'` 格式的表结构。确定列名和类型。 类型: [String](../../sql-reference/data-types/string.md)。
 
 **返回值**
@@ -48,4 +48,4 @@ SELECT * FROM test_table;
 
 **另请参阅**
 
--   [虚拟列](/operations/table_engines/#table_engines-virtual_columns)
+-   [虚拟列](/engines/table-engines#table_engines-virtual_columns)

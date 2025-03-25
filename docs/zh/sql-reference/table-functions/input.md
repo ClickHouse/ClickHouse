@@ -14,7 +14,7 @@ sidebar_label: input
 该函数只能在 `INSERT SELECT` 查询中使用，并且只能使用一次，但在其他方面，行为类似于普通的表函数
 （例如，它可以用于子查询等。).
 
-数据可以像普通 `INSERT` 查询一样发送，并以必须在查询末尾指定的任何可用[格式](../../interfaces/formats.md#formats)
+数据可以像普通 `INSERT` 查询一样发送，并以必须在查询末尾指定的任何可用[格式](/sql-reference/formats)
 传递（与普通 `INSERT SELECT`不同)。
 
 该函数的主要特点是，当服务器从客户端接收数据时，它会同时根据 `SELECT` 子句中的表达式列表将其转换，并插入到目标表中。

@@ -223,7 +223,11 @@ StorageKafka::StorageKafka(
     });
 }
 
-StorageKafka::~StorageKafka() = default;
+StorageKafka::~StorageKafka()
+{
+    if (!shutdown_called)
+        shutdown(false);
+}
 
 void StorageKafka::read(
     QueryPlan & query_plan,
@@ -283,6 +287,10 @@ void StorageKafka::startup()
 
 void StorageKafka::shutdown(bool)
 {
+    // Interrupt streaming, inform consumers to stop
+    for (auto & task : tasks)
+        task->stream_cancelled = true;
+
     shutdown_called = true;
     cleanup_cv.notify_one();
 
@@ -302,9 +310,6 @@ void StorageKafka::shutdown(bool)
         Stopwatch watch;
         for (auto & task : tasks)
         {
-            // Interrupt streaming thread
-            task->stream_cancelled = true;
-
             LOG_TEST(log, "Waiting for cleanup of a task");
             task->holder->deactivate();
         }

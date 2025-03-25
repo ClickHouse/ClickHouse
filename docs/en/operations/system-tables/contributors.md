@@ -1,8 +1,8 @@
 ---
-description: "System table containing information about contributors."
+description: 'System table containing information about contributors.'
+keywords: ['system table', 'contributors']
 slug: /operations/system-tables/contributors
-title: "contributors"
-keywords: ["system table", "contributors"]
+title: 'system.contributors'
 ---
 
 Contains information about contributors. The order is random at query execution time.

@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -10,6 +9,8 @@
 #include <Common/SipHash.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+
+#include <fmt/ranges.h>
 
 
 namespace DB
@@ -30,9 +31,7 @@ static String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    WriteBufferFromOwnString buf;
-    formatAST(*ast, buf, false, true);
-    return buf.str();
+    return ast->formatWithSecretsOneLine();
 }
 
 static String formattedASTNormalized(const ASTPtr & ast)
@@ -41,9 +40,7 @@ static String formattedASTNormalized(const ASTPtr & ast)
         return "";
     auto ast_normalized = ast->clone();
     FunctionNameNormalizer::visit(ast_normalized.get());
-    WriteBufferFromOwnString buf;
-    formatAST(*ast_normalized, buf, false, true);
-    return buf.str();
+    return ast_normalized->formatWithSecretsOneLine();
 }
 
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)

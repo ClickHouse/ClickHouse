@@ -42,7 +42,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg)
          {
              const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'"};
-             return rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomly(choices);
          },
          {},
          false)},
@@ -55,6 +55,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"enable_block_offset_column", CHSetting(trueOrFalse, {}, false)},
     {"enable_index_granularity_compression", CHSetting(trueOrFalse, {}, false)},
     {"enable_mixed_granularity_parts", CHSetting(trueOrFalse, {}, false)},
+    {"enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", CHSetting(trueOrFalse, {}, false)},
     {"enable_vertical_merge_algorithm", CHSetting(trueOrFalse, {}, false)},
     {"enforce_index_structure_match_on_partition_manipulation", CHSetting(trueOrFalse, {}, false)},
     {"exclude_deleted_rows_for_part_size_in_merge", CHSetting(trueOrFalse, {}, false)},
@@ -70,7 +71,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg)
          {
              const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'"};
-             return rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomly(choices);
          },
          {},
          false)},
@@ -204,14 +205,29 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
 
 std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
+std::unordered_map<String, CHSetting> restoreSettings
+    = {{"allow_different_database_def", CHSetting(trueOrFalse, {}, false)},
+       {"allow_different_table_def", CHSetting(trueOrFalse, {}, false)},
+       {"allow_non_empty_tables", CHSetting(trueOrFalse, {}, false)},
+       {"allow_s3_native_copy", CHSetting(trueOrFalse, {}, false)},
+       {"async", CHSetting(trueOrFalse, {}, false)},
+       {"internal", CHSetting(trueOrFalse, {}, false)},
+       {"restore_broken_parts_as_detached", CHSetting(trueOrFalse, {}, false)},
+       {"skip_unresolved_access_dependencies", CHSetting(trueOrFalse, {}, false)},
+       {"structure_only", CHSetting(trueOrFalse, {}, false)},
+       {"update_access_entities_dependents", CHSetting(trueOrFalse, {}, false)},
+       {"use_same_password_for_base_backup", CHSetting(trueOrFalse, {}, false)},
+       {"use_same_s3_credentials_for_base_backup", CHSetting(trueOrFalse, {}, false)}};
+
 void loadFuzzerTableSettings(const FuzzConfig & fc)
 {
     if (!fc.storage_policies.empty())
     {
         merge_storage_policies.insert(merge_storage_policies.end(), fc.storage_policies.begin(), fc.storage_policies.end());
-        mergeTreeTableSettings.insert(
-            {{"storage_policy",
-              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomlyFromVector(merge_storage_policies) + "'"; }, {}, false)}});
+        const auto & storage_policy
+            = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(merge_storage_policies) + "'"; }, {}, false);
+        mergeTreeTableSettings.insert({{"storage_policy", storage_policy}});
+        restoreSettings.insert({{"storage_policy", storage_policy}});
     }
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},

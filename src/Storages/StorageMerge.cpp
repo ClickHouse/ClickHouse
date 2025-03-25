@@ -12,6 +12,7 @@
 #include <Common/quoteString.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
@@ -31,7 +32,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/queryToString.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>

@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <deque>
 
-#include <fmt/core.h>
 #include <fmt/format.h>
 
 #include <IO/WriteBuffer.h>
@@ -22,7 +21,7 @@ struct MarkRange
     size_t end;
 
     MarkRange() = default;
-    MarkRange(const size_t begin_, const size_t end_) : begin{begin_}, end{end_} {}
+    MarkRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
 
     size_t getNumberOfMarks() const;
 

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>praktika report</title>
-    <link rel="icon" href="https://w4z3pajszlbkfcw2wcylfei5km0xmwag.lambda-url.us-east-1.on.aws/" type="image/x-icon">
+<!--    <link rel="icon" href="https://w4z3pajszlbkfcw2wcylfei5km0xmwag.lambda-url.us-east-1.on.aws/" type="image/x-icon">-->
     <style>
 
         /* Default (Day Theme) */
@@ -15,8 +15,20 @@
             --footer-background: #f1f1f1;
             --footer-text-color: #000;
             --status-width: 300px;
-            --pending-bar-color: #fae8c6;
+            --pending-bar-color: #f5e6a3;
             --skipped-bar-color: #ccc;
+        }
+
+        .hidden {
+            transform: translateX(-100%); /* Moves status-container out of view */
+        }
+
+        .expanded {
+            left: 10px !important; /* Move result-container to the left */
+        }
+
+        .button-moved {
+            left: 0 !important; /* Move button to the left when sidebar is hidden */
         }
 
         body {
@@ -49,15 +61,6 @@
             --file-link-hover-color: #004d9a;
         }
 
-        .name-column a {
-            color: var(--link-color);
-            text-decoration: none;
-        }
-
-        .name-column a:hover {
-            color: var(--link-hover-color);
-        }
-
         #status-container {
             position: fixed;
             top: 0;
@@ -65,12 +68,33 @@
             left: 0;
             width: var(--status-width);
             background-color: var(--tile-background);
-            padding: 20px;
+            padding-left: 15px;
+            padding-right: 15px;
             box-sizing: border-box;
-            font-size: 18px;
+            /*font-size: 18px;*/
             margin: 0;
             overflow-y: auto;
         }
+
+        #toggle-status-bar {
+            position: fixed;
+            top: 40%;
+            left: calc(var(--status-width));
+            background-color: var(--pending-bar-color);
+            color: var(--tile-background);
+            border: none;
+            padding: 20px 4px 20px 4px;
+            cursor: pointer;
+            border-top-right-radius: 8px;
+            border-bottom-right-radius: 8px;
+        }
+
+        @media (min-width: 1200px) {
+            #toggle-status-bar {
+                display: none;
+            }
+        }
+
         .file-link {
             color: var(--file-link-color);
             font-weight: bold;
@@ -91,7 +115,8 @@
         .key-value-pair {
             display: flex;               /* Enable Flexbox for alignment */
             justify-content: space-between; /* Distribute space between key and value */
-            margin-bottom: 20px;         /* Add space between each pair */
+            padding-bottom: 15px;
+            padding-top: 15px;
         }
 
         .json-key {
@@ -101,15 +126,12 @@
         .json-value {
             font-weight: normal;
             font-family: 'Source Code Pro', monospace, sans-serif;
-            letter-spacing: -0.5px;
         }
         .external-link {
             color: var(--file-link-color);
-            font-size: 18px;
             font-family: 'Source Code Pro', monospace, sans-serif;
             cursor: pointer;
             display: inline-block;
-            margin-top: 5px;
             text-decoration: none;
         }
 
@@ -120,8 +142,8 @@
         .json-value-small {
             font-weight: normal;
             font-family: 'Source Code Pro', monospace, sans-serif;
-            letter-spacing: -0.5px;
             font-size: 0.75rem;
+            justify-content: left;
         }
         .dropdown-value {
             width: 100px;
@@ -144,7 +166,6 @@
 
             padding: 0;
             box-sizing: border-box;
-            font-size: 18px;
             font-weight: normal;
 
             overflow: auto;
@@ -160,11 +181,10 @@
         #info-content {
             text-align: left;
             padding: 10px;
-            margin-bottom: 20px;
         }
 
         #footer {
-            padding: 5px;
+            padding: 10px;
             position: fixed;
             bottom: 0;
             left: 0;
@@ -212,7 +232,6 @@
 
         #theme-toggle {
             cursor: pointer;
-            font-size: 20px;
             color: white;
         }
 
@@ -225,29 +244,53 @@
         }
 
         table {
-            table-layout: auto;
-            width: auto;
+            table-layout: fixed; /* Ensures columns behave properly */
+            width: auto; /* Table shrinks to fit content */
+            max-width: 100%; /* Prevents overflow */
             border-collapse: collapse;
         }
 
-        th.name-column, td.name-column {
-            width: auto;
+        th, td {
+            white-space: nowrap; /* Prevent text wrapping */
         }
 
-        th.status-column, td.status-column {
-            width: 80px;
-            white-space: nowrap; /* Prevent text from wrapping */
-            overflow: hidden; /* Hide the overflowed text */
+        th.name-column, td.name-column,
+        th.status-column, td.status-column,
+        td.dur-column, th.dur-column {
+            width: 1px;
+            max-width: fit-content;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
-        th.time-column, td.time-column {
-            max-width: 120px; /* Set the maximum width for the column */
-            white-space: nowrap; /* Prevent text from wrapping */
+        td.dur-column {
             text-align: right;
         }
 
-        th.info-column, td.info-column {
-            width: 100%; /* Allow the column to take all the remaining space */
+        th.time-column, td.time-column {
+            width: auto; /* This column takes remaining space */
+            text-align: left;
+        }
+
+        .name-column a {
+            color: var(--link-color);
+            text-decoration: underline;
+            display: inline-block;
+        }
+
+        .name-column a:hover {
+            color: var(--link-hover-color);
+        }
+
+        /* Non-clickable text should look similar but without underline */
+        .name-column .disabled {
+            color: var(--link-color); /* Same color as links */
+            cursor: default; /* No pointer cursor */
+            text-decoration: none; /* No underline */
+        }
+
+        .status-column span[style*="pointer"] {
+            text-decoration: underline;
         }
 
         th, td {
@@ -299,6 +342,7 @@
 <body>
 <div id="status-container"></div>
 <div id="result-container"></div>
+<button id="toggle-status-bar" onclick="toggleStatusBar()">‖</button>
 
 <footer id="footer">
     <div class="left"></div>
@@ -315,6 +359,22 @@
             localStorage.setItem('theme', 'night');
         } else {
             localStorage.setItem('theme', 'day');
+        }
+    }
+
+    function toggleStatusBar() {
+        var statusContainer = document.getElementById("status-container");
+        var resultContainer = document.getElementById("result-container");
+        var toggleButton = document.getElementById("toggle-status-bar");
+
+        if (statusContainer.classList.contains("hidden")) {
+            statusContainer.classList.remove("hidden");
+            resultContainer.classList.remove("expanded");
+            toggleButton.classList.remove("button-moved");
+        } else {
+            statusContainer.classList.add("hidden");
+            resultContainer.classList.add("expanded");
+            toggleButton.classList.add("button-moved");
         }
     }
 
@@ -387,7 +447,15 @@
         return 'status-other';
     }
 
-    function addKeyValueToStatus(key, value, options = null, link = null) {
+    function addInfoLineToStatus(info) {
+        const statusContainer = document.getElementById('status-container');
+        const line = document.createElement('div');
+        line.className = 'json-value-small';
+        line.textContent = info;
+        statusContainer.appendChild(line);
+    }
+
+    function addKeyValueToStatus(key, value, options = null, optionValues = null, link = null) {
         const statusContainer = document.getElementById('status-container');
 
         let keyValuePair = document.createElement('div');
@@ -404,16 +472,15 @@
             valueElement = document.createElement('select');
             valueElement.className = 'dropdown-value';
 
-            options.forEach(optionValue => {
+            options.forEach((optionTextContent, i) => {
                 const option = document.createElement('option');
-                option.value = optionValue;
-                option.textContent = optionValue.slice(0, 10);
+                option.value = optionValues?.[i] ?? optionTextContent;
+                option.textContent = optionTextContent;
 
                 // Set the initially selected option
-                if (optionValue === value) {
+                if (option.value === value) {
                     option.selected = true;
                 }
-
                 valueElement.appendChild(option);
             });
 
@@ -433,7 +500,7 @@
             } else {
                 // Create a simple text display if no options or link are provided
                 valueElement = document.createElement('div');
-                valueElement.className = key !== "" ? "json-value" : "json-value-small";
+                valueElement.className = "json-value";
                 valueElement.textContent = value || 'N/A';
             }
         }
@@ -474,9 +541,7 @@
                 if (!link.includes(base_url)) {
                     textLink.textContent = link.split('/').pop();
                 } else {
-                    // it's a link to another report:
-                    const {PR, sha} = getPRandShaFromLink(link)
-                    textLink.textContent = `Report PR#${PR}, sha#${sha.substring(0, 10)}`;
+                    textLink.textContent = "Report";
                 }
                 textLink.classList.add("file-link")
 
@@ -688,9 +753,7 @@
         statusContainer.appendChild(keyValuePair);
     }
 
-    // Define the fixed columns globally, so both functions can use it
-    const columns = ['status', 'name', 'start_time', 'duration'];
-    // const columns = ['status', 'name', 'start_time', 'duration', 'info'];
+    const columns = ['status', 'name', 'duration', 'start_time'];
 
     const columnSymbols = {
         // name: '🗂️',
@@ -714,7 +777,7 @@
                 th.textContent = columnSymbols[column] || column;
                 th.style.cursor = 'pointer'; // Make headers clickable
                 th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
-                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, columns)); // Add click event to sort the table
+                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, columns));
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
@@ -731,7 +794,7 @@
     }
 
     function populateTableRows(tbody, results, nest_level) {
-        const currentUrl = new URL(window.location.href);  // Get the current URL
+        const currentUrl = new URL(window.location.href);
 
         // Clear existing rows if re-rendering (used in sorting)
         tbody.innerHTML = '';
@@ -749,34 +812,47 @@
                     span.className = getStatusClass(value);
                     span.textContent = value;
                     td.classList.add('status-column');
-                    if (result.info && result.info.trim() !== "") {
+                    row.dataset.status = value ? value.toLowerCase() : "";
+                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0)) {
                         span.style.cursor = "pointer";
-                        span.addEventListener('click', () => toggleInfoRow(row, result.info));
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.links));
                     }
                     td.appendChild(span);
 
-                    // // Click event to toggle the info row
-                    // span.addEventListener('click', () => toggleInfoRow(row, result.info));
                 } else if (column === 'name') {
-                    // Create a link for the name field, using name_X
-                    const link = document.createElement('a');
-                    const newUrl = new URL(currentUrl);
-                    newUrl.searchParams.set(`name_${nest_level}`, value);
-                    link.href = newUrl.toString();
-                    link.textContent = value;
-                    td.classList.add('name-column');
-                    td.appendChild(link);
+                    const statusValue = result["status"] ? result["status"].toLowerCase() : "";
+
+                    if (
+                        (nest_level === 1 && ["pending", "skipped", "running"].includes(statusValue)) ||
+                        (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0))
+                    ) {
+                        // If status is pending, just show plain text
+                        const span = document.createElement('span');
+                        span.textContent = value;
+                        span.classList.add('disabled');
+                        td.classList.add('name-column');
+                        td.appendChild(span);
+                    } else {
+                        // Create a link for the name field
+                        const newUrl = new URL(currentUrl);
+                        newUrl.searchParams.set(`name_${nest_level}`, value);
+
+                        const link = document.createElement('a');
+                        link.href = newUrl.toString();
+                        link.textContent = value;
+                        td.classList.add('name-column');
+                        td.appendChild(link);
+                    }
+
                 } else if (column === 'start_time') {
                     td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
-                } else if (column === 'duration') {
-                    td.classList.add('time-column');
-                    td.textContent = value ? formatDuration(value) : '';
-                } else if (column === 'info') {
-                    td.textContent = value && value.includes('\n') ? '↵' : (value || '');
-                    td.classList.add('info-column');
-                }
 
+                } else if (column === 'duration') {
+                    td.classList.add('dur-column');
+                    td.textContent = value ? formatDuration(value) : '';
+
+                }
                 row.appendChild(td);
             });
 
@@ -787,8 +863,8 @@
     /**
      * Toggles an additional row below the clicked row to display the "info" text.
      */
-    function toggleInfoRow(row, infoText) {
-        if (!infoText) return; // Do nothing if there's no info
+    function toggleInfoRow(row, infoText, links = []) {
+        if (!infoText && links.length === 0) return;
 
         let nextRow = row.nextElementSibling;
 
@@ -802,8 +878,39 @@
 
             const infoCell = document.createElement('td');
             infoCell.colSpan = row.children.length; // Make it span the full width
-            infoCell.innerHTML = infoText.replace(/\n/g, '<br>'); // Preserve line breaks
             infoCell.classList.add('info-text');
+
+            if (infoText) {
+                let content = document.createElement('div');
+                infoCell.innerHTML = '<pre></pre>';
+                // Append content securely, without interpreting HTML tags.
+                infoCell.firstChild.textContent = infoText;
+                infoCell.appendChild(content);
+            }
+
+            // If there are links, create a list of links
+            if (Array.isArray(links) && links.length > 0) {
+                const linksContainer = document.createElement('div');
+                linksContainer.classList.add('file-link');
+                let base_url = window.location.origin + window.location.pathname;
+
+                links.forEach(link => {
+                    let linkElement = document.createElement('a');
+                    linkElement.href = link;
+                    linkElement.target = "_blank"; // Open in a new tab
+                    linkElement.style.display = "block"; // Each link on a new line
+
+                    if (!link.includes(base_url)) {
+                        // External link: Show file name
+                        linkElement.textContent = link.split('/').pop();
+                    } else {
+                        linkElement.textContent = "Report";
+                    }
+                    linksContainer.appendChild(linkElement);
+                });
+
+                infoCell.appendChild(linksContainer);
+            }
 
             infoRow.appendChild(infoCell);
             row.parentNode.insertBefore(infoRow, row.nextSibling); // Insert below the clicked row
@@ -998,10 +1105,12 @@
         }
 
         const resultsDiv = document.getElementById('result-container');
-        const textDiv = document.createElement('div');
-        textDiv.id = 'info-content';
-        textDiv.innerHTML = (result.info || '').replace(/\n/g, '<br>');
-        resultsDiv.appendChild(textDiv);
+        if (result.info) {
+            const textDiv = document.createElement('div');
+            textDiv.id = 'info-content';
+            textDiv.innerHTML = (result.info || '').replace(/\n/g, '<br>');
+            resultsDiv.appendChild(textDiv);
+        }
 
         const resultsData = result.results;
         if (Array.isArray(resultsData) && resultsData.length > 0) {
@@ -1012,11 +1121,27 @@
         }
         // Status and info
         if (PR > 0) {
-            addKeyValueToStatus("PR", PR, null, runtimeCache.prLink);
+            addKeyValueToStatus("PR", PR, null, null, runtimeCache.prLink);
         }
-        let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1) || sha) : sha;
-        addKeyValueToStatus("sha", sha || "latest", runtimeCache.commits.concat(["latest"]));
-        addKeyValueToStatus("", current_sha);
+        let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1).sha || sha) : sha;
+        const shaSelectorText = [];
+        const shaSelectorValues = [];
+
+        runtimeCache.commits.forEach(({ sha, message }) => {
+            const shortSha = (sha || "").substring(0, 8);
+            shaSelectorText.push(message ? `${shortSha}: ${message}` : shortSha);
+            shaSelectorValues.push(sha);
+        });
+        shaSelectorText.push("latest");
+        shaSelectorValues.push("latest");
+        addKeyValueToStatus("sha", sha || "latest", shaSelectorText, shaSelectorValues);
+
+        if (PR > 0) {
+            const { pr_title, git_branch } = runtimeCache.json0?.ext || {};
+            if (pr_title) addInfoLineToStatus(pr_title);
+            if (git_branch) addInfoLineToStatus(git_branch);
+        }
+        addInfoLineToStatus(current_sha);
         addStatusToStatus(result.status, result.start_time, result.duration);
         if (nameParams.length > 1) {
             addFileButtonToStatus('files', result.links);
@@ -1045,37 +1170,42 @@
         let hasNewData = false;
 
         if (!runtimeCache.commits || sha === 'latest') {
-            const { data, updated } = await fetchJson(
-                `${baseUrl}/${suffix}/commits.json`,
-            );
+            const { data, updated } = await fetchJson(`${baseUrl}/${suffix}/commits.json`);
             if (updated) {
-                runtimeCache.commits = data ? data.map(item => item.sha) : [];
+                runtimeCache.commits = data ? data : [];
                 hasNewData = true;
             }
         }
 
-        const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1] : sha;
-        if (nameParams.length > 1) {
-            const task = normalizeTaskName(nameParams[1]);
-            const path = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task}.json`;
-            const { data, updated } = await fetchJson(path);
+        const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1]?.sha : sha;
 
+        const fetchTasks = [];
+        if (nameParams.length > 1) {
+            const task1 = normalizeTaskName(nameParams[1]);
+            const path1 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task1}.json`;
+            fetchTasks.push(fetchJson(path1));
+        }
+
+        const task0 = normalizeTaskName(nameParams[0]);
+        const path0 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task0}.json`;
+        fetchTasks.push(fetchJson(path0));
+
+        // Run fetchJson calls in parallel
+        const results = await Promise.all(fetchTasks);
+
+        if (nameParams.length > 1) {
+            const { data, updated } = results[0]; // First request result
             if (updated) {
                 runtimeCache.json1 = data;
                 hasNewData = true;
             }
         }
 
-        {
-            const task = normalizeTaskName(nameParams[0]);
-            const path = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task}.json`;
-
-            const { data, updated } = await fetchJson(path);
-            if (updated) {
-                runtimeCache.json0 = data;
-                hasNewData = true;
-                data.links.forEach(storeLink);
-            }
+        const { data, updated } = results[fetchTasks.length - 1]; // Last request result (always task0)
+        if (updated) {
+            runtimeCache.json0 = data;
+            hasNewData = true;
+            data.links.forEach(storeLink);
         }
 
         return hasNewData;
@@ -1095,7 +1225,6 @@
             }
         }
         setInterval(checkForUpdates, 30000);
-        checkForUpdates();
     }
 
     function updatePageTitle(PR, REF, sha, nameParams) {
@@ -1133,8 +1262,13 @@
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
 
-        if (runtimeCache.json0?.status === "running" || runtimeCache.json0?.status === "pending") {
-            console.log("autoreload started")
+        if (
+            (nameParams?.length === 1 &&
+                ["running", "pending"].includes(runtimeCache?.json0?.status)) ||
+            (nameParams?.length === 2 &&
+                (["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null))
+        ) {
+            console.log("Auto-reload started");
             startAutoRefresh(PR, REF, sha, nameParams);
         }
     }
@@ -1146,6 +1280,51 @@
         }
         init();
     });
+
+    function createFavicon() {
+        const width = 32;
+        const height = 32;
+        const lineColor = "rgb(0, 0, 0)";
+        const lineWidth = 4;
+        const spaceWidth = 3;
+        const lineNumber = 4;
+
+        // Create a canvas
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+
+        // Set transparent background
+        ctx.clearRect(0, 0, width, height);
+
+        // Draw vertical lines
+        let xStart = spaceWidth;
+        for (let i = 0; i < lineNumber; i++) {
+            let yStart = Math.floor(Math.random() * height); // Random Y start position
+
+            ctx.fillStyle = lineColor;
+            for (let y = 0; y < height - spaceWidth; y++) {
+                let yPos = (y + yStart) % height;
+                ctx.fillRect(xStart, yPos, lineWidth, 1); // Draw a 1-pixel high line segment
+            }
+
+            xStart += lineWidth + spaceWidth;
+        }
+
+        // Convert canvas to Data URL (PNG format)
+        const faviconURL = canvas.toDataURL("image/png");
+
+        // Set the favicon dynamically
+        let link = document.querySelector("link[rel='icon']");
+        if (!link) {
+            link = document.createElement("link");
+            link.rel = "icon";
+            document.head.appendChild(link);
+        }
+        link.href = faviconURL;
+    }
+    createFavicon();
 </script>
 </body>
 </html>

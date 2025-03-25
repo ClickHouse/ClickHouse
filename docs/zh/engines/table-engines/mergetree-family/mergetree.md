@@ -96,7 +96,7 @@ ORDER BY expr
   - `index_granularity_bytes` — 索引粒度，以字节为单位，默认值: 10Mb。如果想要仅按数据行数限制索引粒度, 请设置为0(不建议)。
   - `min_index_granularity_bytes` - 允许的最小数据粒度，默认值：1024b。该选项用于防止误操作，添加了一个非常低索引粒度的表。参考[数据存储](#mergetree-data-storage)
   - `enable_mixed_granularity_parts` — 是否启用通过 `index_granularity_bytes` 控制索引粒度的大小。在19.11版本之前, 只有 `index_granularity` 配置能够用于限制索引粒度的大小。当从具有很大的行（几十上百兆字节）的表中查询数据时候，`index_granularity_bytes` 配置能够提升ClickHouse的性能。如果您的表里有很大的行，可以开启这项配置来提升`SELECT` 查询的性能。
-  - `use_minimalistic_part_header_in_zookeeper` — ZooKeeper中数据片段存储方式 。如果`use_minimalistic_part_header_in_zookeeper=1` ，ZooKeeper 会存储更少的数据。更多信息参考[服务配置参数]([Server Settings | ClickHouse Documentation](https://clickhouse.com/docs/zh/operations/server-configuration-parameters/settings/))这章中的 [设置描述](../../../operations/server-configuration-parameters/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) 。
+  - `use_minimalistic_part_header_in_zookeeper` — ZooKeeper中数据片段存储方式 。如果`use_minimalistic_part_header_in_zookeeper=1` ，ZooKeeper 会存储更少的数据。更多信息参考[服务配置参数]([Server Settings | ClickHouse Documentation](https://clickhouse.com/docs/zh/operations/server-configuration-parameters/settings/))这章中的 [设置描述](/operations/server-configuration-parameters/settings#use_minimalistic_part_header_in_zookeeper) 。
   - `min_merge_bytes_to_use_direct_io` — 使用直接 I/O 来操作磁盘的合并操作时要求的最小数据量。合并数据片段时，ClickHouse 会计算要被合并的所有数据的总存储空间。如果大小超过了 `min_merge_bytes_to_use_direct_io` 设置的字节数，则 ClickHouse 将使用直接 I/O 接口（`O_DIRECT` 选项）对磁盘读写。如果设置 `min_merge_bytes_to_use_direct_io = 0` ，则会禁用直接 I/O。默认值：`10 * 1024 * 1024 * 1024` 字节。
         <a name="mergetree_setting-merge_with_ttl_timeout"></a>
   - `merge_with_ttl_timeout` — TTL合并频率的最小间隔时间，单位：秒。默认值: 86400 (1 天)。
@@ -105,8 +105,8 @@ ORDER BY expr
   - `storage_policy` — 存储策略。 参见 [使用具有多个块的设备进行数据存储](#table_engine-mergetree-multiple-volumes).
   - `min_bytes_for_wide_part`,`min_rows_for_wide_part` 在数据片段中可以使用`Wide`格式进行存储的最小字节数/行数。您可以不设置、只设置一个，或全都设置。参考：[数据存储](#mergetree-data-storage)
   - `max_parts_in_total` - 所有分区中最大块的数量(意义不明)
-  - `max_compress_block_size` - 在数据压缩写入表前，未压缩数据块的最大大小。您可以在全局设置中设置该值(参见[max_compress_block_size](https://clickhouse.com/docs/zh/operations/settings/settings/#max-compress-block-size))。建表时指定该值会覆盖全局设置。
-  - `min_compress_block_size` - 在数据压缩写入表前，未压缩数据块的最小大小。您可以在全局设置中设置该值(参见[min_compress_block_size](https://clickhouse.com/docs/zh/operations/settings/settings/#min-compress-block-size))。建表时指定该值会覆盖全局设置。
+  - `max_compress_block_size` - 在数据压缩写入表前，未压缩数据块的最大大小。您可以在全局设置中设置该值(参见[max_compress_block_size](/operations/settings/merge-tree-settings#max_compress_block_size))。建表时指定该值会覆盖全局设置。
+  - `min_compress_block_size` - 在数据压缩写入表前，未压缩数据块的最小大小。您可以在全局设置中设置该值(参见[min_compress_block_size](/operations/settings/merge-tree-settings#min_compress_block_size))。建表时指定该值会覆盖全局设置。
   - `max_partitions_to_read` - 一次查询中可访问的分区最大数。您可以在全局设置中设置该值(参见[max_partitions_to_read](https://clickhouse.com/docs/zh/operations/settings/settings/#max_partitions_to_read))。
 
 **示例配置**
@@ -218,9 +218,9 @@ ClickHouse 不要求主键唯一，所以您可以插入多条具有相同主键
 
 长的主键会对插入性能和内存消耗有负面影响，但主键中额外的列并不影响 `SELECT` 查询的性能。
 
-可以使用 `ORDER BY tuple()` 语法创建没有主键的表。在这种情况下 ClickHouse 根据数据插入的顺序存储。如果在使用 `INSERT ... SELECT` 时希望保持数据的排序，请设置 [max_insert_threads = 1](../../../operations/settings/settings.md#settings-max-insert-threads)。
+可以使用 `ORDER BY tuple()` 语法创建没有主键的表。在这种情况下 ClickHouse 根据数据插入的顺序存储。如果在使用 `INSERT ... SELECT` 时希望保持数据的排序，请设置 [max_insert_threads = 1](/operations/settings/settings#max_insert_threads)。
 
-想要根据初始顺序进行数据查询，使用 [单线程查询](../../../operations/settings/settings.md#settings-max_threads)
+想要根据初始顺序进行数据查询，使用 [单线程查询](/operations/settings/settings#max_threads)
 
 ### 选择与排序键不同的主键 {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
@@ -351,7 +351,7 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
 | ------------------------------------------------------------ | ----------- | ------ | ---------- | ---------- | ------------ |
 | [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#equals) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#notequals) | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [like](../../../sql-reference/functions/string-search-functions.md#function-like) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [like](/sql-reference/functions/string-search-functions#like) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith) | ✔           | ✔      | ✔          | ✔          | ✗            |
 | [endsWith](../../../sql-reference/functions/string-functions.md#endswith) | ✗           | ✗      | ✔          | ✔          | ✗            |
@@ -711,7 +711,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 更进一步，数据变异和分区冻结使用的是 [硬链接](https://en.wikipedia.org/wiki/Hard_link)。不同磁盘之间的硬链接是不支持的，所以在这种情况下数据片段都会被存储到原来的那一块磁盘上。
 
-在后台，数据片段基于剩余空间（`move_factor`参数）根据卷在配置文件中定义的顺序进行转移。数据永远不会从最后一个移出也不会从第一个移入。可以通过系统表 [system.part_log](../../../operations/system-tables/part_log.md#system_tables-part-log) (字段 `type = MOVE_PART`) 和 [system.parts](../../../operations/system-tables/parts.md#system_tables-parts) (字段 `path` 和 `disk`) 来监控后台的移动情况。具体细节可以通过服务器日志查看。
+在后台，数据片段基于剩余空间（`move_factor`参数）根据卷在配置文件中定义的顺序进行转移。数据永远不会从最后一个移出也不会从第一个移入。可以通过系统表 [system.part_log](/operations/system-tables/part_log) (字段 `type = MOVE_PART`) 和 [system.parts](../../../operations/system-tables/parts.md#system_tables-parts) (字段 `path` 和 `disk`) 来监控后台的移动情况。具体细节可以通过服务器日志查看。
 
 用户可以通过 [ALTER TABLE ... MOVE PART\|PARTITION ... TO VOLUME\|DISK ...](../../../sql-reference/statements/alter.md#alter_move-partition) 强制移动一个数据片段或分区到另外一个卷，所有后台移动的限制都会被考虑在内。这个查询会自行启动，无需等待后台操作完成。如果没有足够的可用空间或任何必须条件没有被满足，用户会收到报错信息。
 

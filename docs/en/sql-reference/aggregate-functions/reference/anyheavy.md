@@ -1,6 +1,10 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/anyheavy
+description: 'Selects a frequently occurring value using the heavy hitters algorithm.
+  If there is a value that occurs more than in half the cases in each of the query
+  execution threads, this value is returned. Normally, the result is nondeterministic.'
 sidebar_position: 104
+slug: /sql-reference/aggregate-functions/reference/anyheavy
+title: 'anyHeavy'
 ---
 
 # anyHeavy

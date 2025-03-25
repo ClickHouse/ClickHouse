@@ -247,7 +247,15 @@ bool convertLogicalJoinToPhysical(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
     JoinActionRef post_filter(nullptr);
-    auto join_ptr = join_step->convertToPhysical(post_filter, keep_logical, rhs_size_estimation);
+    auto join_ptr = join_step->convertToPhysical(
+        post_filter,
+        keep_logical,
+        optimization_settings.max_threads,
+        optimization_settings.max_entries_for_hash_table_stats,
+        optimization_settings.initial_query_id,
+        optimization_settings.lock_acquire_timeout,
+        optimization_settings.actions_settings,
+        rhs_size_estimation);
 
     if (join_ptr->isFilled())
     {
@@ -259,7 +267,7 @@ bool convertLogicalJoinToPhysical(
 
     Header output_header = join_step->getOutputHeader();
 
-    auto & join_expression_actions = join_step->getExpressionActions();
+    const auto & join_expression_actions = join_step->getExpressionActions();
 
     QueryPlan::Node * new_left_node = makeExpressionNodeOnTopOf(node.children.at(0), std::move(*join_expression_actions.left_pre_join_actions), {}, nodes);
     QueryPlan::Node * new_right_node = nullptr;
@@ -287,7 +295,7 @@ bool convertLogicalJoinToPhysical(
             join_ptr,
             settings.max_block_size,
             settings.min_joined_block_size_bytes,
-            settings.max_threads,
+            optimization_settings.max_threads,
             NameSet(required_output_from_join.begin(), required_output_from_join.end()),
             false /*optimize_read_in_order*/,
             true /*use_new_analyzer*/);
@@ -309,14 +317,10 @@ bool convertLogicalJoinToPhysical(
         result_node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.post_join_actions), post_filter.getColumnName(), remove_filter);
         result_node.children = {&new_join_node};
     }
-    else if (!isPassthroughActions(*join_expression_actions.post_join_actions))
+    else
     {
         result_node.step = std::make_unique<ExpressionStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.post_join_actions));
         result_node.children = {&new_join_node};
-    }
-    else
-    {
-        result_node = std::move(new_join_node);
     }
 
     node = std::move(result_node);

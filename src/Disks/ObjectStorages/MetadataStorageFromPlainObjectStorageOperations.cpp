@@ -60,11 +60,8 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 {
     /// parent_path() removes the trailing '/'
     const auto base_path = path.parent_path();
-    {
-        SharedLockGuard lock(path_map.mutex);
-        if (path_map.map.contains(base_path))
-            return;
-    }
+    if (path_map.existsLocalPath(base_path))
+        return;
 
     auto metadata_object_key = createMetadataObjectKey(object_key_prefix, metadata_key_prefix);
 
@@ -92,27 +89,16 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
     auto event = object_storage->getMetadataStorageMetrics().directory_created;
     ProfileEvents::increment(event);
-    {
-        std::lock_guard lock(path_map.mutex);
-        auto & map = path_map.map;
-        [[maybe_unused]] auto result
-            = map.emplace(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, Poco::Timestamp{}.epochTime(), {}});
-        chassert(result.second);
-    }
-    auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-    CurrentMetrics::add(metric, 1);
+    [[maybe_unused]] auto result
+        = path_map.addPathIfNotExists(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, Poco::Timestamp{}.epochTime(), {}});
+    chassert(result.second);
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory creation for path '{}'", path);
     const auto base_path = path.parent_path();
-    if (path_map.removePathIfExists(base_path))
-    {
-        auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-        CurrentMetrics::sub(metric, 1);
-    }
-
+    path_map.removePathIfExists(base_path);
     auto metadata_object_key = createMetadataObjectKey(object_key_prefix, metadata_key_prefix);
     object_storage->removeObjectIfExists(StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME));
 }
@@ -136,22 +122,17 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
 std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::createWriteBuf(
     const std::filesystem::path & expected_path, const std::filesystem::path & new_path, bool validate_content)
 {
-    std::filesystem::path remote_path;
-    {
-        SharedLockGuard lock(path_map.mutex);
-        auto & map = path_map.map;
-        /// parent_path() removes the trailing '/'.
-        auto expected_it = map.find(expected_path.parent_path());
-        if (expected_it == map.end())
-            throw Exception(
-                ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the expected (source) path '{}' does not exist", expected_path);
+    /// parent_path() removes the trailing '/'.
+    auto remote_path_info = path_map.getRemotePathInfoIfExists(expected_path.parent_path());
+    if (!remote_path_info)
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the expected (source) path '{}' does not exist", expected_path);
 
-        if (map.contains(new_path.parent_path()))
-            throw Exception(
-                ErrorCodes::FILE_ALREADY_EXISTS, "Metadata object for the new (destination) path '{}' already exists", new_path);
+    if (path_map.existsLocalPath(new_path.parent_path()))
+        throw Exception(
+            ErrorCodes::FILE_ALREADY_EXISTS, "Metadata object for the new (destination) path '{}' already exists", new_path);
 
-        remote_path = expected_it->second.path;
-    }
+    std::filesystem::path remote_path = remote_path_info->path;
 
     auto metadata_object_key = createMetadataObjectKey(remote_path, metadata_key_prefix);
 
@@ -203,24 +184,15 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
     auto write_buf = createWriteBuf(path_from, path_to, validate_content);
     writeString(path_to.string(), *write_buf);
 
-    fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move, {
+    fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move,
+    {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
     });
 
     write_buf->finalize();
 
     /// parent_path() removes the trailing '/'.
-    auto base_path_to = path_to.parent_path();
-    auto base_path_from = path_from.parent_path();
-
-    {
-        std::lock_guard lock(path_map.mutex);
-        auto & map = path_map.map;
-        [[maybe_unused]] auto result = map.emplace(base_path_to, map.extract(base_path_from).mapped());
-        chassert(result.second);
-        result.first->second.last_modified = Poco::Timestamp{}.epochTime();
-    }
-
+    path_map.moveDirectory(path_from.parent_path(), path_to.parent_path());
     write_finalized = true;
 }
 
@@ -229,11 +201,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::uniq
     if (write_finalized)
     {
         LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory move from '{}' to '{}'", path_from, path_to);
-        {
-            std::lock_guard lock(path_map.mutex);
-            auto & map = path_map.map;
-            map.emplace(path_from.parent_path(), map.extract(path_to.parent_path()).mapped());
-        }
+        path_map.moveDirectory(path_to.parent_path(), path_from.parent_path());
 
         auto write_buf = createWriteBuf(path_to, path_from, /* verify_content */ false);
         writeString(path_from.string(), *write_buf);
@@ -255,26 +223,19 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
 {
     /// parent_path() removes the trailing '/'
     const auto base_path = path.parent_path();
-    {
-        SharedLockGuard lock(path_map.mutex);
-        auto & map = path_map.map;
-        auto path_it = map.find(base_path);
-        if (path_it == map.end())
-            return;
-        key_prefix = path_it->second.path;
-    }
+    auto optional_info = path_map.getRemotePathInfoIfExists(base_path);
+    if (!optional_info)
+        return;
+    info = *std::move(optional_info);
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation"), "Removing directory '{}'", path);
 
-    auto metadata_object_key = createMetadataObjectKey(key_prefix, metadata_key_prefix);
+    auto metadata_object_key = createMetadataObjectKey(info.path, metadata_key_prefix);
     auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key.serialize(), /*local_path*/ path / PREFIX_PATH_FILE_NAME);
     object_storage->removeObjectIfExists(metadata_object);
 
     if (path_map.removePathIfExists(base_path))
     {
-        auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-        CurrentMetrics::sub(metric, 1);
-
         auto event = object_storage->getMetadataStorageMetrics().directory_removed;
         ProfileEvents::increment(event);
     }
@@ -288,15 +249,9 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
         return;
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory removal for '{}'", path);
-    {
-        std::lock_guard lock(path_map.mutex);
-        auto & map = path_map.map;
-        map.emplace(path.parent_path(), key_prefix);
-    }
-    auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-    CurrentMetrics::add(metric, 1);
+    path_map.addPathIfNotExists(path.parent_path(), info);
 
-    auto metadata_object_key = createMetadataObjectKey(key_prefix, metadata_key_prefix);
+    auto metadata_object_key = createMetadataObjectKey(info.path, metadata_key_prefix);
     auto metadata_object = StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
 
     size_t buf_size = std::bit_ceil(path.string().size()) << 1;
@@ -318,54 +273,28 @@ MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlai
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute(std::unique_lock<SharedMutex> &)
 {
-    LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file  '{}'", path);
+    LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}'", path);
 
-    std::lock_guard lock(path_map.mutex);
-
-    auto it = path_map.map.find(path.parent_path());
-    /// Some paths (e.g., clickhouse_access_check) may not have parent directories.
-    if (it == path_map.map.end())
-        LOG_TRACE(
-            getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"),
-            "Parent dirrectory does not exist, skipping path {}",
-            path);
+    if (path_map.addFile(path))
+    {
+        written = true;
+    }
     else
     {
-        auto [filename_it, inserted] = path_map.unique_filenames.emplace(path.filename());
-        if (inserted)
-        {
-            auto metric = object_storage->getMetadataStorageMetrics().unique_filenames_count;
-            CurrentMetrics::add(metric, 1);
-        }
-        written = it->second.filename_iterators.emplace(filename_it).second;
-        if (written)
-        {
-            auto metric = object_storage->getMetadataStorageMetrics().file_count;
-            CurrentMetrics::add(metric, 1);
-        }
+        /// Some paths (e.g., clickhouse_access_check) may not have parent directories.
+        LOG_TRACE(
+            getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"),
+            "Parent directory does not exist, skipping path {}",
+            path);
     }
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo(std::unique_lock<SharedMutex> &)
 {
-    if (written)
-    {
-        std::lock_guard lock(path_map.mutex);
-        auto it = path_map.map.find(path.parent_path());
-        chassert(it != path_map.map.end());
-        if (it != path_map.map.end())
-        {
-            auto filename_it = path_map.unique_filenames.find(path.filename());
-            if (filename_it != path_map.unique_filenames.end())
-            {
-                if (it->second.filename_iterators.erase(filename_it) > 0)
-                {
-                    auto metric = object_storage->getMetadataStorageMetrics().file_count;
-                    CurrentMetrics::sub(metric, 1);
-                }
-            }
-        }
-    }
+    if (!written)
+        return;
+
+    path_map.removeFile(path);
 }
 
 MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
@@ -385,47 +314,23 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute(s
         path,
         remote_path);
 
-    std::lock_guard lock(path_map.mutex);
-    auto it = path_map.map.find(path.parent_path());
-    if (it == path_map.map.end())
-        LOG_TRACE(
-            getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"),
-            "Parent directory does not exist, skipping path {}",
-            path);
-    else
-    {
-        auto & filename_iterators = it->second.filename_iterators;
-        auto filename_it = path_map.unique_filenames.find(path.filename());
-        if (filename_it != path_map.unique_filenames.end())
-            unlinked = (filename_iterators.erase(filename_it) > 0);
-
-        if (unlinked)
-        {
-            auto metric = object_storage->getMetadataStorageMetrics().file_count;
-            CurrentMetrics::sub(metric, 1);
-        }
-    }
+    if (path_map.removeFile(path))
+        unlinked = true;
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> &)
 {
-    if (unlinked)
+    if (!unlinked)
+        return;
+
+    if (!path_map.addFile(path))
     {
-        std::lock_guard lock(path_map.mutex);
-        auto it = path_map.map.find(path.parent_path());
-        chassert(it != path_map.map.end());
-        if (it != path_map.map.end())
-        {
-            auto filename_it = path_map.unique_filenames.find(path.filename());
-            if (filename_it != path_map.unique_filenames.end())
-            {
-                if (it->second.filename_iterators.emplace(filename_it).second)
-                {
-                    auto metric = object_storage->getMetadataStorageMetrics().file_count;
-                    CurrentMetrics::add(metric, 1);
-                }
-            }
-        }
+        /// Some paths (e.g., clickhouse_access_check) may not have parent directories.
+        LOG_TRACE(
+            getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"),
+            "Parent directory does not exist, skipping path {}",
+            path);
     }
 }
+
 }

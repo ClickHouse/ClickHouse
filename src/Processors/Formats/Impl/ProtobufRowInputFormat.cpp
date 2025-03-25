@@ -1,6 +1,7 @@
 #include "ProtobufRowInputFormat.h"
 
 #if USE_PROTOBUF
+#   include <Columns/IColumn.h>
 #   include <Core/Block.h>
 #   include <Formats/FormatFactory.h>
 #   include <Formats/ProtobufReader.h>

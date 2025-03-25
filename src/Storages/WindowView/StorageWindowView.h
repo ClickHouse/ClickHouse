@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/DateLUT.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <DataTypes/DataTypeInterval.h>

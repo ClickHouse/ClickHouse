@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-s3-storage, long
-# ^ no-s3-storage: too memory hungry
+# Tags: no-fasttest, no-object-storage, long
+# ^ no-object-storage: too memory hungry
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

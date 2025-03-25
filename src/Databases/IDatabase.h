@@ -3,7 +3,7 @@
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/executeQuery.h>
+#include <Interpreters/QueryFlags.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Storages/IStorage_fwd.h>
@@ -257,6 +257,13 @@ public:
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
     /// Wait for all tables to be loaded and started up. If `skip_not_loaded` is true, then not yet loaded or not yet started up (at the moment of iterator creation) tables are excluded.
     virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const = 0; /// NOLINT
+
+    /// Same as above, but may return non-fully initialized StoragePtr objects which are not suitable for reading.
+    /// Useful for queries like "SHOW TABLES"
+    virtual DatabaseTablesIteratorPtr getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const /// NOLINT
+    {
+        return getTablesIterator(context, filter_by_table_name, skip_not_loaded);
+    }
 
     virtual DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
         ContextPtr /*context*/, const FilterByNameFunction & /*filter_by_table_name = {}*/, bool /*skip_not_loaded = false*/) const;

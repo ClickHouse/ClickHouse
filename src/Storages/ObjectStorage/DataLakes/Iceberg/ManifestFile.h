@@ -4,9 +4,12 @@
 
 #if USE_AVRO
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IteratorWrapper.h>
+#include <Storages/KeyDescription.h>
+#include <Core/Field.h>
 
 #include <cstdint>
+#include <variant>
 
 namespace Iceberg
 {
@@ -18,10 +21,9 @@ enum class ManifestEntryStatus : uint8_t
     EXISTING = 0,
     ADDED = 1,
     DELETED = 2,
-
 };
 
-enum class DataFileContent : uint8_t
+enum class FileContentType : uint8_t
 {
     DATA = 0,
     POSITION_DELETES = 1,
@@ -30,49 +32,39 @@ enum class DataFileContent : uint8_t
 
 struct DataFileEntry
 {
-    String data_file_name;
-    ManifestEntryStatus status;
-    DataFileContent content;
-    std::unordered_map<Int32, DB::Range> partition_ranges;
-
-    std::vector<DB::Range> getPartitionRanges(const std::vector<Int32> & partition_columns_ids) const;
+    String file_name;
 };
 
-struct PartitionColumnInfo
+using FileEntry = std::variant<DataFileEntry>; // In the future we will add PositionalDeleteFileEntry and EqualityDeleteFileEntry here
+
+/// Description of Data file in manifest file
+struct ManifestFileEntry
 {
-    PartitionTransform transform;
-    Int32 source_id;
-};
+    ManifestEntryStatus status;
+    Int64 added_sequence_number;
 
+    FileEntry file;
+    DB::Row partition_key_value;
+};
 
 class ManifestFileContent
 {
 public:
     explicit ManifestFileContent(std::unique_ptr<ManifestFileContentImpl> impl_);
 
-    const std::vector<DataFileEntry> & getDataFiles() const;
+    const std::vector<ManifestFileEntry> & getFiles() const;
     Int32 getSchemaId() const;
-    const std::vector<PartitionColumnInfo> & getPartitionColumnInfos() const;
 
-
+    bool hasPartitionKey() const;
+    const DB::KeyDescription & getPartitionKeyDescription() const;
+    const std::vector<Int32> & getPartitionKeyColumnIDs() const;
 private:
     std::unique_ptr<ManifestFileContentImpl> impl;
 };
 
 
-using ManifestFilesByName = std::map<String, ManifestFileContent>;
-
-struct ManifestFileEntry
-{
-    explicit ManifestFileEntry(const ManifestFilesByName::const_iterator & reference_) : reference(reference_) { }
-    const ManifestFileContent & getContent() const { return reference->second; }
-    const String & getName() const { return reference->first; }
-
-
-private:
-    ManifestFilesByName::const_iterator reference;
-};
-
+using ManifestFilesStorage = std::map<String, ManifestFileContent>;
+using ManifestFileIterator = IteratorWrapper<ManifestFileContent>;
 }
 
 #endif

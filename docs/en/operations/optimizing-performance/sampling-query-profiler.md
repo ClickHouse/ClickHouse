@@ -1,8 +1,11 @@
 ---
-slug: /operations/optimizing-performance/sampling-query-profiler
+description: 'Documentation for the sampling query profiler tool in ClickHouse'
+sidebar_label: 'Query Profiling'
 sidebar_position: 54
-sidebar_label: Query Profiling
+slug: /operations/optimizing-performance/sampling-query-profiler
+title: 'Sampling Query Profiler'
 ---
+
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
 # Sampling Query Profiler
@@ -30,7 +33,7 @@ In self-managed deployments, to use query profiler:
 
 - Setup the [trace_log](../../operations/server-configuration-parameters/settings.md#trace_log) section of the server configuration.
 
-    This section configures the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table containing the results of the profiler functioning. It is configured by default. Remember that data in this table is valid only for a running server. After the server restart, ClickHouse does not clean up the table and all the stored virtual memory address may become invalid.
+    This section configures the [trace_log](/operations/system-tables/trace_log) system table containing the results of the profiler functioning. It is configured by default. Remember that data in this table is valid only for a running server. After the server restart, ClickHouse does not clean up the table and all the stored virtual memory address may become invalid.
 
 - Setup the [query_profiler_cpu_time_period_ns](../../operations/settings/settings.md#query_profiler_cpu_time_period_ns) or [query_profiler_real_time_period_ns](../../operations/settings/settings.md#query_profiler_real_time_period_ns) settings. Both settings can be used simultaneously.
 
@@ -48,7 +51,7 @@ To analyze the `trace_log` system table:
 
 - Use the `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` and `demangle` [introspection functions](../../sql-reference/functions/introspection.md) to get function names and their positions in ClickHouse code. To get a profile for some query, you need to aggregate data from the `trace_log` table. You can aggregate data by individual functions or by the whole stack traces.
 
-If you need to visualize `trace_log` info, try [flamegraph](../../interfaces/third-party/gui.md#clickhouse-flamegraph-clickhouse-flamegraph) and [speedscope](https://github.com/laplab/clickhouse-speedscope).
+If you need to visualize `trace_log` info, try [flamegraph](/interfaces/third-party/gui#clickhouse-flamegraph) and [speedscope](https://github.com/laplab/clickhouse-speedscope).
 
 ## Example {#example}
 

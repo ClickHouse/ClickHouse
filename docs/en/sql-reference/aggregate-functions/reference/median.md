@@ -1,6 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/median
+description: 'The `median*` functions are the aliases for the corresponding `quantile*`
+  functions. They calculate median of a numeric data sample.'
 sidebar_position: 167
+slug: /sql-reference/aggregate-functions/reference/median
+title: 'median'
 ---
 
 # median
@@ -9,16 +12,16 @@ The `median*` functions are the aliases for the corresponding `quantile*` functi
 
 Functions:
 
-- `median` — Alias for [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
-- `medianDeterministic` — Alias for [quantileDeterministic](../../../sql-reference/aggregate-functions/reference/quantiledeterministic.md#quantiledeterministic).
-- `medianExact` — Alias for [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexact).
-- `medianExactWeighted` — Alias for [quantileExactWeighted](../../../sql-reference/aggregate-functions/reference/quantileexactweighted.md#quantileexactweighted).
-- `medianTiming` — Alias for [quantileTiming](../../../sql-reference/aggregate-functions/reference/quantiletiming.md#quantiletiming).
-- `medianTimingWeighted` — Alias for [quantileTimingWeighted](../../../sql-reference/aggregate-functions/reference/quantiletimingweighted.md#quantiletimingweighted).
-- `medianTDigest` — Alias for [quantileTDigest](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md#quantiletdigest).
-- `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](../../../sql-reference/aggregate-functions/reference/quantiletdigestweighted.md#quantiletdigestweighted).
-- `medianBFloat16` — Alias for [quantileBFloat16](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16).
-- `medianDD` — Alias for [quantileDD](../../../sql-reference/aggregate-functions/reference/quantileddsketch.md#quantileddsketch).
+- `median` — Alias for [quantile](/sql-reference/aggregate-functions/reference/quantile).
+- `medianDeterministic` — Alias for [quantileDeterministic](/sql-reference/aggregate-functions/reference/quantiledeterministic).
+- `medianExact` — Alias for [quantileExact](/sql-reference/aggregate-functions/reference/quantileexact#quantileexact).
+- `medianExactWeighted` — Alias for [quantileExactWeighted](/sql-reference/aggregate-functions/reference/quantileexactweighted).
+- `medianTiming` — Alias for [quantileTiming](/sql-reference/aggregate-functions/reference/quantiletiming).
+- `medianTimingWeighted` — Alias for [quantileTimingWeighted](/sql-reference/aggregate-functions/reference/quantiletimingweighted).
+- `medianTDigest` — Alias for [quantileTDigest](/sql-reference/aggregate-functions/reference/quantiletdigest).
+- `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](/sql-reference/aggregate-functions/reference/quantiletdigestweighted).
+- `medianBFloat16` — Alias for [quantileBFloat16](/sql-reference/aggregate-functions/reference/quantilebfloat16).
+- `medianDD` — Alias for [quantileDD](/sql-reference/aggregate-functions/reference/quantileddsketch).
 
 **Example**
 

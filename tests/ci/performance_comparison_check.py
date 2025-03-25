@@ -26,7 +26,7 @@ from env_helper import (
 )
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
-from report import FAILURE, SUCCESS, JobReport, SKIPPED
+from report import FAILURE, SKIPPED, SUCCESS, JobReport
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 

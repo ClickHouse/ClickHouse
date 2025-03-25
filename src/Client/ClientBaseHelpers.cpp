@@ -1,6 +1,7 @@
 #include "ClientBaseHelpers.h"
 
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/LocalDate.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>

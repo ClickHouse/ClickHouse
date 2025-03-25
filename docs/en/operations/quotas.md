@@ -1,8 +1,9 @@
 ---
-slug: /operations/quotas
+description: 'Guide to configuring and managing resource usage quotas in ClickHouse'
+sidebar_label: 'Quotas'
 sidebar_position: 51
-sidebar_label: Quotas
-title: Quotas
+slug: /operations/quotas
+title: 'Quotas'
 ---
 
 Quotas allow you to limit resource usage over a period of time or track the use of resources.

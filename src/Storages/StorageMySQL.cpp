@@ -19,6 +19,7 @@
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
+#include <Columns/IColumn.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>

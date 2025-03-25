@@ -115,6 +115,10 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
             data_part->getMarksCount(), data_part->name, data_part->rows_count);
 
+    /// Note, that we don't check setting collaborate_with_coordinator presence, because this source
+    /// is only used in background merges.
+    addTotalRowsApprox(data_part->rows_count);
+
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
     read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];

@@ -17,7 +17,7 @@ Prewhere — это оптимизация для более эффективн�
 
 Если значение параметра [optimize_move_to_prewhere](../../../operations/settings/settings.md#optimize_move_to_prewhere) равно 0, эвристика по автоматическому перемещению части выражений из `WHERE` к `PREWHERE` отключается.
 
-Если в запросе есть модификатор [FINAL](from.md#select-from-final), оптимизация `PREWHERE` не всегда корректна. Она действует только если включены обе настройки [optimize_move_to_prewhere](../../../operations/settings/settings.md#optimize_move_to_prewhere) и [optimize_move_to_prewhere_if_final](../../../operations/settings/settings.md#optimize_move_to_prewhere_if_final).
+Если в запросе есть модификатор [FINAL](/sql-reference/statements/select/from#final-modifier), оптимизация `PREWHERE` не всегда корректна. Она действует только если включены обе настройки [optimize_move_to_prewhere](../../../operations/settings/settings.md#optimize_move_to_prewhere) и [optimize_move_to_prewhere_if_final](../../../operations/settings/settings.md#optimize_move_to_prewhere_if_final).
 
 :::note Внимание
 Секция `PREWHERE` выполняется до `FINAL`, поэтому результаты запросов `FROM ... FINAL` могут исказиться при использовании `PREWHERE` с полями, не входящями в `ORDER BY` таблицы.
