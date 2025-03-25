@@ -37,6 +37,7 @@ class QueryPriorities
 {
 public:
     using Priority = size_t;
+    using WaitTimeMs = std::chrono::milliseconds;
 
 private:
     friend struct Handle;
@@ -91,10 +92,10 @@ public:
         QueryPriorities & parent;
         QueryPriorities::Container::value_type & value;
         // The wait time in millisecond
-        std::chrono::milliseconds wait_time;
+        WaitTimeMs wait_time;
 
     public:
-        HandleImpl(QueryPriorities & parent_, QueryPriorities::Container::value_type & value_, std::chrono::milliseconds wait_time_)
+        HandleImpl(QueryPriorities & parent_, QueryPriorities::Container::value_type & value_, WaitTimeMs wait_time_)
             : parent(parent_), value(value_), wait_time(wait_time_) {}
 
         ~HandleImpl()
@@ -117,7 +118,7 @@ public:
     /** Register query with specified priority.
       * Returns an object that remove record in destructor.
       */
-    Handle insert(Priority priority, Poco::Timespan::TimeDiff wait_time)
+    Handle insert(Priority priority, WaitTimeMs wait_time)
     {
         if (0 == priority)
             return {};
