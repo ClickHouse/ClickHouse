@@ -5980,7 +5980,10 @@ This only affects operations performed on the client side, in particular parsing
 Normally this setting should be set in user profile (users.xml or queries like `ALTER USER`), not through the client (client command line arguments, `SET` query, or `SETTINGS` section of `SELECT` query). Through the client it can be changed to false, but can't be changed to true (because the server won't send the settings if user profile has `apply_settings_from_server = false`).
 
 Note that initially (24.12) there was a server setting (`send_settings_to_client`), but latter it got replaced with this client setting, for better usability.
-)", 0) \
+)", 0)                                  \
+    DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
+Wait time in milliseconds when lower priority query meets higher priority query.
+)", BETA) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
