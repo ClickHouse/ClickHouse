@@ -488,6 +488,10 @@ ReplxxLineReader::~ReplxxLineReader()
 {
     if (history_file_fd >= 0 && close(history_file_fd))
         rx.print("Close of history file failed: %s\n", errnoToString().c_str());
+
+    /// Reset cursor blinking
+    if (overwrite_mode)
+        rx.print("%s", "\033[0 q");
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
