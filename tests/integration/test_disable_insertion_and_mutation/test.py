@@ -43,12 +43,12 @@ def test_disable_insertion_and_mutation(started_cluster):
 
 
     # allow insert into temp table in reading node
+    # use the same session_id because the temporary table only exist in one session
     session_id = 1
     reading_node.http_query(
         """CREATE TEMPORARY TABLE my_tmp_table (key UInt64, value String) ENGINE=Memory""",
         params={"session_id": session_id}
     )
-
 
     reading_node.http_query(
         """INSERT INTO my_tmp_table VALUES (1, 'hello'), (2, 'world')""",
