@@ -5264,7 +5264,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
               * Example: SELECT a + 1 AS b FROM (SELECT 1 AS a) t1 JOIN (SELECT 2 AS b) USING b
               * In this case `b` is not in the left table expression, but it is in the parent subquery projection.
               */
-            auto try_resolve_identifier_from_query_projection = [this](const String & identifier_full_name_,
+            auto try_resolve_identifier_from_query_projection = [this](String identifier_full_name_,
                                                                        const QueryTreeNodePtr & left_table_expression,
                                                                        const IdentifierResolveScope & scope_) -> QueryTreeNodePtr
             {
@@ -5287,6 +5287,41 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                         const auto & resolved_nodes = left_subquery->getProjection().getNodes();
                         if (resolved_nodes.size() == 1)
                         {
+                            /// Added column should not conflict with existing column names
+                            NameSet existing_columns;
+                            if (const auto * left_table_node = left_table_expression->as<TableNode>())
+                            {
+                                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                                for (const auto & column : left_table_node->getStorageSnapshot()->getColumns(get_column_options))
+                                    existing_columns.insert(column.name);
+                            }
+                            else if (const auto * left_table_function_node = left_table_expression->as<TableFunctionNode>())
+                            {
+                                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                                for (const auto & column : left_table_function_node->getStorageSnapshot()->getColumns(get_column_options))
+                                    existing_columns.insert(column.name);
+                            }
+                            else if (const auto * left_query_node = left_table_expression->as<QueryNode>())
+                            {
+                                for (const auto & column : left_query_node->getProjectionColumns())
+                                    existing_columns.insert(column.name);
+                            }
+                            else if (const auto * left_union_node = left_table_expression->as<UnionNode>())
+                            {
+                                for (const auto & column : left_union_node->computeProjectionColumns())
+                                    existing_columns.insert(column.name);
+                            }
+                            else
+                            {
+                                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                    "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
+                                    left_table_expression->getNodeTypeName(),
+                                    left_table_expression->formatASTForErrorMessage());
+                            }
+
+                            while (existing_columns.contains(identifier_full_name_))
+                                identifier_full_name_ = "_" + identifier_full_name_;
+
                             /// Create ColumnNode with expression from parent projection
                             return std::make_shared<ColumnNode>(
                                 NameAndTypePair{identifier_full_name_, resolved_nodes.front()->getResultType()},
@@ -5325,7 +5360,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             {
                 String extra_message;
                 const QueryNode * query_node = scope.scope_node ? scope.scope_node->as<QueryNode>() : nullptr;
-                if (settings[Setting::analyzer_compatibility_join_using_top_level_identifier] && query_node)
+                if (!settings[Setting::analyzer_compatibility_join_using_top_level_identifier] && query_node)
                 {
                     for (const auto & projection_node : query_node->getProjection().getNodes())
                     {
