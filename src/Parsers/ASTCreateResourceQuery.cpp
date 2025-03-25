@@ -51,12 +51,10 @@ void ASTCreateResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
         if (operation.mode == AccessMode::MasterThread)
         {
             ostr << (format.hilite ? hilite_keyword : "") << "MASTER THREAD" << (format.hilite ? hilite_none : "");
-            break;
         }
         else if (operation.mode == AccessMode::WorkerThread)
         {
             ostr << (format.hilite ? hilite_keyword : "") << "WORKER THREAD" << (format.hilite ? hilite_none : "");
-            break;
         }
         else
         {
