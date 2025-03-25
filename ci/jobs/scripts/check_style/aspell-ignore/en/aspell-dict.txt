@@ -795,7 +795,6 @@ ParallelParsingInputFormat
 ParallelParsingInputFormatThreads
 ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
-Parametrized
 ParquetCompression
 ParquetMetadata
 ParquetVersion
