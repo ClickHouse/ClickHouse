@@ -327,7 +327,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         else
         {
-            cv->set_populate(!has_to && rg.nextSmallNumber() < 4);
+            cv->set_populate(!has_to && !replace && rg.nextSmallNumber() < 4);
         }
     }
     else
