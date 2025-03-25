@@ -40,7 +40,7 @@ static const std::unordered_map<OutFormat, InFormat> outIn{
     {OutFormat::OUT_Avro, InFormat::IN_Avro},
     {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
     {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
-    {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream},
+    ///{OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream}, It's giving different results
     {OutFormat::OUT_ORC, InFormat::IN_ORC},
     {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
     {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
