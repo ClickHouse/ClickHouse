@@ -6,7 +6,7 @@ drop table if exists rhs;
 create table lhs(a UInt64, b UInt64) Engine = MergeTree order by tuple();
 create table rhs(a UInt64, b UInt64) Engine = MergeTree order by tuple();
 
-insert into lhs select number, number from numbers_mt(1e5);
+insert into lhs select number, number from numbers_mt(2e5);
 -- rhs should be bigger to trigger tables swap (see `query_plan_join_swap_table`)
 insert into rhs select number, number from numbers_mt(1e6);
 
