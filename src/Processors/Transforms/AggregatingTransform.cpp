@@ -393,13 +393,14 @@ private:
         return Status::PortFull;
     }
 
-    static void encodeDelayedBucketId(Chunk & chunk, Int32 delayed_bucket)
+    static void encodeDelayedBucketId(Chunk & chunk, const Int32 delayed_buckets[2])
     {
         auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
         if (!agg_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo.");
 
-        agg_info->bucket_num |= (delayed_bucket << 16);
+        agg_info->bucket_num |= (delayed_buckets[0] << 16) & 0x00FF0000;
+        agg_info->bucket_num |= (delayed_buckets[1] << 24) & 0xFF000000;
     }
 
     /// Read all sources and try to push current bucket.
@@ -431,21 +432,24 @@ private:
         while (current_bucket_num < NUM_BUCKETS)
         {
             Chunk chunk;
-            if ((chunk = get_bucket_if_ready(current_bucket_num)))
+            if (delayed_buckets[0] != -1 && (chunk = get_bucket_if_ready(delayed_buckets[0])))
+            {
+                delayed_buckets[0] = -1;
+            }
+            else if (delayed_buckets[1] != -1 && (chunk = get_bucket_if_ready(delayed_buckets[1])))
+            {
+                delayed_buckets[1] = -1;
+            }
+            else if ((chunk = get_bucket_if_ready(current_bucket_num)))
             {
                 ++current_bucket_num;
             }
             else
             {
-                if (delayed_bucket != -1)
+                auto & empty = delayed_buckets[0] == -1 ? delayed_buckets[0] : delayed_buckets[1];
+                if (empty == -1)
                 {
-                    chunk = get_bucket_if_ready(delayed_bucket);
-                    if (chunk)
-                        delayed_bucket = -1;
-                }
-                else
-                {
-                    delayed_bucket = current_bucket_num;
+                    empty = current_bucket_num;
                     ++current_bucket_num;
                     continue;
                 }
@@ -457,22 +461,32 @@ private:
             const auto has_rows = chunk.hasRows();
             if (has_rows)
             {
-                encodeDelayedBucketId(chunk, delayed_bucket);
+                encodeDelayedBucketId(chunk, delayed_buckets);
                 output.push(std::move(chunk));
                 return Status::PortFull;
             }
         }
 
-        if (delayed_bucket != -1)
+        auto try_push_delayed_bucket = [&](Int32 & delayed_bucket)
         {
-            auto chunk = get_bucket_if_ready(delayed_bucket);
-            if (!chunk)
-                return Status::NeedData;
-            delayed_bucket = -1;
-            encodeDelayedBucketId(chunk, delayed_bucket);
-            output.push(std::move(chunk));
+            if (delayed_bucket != -1)
+            {
+                auto chunk = get_bucket_if_ready(delayed_bucket);
+                if (chunk)
+                {
+                    delayed_bucket = -1;
+                    encodeDelayedBucketId(chunk, delayed_buckets);
+                    output.push(std::move(chunk));
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        if (try_push_delayed_bucket(delayed_buckets[0]) || try_push_delayed_bucket(delayed_buckets[1]))
             return Status::PortFull;
-        }
+        else if (delayed_buckets[0] != -1 || delayed_buckets[1] != -1)
+            return Status::NeedData;
 
         output.finish();
         /// Do not close inputs, they must be finished.
@@ -494,7 +508,7 @@ private:
     static constexpr Int32 NUM_BUCKETS = 256;
     std::array<Chunk, NUM_BUCKETS> two_level_chunks;
 
-    Int32 delayed_bucket = -1;
+    Int32 delayed_buckets[2] = {-1, -1};
 
     Processors processors;
 
