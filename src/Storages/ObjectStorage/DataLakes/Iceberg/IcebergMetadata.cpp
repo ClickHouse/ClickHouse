@@ -26,7 +26,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event IcebergPartitionPrunnedFiles;
     extern const Event IcebergTrivialCountOptimizationApplied;
 }
 

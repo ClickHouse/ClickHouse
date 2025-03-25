@@ -63,7 +63,7 @@ namespace
             /// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
             /// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
             /// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
-            /// let's skip it". But it will produce incorrect result since actuall value (17.22 >= 17.21) is stored in this file.
+            /// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
             ///
             /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
             /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
