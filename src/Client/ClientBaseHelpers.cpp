@@ -9,8 +9,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
-#include <iostream>
-
 
 namespace DB
 {

@@ -15,7 +15,7 @@ This engine provides a read-only integration with existing Apache [Hudi](https:/
 
 Note that the Hudi table must already exist in S3, this command does not take DDL parameters to create a new table.
 
-``` sql
+```sql
 CREATE TABLE hudi_table
     ENGINE = Hudi(url, [aws_access_key_id, aws_secret_access_key,])
 ```
@@ -35,7 +35,7 @@ CREATE TABLE hudi_table ENGINE=Hudi('http://mars-doc-test.s3.amazonaws.com/click
 
 Using named collections:
 
-``` xml
+```xml
 <clickhouse>
     <named_collections>
         <hudi_conf>

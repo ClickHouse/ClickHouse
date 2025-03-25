@@ -27,29 +27,27 @@ void QueryConditionCache::write(
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
     auto [entry, inserted] = cache.getOrSet(key, load_func);
 
+    std::lock_guard lock(entry->mutex);
+
     chassert(marks_count == entry->matching_marks.size());
 
-    {
-        std::lock_guard lock(entry->mutex);
+    /// The input mark ranges are the areas which the scan can skip later on.
+    for (const auto & mark_range : mark_ranges)
+        std::fill(entry->matching_marks.begin() + mark_range.begin, entry->matching_marks.begin() + mark_range.end, false);
 
-        /// The input mark ranges are the areas which the scan can skip later on.
-        for (const auto & mark_range : mark_ranges)
-            std::fill(entry->matching_marks.begin() + mark_range.begin, entry->matching_marks.begin() + mark_range.end, false);
+    if (has_final_mark)
+        entry->matching_marks[marks_count - 1] = false;
 
-        if (has_final_mark)
-            entry->matching_marks[marks_count - 1] = false;
-
-        LOG_DEBUG(
-            logger,
-            "{} entry for table_id: {}, part_name: {}, condition_hash: {}, marks_count: {}, has_final_mark: {}, ranges: {}",
-            inserted ? "Inserted" : "Updated",
-            table_id,
-            part_name,
-            condition_hash,
-            marks_count,
-            has_final_mark,
-            toString(mark_ranges));
-    }
+    LOG_DEBUG(
+        logger,
+        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, marks_count: {}, has_final_mark: {}, ranges: {}",
+        inserted ? "Inserted" : "Updated",
+        table_id,
+        part_name,
+        condition_hash,
+        marks_count,
+        has_final_mark,
+        toString(mark_ranges));
 }
 
 std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, size_t condition_hash)

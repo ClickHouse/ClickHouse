@@ -64,16 +64,16 @@ do
 done
 
 # Check that if there are duplicated settings (declared in different objects) they all have the same type (it's simpler to validate style with that assert)
-# Disabled because fixing this requires changing types of existing settings, and it's not as simple as just changing it as compatibility with
-# previous releases is more important
-#for setting in $(
-#      awk '{ gsub(/^.*Settings/, "", $2); print $1 " " $2}' "${SETTINGS_FILE}" | \
-#      sort | uniq | awk '{ print $1 }' | uniq -d
-#    );
-#do
-#    echo "# Found multiple definitions of setting ${setting} with different types: "
-#    grep --line-number " ${setting}," ${ALL_DECLARATION_FILES} | awk '{print "    > " $0 }'
-#done
+# Disabled for some old settings because it requires changing the type of existing settings and that breaks compatibility with
+# previous releases, which is more important than consistency
+for setting in $(
+      awk '{ gsub(/^.*Settings/, "", $2); print $1 " " $2}' "${SETTINGS_FILE}" | \
+      sort | uniq | awk '{ print $1 }' | uniq -d | grep -v "connect_timeout" | grep -v "max_connections"
+    );
+do
+    echo "# Found multiple definitions of setting ${setting} with different types: "
+    grep --line-number " ${setting}," ${ALL_DECLARATION_FILES} | awk '{print "    > " $0 }'
+done
 
 # We append all uses of extern found in implementation files to validate them in a single pass and avoid reading the same files over and over
 # Note that rg outputs 'path:$line', so with replace ':' with a space and then reorder to have "$setting $type $path"

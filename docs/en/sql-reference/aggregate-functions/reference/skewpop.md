@@ -9,7 +9,7 @@ title: 'skewPop'
 
 Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
 
-``` sql
+```sql
 skewPop(expr)
 ```
 
@@ -23,6 +23,6 @@ The skewness of the given distribution. Type — [Float64](../../../sql-referenc
 
 **Example**
 
-``` sql
+```sql
 SELECT skewPop(value) FROM series_with_value_column;
 ```
