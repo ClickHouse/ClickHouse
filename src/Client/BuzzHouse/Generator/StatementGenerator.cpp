@@ -3099,8 +3099,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     const uint32_t create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions);
     const uint32_t system_stmt = 1;
     const uint32_t backup_or_restore = 1;
-    const uint32_t create_dictionary
-        = 10 * static_cast<uint32_t>(has_tables && static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries);
+    const uint32_t create_dictionary = 10 * static_cast<uint32_t>(static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries);
     const uint32_t select_query = 800;
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt
@@ -3235,7 +3234,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
                + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt
-               + backup_or_restore + select_query + create_dictionary + 1))
+               + backup_or_restore + create_dictionary + select_query + 1))
     {
         generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
     }

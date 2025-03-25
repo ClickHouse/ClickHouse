@@ -1907,7 +1907,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         addDictionaryRelation("", next);
         this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs
             = this->allow_in_expression_alias = this->allow_subqueries = false;
-        generateExpression(rg, dc->mutable_default_val());
+        generateLiteralValue(rg, dc->mutable_default_val());
         if (rg.nextMediumNumber() < 21)
         {
             generateExpression(rg, dc->mutable_expression());
@@ -1943,7 +1943,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         svs = svs ? svs : layout->mutable_setting_values();
         generateSettingValues(rg, layoutSettings, svs);
     }
-    if (dl == COMPLEX_KEY_CACHE || dl == SSD_CACHE)
+    if (dl == COMPLEX_KEY_SSD_CACHE || dl == SSD_CACHE)
     {
         /// needs path
         svs = svs ? svs : layout->mutable_setting_values();
@@ -1962,6 +1962,10 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         life->set_max(rg.pickRandomly(lifeValues));
     }
 
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, cd->mutable_setting_values());
+    }
     if (rg.nextSmallNumber() < 3)
     {
         cd->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));

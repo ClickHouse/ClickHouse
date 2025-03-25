@@ -4497,6 +4497,9 @@ CONV_FN(SQLQueryInner, query)
         case QueryType::kBackupRestore:
             BackupRestoreToString(ret, query.backup_restore());
             break;
+        case QueryType::kCreateDictionary:
+            CreateDictionaryToString(ret, query.create_dictionary());
+            break;
         default:
             ret += "SELECT 1";
     }
