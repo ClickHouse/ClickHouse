@@ -602,7 +602,7 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
 
-            d.setName(tof->mutable_est(), false);
+            d.setName(cdf->mutable_tof()->mutable_est(), false);
             if (rg.nextBool())
             {
                 /// Optional sharding key

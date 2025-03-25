@@ -1795,7 +1795,7 @@ CONV_FN(GenerateSeriesFunc, gsf)
     ret += ")";
 }
 
-static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & est)
+static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & est, const String & separator)
 {
     ret += "'";
     if (est.has_database())
@@ -1806,7 +1806,7 @@ static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & es
     {
         ret += "default";
     }
-    ret += "', '";
+    ret += separator;
     TableToString(ret, est.table());
     ret += "'";
 }
@@ -1821,7 +1821,7 @@ static void TableOrFunctionToString(String & ret, const bool tudf, const TableOr
         case TableOrFunctionType::kEst:
             if (tudf)
             {
-                FlatExprSchemaTableToString(ret, tof.est());
+                FlatExprSchemaTableToString(ret, tof.est(), "', '");
             }
             else
             {
@@ -1999,7 +1999,7 @@ CONV_FN(ClusterFunc, cluster)
 CONV_FN(MergeTreeIndexFunc, mfunc)
 {
     ret += "mergeTreeIndex(";
-    FlatExprSchemaTableToString(ret, mfunc.est());
+    FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
     if (mfunc.has_with_marks())
     {
         ret += ", with_marks = ";
@@ -2100,7 +2100,7 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kDictionary:
             ret += "dictionary(";
-            FlatExprSchemaTableToString(ret, tf.dictionary());
+            FlatExprSchemaTableToString(ret, tf.dictionary(), ".");
             ret += ")";
             break;
         default:
@@ -2808,7 +2808,7 @@ CONV_FN(TableEngineParam, tep)
             ret += "')";
             break;
         case TableEngineParamType::kEst:
-            FlatExprSchemaTableToString(ret, tep.est());
+            FlatExprSchemaTableToString(ret, tep.est(), ".");
             break;
         default:
             ret += "c0";
@@ -3526,23 +3526,11 @@ CONV_FN(DictionarySource, ds)
     using DictionarySourceType = DictionarySource::DictionarySourceOneofCase;
     switch (ds.dictionary_source_oneof_case())
     {
-        case DictionarySourceType::kEst: {
-            const ExprSchemaTable & est = ds.est();
-
-            ret += "CLICKHOUSE(DB '";
-            if (est.has_database())
-            {
-                DatabaseToString(ret, est.database());
-            }
-            else
-            {
-                ret += "default";
-            }
-            ret += "' TABLE '";
-            TableToString(ret, est.table());
-            ret += "')";
-        }
-        break;
+        case DictionarySourceType::kEst:
+            ret += "CLICKHOUSE(DB ";
+            FlatExprSchemaTableToString(ret, ds.est(), "' TABLE '");
+            ret += ")";
+            break;
         default:
             ret += "NULL()";
     }
