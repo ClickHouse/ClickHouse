@@ -18,6 +18,7 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
+#include "base/defines.h"
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Columns/ColumnSet.h>
@@ -104,8 +105,6 @@ public:
 
         String result;
         auto node_type = node->getNodeType();
-
-        static size_t correlated_subquery_counter = 0;
 
         switch (node_type)
         {
@@ -195,7 +194,16 @@ public:
                 }
                 else if (function_node.getFunctionName() == "exists")
                 {
-                    result = fmt::format("exists(subquery_{})", ++correlated_subquery_counter);
+                    const auto & arguments = function_node.getArguments().getNodes();
+                    chassert(arguments.size() == 1);
+
+                    const auto & exists_argument = arguments.front();
+                    chassert(exists_argument != nullptr);
+
+                    const auto & table_alias = exists_argument->getAlias();
+                    chassert(!table_alias.empty());
+
+                    result = fmt::format("exists({})", table_alias);
                     break;
                 }
 
@@ -995,7 +1003,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     size_t exists_function_level = actions_stack.size() - 1;
     actions_stack[exists_function_level].addInputColumnIfNecessary(function_node_name, function_node.getResultType());
-    correlated_subtrees.subqueries.emplace_back(function_node.getArguments().getNodes().front(), CorrelatedSubqueryKind::EXISTS);
+    correlated_subtrees.subqueries.emplace_back(function_node.getArguments().getNodes().front(), CorrelatedSubqueryKind::EXISTS, function_node_name);
     return { function_node_name, Levels(exists_function_level) };
 }
 

@@ -1498,7 +1498,16 @@ std::string ActionsDAG::dumpDAG() const
     return out.str();
 }
 
-bool ActionsDAG::hasArrayJoin() const
+bool ActionsDAG::hasCorrelatedColumns() const noexcept
+{
+    for (const auto & node : nodes)
+        if (node.type == ActionType::PLACEHOLDER)
+            return true;
+
+    return false;
+}
+
+bool ActionsDAG::hasArrayJoin() const noexcept
 {
     for (const auto & node : nodes)
         if (node.type == ActionType::ARRAY_JOIN)
@@ -1516,7 +1525,7 @@ bool ActionsDAG::hasStatefulFunctions() const
     return false;
 }
 
-bool ActionsDAG::trivial() const
+bool ActionsDAG::trivial() const noexcept
 {
     for (const auto & node : nodes)
         if (node.type == ActionType::FUNCTION || node.type == ActionType::ARRAY_JOIN)
@@ -1539,6 +1548,18 @@ bool ActionsDAG::hasNonDeterministic() const
         if (!node.isDeterministic())
             return true;
     return false;
+}
+
+void ActionsDAG::decorrelate() noexcept
+{
+    for (auto & node : nodes)
+    {
+        if (node.type == ActionType::PLACEHOLDER)
+        {
+            node.type = ActionType::INPUT;
+            inputs.emplace_back(&node);
+        }
+    }
 }
 
 void ActionsDAG::addMaterializingOutputActions(bool materialize_sparse)

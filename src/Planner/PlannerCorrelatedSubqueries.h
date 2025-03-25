@@ -3,6 +3,7 @@
 #include <memory>
 #include <string_view>
 #include <vector>
+#include "Processors/QueryPlan/QueryPlan.h"
 
 namespace DB
 {
@@ -24,13 +25,15 @@ enum class CorrelatedSubqueryKind
 
 struct CorrelatedSubquery
 {
-    CorrelatedSubquery(QueryTreeNodePtr query_tree_, CorrelatedSubqueryKind kind_)
+    CorrelatedSubquery(QueryTreeNodePtr query_tree_, CorrelatedSubqueryKind kind_, const String & action_node_name_)
         : query_tree(std::move(query_tree_))
         , kind(kind_)
+        , action_node_name(action_node_name_)
     {}
 
     QueryTreeNodePtr query_tree;
     CorrelatedSubqueryKind kind;
+    String action_node_name;
 };
 
 using CorrelatedSubqueries = std::vector<CorrelatedSubquery>;
@@ -46,6 +49,7 @@ struct CorrelatedSubtrees
 
 void buildQueryPlanForCorrelatedSubquery(
     const PlannerContextPtr & planner_context,
+    QueryPlan & query_plan,
     const CorrelatedSubquery & correlated_subquery,
     const SelectQueryOptions & select_query_options);
 

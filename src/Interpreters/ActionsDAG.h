@@ -259,9 +259,10 @@ public:
         const std::unordered_map<const Node *, const Node *> & new_inputs,
         const NodeRawConstPtrs & required_outputs);
 
-    bool hasArrayJoin() const;
+    bool hasCorrelatedColumns() const noexcept;
+    bool hasArrayJoin() const noexcept;
     bool hasStatefulFunctions() const;
-    bool trivial() const; /// If actions has no functions or array join.
+    bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
 
@@ -288,6 +289,9 @@ public:
         const NodeRawConstPtrs & outputs,
         size_t input_rows_count,
         bool throw_on_error);
+
+    /// Replace all PLACEHOLDER nodes with INPUT nodes
+    void decorrelate() noexcept;
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.

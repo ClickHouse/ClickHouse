@@ -5,6 +5,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include "Common/Logger.h"
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -408,7 +409,8 @@ void addFilterStep(
 {
     for (const auto & correlated_subquery : filter_analysis_result.correlated_subtrees.subqueries)
     {
-        buildQueryPlanForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options);
+        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
+        LOG_DEBUG(getLogger(__func__), "Current plan:\n{}", dumpQueryPlan(query_plan));
     }
 
     auto actions = std::move(filter_analysis_result.filter_actions->dag);

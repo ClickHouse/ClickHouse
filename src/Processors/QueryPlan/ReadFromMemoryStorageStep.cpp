@@ -14,6 +14,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
+#include "Processors/QueryPlan/QueryPlan.h"
 
 namespace DB
 {
@@ -133,6 +134,11 @@ void ReadFromMemoryStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     }
 
     pipeline.init(std::move(pipe));
+}
+
+QueryPlanStepPtr ReadFromMemoryStorageStep::clone() const
+{
+    return std::make_unique<ReadFromMemoryStorageStep>(*this);
 }
 
 Pipe ReadFromMemoryStorageStep::makePipe()
