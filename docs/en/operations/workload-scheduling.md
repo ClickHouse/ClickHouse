@@ -1,8 +1,9 @@
 ---
-slug: /operations/workload-scheduling
+description: 'Documentation for Workload Scheduling'
+sidebar_label: 'Workload scheduling'
 sidebar_position: 69
-sidebar_label: "Workload scheduling"
-title: "Workload scheduling"
+slug: /operations/workload-scheduling
+title: 'Workload scheduling'
 ---
 
 When ClickHouse execute multiple queries simultaneously, they may be using shared resources (e.g. disks). Scheduling constraints and policies can be applied to regulate how resources are utilized and shared between different workloads. For every resource a scheduling hierarchy can be configured. Hierarchy root represents a resource, while leafs are queues, holding requests that exceed resource capacity.
@@ -210,12 +211,12 @@ Do not set `throw_on_unknown_workload` to `true` unless `CREATE WORKLOAD default
 :::
 
 ## See also {#see-also}
- - [system.scheduler](/docs/operations/system-tables/scheduler.md)
- - [system.workloads](/docs/operations/system-tables/workloads.md)
- - [system.resources](/docs/operations/system-tables/resources.md)
- - [merge_workload](/docs/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
- - [merge_workload](/docs/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
- - [mutation_workload](/docs/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
- - [mutation_workload](/docs/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
- - [workload_path](/docs/operations/server-configuration-parameters/settings.md#workload_path) global server setting
- - [workload_zookeeper_path](/docs/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting
+ - [system.scheduler](/operations/system-tables/scheduler.md)
+ - [system.workloads](/operations/system-tables/workloads.md)
+ - [system.resources](/operations/system-tables/resources.md)
+ - [merge_workload](/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
+ - [merge_workload](/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
+ - [mutation_workload](/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
+ - [mutation_workload](/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
+ - [workload_path](/operations/server-configuration-parameters/settings.md#workload_path) global server setting
+ - [workload_zookeeper_path](/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting

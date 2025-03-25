@@ -1,8 +1,8 @@
 ---
-description: "Dataset containing 400 million images with English image captions"
+description: 'Dataset containing 400 million images with English image captions'
+sidebar_label: 'Laion-400M dataset'
 slug: /getting-started/example-datasets/laion-400m-dataset
-sidebar_label: Laion-400M dataset
-title: "Laion-400M dataset"
+title: 'Laion-400M dataset'
 ---
 
 The [Laion-400M dataset](https://laion.ai/blog/laion-400-open-dataset/) contains 400 million images with English image captions. Laion nowadays provides [an even larger dataset](https://laion.ai/blog/laion-5b/) but working with it will be similar.
@@ -176,7 +176,7 @@ The speed increased significantly at the cost of less accurate results. This is 
 
 ## Creating embeddings with UDFs {#creating-embeddings-with-udfs}
 
-One usually wants to create embeddings for new images or new image captions and search for similar image / image caption pairs in the data. We can use [UDF](../../sql-reference/functions/overview#sql-user-defined-functions) to create the `target` vector without leaving the client. It is important to use the same model to create the data and new embeddings for searches. The following scripts utilize the `ViT-B/32` model which also underlies the dataset.
+One usually wants to create embeddings for new images or new image captions and search for similar image / image caption pairs in the data. We can use [UDF](/sql-reference/functions/udf) to create the `target` vector without leaving the client. It is important to use the same model to create the data and new embeddings for searches. The following scripts utilize the `ViT-B/32` model which also underlies the dataset.
 
 ### Text embeddings {#text-embeddings}
 

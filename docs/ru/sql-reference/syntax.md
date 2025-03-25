@@ -39,7 +39,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 -   Стандарту SQL. Например, применение любого из вариантов `SELECT`, `select` или `SeLeCt` не вызовет ошибки.
 -   Реализации в некоторых популярных DBMS (MySQL или Postgres). Например, `DateTime` и `datetime`.
 
-Зависимость от регистра для имён типов данных можно проверить в таблице [system.data_type_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families).
+Зависимость от регистра для имён типов данных можно проверить в таблице [system.data_type_families](/operations/system-tables/data_type_families).
 
 В отличие от стандарта SQL, все остальные ключевые слова, включая названия функций зависят от регистра.
 
@@ -151,7 +151,7 @@ expr AS alias
 
         Например, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-        В функции [CAST](../sql-reference/syntax.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
+        В функции [CAST](/sql-reference/functions/type-conversion-functions#cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
 
 -   `expr` — любое выражение, которое поддерживает ClickHouse.
 

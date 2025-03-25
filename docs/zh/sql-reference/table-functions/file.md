@@ -6,7 +6,7 @@ sidebar_label: file
 
 # file {#file}
 
-从文件创建表。 此表函数类似于 [url](../../sql-reference/table-functions/url.md) 和 [hdfs](../../sql-reference/table-functions/hdfs.md)。
+从文件创建表。 此表函数类似于 [url](/sql-reference/table-functions/url) 和 [hdfs](/sql-reference/table-functions/hdfs)。
 
 `file` 函数可用于对[File](../../engines/table-engines/special/file.md) 表中的数据进行 `SELECT` 和 `INSERT` 查询。
 
@@ -19,7 +19,7 @@ file(path, format, structure)
 **参数**
 
 -   `path` — [user_files_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path)中文件的相对路径。在只读模式下，文件路径支持以下通配符: `*`, `?`, `{abc,def}` 和 `{N..M}`，其中 `N`, `M` 是数字, \``'abc', 'def'` 是字符串。
--   `format` —文件的[格式](../../interfaces/formats.md#formats)。
+-   `format` —文件的[格式](/sql-reference/formats)。
 -   `structure` — 表的结构。格式 `'column1_name column1_type, column2_name column2_type, ...'`。
 
 **返回值**
@@ -128,4 +128,4 @@ FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 
 **另请参阅**
 
--   [虚拟列](/operations/table_engines/#table_engines-virtual_columns)
+-   [虚拟列](/engines/table-engines#table_engines-virtual_columns)

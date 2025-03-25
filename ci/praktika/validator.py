@@ -22,6 +22,14 @@ class Validator:
                     f"Setting DISABLED_WORKFLOWS has non-existing workflow file [{file}]",
                 )
 
+        if Settings.ENABLED_WORKFLOWS:
+            for file in Settings.ENABLED_WORKFLOWS:
+                cls.evaluate_check_simple(
+                    Path(file).is_file()
+                    or Path(f"{Settings.WORKFLOWS_DIRECTORY}/{file}").is_file(),
+                    f"Setting ENABLED_WORKFLOWS has non-existing workflow file [{file}]",
+                )
+
         if Settings.USE_CUSTOM_GH_AUTH:
             cls.evaluate_check_simple(
                 Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY,
@@ -117,11 +125,20 @@ class Validator:
                 ), f"CACHE_S3_PATH Setting must be defined if enable_cache=True, workflow [{workflow.name}]"
 
             if workflow.dockers:
-                cls.evaluate_check(
-                    Settings.DOCKER_BUILD_RUNS_ON,
-                    f"DOCKER_BUILD_RUNS_ON settings must be defined if workflow has dockers",
-                    workflow_name=workflow.name,
-                )
+                if Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB == False:
+                    cls.evaluate_check_simple(
+                        Settings.DOCKER_BUILD_ARM_RUNS_ON
+                        and Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON
+                        and Settings.DOCKER_BUILD_ARM_RUNS_ON
+                        != Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
+                        f"Settings: DOCKER_BUILD_AND_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON must be provided and be different CPU architecture machines",
+                    )
+                else:
+                    cls.evaluate_check(
+                        Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
+                        f"DOCKER_BUILD_AND_MERGE_RUNS_ON settings must be defined if workflow has dockers",
+                        workflow_name=workflow.name,
+                    )
 
             if workflow.enable_report:
                 assert (
@@ -222,7 +239,7 @@ class Validator:
                 else:
                     assert (
                         Path(include_path).is_file() or Path(include_path).is_dir()
-                    ), f"Apparently file path [{include_path}] in job [{job.name}] digest_config [{job.digest_config}] invalid, workflow [{workflow.name}]. Setting to disable check: VALIDATE_FILE_PATHS"
+                    ), f"Invalid file path [{include_path}] in job [{job.name}] digest_config, workflow [{workflow.name}]. Setting to disable check: VALIDATE_FILE_PATHS"
 
     @classmethod
     def validate_requirements_txt_files(cls, workflow: Workflow.Config) -> None:
@@ -232,7 +249,7 @@ class Validator:
                     path = Path(job.job_requirements.python_requirements_txt)
                     message = f"File with py requirement [{path}] does not exist"
                     if job.name in (
-                        Settings.DOCKER_BUILD_JOB_NAME,
+                        Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
                         Settings.CI_CONFIG_JOB_NAME,
                         Settings.FINISH_WORKFLOW_JOB_NAME,
                     ):

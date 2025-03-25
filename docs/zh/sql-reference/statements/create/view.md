@@ -59,7 +59,7 @@ ClickHouse 中的物化视图更像是插入触发器。 如果视图查询中�
 
 在物化视图上执行[ALTER](../../../sql-reference/statements/alter/index.md)查询有局限性，因此可能不方便。 如果物化视图使用构造`TO [db.]name`，你可以`DETACH`视图，为目标表运行`ALTER`，然后`ATTACH`先前分离的（`DETACH`）视图。
 
-请注意，物化视图受[optimize_on_insert](../../../operations/settings/settings.md#optimize-on-insert)设置的影响。 在插入视图之前合并数据。
+请注意，物化视图受[optimize_on_insert](/operations/settings/settings#optimize_on_insert)设置的影响。 在插入视图之前合并数据。
 
 视图看起来与普通表相同。 例如，它们列在`SHOW TABLES`查询的结果中。
 
@@ -216,7 +216,7 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 
 !!! important "重要"
     这是一项试验性功能，可能会在未来版本中以向后不兼容的方式进行更改。
-    通过[allow_experimental_window_view](../../../operations/settings/settings.md#allow-experimental-window-view)启用window view以及`WATCH`语句。输入命令
+    通过[allow_experimental_window_view](/operations/settings/settings#allow_experimental_window_view)启用window view以及`WATCH`语句。输入命令
     `set allow_experimental_window_view = 1`。
 
 ``` sql

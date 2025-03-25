@@ -36,7 +36,6 @@ namespace
 
     bool isSimpleDataType(TypeIndex type_index)
     {
-        DataTypePtr data_type;
         switch (type_index)
         {
             case TypeIndex::UInt8: [[fallthrough]];

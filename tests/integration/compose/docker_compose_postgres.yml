@@ -16,7 +16,7 @@ services:
                     - postgre-sql.local
         environment:
             POSTGRES_HOST_AUTH_METHOD: "trust"
-            POSTGRES_PASSWORD: mysecretpassword
+            POSTGRES_PASSWORD: ClickHouse_PostgreSQL_P@ssw0rd
             PGDATA: /postgres/data
         volumes:
             - type: ${POSTGRES_LOGS_FS:-tmpfs}

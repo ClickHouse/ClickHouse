@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/machine-learning-functions
+description: 'Documentation for Machine Learning Functions'
+sidebar_label: 'Machine Learning'
 sidebar_position: 115
-sidebar_label: Machine Learning
+slug: /sql-reference/functions/machine-learning-functions
+title: 'Machine Learning Functions'
 ---
 
 # Machine Learning Functions
@@ -12,8 +14,8 @@ Prediction using fitted regression models uses `evalMLMethod` function. See link
 
 ## stochasticLinearRegression {#stochasticlinearregression}
 
-The [stochasticLinearRegression](../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md#agg_functions-stochasticlinearregression) aggregate function implements stochastic gradient descent method using linear model and MSE loss function. Uses `evalMLMethod` to predict on new data.
+The [stochasticLinearRegression](/sql-reference/aggregate-functions/reference/stochasticlinearregression) aggregate function implements stochastic gradient descent method using linear model and MSE loss function. Uses `evalMLMethod` to predict on new data.
 
 ## stochasticLogisticRegression {#stochasticlogisticregression}
 
-The [stochasticLogisticRegression](../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md#agg_functions-stochasticlogisticregression) aggregate function implements stochastic gradient descent method for binary classification problem. Uses `evalMLMethod` to predict on new data.
+The [stochasticLogisticRegression](/sql-reference/aggregate-functions/reference/stochasticlogisticregression) aggregate function implements stochastic gradient descent method for binary classification problem. Uses `evalMLMethod` to predict on new data.

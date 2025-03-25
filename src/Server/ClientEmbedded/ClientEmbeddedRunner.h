@@ -4,7 +4,6 @@
 
 #include <atomic>
 #include <memory>
-#include <stdexcept>
 
 #include <Server/ClientEmbedded/ClientEmbedded.h>
 #include <Server/ClientEmbedded/IClientDescriptorSet.h>
@@ -18,20 +17,26 @@ namespace DB
 class ClientEmbeddedRunner
 {
 public:
-    explicit ClientEmbeddedRunner(std::unique_ptr<IClientDescriptorSet> && client_descriptor_, std::unique_ptr<Session> && dbSession_)
-        : client_descriptors(std::move(client_descriptor_)), db_session(std::move(dbSession_)), log(&Poco::Logger::get("ClientEmbeddedRunner"))
+    explicit ClientEmbeddedRunner(
+        std::unique_ptr<IClientDescriptorSet> && client_descriptor_,
+        std::unique_ptr<Session> && database_session_)
+        : client_descriptors(std::move(client_descriptor_))
+        , db_session(std::move(database_session_))
+        , log(&Poco::Logger::get("ClientEmbeddedRunner"))
     {
     }
     ~ClientEmbeddedRunner();
 
-    bool hasStarted() { return started.test(); }
-    bool hasFinished() { return finished.test(); }
-    void run(const NameToNameMap & envs, const String & starting_query = "");
-    IClientDescriptorSet::DescriptorSet getDescriptorsForServer() { return client_descriptors->getDescriptorsForServer(); }
+    bool hasStarted() const;
+    bool hasFinished() const;
+    int getExitCode() const;
+    IClientDescriptorSet::DescriptorSet getDescriptorsForServer();
+    void closeStdIn() const;
     bool hasPty() const { return client_descriptors->isPty(); }
     // Sets new window size for tty. Works only if IClientDescriptorSet is pty
     void changeWindowSize(int width, int height, int width_pixels, int height_pixels);
 
+    void run(const NameToNameMap & envs, const String & starting_query = "");
 private:
     void clientRoutine(NameToNameMap envs, String starting_query);
 
@@ -43,6 +48,8 @@ private:
     ThreadFromGlobalPool client_thread;
     std::unique_ptr<Session> db_session;
     Poco::Logger * log;
+
+    int exit_code = 1;
 };
 
 }

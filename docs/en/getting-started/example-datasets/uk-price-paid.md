@@ -1,9 +1,11 @@
 ---
-description: "Learn how to use projections to improve the performance of queries that you run frequently using the UK property dataset, which contains data about prices paid for real-estate property in England and Wales"
-slug: /getting-started/example-datasets/uk-price-paid
-sidebar_label: UK Property Prices
+description: 'Learn how to use projections to improve the performance of queries that
+  you run frequently using the UK property dataset, which contains data about prices
+  paid for real-estate property in England and Wales'
+sidebar_label: 'UK Property Prices'
 sidebar_position: 1
-title: "The UK property prices dataset"
+slug: /getting-started/example-datasets/uk-price-paid
+title: 'The UK property prices dataset'
 ---
 
 Projections are a great way to improve the performance of queries that you run frequently. We will demonstrate the power of projections
@@ -44,7 +46,7 @@ We will use the `url` function to stream the data into ClickHouse. We need to pr
 - converting the `time` field to date as it only contains 00:00 time
 - ignoring the [UUid](../../sql-reference/data-types/uuid.md) field because we don't need it for analysis
 - transforming `type` and `duration` to more readable `Enum` fields using the [transform](../../sql-reference/functions/other-functions.md#transform) function
-- transforming the `is_new` field from a single-character string (`Y`/`N`) to a [UInt8](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-uint256-int8-int16-int32-int64-int128-int256) field with 0 or 1
+- transforming the `is_new` field from a single-character string (`Y`/`N`) to a [UInt8](/sql-reference/data-types/int-uint) field with 0 or 1
 - drop the last two columns since they all have the same value (which is 0)
 
 The `url` function streams the data from the web server into your ClickHouse table. The following command inserts 5 million rows into the `uk_price_paid` table:

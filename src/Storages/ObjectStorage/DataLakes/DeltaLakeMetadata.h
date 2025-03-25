@@ -7,9 +7,11 @@
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Poco/JSON/Object.h>
 
 namespace DB
 {
@@ -44,7 +46,7 @@ public:
 
     DeltaLakePartitionColumns getPartitionColumns() const { return partition_columns; }
 
-    bool operator ==(const IDataLakeMetadata & other) const override
+    bool operator==(const IDataLakeMetadata & other) const override
     {
         const auto * deltalake_metadata = dynamic_cast<const DeltaLakeMetadata *>(&other);
         return deltalake_metadata
@@ -55,18 +57,23 @@ public:
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
-        ContextPtr local_context,
-        [[maybe_unused]] bool allow_experimental_delta_kernel_rs)
+        ContextPtr local_context)
     {
 #if USE_DELTA_KERNEL_RS
-        if (allow_experimental_delta_kernel_rs)
-            return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
+        auto configuration_ptr = configuration.lock();
+        if (configuration_ptr->getSettingsRef()[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs])
+            return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration);
         else
             return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 #else
         return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 #endif
     }
+
+    static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
+    static DataTypePtr getSimpleTypeByName(const String & type_name);
+    static DataTypePtr getFieldValue(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
+    static Field getFieldValue(const String & value, DataTypePtr data_type);
 
 private:
     mutable Strings data_files;

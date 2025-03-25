@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/IAST_erase.h>
 #include <IO/WriteHelpers.h>
 
 

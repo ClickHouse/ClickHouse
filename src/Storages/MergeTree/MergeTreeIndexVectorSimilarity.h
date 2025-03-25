@@ -6,6 +6,11 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Common/Logger.h>
+
+/// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
+#if defined(__x86_64__) || defined(__i386__)
+#include <immintrin.h>
+#endif
 #include <usearch/index_dense.hpp>
 
 namespace DB
@@ -137,6 +142,7 @@ class MergeTreeIndexConditionVectorSimilarity final : public IMergeTreeIndexCond
 public:
     explicit MergeTreeIndexConditionVectorSimilarity(
         const std::optional<VectorSearchParameters> & parameters_,
+        const String & index_column_,
         unum::usearch::metric_kind_t metric_kind_,
         ContextPtr context);
 
@@ -148,6 +154,7 @@ public:
 
 private:
     std::optional<VectorSearchParameters> parameters;
+    const String index_column;
     const unum::usearch::metric_kind_t metric_kind;
     const size_t expansion_search;
 };

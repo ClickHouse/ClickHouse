@@ -1,11 +1,10 @@
 import json
-import os
 import urllib
 from pathlib import Path
 from typing import Optional
 
-from praktika.runtime import RunConfig
-from praktika.settings import Settings
+from .runtime import RunConfig
+from .settings import Settings
 
 
 class Info:
@@ -23,6 +22,14 @@ class Info:
     @property
     def pr_number(self):
         return self.env.PR_NUMBER
+
+    @property
+    def linked_pr_number(self):
+        """
+        PR associated with the merge commit for Push or Merge Queue workflow
+        :return: PR number or 0 if not applicable or not found
+        """
+        return self.env.LINKED_PR_NUMBER
 
     @property
     def workflow_name(self):
@@ -45,8 +52,16 @@ class Info:
         return self.env.COMMIT_URL
 
     @property
+    def change_url(self):
+        return self.pr_url if self.pr_number else self.commit_url
+
+    @property
     def git_branch(self):
         return self.env.BRANCH
+
+    @property
+    def base_branch(self):
+        return self.env.BASE_BRANCH
 
     @property
     def git_sha(self):
@@ -65,12 +80,20 @@ class Info:
         return self.env.USER_LOGIN
 
     @property
+    def run_url(self):
+        return self.env.RUN_URL
+
+    @property
     def pr_labels(self):
         return self.env.PR_LABELS
 
     @property
     def instance_type(self):
         return self.env.INSTANCE_TYPE
+
+    @property
+    def instance_lifecycle(self):
+        return self.env.INSTANCE_LIFE_CYCLE
 
     @property
     def instance_id(self):
@@ -82,7 +105,7 @@ class Info:
 
     # TODO: Consider defining secrets outside of workflow as it project data in most of the cases
     def get_secret(self, name):
-        from praktika.mangle import _get_workflows
+        from .mangle import _get_workflows
 
         if not self.workflow:
             self.workflow = _get_workflows(self.env.WORKFLOW_NAME)[0]
@@ -104,7 +127,7 @@ class Info:
         self.env.dump()
 
     def get_specific_report_url(self, pr_number, branch, sha, job_name=""):
-        from praktika.settings import Settings
+        from .settings import Settings
 
         if pr_number:
             ref_param = f"PR={pr_number}"
@@ -123,7 +146,7 @@ class Info:
 
     @staticmethod
     def get_workflow_input_value(input_name) -> Optional[str]:
-        from praktika.settings import _Settings
+        from .settings import _Settings
 
         try:
             with open(_Settings.WORKFLOW_INPUTS_FILE, "r", encoding="utf8") as f:
@@ -157,3 +180,19 @@ class Info:
         if key:
             return custom_data.get(key, None)
         return custom_data
+
+    def is_workflow_ok(self):
+        """
+        Experimental function
+        :return:
+        """
+        from .result import Result
+
+        result = Result.from_fs(self.env.WORKFLOW_NAME)
+        for subresult in result.results:
+            if subresult.name == Settings.FINISH_WORKFLOW_JOB_NAME:
+                continue
+            if not subresult.is_ok():
+                print(f"Job [{subresult.name}] is not ok, status [{subresult.status}]")
+                return False
+        return True
