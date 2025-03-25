@@ -368,4 +368,12 @@ enum class DatabaseDataLakeCatalogType : uint8_t
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
 
+enum class FileCachePolicy : uint8_t
+{
+    LRU,
+    SLRU,
+};
+
+DECLARE_SETTING_ENUM(FileCachePolicy)
+
 }

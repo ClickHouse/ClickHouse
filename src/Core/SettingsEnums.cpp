@@ -288,4 +288,10 @@ IMPLEMENT_SETTING_ENUM(
     {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE}})
+
+IMPLEMENT_SETTING_ENUM(
+    FileCachePolicy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"lru", FileCachePolicy::LRU},
+     {"slru", FileCachePolicy::SLRU}})
 }

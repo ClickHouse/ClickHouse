@@ -60,7 +60,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 max_elements;
     extern const FileCacheSettingsUInt64 max_file_segment_size;
     extern const FileCacheSettingsUInt64 boundary_alignment;
-    extern const FileCacheSettingsString cache_policy;
+    extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
     extern const FileCacheSettingsUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
@@ -140,15 +140,6 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             break;
         }
     }
-=======
-    {
-    }
-    else if (settings[FileCacheSetting::cache_policy].value == "SLRU")
-    {
-    }
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy: {}", settings[FileCacheSetting::cache_policy].value);
->>>>>>> origin/master
 
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 

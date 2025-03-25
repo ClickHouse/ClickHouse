@@ -1,14 +1,9 @@
 #pragma once
 #include <memory>
+#include <Core/SettingsEnums.h>
 
 namespace DB
 {
-
-enum class FileCachePolicy
-{
-    LRU,
-    SLRU,
-};
 
 static constexpr int FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE = 32 * 1024 * 1024; /// 32Mi
 static constexpr int FILECACHE_DEFAULT_FILE_SEGMENT_ALIGNMENT = 4 * 1024 * 1024; /// 4Mi

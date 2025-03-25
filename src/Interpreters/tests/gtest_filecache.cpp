@@ -59,7 +59,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 max_elements;
     extern const FileCacheSettingsUInt64 max_file_segment_size;
     extern const FileCacheSettingsUInt64 boundary_alignment;
-    extern const FileCacheSettingsString cache_policy;
+    extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
     extern const FileCacheSettingsUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
