@@ -665,7 +665,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
                 chassert(ordinary_reading_marks == 0);
         }
 
-        auto * logger = &::Poco::Logger::get("optimizeUseAggregateProjections");
+        auto logger = getLogger("optimizeUseAggregateProjections");
 
         /// Selecting best candidate.
         for (auto & candidate : candidates.real)

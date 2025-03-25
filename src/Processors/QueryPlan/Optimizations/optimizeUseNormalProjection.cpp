@@ -166,7 +166,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
 
     std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
 
-    auto * logger = &::Poco::Logger::get("optimizeUseNormalProjections");
+    auto logger = getLogger("optimizeUseNormalProjections");
 
     for (const auto * projection : normal_projections)
     {
