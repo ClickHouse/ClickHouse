@@ -3490,12 +3490,15 @@ CONV_FN(CreateView, create_view)
 
 CONV_FN(DictionaryColumn, dc)
 {
-    ColumnDefToString(ret, dc.col_def());
+    ret += "`";
+    ColumnToString(ret, 1, dc.col());
+    ret += "` ";
+    TypeNameToString(ret, 0, dc.type());
+    ret += " DEFAULT ";
+    ExprToString(ret, dc.default_val());
     if (dc.has_expression())
     {
-        ret += " ";
-        ret += dc.use_default() ? "DEFAULT" : "EXPRESSION";
-        ret += " ";
+        ret += " EXPRESSION ";
         ExprToString(ret, dc.expression());
     }
     if (dc.has_hierarchical())
@@ -3518,7 +3521,7 @@ CONV_FN(DictionarySource, ds)
         case DictionarySourceType::kEst: {
             const ExprSchemaTable & est = ds.est();
 
-            ret += "CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE '";
+            ret += "CLICKHOUSE(TABLE '";
             TableToString(ret, est.table());
             ret += "' DB '";
             if (est.has_database())
@@ -3541,7 +3544,7 @@ CONV_FN(DictionarySource, ds)
 CONV_FN(DictionaryLayout, dl)
 {
     ret += " LAYOUT(";
-    ret += DictionaryLayout_DictionaryLayouts_Name(dl.layout());
+    ret += DictionaryLayouts_Name(dl.layout());
     ret += "(";
     if (dl.has_setting_values())
     {

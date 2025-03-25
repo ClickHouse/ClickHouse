@@ -149,6 +149,18 @@ extern std::unique_ptr<SQLType> size_tp, null_tp;
 
 extern std::unordered_map<String, DB::Strings> systemTables;
 
+extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSetting>> allDictionaryLayoutSettings;
+
+const auto max_rows_func
+    = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(8192))); };
+const auto max_bytes_func = [](RandomGenerator & rg)
+{ return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); };
+
+const CHSetting threadRange = CHSetting(
+    [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
+    {"0", "1", std::to_string(std::thread::hardware_concurrency())},
+    false);
+
 void loadFuzzerServerSettings(const FuzzConfig & fc);
 void loadFuzzerTableSettings(const FuzzConfig & fc);
 void loadSystemTables(const FuzzConfig & fc);

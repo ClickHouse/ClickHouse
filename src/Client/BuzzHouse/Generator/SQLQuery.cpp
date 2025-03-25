@@ -248,7 +248,7 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
         sfunc->set_user(sc.user);
         sfunc->set_password(sc.password);
         sfunc->set_format(t.file_format);
-        flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
+        flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
         for (const auto & entry : this->remote_entries)
         {
             SQLType * tp = entry.getBottomType();
@@ -564,7 +564,7 @@ bool StatementGenerator::joinedTableOrFunction(
             if (rg.nextBool())
             {
                 /// Optional sharding key
-                flatTableColumnPath(to_remote_entries, *t, [](const SQLColumn &) { return true; });
+                flatTableColumnPath(to_remote_entries, t->cols, [](const SQLColumn &) { return true; });
                 cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
                 this->remote_entries.clear();
             }

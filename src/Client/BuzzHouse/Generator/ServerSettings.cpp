@@ -8,11 +8,6 @@ const RandomSettingParameter probRange
 
 const RandomSettingParameter highRange = [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); };
 
-static const CHSetting threadRange = CHSetting(
-    [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
-    {"0", "1", std::to_string(std::thread::hardware_concurrency())},
-    false);
-
 std::unordered_map<String, CHSetting> performanceSettings
     = {{"allow_aggregate_partitions_independently", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"allow_experimental_query_deduplication", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -919,14 +914,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     }
 
     /// When measuring performance use bigger block sizes
-    const auto max_rows_func
-        = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(8192))); };
-    const auto max_bytes_func = [](RandomGenerator & rg)
-    {
-        return std::to_string(
-            rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
-    };
-
     /// Number of rows values
     for (const auto & entry :
          {"cross_join_min_rows_to_compress",

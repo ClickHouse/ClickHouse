@@ -170,7 +170,7 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
     t.setName(jtf->mutable_tof()->mutable_est(), false);
     jtf->set_final(t.supportsFinal());
 
-    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    gen.flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     const uint32_t ncols = static_cast<uint32_t>(gen.entries.size());
     for (const auto & entry : gen.entries)
     {
@@ -216,7 +216,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     }
     ff->set_path(nfile.generic_string());
 
-    gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         SQLType * tp = entry.getBottomType();
@@ -266,7 +266,7 @@ void QueryOracle::generateImportQuery(
     const OutFormat & outf = ff.outformat();
 
     t.setName(ins->mutable_est(), false);
-    gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         gen.columnPathRef(entry, ins->add_cols());
@@ -665,7 +665,7 @@ void QueryOracle::replaceQueryWithTablePeers(
 
         t.setName(jtf->mutable_tof()->mutable_est(), false);
         jtf->set_final(t.supportsFinal());
-        gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+        gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)
         {
             gen.columnPathRef(colRef, ins->add_cols());

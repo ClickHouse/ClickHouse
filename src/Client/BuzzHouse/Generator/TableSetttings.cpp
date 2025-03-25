@@ -226,6 +226,60 @@ std::unordered_map<String, CHSetting> restoreSettings
        {"use_same_password_for_base_backup", CHSetting(trueOrFalse, {}, false)},
        {"use_same_s3_credentials_for_base_backup", CHSetting(trueOrFalse, {}, false)}};
 
+std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSetting>> allDictionaryLayoutSettings;
+
+std::unordered_map<String, CHSetting> flatLayoutSettings
+    = {{"INITIAL_ARRAY_SIZE", CHSetting(max_bytes_func, {}, false)}, {"MAX_ARRAY_SIZE", CHSetting(max_bytes_func, {}, false)}};
+
+std::unordered_map<String, CHSetting> hashedLayoutSettings
+    = {{"MAX_LOAD_FACTOR", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "0.5" : "0.99"; }, {}, false)},
+       {"SHARD_LOAD_QUEUE_BACKLOG",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                return std::to_string(
+                    rg.thresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+            },
+            {},
+            false)},
+       {"SHARDS", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, 10)); }, {}, false)}};
+
+std::unordered_map<String, CHSetting> hashedArrayLayoutSettings
+    = {{"SHARDS", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, 10)); }, {}, false)}};
+
+std::unordered_map<String, CHSetting> rangeHashedLayoutSettings
+    = {{"range_lookup_strategy", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'min'" : "'max'"; }, {}, false)}};
+
+std::unordered_map<String, CHSetting> cachedLayoutSettings
+    = {{"ALLOW_READ_EXPIRED_KEYS", CHSetting(trueOrFalse, {}, false)},
+       {"MAX_THREADS_FOR_UPDATES", threadRange},
+       {"MAX_UPDATE_QUEUE_SIZE",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                return std::to_string(
+                    rg.thresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+            },
+            {},
+            false)},
+       {"SIZE_IN_CELLS",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                return std::to_string(
+                    rg.thresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+            },
+            {},
+            false)}};
+
+std::unordered_map<String, CHSetting> ssdCachedLayoutSettings
+    = {{"BLOCK_SIZE", CHSetting(max_bytes_func, {}, false)},
+       {"FILE_SIZE", CHSetting(max_bytes_func, {}, false)},
+       {"READ_BUFFER_SIZE", CHSetting(max_bytes_func, {}, false)},
+       {"WRITE_BUFFER_SIZE", CHSetting(max_bytes_func, {}, false)}};
+
+std::unordered_map<String, CHSetting> ipTreeLayoutSettings = {{"ACCESS_TO_KEY_FROM_ATTRIBUTES", CHSetting(trueOrFalse, {}, false)}};
+
 void loadFuzzerTableSettings(const FuzzConfig & fc)
 {
     if (!fc.storage_policies.empty())
@@ -265,6 +319,24 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {IcebergS3, {}},
          {Merge, {}},
          {Distributed, distributedTableSettings}});
+
+    allDictionaryLayoutSettings.insert(
+        {{CACHE, cachedLayoutSettings},
+         {COMPLEX_KEY_CACHE, cachedLayoutSettings},
+         {COMPLEX_KEY_DIRECT, {}},
+         {COMPLEX_KEY_HASHED, hashedLayoutSettings},
+         {COMPLEX_KEY_HASHED_ARRAY, hashedArrayLayoutSettings},
+         {COMPLEX_KEY_RANGE_HASHED, rangeHashedLayoutSettings},
+         {COMPLEX_KEY_SPARSE_HASHED, hashedLayoutSettings},
+         {COMPLEX_KEY_SSD_CACHE, ssdCachedLayoutSettings},
+         {DIRECT, {}},
+         {FLAT, flatLayoutSettings},
+         {HASHED, hashedLayoutSettings},
+         {HASHED_ARRAY, hashedArrayLayoutSettings},
+         {IP_TRIE, ipTreeLayoutSettings},
+         {RANGE_HASHED, rangeHashedLayoutSettings},
+         {SPARSE_HASHED, hashedLayoutSettings},
+         {SSD_CACHE, ssdCachedLayoutSettings}});
 }
 
 }

@@ -101,6 +101,7 @@ public:
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> databases;
     std::unordered_map<uint32_t, SQLTable> tables;
     std::unordered_map<uint32_t, SQLView> views;
+    std::unordered_map<uint32_t, SQLDictionary> dictionaries;
     /// Backup a system table
     std::optional<String> system_table, partition_id;
 
@@ -122,10 +123,11 @@ private:
     bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, allow_in_expression_alias = true,
          allow_subqueries = true, enforce_final = false, allow_engine_udf = true;
     uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, zoo_path_counter = 0, function_counter = 0, current_level = 0,
-             backup_counter = 0;
+             backup_counter = 0, cache_counter = 0;
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
     std::unordered_map<uint32_t, SQLTable> staged_tables, tables;
     std::unordered_map<uint32_t, SQLView> staged_views, views;
+    std::unordered_map<uint32_t, SQLDictionary> staged_dictionaries, dictionaries;
     std::unordered_map<uint32_t, SQLFunction> staged_functions, functions;
     std::unordered_map<uint32_t, CatalogBackup> backups;
 
@@ -153,6 +155,7 @@ private:
     std::vector<std::reference_wrapper<const SQLColumn>> filtered_columns;
     std::vector<std::reference_wrapper<const SQLTable>> filtered_tables;
     std::vector<std::reference_wrapper<const SQLView>> filtered_views;
+    std::vector<std::reference_wrapper<const SQLDictionary>> filtered_dictionaries;
     std::vector<std::reference_wrapper<const std::shared_ptr<SQLDatabase>>> filtered_databases;
     std::vector<std::reference_wrapper<const SQLFunction>> filtered_functions;
 
@@ -177,6 +180,10 @@ private:
         else if constexpr (std::is_same_v<T, SQLView>)
         {
             return views;
+        }
+        else if constexpr (std::is_same_v<T, SQLDictionary>)
+        {
+            return dictionaries;
         }
         else if constexpr (std::is_same_v<T, SQLFunction>)
         {
@@ -229,6 +236,10 @@ private:
         {
             return filtered_views;
         }
+        else if constexpr (std::is_same_v<T, SQLDictionary>)
+        {
+            return filtered_dictionaries;
+        }
         else if constexpr (std::is_same_v<T, SQLFunction>)
         {
             return filtered_functions;
@@ -268,10 +279,12 @@ public:
 private:
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
-    void addViewRelation(const String & rel_name, const SQLView & v);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
+    void addViewRelation(const String & rel_name, const SQLView & v);
+    void addDictionaryRelation(const String & rel_name, const SQLDictionary & d);
     String strAppendAnyValue(RandomGenerator & rg, SQLType * tp);
-    void flatTableColumnPath(uint32_t flags, const SQLTable & t, std::function<bool(const SQLColumn & c)> col_filter);
+    void flatTableColumnPath(
+        uint32_t flags, const std::unordered_map<uint32_t, SQLColumn> & cols, std::function<bool(const SQLColumn & c)> col_filter);
     void flatColumnPath(uint32_t flags, const std::unordered_map<uint32_t, std::unique_ptr<SQLType>> & centries);
     void generateStorage(RandomGenerator & rg, Storage * store) const;
     void generateNextCodecs(RandomGenerator & rg, CodecList * cl);
@@ -295,6 +308,7 @@ private:
     void addTableProjection(RandomGenerator & rg, SQLTable & t, bool staged, ProjectionDef * pdef);
     void addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
     void generateTableKey(RandomGenerator & rg, TableEngineValues teng, bool allow_asc_desc, TableKey * tkey);
+    void setClusterInfo(RandomGenerator & rg, SQLBase & b);
     void generateMergeTreeEngineDetails(RandomGenerator & rg, const SQLBase & b, bool add_pkey, TableEngine * te);
     void generateEngineDetails(RandomGenerator & rg, SQLBase & b, bool add_pkey, TableEngine * te);
 
@@ -304,6 +318,7 @@ private:
 
     void generateNextRefreshableView(RandomGenerator & rg, RefreshableView * cv);
     void generateNextCreateView(RandomGenerator & rg, CreateView * cv);
+    void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
     void generateNextInsert(RandomGenerator & rg, Insert * ins);
     void generateNextDelete(RandomGenerator & rg, LightDelete * del);
@@ -400,6 +415,7 @@ public:
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->isAttached(); };
     const std::function<bool(const SQLTable &)> attached_tables = [](const SQLTable & t) { return t.isAttached(); };
     const std::function<bool(const SQLView &)> attached_views = [](const SQLView & v) { return v.isAttached(); };
+    const std::function<bool(const SQLDictionary &)> attached_dictionaries = [](const SQLDictionary & d) { return d.isAttached(); };
 
     const std::function<bool(const SQLTable &)> attached_tables_for_dump_table_oracle = [](const SQLTable & t)
     { return t.isAttached() && !t.isNotTruncableEngine() && t.teng != TableEngineValues::CollapsingMergeTree; };
@@ -409,11 +425,10 @@ public:
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
-        = [](const std::shared_ptr<SQLDatabase> & d) { return d->attached != DetachStatus::ATTACHED; };
-    const std::function<bool(const SQLTable &)> detached_tables
-        = [](const SQLTable & t) { return (t.db && t.db->attached != DetachStatus::ATTACHED) || t.attached != DetachStatus::ATTACHED; };
-    const std::function<bool(const SQLView &)> detached_views
-        = [](const SQLView & v) { return (v.db && v.db->attached != DetachStatus::ATTACHED) || v.attached != DetachStatus::ATTACHED; };
+        = [](const std::shared_ptr<SQLDatabase> & d) { return d->isDettached(); };
+    const std::function<bool(const SQLTable &)> detached_tables = [](const SQLTable & t) { return t.isDettached(); };
+    const std::function<bool(const SQLView &)> detached_views = [](const SQLView & v) { return v.isDettached(); };
+    const std::function<bool(const SQLDictionary &)> detached_dictionaries = [](const SQLDictionary & d) { return d.isDettached(); };
 
     template <typename T>
     std::function<bool(const T &)> hasTableOrView(const SQLBase & b) const

@@ -3426,11 +3426,12 @@ message CreateView {
 }
 
 message DictionaryColumn {
-    required ColumnDef col_def = 1;
-    optional bool use_default = 2;
-    optional Expr expression = 3;
-    optional bool hierarchical = 4; /// or injective
-    optional bool is_object_id = 5;
+    required Column col = 1;
+    required TypeName type = 2;
+    required Expr default_val = 3;
+    optional Expr expression = 4;
+    optional bool hierarchical = 5; /// or injective
+    optional bool is_object_id = 6;
 }
 
 message DictionarySource {
@@ -3441,25 +3442,26 @@ message DictionarySource {
     }
 }
 
+enum DictionaryLayouts {
+    CACHE = 1;
+    COMPLEX_KEY_CACHE = 2;
+    COMPLEX_KEY_DIRECT = 3;
+    COMPLEX_KEY_HASHED = 4;
+    COMPLEX_KEY_HASHED_ARRAY = 5;
+    COMPLEX_KEY_RANGE_HASHED = 6;
+    COMPLEX_KEY_SPARSE_HASHED = 7;
+    COMPLEX_KEY_SSD_CACHE = 8;
+    DIRECT = 9;
+    FLAT = 10;
+    HASHED = 11;
+    HASHED_ARRAY = 12;
+    IP_TRIE = 13;
+    RANGE_HASHED = 14;
+    SPARSE_HASHED = 15;
+    SSD_CACHE = 16;
+}
+
 message DictionaryLayout {
-    enum DictionaryLayouts {
-        CACHE = 1;
-        COMPLEX_KEY_CACHE = 2;
-        COMPLEX_KEY_DIRECT = 3;
-        COMPLEX_KEY_HASHED = 4;
-        COMPLEX_KEY_HASHED_ARRAY = 5;
-        COMPLEX_KEY_RANGE_HASHED = 6;
-        COMPLEX_KEY_SPARSE_HASHED = 7;
-        COMPLEX_KEY_SSD_CACHE = 8;
-        DIRECT = 9;
-        FLAT = 10;
-        HASHED = 11;
-        HASHED_ARRAY = 12;
-        IP_TRIE = 13;
-        RANGE_HASHED = 14;
-        SPARSE_HASHED = 15;
-        SSD_CACHE = 16;
-    }
     required DictionaryLayouts layout = 1;
     optional SettingValues setting_values = 2;
 }
@@ -3737,6 +3739,7 @@ message SQLQueryInner {
         CreateFunction create_function = 17;
         SystemCommand system_cmd = 18;
         BackupRestore backup_restore = 19;
+        CreateDictionary create_dictionary = 20;
     }
 }
 

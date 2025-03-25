@@ -124,6 +124,8 @@ public:
 
     bool isAttached() const { return attached == DetachStatus::ATTACHED; }
 
+    bool isDettached() const { return attached != DetachStatus::ATTACHED; }
+
     void finishDatabaseSpecification(DatabaseEngine * dspec)
     {
         if (isReplicatedDatabase())
@@ -228,6 +230,8 @@ public:
     std::optional<String> getCluster() const { return cluster; }
 
     bool isAttached() const { return (!db || db->isAttached()) && attached == DetachStatus::ATTACHED; }
+
+    bool isDettached() const { return (db && db->attached != DetachStatus::ATTACHED) || attached != DetachStatus::ATTACHED; }
 };
 
 struct SQLTable : SQLBase
@@ -290,6 +294,23 @@ public:
     }
 
     bool supportsFinal() const { return !this->is_materialized; }
+};
+
+struct SQLDictionary : SQLBase
+{
+public:
+    std::unordered_map<uint32_t, SQLColumn> cols;
+
+    void setName(ExprSchemaTable * est, const bool setdbname) const
+    {
+        if (db || setdbname)
+        {
+            est->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
+        }
+        est->mutable_table()->set_table("d" + std::to_string(tname));
+    }
+
+    bool supportsFinal() const { return false; }
 };
 
 struct SQLFunction
