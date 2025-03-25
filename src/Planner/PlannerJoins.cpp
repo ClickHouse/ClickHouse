@@ -1128,14 +1128,15 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         {
             const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !rhs_size_estimation
                 || (*rhs_size_estimation >= settings.parallel_hash_join_threshold);
-            if (use_parallel_hash){
-            StatsCollectingParams params{
-                hash_table_key_hash,
-                settings.collect_hash_table_stats_during_joins,
-                settings.max_entries_for_hash_table_stats,
-                settings.max_size_to_preallocate_for_joins};
-            return std::make_shared<ConcurrentHashJoin>(
-                table_join, settings.max_threads, right_table_expression_header, params);}
+            if (use_parallel_hash)
+            {
+                StatsCollectingParams params{
+                    hash_table_key_hash,
+                    settings.collect_hash_table_stats_during_joins,
+                    settings.max_entries_for_hash_table_stats,
+                    settings.max_size_to_preallocate_for_joins};
+                return std::make_shared<ConcurrentHashJoin>(table_join, settings.max_threads, right_table_expression_header, params);
+            }
         }
 
         return std::make_shared<HashJoin>(
@@ -1221,7 +1222,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
     const JoinAlgorithmSettings & settings,
-    UInt64 hash_table_key_hash, std::optional<UInt64> rhs_size_estimation)
+    UInt64 hash_table_key_hash,
+    std::optional<UInt64> rhs_size_estimation)
 {
     if (table_join->getMixedJoinExpression()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)

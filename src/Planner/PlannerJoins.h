@@ -11,7 +11,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include "base/types.h"
 
 namespace DB
 {
