@@ -238,7 +238,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         tname = next.tname = this->table_counter++;
     }
-    cv->set_replace(replace);
+    cv->set_create_opt(replace ? CreateReplaceOption::Replace : CreateReplaceOption::Create);
     next.is_materialized = rg.nextBool();
     cv->set_materialized(next.is_materialized);
     next.setName(cv->mutable_est(), false);
@@ -1365,7 +1365,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
                 columnPathRef(rg.pickRandomly(this->entries), mcp->mutable_col());
                 this->entries.clear();
-                generateSettingValues(rg, csettings, mcp->mutable_settings());
+                generateSettingValues(rg, csettings, mcp->mutable_setting_values());
             }
             else if (
                 column_remove_setting
@@ -1381,7 +1381,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
                 columnPathRef(rg.pickRandomly(this->entries), rcp->mutable_col());
                 this->entries.clear();
-                generateSettingList(rg, csettings, rcp->mutable_settings());
+                generateSettingList(rg, csettings, rcp->mutable_setting_values());
             }
             else if (
                 table_modify_setting
@@ -3382,7 +3382,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
         if (!sq.explain().is_explain() && success)
         {
-            if (query.create_table().create_opt() == CreateTable_CreateTableOption::CreateTable_CreateTableOption_Replace)
+            if (query.create_table().create_opt() == CreateReplaceOption::Replace)
             {
                 dropTable(false, true, tname);
             }
@@ -3396,7 +3396,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
         if (!sq.explain().is_explain() && success)
         {
-            if (query.create_view().replace())
+            if (query.create_view().create_opt() == CreateReplaceOption::Replace)
             {
                 this->views.erase(tname);
             }

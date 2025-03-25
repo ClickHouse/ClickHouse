@@ -970,18 +970,18 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         if (!engineSettings.empty() && rg.nextSmallNumber() < 5)
         {
             /// Add table engine settings
-            svs = svs ? svs : te->mutable_settings();
+            svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, engineSettings, svs);
         }
         if (rg.nextSmallNumber() < 4)
         {
             /// Add server settings
-            svs = svs ? svs : te->mutable_settings();
+            svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, serverSettings, svs);
         }
         if (b.isAnyS3Engine() || (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared))
         {
-            svs = svs ? svs : te->mutable_settings();
+            svs = svs ? svs : te->mutable_setting_values();
             if (b.isAnyS3Engine())
             {
                 SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
@@ -1132,7 +1132,7 @@ void StatementGenerator::addTableColumnInternal(
         }
         if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !csettings.empty() && rg.nextMediumNumber() < 16)
         {
-            generateSettingValues(rg, csettings, cd->mutable_settings());
+            generateSettingValues(rg, csettings, cd->mutable_setting_values());
         }
         if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !t.hasDatabasePeer() && rg.nextMediumNumber() < 16)
         {
@@ -1535,9 +1535,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         }
         tname = next.tname = this->table_counter++;
     }
-    ct->set_create_opt(
-        replace ? CreateTable_CreateTableOption::CreateTable_CreateTableOption_Replace
-                : CreateTable_CreateTableOption::CreateTable_CreateTableOption_Create);
+    ct->set_create_opt(replace ? CreateReplaceOption::Replace : CreateReplaceOption::Create);
     next.setName(ct->mutable_est(), false);
     if (!collectionHas<SQLTable>(tableLikeLambda) || rg.nextSmallNumber() < 9)
     {

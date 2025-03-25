@@ -2940,7 +2940,7 @@ message ColumnDef {
     optional ColumnStatistics stats = 7;
     optional Expr ttl_expr = 8;
     optional bool is_pkey = 9;
-    optional SettingValues settings = 10;
+    optional SettingValues setting_values = 10;
 }
 
 enum IndexType {
@@ -3113,7 +3113,7 @@ message TableEngine {
     optional TableKey primary_key = 6;
     optional TableKey sample_by = 7;
     optional TTLExpr ttl_expr = 8;
-    optional SettingValues settings = 9;
+    optional SettingValues setting_values = 9;
 }
 
 message CreateTableAs {
@@ -3121,13 +3121,14 @@ message CreateTableAs {
     required ExprSchemaTable est = 2;
 }
 
+enum CreateReplaceOption {
+    Create = 1;
+    Replace = 2;
+    CreateOrReplace = 3;
+}
+
 message CreateTable {
-    enum CreateTableOption {
-        Create = 1;
-        Replace = 2;
-        CreateOrReplace = 3;
-    }
-    required CreateTableOption create_opt = 1;
+    required CreateReplaceOption create_opt = 1;
     optional bool is_temp = 2;
     optional bool if_not_exists = 3;
     required ExprSchemaTable est = 4;
@@ -3366,7 +3367,7 @@ message RemoveColumnProperty {
 
 message ModifyColumnSetting {
     required ColumnPath col = 1;
-    required SettingValues settings = 2;
+    required SettingValues setting_values = 2;
 }
 
 message SettingList {
@@ -3376,7 +3377,7 @@ message SettingList {
 
 message RemoveColumnSetting {
     required ColumnPath col = 1;
-    required SettingList settings = 2;
+    required SettingList setting_values = 2;
 }
 
 message RefreshInterval {
@@ -3411,16 +3412,76 @@ message CreateMatViewTo {
 }
 
 message CreateView {
-    optional bool replace = 1;
-    optional bool materialized = 2;
+    required CreateReplaceOption create_opt = 1;
+    optional bool if_not_exists = 2;
+    optional bool materialized = 3;
+    required ExprSchemaTable est = 4;
+    optional RefreshableView refresh = 5;
+    optional CreateMatViewTo to = 6;
+    optional TableEngine engine = 7;
+    optional bool populate = 8;
+    optional bool empty = 9;
+    required Select select = 10;
+    optional string comment = 11;
+}
+
+message DictionaryColumn {
+    required ColumnDef col_def = 1;
+    optional bool use_default = 2;
+    optional Expr expression = 3;
+    optional bool hierarchical = 4; /// or injective
+    optional bool is_object_id = 5;
+}
+
+message DictionarySource {
+    /// TODO Add other sources
+    oneof dictionary_source_oneof {
+        ExprSchemaTable est = 1;
+        bool null_src = 2;
+    }
+}
+
+message DictionaryLayout {
+    enum DictionaryLayouts {
+        CACHE = 1;
+        COMPLEX_KEY_CACHE = 2;
+        COMPLEX_KEY_DIRECT = 3;
+        COMPLEX_KEY_HASHED = 4;
+        COMPLEX_KEY_HASHED_ARRAY = 5;
+        COMPLEX_KEY_RANGE_HASHED = 6;
+        COMPLEX_KEY_SPARSE_HASHED = 7;
+        COMPLEX_KEY_SSD_CACHE = 8;
+        DIRECT = 9;
+        FLAT = 10;
+        HASHED = 11;
+        HASHED_ARRAY = 12;
+        IP_TRIE = 13;
+        RANGE_HASHED = 14;
+        SPARSE_HASHED = 15;
+        SSD_CACHE = 16;
+    }
+    required DictionaryLayouts layout = 1;
+    optional SettingValues setting_values = 2;
+}
+
+message DictionaryLifetime {
+    required uint32 min = 1;
+    optional uint32 max = 2;
+}
+
+message CreateDictionary {
+    required CreateReplaceOption create_opt = 1;
+    optional bool if_not_exists = 2;
     required ExprSchemaTable est = 3;
-    optional RefreshableView refresh = 4;
-    optional CreateMatViewTo to = 5;
-    optional TableEngine engine = 6;
-    optional bool populate = 7;
-    optional bool empty = 8;
-    required Select select = 9;
-    optional string comment = 10;
+    optional Cluster cluster = 4;
+    required DictionaryColumn col = 5;
+    repeated DictionaryColumn other_cols = 6;
+    required TableKey primary_key = 7;
+    required DictionarySource source = 8;
+    required DictionaryLayout layout = 9;
+    required DictionaryLifetime lifetime = 10;
+    optional SettingValues setting_values = 11;
+    optional string comment = 12;
 }
 
 message ApplyDeleteMask {
