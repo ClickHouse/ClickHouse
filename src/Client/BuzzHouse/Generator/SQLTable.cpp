@@ -1907,7 +1907,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         addDictionaryRelation("", next);
         this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs
             = this->allow_in_expression_alias = this->allow_subqueries = false;
-        generateLiteralValue(rg, dc->mutable_default_val());
+        generateLiteralValue(rg, false, dc->mutable_default_val());
         if (rg.nextMediumNumber() < 21)
         {
             generateExpression(rg, dc->mutable_expression());

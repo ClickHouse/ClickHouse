@@ -345,7 +345,7 @@ private:
     void refColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr);
     void generateSubquery(RandomGenerator & rg, ExplainQuery * eq);
     void generateColRef(RandomGenerator & rg, Expr * expr);
-    void generateLiteralValue(RandomGenerator & rg, Expr * expr);
+    void generateLiteralValue(RandomGenerator & rg, bool add_cast, Expr * expr);
     void generatePredicate(RandomGenerator & rg, Expr * expr);
     void generateFrameBound(RandomGenerator & rg, Expr * expr);
     void generateExpression(RandomGenerator & rg, Expr * expr);

@@ -1012,7 +1012,7 @@ void StatementGenerator::addWhereSide(RandomGenerator & rg, const std::vector<Gr
     }
     else
     {
-        generateLiteralValue(rg, expr);
+        generateLiteralValue(rg, true, expr);
     }
 }
 
