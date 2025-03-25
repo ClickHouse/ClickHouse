@@ -1905,7 +1905,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
 	if (indexes->use_skip_indexes && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
         {
-            result.parts_with_ranges = findPKRangesForFinalAfterSkipIndex(primary_key, result.parts_with_ranges, log);
+            result.parts_with_ranges = findPKRangesForFinalAfterSkipIndex(primary_key,
+                                                                          metadata_snapshot->getSortingKey(),
+                                                                          result.parts_with_ranges,
+                                                                          log);
             add_index_stat_row_for_pk_expand = true;
         }
     }

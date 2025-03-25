@@ -930,7 +930,6 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     std::vector<PartsRangesIterator> rejected_ranges;
 
     RangesInDataPartsBuilder result(ranges_in_data_parts);
-    bool earliest_part_found = false;
 
     auto skip_and_return_all_part_ranges = [&]()
     {
@@ -964,11 +963,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
                 {index_access.getValue(part_index, range.begin), false, range, part_index, PartsRangesIterator::EventType::RangeStart, false});
             for (auto i = range.begin; i < range.end;i++)
                is_selected_range[i] = true;
-
-            earliest_part_found = true;
         }
-        if (!earliest_part_found)
-            continue;
 
         for (size_t range_begin = 0; range_begin < is_selected_range.size(); range_begin++)
         {
@@ -1194,11 +1189,12 @@ Pipes readByLayers(
 
 RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     const KeyDescription & primary_key,
+    const KeyDescription & sorting_key,
     RangesInDataParts & ranges_in_data_parts,
     const LoggerPtr & logger)
 {
     bool cannot_sort_primary_key = false;
-    if (!isSafePrimaryKey(primary_key))
+    if (!isSafePrimaryKey(primary_key) || !sorting_key.reverse_flags.empty())
     {
         LOG_TRACE(logger, "Primary key is not sortable, expanding PK range to entire due to exact_mode.");
         cannot_sort_primary_key = true;

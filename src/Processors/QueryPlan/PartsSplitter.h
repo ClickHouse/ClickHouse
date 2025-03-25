@@ -46,6 +46,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
   */
 RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     const KeyDescription & primary_key,
+    const KeyDescription & sorting_key,
     RangesInDataParts & ranges_in_data_parts,
     const LoggerPtr & logger);
 
