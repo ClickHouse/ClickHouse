@@ -2098,6 +2098,19 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kValues:
             ValuesStatementToString(ret, true, tf.values());
             break;
+        case TableFunctionType::kDictionary: {
+            const ExprSchemaTable & est = tf.dictionary();
+
+            ret += "dictionary('";
+            if (est.has_database())
+            {
+                DatabaseToString(ret, est.database());
+                ret += ".";
+            }
+            TableToString(ret, est.table());
+            ret += "')";
+        }
+        break;
         default:
             ret += "numbers(10)";
     }
@@ -3521,9 +3534,7 @@ CONV_FN(DictionarySource, ds)
         case DictionarySourceType::kEst: {
             const ExprSchemaTable & est = ds.est();
 
-            ret += "CLICKHOUSE(TABLE '";
-            TableToString(ret, est.table());
-            ret += "' DB '";
+            ret += "CLICKHOUSE(DB '";
             if (est.has_database())
             {
                 DatabaseToString(ret, est.database());
@@ -3532,6 +3543,8 @@ CONV_FN(DictionarySource, ds)
             {
                 ret += "default";
             }
+            ret += "' TABLE '";
+            TableToString(ret, est.table());
             ret += "')";
         }
         break;

@@ -2542,6 +2542,7 @@ message TableFunction {
         TableOrFunction loop = 13;
         GenerateRandomFunc grandom = 14;
         ValuesStatement values = 15;
+        ExprSchemaTable dictionary = 16;
     }
 }
 

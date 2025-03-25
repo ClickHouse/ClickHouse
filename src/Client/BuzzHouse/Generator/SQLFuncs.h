@@ -1267,6 +1267,7 @@ const std::vector<CHFunction> CHTableFuncs = {
     /// Table Functions
     CHFunction(SQLTableFunc::TFcluster, 0, 0, 2, 4),
     CHFunction(SQLTableFunc::TFclusterAllReplicas, 0, 0, 2, 4),
+    CHFunction(SQLTableFunc::TFdictionary, 0, 0, 1, 1),
     CHFunction(SQLTableFunc::TFfile, 0, 0, 1, 5),
     CHFunction(SQLTableFunc::TFfileCluster, 0, 0, 2, 5),
     CHFunction(SQLTableFunc::TFformat, 0, 0, 2, 3),
