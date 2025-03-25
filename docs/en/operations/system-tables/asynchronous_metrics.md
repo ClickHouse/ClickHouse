@@ -1,10 +1,14 @@
 ---
-description: "System table containing metrics that are calculated periodically in the background. For example, the amount of RAM in use."
+description: 'System table containing metrics that are calculated periodically in
+  the background. For example, the amount of RAM in use.'
+keywords: ['system table', 'asynchronous_metrics']
 slug: /operations/system-tables/asynchronous_metrics
-title: "system.asynchronous_metrics"
-keywords: ["system table", "asynchronous_metrics"]
+title: 'system.asynchronous_metrics'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.asynchronous_metrics
 
 <SystemTableCloud/>
 
@@ -18,11 +22,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.asynchronous_metrics LIMIT 10
 ```
 
-``` text
+```text
 ┌─metric──────────────────────────────────┬──────value─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ AsynchronousMetricsCalculationTimeSpent │ 0.00179053 │ Time in seconds spent for calculation of asynchronous metrics (this is the overhead of asynchronous metrics).                                                                                                                                              │
 │ NumberOfDetachedByUserParts             │          0 │ The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed.                          │

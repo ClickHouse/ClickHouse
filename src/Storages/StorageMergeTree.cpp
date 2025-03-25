@@ -11,13 +11,13 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
-#include <Parsers/formatAST.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -311,7 +311,7 @@ void StorageMergeTree::read(
         query_plan = std::move(*plan);
 }
 
-std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
+std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
 {
     return getTotalActiveSizeInRows();
 }
@@ -322,7 +322,7 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
     return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, parts);
 }
 
-std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
+std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
 {
     return getTotalActiveSizeInBytes();
 }
@@ -866,12 +866,10 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
         for (const MutationCommand & command : *entry.commands)
         {
-            WriteBufferFromOwnString buf;
-            formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.file_name,
-                buf.str(),
+                command.ast->formatWithSecretsOneLine(),
                 entry.create_time,
                 block_numbers_map,
                 parts_to_do_names,

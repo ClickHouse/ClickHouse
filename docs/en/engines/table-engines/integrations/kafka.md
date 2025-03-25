@@ -1,9 +1,11 @@
 ---
-slug: /engines/table-engines/integrations/kafka
+description: 'The Kafka engine works with Apache Kafka and lets you publish or subscribe
+  to data flows, organize fault-tolerant storage, and process streams as they become
+  available.'
+sidebar_label: 'Kafka'
 sidebar_position: 110
-sidebar_label: Kafka
-title: "Kafka"
-description: "The Kafka engine works with Apache Kafka and lets you publish or subscribe to data flows, organize fault-tolerant storage, and process streams as they become available."
+slug: /engines/table-engines/integrations/kafka
+title: 'Kafka'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -27,7 +29,7 @@ Kafka lets you:
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [ALIAS expr1],
@@ -79,7 +81,7 @@ Optional parameters:
 
 Examples:
 
-``` sql
+```sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -115,7 +117,7 @@ Examples:
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
-``` sql
+```sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
       [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
 ```
@@ -143,7 +145,7 @@ One kafka table can have as many materialized views as you like, they do not rea
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -166,7 +168,7 @@ To improve performance, received messages are grouped into blocks the size of [m
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
-``` sql
+```sql
   DETACH TABLE consumer;
   ATTACH TABLE consumer;
 ```
@@ -177,7 +179,7 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (below `<kafka>`) and topic-level (below `<kafka><kafka_topic>`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
 
-``` xml
+```xml
   <kafka>
     <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
@@ -227,13 +229,13 @@ ClickHouse is able to maintain Kerberos credentials using a keytab file. Conside
 
 Example:
 
-``` xml
-  <!-- Kerberos-aware Kafka -->
-  <kafka>
-    <security_protocol>SASL_PLAINTEXT</security_protocol>
-	<sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
-	<sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
-  </kafka>
+```xml
+<!-- Kerberos-aware Kafka -->
+<kafka>
+  <security_protocol>SASL_PLAINTEXT</security_protocol>
+  <sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
+  <sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
+</kafka>
 ```
 
 ## Virtual Columns {#virtual-columns}
@@ -274,7 +276,7 @@ Either both of the settings must be specified or neither of them. When both of t
 
 Example:
 
-``` sql
+```sql
 CREATE TABLE experimental_kafka (key UInt64, value UInt64)
 ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
@@ -285,7 +287,7 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 
 Or to utilize the `uuid` and `replica` macros similarly to ReplicatedMergeTree:
 
-``` sql
+```sql
 CREATE TABLE experimental_kafka (key UInt64, value UInt64)
 ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS

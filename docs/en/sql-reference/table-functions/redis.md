@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/table-functions/redis
+description: 'This table function allows integrating ClickHouse with Redis.'
+sidebar_label: 'redis'
 sidebar_position: 170
-sidebar_label: redis
-title: "redis"
-description: "This table function allows integrating ClickHouse with Redis."
+slug: /sql-reference/table-functions/redis
+title: 'redis'
 ---
 
 # redis Table Function

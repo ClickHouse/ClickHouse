@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/revoke
+description: 'Documentation for REVOKE Statement'
+sidebar_label: 'REVOKE'
 sidebar_position: 39
-sidebar_label: REVOKE
+slug: /sql-reference/statements/revoke
+title: 'REVOKE Statement'
 ---
 
 # REVOKE Statement
@@ -12,13 +14,13 @@ Revokes privileges from users or roles.
 
 **Revoking privileges from users**
 
-``` sql
+```sql
 REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
 ```
 
 **Revoking roles from users**
 
-``` sql
+```sql
 REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
 ```
 
@@ -34,14 +36,14 @@ You can revoke a part of a privilege. For example, if a user has the `SELECT *.*
 
 Grant the `john` user account with a privilege to select from all the databases, excepting the `accounts` one:
 
-``` sql
+```sql
 GRANT SELECT ON *.* TO john;
 REVOKE SELECT ON accounts.* FROM john;
 ```
 
 Grant the `mira` user account with a privilege to select from all the columns of the `accounts.staff` table, excepting the `wage` one.
 
-``` sql
+```sql
 GRANT SELECT ON accounts.staff TO mira;
 REVOKE SELECT(wage) ON accounts.staff FROM mira;
 ```

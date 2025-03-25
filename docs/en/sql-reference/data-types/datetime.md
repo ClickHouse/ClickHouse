@@ -1,7 +1,10 @@
 ---
-slug: /sql-reference/data-types/datetime
+description: 'Documentation for the DateTime data type in ClickHouse, which stores
+  timestamps with second precision'
+sidebar_label: 'DateTime'
 sidebar_position: 16
-sidebar_label: DateTime
+slug: /sql-reference/data-types/datetime
+title: 'DateTime'
 ---
 
 # DateTime
@@ -10,7 +13,7 @@ Allows to store an instant in time, that can be expressed as a calendar date and
 
 Syntax:
 
-``` sql
+```sql
 DateTime([timezone])
 ```
 
@@ -44,7 +47,7 @@ When inserting data into ClickHouse, you can use different formats of date and t
 
 **1.** Creating a table with a `DateTime`-type column and inserting data into it:
 
-``` sql
+```sql
 CREATE TABLE dt
 (
     `timestamp` DateTime('Asia/Istanbul'),
@@ -53,7 +56,7 @@ CREATE TABLE dt
 ENGINE = TinyLog;
 ```
 
-``` sql
+```sql
 -- Parse DateTime
 -- - from string,
 -- - from integer interpreted as number of seconds since 1970-01-01.
@@ -62,7 +65,7 @@ INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 3);
 SELECT * FROM dt;
 ```
 
-``` text
+```text
 ┌───────────timestamp─┬─event_id─┐
 │ 2019-01-01 00:00:00 │        2 │
 │ 2019-01-01 03:00:00 │        1 │
@@ -74,11 +77,11 @@ SELECT * FROM dt;
 
 **2.** Filtering on `DateTime` values
 
-``` sql
+```sql
 SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istanbul')
 ```
 
-``` text
+```text
 ┌───────────timestamp─┬─event_id─┐
 │ 2019-01-01 00:00:00 │        1 │
 └─────────────────────┴──────────┘
@@ -86,11 +89,11 @@ SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istan
 
 `DateTime` column values can be filtered using a string value in `WHERE` predicate. It will be converted to `DateTime` automatically:
 
-``` sql
+```sql
 SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
 ```
 
-``` text
+```text
 ┌───────────timestamp─┬─event_id─┐
 │ 2019-01-01 00:00:00 │        1 │
 └─────────────────────┴──────────┘
@@ -98,11 +101,11 @@ SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
 
 **3.** Getting a time zone for a `DateTime`-type column:
 
-``` sql
+```sql
 SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
 ```
 
-``` text
+```text
 ┌──────────────column─┬─x─────────────────────────┐
 │ 2019-10-16 04:12:04 │ DateTime('Asia/Istanbul') │
 └─────────────────────┴───────────────────────────┘
@@ -110,14 +113,14 @@ SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
 
 **4.** Timezone conversion
 
-``` sql
+```sql
 SELECT
 toDateTime(timestamp, 'Europe/London') as lon_time,
 toDateTime(timestamp, 'Asia/Istanbul') as mos_time
 FROM dt
 ```
 
-``` text
+```text
 ┌───────────lon_time──┬────────────mos_time─┐
 │ 2019-01-01 00:00:00 │ 2019-01-01 03:00:00 │
 │ 2018-12-31 21:00:00 │ 2019-01-01 00:00:00 │

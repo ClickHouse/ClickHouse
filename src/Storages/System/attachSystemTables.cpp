@@ -5,7 +5,6 @@
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachSystemTablesImpl.h>
 
-#include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <Storages/System/StorageSystemAsyncLoader.h>
@@ -84,6 +83,7 @@
 #include <Storages/System/StorageSystemTransactions.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Storages/System/StorageSystemFilesystemCacheSettings.h>
+#include <Storages/System/StorageSystemQueryConditionCache.h>
 #include <Storages/System/StorageSystemQueryResultCache.h>
 #include <Storages/System/StorageSystemNamedCollections.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
@@ -218,6 +218,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemAsynchronousInserts>(context, system_database, "asynchronous_inserts", "Contains information about pending asynchronous inserts in queue in server's memory.");
     attachNoDescription<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache", "Contains information about all entries inside filesystem cache for remote objects.");
     attachNoDescription<StorageSystemFilesystemCacheSettings>(context, system_database, "filesystem_cache_settings", "Contains information about all filesystem cache settings");
+    attachNoDescription<StorageSystemQueryConditionCache>(context, system_database, "query_condition_cache", "Contains information about all entries inside query condition cache in server's memory.");
     attachNoDescription<StorageSystemQueryResultCache>(context, system_database, "query_cache", "Contains information about all entries inside query cache in server's memory.");
     attachNoDescription<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "Contains a mapping from a filename on local filesystem to a blob name inside object storage.");
     attach<StorageSystemCertificates>(context, system_database, "certificates", "Contains information about available certificates and their sources.");

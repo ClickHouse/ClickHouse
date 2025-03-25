@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/hdfs
+description: 'Creates a table from files in HDFS. This table function is similar to
+  the url and file table functions.'
+sidebar_label: 'hdfs'
 sidebar_position: 80
-sidebar_label: hdfs
-title: "hdfs"
-description: "Creates a table from files in HDFS. This table function is similar to the url and file table functions."
+slug: /sql-reference/table-functions/hdfs
+title: 'hdfs'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -13,7 +14,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 Creates a table from files in HDFS. This table function is similar to the [url](../../sql-reference/table-functions/url.md) and [file](../../sql-reference/table-functions/file.md) table functions.
 
-``` sql
+```sql
 hdfs(URI, format, structure)
 ```
 
@@ -31,13 +32,13 @@ A table with the specified structure for reading or writing data in the specifie
 
 Table from `hdfs://hdfs1:9000/test` and selection of the first two rows from it:
 
-``` sql
+```sql
 SELECT *
 FROM hdfs('hdfs://hdfs1:9000/test', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 LIMIT 2
 ```
 
-``` text
+```text
 ┌─column1─┬─column2─┬─column3─┐
 │       1 │       2 │       3 │
 │       3 │       2 │       1 │
@@ -71,7 +72,7 @@ Constructions with `{}` are similar to the [remote](remote.md) and [file](file.m
 
 <!-- -->
 
-``` sql
+```sql
 SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
 ```
@@ -80,7 +81,7 @@ FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name 
 
 <!-- -->
 
-``` sql
+```sql
 SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
 ```
@@ -93,7 +94,7 @@ If your listing of files contains number ranges with leading zeros, use the cons
 
 Query the data from files named `file000`, `file001`, ... , `file999`:
 
-``` sql
+```sql
 SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 ```
@@ -113,7 +114,7 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 
 Use virtual column, created with Hive-style partitioning
 
-``` sql
+```sql
 SELECT * from HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 

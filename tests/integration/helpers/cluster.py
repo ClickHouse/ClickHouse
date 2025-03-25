@@ -536,6 +536,7 @@ class ClickHouseCluster:
 
         self.spark_session = None
         self.with_iceberg_catalog = False
+        self.with_glue_catalog = False
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -1377,6 +1378,25 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
+    def setup_glue_catalog_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_glue_catalog.yml"
+                ),
+            ]
+        )
+        self.base_iceberg_catalog_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
+        )
+        return self.base_iceberg_catalog_cmd
+
     def setup_iceberg_catalog_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1395,7 +1415,6 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
         )
         return self.base_iceberg_catalog_cmd
-        # return self.base_minio_cmd
 
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
@@ -1555,6 +1574,7 @@ class ClickHouseCluster:
         with_nginx=False,
         with_redis=False,
         with_minio=False,
+        with_remote_database_disk=False,  # Currently, there is no remote storage can be used for the database disk. We disabled it as default.
         with_azurite=False,
         with_cassandra=False,
         with_ldap=False,
@@ -1563,6 +1583,7 @@ class ClickHouseCluster:
         with_coredns=False,
         with_prometheus=False,
         with_iceberg_catalog=False,
+        with_glue_catalog=False,
         handle_prometheus_remote_write=False,
         handle_prometheus_remote_read=False,
         use_old_analyzer=None,
@@ -1615,6 +1636,16 @@ class ClickHouseCluster:
 
         if tag is None:
             tag = DOCKER_BASE_TAG
+        else:
+            if with_remote_database_disk:
+                raise Exception(
+                    f"Can't add instance '{name}': not support remote database disk with the old version {tag}"
+                )
+            with_remote_database_disk = False
+
+        if with_remote_database_disk is None:
+            with_remote_database_disk = False
+
         if not env_variables:
             env_variables = {}
         self.use_keeper = use_keeper
@@ -1661,6 +1692,7 @@ class ClickHouseCluster:
             with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
+            with_remote_database_disk=with_remote_database_disk,
             with_azurite=with_azurite,
             with_jdbc_bridge=with_jdbc_bridge,
             with_hive=with_hive,
@@ -1668,6 +1700,7 @@ class ClickHouseCluster:
             with_cassandra=with_cassandra,
             with_ldap=with_ldap,
             with_iceberg_catalog=with_iceberg_catalog,
+            with_glue_catalog=with_glue_catalog,
             use_old_analyzer=use_old_analyzer,
             server_bin_path=self.server_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
@@ -1847,6 +1880,13 @@ class ClickHouseCluster:
         if with_iceberg_catalog and not self.with_iceberg_catalog:
             cmds.append(
                 self.setup_iceberg_catalog_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_glue_catalog and not self.with_glue_catalog:
+            cmds.append(
+                self.setup_glue_catalog_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
@@ -2183,8 +2223,8 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(
-                    user=mysql8_user,
-                    password=mysql8_pass,
+                    user=mysql_user,
+                    password=mysql_pass,
                     host=self.mysql8_ip,
                     port=self.mysql8_port,
                 )
@@ -2428,7 +2468,7 @@ class ClickHouseCluster:
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
         connection_str = "mongodb://{user}:{password}@{host}:{port}".format(
-            host="localhost", port=self.mongo_port, user=mongo_user, password=mongo_pass
+            host="localhost", port=self.mongo_port, user=mongo_user, password=urllib.parse.quote_plus(mongo_pass)
         )
         if secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
@@ -3336,6 +3376,7 @@ class ClickHouseInstance:
         with_mongo,
         with_redis,
         with_minio,
+        with_remote_database_disk,
         with_azurite,
         with_jdbc_bridge,
         with_hive,
@@ -3343,6 +3384,7 @@ class ClickHouseInstance:
         with_cassandra,
         with_ldap,
         with_iceberg_catalog,
+        with_glue_catalog,
         use_old_analyzer,
         server_bin_path,
         clickhouse_path_dir,
@@ -3431,6 +3473,7 @@ class ClickHouseInstance:
         )
         self.with_redis = with_redis
         self.with_minio = with_minio
+        self.with_remote_database_disk = with_remote_database_disk
         self.with_azurite = with_azurite
         self.with_cassandra = with_cassandra
         self.with_ldap = with_ldap
@@ -4424,14 +4467,14 @@ class ClickHouseInstance:
                     "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libmyodbc.so",
                     "Database": odbc_mysql_db,
                     "Uid": odbc_mysql_uid,
-                    "Pwd": odbc_mysql_pass,
+                    "Pwd": mysql_pass,
                     "Server": self.cluster.mysql8_host,
                 },
                 "PostgreSQL": {
                     "DSN": "postgresql_odbc",
                     "Database": odbc_psql_db,
                     "UserName": odbc_psql_user,
-                    "Password": odbc_psql_pass,
+                    "Password": pg_pass,
                     "Port": str(self.cluster.postgres_port),
                     "Servername": self.cluster.postgres_host,
                     "Protocol": "9.3",

@@ -71,7 +71,7 @@ def test_psql_client(started_cluster):
         )
     cmd_prefix = [
         "/usr/bin/psql",
-        f"sslmode=require host={node.hostname} port={server_port} user=default dbname=default password=123",
+        f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
     ]
     cmd_prefix += ["--no-align", "--field-separator=' '"]
 

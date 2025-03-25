@@ -1,6 +1,5 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Common/typeid_cast.h>
 #include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -105,6 +104,28 @@ bool ASTSelectWithUnionQuery::hasQueryParameters() const
     }
 
     return  has_query_parameters.value();
+}
+
+NameToNameMap ASTSelectWithUnionQuery::getQueryParameters() const
+{
+    NameToNameMap query_params;
+
+    if (!hasQueryParameters())
+        return {};
+
+    for (const auto & child : list_of_selects->children)
+    {
+        if (auto * select_node = child->as<ASTSelectQuery>())
+        {
+            if (select_node->hasQueryParameters())
+            {
+                NameToNameMap select_node_param = select_node->getQueryParameters();
+                query_params.insert(select_node_param.begin(), select_node_param.end());
+            }
+        }
+    }
+
+    return query_params;
 }
 
 }

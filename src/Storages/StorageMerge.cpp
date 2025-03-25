@@ -32,7 +32,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/queryToString.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -1657,14 +1656,14 @@ bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, 
     return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(nullptr, ctx); }) == nullptr;
 }
 
-std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const
+std::optional<UInt64> StorageMerge::totalRows(ContextPtr query_context) const
 {
-    return totalRowsOrBytes([&](const auto & table) { return table->totalRows(settings); });
+    return totalRowsOrBytes([&](const auto & table) { return table->totalRows(query_context); });
 }
 
-std::optional<UInt64> StorageMerge::totalBytes(const Settings & settings) const
+std::optional<UInt64> StorageMerge::totalBytes(ContextPtr query_context) const
 {
-    return totalRowsOrBytes([&](const auto & table) { return table->totalBytes(settings); });
+    return totalRowsOrBytes([&](const auto & table) { return table->totalBytes(query_context); });
 }
 
 template <typename F>

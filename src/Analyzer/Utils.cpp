@@ -12,6 +12,19 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnNullable.h>
+
+#include <Common/FieldVisitorToString.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -1144,6 +1157,162 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
     const auto function_impl = FunctionFactory::instance().get("and", context);
     function->resolveAsFunction(function_impl->build(function->getArgumentColumns()));
+}
+
+namespace
+{
+
+Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object)
+{
+    if (isColumnConst(*column))
+        return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, is_inside_object);
+
+    switch (data_type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+        {
+            const auto & nullable_data_type = assert_cast<const DataTypeNullable &>(*data_type);
+            const auto & nullable_column = assert_cast<const ColumnNullable &>(*column);
+            if (nullable_column.isNullAt(row))
+                return Null();
+            return getFieldFromColumnForASTLiteralImpl(nullable_column.getNestedColumnPtr(), row, nullable_data_type.getNestedType(), is_inside_object);
+        }
+        case TypeIndex::Date: [[fallthrough]];
+        case TypeIndex::Date32: [[fallthrough]];
+        case TypeIndex::DateTime: [[fallthrough]];
+        case TypeIndex::DateTime64:
+        {
+            WriteBufferFromOwnString buf;
+            data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
+            return Field(buf.str());
+        }
+        case TypeIndex::UInt8:
+        {
+            auto field = (*column)[row];
+            if (isBool(data_type))
+                return bool(field.safeGet<bool>());
+            return field;
+        }
+
+        case TypeIndex::Array:
+        {
+            const auto & nested_data_type = assert_cast<const DataTypeArray &>(*data_type).getNestedType();
+            const auto & array_column = assert_cast<const ColumnArray &>(*column);
+            const auto & offsets = array_column.getOffsets();
+            const auto & nested_column = array_column.getDataPtr();
+            size_t start = offsets[static_cast<ssize_t>(row) - 1];
+            size_t end = offsets[row];
+            Array array;
+            array.reserve(end - start);
+            for (size_t i = start; i != end; ++i)
+                array.push_back(getFieldFromColumnForASTLiteralImpl(nested_column, i, nested_data_type, is_inside_object));
+            return array;
+        }
+        case TypeIndex::Map:
+        {
+            /// If we are inside Object, return Map as Object value instead of Array(Tuple).
+            if (is_inside_object)
+            {
+                const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
+                const auto & map_column = assert_cast<const ColumnMap &>(*column);
+                const auto & offsets = map_column.getNestedColumn().getOffsets();
+                const auto & key_column = map_column.getNestedData().getColumnPtr(0);
+                const auto & value_column = map_column.getNestedData().getColumnPtr(1);
+                size_t start = offsets[static_cast<ssize_t>(row) - 1];
+                size_t end = offsets[row];
+                Object object;
+                for (size_t i = start; i != end; ++i)
+                {
+                    auto key_field = convertFieldToString(getFieldFromColumnForASTLiteralImpl(key_column, i, map_type.getKeyType(), is_inside_object));
+                    auto value_field = getFieldFromColumnForASTLiteralImpl(value_column, i, map_type.getValueType(), is_inside_object);
+                    object[key_field] = value_field;
+                }
+
+                return object;
+            }
+
+            const auto & nested_type = assert_cast<const DataTypeMap &>(*data_type).getNestedType();
+            const auto & nested_column = assert_cast<const ColumnMap &>(*column).getNestedColumnPtr();
+            return getFieldFromColumnForASTLiteralImpl(nested_column, row, nested_type, is_inside_object);
+        }
+        case TypeIndex::Tuple:
+        {
+            const auto & element_types = assert_cast<const DataTypeTuple &>(*data_type).getElements();
+            const auto & element_columns = assert_cast<const ColumnTuple &>(*column).getColumns();
+            Tuple tuple;
+            tuple.reserve(element_columns.size());
+            for (size_t i = 0; i != element_types.size(); ++i)
+                tuple.push_back(getFieldFromColumnForASTLiteralImpl(element_columns[i], row, element_types[i], is_inside_object));
+            return tuple;
+        }
+        case TypeIndex::Variant:
+        {
+            const auto & variant_types = assert_cast<const DataTypeVariant &>(*data_type).getVariants();
+            const auto & variant_column = assert_cast<const ColumnVariant &>(*column);
+            auto global_discr = variant_column.globalDiscriminatorAt(row);
+            if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                return Null();
+            const auto & variant = variant_column.getVariantPtrByGlobalDiscriminator(global_discr);
+            size_t variant_offset = variant_column.offsetAt(row);
+            return getFieldFromColumnForASTLiteralImpl(variant, variant_offset, variant_types[global_discr], is_inside_object);
+        }
+        case TypeIndex::Dynamic:
+        {
+            const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*column);
+            const auto & variant_column = dynamic_column.getVariantColumn();
+            auto global_discr = variant_column.globalDiscriminatorAt(row);
+            if (global_discr != dynamic_column.getSharedVariantDiscriminator())
+                return getFieldFromColumnForASTLiteralImpl(dynamic_column.getVariantColumnPtr(), row, dynamic_column.getVariantInfo().variant_type, is_inside_object);
+
+            const auto & shared_variant = dynamic_column.getSharedVariant();
+            auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
+            ReadBufferFromMemory buf(value_data.data, value_data.size);
+            auto type = decodeDataType(buf);
+            auto tmp_column = type->createColumn();
+            tmp_column->reserve(1);
+            type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, {});
+            return getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, type, is_inside_object);
+        }
+        case TypeIndex::Object:
+        {
+            const auto & object_column = assert_cast<const ColumnObject &>(*column);
+            const auto & typed_paths_types = assert_cast<const DataTypeObject &>(*data_type).getTypedPaths();
+            Object object;
+            for (const auto & [path, path_column] : object_column.getTypedPaths())
+                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, typed_paths_types.at(path), true);
+
+            for (const auto & [path, path_column] : object_column.getDynamicPaths())
+                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, std::make_shared<DataTypeDynamic>(), true);
+
+            const auto & shared_data_offsets = object_column.getSharedDataOffsets();
+            const auto [shared_paths, shared_values] = object_column.getSharedDataPathsAndValues();
+            size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
+            size_t end = shared_data_offsets[row];
+            auto dynamic_type = std::make_shared<DataTypeDynamic>();
+            auto dynamic_serialization = dynamic_type->getDefaultSerialization();
+            for (size_t i = start; i != end; ++i)
+            {
+                String path = shared_paths->getDataAt(i).toString();
+                auto value_data = shared_values->getDataAt(i);
+                ReadBufferFromMemory buf(value_data.data, value_data.size);
+                auto tmp_column = dynamic_type->createColumn();
+                tmp_column->reserve(1);
+                dynamic_serialization->deserializeBinary(*tmp_column, buf, {});
+                object[path] = getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, dynamic_type, true);
+            }
+
+            return is_inside_object ? Field(object) : Field(convertObjectToString(object));
+        }
+        default:
+            return (*column)[row];
+    }
+}
+
+}
+
+Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type)
+{
+    return getFieldFromColumnForASTLiteralImpl(column, row, data_type, false);
 }
 
 }

@@ -1,8 +1,9 @@
 ---
-description: "Dataset containing publicly available comments on Reddit from December 2005 to March 2023 with over 14B rows of data in JSON format"
+description: 'Dataset containing publicly available comments on Reddit from December
+  2005 to March 2023 with over 14B rows of data in JSON format'
+sidebar_label: 'Reddit comments'
 slug: /getting-started/example-datasets/reddit-comments
-sidebar_label: Reddit comments
-title: "Reddit comments dataset"
+title: 'Reddit comments dataset'
 ---
 
 This dataset contains publicly available comments on Reddit that go back to December, 2005, to March, 2023, and contains over 14B rows of data. The raw data is in JSON format in compressed files and the rows look like the following:

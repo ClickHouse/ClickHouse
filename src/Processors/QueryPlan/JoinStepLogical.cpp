@@ -516,6 +516,31 @@ static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolve
     }
 }
 
+void JoinStepLogical::appendRequiredOutputsToActions(JoinActionRef & post_filter)
+{
+    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
+    addRequiredInputToOutput(expression_actions.left_pre_join_actions, required_output_columns_set);
+    addRequiredInputToOutput(expression_actions.right_pre_join_actions, required_output_columns_set);
+    addRequiredInputToOutput(expression_actions.post_join_actions, required_output_columns_set);
+
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+    for (const auto * output : expression_actions.post_join_actions->getOutputs())
+    {
+        if (required_output_columns_set.contains(output->result_name))
+            new_outputs.push_back(output);
+    }
+
+    if (new_outputs.empty())
+    {
+        new_outputs = getAnyColumn(expression_actions.post_join_actions->getOutputs());
+    }
+
+    if (post_filter)
+        new_outputs.push_back(post_filter.getNode());
+    expression_actions.post_join_actions->getOutputs() = std::move(new_outputs);
+    expression_actions.post_join_actions->removeUnusedActions();
+}
+
 JoinPtr JoinStepLogical::convertToPhysical(
     JoinActionRef & post_filter,
     bool is_explain_logical,
@@ -696,27 +721,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
         mixed_join_expression = std::make_shared<ExpressionActions>(std::move(dag), actions_settings);
     }
 
-    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
-    addRequiredInputToOutput(expression_actions.left_pre_join_actions, required_output_columns_set);
-    addRequiredInputToOutput(expression_actions.right_pre_join_actions, required_output_columns_set);
-    addRequiredInputToOutput(expression_actions.post_join_actions, required_output_columns_set);
-
-    ActionsDAG::NodeRawConstPtrs new_outputs;
-    for (const auto * output : expression_actions.post_join_actions->getOutputs())
-    {
-        if (required_output_columns_set.contains(output->result_name))
-            new_outputs.push_back(output);
-    }
-
-    if (new_outputs.empty())
-    {
-        new_outputs = getAnyColumn(expression_actions.post_join_actions->getOutputs());
-    }
-
-    if (post_filter)
-        new_outputs.push_back(post_filter.getNode());
-    expression_actions.post_join_actions->getOutputs() = std::move(new_outputs);
-    expression_actions.post_join_actions->removeUnusedActions();
+    appendRequiredOutputsToActions(post_filter);
 
     table_join->setInputColumns(
         expression_actions.left_pre_join_actions->getNamesAndTypesList(),

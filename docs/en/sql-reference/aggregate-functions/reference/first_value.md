@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/first_value
+description: 'It is an alias for any but it was introduced for compatibility with
+  Window Functions, where sometimes it is necessary to process `NULL` values (by default
+  all ClickHouse aggregate functions ignore NULL values).'
 sidebar_position: 137
-title: "first_value"
-description: "It is an alias for any but it was introduced for compatibility with Window Functions, where sometimes it's necessary to process `NULL` values (by default all ClickHouse aggregate functions ignore NULL values)."
+slug: /sql-reference/aggregate-functions/reference/first_value
+title: 'first_value'
 ---
 
 # first_value
