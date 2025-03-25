@@ -4,7 +4,12 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance("node", main_configs=["config/config.xml"])
+node = cluster.add_instance(
+    "node1",
+    with_zookeeper=True,
+    macros={"replica": "r1"},
+    main_configs=["config/config.xml"],
+)
 
 
 @pytest.fixture(scope="module")
