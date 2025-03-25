@@ -92,11 +92,10 @@ public:
         QueryPriorities & parent;
         QueryPriorities::Container::value_type & value;
         // The wait time in millisecond
-        Poco::Timespan::TimeDiff wait_time;
+        std::chrono::milliseconds wait_time;
 
     public:
-        // Override constructor with customized wait time for low priority query
-        HandleImpl(QueryPriorities & parent_, QueryPriorities::Container::value_type & value_, Poco::Timespan::TimeDiff wait_time_)
+        HandleImpl(QueryPriorities & parent_, QueryPriorities::Container::value_type & value_, std::chrono::milliseconds wait_time_)
             : parent(parent_), value(value_), wait_time(wait_time_) {}
 
         ~HandleImpl()
@@ -110,7 +109,7 @@ public:
 
         void waitIfNeed()
         {
-            parent.waitIfNeed(value.first, std::chrono::milliseconds(wait_time));
+            parent.waitIfNeed(value.first, wait_time);
         }
     };
 

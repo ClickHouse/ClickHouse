@@ -300,9 +300,9 @@ ProcessList::EntryPtr ProcessList::insert(
             query_,
             normalized_query_hash,
             client_info,
-            priorities.insert(settings[Setting::priority],
-                              settings[Setting::low_priority_query_wait_time_ms]
-                                  .totalMilliseconds()),
+            priorities.insert(
+                settings[Setting::priority],
+                std::chrono::milliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
             std::move(thread_group),
             query_kind,
             settings,
