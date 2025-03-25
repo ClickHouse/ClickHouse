@@ -151,12 +151,17 @@ namespace
             ColumnPtr default_non_const;
             if (!cache.default_column && arguments.size() == 4)
             {
-                default_non_const = castColumn(arguments[3], result_type);
-                if (in->size() > default_non_const->size())
+                default_non_const = castColumn(arguments[3], result_type); /// While converting NULL to Nullable(string), the size of default_non_const becomes 0
+                if (default_non_const->empty() || !isColumnConst(*default_non_const))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Fourth argument of function {} must be constant and not NULL",
+                        getName());
+                if (arguments[1].column.get()->size() > default_non_const->size() || arguments[2].column.get()->size() > default_non_const->size())
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Fourth argument of function {} must be a constant or a column at least as big as the second and third arguments",
+                        "Fourth argument of function {} must be at least as big as the second and third arguments",
                         getName());
                 }
             }
