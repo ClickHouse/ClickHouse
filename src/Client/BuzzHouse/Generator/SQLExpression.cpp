@@ -155,7 +155,7 @@ void StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, 
     }
 }
 
-void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool add_cast, Expr * expr)
+void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool complex, Expr * expr)
 {
     const uint32_t noption = rg.nextLargeNumber();
     LiteralValue * lv = expr->mutable_lit_val();
@@ -172,7 +172,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool a
 
             huge->set_upper(rg.nextRandomInt64());
             huge->set_lower(rg.nextRandomUInt64());
-            if (add_cast && rg.nextSmallNumber() < 9)
+            if (complex && rg.nextSmallNumber() < 9)
             {
                 il->set_integers(rg.nextBool() ? Integers::Int128 : Integers::Int256);
             }
@@ -184,7 +184,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool a
 
             uhuge->set_upper(rg.nextRandomUInt64());
             uhuge->set_lower(rg.nextRandomUInt64());
-            if (add_cast && rg.nextSmallNumber() < 9)
+            if (complex && rg.nextSmallNumber() < 9)
             {
                 il->set_integers(rg.nextBool() ? Integers::UInt128 : Integers::UInt256);
             }
@@ -192,7 +192,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool a
         else if (noption < 121)
         {
             il->set_int_lit(rg.nextRandomInt64());
-            if (add_cast && rg.nextSmallNumber() < 9)
+            if (complex && rg.nextSmallNumber() < 9)
             {
                 il->set_integers(static_cast<Integers>(
                     (rg.nextRandomUInt32() % static_cast<uint32_t>(Integers::Int - Integers::UInt256))
@@ -202,7 +202,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool a
         else
         {
             il->set_uint_lit(rg.nextRandomUInt64());
-            if (add_cast && rg.nextSmallNumber() < 9)
+            if (complex && rg.nextSmallNumber() < 9)
             {
                 il->set_integers(static_cast<Integers>((rg.nextRandomUInt32() % static_cast<uint32_t>(Integers_MAX)) + 1));
             }
@@ -214,19 +214,19 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool a
 
         if (noption < 251)
         {
-            ret = fmt::format("'{}'{}", rg.nextDate(), add_cast ? "::Date" : "");
+            ret = fmt::format("'{}'{}", rg.nextDate(), complex ? "::Date" : "");
         }
         else if (noption < 301)
         {
-            ret = fmt::format("'{}'{}", rg.nextDate32(), add_cast ? "::Date32" : "");
+            ret = fmt::format("'{}'{}", rg.nextDate32(), complex ? "::Date32" : "");
         }
         else if (noption < 351)
         {
-            ret = fmt::format("'{}'{}", rg.nextDateTime(), add_cast ? "::DateTime" : "");
+            ret = fmt::format("'{}'{}", rg.nextDateTime(), complex ? "::DateTime" : "");
         }
         else
         {
-            ret = fmt::format("'{}'{}", rg.nextDateTime64(), add_cast ? "::DateTime64" : "");
+            ret = fmt::format("'{}'{}", rg.nextDateTime64(), complex ? "::DateTime64" : "");
         }
         lv->set_no_quote_str(ret);
     }
@@ -238,7 +238,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool a
 
         lv->set_no_quote_str("(" + appendDecimal(rg, left, right) + ")");
     }
-    else if (this->allow_not_deterministic && noption < 551)
+    else if (complex && this->allow_not_deterministic && noption < 551)
     {
         String ret;
         const uint32_t nlen = rg.nextLargeNumber();
@@ -269,21 +269,21 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool a
 
         if (nopt < 31)
         {
-            ret = fmt::format("'{}'{}", rg.nextUUID(), add_cast ? "::UUID" : "");
+            ret = fmt::format("'{}'{}", rg.nextUUID(), complex ? "::UUID" : "");
         }
         else if (nopt < 51)
         {
-            ret = fmt::format("'{}'{}", rg.nextIPv4(), add_cast ? "::IPv4" : "");
+            ret = fmt::format("'{}'{}", rg.nextIPv4(), complex ? "::IPv4" : "");
         }
         else if (nopt < 71)
         {
-            ret = fmt::format("'{}'{}", rg.nextIPv6(), add_cast ? "::IPv6" : "");
+            ret = fmt::format("'{}'{}", rg.nextIPv6(), complex ? "::IPv6" : "");
         }
         else if (nopt < 101)
         {
             const GeoTypes gt = static_cast<GeoTypes>((rg.nextRandomUInt32() % static_cast<uint32_t>(GeoTypes_MAX)) + 1);
 
-            ret = fmt::format("'{}'{}{}", strAppendGeoValue(rg, gt), add_cast ? "::" : "", add_cast ? GeoTypes_Name(gt) : "");
+            ret = fmt::format("'{}'{}{}", strAppendGeoValue(rg, gt), complex ? "::" : "", complex ? GeoTypes_Name(gt) : "");
         }
         else
         {
@@ -305,7 +305,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool a
         std::uniform_int_distribution<int> dopt(1, 3);
         std::uniform_int_distribution<int> wopt(1, 3);
 
-        lv->set_no_quote_str(fmt::format("'{}'{}", strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator)), add_cast ? "::JSON" : ""));
+        lv->set_no_quote_str(fmt::format("'{}'{}", strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator)), complex ? "::JSON" : ""));
     }
     else
     {
