@@ -2,7 +2,7 @@
 #include <Interpreters/InterpreterCreateDriverFunctionQuery.h>
 
 #include <Access/ContextAccess.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedDriverFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateDriverFunctionQuery.h>
 
@@ -32,7 +32,7 @@ BlockIO InterpreterCreateDriverFunctionQuery::execute()
     bool throw_if_exists = !create_driver_function.if_not_exists && !create_driver_function.or_replace;
     bool replace_if_exists = create_driver_function.or_replace;
 
-    // TODO: UserDefinedDriverFunctionFactory::instance().registerFunction(current_context, function_name, query_ptr, throw_if_exists, replace_if_exists);
+    UserDefinedDriverFunctionFactory::instance().registerFunction(current_context, function_name, query_ptr, throw_if_exists, replace_if_exists);
 
     return {};
 }
