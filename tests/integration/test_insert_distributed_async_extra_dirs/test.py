@@ -23,6 +23,9 @@ def start_cluster():
 
 
 def test_insert_distributed_async_send_success():
+    node.query("DROP TABLE IF EXISTS data SYNC")
+    node.query("DROP TABLE IF EXISTS dist SYNC")
+
     node.query("CREATE TABLE data (key Int, value String) Engine=Null()")
     node.query(
         """
@@ -36,18 +39,22 @@ def test_insert_distributed_async_send_success():
     """
     )
 
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='dist'"
+    ).strip()
+
     node.exec_in_container(
         [
             "bash",
             "-c",
-            "mkdir /var/lib/clickhouse/data/default/dist/shard10000_replica10000",
+            f"mkdir {data_path}/shard10000_replica10000",
         ]
     )
     node.exec_in_container(
         [
             "bash",
             "-c",
-            "touch /var/lib/clickhouse/data/default/dist/shard10000_replica10000/1.bin",
+            f"touch {data_path}/shard10000_replica10000/1.bin",
         ]
     )
 
@@ -55,14 +62,14 @@ def test_insert_distributed_async_send_success():
         [
             "bash",
             "-c",
-            "mkdir /var/lib/clickhouse/data/default/dist/shard1_replica10000",
+            f"mkdir {data_path}/shard1_replica10000",
         ]
     )
     node.exec_in_container(
         [
             "bash",
             "-c",
-            "touch /var/lib/clickhouse/data/default/dist/shard1_replica10000/1.bin",
+            f"touch {data_path}/shard1_replica10000/1.bin",
         ]
     )
 
@@ -70,16 +77,18 @@ def test_insert_distributed_async_send_success():
         [
             "bash",
             "-c",
-            "mkdir /var/lib/clickhouse/data/default/dist/shard10000_replica1",
+            f"mkdir {data_path}/shard10000_replica1",
         ]
     )
     node.exec_in_container(
         [
             "bash",
             "-c",
-            "touch /var/lib/clickhouse/data/default/dist/shard10000_replica1/1.bin",
+            f"touch {data_path}/shard10000_replica1/1.bin",
         ]
     )
 
     # will check that clickhouse-server is alive
     node.restart_clickhouse()
+
+    node.query("DROP TABLE IF EXISTS data SYNC")
