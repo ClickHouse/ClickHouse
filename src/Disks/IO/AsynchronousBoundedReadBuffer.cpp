@@ -76,6 +76,7 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
         use_page_cache = true;
         buffer_size = cached_impl->getPageCache()->defaultBlockSize();
     }
+    LOG_TEST(log, "Using buffer size {} while reading {}", buffer_size, file_name);
 }
 
 String AsynchronousBoundedReadBuffer::getInfoForLog()
@@ -110,7 +111,7 @@ bool AsynchronousBoundedReadBuffer::hasPendingDataToRead()
 std::future<IAsynchronousReader::Result> AsynchronousBoundedReadBuffer::readAsync(char * data, size_t size, Priority priority)
 {
     if (use_page_cache)
-        assert(data == nullptr);
+        chassert(data == nullptr);
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl, async_read_counters);
     request.buf = data;
@@ -124,7 +125,7 @@ std::future<IAsynchronousReader::Result> AsynchronousBoundedReadBuffer::readAsyn
 IAsynchronousReader::Result AsynchronousBoundedReadBuffer::readSync(char * data, size_t size)
 {
     if (use_page_cache)
-        assert(data == nullptr);
+        chassert(data == nullptr);
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl, async_read_counters);
     request.buf = data;
@@ -145,8 +146,10 @@ void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
     last_prefetch_info.submit_time = std::chrono::system_clock::now();
     last_prefetch_info.priority = priority;
 
+    /// Don't allocate any buffers if page cache is in use, the cache has its own buffers (PageCacheCell).
     if (!use_page_cache)
         prefetch_buffer.resize(buffer_size);
+
     prefetch_future = readAsync(prefetch_buffer.data(), buffer_size, priority);
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
@@ -247,6 +250,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     }
     else
     {
+        /// Don't allocate any buffers if page cache is in use, the cache has its own buffers (PageCacheCell).
         if (!use_page_cache)
             memory.resize(buffer_size);
 

@@ -124,7 +124,7 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
 
     auto * fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
     auto & reader = fd->getReader();
-    auto * cached_reader = typeid_cast<CachedInMemoryReadBufferFromFile *>(&reader);
+    auto * page_cache_reader = typeid_cast<CachedInMemoryReadBufferFromFile *>(&reader);
 
     auto read_counters = fd->getReadCounters();
     std::optional<AsyncReadIncrement> increment = read_counters ? std::optional<AsyncReadIncrement>(read_counters) : std::nullopt;
@@ -133,7 +133,7 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
         ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderPrepareMicroseconds);
         if (!seek_performed)
         {
-            if (!cached_reader)
+            if (!page_cache_reader)
                 reader.set(request.buf, request.size);
             reader.seek(request.offset, SEEK_SET);
         }
@@ -160,9 +160,9 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
     IAsynchronousReader::Result read_result;
     if (result)
     {
-        if (cached_reader)
+        if (page_cache_reader)
         {
-            read_result.page_cache_cell = cached_reader->getPageCacheCell();
+            read_result.page_cache_cell = page_cache_reader->getPageCacheCell();
             chassert(read_result.page_cache_cell);
             chassert(read_result.page_cache_cell->data() == reader.buffer().begin());
             chassert(!request.ignore);

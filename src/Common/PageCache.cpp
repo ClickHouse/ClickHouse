@@ -129,8 +129,9 @@ PageCache::MappedPtr PageCache::get(const PageCacheKey & key, bool inject_evicti
         return nullptr;
 
     Key key_hash = key.hash();
+    Shard & shard = *shards[getShardIdx(key_hash)];
 
-    const auto result = Base::get(key_hash);
+    const auto result = shard.get(key_hash);
 
     /// Count only hits. On miss, the caller would normally call getOrSet, which will count the miss.
     if (result)

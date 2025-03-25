@@ -72,6 +72,8 @@ public:
         size_t size = 0;
         size_t offset = 0;
 
+        /// If not null, `buf` points into it, so this shared_ptr must be kept alive for as long
+        /// as `buf` is in use.
         PageCacheCellPtr page_cache_cell = {};
 
         std::unique_ptr<Stopwatch> execution_watch = {};
