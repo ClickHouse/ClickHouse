@@ -2685,3 +2685,11 @@ def test_minmax_pruning(started_cluster, storage_type):
         )
         == 2
     )
+    # Spark store rounded values of decimals, this query checks that we work it around.
+    # Please check the code where we parse lower bounds and upper bounds
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE ddd >= toDecimal64('17.21', 3) ORDER BY ALL"
+        )
+        == 1
+    )

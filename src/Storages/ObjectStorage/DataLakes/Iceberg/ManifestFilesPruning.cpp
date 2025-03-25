@@ -138,24 +138,18 @@ ManifestFilesPruner::ManifestFilesPruner(
 {
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
+    if (manifest_file.hasPartitionKey() || manifest_file.hasBoundsInfoInManifests())
+        transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter);
+
     if (manifest_file.hasPartitionKey())
     {
         partition_key = &manifest_file.getPartitionKeyDescription();
-        transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter);
         if (transformed_dag != nullptr)
-        {
             partition_key_condition.emplace(transformed_dag.get(), context, partition_key->column_names, partition_key->expression, true /* single_point */);
-        }
     }
 
     if (manifest_file.hasBoundsInfoInManifests())
     {
-        if (!transformed_dag)
-            transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter);
-
-        if (transformed_dag)
-            LOG_DEBUG(&Poco::Logger::get("PRUNER"), "DAG {}", transformed_dag->dumpDAG());
-
         if (transformed_dag != nullptr)
         {
             const auto & bounded_colums = manifest_file.getColumnsIDsWithBounds();
@@ -169,8 +163,6 @@ ManifestFilesPruner::ManifestFilesPruner(
 
                 ExpressionActionsPtr expression = std::make_shared<ExpressionActions>(
                     ActionsDAG({name_and_type}), ExpressionActionsSettings(context));
-
-                LOG_DEBUG(&Poco::Logger::get("PRUNER"), "EXPRESSION {}", transformed_dag->dumpDAG());
 
                 min_max_key_conditions.emplace(used_column_id, KeyCondition(transformed_dag.get(), context, {name_and_type.name}, expression));
             }
@@ -205,7 +197,6 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
 
     for (const auto & [column_id, key_condition] : min_max_key_conditions)
     {
-        LOG_DEBUG(&Poco::Logger::get("CAN BE PRUNNED"), "COlUMN ID {}", column_id);
         std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, column_id);
 
         /// There is no such column in this manifest file
@@ -213,20 +204,10 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
             continue;
 
         auto hyperrectangle = entry.columns_infos.at(column_id).hyperrectangle;
-        if (hyperrectangle.has_value())
-        {
-            LOG_DEBUG(&Poco::Logger::get("CAN BE PRUNNED"), "HAS HYPPERRECT {}", hyperrectangle->toString());
-            LOG_DEBUG(&Poco::Logger::get("CAN BE PRUNNED"), "KEY CONDITION {}", key_condition.toString());
-        }
         if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
         {
-            LOG_DEBUG(&Poco::Logger::get("CAN BE PRUNNED"), "GOOD PRUNNING");
             ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunnedFiles);
             return true;
-        }
-        else
-        {
-            LOG_DEBUG(&Poco::Logger::get("CAN BE PRUNNED"), "CANNOT PRUNE");
         }
     }
 
