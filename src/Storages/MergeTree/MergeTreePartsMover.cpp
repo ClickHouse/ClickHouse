@@ -429,4 +429,11 @@ void MergeTreeZeroCopyPartsMover::swapClonedPart(TemporaryClonedPart & cloned_pa
     swapActivePart(cloned_part, part_lock);
 }
 
+MergeTreePartsMoverPtr MergeTreePartsMoverFactory::get(MergeTreeData * data, bool replicated)
+{
+    if (!replicated || (*data->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
+        return std::make_shared<MergeTreePartsMover>(data);
+    return std::make_shared<MergeTreeZeroCopyPartsMover>(data);
+}
+
 }

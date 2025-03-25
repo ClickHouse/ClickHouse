@@ -44,7 +44,7 @@ protected:
         const HTMLForm & params, ReadBuffer & body, WriteBuffer & out,
         HTTPServerResponse & response, int client_protocol_version, bool send_projections);
 
-    MergeTreeData::DataPartPtr findPart(const String & name);
+    virtual MergeTreeData::DataPartPtr findPart(const String & name);
 
     virtual MergeTreeData::DataPart::Checksums sendPartFromDisk(
         const MergeTreeData::DataPartPtr & part,
@@ -80,7 +80,7 @@ public:
     void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
 
 protected:
-    MergeTreeData::DataPartPtr findPart(const String & name);
+    MergeTreeData::DataPartPtr findPart(const String & name) override;
 
     MergeTreeData::DataPart::Checksums sendPartFromDisk(
         const MergeTreeData::DataPartPtr & part,
@@ -149,7 +149,7 @@ protected:
 
 };
 
-class FetcherZeroCopy : Fetcher
+class FetcherZeroCopy : public Fetcher
 {
 public:
     explicit FetcherZeroCopy(StorageReplicatedMergeTree & data_);
@@ -185,6 +185,16 @@ protected:
         ThrottlerPtr throttler,
         bool sync);
 
+};
+
+using ServicePtr = std::shared_ptr<DB::DataPartsExchange::Service>;
+using FetcherPtr = std::shared_ptr<DB::DataPartsExchange::Fetcher>;
+
+class DataPartsExchangeFactory
+{
+public:
+    static ServicePtr getService(StorageReplicatedMergeTree & data);
+    static FetcherPtr getFetcher(StorageReplicatedMergeTree & data);
 };
 
 }

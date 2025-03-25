@@ -116,4 +116,12 @@ public:
 };
 
 
+using MergeTreePartsMoverPtr = std::shared_ptr<MergeTreePartsMover>;
+
+class MergeTreePartsMoverFactory
+{
+public:
+    static MergeTreePartsMoverPtr get(MergeTreeData * data, bool replicated);
+};
+
 }

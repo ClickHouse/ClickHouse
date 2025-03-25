@@ -757,6 +757,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> FetcherZeroCopy::fetch
         capability.push_back(disk->getDataSourceDescription().toString());
     }
 
+    /// TODO zero-copy: fallback to Fetcher::fetchSelectedPart() here?
     if (capability.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot select any zero-copy disk for {}", part_name);
 
@@ -1112,18 +1113,20 @@ MergeTreeData::MutableDataPartPtr FetcherZeroCopy::downloadPartToDisk(
     bool sync)
 {
     String part_id;
-    const auto data_settings = data.getSettings();
-    MergeTreeData::DataPart::Checksums data_checksums;
-
-    zkutil::EphemeralNodeHolderPtr zero_copy_temporary_lock_holder;
     readStringBinary(part_id, in);
+    zkutil::EphemeralNodeHolderPtr zero_copy_temporary_lock_holder;
+    zero_copy_temporary_lock_holder = data.lockSharedDataTemporary(part_name, part_id, disk);
 
     /// TODO zero-copy: maybe redundant supportZeroCopyReplication()
     if (!disk->supportZeroCopyReplication() || !disk->checkUniqueId(part_id))
-        throw Exception(ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Part {} unique id {} doesn't exist on {} (with type {}).", part_name, part_id, disk->getName(), disk->getDataSourceDescription().toString());
+    throw Exception(ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Part {} unique id {} doesn't exist on {} (with type {}).", part_name, part_id, disk->getName(), disk->getDataSourceDescription().toString());
 
     LOG_DEBUG(log, "Downloading part {} unique id {} metadata onto disk {}.", part_name, part_id, disk->getName());
-    zero_copy_temporary_lock_holder = data.lockSharedDataTemporary(part_name, part_id, disk);
+
+    ///
+
+    const auto data_settings = data.getSettings();
+    MergeTreeData::DataPart::Checksums data_checksums;
 
     /// We will remove directory if it's already exists. Make precautions.
     if (tmp_prefix.empty()
@@ -1233,6 +1236,20 @@ MergeTreeData::MutableDataPartPtr FetcherZeroCopy::downloadPartToDisk(
         zero_copy_temporary_lock_holder->setAlreadyRemoved();
 
     return new_data_part;
+}
+
+ServicePtr DataPartsExchangeFactory::getService(StorageReplicatedMergeTree & data)
+{
+    if ((*data.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
+        return std::make_shared<ServiceZeroCopy>(data);
+    return std::make_shared<Service>(data);
+}
+
+FetcherPtr DataPartsExchangeFactory::getFetcher(StorageReplicatedMergeTree & data)
+{
+    if ((*data.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
+        return std::make_shared<FetcherZeroCopy>(data);
+    return std::make_shared<Fetcher>(data);
 }
 
 }

@@ -469,7 +469,6 @@ MergeTreeData::MergeTreeData(
     , pinned_part_uuids(std::make_shared<PinnedPartUUIDs>())
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
-    , parts_mover(this)
     , background_operations_assignee(*this, BackgroundJobsAssignee::Type::DataProcessing, getContext())
     , background_moves_assignee(*this, BackgroundJobsAssignee::Type::Moving, getContext())
 {
@@ -546,6 +545,9 @@ MergeTreeData::MergeTreeData(
         else
             background_moves_assignee.trigger();
     };
+
+    bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
+    parts_mover = MergeTreePartsMoverFactory::get(this, replicated);
 }
 
 VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMetadata & metadata)
@@ -5496,7 +5498,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
         throw Exception(ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on disk '{}'", partition_id, disk->getName());
     }
 
-    if (parts_mover.moves_blocker.isCancelled())
+    if (parts_mover->moves_blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
 
     auto moving_tagger = checkPartsForMove(parts, std::static_pointer_cast<Space>(disk));
@@ -5579,7 +5581,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception(ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on volume '{}'", partition_id, volume->getName());
     }
 
-    if (parts_mover.moves_blocker.isCancelled())
+    if (parts_mover->moves_blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
 
     auto moving_tagger = checkPartsForMove(parts, std::static_pointer_cast<Space>(volume));
@@ -8276,7 +8278,7 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
 
 bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
 {
-    if (parts_mover.moves_blocker.isCancelled())
+    if (parts_mover->moves_blocker.isCancelled())
         return false;
 
     auto moving_tagger = selectPartsForMove();
@@ -8354,7 +8356,7 @@ MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::selectPartsForMove()
 
     std::lock_guard moving_lock(moving_parts_mutex);
 
-    parts_mover.selectPartsForMove(parts_to_move, can_move, moving_lock);
+    parts_mover->selectPartsForMove(parts_to_move, can_move, moving_lock);
     return std::make_shared<CurrentlyMovingPartsTagger>(std::move(parts_to_move), *this);
 }
 
@@ -8455,12 +8457,12 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
 
                     if (lock->isLocked())
                     {
-                        cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
+                        cloned_part = parts_mover->clonePart(moving_part, read_settings, write_settings);
                         /// Cloning part can take a long time.
                         /// Recheck if the lock (and keeper session expirity) is OK
                         if (lock->isLocked())
                         {
-                            parts_mover.swapClonedPart(cloned_part);
+                            parts_mover->swapClonedPart(cloned_part);
                             break; /// Successfully moved
                         }
                         else
@@ -8488,8 +8490,8 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             }
             else /// Ordinary move as it should be
             {
-                cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
-                parts_mover.swapClonedPart(cloned_part);
+                cloned_part = parts_mover->clonePart(moving_part, read_settings, write_settings);
+                parts_mover->swapClonedPart(cloned_part);
             }
             write_part_log({});
         }
