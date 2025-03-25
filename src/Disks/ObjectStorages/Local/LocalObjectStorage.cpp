@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_UNLINK;
+    extern const int CANNOT_RMDIR;
     extern const int READONLY;
 }
 
@@ -99,13 +100,14 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
     /// Remove empty directories.
     fs::path dir = fs::path(object.remote_path).parent_path();
     fs::path root(settings.key_prefix);
-    while (dir.has_parent_path() && dir.has_relative_path() && pathStartsWith(dir, root) && dir != root)
+    while (dir.has_parent_path() && dir.has_relative_path() && pathStartsWith(dir, root))
     {
-        if (0 != rmdir(std::string(dir).data()))
+        std::string dir_str = dir;
+        if (0 != rmdir(dir_str.data()))
         {
             if (errno == ENOTDIR || errno == ENOTEMPTY)
                 break;
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, object.remote_path, "Cannot unlink file {}", std::string(dir));
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, dir_str, "Cannot remove directory {}", dir_str);
         }
 
         dir = dir.parent_path();
