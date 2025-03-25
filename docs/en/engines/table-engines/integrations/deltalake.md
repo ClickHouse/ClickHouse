@@ -15,7 +15,7 @@ This engine provides a read-only integration with existing [Delta Lake](https://
 
 Note that the Delta Lake table must already exist in S3, this command does not take DDL parameters to create a new table.
 
-``` sql
+```sql
 CREATE TABLE deltalake
     ENGINE = DeltaLake(url, [aws_access_key_id, aws_secret_access_key,])
 ```
@@ -35,7 +35,7 @@ CREATE TABLE deltalake ENGINE=DeltaLake('http://mars-doc-test.s3.amazonaws.com/c
 
 Using named collections:
 
-``` xml
+```xml
 <clickhouse>
     <named_collections>
         <deltalake_conf>

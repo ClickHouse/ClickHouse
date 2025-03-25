@@ -10,7 +10,7 @@ Creates [settings profiles](../../../guides/sre/user-management/index.md#setting
 
 Syntax:
 
-``` sql
+```sql
 CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] 
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
@@ -29,7 +29,7 @@ CREATE USER robin IDENTIFIED BY 'password';
 
 Create the `max_memory_usage_profile` settings profile with value and constraints for the `max_memory_usage` setting and assign it to user `robin`:
 
-``` sql
+```sql
 CREATE
 SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000
 TO robin

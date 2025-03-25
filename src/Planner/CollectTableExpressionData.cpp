@@ -8,12 +8,11 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/JoinNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/FunctionNode.h>
 
-#include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
+
 
 namespace DB
 {
