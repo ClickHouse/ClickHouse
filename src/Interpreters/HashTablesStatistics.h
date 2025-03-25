@@ -52,6 +52,7 @@ struct HashJoinEntry
     std::string dump() const { return fmt::format("ht_size={}", ht_size); }
 
     size_t ht_size; // the size of the shared hash table
+    size_t source_rows; // the number of rows in the source table
 };
 
 /** Collects observed HashTable-s sizes to avoid redundant intermediate resizes.

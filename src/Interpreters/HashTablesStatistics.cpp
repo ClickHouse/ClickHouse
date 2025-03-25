@@ -134,7 +134,7 @@ std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats
             }
             else if (hint->ht_size > 100'000)
             {
-                return HashJoinEntry{hint->ht_size};
+                return hint;
             }
         }
     }

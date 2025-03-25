@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Interpreters/JoinInfo.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -90,11 +91,18 @@ public:
 
     void appendRequiredOutputsToActions(JoinActionRef & post_filter);
 
+    struct HashTableKeyHashes
+    {
+        UInt64 key_hash_left;
+        UInt64 key_hash_right;
+    };
+
     void setHashTableCacheKeys(UInt64 left_key_hash, UInt64 right_key_hash)
     {
-        hash_table_key_hash_left = left_key_hash;
-        hash_table_key_hash_right = right_key_hash;
+        hash_table_key_hashes.emplace(left_key_hash, right_key_hash);
     }
+
+    const std::optional<HashTableKeyHashes> & getHashTableKeyHashes() const { return hash_table_key_hashes; }
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
@@ -106,14 +114,14 @@ protected:
 
     std::vector<std::pair<String, String>> describeJoinActions() const;
 
+    std::optional<HashTableKeyHashes> hash_table_key_hashes;
+
     JoinExpressionActions expression_actions;
     JoinInfo join_info;
 
     Names required_output_columns;
 
     PreparedJoinStorage prepared_join_storage;
-    std::optional<UInt64> hash_table_key_hash_left;
-    std::optional<UInt64> hash_table_key_hash_right;
 
     bool use_nulls;
 

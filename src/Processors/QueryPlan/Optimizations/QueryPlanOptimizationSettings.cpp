@@ -48,6 +48,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
+    extern const SettingsUInt64 max_size_to_preallocate_for_joins;
 }
 
 namespace ServerSetting
@@ -112,6 +113,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     is_explain = false;
 
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
+    max_size_to_preallocate_for_joins = from[Setting::max_size_to_preallocate_for_joins];
     initial_query_id = initial_query_id_;
     lock_acquire_timeout = from[Setting::lock_acquire_timeout];
     actions_settings = std::move(actions_settings_);

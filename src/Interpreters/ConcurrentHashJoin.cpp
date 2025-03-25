@@ -82,8 +82,13 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
     if (!std::ranges::all_of(hash_joins, [&](const auto & hash_join) { return hash_join->data->getTotalRowCount() == ht_size; }))
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes.");
 
+    const auto source_rows = std::accumulate(
+        hash_joins.begin(),
+        hash_joins.end(),
+        0ull,
+        [](auto acc, const auto & hash_join) { return acc + hash_join->data->getTotalRowCount(); });
     if (ht_size)
-        DB::getHashTablesStatistics<DB::HashJoinEntry>().update(DB::HashJoinEntry{.ht_size = ht_size}, params);
+        DB::getHashTablesStatistics<DB::HashJoinEntry>().update(DB::HashJoinEntry{.ht_size = ht_size, .source_rows = source_rows}, params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)

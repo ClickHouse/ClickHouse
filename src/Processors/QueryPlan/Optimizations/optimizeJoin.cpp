@@ -20,10 +20,10 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 
-#include <Common/logger_useful.h>
-#include <Core/Joins.h>
-#include <ranges>
 #include <memory>
+#include <Core/Joins.h>
+#include <Interpreters/HashTablesStatistics.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -343,6 +343,21 @@ optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanO
     bool need_swap = false;
     auto lhs_estimation = estimateReadRowsCount(*node.children[0]);
     auto rhs_estimation = estimateReadRowsCount(*node.children[1]);
+
+    if (const auto & hash_table_key_hashes = join_step->getHashTableKeyHashes())
+    {
+        StatsCollectingParams params{
+            hash_table_key_hashes->key_hash_left,
+            /*enable=*/true,
+            optimization_settings.max_entries_for_hash_table_stats,
+            optimization_settings.max_size_to_preallocate_for_joins};
+        if (auto hint = getSizeHint(params))
+            lhs_estimation = lhs_estimation ? std::min(*lhs_estimation, hint->source_rows) : hint->source_rows;
+        params.key = hash_table_key_hashes->key_hash_right;
+        if (auto hint = getSizeHint(params))
+            rhs_estimation = rhs_estimation ? std::min(*rhs_estimation, hint->source_rows) : hint->source_rows;
+    }
+
     LOG_TRACE(
         getLogger("optimizeJoin"),
         "Left table estimation: {}, right table estimation: {}",
