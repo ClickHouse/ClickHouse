@@ -259,6 +259,7 @@ namespace Setting
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
+    extern const SettingsBool enable_hdfs_pread;
 }
 
 namespace MergeTreeSetting
@@ -6235,6 +6236,7 @@ ReadSettings Context::getReadSettings() const
     res.http_make_head_request = settings_ref[Setting::http_make_head_request];
 
     res.mmap_cache = getMMappedFileCache().get();
+    res.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
 
     return res;
 }

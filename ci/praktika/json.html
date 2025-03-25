@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>praktika report</title>
-<!--    <link rel="icon" href="https://w4z3pajszlbkfcw2wcylfei5km0xmwag.lambda-url.us-east-1.on.aws/" type="image/x-icon">-->
     <style>
 
         /* Default (Day Theme) */
@@ -552,6 +551,180 @@
         }
     }
 
+    function addStorageUsageChartToStatus(usage_data) {
+        const statusContainer = document.getElementById("status-container");
+
+        if (!usage_data || !usage_data.uploaded || !usage_data.uploaded_details) {
+            console.error("Invalid or missing storage usage data.");
+            return;
+        }
+
+        const uploaded = usage_data.uploaded;
+        const originalDetails = usage_data.uploaded_details;
+
+        // Group small files and sort
+        let sortedEntries = Object.entries(originalDetails)
+            .map(([name, size]) => [name, size])
+            .sort((a, b) => b[1] - a[1]);
+
+        // Take top 20, rest go to "other"
+        let grouped = sortedEntries.slice(0, 20);
+        const rest = sortedEntries.slice(20);
+        const otherTotal = rest.reduce((sum, [, value]) => sum + value, 0);
+        if (otherTotal > 0) grouped.push(["other", otherTotal]);
+
+        const labels = grouped.map(([label]) => label);
+        const values = grouped.map(([, value]) => value);
+
+        const chartWrapper = document.createElement("div");
+
+        // Title
+        const title = document.createElement("h4");
+        title.textContent = "usage:";
+        chartWrapper.appendChild(title);
+
+        // Total uploaded row
+        const totalRow = document.createElement("div");
+        totalRow.style.display = "flex";
+        totalRow.style.justifyContent = "space-between";
+        totalRow.style.margin = 0;
+
+        const totalLabel = document.createElement("span");
+        totalLabel.textContent = "uploaded";
+        const uploadedMB = (uploaded / (1024 * 1024)).toFixed(2);
+        const totalSize = document.createElement("span");
+        totalSize.textContent = `${uploadedMB} MB`;
+
+        totalRow.appendChild(totalLabel);
+        totalRow.appendChild(totalSize);
+        chartWrapper.appendChild(totalRow);
+
+        // Canvas
+        const canvas = document.createElement("canvas");
+        canvas.width = 400;
+        canvas.height = 400;
+        canvas.style.width = "100%";
+        canvas.style.maxWidth = "400px";
+        canvas.style.margin = "0";
+        chartWrapper.appendChild(canvas);
+
+        const ctx = canvas.getContext("2d");
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const radius = 150;
+
+        const sliceData = [];
+        let startAngle = 0;
+        labels.forEach((label, index) => {
+            const value = values[index];
+            const sliceAngle = (value / uploaded) * 2 * Math.PI;
+            const color = stringToColor(label);
+
+            sliceData.push({
+                label,
+                startAngle,
+                endAngle: startAngle + sliceAngle,
+                color,
+            });
+
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle);
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            startAngle += sliceAngle;
+        });
+
+        // Legend + label mapping
+        const legend = document.createElement("div");
+        const legendMap = {}; // label => element
+
+        labels.forEach((label, index) => {
+            const value = values[index];
+            const percent = ((value / uploaded) * 100).toFixed(1);
+            const sizeMB = (value / (1024 * 1024)).toFixed(2);
+            const color = stringToColor(label);
+
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.alignItems = "center";
+            row.style.justifyContent = "space-between";
+            row.style.fontSize = "10px";
+            row.style.cursor = "pointer";
+
+            const left = document.createElement("span");
+            left.style.display = "flex";
+            left.style.alignItems = "center";
+
+            const dot = document.createElement("span");
+            dot.style.display = "inline-block";
+            dot.style.width = "8px";
+            dot.style.height = "8px";
+            dot.style.flexShrink = "0";
+            dot.style.marginRight = "6px";
+            dot.style.backgroundColor = color;
+
+            const labelText = document.createElement("span");
+            labelText.textContent = label;
+
+            left.appendChild(dot);
+            left.appendChild(labelText);
+
+            const right = document.createElement("span");
+            right.textContent = `${sizeMB} MB (${percent}%)`;
+
+            row.appendChild(left);
+            row.appendChild(right);
+            legend.appendChild(row);
+
+            legendMap[label] = row;
+
+            // Hover from legend to chart
+            row.addEventListener("mouseenter", () => drawChart(label));
+            row.addEventListener("mouseleave", () => drawChart(null));
+        });
+
+        chartWrapper.appendChild(legend);
+        statusContainer.appendChild(chartWrapper);
+
+        function drawChart(hoveredLabel) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            sliceData.forEach((slice) => {
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius, slice.startAngle, slice.endAngle);
+                ctx.closePath();
+                ctx.fillStyle = slice.color;
+                ctx.fill();
+                if (slice.label === hoveredLabel) {
+                    ctx.strokeStyle = "#000";
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+
+                // Legend underline toggle
+                const row = legendMap[slice.label];
+                if (row) {
+                    row.style.textDecoration = slice.label === hoveredLabel ? "underline" : "none";
+                }
+            });
+        }
+
+        drawChart(null); // Initial draw
+
+        // Color utility
+        function stringToColor(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const hue = hash % 360;
+            return `hsl(${hue}, 60%, 60%)`;
+        }
+    }
+
     function addTimeTraceWidget(results) {
         const statusContainer = document.getElementById("status-container");
         if (!results || results.length === 0) {
@@ -560,30 +733,31 @@
         }
 
         // Constants
-        const lineWidth = 5; // Height per task
-        const padding = 1; // Space between lines
+        const lineWidth = 5;
+        const padding = 1;
         const totalHeight = (lineWidth + padding) * results.length;
+
+        const widgetWrapper = document.createElement("div");
+        widgetWrapper.style.position = "relative";
+        widgetWrapper.style.marginTop = "20px"; // spacing from previous widget
+        widgetWrapper.style.height = `${totalHeight}px`;
+        widgetWrapper.style.marginLeft = "-10px";
+        widgetWrapper.style.marginRight = "-10px";
+        widgetWrapper.style.width = "calc(100% + 20px)";
+        statusContainer.appendChild(widgetWrapper);
 
         // Create and configure canvas
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
-        const tooltip = document.createElement("div");
 
-        canvas.style.position = "absolute";
-        canvas.style.left = "0px"; // Force canvas to start from the very left
-        canvas.style.width = "100%"; // Make it stretch within container
+        canvas.style.width = "100%";
         canvas.style.height = `${totalHeight}px`;
+        canvas.style.display = "block"; // ensures it's a block-level element
 
-        function resizeCanvas() {
-            canvas.width = statusContainer.clientWidth; // Full width of container
-            canvas.height = totalHeight;
-            drawTimeline(); // Redraw after resizing
-        }
-
-        statusContainer.appendChild(canvas);
-        resizeCanvas();
+        widgetWrapper.appendChild(canvas);
 
         // Tooltip styles
+        const tooltip = document.createElement("div");
         tooltip.style.position = "absolute";
         tooltip.style.background = "black";
         tooltip.style.color = "white";
@@ -592,23 +766,28 @@
         tooltip.style.fontSize = "12px";
         tooltip.style.display = "none";
         tooltip.style.pointerEvents = "none";
-        statusContainer.appendChild(tooltip);
+        widgetWrapper.appendChild(tooltip);
+
+        function resizeCanvas() {
+            canvas.width = widgetWrapper.clientWidth;
+            canvas.height = totalHeight;
+            drawTimeline();
+        }
+        resizeCanvas();
 
         window.addEventListener("resize", resizeCanvas);
 
         function getColorFromName(name) {
             let hash = 0;
             for (let i = 0; i < name.length; i++) {
-                hash = name.charCodeAt(i) + ((hash << 5) - hash); // Simple hash function
+                hash = name.charCodeAt(i) + ((hash << 5) - hash);
             }
-            const hue = Math.abs(hash % 360); // Map hash to 0-360 for color hue
-            return `hsl(${hue}, 70%, 60%)`; // Use HSL for vibrant, distinct colors
+            const hue = Math.abs(hash % 360);
+            return `hsl(${hue}, 70%, 60%)`;
         }
 
         function drawTimeline() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Store task positions for hover detection
             let taskRects = [];
 
             const minStartTime = runtimeCache.json0.start_time;
@@ -624,15 +803,8 @@
                 if (task.start_time === null) {
                     x = 0;
                     width = canvas.width;
-                    function getCssVariable(name) {
-                        return getComputedStyle(document.body).getPropertyValue(name).trim();
-                    }
-
-                    if (task.status === "pending") {
-                        color = getCssVariable('--pending-bar-color');
-                    } else {
-                        color = getCssVariable('--skipped-bar-color');
-                    }
+                    const getCss = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
+                    color = task.status === "pending" ? getCss('--pending-bar-color') : getCss('--skipped-bar-color');
                 } else if (task.duration === null) {
                     x = (task.start_time - minStartTime) * scaleX;
                     width = (maxTime - (task.start_time - minStartTime)) * scaleX;
@@ -643,15 +815,11 @@
                     color = getColorFromName(task.name);
                 }
 
-                // Draw the bar
                 ctx.fillStyle = color;
                 ctx.fillRect(x, y, width, height);
-
-                // Store task row position (entire row for hover detection)
                 taskRects.push({ x, y, width, height, name: task.name });
             });
 
-            // Mouse move event for hover detection
             canvas.addEventListener("mousemove", (event) => {
                 const rect = canvas.getBoundingClientRect();
                 const tooltipRect = tooltip.getBoundingClientRect();
@@ -666,10 +834,9 @@
                 }
 
                 if (hoveredTask) {
-                    let tooltipX = event.clientX + 10; // Default tooltip position (right of mouse)
-                    // Prevent tooltip from going outside the right edge
+                    let tooltipX = event.clientX + 10;
                     if (tooltipX + tooltipRect.width > rect.right) {
-                        tooltipX = rect.right - tooltipRect.width; // Stop moving right
+                        tooltipX = rect.right - tooltipRect.width;
                     }
                     tooltip.textContent = hoveredTask.name;
                     tooltip.style.left = `${tooltipX}px`;
@@ -680,7 +847,6 @@
                 }
             });
 
-            // Hide tooltip on mouse out
             canvas.addEventListener("mouseleave", () => {
                 tooltip.style.display = "none";
             });
@@ -688,10 +854,7 @@
 
         drawTimeline();
 
-        // Redraw traces every 5 seconds
-        setInterval(() => {
-            drawTimeline();
-        }, 5000);
+        setInterval(drawTimeline, 5000);
     }
 
     function addStatusToStatus(status, start_time, duration) {
@@ -1148,6 +1311,7 @@
         } else {
             addTimeTraceWidget(result.results)
         }
+        addStorageUsageChartToStatus(result.ext?.storage_usage)
     }
 
     async function fetchData(PR, REF, sha, nameParams) {

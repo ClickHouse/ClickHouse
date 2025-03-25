@@ -70,6 +70,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"use_page_cache_for_local_disks", false, false, "New setting"},
             {"use_page_cache_for_object_storage", false, false, "New setting"},
+            {"query_plan_convert_join_to_in", false, false, "New setting"},
+            {"enable_hdfs_pread", true, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
@@ -691,7 +693,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
-
+            {"max_merge_delayed_streams_for_parallel_write", 1000, 100, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.3",
         {

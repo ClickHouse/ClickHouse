@@ -16,6 +16,8 @@ node = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
     with_azurite=True,
+    # Disable `with_remote_database_disk` as `test_create_table` might access minIO and expect `DNS_ERROR`. However, minIO might be enabled when `with_remote_database_disk` is enabled;
+    with_remote_database_disk=False,
 )
 base_search_query = "SELECT COUNT() FROM system.query_log WHERE query LIKE "
 
