@@ -9,4 +9,4 @@ title: 'JDBC Driver'
 
 # JDBC Driver
 
-Use the [official JDBC driver](/docs/integrations/java/jdbc-v2) (and Java client) to access ClickHouse from your Java applications.
+Use the [official JDBC driver](/docs/integrations/language-clients/java/jdbc) (and Java client) to access ClickHouse from your Java applications.
