@@ -1,4 +1,7 @@
 #pragma once
+#include "config.h"
+
+#if USE_AVRO
 
 #include <Core/Settings.h>
 #include <Common/CacheBase.h>
@@ -184,3 +187,4 @@ private:
 using IcebergMetadataFilesCachePtr = std::shared_ptr<IcebergMetadataFilesCache>;
 
 }
+#endif
