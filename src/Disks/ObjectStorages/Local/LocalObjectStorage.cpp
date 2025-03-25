@@ -102,6 +102,9 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
     fs::path root(settings.key_prefix);
     while (dir.has_parent_path() && dir.has_relative_path() && pathStartsWith(dir, root))
     {
+        LOG_TEST(log, "Removing empty directory {}, has_parent_path: {}, has_relative_path: {}, root: {}, starts with root: {}",
+            std::string(dir), dir.has_parent_path(), dir.has_relative_path(), std::string(root), pathStartsWith(dir, root));
+
         std::string dir_str = dir;
         if (0 != rmdir(dir_str.data()))
         {
