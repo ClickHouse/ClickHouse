@@ -15,7 +15,7 @@
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
-#include "Common/ExternalLoaderStatus.h"
+#include <Common/ExternalLoaderStatus.h>
 #include <Common/PageCache.h>
 #include <Common/quoteString.h>
 
@@ -225,18 +225,18 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "The number of used inodes on the volume where ClickHouse logs path is mounted." };
     }
     {
-        Duration max_last_successful_update_time;
+        ExternalLoader::Duration max_last_successful_update_time;
         size_t failed_counter = 0;
         const auto & external_dictionaries = getContext()->getExternalDictionariesLoader();
 
         for (const auto & load_result : external_dictionaries.getLoadResults()) {
             if (load_result.status == ExternalLoaderStatus::LOADED || load_result.status == ExternalLoaderStatus::LOADED_AND_RELOADING) {
-                max_last_successful_update_time = std::max(max_last_successful_update_time, std::chrono::duration_cast<Duration>(current_time - load_result.last_successful_update_time));
+                max_last_successful_update_time = std::max(max_last_successful_update_time, std::chrono::duration_cast<ExternalLoader::Duration>(current_time - load_result.last_successful_update_time));
             }
             failed_counter += (load_result.status == ExternalLoaderStatus::FAILED || load_result.status == ExternalLoaderStatus::FAILED_AND_RELOADING);
         }
-        new_values["DictMaxLastSuccessfulUpdateTime"] = {max_last_successful_update_time.count(), "The maximum duration of dictionary has been failed"};
-        new_values["DictLoadFailed"] = {failed_counter, "Amount of failed dictionaries"};
+        new_values["DictionaryMaxLastSuccessfulUpdateTime"] = {max_last_successful_update_time.count(), "The maximum duration(in milliseconds) of dictionary has been failed"};
+        new_values["DictionaryLoadFailed"] = {failed_counter, "Amount of failed dictionaries"};
     }
 
     /// Free and total space on every configured disk.
