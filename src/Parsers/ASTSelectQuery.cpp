@@ -528,4 +528,12 @@ bool ASTSelectQuery::hasQueryParameters() const
     return  has_query_parameters.value();
 }
 
+NameToNameMap ASTSelectQuery::getQueryParameters() const
+{
+    if (!hasQueryParameters())
+        return {};
+
+    return analyzeReceiveQueryParamsWithType(std::make_shared<ASTSelectQuery>(*this));
+}
+
 }
