@@ -50,11 +50,11 @@ The symbolization can be enabled or disabled in the `symbolize` under `trace_log
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.trace_log LIMIT 1 \G
 ```
 
-``` text
+```text
 Row 1:
 ──────
 hostname:                clickhouse.eu-central1.internal

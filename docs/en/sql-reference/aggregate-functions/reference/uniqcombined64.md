@@ -11,7 +11,7 @@ title: 'uniqCombined64'
 
 Calculates the approximate number of different argument values. It is the same as [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined), but uses a 64-bit hash for all data types rather than just for the String data type.
 
-``` sql
+```sql
 uniqCombined64(HLL_precision)(x[, ...])
 ```
 

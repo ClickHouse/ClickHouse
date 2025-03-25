@@ -77,6 +77,7 @@ namespace ErrorCodes
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int HTTP_LENGTH_REQUIRED;
+    extern const int SESSION_ID_EMPTY;
 }
 
 namespace
@@ -239,6 +240,8 @@ void HTTPHandler::processQuery(
     if (session_is_set)
     {
         session_id = params.get("session_id");
+        if (session_id.empty())
+            throw Exception(ErrorCodes::SESSION_ID_EMPTY, "Session id query parameter was provided, but it was empty");
         session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
         session->makeSessionContext(session_id, session_timeout, session_check == "1");

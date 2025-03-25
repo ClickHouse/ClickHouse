@@ -29,7 +29,7 @@ It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -57,7 +57,7 @@ When creating an `AggregatingMergeTree` table, the same [clauses](../../../engin
 Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 :::
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -86,7 +86,7 @@ CREATE DATABASE test;
 
 Now create the table `test.visits` that contains the raw data:
 
-``` sql
+```sql
 CREATE TABLE test.visits
  (
     StartDate DateTime64 NOT NULL,
@@ -100,7 +100,7 @@ Next, you need an `AggregatingMergeTree` table that will store `AggregationFunct
 
 Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the `AggregateFunction` type:
 
-``` sql
+```sql
 CREATE TABLE test.agg_visits (
     StartDate DateTime64 NOT NULL,
     CounterID UInt64,
@@ -125,7 +125,7 @@ GROUP BY StartDate, CounterID;
 
 Insert data into the `test.visits` table:
 
-``` sql
+```sql
 INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
  VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
 ```

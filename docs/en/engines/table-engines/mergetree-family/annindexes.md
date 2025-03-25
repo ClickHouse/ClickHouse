@@ -30,7 +30,7 @@ Blogs:
 
 In terms of SQL, a nearest neighborhood search can be expressed as follows:
 
-``` sql
+```sql
 SELECT [...]
 FROM table, [...]
 ORDER BY DistanceFunction(vectors, reference_vector)
@@ -125,18 +125,19 @@ additional techniques are recommended to speed up index creation:
 - Index creation on newly inserted parts may be disabled using session setting
   [`materialize_skip_indexes_on_insert`](../../../operations/settings/settings.md). Searches on such parts will fall back to exact search
   but as inserted parts are typically small compared to the total table size, the performance impact is expected to be negligible.
-- As parts are incrementally merged into bigger parts, and these new parts are merged into even bigger parts ("write amplification"),
-  vector similarity indexes are possibly build multiple times for the same vectors. To avoid that, you may suppress merges during insert
-  using statement [`SYSTEM STOP MERGES`](../../../sql-reference/statements/system.md), respectively start merges once all data has been
-  inserted using `SYSTEM START MERGES`.
-- If the data is inserted in very small batches, the latter may lead to an "too many parts" error. As an alternative, you could disable
-  merge tree setting [`materialize_skip_indexes_on_merge`](../../../operations/settings/merge-tree-settings.md), then insert the data (with
-  background merges continuously combining new and existing parts), afterwards enable `materialize_skip_indexes_on_merge` via an `ALTER
-  TABLE` statement, and finally force a merge for all parts (`OPTIMIZE TABLE`).
+- ClickHouse merges multiple parts incrementally in the background into bigger parts. These new parts are potentially merged later into even
+  bigger parts ("write amplification"). Each merge re-builds the vector similarity index of the output part from scratch (as well as other
+  skipping indexes), meaning that vector similarity indexes are potentially created unnecessarily. To avoid that, it is possible to suppress
+  the creation of vector similarity indexes during merge using merge tree setting
+  [materialize_skip_indexes_on_merge](../../../operations/settings/merge-tree-settings.md#materialize_skip_indexes_on_merge). This, in
+  conjunction with statement [ALTER TABLE \[...\] MATERIALIZE INDEX
+  \[...\]](../../../sql-reference/statements/alter/skipping-index.md#materialize-index), provides explicit control over the life cycle of
+  vector similarity indexes. For example, index building can be deferred to a period of low load (e.g. the weekend) or after a large data
+  ingestion.
 
 Vector similarity indexes support this type of query:
 
-``` sql
+```sql
 WITH [...] AS reference_vector
 SELECT *
 FROM table
@@ -148,6 +149,11 @@ LIMIT N
 To search using a different value of HNSW parameter `hnsw_candidate_list_size_for_search` (default: 256), also known as `ef_search` in the
 original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473), run the `SELECT` query with `SETTINGS hnsw_candidate_list_size_for_search
 = <value>`.
+
+Repeated reads from a vector similarity index benefit from a large vector similarity index cache. The maximum cache size can be configured using
+server setting
+[vector_similarity_index_cache_size](../../../operations/server-configuration-parameters/settings.md#vector_similarity_index_cache_size). By
+default, it is configured to be at most 5 GB large.
 
 **Restrictions**: Approximate vector search algorithms require a limit, hence queries without `LIMIT` clause cannot utilize vector
 similarity indexes. The limit must also be smaller than setting `max_limit_for_ann_queries` (default: 100).

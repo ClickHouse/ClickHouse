@@ -60,7 +60,7 @@
 	url = https://github.com/ClickHouse/snappy
 [submodule "contrib/cppkafka"]
 	path = contrib/cppkafka
-	url = https://github.com/mfontanini/cppkafka
+	url = https://github.com/ClickHouse/cppkafka
 [submodule "contrib/brotli"]
 	path = contrib/brotli
 	url = https://github.com/google/brotli
