@@ -1180,6 +1180,7 @@ JoinAlgorithmSettings::JoinAlgorithmSettings(const Context & context)
 
     collect_hash_table_stats_during_joins = settings[Setting::collect_hash_table_stats_during_joins];
     max_entries_for_hash_table_stats = context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats];
+    parallel_hash_join_threshold = settings[Setting::parallel_hash_join_threshold];
 
     grace_hash_join_initial_buckets = settings[Setting::grace_hash_join_initial_buckets];
     grace_hash_join_max_buckets = settings[Setting::grace_hash_join_max_buckets];
@@ -1202,6 +1203,7 @@ JoinAlgorithmSettings::JoinAlgorithmSettings(
 
     collect_hash_table_stats_during_joins = join_settings.collect_hash_table_stats_during_joins;
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
+    parallel_hash_join_threshold = join_settings.parallel_hash_join_threshold;
 
     grace_hash_join_initial_buckets = join_settings.grace_hash_join_initial_buckets;
     grace_hash_join_max_buckets = join_settings.grace_hash_join_max_buckets;
@@ -1280,7 +1282,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             left_table_expression_header,
             right_table_expression_header,
             settings,
-            hash_table_key_hash, rhs_size_estimation);
+            hash_table_key_hash,
+            rhs_size_estimation);
         if (join)
             return join;
     }
