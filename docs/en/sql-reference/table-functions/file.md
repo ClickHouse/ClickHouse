@@ -20,7 +20,7 @@ The `file` function can be used in `SELECT` and `INSERT` queries to read from or
 
 **Syntax**
 
-``` sql
+```sql
 file([path_to_archive ::] path [,format] [,structure] [,compression])
 ```
 
@@ -86,7 +86,7 @@ As a result, the data is written into three files: `test_1.tsv`, `test_2.tsv`, a
 
 First, set `user_files_path` in the server configuration and prepare a file `test.csv`:
 
-``` bash
+```bash
 $ grep user_files_path /etc/clickhouse-server/config.xml
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 
@@ -98,13 +98,13 @@ $ cat /var/lib/clickhouse/user_files/test.csv
 
 Then, read data from `test.csv` into a table and select its first two rows:
 
-``` sql
+```sql
 SELECT * FROM
 file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 LIMIT 2;
 ```
 
-``` text
+```text
 ┌─column1─┬─column2─┬─column3─┐
 │       1 │       2 │       3 │
 │       3 │       2 │       1 │
@@ -113,7 +113,7 @@ LIMIT 2;
 
 ### Inserting data from a file into a table {#inserting-data-from-a-file-into-a-table}
 
-``` sql
+```sql
 INSERT INTO FUNCTION
 file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 VALUES (1, 2, 3), (3, 2, 1);
@@ -123,7 +123,7 @@ SELECT * FROM
 file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-``` text
+```text
 ┌─column1─┬─column2─┬─column3─┐
 │       1 │       2 │       3 │
 │       3 │       2 │       1 │
@@ -132,7 +132,7 @@ file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 
 Reading data from `table.csv`, located in `archive1.zip` or/and `archive2.zip`:
 
-``` sql
+```sql
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
@@ -163,13 +163,13 @@ Suppose there are these files with the following relative paths:
 
 Query the total number of rows in all files:
 
-``` sql
+```sql
 SELECT count(*) FROM file('{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32');
 ```
 
 An alternative path expression which achieves the same:
 
-``` sql
+```sql
 SELECT count(*) FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32');
 ```
 
@@ -187,7 +187,7 @@ If your listing of files contains number ranges with leading zeros, use the cons
 
 Query the total number of rows in files named `file000`, `file001`, ... , `file999`:
 
-``` sql
+```sql
 SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32');
 ```
 
@@ -195,7 +195,7 @@ SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String,
 
 Query the total number of rows from all files inside directory `big_dir/` recursively:
 
-``` sql
+```sql
 SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
 ```
 
@@ -203,7 +203,7 @@ SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
 
 Query the total number of rows from all files `file002` inside any folder in directory `big_dir/` recursively:
 
-``` sql
+```sql
 SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
 ```
 
@@ -222,7 +222,7 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 
 Use virtual column, created with Hive-style partitioning
 
-``` sql
+```sql
 SELECT * from file('data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 

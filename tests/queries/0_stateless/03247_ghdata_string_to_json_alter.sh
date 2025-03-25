@@ -12,7 +12,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ghdata (data String) ENGINE = MergeTree OR
 cat $CUR_DIR/data_json/ghdata_sample.json | ${CLICKHOUSE_CLIENT} \
   --max_memory_usage 10G --query "INSERT INTO ghdata FORMAT JSONAsString"
 
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE ghdata MODIFY column data JSON SETTINGS mutations_sync=1" --allow_experimental_json_type 1
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE ghdata MODIFY column data JSON SETTINGS mutations_sync=1" --enable_json_type 1
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ghdata WHERE NOT ignore(*)"
 

@@ -5,16 +5,32 @@
 #include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
 #include <Poco/SHA1Engine.h>
+#include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
 #include <Access/Common/SSLCertificateSubjects.h>
 
+#include <base/types.h>
 #include "config.h"
 
+#if USE_SSL
+#   include <openssl/evp.h>
+#   include <openssl/hmac.h>
+#   include <openssl/sha.h>
+#   include <openssl/buffer.h>
+#   include <openssl/rand.h>
+#   include <openssl/bio.h>
+#   include <openssl/err.h>
+#endif
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -93,6 +109,72 @@ namespace
     {
         return authentication_method.getType() == AuthenticationType::KERBEROS
             && external_authenticators.checkKerberosCredentials(authentication_method.getKerberosRealm(), *gss_acceptor_context);
+    }
+
+#if USE_SSL
+    std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t>& key, const std::string& data)
+    {
+        unsigned int len = SHA256_DIGEST_LENGTH;
+        std::vector<uint8_t> result(len);
+        HMAC(
+            EVP_sha256(),
+            key.data(),
+            static_cast<Int32>(key.size()),
+            reinterpret_cast<const uint8_t*>(data.data()),
+            data.size(),
+            result.data(),
+            &len);
+        return result;
+    }
+
+    std::vector<uint8_t> sha256(const std::vector<uint8_t>& data)
+    {
+        std::vector<uint8_t> hash(SHA256_DIGEST_LENGTH);
+        SHA256_CTX sha256;
+        SHA256_Init(&sha256);
+        SHA256_Update(&sha256, data.data(), data.size());
+        SHA256_Final(hash.data(), &sha256);
+        return hash;
+    }
+
+#endif
+
+    std::string computeScramSHA256ClientProof(const std::vector<uint8_t> & salted_password [[maybe_unused]], const std::string& auth_message [[maybe_unused]])
+    {
+#if USE_SSL
+        auto client_key = hmacSHA256(salted_password, "Client Key");
+        auto stored_key = sha256(client_key);
+        auto client_signature = hmacSHA256(stored_key, auth_message);
+
+        String client_proof(client_key.size(), 0);
+        for (size_t i = 0; i < client_key.size(); ++i)
+            client_proof[i] = client_key[i] ^ client_signature[i];
+
+        return base64Encode(client_proof);
+#else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Client proof can be computed only with USE_SSL compile flag.");
+#endif
+    }
+
+    bool checkScramSHA256Authentication(
+        const ScramSHA256Credentials * scram_sha256_credentials,
+        const AuthenticationData & authentication_method)
+    {
+        const auto & client_proof = scram_sha256_credentials->getClientProof();
+        const auto & auth_message = scram_sha256_credentials->getAuthMessage();
+        const auto & salt = authentication_method.getSalt();
+        const auto & password = authentication_method.getPasswordHashBinary();
+        auto computed_client_proof = computeScramSHA256ClientProof(password, auth_message);
+
+        if (computed_client_proof.size() != client_proof.size())
+            return false;
+
+        for (size_t i = 0; i < computed_client_proof.size(); ++i)
+        {
+            if (static_cast<UInt8>(computed_client_proof[i]) != static_cast<UInt8>(client_proof[i]))
+                return false;
+        }
+        return true;
     }
 
     bool checkMySQLAuthentication(
@@ -253,6 +335,11 @@ bool Authentication::areCredentialsValid(
     if (const auto * basic_credentials = typeid_cast<const BasicCredentials *>(&credentials))
     {
         return checkBasicAuthentication(basic_credentials, authentication_method, external_authenticators, client_info, settings);
+    }
+
+    if (const auto * scram_shh256_credentials = typeid_cast<const ScramSHA256Credentials *>(&credentials))
+    {
+        return checkScramSHA256Authentication(scram_shh256_credentials, authentication_method);
     }
 
     if (const auto * ssl_certificate_credentials = typeid_cast<const SSLCertificateCredentials *>(&credentials))

@@ -24,7 +24,7 @@ Example:
 
 Install the `web` profile.
 
-``` sql
+```sql
 SET profile = 'web'
 ```
 
@@ -32,7 +32,7 @@ Settings profiles are declared in the user config file. This is usually `users.x
 
 Example:
 
-``` xml
+```xml
 <!-- Settings profiles -->
 <profiles>
     <!-- Default settings -->

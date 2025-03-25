@@ -17,7 +17,7 @@ Note that for an empty numeric sequence, `quantile` will return NaN, but its `qu
 
 **Syntax**
 
-``` sql
+```sql
 quantile(level)(expr)
 ```
 
@@ -42,7 +42,7 @@ Type:
 
 Input table:
 
-``` text
+```text
 ┌─val─┐
 │   1 │
 │   1 │
@@ -53,13 +53,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT quantile(val) FROM t
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantile(val)─┐
 │           1.5 │
 └───────────────┘
