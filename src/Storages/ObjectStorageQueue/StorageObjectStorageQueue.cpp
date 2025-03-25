@@ -275,6 +275,7 @@ void StorageObjectStorageQueue::startup()
         files_metadata->shutdown();
         throw;
     }
+    startup_finished = true;
 }
 
 void StorageObjectStorageQueue::shutdown(bool is_drop)
@@ -1009,6 +1010,13 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
+const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetadata() const
+{
+    if (!files_metadata)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Files metadata is empty");
+    return files_metadata->getTableMetadata();
+}
+
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
@@ -1045,6 +1053,10 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
+    /// If startup() for a table was not called, just use the default queue settings
+    if (!startup_finished)
+        return settings;
+
     const auto & table_metadata = getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
