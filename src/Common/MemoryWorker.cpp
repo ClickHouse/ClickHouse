@@ -82,7 +82,7 @@ uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list
             continue;
         }
         if (found_mask & (1l << (it - keys.begin())))
-            LOG_ERROR(getLogger("CgroupsReader"), "Duplicate key '{}' in '{}'", current_key, buf.getFileName());
+            LOG_WARNING(LogFrequencyLimiter(getLogger("CgroupsReader"), 300), "Duplicate key '{}' in '{}'", current_key, buf.getFileName());
         found_mask |= 1ll << (it - keys.begin());
 
         assertChar(' ', buf);
@@ -95,7 +95,7 @@ uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list
         for (const auto * it = keys.begin(); it != keys.end(); ++it)
         {
             if (!(found_mask & (1l << (it - keys.begin()))))
-                LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
+                LOG_WARNING(LogFrequencyLimiter(getLogger("CgroupsReader"), 300), "Cannot find '{}' in '{}'", *it, buf.getFileName());
         }
     }
     return sum;

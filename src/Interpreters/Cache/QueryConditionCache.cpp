@@ -103,6 +103,11 @@ void QueryConditionCache::setMaxSizeInBytes(size_t max_size_in_bytes)
     cache.setMaxSizeInBytes(max_size_in_bytes);
 }
 
+size_t QueryConditionCache::maxSizeInBytes()
+{
+    return cache.maxSizeInBytes();
+}
+
 bool QueryConditionCache::Key::operator==(const Key & other) const
 {
     return table_id == other.table_id

@@ -1,3 +1,4 @@
+#include <Common/DateLUTImpl.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -404,7 +405,7 @@ QueryLogElement logQueryStart(
     UInt64 normalized_query_hash,
     const ASTPtr & query_ast,
     const QueryPipeline & pipeline,
-    const std::unique_ptr<IInterpreter> & interpreter,
+    const IInterpreter * interpreter,
     bool internal,
     const String & query_database,
     const String & query_table,
@@ -1556,7 +1557,7 @@ static BlockIO executeQueryImpl(
                 normalized_query_hash,
                 out_ast,
                 pipeline,
-                interpreter,
+                interpreter.get(),
                 internal,
                 query_database,
                 query_table,

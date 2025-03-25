@@ -60,6 +60,7 @@ export CLICKHOUSE_USER_FILES_UNIQUE=${CLICKHOUSE_USER_FILES_UNIQUE:="${CLICKHOUS
 export USER_FILES_PATH=$CLICKHOUSE_USER_FILES
 
 export CLICKHOUSE_SCHEMA_FILES=${CLICKHOUSE_SCHEMA_FILES:="/var/lib/clickhouse/format_schemas"}
+export CLICKHOUSE_DISKS_FILES=${CLICKHOUSE_DISKS_FILES:="/var/lib/clickhouse/disks"}
 
 [ -x "${CLICKHOUSE_BINARY}-extract-from-config" ] && CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="$CLICKHOUSE_BINARY-extract-from-config --config=$CLICKHOUSE_CONFIG"}
 [ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="$CLICKHOUSE_BINARY extract-from-config --config=$CLICKHOUSE_CONFIG"}
@@ -150,7 +151,7 @@ function clickhouse_client_removed_host_parameter()
 {
     # removing only `--host=value` and `--host value` (removing '-hvalue' feels to dangerous) with python regex.
     # bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
-    $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
+    $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub(r'--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }
 
 function wait_for_queries_to_finish()

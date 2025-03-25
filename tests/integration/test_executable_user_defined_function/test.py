@@ -340,23 +340,49 @@ def test_executable_function_always_error_python(started_cluster):
         assert "DB::Exception: Child process was exited with return code 1" in str(ex)
 
 def test_executable_function_query_cache(started_cluster):
-    '''Test for issue #77553: Externally-defined UDFs may be non-deterministic. The query cache should treat them as such, i.e. reject them.'''
+    '''Test for issues #77553 and #59988: Users should be able to specify if externally-defined are non-deterministic, and the query cache should treat them correspondingly.'''
     '''Also see tests/0_stateless/test_query_cache_udf_sql.sql'''
     skip_test_msan(node)
 
     node.query("SYSTEM DROP QUERY CACHE");
 
+    # we are each testing an UDF without explicit <deterministic> tag (to check the default behavior) and two queries with <deterministic> true respectively false </deterministic>.
+
     # query_cache_nondeterministic_function_handling = throw
+
     assert node.query_and_get_error("SELECT test_function_bash(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'throw'")
     assert node.query("SELECT count(*) FROM system.query_cache") == "0\n"
+
+    assert node.query("SELECT test_function_bash_deterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'throw'") == "Key 1\n"
+    assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
+
+    assert node.query_and_get_error("SELECT test_function_bash_nondeterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'throw'")
+    assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
+
     node.query("SYSTEM DROP QUERY CACHE");
 
     # query_cache_nondeterministic_function_handling = save
+
     assert node.query("SELECT test_function_bash(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'save'") == "Key 1\n"
     assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
+
+    assert node.query("SELECT test_function_bash_deterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'save'") == "Key 1\n"
+    assert node.query("SELECT count(*) FROM system.query_cache") == "2\n"
+
+    assert node.query("SELECT test_function_bash_nondeterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'save'") == "Key 1\n"
+    assert node.query("SELECT count(*) FROM system.query_cache") == "3\n"
+
     node.query("SYSTEM DROP QUERY CACHE");
 
     # query_cache_nondeterministic_function_handling = ignore
+
     assert node.query("SELECT test_function_bash(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'ignore'") == "Key 1\n"
     assert node.query("SELECT count(*) FROM system.query_cache") == "0\n"
+
+    assert node.query("SELECT test_function_bash_deterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'ignore'") == "Key 1\n"
+    assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
+
+    assert node.query("SELECT test_function_bash_nondeterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'ignore'") == "Key 1\n"
+    assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
+
     node.query("SYSTEM DROP QUERY CACHE");

@@ -181,7 +181,8 @@ result blocks. While this behavior is a good default, it can be suppressed using
 
 Also, results of queries with non-deterministic functions are not cached by default. Such functions include
 - functions for accessing dictionaries: [`dictGet()`](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull) etc.
-- [user-defined functions](../sql-reference/statements/create/function.md),
+- [user-defined functions](../sql-reference/statements/create/function.md) without tag `<deterministic>true</deterministic>` in their XML
+  definition,
 - functions which return the current date or time: [`now()`](../sql-reference/functions/date-time-functions.md#now),
   [`today()`](../sql-reference/functions/date-time-functions.md#today),
   [`yesterday()`](../sql-reference/functions/date-time-functions.md#yesterday) etc.,

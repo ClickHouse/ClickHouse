@@ -258,7 +258,21 @@ class Runner:
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(cmd, timeout=job.timeout) as process:
+            start_time = Utils.timestamp()
+            if Path((Result.experimental_file_name_static())).exists():
+                # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
+                Path(Result.experimental_file_name_static()).unlink()
+
             exit_code = process.wait()
+
+            if Path(Result.experimental_file_name_static()).exists():
+                result = Result.experimental_from_fs(job.name)
+                if not result.start_time:
+                    print(
+                        "WARNING: no start_time set by the job - set job start_time/duration"
+                    )
+                    result.start_time = start_time
+                    result.dump()
 
             result = Result.from_fs(job.name)
             if exit_code != 0:
@@ -326,6 +340,7 @@ class Runner:
             result = Result.from_fs(job.name)
         except Exception as e:  # json.decoder.JSONDecodeError
             print(f"ERROR: Failed to read Result json from fs, ex: [{e}]")
+            traceback.print_exc()
             result = Result.create_from(
                 status=Result.Status.ERROR,
                 info=f"Failed to read Result json, ex: [{e}]",

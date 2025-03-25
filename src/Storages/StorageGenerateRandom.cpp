@@ -30,6 +30,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/SipHash.h>
 #include <Common/intExp10.h>
 #include <Common/randomSeed.h>
