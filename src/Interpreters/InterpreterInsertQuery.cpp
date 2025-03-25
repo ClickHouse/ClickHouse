@@ -825,7 +825,11 @@ BlockIO InterpreterInsertQuery::execute()
     if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    {
+        LOG_ERROR(getLogger("InterpreterInsertQuery"), "Insert queries are prohibited, current database: {}",
+            query.table_id.database_name);
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
+    }
 
     StoragePtr table = getTable(query);
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
