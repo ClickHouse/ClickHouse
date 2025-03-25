@@ -308,7 +308,7 @@ Poco::JSON::Object::Ptr IcebergMetadata::readJSON(const String & metadata_file_p
 
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
     Poco::Dynamic::Var json = parser.parse(json_str);
-    auto object = json.extract<Poco::JSON::Object::Ptr>();
+    const auto & object = json.extract<Poco::JSON::Object::Ptr>();
     if (manifest_cache)
     {
         manifest_cache->setMetadataObject(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), object, json_str.size());
@@ -527,7 +527,7 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
             [&](const String & filename_, Int64 inherited_sequence_number_){ return getManifestFile(filename_, inherited_sequence_number_); });
         if (manifest_list_ptr)
         {
-            for (auto manifest_file_content : *manifest_list_ptr)
+            for (const auto & manifest_file_content : *manifest_list_ptr)
             {
                 for (const auto & data_file_path : manifest_file_content->getFiles())
                 {
