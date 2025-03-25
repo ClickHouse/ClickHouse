@@ -51,6 +51,12 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsBool s3_disable_checksum;
+extern const SettingsUInt64 max_backup_bandwidth;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -352,7 +358,7 @@ struct BackupsWorker::BackupStarter
     bool is_internal_backup;
     std::shared_ptr<IBackupCoordination> backup_coordination;
     ClusterPtr cluster;
-    BackupMutablePtr backup;
+    BackupMutablePtr backup; // 对应的S3 Engine的封装了BackupWriterS3对象的BackupImpl
     std::shared_ptr<ProcessListEntry> process_list_element_holder;
 
     BackupStarter(BackupsWorker & backups_worker_, const ASTPtr & query_, const ContextPtr & context_)
@@ -387,7 +393,6 @@ struct BackupsWorker::BackupStarter
         String base_backup_name;
         if (backup_settings.base_backup_info)
             base_backup_name = backup_settings.base_backup_info->toStringForLogging();
-        backup_settings.
 
         /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
         auto process_list_element = backup_context->getProcessListElement();
@@ -396,6 +401,20 @@ struct BackupsWorker::BackupStarter
 
         backup_create_params.read_settings = getReadSettingsForBackup(backup_context, backup_settings);
         backup_create_params.write_settings = getWriteSettingsForBackup(context);
+        if (!query_context->getSettingsRef()[Setting::s3_disable_checksum] and backup_info.backup_engine_name == "S3")
+        {
+            UInt64 queryMaxSpeed = query_context->getBackupsThrottler()->getMaxSpeed();
+            UInt64 serverMaxSpeed = query_context->getBackupServerThrottler()->getMaxSpeed();
+
+            //auto backup_bandwidth = query_context->getSettingsRef()[Setting::max_backup_bandwidth]
+            LOG_INFO(
+                log,
+                "Backup from local to remote S3 with checksum enabled "
+                "will make the read-side bandwidth control halved because we will read the disk twice. "
+                "Current max_backup_bandwidth is {}, "
+                "Global max_backup_bandwidth is {}" queryMaxSpeed,
+                serverMaxSpeed)
+        }
 
         backups_worker.addInfo(backup_id,
             backup_name_for_logging,
@@ -419,6 +438,7 @@ struct BackupsWorker::BackupStarter
 
         chassert(!backup);
         // 在这里会设置throttler
+        // 这里会打印  BackupsWorker: Opened backup for writing
         backup = backups_worker.openBackupForWriting(backup_info, backup_settings, backup_coordination, backup_context);
 
         backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context, query_context,
@@ -541,7 +561,7 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(const BackupInfo & backup_i
 
 
 void BackupsWorker::doBackup(
-    BackupMutablePtr backup,
+    BackupMutablePtr backup, // IBackup接口的实现类，是 BackupImpl
     const std::shared_ptr<ASTBackupQuery> & backup_query,
     const OperationID & backup_id,
     const BackupSettings & backup_settings,
@@ -629,7 +649,7 @@ void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, con
 
 
 void BackupsWorker::writeBackupEntries(
-    BackupMutablePtr backup,
+    BackupMutablePtr backup, // BackupImpl
     BackupEntries && backup_entries,
     const OperationID & backup_id,
     std::shared_ptr<IBackupCoordination> backup_coordination,
@@ -683,7 +703,7 @@ void BackupsWorker::writeBackupEntries(
             {
                 if (process_list_element)
                     process_list_element->checkTimeLimit();
-
+                // BackupImpl
                 backup->writeFile(file_info, std::move(entry));
 
                 maybeSleepForTesting();
