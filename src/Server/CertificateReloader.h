@@ -39,7 +39,10 @@ public:
         Poco::Crypto::X509Certificate::List certs_chain;
         Poco::Crypto::EVPPKey key;
 
+        std::string hash;
+
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
+        Data(Poco::Crypto::EVPPKey, Poco::Crypto::X509Certificate::List, std::string hash);
     };
 
     struct File
@@ -57,7 +60,7 @@ public:
     {
         SSL_CTX * ctx = nullptr;
         MultiVersion<Data> data;
-        bool init_was_not_made = true;
+        bool initialized = false;
 
         File cert_file{"certificate"};
         File key_file{"key"};
@@ -97,6 +100,7 @@ private:
 
     /// Unsafe implementation
     void tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
+    void tryLoadACMECertificate(SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
 
     std::list<MultiData>::iterator findOrInsert(SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
 

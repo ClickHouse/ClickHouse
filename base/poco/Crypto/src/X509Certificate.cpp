@@ -56,7 +56,7 @@ X509Certificate::X509Certificate(X509* pCert, bool shared):
 	_pCert(pCert)
 {
 	poco_check_ptr(_pCert);
-	
+
 	if (shared)
 	{
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
@@ -150,7 +150,7 @@ void X509Certificate::save(std::ostream& stream) const
 	if (!pBIO) throw Poco::IOException("Cannot create BIO for writing certificate");
 	try
 	{
-		if (!PEM_write_bio_X509(pBIO, _pCert)) 
+		if (!PEM_write_bio_X509(pBIO, _pCert))
 			throw Poco::IOException("Failed to write certificate to stream");
 
 		char *pData;
@@ -178,7 +178,7 @@ void X509Certificate::save(const std::string& path) const
 	}
 	try
 	{
-		if (!PEM_write_bio_X509(pBIO, _pCert)) 
+		if (!PEM_write_bio_X509(pBIO, _pCert))
 			throw Poco::WriteFileException("Failed to write certificate to file", path);
 	}
 	catch (...)
@@ -243,7 +243,7 @@ std::string X509Certificate::subjectName(NID nid) const
 
 void X509Certificate::extractNames(std::string& cmnName, std::set<std::string>& domainNames) const
 {
-	domainNames.clear(); 
+	domainNames.clear();
 	if (STACK_OF(GENERAL_NAME)* names = static_cast<STACK_OF(GENERAL_NAME)*>(X509_get_ext_d2i(_pCert, NID_subject_alt_name, 0, 0)))
 	{
 		for (int i = 0; i < sk_GENERAL_NAME_num(names); ++i)
@@ -258,7 +258,7 @@ void X509Certificate::extractNames(std::string& cmnName, std::set<std::string>& 
 		}
 		GENERAL_NAMES_free(names);
 	}
- 
+
 	cmnName = commonName();
 	if (!cmnName.empty() && domainNames.empty())
 	{
@@ -275,7 +275,7 @@ Poco::DateTime X509Certificate::validFrom() const
 	return DateTimeParser::parse("%y%m%d%H%M%S", dateTime, tzd);
 }
 
-	
+
 Poco::DateTime X509Certificate::expiresOn() const
 {
 	ASN1_TIME* certTime = X509_get_notAfter(_pCert);
@@ -346,6 +346,25 @@ X509Certificate::List X509Certificate::readPEM(const std::string& pemFileName)
 	return caCertList;
 }
 
+X509Certificate::List X509Certificate::readPEM(std::istream& istr)
+{
+	List caCertList;
+	std::stringstream certStream;
+	Poco::StreamCopier::copyStream(istr, certStream);
+	std::string cert = certStream.str();
+
+	BIO *pBIO = BIO_new_mem_buf(const_cast<char*>(cert.data()), static_cast<int>(cert.size()));
+	if (!pBIO) throw Poco::IOException("Cannot create BIO for reading certificate");
+	X509* x = PEM_read_bio_X509(pBIO, NULL, 0, NULL);
+	if (!x) throw OpenSSLException("X509Certificate::readPEM(istream)");
+	while(x)
+	{
+		caCertList.push_back(X509Certificate(x));
+		x = PEM_read_bio_X509(pBIO, NULL, 0, NULL);
+	}
+	BIO_free(pBIO);
+	return caCertList;
+}
 
 void X509Certificate::writePEM(const std::string& pemFileName, const List& list)
 {

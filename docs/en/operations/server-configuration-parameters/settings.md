@@ -2770,6 +2770,35 @@ Keys for server/client settings:
 </openSSL>
 ```
 
+## Let's Encrypt (ACME) {#lets-encrypt}
+
+Retrieve server TLS certificate and key via [ACME](https://datatracker.ietf.org/doc/html/rfc8555). Mutually exclusive with [openSSL](#openssl) server settings.
+
+| Option                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Default Value                              |
+|-------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|
+| `email`              | Email to use for ACME account creation.                                                                                                                                                                                                                                                                                                                                              |                                            |
+| `terms_of_service_agreed`             | Must be explicitly set to `true`                                                                                                                                                                                                                                                                                                                                               | `false`                                           |
+| `domains`                    |  A list of hostnames to include in the certificate request |                                            |
+| `directory_url`            | URL of the ACME directory to use.                                                                                                                                                                                                          | `https://acme-v02.api.letsencrypt.org/directory`                                  |
+| `refresh_certificates_task_interval`           | Time interval in milliseconds to wait before checking certificate expiration                                                                                                                                                                                                                                                 | `3600000`                                        |
+| `refresh_certificates_before`           | Maximum time interval in seconds ahead of certificate expiration to start renewal process                                                                                                                                                                       | `2592000`                                     |
+
+**Example of settings:**
+
+```xml
+<acme>
+    <email>actual@email.com</email>
+    <terms_of_service_agreed>true</terms_of_service_agreed>
+    <domains>
+        <domain>letsencrypt-stg.example.com</domain>
+    </domains>
+    <directory_url>https://acme-staging-v02.api.letsencrypt.org/directory</directory_url>
+    <refresh_certificates_task_interval>3600000</refresh_certificates_task_interval>
+    <refresh_certificates_before>2592000</refresh_certificates_before>
+</acme>
+
+```
+
 ## part_log {#part_log}
 
 Logging events that are associated with [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
