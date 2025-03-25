@@ -318,7 +318,9 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {DeltaLake, {}},
          {IcebergS3, {}},
          {Merge, {}},
-         {Distributed, distributedTableSettings}});
+         {Distributed, distributedTableSettings},
+         {Dictionary, {}},
+         {GenerateRandom, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},

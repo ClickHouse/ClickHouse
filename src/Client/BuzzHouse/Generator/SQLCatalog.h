@@ -208,11 +208,15 @@ public:
 
     bool isDistributedEngine() const { return teng == TableEngineValues::Distributed; }
 
+    bool isDictionaryEngine() const { return teng == TableEngineValues::Dictionary; }
+
+    bool isGenerateRandomEngine() const { return teng == TableEngineValues::GenerateRandom; }
+
     bool isNotTruncableEngine() const
     {
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
             || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine() || isMergeEngine()
-            || isDistributedEngine();
+            || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine();
     }
 
     bool isAnotherRelationalDatabaseEngine() const { return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine(); }

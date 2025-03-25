@@ -3044,6 +3044,8 @@ enum TableEngineValues {
     IcebergS3 = 26;
     Merge = 27;
     Distributed = 28;
+    Dictionary = 29;
+    GenerateRandom = 30;
 }
 
 enum TableEngineOption {
@@ -3065,6 +3067,7 @@ message TableEngineParam {
         string svalue = 10;
         ColumnPathList col_list = 11;
         string regexp = 12;
+        ExprSchemaTable est = 13;
     }
 }
 

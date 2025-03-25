@@ -123,7 +123,9 @@ const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting
        {DeltaLake, {}},
        {IcebergS3, {}},
        {Merge, {}},
-       {Distributed, {}}};
+       {Distributed, {}},
+       {Dictionary, {}},
+       {GenerateRandom, {}}};
 
 const std::unordered_map<String, CHSetting> backupSettings
     = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},

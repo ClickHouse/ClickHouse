@@ -2098,19 +2098,11 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kValues:
             ValuesStatementToString(ret, true, tf.values());
             break;
-        case TableFunctionType::kDictionary: {
-            const ExprSchemaTable & est = tf.dictionary();
-
-            ret += "dictionary('";
-            if (est.has_database())
-            {
-                DatabaseToString(ret, est.database());
-                ret += ".";
-            }
-            TableToString(ret, est.table());
-            ret += "')";
-        }
-        break;
+        case TableFunctionType::kDictionary:
+            ret += "dictionary(";
+            FlatExprSchemaTableToString(ret, tf.dictionary());
+            ret += ")";
+            break;
         default:
             ret += "numbers(10)";
     }
@@ -2814,6 +2806,9 @@ CONV_FN(TableEngineParam, tep)
             ret += "REGEXP('";
             ret += tep.regexp();
             ret += "')";
+            break;
+        case TableEngineParamType::kEst:
+            FlatExprSchemaTableToString(ret, tep.est());
             break;
         default:
             ret += "c0";
@@ -4574,5 +4569,4 @@ CONV_FN(SQLQuery, query)
     }
     ret += ";";
 }
-
 }

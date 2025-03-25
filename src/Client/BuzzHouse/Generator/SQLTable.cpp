@@ -790,6 +790,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
 {
     const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
+    const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
 
     if (b.isMergeTreeFamily())
     {
@@ -870,19 +871,37 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     }
     else if (te->has_engine() && b.isBufferEngine())
     {
-        if (has_tables && (!has_views || rg.nextSmallNumber() < 8))
+        const uint32_t buf_table = 15 * static_cast<uint32_t>(has_tables);
+        const uint32_t buf_view = 5 * static_cast<uint32_t>(has_views);
+        const uint32_t buf_dictionary = 5 * static_cast<uint32_t>(has_dictionaries);
+        const uint32_t prob_space = buf_table + buf_view + buf_dictionary;
+        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+        const uint32_t nopt = next_dist(rg.generator);
+
+        if (buf_table && nopt < (buf_table + 1))
         {
             const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b)));
 
             te->add_params()->mutable_database()->set_database("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
             te->add_params()->mutable_table()->set_table("t" + std::to_string(t.tname));
         }
-        else
+        else if (buf_view && nopt < (buf_table + buf_view + 1))
         {
             const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(hasTableOrView<SQLView>(b)));
 
             te->add_params()->mutable_database()->set_database("d" + (v.db ? std::to_string(v.db->dname) : "efault"));
             te->add_params()->mutable_table()->set_table("v" + std::to_string(v.tname));
+        }
+        else if (buf_dictionary && nopt < (buf_table + buf_view + buf_dictionary + 1))
+        {
+            const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(hasTableOrView<SQLDictionary>(b)));
+
+            te->add_params()->mutable_database()->set_database("d" + (d.db ? std::to_string(d.db->dname) : "efault"));
+            te->add_params()->mutable_table()->set_table("d" + std::to_string(d.tname));
+        }
+        else
+        {
+            chassert(0);
         }
         /// num_layers
         te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 101));
@@ -966,9 +985,15 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     else if (te->has_engine() && b.isDistributedEngine())
     {
         bool has_sharding_key = false;
+        const uint32_t dist_table = 15 * static_cast<uint32_t>(has_tables);
+        const uint32_t dist_view = 5 * static_cast<uint32_t>(has_views);
+        const uint32_t dist_dictionary = 5 * static_cast<uint32_t>(has_dictionaries);
+        const uint32_t prob_space = dist_table + dist_view + dist_dictionary;
+        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+        const uint32_t nopt = next_dist(rg.generator);
 
         te->add_params()->set_svalue(rg.pickRandomly(fc.clusters));
-        if (has_tables && (!has_views || rg.nextSmallNumber() < 8))
+        if (dist_table && nopt < (dist_table + 1))
         {
             const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b)));
 
@@ -982,7 +1007,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                 this->remote_entries.clear();
             }
         }
-        else
+        else if (dist_view && nopt < (dist_table + dist_view + 1))
         {
             const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(hasTableOrView<SQLView>(b)));
 
@@ -994,6 +1019,18 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                 te->add_params()->mutable_cols()->mutable_col()->set_column("c" + std::to_string(rg.randomInt<uint32_t>(0, 5)));
             }
         }
+        else if (dist_dictionary && nopt < (dist_table + dist_view + dist_dictionary + 1))
+        {
+            const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(hasTableOrView<SQLDictionary>(b)));
+
+            te->add_params()->mutable_database()->set_database("d" + (d.db ? std::to_string(d.db->dname) : "efault"));
+            te->add_params()->mutable_table()->set_table("d" + std::to_string(d.tname));
+        }
+        else
+        {
+            chassert(0);
+        }
+
         if (has_sharding_key && !fc.storage_policies.empty() && rg.nextBool())
         {
             /// Optional policy name
@@ -1003,6 +1040,24 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine()) && add_pkey && !entries.empty())
     {
         columnPathRef(rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
+    }
+    else if (te->has_engine() && b.isDictionaryEngine())
+    {
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(hasTableOrView<SQLDictionary>(b)));
+
+        d.setName(te->add_params()->mutable_est(), false);
+    }
+    else if (te->has_engine() && b.isGenerateRandomEngine())
+    {
+        te->add_params()->set_num(rg.nextRandomUInt64());
+        if (rg.nextBool())
+        {
+            std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+            std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
+
+            te->add_params()->set_num(string_length_dist(rg.generator));
+            te->add_params()->set_num(nested_rows_dist(rg.generator));
+        }
     }
     if (te->has_engine())
     {
@@ -1459,6 +1514,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     }
     const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
+    const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
 
     chassert(this->ids.empty());
     this->ids.emplace_back(MergeTree);
@@ -1477,13 +1533,17 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.emplace_back(TinyLog);
     this->ids.emplace_back(EmbeddedRocksDB);
     this->ids.emplace_back(Merge);
-    if (has_tables || has_views)
+    if (has_tables || has_views || has_dictionaries)
     {
         this->ids.emplace_back(Buffer);
         if (!fc.clusters.empty())
         {
             this->ids.emplace_back(Distributed);
         }
+    }
+    if (!b.is_deterministic)
+    {
+        this->ids.emplace_back(GenerateRandom);
     }
     if (use_external_integrations)
     {
