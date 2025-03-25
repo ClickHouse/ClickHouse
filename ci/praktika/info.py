@@ -36,6 +36,10 @@ class Info:
         return self.env.WORKFLOW_NAME
 
     @property
+    def job_name(self):
+        return self.env.JOB_NAME
+
+    @property
     def pr_body(self):
         return self.env.PR_BODY
 

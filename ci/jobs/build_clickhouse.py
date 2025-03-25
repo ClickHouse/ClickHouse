@@ -5,10 +5,8 @@ from ci.defs.defs import BuildTypes, ToolSet
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.info import Info
 from ci.praktika.result import Result
-from ci.praktika.s3 import S3
 from ci.praktika.settings import Settings
 from ci.praktika.utils import MetaClasses, Shell, Utils
-from ci.settings.settings import S3_BUCKET_NAME
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/build"
@@ -36,23 +34,8 @@ BUILD_TYPE_TO_CMAKE = {
     BuildTypes.AMD_MUSL: f"     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake",
     BuildTypes.RISCV64: f"      cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-riscv64.cmake",
     BuildTypes.S390X: f"        cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-s390x.cmake",
-    BuildTypes.LOONGARCH64: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-loongarch64.cmake",
+    BuildTypes.LOONGARCH64: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-loongarch64.cmake -DENABLE_BUZZHOUSE=1",
     BuildTypes.FUZZERS: f"      cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=address   -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DENABLE_FUZZING=1 -DENABLE_PROTOBUF=1 -DWITH_COVERAGE=1 -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DENABLE_BUZZHOUSE=1",
-}
-
-BUILD_TYPE_TO_STATIC_LOCATION = {
-    BuildTypes.AMD_RELEASE: "amd64",
-    BuildTypes.ARM_RELEASE: "aarch64",
-    BuildTypes.AMD_DARWIN: "macos",
-    BuildTypes.ARM_DARWIN: "macos-aarch64",
-    BuildTypes.ARM_V80COMPAT: "aarch64v80compat",
-    BuildTypes.AMD_FREEBSD: "freebsd",
-    BuildTypes.PPC64LE: "powerpc64le",
-    BuildTypes.AMD_COMPAT: "amd64compat",
-    BuildTypes.AMD_MUSL: "amd64musl",
-    BuildTypes.RISCV64: "riscv64",
-    BuildTypes.S390X: "s390x",
-    BuildTypes.LOONGARCH64: "loongarch64",
 }
 
 # TODO: for legacy packaging script - remove
@@ -119,7 +102,11 @@ def main():
         build_type in BUILD_TYPE_TO_CMAKE
     ), f"--build_type option is invalid [{build_type}]"
 
-    cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type] + " " + current_directory
+    cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type]
+    info = Info()
+    if info.pr_number == 0:
+        cmake_cmd += " -DCLICKHOUSE_OFFICIAL_BUILD=1"
+    cmake_cmd += f" {current_directory}"
 
     res = True
     results = []
@@ -222,50 +209,6 @@ def main():
                 with_log=True,
             )
         )
-        res = results[-1].is_ok()
-
-    if res and build_type in BUILD_TYPE_TO_STATIC_LOCATION:
-        info = Info()
-        if (
-            not info.is_local_run
-            and info.repo_name == "ClickHouse/ClickHouse"
-            and info.git_branch == "master"
-        ):
-            print("Uploading binary to static location for installation with curl")
-
-            def do():
-                S3().copy_file_to_s3(
-                    local_path="",
-                    s3_path=f"{S3_BUCKET_NAME}/master/{BUILD_TYPE_TO_STATIC_LOCATION[build_type]}/clickhouse-full",
-                )
-
-            results.append(
-                Result.from_commands_run(
-                    name="Upload to static location",
-                    command=do,
-                )
-            )
-
-        # if "amd" in build_type:
-        #     deb_arch = "amd64"
-        # else:
-        #     deb_arch = "arm64"
-        #
-        # assert Shell.check(f"rm -f {temp_dir}/*.deb")
-        #
-        # results.append(
-        #     Result.from_commands_run(
-        #         name="Build Packages",
-        #         command=[
-        #             f"DESTDIR={build_dir}/root ninja programs/install",
-        #             f"ln -sf {build_dir}/root {Utils.cwd()}/packages/root",
-        #             f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={temp_dir} BUILD_TYPE={BUILD_TYPE_TO_DEB_PACKAGE_TYPE[build_type]} VERSION_STRING={version} DEB_ARCH={deb_arch} ./build --deb {'--rpm --tgz' if 'release' in build_type else ''}",
-        #         ],
-        #         workdir=build_dir,
-        #         with_log=True,
-        #     )
-        # )
-        pass
         res = results[-1].is_ok()
 
     # if (

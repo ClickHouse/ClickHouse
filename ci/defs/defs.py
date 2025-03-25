@@ -6,6 +6,11 @@ TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == _Settings.TEMP_DIR != env_helper.TEMP_P
 
 SYNC = "CH Inc sync"
 
+S3_BUCKET_NAME = "clickhouse-builds"
+S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
+S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
+S3_REPORT_BUCKET_HTTP_ENDPOINT = "s3.amazonaws.com/clickhouse-test-reports"
+
 
 class RunnerLabels:
     CI_SERVICES = "ci_services"
@@ -426,7 +431,7 @@ class ArtifactConfigs:
     clickhouse_binaries = Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/programs/clickhouse",
+        path=f"{TEMP_DIR}/build/programs/self-extracting/clickhouse",
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,

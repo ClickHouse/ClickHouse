@@ -107,6 +107,7 @@ class JobConfigs:
             ],
             with_git_submodules=True,
         ),
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/build_post_hook.py"],
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,
@@ -197,6 +198,7 @@ class JobConfigs:
             ],
             with_git_submodules=True,
         ),
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/build_post_hook.py"],
     ).parametrize(
         parameter=[
             BuildTypes.AMD_COVERAGE,
@@ -745,7 +747,7 @@ class JobConfigs:
             ["Build (amd_ubsan)"],
         ],
     )
-    performance_comparison__with_prev_release_jobs = Job.Config(
+    performance_comparison_with_prev_release_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
         command="python3 ./ci/jobs/performance_tests.py --test-options {PARAMETER}",

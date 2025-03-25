@@ -47,7 +47,7 @@ SET(VERSION_STRING {string})
         return result
 
     @classmethod
-    def get_curent_version_as_dict(cls):
+    def get_current_version_as_dict(cls):
         version = cls.get_release_version_as_dict()
         info = Info()
         try:
@@ -79,11 +79,11 @@ SET(VERSION_STRING {string})
 
     @classmethod
     def get_version(cls):
-        return cls.get_curent_version_as_dict()["string"]
+        return cls.get_current_version_as_dict()["string"]
 
     @classmethod
     def set_binary_version(cls, version_dict=None):
-        version_dict = version_dict or cls.get_curent_version_as_dict()
+        version_dict = version_dict or cls.get_current_version_as_dict()
         Path(cls.FILE_WITH_VERSION_PATH).write_text(
             cls.VERSIONS_TEMPLATE.format_map(version_dict), encoding="utf-8"
         )
@@ -94,9 +94,6 @@ SET(VERSION_STRING {string})
 
     @classmethod
     def store_version_data_in_ci_pipeline(cls):
-        Info().store_custom_data("clickhouse_version", cls.get_curent_version_as_dict())
-
-    @classmethod
-    def get_latest_release_major_minor_sha(cls):
-        version_dict = cls.get_curent_version_as_dict()
-        return version_dict["major"], version_dict["minor"], version_dict["githash"]
+        Info().store_custom_data(
+            "clickhouse_version", cls.get_current_version_as_dict()
+        )

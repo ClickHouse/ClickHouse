@@ -35,7 +35,7 @@ class Runner:
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
             REPOSITORY="",
-            BRANCH=branch or Settings.MAIN_BRANCH if not pr else "",
+            BRANCH="branch_name",
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
             PR_NUMBER=pr or -1,
             EVENT_TYPE="",
@@ -356,6 +356,21 @@ class Runner:
         # if result.is_error():
         result.set_files([Settings.RUN_LOG])
 
+        if job.post_hooks:
+            sw_ = Utils.Stopwatch()
+            results_ = []
+            for check in job.post_hooks:
+                if callable(check):
+                    name = check.__name__
+                else:
+                    name = str(check)
+                results_.append(
+                    Result.from_commands_run(name=name, command=check, with_info=True)
+                )
+            result.results.append(
+                Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+            )
+
         if run_exit_code == 0:
             providing_artifacts = []
             if job.provides and workflow.artifacts:
@@ -553,7 +568,10 @@ class Runner:
 
         if not local_run:
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
-            res = self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
+            post_res = self._post_run(
+                workflow, job, setup_env_code, prerun_code, run_code
+            )
+            res = res and post_res
             print(f"=== Post run script finished ===")
 
         if not res:

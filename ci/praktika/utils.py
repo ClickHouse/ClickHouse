@@ -427,10 +427,15 @@ class Utils:
 
     @staticmethod
     def terminate_process_group(pid, force=False):
-        if not force:
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
-        else:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
+        try:
+            if not force:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            else:
+                os.killpg(os.getpgid(pid), signal.SIGKILL)
+        except Exception as e:
+            print(
+                f"ERROR: Exception while terminating process [{pid}]: [{e}], (force={force})"
+            )
 
     @staticmethod
     def set_env(key, val):
