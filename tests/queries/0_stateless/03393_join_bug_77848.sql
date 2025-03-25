@@ -1,4 +1,4 @@
-
+-- Tags: no-parallel-replicas
 DROP TABLE IF EXISTS BadTable;
 DROP TABLE IF EXISTS BadJoin;
 
