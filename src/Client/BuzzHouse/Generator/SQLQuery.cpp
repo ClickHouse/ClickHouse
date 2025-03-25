@@ -542,15 +542,29 @@ bool StatementGenerator::joinedTableOrFunction(
     }
     else if (merge_udf && nopt < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + 1))
     {
+        String mergeDesc;
         SQLRelation rel(rel_name);
         TableFunction * tf = tof->mutable_tfunc();
         MergeFunc * mdf = tf->mutable_merge();
+        const uint32_t nopt2 = rg.nextSmallNumber();
 
         if (rg.nextBool())
         {
             mdf->set_mdatabase(setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, "d"));
         }
-        mdf->set_mtable(rg.nextBool() ? setMergeTableParameter<SQLTable>(rg, "t") : setMergeTableParameter<SQLView>(rg, "v"));
+        if (nopt2 < 3)
+        {
+            mergeDesc = setMergeTableParameter<SQLTable>(rg, "t");
+        }
+        else if (nopt2 < 5)
+        {
+            mergeDesc = setMergeTableParameter<SQLView>(rg, "v");
+        }
+        else
+        {
+            mergeDesc = setMergeTableParameter<SQLDictionary>(rg, "d");
+        }
+        mdf->set_mtable(std::move(mergeDesc));
         for (uint32_t i = 0; i < 6; i++)
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i)}));

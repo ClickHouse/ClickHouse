@@ -642,7 +642,7 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const St
             return initial + std::to_string(t.tname);
         }
     }
-    else
+    else if constexpr (std::is_same_v<T, SQLView>)
     {
         if (collectionHas<SQLView>(attached_views) && noption < 4)
         {
@@ -650,6 +650,19 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const St
 
             return initial + std::to_string(v.tname);
         }
+    }
+    else if constexpr (std::is_same_v<T, SQLDictionary>)
+    {
+        if (collectionHas<SQLDictionary>(attached_dictionaries) && noption < 4)
+        {
+            const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
+
+            return initial + std::to_string(d.tname);
+        }
+    }
+    else
+    {
+        chassert(0);
     }
     if (noption < 7)
     {
@@ -979,8 +992,23 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     }
     else if (te->has_engine() && b.isMergeEngine())
     {
+        String mergeDesc;
+        const uint32_t nopt2 = rg.nextSmallNumber();
+
         te->add_params()->set_regexp(setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, "d"));
-        te->add_params()->set_svalue(rg.nextBool() ? setMergeTableParameter<SQLTable>(rg, "t") : setMergeTableParameter<SQLView>(rg, "v"));
+        if (nopt2 < 3)
+        {
+            mergeDesc = setMergeTableParameter<SQLTable>(rg, "t");
+        }
+        else if (nopt2 < 5)
+        {
+            mergeDesc = setMergeTableParameter<SQLView>(rg, "v");
+        }
+        else
+        {
+            mergeDesc = setMergeTableParameter<SQLDictionary>(rg, "d");
+        }
+        te->add_params()->set_svalue(std::move(mergeDesc));
     }
     else if (te->has_engine() && b.isDistributedEngine())
     {
