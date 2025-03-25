@@ -202,12 +202,13 @@ function run_tests
     then
         # Use the explicitly set path to directory with test files.
         test_prefix="$CHPC_TEST_PATH"
-    elif [ "$PR_TO_TEST" == "0" ]
-    then
-        # When testing commits from master, use the older test files. This
-        # allows the tests to pass even when we add new functions and tests for
-        # them, that are not supported in the old revision.
-        test_prefix=left/performance
+# TODO: remove?
+#    elif [ "$PR_TO_TEST" == "0" ]
+#    then
+#        # When testing commits from master, use the older test files. This
+#        # allows the tests to pass even when we add new functions and tests for
+#        # them, that are not supported in the old revision.
+#        test_prefix=left/performance
     else
         # For PRs, use newer test files so we can test these changes.
         test_prefix=right/performance
@@ -221,15 +222,16 @@ function run_tests
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
         test_files=($(ls "$test_prefix" | rg "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
-    elif [ "$PR_TO_TEST" -ne 0 ] \
-        && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
-        && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
-    then
-        # If only the perf tests were changed in the PR, we will run only these
-        # tests. The lists of changed files are prepared in entrypoint.sh because
-        # it has the repository.
-        test_files=($(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt))
-        run_only_changed_tests=1
+# TODO: remove
+#    elif [ "$PR_TO_TEST" -ne 0 ] \
+#        && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
+#        && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
+#    then
+#        # If only the perf tests were changed in the PR, we will run only these
+#        # tests. The lists of changed files are prepared in entrypoint.sh because
+#        # it has the repository.
+#        test_files=($(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt))
+#        run_only_changed_tests=1
     else
         # The default -- run all tests found in the test dir.
         test_files=($(ls "$test_prefix"/*.xml))
@@ -319,13 +321,15 @@ function run_tests
         # Use awk because bash doesn't support floating point arithmetic.
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
-        if rg --quiet "$(basename $test)" changed-test-definitions.txt
-        then
-          # Run all queries from changed test files to ensure that all new queries will be tested.
-          max_queries=0
-        else
-          max_queries=$CHPC_MAX_QUERIES
-        fi
+        max_queries=0
+# TODO: remove?
+#        if rg --quiet "$(basename $test)" changed-test-definitions.txt
+#        then
+#          # Run all queries from changed test files to ensure that all new queries will be tested.
+#          max_queries=0
+#        else
+#          max_queries=$CHPC_MAX_QUERIES
+#        fi
 
         (
             set +x
@@ -566,8 +570,8 @@ unset IFS
 # The comparison script might be bound to one NUMA node for better test
 # stability, and the calculation runs out of memory because of this. Use
 # all nodes.
-numactl --show
-numactl --cpunodebind=all --membind=all numactl --show
+#numactl --show
+#numactl --cpunodebind=all --membind=all numactl --show
 
 # Notes for parallel:
 #
@@ -581,7 +585,7 @@ numactl --cpunodebind=all --membind=all numactl --show
 # --memsuspend:
 #
 #   If the available memory falls below 2 * size, GNU parallel will suspend some of the running jobs.
-numactl --cpunodebind=all --membind=all parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
+parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
@@ -843,7 +847,7 @@ create view total_client_time_per_query as select *
         'test text, query_index int, client float, server float');
 
 create table wall_clock_time_per_test engine Memory as select *
-    from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
+    from file('wall-clock-times.tsv', TSV, 'test text, real float');
 
 create table test_time engine Memory as
     select test, sum(client) total_client_time,
@@ -1142,7 +1146,7 @@ do
         # "socket.timeout: timed out".
         rg --no-filename --max-count=2 -i '\(Exception\|Error\):[^:]' "$log" \
             || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
-            || head -2 "$log"
+            || head -10 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
 done
 }
@@ -1371,10 +1375,11 @@ case "$stage" in
     time configure
     ;&
 "restart")
-    numactl --show ||:
-    numactl --hardware ||:
-    lscpu ||:
-    dmidecode -t 4 ||:
+# TODO: remove
+#    numactl --show ||:
+#    numactl --hardware ||:
+#    lscpu ||:
+#    dmidecode -t 4 ||:
     time restart
     ;&
 "run_tests")
@@ -1411,7 +1416,9 @@ case "$stage" in
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.
-    while env kill -- -$watchdog_pid ; do sleep 1; done
+    # TODO: while hangs
+    #while env kill -- -$watchdog_pid ; do sleep 1; done
+    env kill -- -$watchdog_pid
 
     # Stop the servers to free memory for the subsequent query analysis.
     while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
@@ -1431,11 +1438,11 @@ case "$stage" in
     time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
     time "$script_dir/report.py" > report.html
     ;&
-"upload_results")
-    time upload_results ||:
-    ;&
+#"upload_results")
+#    time upload_results ||:
+#    ;&
 esac
 
 # Print some final debug info to help debug Weirdness, of which there is plenty.
 jobs
-pstree -apgT
+#pstree -apgT

@@ -291,7 +291,7 @@ def add_tested_commits():
     try:
         addSimpleTable(
             "Tested Commits",
-            ["Old", "New"],
+            ["Reference", "Patched"],
             [
                 [
                     "<pre>{}</pre>".format(x)
