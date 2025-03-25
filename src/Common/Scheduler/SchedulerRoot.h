@@ -234,7 +234,7 @@ private:
 
     void schedulerThread(const String & name)
     {
-        setThreadName(name.c_str());
+        setThreadName(name.c_str(), true);
         while (!stop_flag.load())
         {
             // Dequeue and execute single request
