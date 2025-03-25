@@ -987,7 +987,7 @@ void StorageLog::updateTotalRows(const WriteLock &)
         total_rows = 0;
 }
 
-std::optional<UInt64> StorageLog::totalRows(const Settings &) const
+std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
 {
     if (use_marks_file && marks_loaded)
         return total_rows;
@@ -998,7 +998,7 @@ std::optional<UInt64> StorageLog::totalRows(const Settings &) const
     return {};
 }
 
-std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
+std::optional<UInt64> StorageLog::totalBytes(ContextPtr) const
 {
     return total_bytes;
 }
