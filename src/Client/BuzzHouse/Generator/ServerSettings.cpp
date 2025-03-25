@@ -155,6 +155,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"prefer_global_in_and_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"prefer_localhost_replica", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_aggregation_in_order", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_convert_join_to_in", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_convert_outer_join_to_inner_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_enable_multithreading_after_window_functions", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_enable_optimizations", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -165,6 +166,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_lift_up_union", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_merge_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_merge_filters", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_optimize_lazy_materialization", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_optimize_prewhere", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_push_down_limit", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_read_in_order", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -924,7 +926,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "max_joined_block_size_rows",
           "max_number_of_partitions_for_independent_aggregation",
           "max_rows_to_transfer",
-          "partial_merge_join_rows_in_right_blocks"})
+          "partial_merge_join_rows_in_right_blocks",
+          "query_plan_max_limit_for_lazy_materialization"})
     {
         performanceSettings.insert({{entry, CHSetting(max_rows_func, {"0", "512", "1024", "2048", "4096", "16384", "65536"}, false)}});
         serverSettings.insert({{entry, CHSetting(max_rows_func, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
