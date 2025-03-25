@@ -351,10 +351,10 @@ optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanO
             /*enable=*/true,
             optimization_settings.max_entries_for_hash_table_stats,
             optimization_settings.max_size_to_preallocate_for_joins};
-        if (auto hint = getSizeHint(params))
+        if (auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params))
             lhs_estimation = lhs_estimation ? std::min(*lhs_estimation, hint->source_rows) : hint->source_rows;
         params.key = hash_table_key_hashes->key_hash_right;
-        if (auto hint = getSizeHint(params))
+        if (auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params))
             rhs_estimation = rhs_estimation ? std::min(*rhs_estimation, hint->source_rows) : hint->source_rows;
     }
 

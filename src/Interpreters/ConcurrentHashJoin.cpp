@@ -86,7 +86,7 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
         hash_joins.begin(),
         hash_joins.end(),
         0ull,
-        [](auto acc, const auto & hash_join) { return acc + hash_join->data->getTotalRowCount(); });
+        [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
     if (ht_size)
         DB::getHashTablesStatistics<DB::HashJoinEntry>().update(DB::HashJoinEntry{.ht_size = ht_size, .source_rows = source_rows}, params);
 }
