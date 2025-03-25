@@ -21,6 +21,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/LatencyLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
@@ -330,6 +331,13 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
         metric_log->startCollect("MetricLog", collect_interval_milliseconds);
+    }
+
+    if (transposed_metric_log)
+    {
+        size_t collect_interval_milliseconds = config.getUInt64("transposed_metric_log.collect_interval_milliseconds",
+                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        transposed_metric_log->startCollect("TMetricLog", collect_interval_milliseconds);
     }
 
     if (latency_log)
