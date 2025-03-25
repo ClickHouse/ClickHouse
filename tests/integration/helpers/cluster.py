@@ -2041,16 +2041,6 @@ class ClickHouseCluster:
         container_id = self.get_container_id(node)
         return self.exec_in_container(container_id, cmd, nothrow=nothrow, use_cli=False)
 
-    def exec_huita(self, container_id: str, cmd: Sequence[str]):
-        exec_cmd = cmd
-
-        env = None
-        result = subprocess_check_call(
-            exec_cmd, detach=False, nothrow=False, env=env
-        )
-        return result
-
-
     def exec_in_container(
         self,
         container_id: str,
@@ -2081,7 +2071,6 @@ class ClickHouseCluster:
             exec_cmd += [container_id]
             exec_cmd += list(cmd)
 
-            #exec_cmd = ["docker build -t clickhouse/postgresql-java-client ~/ClickHouse/docker/test/integration/postgresql_java_client", "&&"] + exec_cmd
             result = subprocess_check_call(
                 exec_cmd, detach=detach, nothrow=nothrow, env=env
             )
@@ -2379,9 +2368,9 @@ class ClickHouseCluster:
                     return True
                 time.sleep(0.5)
             except Exception as ex:
-                logging.debug("Can't find PostgreSQL Java Client" + str(ex))
+                logging.debug("Can't find Keeper Persistent Watcher " + str(ex))
                 time.sleep(0.5)
-        raise Exception("Cannot wait PostgreSQL Java Client container")
+        raise Exception("Cannot wait Keeper Persistent Watcher container")
 
     def wait_rabbitmq_to_start(self, timeout=120):
         self.print_all_docker_pieces()
