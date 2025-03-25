@@ -17,6 +17,8 @@ struct IcebergSnapshot
 {
     ManifestListPtr manifest_list;
     Int64 snapshot_id;
+    std::optional<size_t> total_rows;
+    std::optional<size_t> total_bytes;
 };
 
 struct IcebergHistory
