@@ -267,7 +267,7 @@ To exclude a query from CPU scheduling set a query setting [use_concurrency_cont
 CPU scheduling is not supported for merges and mutations yet.
 
 :::warning
-Slot scheduling provides a way to control [query concurrency](/operations/settings/settings.md/#max_thruseeads) but does not guarantee fair CPU time allocation yet. This requires further development of CPU slot preemption and will be supported later.
+Slot scheduling provides a way to control [query concurrency](/operations/settings/settings.md/#max_threads) but does not guarantee fair CPU time allocation yet. This requires further development of CPU slot preemption and will be supported later.
 :::
 
 :::note
