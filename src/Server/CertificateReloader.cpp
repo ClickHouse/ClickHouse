@@ -144,6 +144,10 @@ void CertificateReloader::tryLoadACMECertificate(SSL_CTX * ctx, const std::strin
 {
     try
     {
+        auto it = findOrInsert(ctx, prefix);
+        if (!it->initialized)
+            init(&*it);
+
         auto key_certificate_pair = ACME::Client::instance().requestCertificate();
         if (!key_certificate_pair)
         {
@@ -152,7 +156,6 @@ void CertificateReloader::tryLoadACMECertificate(SSL_CTX * ctx, const std::strin
         }
 
         auto [pkey, certificate, hash] = key_certificate_pair.value();
-        auto it = findOrInsert(ctx, prefix);
 
         auto current_version = it->data.get();
         if (current_version && current_version->hash == hash)
@@ -161,9 +164,6 @@ void CertificateReloader::tryLoadACMECertificate(SSL_CTX * ctx, const std::strin
         LOG_DEBUG(log, "Reloading ACME certificate and key.");
         it->data.set(std::make_unique<const Data>(pkey, certificate, hash));
         LOG_INFO(log, "Reloaded ACME certificate and key.");
-
-        if (!it->initialized)
-            init(&*it);
     }
     catch (...)
     {
