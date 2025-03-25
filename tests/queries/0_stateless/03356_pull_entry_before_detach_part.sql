@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 
 DROP TABLE IF EXISTS t1 SYNC;
 
