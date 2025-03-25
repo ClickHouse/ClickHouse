@@ -68,6 +68,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.4",
         {
+            {"query_plan_optimize_lazy_materialization", false, true, "Added new setting to use query plan for lazy materialization optimisation"},
+            {"query_plan_max_limit_for_lazy_materialization", 10, 10, "Added new setting to control maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"},
+            {"query_plan_convert_join_to_in", false, false, "New setting"},
             {"enable_hdfs_pread", true, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.3",
