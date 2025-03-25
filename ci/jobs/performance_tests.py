@@ -221,7 +221,7 @@ def main():
     for test_option in test_options:
         if "/" in test_option:
             batch_num, total_batches = map(int, test_option.split("/"))
-        if test_option == "head_master":
+        if test_option == "master_head":
             compare_against_master = True
         elif test_option == "prev_release":
             compare_against_release = True
@@ -239,14 +239,14 @@ def main():
         if compare_against_master:
             link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
         elif compare_against_release:
-            link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{left_major}.{left_minor-1}/{left_sha}/package_aarch64/clickhouse"
+            link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{left_major}.{left_minor-1}/{left_sha}/build_arm_release/clickhouse"
         else:
             assert False
     elif Utils.is_amd():
         if compare_against_master:
             link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
         elif compare_against_release:
-            link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{left_major}.{left_minor-1}/{left_sha}/package_release/clickhouse"
+            link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{left_major}.{left_minor-1}/{left_sha}/build_amd_release/clickhouse"
         else:
             assert False
     else:
@@ -586,10 +586,10 @@ def main():
     # attach all logs with errors
     Shell.check(f"rm -f {perf_wd}/logs.zip")
     Shell.check(
-        f'find {perf_wd} -type f \( -name "*err*.log" -o -name "*err*.tsv" \) -exec zip {perf_wd}/logs.zip {{}} +',
+        f'find {perf_wd} -type f \( -name "*err*.log" -o -name "*err*.tsv" \) -print0 | tar --null -T - -cf - | zstd -o logs.tar.zst',
         verbose=True,
     )
-    if Path(f"{perf_wd}/logs.zip").is_file():
+    if Path(f"{perf_wd}/logs.tar.zst").is_file():
         files_to_attach.append(f"{perf_wd}/logs.zip")
 
     Result.create_from(

@@ -409,10 +409,15 @@ class ArtifactNames:
     FUZZERS = "FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
 
-    PERF_REPORTS_AMD_1_2 = "PERF_REPORTS_AMD_1_2"
-    PERF_REPORTS_AMD_2_2 = "PERF_REPORTS_AMD_2_2"
-    PERF_REPORTS_AMD_1_2_WITH_RELEASE = "PERF_REPORTS_AMD_1_2_WITH_RELEASE"
-    PERF_REPORTS_AMD_2_2_WITH_RELEASE = "PERF_REPORTS_AMD_2_2_WITH_RELEASE"
+    PERF_REPORTS_AMD_1 = "PERF_REPORTS_AMD_1"
+    PERF_REPORTS_AMD_2 = "PERF_REPORTS_AMD_2"
+    PERF_REPORTS_AMD_3 = "PERF_REPORTS_AMD_3"
+    PERF_REPORTS_ARM_1 = "PERF_REPORTS_ARM_1"
+    PERF_REPORTS_ARM_2 = "PERF_REPORTS_ARM_2"
+    PERF_REPORTS_ARM_3 = "PERF_REPORTS_ARM_3"
+    PERF_REPORTS_AMD_1_WITH_RELEASE = "PERF_REPORTS_AMD_1_WITH_RELEASE"
+    PERF_REPORTS_AMD_2_WITH_RELEASE = "PERF_REPORTS_AMD_2_WITH_RELEASE"
+    PERF_REPORTS_AMD_3_WITH_RELEASE = "PERF_REPORTS_AMD_3_WITH_RELEASE"
 
     PERF_REPORTS_ARM = "PERF_REPORTS_ARM"
 
@@ -468,7 +473,7 @@ class ArtifactConfigs:
     clickhouse_rpms = Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*.rpm",
+        path=f"{TEMP_DIR}/*.rpm",
     ).parametrize(
         names=[
             ArtifactNames.RPM_AMD_RELEASE,
@@ -518,10 +523,15 @@ class ArtifactConfigs:
         path=f"{TEMP_DIR}/perf_wd/*.html",
     ).parametrize(
         names=[
-            ArtifactNames.PERF_REPORTS_AMD_1_2,
-            ArtifactNames.PERF_REPORTS_AMD_2_2,
-            ArtifactNames.PERF_REPORTS_AMD_1_2_WITH_RELEASE,
-            ArtifactNames.PERF_REPORTS_AMD_2_2_WITH_RELEASE,
+            ArtifactNames.PERF_REPORTS_AMD_1,
+            ArtifactNames.PERF_REPORTS_AMD_2,
+            ArtifactNames.PERF_REPORTS_AMD_3,
+            ArtifactNames.PERF_REPORTS_ARM_1,
+            ArtifactNames.PERF_REPORTS_ARM_2,
+            ArtifactNames.PERF_REPORTS_ARM_3,
+            ArtifactNames.PERF_REPORTS_AMD_1_WITH_RELEASE,
+            ArtifactNames.PERF_REPORTS_AMD_2_WITH_RELEASE,
+            ArtifactNames.PERF_REPORTS_AMD_3_WITH_RELEASE,
         ]
     )
 
@@ -872,8 +882,8 @@ class Jobs:
         requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(2)],
         # [ArtifactNames.CH_ARM_RELEASE]],
         provides=[
-            [ArtifactNames.PERF_REPORTS_AMD_1_2],
-            [ArtifactNames.PERF_REPORTS_AMD_2_2],
+            [ArtifactNames.PERF_REPORTS_AMD_1],
+            [ArtifactNames.PERF_REPORTS_AMD_2],
         ],
         # [ArtifactNames.PERF_REPORTS_ARM]],
     )
@@ -905,8 +915,8 @@ class Jobs:
         requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(2)],
         # [ArtifactNames.CH_ARM_RELEASE]],
         provides=[
-            [ArtifactNames.PERF_REPORTS_AMD_1_2_WITH_RELEASE],
-            [ArtifactNames.PERF_REPORTS_AMD_2_2_WITH_RELEASE],
+            [ArtifactNames.PERF_REPORTS_AMD_1_WITH_RELEASE],
+            [ArtifactNames.PERF_REPORTS_AMD_2_WITH_RELEASE],
         ],
         # [ArtifactNames.PERF_REPORTS_ARM]],
     )
