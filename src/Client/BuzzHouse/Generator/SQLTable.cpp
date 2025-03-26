@@ -1855,9 +1855,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     SettingValues * svs = nullptr;
     DictionarySource * source = cd->mutable_source();
     DictionaryLayout * layout = cd->mutable_layout();
-    DictionaryLifetime * life = cd->mutable_lifetime();
     const uint32_t type_mask_backup = this->next_type_mask;
-    static const std::vector<uint32_t> & lifeValues = {0, 1, 2, 10, 30, 60, 120};
 
     if (replace)
     {
@@ -1959,6 +1957,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
     if (isRange)
     {
+        /// Range properties
         DictionaryRange * dr = cd->mutable_range();
 
         std::shuffle(entries.begin(), entries.end(), rg.generator);
@@ -1967,11 +1966,17 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
     this->entries.clear();
 
-    /// Lifetime properties
-    life->set_min(rg.pickRandomly(lifeValues));
-    if (rg.nextBool())
+    if (dl != COMPLEX_KEY_DIRECT && dl != DIRECT)
     {
-        life->set_max(rg.pickRandomly(lifeValues));
+        /// Lifetime properties
+        DictionaryLifetime * life = cd->mutable_lifetime();
+        static const std::vector<uint32_t> & lifeValues = {0, 1, 2, 10, 30, 60, 120};
+
+        life->set_min(rg.pickRandomly(lifeValues));
+        if (rg.nextBool())
+        {
+            life->set_max(rg.pickRandomly(lifeValues));
+        }
     }
 
     if (rg.nextSmallNumber() < 3)

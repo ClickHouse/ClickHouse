@@ -3617,7 +3617,10 @@ CONV_FN(CreateDictionary, create_dictionary)
     {
         DictionaryRangeToString(ret, create_dictionary.range());
     }
-    DictionaryLifetimeToString(ret, create_dictionary.lifetime());
+    if (create_dictionary.has_lifetime())
+    {
+        DictionaryLifetimeToString(ret, create_dictionary.lifetime());
+    }
     if (create_dictionary.has_setting_values())
     {
         ret += " SETTINGS(";
