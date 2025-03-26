@@ -1725,6 +1725,7 @@ distinctdynamictypes
 distinctjsonpaths
 distro
 divideDecimal
+divideOrNull
 dmesg
 doesnt
 domainRFC
@@ -2034,6 +2035,7 @@ inodes
 instantiation
 instantiations
 intDiv
+intDivOrNull
 intDivOrZero
 intExp
 intHash
@@ -2259,6 +2261,7 @@ mmap
 mmapped
 modularization
 moduli
+moduloOrNull
 moduloOrZero
 mongoc
 mongocxx
@@ -2471,6 +2474,7 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF
 positionUTF
 positiveModulo
+positiveModuloOrNull
 postfix
 postfixes
 postgres

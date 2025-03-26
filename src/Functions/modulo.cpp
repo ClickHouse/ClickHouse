@@ -158,6 +158,15 @@ REGISTER_FUNCTION(Modulo)
     factory.registerAlias("mod", "modulo", FunctionFactory::Case::Insensitive);
 }
 
+struct NameModuloOrNull { static constexpr auto name = "moduloOrNull"; };
+using FunctionModuloOrNull = BinaryArithmeticOverloadResolver<ModuloOrNullImpl, NameModuloOrNull, false>;
+
+REGISTER_FUNCTION(ModuloOrNull)
+{
+    factory.registerFunction<FunctionModuloOrNull>();
+    factory.registerAlias("modOrNull", "moduloOrNull", FunctionFactory::Case::Insensitive);
+}
+
 struct NameModuloLegacy { static constexpr auto name = "moduloLegacy"; };
 using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, NameModuloLegacy, false>;
 
@@ -188,6 +197,28 @@ In other words, the function returning the modulus (modulo) in the terms of Modu
     factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::Case::Insensitive);
     /// Compatibility with Spark:
     factory.registerAlias("pmod", "positiveModulo", FunctionFactory::Case::Insensitive);
+}
+
+struct NamePositiveModuloOrNull
+{
+    static constexpr auto name = "positiveModuloOrNull";
+};
+using FunctionPositiveModuloOrNll = BinaryArithmeticOverloadResolver<PositiveModuloOrNullImpl, NamePositiveModuloOrNull, false>;
+
+REGISTER_FUNCTION(PositiveModuloOrNull)
+{
+    factory.registerFunction<FunctionPositiveModuloOrNll>(FunctionDocumentation
+        {
+            .description = R"(
+Calculates the remainder when dividing `a` by `b`. Similar to function `positiveModulo` except that `positiveModuloOrNull` will return NULL
+if the right argument is 0.
+        )",
+            .examples{{"positiveModuloOrNull", "SELECT positiveModuloOrNull(-1, 0);", ""}},
+            .category{"Arithmetic"}},
+        FunctionFactory::Case::Insensitive);
+
+    factory.registerAlias("positive_modulo_or_null", "positiveModuloOrNull", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("pmodOrNull", "positiveModuloOrNull", FunctionFactory::Case::Insensitive);
 }
 
 }
