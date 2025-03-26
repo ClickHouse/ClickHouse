@@ -120,7 +120,7 @@ Vector similarity indexes are built during column insertion and merge. The HNSW 
 are ideally used only with immutable or rarely changed data, respectively when are far more read requests than write requests. Three
 additional techniques are recommended to speed up index creation:
 - Index creation can be parallelized. The maximum number of threads can be configured using server setting
-  [max_build_vector_similarity_index_thread_pool_size](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size).
+  [max_build_vector_similarity_index_thread_pool_size](/operations/server-configuration-parameters/settings#max_build_vector_similarity_index_thread_pool_size).
   It is recommended to configure the setting to the number of CPU cores of the machine.
 - Index creation on newly inserted parts may be disabled using session setting
   [`materialize_skip_indexes_on_insert`](../../../operations/settings/settings.md). Searches on such parts will fall back to exact search
