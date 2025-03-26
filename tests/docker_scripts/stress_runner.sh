@@ -71,20 +71,56 @@ stop_server
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
 
 # Randomize cache policies.
-cache_policy=""
-if [ $((RANDOM % 2)) -eq 1 ]; then
-    cache_policy="SLRU"
+file_cache_policy=""
+if [ $((RANDOM % 3)) -eq 1 ]; then
+    file_cache_policy="SLRU"
+elif [ $((RANDOM % 3)) -eq 2 ]; then
+    file_cache_policy="SIEVE"
 else
-    cache_policy="LRU"
+    file_cache_policy="LRU"
 fi
 
-echo "Using cache policy: $cache_policy"
+echo "Using file cache policy: $file_cache_policy"
 
-if [ "$cache_policy" = "SLRU" ]; then
+if [ "$file_cache_policy" = "SLRU" ]; then
     sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
     | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
     > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
     mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+fi
+
+cache_policy=""
+if [ $((RANDOM % 3)) -eq 0 ]; then
+    cache_policy="SLRU"
+elif [ $((RANDOM % 3)) -eq 1 ]; then
+    cache_policy="LRU"
+else
+    cache_policy="SIEVE"
+fi
+echo "Using cache policy: $cache_policy"
+
+if [ "$cache_policy" = "LRU" ]; then
+    sudo cat /etc/clickhouse-server/config.d/cache_policy.xml \
+    | sed "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>LRU</mark_cache_policy>|" \
+    > /etc/clickhouse-server/config.d/cache_policy.xml.tmp
+    mv /etc/clickhouse-server/config.d/cache_policy.xml.tmp /etc/clickhouse-server/config.d/cache_policy.xml
+
+    sudo cat /etc/clickhouse-server/config.d/cache_policy.xml \
+    | sed "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>LRU</uncompressed_cache_policy>|" \
+    > /etc/clickhouse-server/config.d/cache_policy.xml.tmp
+    mv /etc/clickhouse-server/config.d/cache_policy.xml.tmp /etc/clickhouse-server/config.d/cache_policy.xml
+fi
+
+if [ "$cache_policy" = "SIEVE" ]; then
+    sudo cat /etc/clickhouse-server/config.d/cache_policy.xml \
+    | sed "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>SIEVE</mark_cache_policy>|" \
+    > /etc/clickhouse-server/config.d/cache_policy.xml.tmp
+    mv /etc/clickhouse-server/config.d/cache_policy.xml.tmp /etc/clickhouse-server/config.d/cache_policy.xml
+
+    sudo cat /etc/clickhouse-server/config.d/cache_policy.xml \
+    | sed "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>SIEVE</uncompressed_cache_policy>|" \
+    > /etc/clickhouse-server/config.d/cache_policy.xml.tmp
+    mv /etc/clickhouse-server/config.d/cache_policy.xml.tmp /etc/clickhouse-server/config.d/cache_policy.xml
 fi
 
 # Disable experimental WINDOW VIEW tests for stress tests, since they may be
@@ -250,11 +286,35 @@ sudo cat /etc/clickhouse-server/config.d/logger_trace.xml \
    > /etc/clickhouse-server/config.d/logger_trace.xml.tmp
 mv /etc/clickhouse-server/config.d/logger_trace.xml.tmp /etc/clickhouse-server/config.d/logger_trace.xml
 
-if [ "$cache_policy" = "SLRU" ]; then
+if [ "$file_cache_policy" = "SLRU" ]; then
     sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
     | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
     > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
     mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+fi
+
+if [ "$cache_policy" = "LRU" ]; then
+    sudo cat /etc/clickhouse-server/config.d/cache_policy.xml \
+    | sed "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>LRU</mark_cache_policy>|" \
+    > /etc/clickhouse-server/config.d/cache_policy.xml.tmp
+    mv /etc/clickhouse-server/config.d/cache_policy.xml.tmp /etc/clickhouse-server/config.d/cache_policy.xml
+
+    sudo cat /etc/clickhouse-server/config.d/cache_policy.xml \
+    | sed "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>LRU</uncompressed_cache_policy>|" \
+    > /etc/clickhouse-server/config.d/cache_policy.xml.tmp
+    mv /etc/clickhouse-server/config.d/cache_policy.xml.tmp /etc/clickhouse-server/config.d/cache_policy.xml
+fi
+
+if [ "$cache_policy" = "SIEVE" ]; then
+    sudo cat /etc/clickhouse-server/config.d/cache_policy.xml \
+    | sed "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>SIEVE</mark_cache_policy>|" \
+    > /etc/clickhouse-server/config.d/cache_policy.xml.tmp
+    mv /etc/clickhouse-server/config.d/cache_policy.xml.tmp /etc/clickhouse-server/config.d/cache_policy.xml
+
+    sudo cat /etc/clickhouse-server/config.d/cache_policy.xml \
+    | sed "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>SIEVE</uncompressed_cache_policy>|" \
+    > /etc/clickhouse-server/config.d/cache_policy.xml.tmp
+    mv /etc/clickhouse-server/config.d/cache_policy.xml.tmp /etc/clickhouse-server/config.d/cache_policy.xml
 fi
 
 # Randomize async_load_databases
