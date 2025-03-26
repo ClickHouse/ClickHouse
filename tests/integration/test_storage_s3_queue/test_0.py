@@ -441,10 +441,10 @@ def test_streaming_to_many_views(started_cluster, mode):
     expect_rows_num = [0]
     files = []
 
-    def generate_files(files_num=20, row_num=100):
+    def generate_files(files_num=20, row_num=100, file_prefix = "a"):
         files.extend(
             [
-                (f"{files_path}/test_{i}.csv", i)
+                (f"{files_path}/{file_prefix}_{i}.csv", i)
                 for i in range(start_idx[0], start_idx[0] + files_num)
             ]
         )
@@ -502,7 +502,7 @@ def test_streaming_to_many_views(started_cluster, mode):
         format="column1 String, column2 JSON",
     )
 
-    generate_files()
+    generate_files(file_prefix = "b")
     rows_from_last_insert = 100 * 20
     # we expect duplicates, but exactly certain amount,
     # which must stop once loading retries limit is reached.
@@ -514,16 +514,16 @@ def test_streaming_to_many_views(started_cluster, mode):
     check([broken_dst_table], 0, 0)
 
     for i in range(20, 40):
-        log_message = f"File {files_path}/test_{i}.csv failed at try 2/2, retries node exists: true"
+        log_message = f"File {files_path}/b_{i}.csv failed at try 2/2, retries node exists: true"
         assert node.contains_in_log(
             log_message
-        ), f"Cannot find log message 1 for path {files_path}/test_{i}.csv: {log_message}"
+        ), f"Cannot find log message 1 for path {files_path}/b_{i}.csv: {log_message}"
         log_message = (
-            f"File {files_path}/test_{i}.csv failed to process and will not be retried"
+            f"File {files_path}/b_{i}.csv failed to process and will not be retried"
         )
         assert node.contains_in_log(
             log_message
-        ), f"Cannot find log message 2 for path {files_path}/test_{i}.csv: {log_message}"
+        ), f"Cannot find log message 2 for path {files_path}/b_{i}.csv: {log_message}"
 
 
 def test_multiple_tables_meta_mismatch(started_cluster):
