@@ -8,7 +8,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-
+from helpers.config_cluster import rabbitmq_username, rabbitmq_password
 
 DEFAULT_TIMEOUT_SEC = 60
 
@@ -16,7 +16,6 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=[
-        "configs/rabbitmq.xml",
         "configs/macros.xml",
         "configs/named_collection.xml",
     ],
@@ -35,7 +34,6 @@ instance3 = cluster.add_instance(
     "instance3",
     user_configs=["configs/users.xml"],
     main_configs=[
-        "configs/rabbitmq.xml",
         "configs/macros.xml",
         "configs/named_collection.xml",
         "configs/mergetree.xml",
@@ -101,7 +99,7 @@ def rabbitmq_setup_teardown():
 
 def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         DROP TABLE IF EXISTS test.consume;
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree
@@ -109,6 +107,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
         CREATE TABLE test.consume (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_flush_interval_ms=500,
                      rabbitmq_max_block_size = 100,
                      rabbitmq_exchange_name = 'producer_reconnect',
@@ -121,6 +121,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
         CREATE TABLE test.producer_reconnect (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'producer_reconnect',
                      rabbitmq_persistent = '1',
                      rabbitmq_flush_interval_ms=1000,
@@ -129,7 +131,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials("rabbitmq", "ClickHouse_RabbitMQ_P@ssw0rd")
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -196,11 +198,13 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
 def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     logging.getLogger("pika").propagate = False
     instance.query(
-        """
+        f"""
         CREATE TABLE test.consumer_reconnect (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'consumer_reconnect',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_num_consumers = 10,
                      rabbitmq_flush_interval_ms = 100,
                      rabbitmq_max_block_size = 100,
@@ -213,7 +217,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     i = 0
     messages_num = 150000
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials("rabbitmq", "ClickHouse_RabbitMQ_P@ssw0rd")
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
