@@ -1115,7 +1115,7 @@ CREATE TABLE system.tables
     `create_table_query` String,
     `engine_full` String,
     `as_select` String,
-    `parametrized_view_paramters` Array(Tuple(
+    `parameterized_view_parameters` Array(Tuple(
         name String,
         type String)),
     `partition_key` String,
@@ -1163,7 +1163,7 @@ CREATE TABLE system.users
     `name` String,
     `id` UUID,
     `storage` String,
-    `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10)),
+    `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10, 'scram_sha256_password' = 11)),
     `auth_params` Array(String),
     `host_ip` Array(String),
     `host_names` Array(String),
