@@ -252,6 +252,10 @@ In Clickhouse the behavior is consistent with Spark. You can mentally replace Sp
 
 `Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).
 
+## Metadata cahce {#metadata-cache}
+
+`Iceberg` table engine and table function support metadata cache storing the information of manifest files, manifest list and metadata json. This feature is controlled by setting `use_iceberg_metadata_files_cache`, which is enabled by default.
+
 ## See also {#see-also}
 
 - [iceberg table function](/sql-reference/table-functions/iceberg.md)
