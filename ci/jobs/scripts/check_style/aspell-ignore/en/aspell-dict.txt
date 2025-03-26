@@ -795,7 +795,6 @@ ParallelParsingInputFormat
 ParallelParsingInputFormatThreads
 ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
-Parametrized
 ParquetCompression
 ParquetMetadata
 ParquetVersion
@@ -2093,8 +2092,8 @@ kRing
 kafka
 kafkaMurmurHash
 kafkacat
-keccak
 kbytes
+keccak
 keepalive
 keepermap
 kerberized
@@ -2568,6 +2567,7 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
+quantized
 quartile
 queryID
 queryString
@@ -2699,6 +2699,7 @@ runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
+runtimes
 russian
 rustc
 rustup
@@ -2943,6 +2944,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+tmpfs
 toBFloat
 toBool
 toColumnTypeName
@@ -3070,7 +3072,6 @@ tryPunycodeDecode
 tskv
 tsv
 tui
-tmpfs
 tukey
 tumbleEnd
 tumbleStart

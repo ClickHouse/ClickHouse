@@ -1581,7 +1581,7 @@ Lower values mean higher priority. Threads with low `nice` priority values are e
     DECLARE(Bool, log_queries, true, R"(
 Setting up query logging.
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#query-log) server configuration parameter.
+Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#query_log) server configuration parameter.
 
 Example:
 
@@ -4107,7 +4107,7 @@ Allows to ignore errors for MATERIALIZED VIEW, and deliver original block to the
     DECLARE(Bool, ignore_materialized_views_with_dropped_target_table, false, R"(
 Ignore MVs with dropped target table during pushing to views
 )", 0) \
-    DECLARE(Bool, allow_materialized_view_with_bad_select, true, R"(
+    DECLARE(Bool, allow_materialized_view_with_bad_select, false, R"(
 Allow CREATE MATERIALIZED VIEW with SELECT query that references nonexistent tables or columns. It must still be syntactically valid. Doesn't apply to refreshable MVs. Doesn't apply if the MV schema needs to be inferred from the SELECT query (i.e. if the CREATE has no column list and no TO table). Can be used for creating MV before its source table.
 )", 0) \
     DECLARE(Bool, use_compact_format_in_distributed_parts_names, true, R"(
@@ -4820,7 +4820,7 @@ Possible values:
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \
     DECLARE(Bool, use_query_condition_cache, false, R"(
-Enable the query condition cache. The cache stores ranges of granules in data parts which satisfy the condition in `WHERE` clause,
+Enable the [query condition cache](/operations/query-condition-cache). The cache stores ranges of granules in data parts which do not satisfy the condition in the `WHERE` clause,
 and reuse this information as an ephemeral index for subsequent queries.
 
 Possible values:
@@ -4974,7 +4974,7 @@ Possible values:
 - 0 — Unlimited.
 )", 0) \
     DECLARE(Bool, database_replicated_enforce_synchronous_settings, false, R"(
-Enforces synchronous waiting for some queries (see also database_atomic_wait_for_drop_and_detach_synchronously, mutation_sync, alter_sync). Not recommended to enable these settings.
+Enforces synchronous waiting for some queries (see also database_atomic_wait_for_drop_and_detach_synchronously, mutations_sync, alter_sync). Not recommended to enable these settings.
 )", 0) \
     DECLARE(UInt64, max_distributed_depth, 5, R"(
 Limits the maximum depth of recursive queries for [Distributed](../../engines/table-engines/special/distributed.md) tables.
