@@ -32,6 +32,7 @@
 #include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexLegacyVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
@@ -1646,8 +1647,15 @@ static void buildIndexes(
             condition = index_helper->createIndexCondition(filter_actions_dag, context);
         }
 
-        if (!condition->alwaysUnknownOrTrue())
+        if (const auto * bloom_filter_index_condition = dynamic_cast<const MergeTreeIndexConditionBloomFilter *>(condition.get()))
+        {
+            if (bloom_filter_index_condition->isIndexUseful())
+                skip_indexes.useful_indices.emplace_back(index_helper, condition);
+        }
+        else if (!condition->alwaysUnknownOrTrue())
+        {
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
+        }
     }
 
     // move minmax indices to first positions, so they will be applied first as cheapest ones

@@ -33,6 +33,57 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+enum class RPNEvaluationIndexUsefulnessState : uint8_t
+{
+    // the following states indicate if the index might be useful
+    TRUE,
+    FALSE,
+    // the following states indicate RPN always evaluates to TRUE or FALSE, they are used for short-circuit.
+    ALWAYS_TRUE,
+    ALWAYS_FALSE
+};
+
+RPNEvaluationIndexUsefulnessState evalAndRpnIndexStates(const RPNEvaluationIndexUsefulnessState & lhs, const RPNEvaluationIndexUsefulnessState & rhs)
+{
+    if (lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE || rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE)
+    {
+        // short circuit
+        return RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::TRUE || rhs == RPNEvaluationIndexUsefulnessState::TRUE)
+    {
+        return RPNEvaluationIndexUsefulnessState::TRUE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::FALSE || rhs == RPNEvaluationIndexUsefulnessState::FALSE)
+    {
+        return RPNEvaluationIndexUsefulnessState::FALSE;
+    }
+    chassert(lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE && rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE);
+    return RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE;
+    }
+
+    RPNEvaluationIndexUsefulnessState evalOrRpnIndexStates(const RPNEvaluationIndexUsefulnessState & lhs, const RPNEvaluationIndexUsefulnessState & rhs)
+    {
+        if (lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE || rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE)
+        {
+            // short circuit
+            return RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE;
+        }
+        else if (lhs == RPNEvaluationIndexUsefulnessState::TRUE || rhs == RPNEvaluationIndexUsefulnessState::TRUE)
+        {
+            return RPNEvaluationIndexUsefulnessState::TRUE;
+        }
+        else if (lhs == RPNEvaluationIndexUsefulnessState::FALSE || rhs == RPNEvaluationIndexUsefulnessState::FALSE)
+        {
+            return RPNEvaluationIndexUsefulnessState::FALSE;
+        }
+        chassert(lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE && rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE);
+        return RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE;
+    }
+    }
+
 MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
     : bits_per_row(bits_per_row_), hash_functions(hash_functions_), bloom_filters(index_columns_)
 {
@@ -323,6 +374,60 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::mayBeTrueInRange");
 
     return rpn_stack[0].can_be_true;
+}
+
+bool MergeTreeIndexConditionBloomFilter::isIndexUseful() const
+{
+    std::vector<RPNEvaluationIndexUsefulnessState> rpn_stack;
+    rpn_stack.reserve(rpn.size() - 1);
+
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::ALWAYS_TRUE)
+        {
+            rpn_stack.emplace_back(RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE);
+        }
+        else if (element.function == RPNElement::ALWAYS_FALSE)
+        {
+            rpn_stack.emplace_back(RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE);
+        }
+        else if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        {
+            rpn_stack.emplace_back(RPNEvaluationIndexUsefulnessState::FALSE);
+        }
+        else if (
+            element.function == RPNElement::FUNCTION_EQUALS || element.function == RPNElement::FUNCTION_NOT_EQUALS
+            || element.function == RPNElement::FUNCTION_HAS || element.function == RPNElement::FUNCTION_HAS_ANY
+            || element.function == RPNElement::FUNCTION_HAS_ALL || element.function == RPNElement::FUNCTION_IN
+            || element.function == RPNElement::FUNCTION_NOT_IN)
+        {
+            rpn_stack.push_back(RPNEvaluationIndexUsefulnessState::TRUE);
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT)
+        {
+            // do nothing
+        }
+        else if (element.function == RPNElement::FUNCTION_AND)
+        {
+            auto lhs = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto rhs = rpn_stack.back();
+            rpn_stack.back() = evalAndRpnIndexStates(lhs, rhs);
+        }
+        else if (element.function == RPNElement::FUNCTION_OR)
+        {
+            auto lhs = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto rhs = rpn_stack.back();
+            rpn_stack.back() = evalOrRpnIndexStates(lhs, rhs);
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+
+    }
+
+    chassert(rpn_stack.size() == 1);
+    return rpn_stack.front() == RPNEvaluationIndexUsefulnessState::TRUE;
 }
 
 bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
