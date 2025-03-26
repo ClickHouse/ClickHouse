@@ -92,7 +92,7 @@ void RabbitMQHandler::updateLoopState(UInt8 state)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Loop is already in state RUN");
     }
 
-    LOG_TRACE(log, "Updaing loop state from {} to {}", toString(loop_state.load()), toString(state));
+    LOG_TRACE(log, "Updating loop state from {} to {}", toString(loop_state.load()), toString(state));
     loop_state.store(state);
 }
 
