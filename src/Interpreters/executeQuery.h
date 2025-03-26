@@ -46,6 +46,17 @@ void executeQuery(
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {} /// If a non-empty callback is passed, it will be called on exception with created output format.
 );
 
+struct QueryAndPlan
+{
+    std::string_view query;
+    std::shared_ptr<QueryPlanAndSets> query_plan;
+
+    QueryAndPlan(const std::string & query_) : query(query_) {} // NOLINT(google-explicit-constructor)
+    QueryAndPlan(const char * query_) : query(query_) {} // NOLINT(google-explicit-constructor)
+    QueryAndPlan(std::string_view query_) : query(query_) {} // NOLINT(google-explicit-constructor)
+    QueryAndPlan(std::string_view query_, std::shared_ptr<QueryPlanAndSets> query_plan_) : query(query_), query_plan(std::move(query_plan_)) {}
+};
+
 
 /// More low-level function for server-to-server interaction.
 /// Prepares a query for execution but doesn't execute it.
@@ -62,8 +73,9 @@ void executeQuery(
 /// Correctly formatting the results (according to INTO OUTFILE and FORMAT sections)
 /// must be done separately.
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const String & query, /// Query text without INSERT data. The latter must be written to BlockIO::out.
-    const std::shared_ptr<QueryPlanAndSets> & query_plan,
+    /// Query text without INSERT data. The latter must be written to BlockIO::out.
+    /// May contain QueryPlan, in this case the plan is being executed
+    QueryAndPlan query_and_plan,
     ContextMutablePtr context,       /// DB, tables, data types, storage engines, functions, aggregate functions...
     QueryFlags flags = {},
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.

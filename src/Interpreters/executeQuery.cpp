@@ -1623,7 +1623,7 @@ static BlockIO executeQueryImpl(
 static std::pair<ASTPtr, BlockIO> executeQueryImpl(
     ContextMutablePtr context,
     QueryFlags flags,
-    const String & query,
+    std::string_view query,
     const std::shared_ptr<QueryPlanAndSets> & query_plan)
 {
     /// Used for logging query start time in system.query_log
@@ -1669,14 +1669,14 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
         }
         else
         {
-            query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length);
+            query_for_logging = wipeSensitiveDataAndCutToLength(std::string(query), log_queries_cut_to_length);
         }
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
     }
     catch (...)
     {
-        query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length);
+        query_for_logging = wipeSensitiveDataAndCutToLength(std::string(query), log_queries_cut_to_length);
         logQuery(query_for_logging, context, internal, QueryProcessingStage::QueryPlan);
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
@@ -1937,8 +1937,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
 }
 
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const String & query,
-    const std::shared_ptr<QueryPlanAndSets> & query_plan,
+    QueryAndPlan query_and_plan,
     ContextMutablePtr context,
     QueryFlags flags,
     QueryProcessingStage::Enum stage)
@@ -1946,10 +1945,15 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     ASTPtr ast;
     BlockIO res;
 
-    if (stage == QueryProcessingStage::QueryPlan)
-        std::tie(ast, res) = executeQueryImpl(context, flags, query, query_plan);
+    if (query_and_plan.query_plan)
+    {
+        std::tie(ast, res) = executeQueryImpl(context, flags, query_and_plan.query, query_and_plan.query_plan);
+    }
     else
+    {
+        const auto & query = query_and_plan.query;
         res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr, ast);
+    }
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {

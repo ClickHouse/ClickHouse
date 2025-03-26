@@ -122,7 +122,7 @@ ORDER BY index_type, expression, seq_in_index;)", database, table, where_express
 
 BlockIO InterpreterShowIndexesQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), nullptr, getContext(), QueryFlags{ .internal = true }).second;
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 void registerInterpreterShowIndexesQuery(InterpreterFactory & factory)
