@@ -26,7 +26,7 @@ create workload invalid in all settings max_io_requests = 1.5; -- {serverError B
 create or replace workload all in production; -- {serverError BAD_ARGUMENTS}
 
 -- Test CREATE OR REPLACE WORKLOAD
-create or replace workload all settings max_io_requests = 200 for 03232_write, max_io_requests = 100 for 03232_read;
+create or replace workload all settings max_io_requests = 200 for 03232_write, max_io_requests = 100 for 03232_read, max_concurrent_threads = 16, max_concurrent_threads_ratio_to_cores = 2.5;
 create or replace workload admin in all settings priority = 1;
 create or replace workload admin in all settings priority = 2;
 create or replace workload admin in all settings priority = 0;

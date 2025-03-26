@@ -206,7 +206,7 @@ To customize workload the following settings could be used:
 * `max_bytes_inflight` - the limit on the total inflight bytes for concurrent requests in this workload.
 * `max_bytes_per_second` - the limit on byte read or write rate of this workload.
 * `max_burst_bytes` - maximum number of bytes that could be processed by the workload without being throttled (for every resource independently).
-* `max_concurrent_threads` - the limit on the number of additional threads for queries in this workload. The first thread of a query is not counted towards this limit.
+* `max_concurrent_threads` - the limit on the number of threads for queries in this workload.
 
 All limit specified through workload settings are independent for every resource. For example workload with `max_bytes_per_second = 10485760` will have 10 MB/s bandwidth limit for every read and write resource independently. If common limit for reading and writing is required, consider using the same resource for READ and WRITE access.
 

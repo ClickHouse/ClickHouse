@@ -1,4 +1,5 @@
 #include <limits>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Parsers/ASTSetQuery.h>
@@ -60,19 +61,20 @@ Int64 WorkloadSettings::getSemaphoreMaxCost() const
     }
 }
 
-void WorkloadSettings::updateFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name, bool throw_on_unknown_setting)
+void WorkloadSettings::initFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name, bool throw_on_unknown_setting)
 {
     // Set resource unit
     unit = unit_;
 
     struct {
-        std::optional<Float64> new_weight;
-        std::optional<Priority> new_priority;
-        std::optional<Float64> new_max_bytes_per_second;
-        std::optional<Float64> new_max_burst_bytes;
-        std::optional<Int64> new_max_io_requests;
-        std::optional<Int64> new_max_bytes_inflight;
-        std::optional<Int64> new_max_concurrent_threads;
+        std::optional<Float64> weight;
+        std::optional<Priority> priority;
+        std::optional<Float64> max_bytes_per_second;
+        std::optional<Float64> max_burst_bytes;
+        std::optional<Int64> max_io_requests;
+        std::optional<Int64> max_bytes_inflight;
+        std::optional<Int64> max_concurrent_threads;
+        std::optional<Float64> max_concurrent_threads_ratio_to_cores;
 
         static Float64 getNotNegativeFloat64(const String & name, const Field & field)
         {
@@ -125,19 +127,21 @@ void WorkloadSettings::updateFromChanges(Unit unit_, const ASTCreateWorkloadQuer
         {
             // Note that the second workload setting name options are provided for backward-compatibility
             if (name == "weight")
-                new_weight = getNotNegativeFloat64(name, value);
+                weight = getNotNegativeFloat64(name, value);
             else if (name == "priority")
-                new_priority = Priority{value.safeGet<Priority::Value>()};
+                priority = Priority{value.safeGet<Priority::Value>()};
             else if (name == "max_bytes_per_second" || name == "max_speed")
-                new_max_bytes_per_second = getNotNegativeFloat64(name, value);
+                max_bytes_per_second = getNotNegativeFloat64(name, value);
             else if (name == "max_burst_bytes" || name == "max_burst")
-                new_max_burst_bytes = getNotNegativeFloat64(name, value);
+                max_burst_bytes = getNotNegativeFloat64(name, value);
             else if (name == "max_io_requests" || name == "max_requests")
-                new_max_io_requests = getNotNegativeInt64(name, value);
+                max_io_requests = getNotNegativeInt64(name, value);
             else if (name == "max_bytes_inflight" || name == "max_cost")
-                new_max_bytes_inflight = getNotNegativeInt64(name, value);
+                max_bytes_inflight = getNotNegativeInt64(name, value);
             else if (name == "max_concurrent_threads")
-                new_max_concurrent_threads = getNotNegativeInt64(name, value);
+                max_concurrent_threads = getNotNegativeInt64(name, value);
+            else if (name == "max_concurrent_threads_ratio_to_cores")
+                max_concurrent_threads_ratio_to_cores = getNotNegativeFloat64(name, value);
             else if (throw_on_unknown_setting)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown workload setting '{}'", name);
         }
@@ -152,37 +156,52 @@ void WorkloadSettings::updateFromChanges(Unit unit_, const ASTCreateWorkloadQuer
             specific.read(name, value, throw_on_unknown_setting);
     }
 
-    auto get_value = [] <typename T> (const std::optional<T> & specific_new, const std::optional<T> & regular_new, T & old)
+    // Regular values are used for all resources, while specific values are from setting having 'FOR resource' clause and has priority over regular
+    auto get_value = [] <typename T> (const std::optional<T> & specific_value, const std::optional<T> & regular_value, T default_value)
     {
-        if (specific_new)
-            return *specific_new;
-        if (regular_new)
-            return *regular_new;
-        return old;
+        if (specific_value)
+            return *specific_value;
+        if (regular_value)
+            return *regular_value;
+        return default_value;
     };
 
     // Validate that we could use values read in a scheduler node
     {
         SchedulerNodeInfo validating_node(
-            get_value(specific.new_weight, regular.new_weight, weight),
-            get_value(specific.new_priority, regular.new_priority, priority));
+            get_value(specific.weight, regular.weight, weight),
+            get_value(specific.priority, regular.priority, priority));
     }
 
-    // Commit new values.
+    // Choose values for given resource.
     // Previous values are left intentionally for ALTER query to be able to skip not mentioned setting values
-    weight = get_value(specific.new_weight, regular.new_weight, weight);
-    priority = get_value(specific.new_priority, regular.new_priority, priority);
-    if (specific.new_max_bytes_per_second || regular.new_max_bytes_per_second)
+    weight = get_value(specific.weight, regular.weight, weight);
+    priority = get_value(specific.priority, regular.priority, priority);
+    if (specific.max_bytes_per_second || regular.max_bytes_per_second)
     {
-        max_bytes_per_second = get_value(specific.new_max_bytes_per_second, regular.new_max_bytes_per_second, max_bytes_per_second);
+        max_bytes_per_second = get_value(specific.max_bytes_per_second, regular.max_bytes_per_second, max_bytes_per_second);
         // We always set max_burst_bytes if max_bytes_per_second is changed.
         // This is done for users to be able to ignore more advanced max_burst_bytes setting and rely only on max_bytes_per_second
         max_burst_bytes = default_burst_seconds * max_bytes_per_second;
     }
-    max_burst_bytes = get_value(specific.new_max_burst_bytes, regular.new_max_burst_bytes, max_burst_bytes);
-    max_io_requests = get_value(specific.new_max_io_requests, regular.new_max_io_requests, max_io_requests);
-    max_bytes_inflight = get_value(specific.new_max_bytes_inflight, regular.new_max_bytes_inflight, max_bytes_inflight);
-    max_concurrent_threads = get_value(specific.new_max_concurrent_threads, regular.new_max_concurrent_threads, max_concurrent_threads);
+    max_burst_bytes = get_value(specific.max_burst_bytes, regular.max_burst_bytes, max_burst_bytes);
+    max_io_requests = get_value(specific.max_io_requests, regular.max_io_requests, max_io_requests);
+    max_bytes_inflight = get_value(specific.max_bytes_inflight, regular.max_bytes_inflight, max_bytes_inflight);
+
+    // Compute concurrent thread limit as minimum of two possible values: (1) exact limit and (2) ratio to cores limit.
+    // Zero setting value means unlimited number of threads.
+    Int64 limit = unlimited;
+    Int64 exact_number = get_value(specific.max_concurrent_threads, regular.max_concurrent_threads, 0l);
+    Float64 ratio_to_cores = get_value(specific.max_concurrent_threads_ratio_to_cores, regular.max_concurrent_threads_ratio_to_cores, 0.0);
+    if (exact_number > 0 && exact_number < limit)
+        limit = exact_number;
+    if (ratio_to_cores > 0)
+    {
+        Int64 value = static_cast<Int64>(ratio_to_cores * getNumberOfCPUCoresToUse());
+        if (value > 0 && value < limit)
+            limit = value;
+    }
+    max_concurrent_threads = limit;
 }
 
 }

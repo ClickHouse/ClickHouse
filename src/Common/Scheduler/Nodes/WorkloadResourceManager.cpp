@@ -54,7 +54,7 @@ WorkloadResourceManager::NodeInfo::NodeInfo(WorkloadSettings::Unit unit, const A
     parent = create->getWorkloadParent();
     // We ignore unknown settings here for forward-compatibility.
     // There is no way to report error at this point other than stop server.
-    settings.updateFromChanges(unit, create->changes, resource_name, /*throw_on_unknown_setting=*/ false);
+    settings.initFromChanges(unit, create->changes, resource_name, /*throw_on_unknown_setting=*/ false);
 }
 
 WorkloadResourceManager::Resource::Resource(const ASTPtr & resource_entity_)

@@ -30,7 +30,7 @@ struct WorkloadSettings
     /// Limits total bytes in-inflight for concurrent IO resource requests
     Int64 max_bytes_inflight = unlimited;
 
-    /// Limits total number of additional query threads (the first main thread is not counted)
+    /// Limits total number of query threads (the first main thread is not counted)
     Int64 max_concurrent_threads = unlimited;
 
     /// Settings that are applied depend on cost unit
@@ -47,7 +47,8 @@ struct WorkloadSettings
     Int64 getSemaphoreMaxRequests() const;
     Int64 getSemaphoreMaxCost() const;
 
-    void updateFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {}, bool throw_on_unknown_setting = true);
+    // Should be called after default constructor
+    void initFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {}, bool throw_on_unknown_setting = true);
 };
 
 }
