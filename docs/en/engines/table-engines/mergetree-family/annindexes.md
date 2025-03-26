@@ -314,7 +314,7 @@ FROM system.metrics
 WHERE metric = 'VectorSimilarityIndexCacheSize'
 ```
 
-The cache hits and misses for a query with some query id can be obtained from [system.query_log](../../../operations/system-tables/query-log.md):
+The cache hits and misses for a query with some query id can be obtained from [system.query_log](../../../operations/system-tables/query_log.md):
 
 ```sql
 SYSTEM FLUSH LOGS query_log;
