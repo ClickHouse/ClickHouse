@@ -2,7 +2,6 @@
 #include <mutex>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
@@ -57,17 +56,17 @@ void StorageSystemIcebergHistory::fillData(MutableColumns & res_columns, Context
 
         if (auto *iceberg_metadata = dynamic_cast<IcebergMetadata *>(current_metadata.get()))
         {
-            std::vector<Iceberg::IcebergHistory> iceberg_history = iceberg_metadata->getHistory();
+            std::vector<Iceberg::IcebergHistory> iceberg_history_items = iceberg_metadata->getHistory();
 
-            for (unsigned int i=0; i < iceberg_history.size(); i++)
+            for (auto & iceberg_history_item : iceberg_history_items)
             {
                 size_t column_index = 0;
                 res_columns[column_index++]->insert(it->databaseName());
                 res_columns[column_index++]->insert(it->name());
-                res_columns[column_index++]->insert(iceberg_history[i].made_current_at);
-                res_columns[column_index++]->insert(iceberg_history[i].snapshot_id);
-                res_columns[column_index++]->insert(iceberg_history[i].parent_id);
-                res_columns[column_index++]->insert(iceberg_history[i].is_current_ancestor);
+                res_columns[column_index++]->insert(iceberg_history_item.made_current_at);
+                res_columns[column_index++]->insert(iceberg_history_item.snapshot_id);
+                res_columns[column_index++]->insert(iceberg_history_item.parent_id);
+                res_columns[column_index++]->insert(iceberg_history_item.is_current_ancestor);
             }
         }
 
