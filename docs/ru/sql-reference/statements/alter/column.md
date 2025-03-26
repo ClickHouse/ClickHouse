@@ -246,7 +246,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 **Смотрите также**
 
-- [MATERIALIZED](../../statements/create/table.md#materialized).
+- [MATERIALIZED](/sql-reference/statements/create/view#materialized-view).
 
 ## Ограничения запроса ALTER {#ogranicheniia-zaprosa-alter}
 

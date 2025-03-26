@@ -345,7 +345,7 @@ FROM
 
 ## 运行差异启动与第一值 {#runningdifferencestartingwithfirstvalue}
 
-与[运行差异](./other-functions.md#other_functions-runningdifference)相同，区别在于第一行返回第一行的值，后续每个后续行返回与上一行的差值。
+与[运行差异](/sql-reference/functions/other-functions#runningDifference)相同，区别在于第一行返回第一行的值，后续每个后续行返回与上一行的差值。
 
 ## MACNumToString(num) {#macnumtostringnum}
 

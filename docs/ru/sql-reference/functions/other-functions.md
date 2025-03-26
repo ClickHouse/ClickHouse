@@ -983,7 +983,7 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-То же, что и [runningDifference](./other-functions.md#other_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
+То же, что и [runningDifference](/sql-reference/functions/other-functions#runningDifference), но в первой строке возвращается значение первой строки, а не ноль.
 
 ## runningConcurrency {#runningconcurrency}
 
@@ -1731,7 +1731,7 @@ SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number as k, sumState(k) 
 └───┴─────┘
 ```
 
-Подзапрос формирует `sumState` для каждого числа от `0` до `9`. `sumState` возвращает состояние функции [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), содержащее сумму одного числа.
+Подзапрос формирует `sumState` для каждого числа от `0` до `9`. `sumState` возвращает состояние функции [sum](/sql-reference/aggregate-functions/reference/sum), содержащее сумму одного числа.
 
 Весь запрос делает следующее:
 
@@ -2273,7 +2273,7 @@ defaultProfiles()
 
 ## currentRoles {#current-roles}
 
-Возвращает список текущих ролей для текущего пользователя. Список ролей пользователя можно изменить с помощью выражения [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement). Если выражение `SET ROLE` не использовалось, данная функция возвращает тот же результат, что и функция [defaultRoles](#default-roles).
+Возвращает список текущих ролей для текущего пользователя. Список ролей пользователя можно изменить с помощью выражения [SET ROLE](/sql-reference/statements/set-role). Если выражение `SET ROLE` не использовалось, данная функция возвращает тот же результат, что и функция [defaultRoles](#default-roles).
 
 **Синтаксис**
 
@@ -2305,7 +2305,7 @@ enabledRoles()
 
 ## defaultRoles {#default-roles}
 
-Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant.md#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement).
+Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant.md#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](/sql-reference/statements/set-role#set-default-role).
 
 **Синтаксис**
 

@@ -86,8 +86,8 @@ class WriteBuffer;
     M(CLASS_NAME, ParallelReplicasCustomKeyFilterType) \
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \
-    M(CLASS_NAME, QueryCacheNondeterministicFunctionHandling) \
-    M(CLASS_NAME, QueryCacheSystemTableHandling) \
+    M(CLASS_NAME, QueryResultCacheNondeterministicFunctionHandling) \
+    M(CLASS_NAME, QueryResultCacheSystemTableHandling) \
     M(CLASS_NAME, SchemaInferenceMode) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, SetOperationMode) \

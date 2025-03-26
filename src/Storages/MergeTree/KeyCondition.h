@@ -409,6 +409,15 @@ private:
     /// PartitionPruner.
     bool single_point;
 
+
+    /// Determines if a function maintains monotonicity.
+    /// Currently only does special checks for toDateTime monotonicity.
+    bool isFunctionReallyMonotonic(const IFunctionBase & func, const IDataType & arg_type) const;
+
+    /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
+    /// Used to check toDateTime monotonicity.
+    bool date_time_overflow_behavior_ignore;
+
     /// If true, this key condition is relaxed. When a key condition is relaxed, it
     /// is considered weakened. This is because keys may not always align perfectly
     /// with the condition specified in the query, and the aim is to enhance the

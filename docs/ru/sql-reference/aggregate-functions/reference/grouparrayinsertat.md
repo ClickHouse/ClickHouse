@@ -21,7 +21,7 @@ groupArrayInsertAt(default_x, size)(x, pos)
 **Аргументы**
 
 -   `x` — значение, которое будет вставлено. [Выражение](../../syntax.md#syntax-expressions), возвращающее значение одного из [поддерживаемых типов данных](../../../sql-reference/data-types/index.md#data_types).
--   `pos` — позиция, в которую вставляется заданный элемент `x`. Нумерация индексов в массиве начинается с нуля. [UInt32](../../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64).
+-   `pos` — позиция, в которую вставляется заданный элемент `x`. Нумерация индексов в массиве начинается с нуля. [UInt32](/sql-reference/data-types/int-uint#integer-ranges).
 -   `default_x` — значение по умолчанию для подстановки на пустые позиции. Опциональный параметр. [Выражение](../../syntax.md#syntax-expressions), возвращающее значение с типом параметра `x`. Если `default_x` не определен, используются [значения по умолчанию](/sql-reference/statements/create/table).
 -   `size` — длина результирующего массива. Опциональный параметр. При использовании этого параметра должно быть указано значение по умолчанию `default_x`. [UInt32](/sql-reference/data-types/int-uint#integer-ranges).
 
@@ -29,7 +29,7 @@ groupArrayInsertAt(default_x, size)(x, pos)
 
 -   Массив со вставленными значениями.
 
-Тип: [Array](../../../sql-reference/data-types/array.md#data-type-array).
+Тип: [Array](/sql-reference/data-types/array).
 
 **Примеры**
 

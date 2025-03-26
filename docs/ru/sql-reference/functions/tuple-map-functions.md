@@ -277,7 +277,7 @@ SELECT mapContains(a, 'name') FROM test;
 
 Возвращает все ключи контейнера `map`.
 
-Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [keys](../../sql-reference/data-types/map.md#map-subcolumns) вместо чтения и обработки данных всего столбца. Запрос `SELECT mapKeys(m) FROM table` преобразуется к запросу `SELECT m.keys FROM table`.
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [keys](../../sql-reference/data-types/map.md#map-subcolumns) вместо чтения и обработки данных всего столбца. Запрос `SELECT mapKeys(m) FROM table` преобразуется к запросу `SELECT m.keys FROM table`.
 
 **Синтаксис**
 
@@ -320,7 +320,7 @@ SELECT mapKeys(a) FROM test;
 
 Возвращает все значения контейнера `map`.
 
-Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [values](../../sql-reference/data-types/map.md#map-subcolumns) вместо чтения и обработки данных всего столбца. Запрос `SELECT mapValues(m) FROM table` преобразуется к запросу `SELECT m.values FROM table`.
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [values](../../sql-reference/data-types/map.md#map-subcolumns) вместо чтения и обработки данных всего столбца. Запрос `SELECT mapValues(m) FROM table` преобразуется к запросу `SELECT m.values FROM table`.
 
 **Синтаксис**
 

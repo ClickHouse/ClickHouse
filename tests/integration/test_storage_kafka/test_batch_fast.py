@@ -3537,6 +3537,62 @@ def test_kafka_null_message(kafka_cluster, create_query_generator):
         )
 
 
+def test_kafka_json_type(kafka_cluster):
+    # Check that matview does respect Kafka SETTINGS
+    k.kafka_produce(
+        kafka_cluster,
+        "test_json_type",
+        [
+            '{"a" : 1}',
+            '{"a" : 2}',
+        ],
+    )
+
+    instance.query(
+        """
+        SET enable_json_type = 1;
+        CREATE TABLE test.dst (
+            a Int64,
+        )
+        ENGINE = MergeTree()
+        ORDER BY tuple();
+
+        CREATE TABLE test.kafka (data JSON)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'test_json_type',
+                     kafka_group_name = 'test_json_type',
+                     kafka_format = 'JSONAsObject',
+                     kafka_row_delimiter = '\\n',
+                     kafka_flush_interval_ms=1000;
+
+        CREATE MATERIALIZED VIEW test.kafka_mv TO test.dst AS
+        SELECT
+            data.a::Int64 as a
+        FROM test.kafka;
+        """
+    )
+
+    while int(instance.query("SELECT count() FROM test.dst")) < 2:
+        time.sleep(1)
+
+    result = instance.query("SELECT * FROM test.dst ORDER BY a;")
+
+    instance.query(
+        """
+        DROP TABLE test.dst;
+        DROP TABLE test.kafka_mv;
+        DROP TABLE test.kafka;
+    """
+    )
+
+    expected = """\
+1
+2
+"""
+    assert TSV(result) == TSV(expected)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

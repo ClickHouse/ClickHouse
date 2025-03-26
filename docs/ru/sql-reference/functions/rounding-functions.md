@@ -72,7 +72,7 @@ round(expression [, decimal_places])
 
 **Аргументы**
 
--   `expression` — число для округления. Может быть любым [выражением](../syntax.md#syntax-expressions), возвращающим числовой [тип данных](../../sql-reference/functions/rounding-functions.md#data_types).
+-   `expression` — число для округления. Может быть любым [выражением](/sql-reference/syntax#expressions), возвращающим числовой [тип данных](../../sql-reference/functions/rounding-functions.md#data_types).
 -   `decimal-places` — целое значение.
     -   Если `decimal-places > 0`, то функция округляет значение справа от запятой.
     -   Если `decimal-places < 0` то функция округляет значение слева от запятой.
@@ -166,7 +166,7 @@ roundBankers(expression [, decimal_places])
 
 **Аргументы**
 
--   `expression` — число для округления. Может быть любым [выражением](../syntax.md#syntax-expressions), возвращающим числовой [тип данных](../../sql-reference/functions/rounding-functions.md#data_types).
+-   `expression` — число для округления. Может быть любым [выражением](/sql-reference/syntax#expressions), возвращающим числовой [тип данных](../../sql-reference/functions/rounding-functions.md#data_types).
 -   `decimal-places` — десятичный разряд. Целое число.
     -   `decimal-places > 0` — функция округляет значение выражения до ближайшего чётного числа на соответствующей позиции справа от запятой. Например, `roundBankers(3.55, 1) = 3.6`.
     -   `decimal-places < 0` — функция округляет значение выражения до ближайшего чётного числа на соответствующей позиции слева от запятой. Например, `roundBankers(24.55, -1) = 20`.

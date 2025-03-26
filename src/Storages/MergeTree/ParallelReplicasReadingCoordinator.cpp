@@ -24,6 +24,7 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
+#include <fmt/ranges.h>
 
 using namespace DB;
 

@@ -1,10 +1,11 @@
 ---
-title: PrettyCompactNoEscapesMonoBlock
-slug: /interfaces/formats/PrettyCompactNoEscapesMonoBlock
-keywords: [PrettyCompactNoEscapesMonoBlock]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the PrettyCompactNoEscapesMonoBlock format'
+input_format: false
+keywords: ['PrettyCompactNoEscapesMonoBlock']
+output_format: true
+slug: /interfaces/formats/PrettyCompactNoEscapesMonoBlock
+title: 'PrettyCompactNoEscapesMonoBlock'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';

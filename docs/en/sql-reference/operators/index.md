@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/operators/
+description: 'Documentation for Operators'
+displayed_sidebar: 'sqlreference'
+sidebar_label: 'Operators'
 sidebar_position: 38
-sidebar_label: Operators
-displayed_sidebar: sqlreference
+slug: /sql-reference/operators/
+title: 'Operators'
 ---
 
 # Operators
@@ -25,7 +27,7 @@ For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.
 
 `a * b` – The `multiply (a, b)` function.
 
-For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](../../sql-reference/functions/tuple-functions.md#dotproduct).
+For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](/sql-reference/functions/array-functions#arraydotproduct).
 
 `a / b` – The `divide(a, b)` function.
 
@@ -114,13 +116,13 @@ See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-r
 
 Query with ALL:
 
-``` sql
+```sql
 SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
 ```
 
 Result:
 
-``` text
+```text
 ┌─a─┐
 │ 6 │
 │ 7 │
@@ -131,13 +133,13 @@ Result:
 
 Query with ANY:
 
-``` sql
+```sql
 SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
 ```
 
 Result:
 
-``` text
+```text
 ┌─a─┐
 │ 4 │
 │ 5 │
@@ -152,7 +154,7 @@ Result:
 
 ### EXTRACT {#extract}
 
-``` sql
+```sql
 EXTRACT(part FROM date);
 ```
 
@@ -173,7 +175,7 @@ The `date` parameter specifies the date or the time to process. Either [Date](..
 
 Examples:
 
-``` sql
+```sql
 SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
 SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
 SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
@@ -181,7 +183,7 @@ SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
 
 In the following example we create a table and insert into it a value with the `DateTime` type.
 
-``` sql
+```sql
 CREATE TABLE test.Orders
 (
     OrderId UInt64,
@@ -191,11 +193,11 @@ CREATE TABLE test.Orders
 ENGINE = Log;
 ```
 
-``` sql
+```sql
 INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
 ```
 
-``` sql
+```sql
 SELECT
     toYear(OrderDate) AS OrderYear,
     toMonth(OrderDate) AS OrderMonth,
@@ -206,7 +208,7 @@ SELECT
 FROM test.Orders;
 ```
 
-``` text
+```text
 ┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
 │      2008 │         10 │       11 │        13 │          23 │          44 │
 └───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
@@ -236,31 +238,31 @@ Intervals with different types can't be combined. You can't use expressions like
 
 Examples:
 
-``` sql
+```sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR;
 ```
 
-``` text
+```text
 ┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
 │ 2020-11-03 22:09:50 │                                    2020-11-08 01:09:50 │
 └─────────────────────┴────────────────────────────────────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL '4 day' + INTERVAL '3 hour';
 ```
 
-``` text
+```text
 ┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
 │ 2020-11-03 22:12:10 │                                    2020-11-08 01:12:10 │
 └─────────────────────┴────────────────────────────────────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERVAL '3' hour;
 ```
 
-``` text
+```text
 ┌───current_date_time─┬─plus(plus(now(), toIntervalDay('4')), toIntervalHour('3'))─┐
 │ 2020-11-03 22:33:19 │                                        2020-11-08 01:33:19 │
 └─────────────────────┴────────────────────────────────────────────────────────────┘
@@ -272,11 +274,11 @@ The `INTERVAL` syntax or `addDays` function are always preferred. Simple additio
 
 Examples:
 
-``` sql
+```sql
 SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 60 * 24 AS time_plus_24_hours, time + toIntervalDay(1) AS time_plus_1_day;
 ```
 
-``` text
+```text
 ┌────────────────time─┬──time_plus_24_hours─┬─────time_plus_1_day─┐
 │ 2014-10-26 00:00:00 │ 2014-10-26 23:00:00 │ 2014-10-27 00:00:00 │
 └─────────────────────┴─────────────────────┴─────────────────────┘
@@ -285,19 +287,19 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 **See Also**
 
 - [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
-- [toInterval](../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions
+- [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear) type conversion functions
 
 ## Logical AND Operator {#logical-and-operator}
 
-Syntax `SELECT a AND b` — calculates logical conjunction of `a` and `b` with the function [and](../../sql-reference/functions/logical-functions.md#logical-and-function).
+Syntax `SELECT a AND b` — calculates logical conjunction of `a` and `b` with the function [and](/sql-reference/functions/logical-functions#and).
 
 ## Logical OR Operator {#logical-or-operator}
 
-Syntax `SELECT a OR b` — calculates logical disjunction of `a` and `b` with the function [or](../../sql-reference/functions/logical-functions.md#logical-or-function).
+Syntax `SELECT a OR b` — calculates logical disjunction of `a` and `b` with the function [or](/sql-reference/functions/logical-functions#or).
 
 ## Logical Negation Operator {#logical-negation-operator}
 
-Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [not](../../sql-reference/functions/logical-functions.md#logical-not-function).
+Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [not](/sql-reference/functions/logical-functions#not).
 
 ## Conditional Operator {#conditional-operator}
 
@@ -305,11 +307,11 @@ Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [
 
 Note:
 
-The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](../../sql-reference/functions/array-join.md#functions_arrayjoin) function, each row will be replicated regardless of the "a" condition.
+The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](/sql-reference/functions/array-join) function, each row will be replicated regardless of the "a" condition.
 
 ## Conditional Expression {#conditional-expression}
 
-``` sql
+```sql
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
@@ -359,15 +361,15 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
     - `0` otherwise.
 - For other values, the `IS NULL` operator always returns `0`.
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null FROM TABLE`.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null FROM TABLE`.
 
 <!-- -->
 
-``` sql
+```sql
 SELECT x+100 FROM t_null WHERE y IS NULL
 ```
 
-``` text
+```text
 ┌─plus(x, 100)─┐
 │          101 │
 └──────────────┘
@@ -382,14 +384,14 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 
 <!-- -->
 
-``` sql
+```sql
 SELECT * FROM t_null WHERE y IS NOT NULL
 ```
 
-``` text
+```text
 ┌─x─┬─y─┐
 │ 2 │ 3 │
 └───┴───┘
 ```
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.

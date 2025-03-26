@@ -529,7 +529,7 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 Поддерживаемые форматы:
 
-- [CSVWithNamesAndTypes](/docs/interfaces/formats/CSVWithNamesAndTypes)
+- [CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
 - [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
 - [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
 - [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
@@ -649,19 +649,6 @@ ClickHouse может парсить только базовый формат `Y
 
 -   0 — пустые ячейки заполняются значением по умолчанию соответствующего типа поля.
 -   1 — `JOIN` ведёт себя как в стандартном SQL. Тип соответствующего поля преобразуется в [Nullable](/sql-reference/data-types/nullable), а пустые ячейки заполняются значениями [NULL](../../sql-reference/syntax.md).
-
-## partial_merge_join_optimizations {#partial_merge_join_optimizations}
-
-Отключает все оптимизации для запросов [JOIN](../../sql-reference/statements/select/join.md) с частичным MergeJoin алгоритмом.
-
-По умолчанию оптимизации включены, что может привести к неправильным результатам. Если вы видите подозрительные результаты в своих запросах, отключите оптимизацию с помощью этого параметра. В различных версиях сервера ClickHouse, оптимизация может отличаться.
-
-Возможные значения:
-
--   0 — Оптимизация отключена.
--   1 — Оптимизация включена.
-
-Значение по умолчанию: 1.
 
 ## partial_merge_join_rows_in_right_blocks {#partial_merge_join_rows_in_right_blocks}
 
@@ -830,7 +817,7 @@ ClickHouse может парсить только базовый формат `Y
 
 Если требуется прочитать более, чем `merge_tree_max_rows_to_use_cache` строк в одном запросе, ClickHouse не используют кэш несжатых блоков.
 
-Кэш несжатых блоков хранит данные, извлечённые при выполнении запросов. ClickHouse использует этот кэш для ускорения ответов на повторяющиеся небольшие запросы. Настройка защищает кэш от замусоривания запросами, для выполнения которых необходимо извлечь большое количество данных. Настройка сервера [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) определяет размер кэша несжатых блоков.
+Кэш несжатых блоков хранит данные, извлечённые при выполнении запросов. ClickHouse использует этот кэш для ускорения ответов на повторяющиеся небольшие запросы. Настройка защищает кэш от замусоривания запросами, для выполнения которых необходимо извлечь большое количество данных. Настройка сервера [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) определяет размер кэша несжатых блоков.
 
 Возможные значения:
 
@@ -842,7 +829,7 @@ ClickHouse может парсить только базовый формат `Y
 
 Если требуется прочитать более, чем `merge_tree_max_bytes_to_use_cache` байтов в одном запросе, ClickHouse не используют кэш несжатых блоков.
 
-Кэш несжатых блоков хранит данные, извлечённые при выполнении запросов. ClickHouse использует кэш для ускорения ответов на повторяющиеся небольшие запросы. Настройка защищает кэш от переполнения. Настройка сервера [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) определяет размер кэша несжатых блоков.
+Кэш несжатых блоков хранит данные, извлечённые при выполнении запросов. ClickHouse использует кэш для ускорения ответов на повторяющиеся небольшие запросы. Настройка защищает кэш от переполнения. Настройка сервера [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) определяет размер кэша несжатых блоков.
 
 Возможные значения:
 
@@ -1250,7 +1237,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Использовать ли кэш разжатых блоков. Принимает 0 или 1. По умолчанию - 0 (выключено).
 
-Использование кэша несжатых блоков (только для таблиц семейства MergeTree) может существенно сократить задержку и увеличить пропускную способность при работе с большим количеством коротких запросов. Включите эту настройку для пользователей, от которых идут частые короткие запросы. Также обратите внимание на конфигурационный параметр [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) (настраивается только в конфигурационном файле) – размер кэша разжатых блоков. По умолчанию - 8 GiB. Кэш разжатых блоков заполняется по мере надобности, а наиболее невостребованные данные автоматически удаляются.
+Использование кэша несжатых блоков (только для таблиц семейства MergeTree) может существенно сократить задержку и увеличить пропускную способность при работе с большим количеством коротких запросов. Включите эту настройку для пользователей, от которых идут частые короткие запросы. Также обратите внимание на конфигурационный параметр [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) (настраивается только в конфигурационном файле) – размер кэша разжатых блоков. По умолчанию - 8 GiB. Кэш разжатых блоков заполняется по мере надобности, а наиболее невостребованные данные автоматически удаляются.
 
 Для запросов, читающих хоть немного приличный объём данных (миллион строк и больше), кэш разжатых блоков автоматически выключается, чтобы оставить место для действительно мелких запросов. Поэтому, можно держать настройку `use_uncompressed_cache` всегда выставленной в 1.
 
@@ -1863,7 +1850,7 @@ SELECT * FROM test_table
 
 Возможные значения:
 
--   [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniq](/sql-reference/aggregate-functions/reference/uniq)
 -   [uniqCombined](../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
 -   [uniqCombined64](../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
 -   [uniqHLL12](../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
@@ -2063,7 +2050,7 @@ SELECT * FROM test_table
 
 Могут быть преобразованы следующие функции:
 
--   [length](../../sql-reference/functions/array-functions.md#array_functions-length) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [length](/sql-reference/functions/array-functions#length) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
 -   [empty](../../sql-reference/functions/array-functions.md#function-empty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
 -   [notEmpty](../../sql-reference/functions/array-functions.md#function-notempty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size).
 -   [isNull](../../sql-reference/operators/index.md#operator-is-null) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
@@ -2865,7 +2852,7 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 
 ## cast_keep_nullable {#cast_keep_nullable}
 
-Включает или отключает сохранение типа `Nullable` для аргумента функции [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast).
+Включает или отключает сохранение типа `Nullable` для аргумента функции [CAST](/sql-reference/functions/type-conversion-functions#cast).
 
 Если настройка включена, то когда в функцию `CAST` передается аргумент с типом `Nullable`, функция возвращает результат, также преобразованный к типу `Nullable`.
 Если настройка отключена, то функция `CAST` всегда возвращает результат строго указанного типа.
@@ -2911,7 +2898,7 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 **См. также**
 
--   Функция [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast)
+-   Функция [CAST](/sql-reference/functions/type-conversion-functions#cast)
 
 ## persistent {#persistent}
 
@@ -3049,7 +3036,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 ## allow_nullable_key {#allow-nullable-key}
 
-Включает или отключает поддержку типа [Nullable](/sql-reference/data-types/nullable) для ключей таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree).
+Включает или отключает поддержку типа [Nullable](/sql-reference/data-types/nullable) для ключей таблиц [MergeTree](/engines/table-engines/mergetree-family/mergetree).
 
 Возможные значения:
 
@@ -3417,7 +3404,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 ## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions}
 
-Позволяет объединить агрегатные функции с одинаковым аргументом. Запрос, содержащий по крайней мере две агрегатные функции: [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) или [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) с одинаковым аргументом, перезаписывается как [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
+Позволяет объединить агрегатные функции с одинаковым аргументом. Запрос, содержащий по крайней мере две агрегатные функции: [sum](/sql-reference/aggregate-functions/reference/sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) или [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) с одинаковым аргументом, перезаписывается как [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
 
 Возможные значения:
 
@@ -3690,7 +3677,7 @@ SETTINGS index_granularity = 8192 │
 
 ## short_circuit_function_evaluation {#short-circuit-function-evaluation}
 
-Позволяет вычислять функции [if](../../sql-reference/functions/conditional-functions.md#if), [multiIf](../../sql-reference/functions/conditional-functions.md#multiif), [and](../../sql-reference/functions/logical-functions.md#logical-and-function) и [or](../../sql-reference/functions/logical-functions.md#logical-or-function) по [короткой схеме](https://ru-wikipedia-org.turbopages.org/ru.wikipedia.org/s/wiki/Вычисления_по_короткой_схеме). Это помогает оптимизировать выполнение сложных выражений в этих функциях и предотвратить возможные исключения (например, деление на ноль, когда оно не ожидается).
+Позволяет вычислять функции [if](../../sql-reference/functions/conditional-functions.md#if), [multiIf](../../sql-reference/functions/conditional-functions.md#multiif), [and](/sql-reference/functions/logical-functions#and) и [or](/sql-reference/functions/logical-functions#or) по [короткой схеме](https://ru-wikipedia-org.turbopages.org/ru.wikipedia.org/s/wiki/Вычисления_по_короткой_схеме). Это помогает оптимизировать выполнение сложных выражений в этих функциях и предотвратить возможные исключения (например, деление на ноль, когда оно не ожидается).
 
 Возможные значения:
 

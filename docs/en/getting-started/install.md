@@ -1,8 +1,9 @@
 ---
-sidebar_label: Install
-keywords: [clickhouse, install, getting started, quick start]
-description: Install ClickHouse
+description: 'Install ClickHouse'
+keywords: ['clickhouse', 'install', 'getting started', 'quick start']
+sidebar_label: 'Install'
 slug: /install
+title: 'Install ClickHouse'
 ---
 
 import Tabs from '@theme/Tabs';
@@ -93,7 +94,7 @@ For production deployments of ClickHouse, choose from one of the following insta
 It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu. Run these commands to install packages:
 
 #### Setup the Debian repository {#setup-the-debian-repository}
-``` bash
+```bash
 sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
 curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' | sudo gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
 
@@ -176,14 +177,14 @@ It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat
 #### Setup the RPM repository {#setup-the-rpm-repository}
 First, you need to add the official repository:
 
-``` bash
+```bash
 sudo yum install -y yum-utils
 sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
 ```
 
 For systems with `zypper` package manager (openSUSE, SLES):
 
-``` bash
+```bash
 sudo zypper addrepo -r https://packages.clickhouse.com/rpm/clickhouse.repo -g
 sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
 ```
@@ -229,7 +230,7 @@ You can replace `stable` with `lts` to use different [release kinds](/knowledgeb
 
 Then run these commands to install packages:
 
-``` bash
+```bash
 sudo yum install clickhouse-server clickhouse-client
 ```
 
@@ -242,7 +243,7 @@ It is recommended to use official pre-compiled `tgz` archives for all Linux dist
 The required version can be downloaded with `curl` or `wget` from repository https://packages.clickhouse.com/tgz/.
 After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest stable version:
 
-``` bash
+```bash
 LATEST_VERSION=$(curl -s https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv | \
     grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
 export LATEST_VERSION
@@ -338,25 +339,25 @@ For Mac users: If you are getting errors that the developer of the binary cannot
 
 To start the server as a daemon, run:
 
-``` bash
+```bash
 $ clickhouse start
 ```
 
 There are also other ways to run ClickHouse:
 
-``` bash
+```bash
 $ sudo service clickhouse-server start
 ```
 
 If you do not have `service` command, run as
 
-``` bash
+```bash
 $ sudo /etc/init.d/clickhouse-server start
 ```
 
 If you have `systemctl` command, run as
 
-``` bash
+```bash
 $ sudo systemctl start clickhouse-server.service
 ```
 
@@ -366,7 +367,7 @@ If the server does not start, check the configurations in the file `/etc/clickho
 
 You can also manually launch the server from the console:
 
-``` bash
+```bash
 $ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 ```
 
@@ -379,7 +380,7 @@ For more information, see the section ["Configuration Files"](/operations/config
 
 After launching server, you can use the command-line client to connect to it:
 
-``` bash
+```bash
 $ clickhouse-client
 ```
 

@@ -479,7 +479,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 如果克里克豪斯应该阅读更多 `merge_tree_max_rows_to_use_cache` 在一个查询中的行，它不使用未压缩块的缓存。
 
-未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
+未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
 
 可能的值:
 
@@ -491,7 +491,7 @@ Default value: 128 ✕ 8192.
 
 如果克里克豪斯应该阅读更多 `merge_tree_max_bytes_to_use_cache` 在一个查询中的字节，它不使用未压缩块的缓存。
 
-未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
+未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
 
 可能的值:
 
@@ -724,7 +724,7 @@ Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connectio
 ## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
 是否使用未压缩块的缓存。 接受0或1。 默认情况下，0（禁用）。
-使用未压缩缓存（仅适用于MergeTree系列中的表）可以在处理大量短查询时显着减少延迟并提高吞吐量。 为频繁发送短请求的用户启用此设置。 还要注意 [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+使用未压缩缓存（仅适用于MergeTree系列中的表）可以在处理大量短查询时显着减少延迟并提高吞吐量。 为频繁发送短请求的用户启用此设置。 还要注意 [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
 对于至少读取大量数据（一百万行或更多行）的查询，将自动禁用未压缩缓存，以节省真正小型查询的空间。 这意味着你可以保持 ‘use_uncompressed_cache’ 设置始终设置为1。
 
@@ -1006,7 +1006,7 @@ ClickHouse生成异常
 
 可能的值:
 
--   [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniq](/sql-reference/aggregate-functions/reference/uniq)
 -   [uniqCombined](../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
 -   [uniqCombined64](../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
 -   [uniqHLL12](../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
@@ -1081,7 +1081,7 @@ ClickHouse生成异常
 
 这些函数可以转化为：
 
-- [length](../../sql-reference/functions/array-functions.md/#array_functions-length) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
+- [length](/sql-reference/functions/array-functions#length) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
 - [empty](../../sql-reference/functions/array-functions.md/#empty函数) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
 - [notEmpty](../../sql-reference/functions/array-functions.md/#notempty函数) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
 - [isNull](../../sql-reference/operators/index.md#operator-is-null) 读取 [null](../../sql-reference/data-types/nullable. md/#finding-null) 子列。

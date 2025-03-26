@@ -212,7 +212,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     return res;
 }
 
-void MergeTreeReadTask::addPreWhereUnmatchedMarks(MarkRanges & mark_ranges_)
+void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_)
 {
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }

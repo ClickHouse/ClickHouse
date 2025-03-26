@@ -1,14 +1,21 @@
 #include <Processors/Transforms/FilterTransform.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Processors/Chunk.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+
+namespace ProfileEvents
+{
+    extern const Event FilterTransformPassedRows;
+    extern const Event FilterTransformPassedBytes;
+}
 
 namespace DB
 {
@@ -22,6 +29,19 @@ bool FilterTransform::canUseType(const DataTypePtr & filter_type)
 {
     return filter_type->onlyNull() || isUInt8(removeLowCardinalityAndNullable(filter_type));
 }
+
+auto incrementProfileEvents = [](size_t num_rows, const Columns & columns)
+{
+    ProfileEvents::increment(ProfileEvents::FilterTransformPassedRows, num_rows);
+
+    size_t num_bytes = 0;
+    for (const auto & column : columns)
+    {
+        if (column)
+            num_bytes += column->byteSize();
+    }
+    ProfileEvents::increment(ProfileEvents::FilterTransformPassedBytes, num_bytes);
+};
 
 Block FilterTransform::transformHeader(
     const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
@@ -92,6 +112,9 @@ IProcessor::Status FilterTransform::prepare()
     if (status != IProcessor::Status::PortFull)
         are_prepared_sets_initialized = true;
 
+    if (status == IProcessor::Status::Finished)
+        writeIntoQueryConditionCache({});
+
     return status;
 }
 
@@ -116,26 +139,6 @@ void FilterTransform::doTransform(Chunk & chunk)
     auto columns = chunk.detachColumns();
     DataTypes types;
 
-    auto write_into_query_condition_cache = [&]()
-    {
-        if (!query_condition_cache)
-            return;
-
-        auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
-        if (!mark_info)
-            return;
-
-        const auto & data_part = mark_info->getDataPart();
-        auto storage_id = data_part->storage.getStorageID();
-        query_condition_cache->write(
-                storage_id.uuid,
-                data_part->name,
-                *condition_hash,
-                mark_info->getMarkRanges(),
-                data_part->index_granularity->getMarksCount(),
-                data_part->index_granularity->hasFinalMark());
-    };
-
     {
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
@@ -149,6 +152,7 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_true || on_totals)
     {
+        incrementProfileEvents(num_rows_before_filtration, columns);
         removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         return;
@@ -166,18 +170,16 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_false)
     {
-        write_into_query_condition_cache();
+        writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
+        incrementProfileEvents(0, {});
         return; /// Will finish at next prepare call
     }
 
-    if (constant_filter_description.always_true)
-    {
-        removeFilterIfNeed(columns);
-        chunk.setColumns(std::move(columns), num_rows_before_filtration);
-        return;
-    }
-
     std::unique_ptr<IFilterDescription> filter_description;
+
+    if (isColumnConst(*filter_column))
+        filter_column = filter_column->convertToFullColumnIfConst();
+
     if (filter_column->isSparse())
         filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
     else
@@ -213,10 +215,12 @@ void FilterTransform::doTransform(Chunk & chunk)
     else
         num_filtered_rows = filter_description->countBytesInFilter();
 
+    incrementProfileEvents(num_filtered_rows, columns);
+
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
     {
-        write_into_query_condition_cache();
+        writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
         /// SimpleTransform will skip it.
         return;
     }
@@ -251,5 +255,57 @@ void FilterTransform::doTransform(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_filtered_rows);
 }
 
+void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)
+{
+    if (!query_condition_cache)
+        return;
+
+    if (!mark_ranges_info)
+    {
+        /// FilterTransform has finished, we need to flush to the query result cache.
+
+        if (!buffered_mark_ranges_info)
+            return;
+
+        query_condition_cache->write(
+            buffered_mark_ranges_info->table_uuid,
+            buffered_mark_ranges_info->part_name,
+            *condition_hash,
+            buffered_mark_ranges_info->mark_ranges,
+            buffered_mark_ranges_info->marks_count,
+            buffered_mark_ranges_info->has_final_mark);
+
+        buffered_mark_ranges_info = nullptr;
+
+        return;
+    }
+
+    if (!buffered_mark_ranges_info)
+    {
+        buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+    }
+    else
+    {
+        /// If the current and the buffer mark range info are from the same table/part, append to the buffer.
+        /// Otherwise write to the query condition cache and reset the buffer.
+
+        if (buffered_mark_ranges_info->table_uuid != mark_ranges_info->table_uuid || buffered_mark_ranges_info->part_name != mark_ranges_info->part_name)
+        {
+            query_condition_cache->write(
+                buffered_mark_ranges_info->table_uuid,
+                buffered_mark_ranges_info->part_name,
+                *condition_hash,
+                buffered_mark_ranges_info->mark_ranges,
+                buffered_mark_ranges_info->marks_count,
+                buffered_mark_ranges_info->has_final_mark);
+
+            buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+        }
+        else
+        {
+            buffered_mark_ranges_info->appendMarkRanges(mark_ranges_info->mark_ranges);
+        }
+    }
+}
 
 }
