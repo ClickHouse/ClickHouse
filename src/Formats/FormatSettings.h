@@ -284,6 +284,8 @@ struct FormatSettings
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
         bool use_native_reader = false;
+        bool use_native_reader_with_filter_push_down = false;
+        bool use_native_reader_v3 = false;
         bool enable_json_parsing = true;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
@@ -308,6 +310,8 @@ struct FormatSettings
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
         bool allow_geoparquet_parser = true;
         bool write_geometadata = true;
+        size_t max_dictionary_size = 1024 * 1024;
+        size_t memory_target = 4ul << 30;
     } parquet{};
 
     struct Pretty

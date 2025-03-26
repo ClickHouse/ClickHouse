@@ -65,9 +65,6 @@ namespace DB::ErrorCodes
 namespace DB::Parquet
 {
 
-/// Thrift structs that Parquet uses for various metadata inside the parquet file.
-namespace parq = parquet::format;
-
 namespace
 {
 

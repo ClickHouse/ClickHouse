@@ -97,6 +97,7 @@ public:
     bool has(const std::string & name, bool case_insensitive = false) const;
 
     size_t getPositionByName(const std::string & name, bool case_insensitive = false) const;
+    std::optional<size_t> findPositionByName(const std::string & name, bool case_insensitive = false) const;
 
     const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
     NamesAndTypesList getNamesAndTypesList() const;
@@ -223,5 +224,11 @@ Block materializeBlock(const Block & block);
 void materializeBlockInplace(Block & block);
 
 Block concatenateBlocks(const std::vector<Block> & blocks);
+
+/// If the block has no columns, adds a dummy column with given number of rows.
+/// Without it, things like ExpressionActions can't tell many rows to output.
+/// Name of the new column is randomly generated and returned, so you can remove the column later.
+/// Returns empty string if the block is already not empty.
+String addDummyColumnWithRowCount(Block & block, size_t num_rows);
 
 }

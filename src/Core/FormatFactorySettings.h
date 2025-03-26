@@ -177,11 +177,17 @@ When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE ex
 When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
-When reading Parquet files, to use native reader instead of arrow reader.
+Use native parquet reader v1. It's relatively fast but unfinished.
 )", 0) \
 DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
   When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
   )", 0) \
+DECLARE(Bool, input_format_parquet_use_native_reader_v3, false, R"(
+Use Parquet reader v3.
+)", 0) \
+    DECLARE(UInt64, input_format_parquet_memory_usage_target, 4ul << 30, R"(
+Approximate memory usage limit for Parquet reader v3. Determines how many row groups or columns can be read in parallel. Memory usage doesn't get smaller than one row group. When reading multiple files in one query, the limit is on total memory usage across those files.
+)", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
 Allow seeks while reading in ORC/Parquet/Arrow input formats.
 
@@ -1023,6 +1029,9 @@ Where in the parquet file to place the bloom filters. Bloom filters will be writ
 )", 0) \
     DECLARE(Bool, output_format_parquet_datetime_as_uint32, false, R"(
 Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).
+)", 0) \
+    DECLARE(UInt64, output_format_parquet_max_dictionary_size, 1024 * 1024, R"(
+If dictionary size grows bigger than this many bytes, switch to encoding without dictionary. Set to 0 to disable dictionary encoding.
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.

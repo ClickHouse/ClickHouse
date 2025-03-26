@@ -340,10 +340,10 @@ private:
     bool is_initialized = false;
 };
 
-class ParquetSchemaReader : public ISchemaReader
+class ArrowParquetSchemaReader : public ISchemaReader
 {
 public:
-    ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+    ArrowParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
     std::optional<size_t> readNumberOrRows() override;
