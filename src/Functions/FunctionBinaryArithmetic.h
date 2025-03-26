@@ -1617,8 +1617,8 @@ public:
         /// intDiv or modulo and denominator is Nullable(Something), because it may cause division
         /// by zero error (when value is Null we store default value 0 in nested column).
         /// And we also shouldn't use default implementation for nulls for the case when operation is
-        /// divideOrNull, intDivOrNull, moduloOrNull or positiveModuloOrNull, becasue it will return
-        /// null when the divisor is zero.
+        /// divideOrNull, intDivOrNull, moduloOrNull or positiveModuloOrNull, because it will return
+        /// null when the divisor is zero, and it is conflict with the default implementation.
         return !division_by_nullable && !is_division_or_null;
     }
 
