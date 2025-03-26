@@ -4,6 +4,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/levenshteinDistance.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
 #include <DataTypes/DataTypeArray.h>
@@ -15,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <numeric>
+#include <span>
 
 namespace DB
 {
@@ -111,34 +113,6 @@ private:
             T::name);
     }
 
-    template<typename N>
-    UInt32 levenshteinDistance(const std::vector<N> from, const std::vector<N> to) const
-    {
-        const size_t m = from.size();
-        const size_t n = to.size();
-        if (m==0 || n==0)
-        {
-            return static_cast<UInt32>(m + n);
-        }
-        PODArrayWithStackMemory<size_t, 32> v0(n + 1);
-
-        iota(v0.data() + 1, n, size_t(1));
-
-        for (size_t j = 1; j <= m; ++j)
-        {
-            v0[0] = j;
-            size_t prev = j - 1;
-            for (size_t i = 1; i <= n; ++i)
-            {
-                size_t old = v0[i];
-                v0[i] = std::min(prev + (from[j - 1] != to[i - 1]),
-                        std::min(v0[i - 1], v0[i]) + 1);
-                prev = old;
-            }
-        }
-        return static_cast<UInt32>(v0[n]);
-    }
-
     template <typename N, typename Result>
     bool levenshteinString(std::vector<const ColumnArray *> columns, Result::Container & res_values) const
     {
@@ -181,25 +155,22 @@ private:
 
         const ColumnArray::Offsets & to_offsets = columns[1]->getOffsets();
         ColumnArray::Offset prev_to_offset = 0;
+        const auto extract_array = [](const N * data, size_t prev_offset, size_t count)
+        {
+            std::vector<StringRef> temp;
+            temp.reserve(count);
+            for (size_t j = 0; j < count; ++j) { temp.emplace_back(data->getDataAt(prev_offset + j)); }
+            return temp;
+        };
 
         for (size_t row = 0; row < columns[0]->size(); row++)
         {
             const size_t m = from_offsets[row] - prev_from_offset;
             const size_t n = to_offsets[row] - prev_to_offset;
-            const std::vector<StringRef> & from = [&]()
-            {
-                std::vector<StringRef> temp;
-                temp.reserve(m);
-                for (size_t j = 0; j < m; ++j) { temp.emplace_back(from_data->getDataAt(prev_from_offset + j)); }
-                return temp;
-            }();
-            const std::vector<StringRef> & to = [&]()
-            {
-                std::vector<StringRef> temp;
-                temp.reserve(m);
-                for (size_t j = 0; j < n; ++j) { temp.emplace_back(to_data->getDataAt(prev_to_offset + j)); }
-                return temp;
-            }();
+            const std::vector<StringRef> & from_vec = extract_array(from_data, prev_from_offset, m);
+            const std::vector<StringRef> & to_vec = extract_array(to_data, prev_to_offset, n);
+            std::span<const StringRef> from(from_vec.begin(), m);
+            std::span<const StringRef> to(to_vec.begin(), n);
             prev_from_offset = from_offsets[row];
             prev_to_offset = to_offsets[row];
             res_values[row] = levenshteinDistance<StringRef>(from, to);
@@ -246,19 +217,17 @@ private:
                 T::name);
         }
 
-        const PaddedPODArray<N> & vec_from = column_from->getData();
         const ColumnArray::Offsets & from_offsets = columns[0]->getOffsets();
         ColumnArray::Offset prev_from_offset = 0;
 
-        const PaddedPODArray<N> & vec_to = column_to->getData();
         const ColumnArray::Offsets & to_offsets = columns[1]->getOffsets();
         ColumnArray::Offset prev_to_offset = 0;
 
         for (size_t row = 0; row < columns[0]->size(); row++)
         {
-            const std::vector<N> from(vec_from.begin() + prev_from_offset, vec_from.begin() + from_offsets[row]);
+            std::span<const N> from(column_from->getData().begin() + prev_from_offset, from_offsets[row] - prev_from_offset);
             prev_from_offset = from_offsets[row];
-            const std::vector<N> to(vec_to.begin() + prev_to_offset, vec_to.begin() + to_offsets[row]);
+            std::span<const N> to(column_to->getData().begin() + prev_to_offset, to_offsets[row] - prev_to_offset);
             prev_to_offset = to_offsets[row];
 
             res_values[row] = levenshteinDistance<N>(from, to);
@@ -307,56 +276,10 @@ private:
             // Effective Levenshtein realization from Common/levenshteinDistance
             Array from = (*column_from)[row].safeGet<Array>();
             Array to = (*column_to)[row].safeGet<Array>();
-            const std::vector<Field> from_vec(from.begin(), from.end());
-            const std::vector<Field> to_vec(to.begin(), to.end());
+            std::span<const Field> from_vec(from.begin(), from.end());
+            std::span<const Field> to_vec(to.begin(), to.end());
             res_values[row] = levenshteinDistance<Field>(from_vec, to_vec);
         }
-    }
-
-    template<typename N>
-    Float64 levenshteinDistanceWeighted(const std::vector<N> from, const std::vector<N> to,
-                                        const std::vector<Float64> from_weights, const std::vector<Float64> to_weights) const
-    {
-        auto sum_vec = [](const std::vector<Float64> & vector) -> Float64
-        {
-            return std::accumulate(vector.begin(), vector.end(), .0);
-        };
-        const size_t m = std::min(from.size(), to.size());
-        const size_t n = std::max(from.size(), to.size());
-        if (m==0 || n==0)
-        {
-            return sum_vec(from_weights) + sum_vec(to_weights);
-        }
-        // Consume minimum memory by allocating sliding vectors for min `m`
-        auto & lhs = (from.size() <= to.size()) ? from : to;
-        const std::vector<Float64> & lhs_w = (from.size() <= to.size()) ? from_weights : to_weights;
-        auto & rhs = (from.size() <= to.size()) ? to : from;
-        const std::vector<Float64> & rhs_w = (from.size() <= to.size()) ? to_weights : from_weights;
-
-        PODArrayWithStackMemory<Float64, 64> v0(m + 1);
-        PODArrayWithStackMemory<Float64, 64> v1(m + 1);
-
-        v0[0] = 0;
-        std::partial_sum(lhs_w.begin(), lhs_w.end(), v0.begin() + 1);
-
-        for (size_t i = 0; i < n; ++i)
-        {
-            v1[0] = v0[0] + rhs_w[i];
-            for (size_t j = 0; j < m; ++j)
-            {
-                if (lhs[j] == rhs[i])
-                {
-                    v1[j + 1] = v0[j];
-                    continue;
-                }
-
-                v1[j+1] = std::min({v0[j + 1] + rhs_w[i],          // deletion
-                                    v1[j] + lhs_w[j],              // insertion
-                                    v0[j] + lhs_w[j] + rhs_w[i]}); // substitusion
-            }
-            std::swap(v0, v1);
-        }
-        return v0[m];
     }
 
     template <typename N, typename W>
@@ -376,41 +299,38 @@ private:
         const ColumnVector<W> * column_to_weights = checkAndGetColumn<ColumnVector<W>>(&columns[3]->getData());
         if (!column_from_weights || !column_to_weights)
             return false;
-        const PaddedPODArray<W> & vec_from_weights = column_from_weights->getData();
+
         const ColumnArray::Offsets & from_weights_offsets = columns[2]->getOffsets();
         ColumnArray::Offset prev_from_weights_offset = 0;
 
-        const PaddedPODArray<W> & vec_to_weights = column_to_weights->getData();
         const ColumnArray::Offsets & to_weights_offsets = columns[3]->getOffsets();
         ColumnArray::Offset prev_to_weights_offset = 0;
+
+        const auto extract_array = [](const N * data, size_t prev_offset, size_t count)
+        {
+            std::vector<StringRef> temp;
+            temp.reserve(count);
+            for (size_t j = 0; j < count; ++j) { temp.emplace_back(data->getDataAt(prev_offset + j)); }
+            return temp;
+        };
 
         for (size_t row = 0; row < columns[0]->size(); row++)
         {
             const size_t m = from_offsets[row] - prev_from_offset;
             const size_t n = to_offsets[row] - prev_to_offset;
-            const std::vector<StringRef> & from = [&]()
-            {
-                std::vector<StringRef> temp;
-                temp.reserve(m);
-                for (size_t j = 0; j < m; ++j) { temp.emplace_back(from_data->getDataAt(prev_from_offset + j)); }
-                return temp;
-            }();
-            const std::vector<StringRef> & to = [&]()
-            {
-                std::vector<StringRef> temp;
-                temp.reserve(m);
-                for (size_t j = 0; j < n; ++j) { temp.emplace_back(to_data->getDataAt(prev_to_offset + j)); }
-                return temp;
-            }();
+            const std::vector<StringRef> & from_vec = extract_array(from_data, prev_from_offset, m);
+            const std::vector<StringRef> & to_vec = extract_array(to_data, prev_to_offset, n);
+            std::span<const StringRef> from(from_vec.begin(), m);
+            std::span<const StringRef> to(to_vec.begin(), n);
             prev_from_offset = from_offsets[row];
             prev_to_offset = to_offsets[row];
 
-            const std::vector<Float64> from_weights(vec_from_weights.begin() + prev_from_weights_offset, vec_from_weights.begin() + from_weights_offsets[row]);
+            std::span<const W> from_weights(column_from_weights->getData().begin() + prev_from_weights_offset, from_weights_offsets[row] - prev_from_weights_offset);
             prev_from_weights_offset = from_weights_offsets[row];
-            const std::vector<Float64> to_weights(vec_to_weights.begin() + prev_to_weights_offset, vec_to_weights.begin() + to_weights_offsets[row]);
+            std::span<const W> to_weights(column_to_weights->getData().begin() + prev_to_weights_offset, to_weights_offsets[row] - prev_to_weights_offset);
             prev_to_weights_offset = to_weights_offsets[row];
 
-            res_values[row] = levenshteinDistanceWeighted<StringRef>(from, to, from_weights, to_weights);
+            res_values[row] = static_cast<Float64>(DB::levenshteinDistanceWeighted<StringRef, W>(from, to, from_weights, to_weights));
         }
         return true;
     }
@@ -421,12 +341,11 @@ private:
         const ColumnVectorOrDecimal<N> * column_from = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[0]->getData());
         const ColumnVectorOrDecimal<N> * column_to = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[1]->getData());
         if (!column_from || !column_to)
+            // just to be on the safe side, it's already checked
             return false;
-        const PaddedPODArray<N> & vec_from = column_from->getData();
+
         const ColumnArray::Offsets & from_offsets = columns[0]->getOffsets();
         ColumnArray::Offset prev_from_offset = 0;
-
-        const PaddedPODArray<N> & vec_to = column_to->getData();
         const ColumnArray::Offsets & to_offsets = columns[1]->getOffsets();
         ColumnArray::Offset prev_to_offset = 0;
 
@@ -434,27 +353,25 @@ private:
         const ColumnVector<W> * column_to_weights = checkAndGetColumn<ColumnVector<W>>(&columns[3]->getData());
         if (!column_from_weights || !column_to_weights)
             return false;
-        const PaddedPODArray<W> & vec_from_weights = column_from_weights->getData();
+
         const ColumnArray::Offsets & from_weights_offsets = columns[2]->getOffsets();
         ColumnArray::Offset prev_from_weights_offset = 0;
-
-        const PaddedPODArray<W> & vec_to_weights = column_to_weights->getData();
         const ColumnArray::Offsets & to_weights_offsets = columns[3]->getOffsets();
         ColumnArray::Offset prev_to_weights_offset = 0;
 
         for (size_t row = 0; row < columns[0]->size(); row++)
         {
-            const std::vector<N> from(vec_from.begin() + prev_from_offset, vec_from.begin() + from_offsets[row]);
+            std::span<const N> from(column_from->getData().begin() + prev_from_offset, from_offsets[row] - prev_from_offset);
             prev_from_offset = from_offsets[row];
-            const std::vector<N> to(vec_to.begin() + prev_to_offset, vec_to.begin() + to_offsets[row]);
+            std::span<const N> to(column_to->getData().begin() + prev_to_offset, to_offsets[row] - prev_to_offset);
             prev_to_offset = to_offsets[row];
 
-            const std::vector<Float64> from_weights(vec_from_weights.begin() + prev_from_weights_offset, vec_from_weights.begin() + from_weights_offsets[row]);
+            std::span<const W> from_weights(column_from_weights->getData().begin() + prev_from_weights_offset, from_weights_offsets[row] - prev_from_weights_offset);
             prev_from_weights_offset = from_weights_offsets[row];
-            const std::vector<Float64> to_weights(vec_to_weights.begin() + prev_to_weights_offset, vec_to_weights.begin() + to_weights_offsets[row]);
+            std::span<const W> to_weights(column_to_weights->getData().begin() + prev_to_weights_offset, to_weights_offsets[row] - prev_to_weights_offset);
             prev_to_weights_offset = to_weights_offsets[row];
 
-            res_values[row] = levenshteinDistanceWeighted<N>(from, to, from_weights, to_weights);
+            res_values[row] = static_cast<Float64>(DB::levenshteinDistanceWeighted<N, W>(from, to, from_weights, to_weights));
         }
         return true;
     }
@@ -469,11 +386,9 @@ private:
         const ColumnVector<W> * column_to_weights = checkAndGetColumn<ColumnVector<W>>(&columns[3]->getData());
         if (!column_from_weights || !column_to_weights)
             return false;
-        const PaddedPODArray<W> & vec_from_weights = column_from_weights->getData();
         const ColumnArray::Offsets & from_weights_offsets = columns[2]->getOffsets();
         ColumnArray::Offset prev_from_weights_offset = 0;
 
-        const PaddedPODArray<W> & vec_to_weights = column_to_weights->getData();
         const ColumnArray::Offsets & to_weights_offsets = columns[3]->getOffsets();
         ColumnArray::Offset prev_to_weights_offset = 0;
 
@@ -485,12 +400,12 @@ private:
             const std::vector<Field> from_vec(from.begin(), from.end());
             const std::vector<Field> to_vec(to.begin(), to.end());
 
-            const std::vector<Float64> from_weights(vec_from_weights.begin() + prev_from_weights_offset, vec_from_weights.begin() + from_weights_offsets[row]);
+            std::span<const W> from_weights(column_from_weights->getData().begin() + prev_from_weights_offset, from_weights_offsets[row] - prev_from_weights_offset);
             prev_from_weights_offset = from_weights_offsets[row];
-            const std::vector<Float64> to_weights(vec_to_weights.begin() + prev_to_weights_offset, vec_to_weights.begin() + to_weights_offsets[row]);
+            std::span<const W> to_weights(column_to_weights->getData().begin() + prev_to_weights_offset, to_weights_offsets[row] - prev_to_weights_offset);
             prev_to_weights_offset = to_weights_offsets[row];
 
-            res_values[row] = levenshteinDistanceWeighted<Field>(from_vec, to_vec, from_weights, to_weights);
+            res_values[row] = static_cast<Float64>(DB::levenshteinDistanceWeighted<Field, W>(from, to, from_weights, to_weights));
         }
         return true;
     }
