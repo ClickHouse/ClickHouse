@@ -21,7 +21,7 @@ DETACH TABLE t_prewarm_add_column;
 ATTACH TABLE t_prewarm_add_column;
 
 SELECT * FROM t_prewarm_add_column ORDER BY a;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['LoadedMarksCount'] FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT * FROM t_prewarm_add_column%'
