@@ -59,6 +59,7 @@ Upcoming meetups
 * [Ho Chi Minh Meetup with AWS & Infinite Lambda](https://www.meetup.com/clickhouse-vietnam-meetup-group/events/306810105/) - April 12, 2025
 * [Tokyo Meetup with Confluent](https://www.meetup.com/clickhouse-tokyo-user-group/events/306832118/) - April 15, 2025
 * [Kuala Lumper Meetup with CNCF](https://www.meetup.com/clickhouse-malaysia-meetup-group/events/306697678/) - April 16, 2025
+* [Denver Meetup](https://www.meetup.com/clickhouse-denver-user-group/events/306934991/) - April 23rd
 * [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/306047172/) - May 14, 2025
 
 Recent meetups
