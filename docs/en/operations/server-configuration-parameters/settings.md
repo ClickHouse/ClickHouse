@@ -703,7 +703,7 @@ Type: `Double`
 
 Default: `0.9`
 
-## max_build_vector_similarity_index_thread_pool_size {#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size}
+## max_build_vector_similarity_index_thread_pool_size {#max_build_vector_similarity_index_thread_pool_size}
 
 The maximum number of threads to use for building vector indexes.
 
