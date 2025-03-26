@@ -194,7 +194,7 @@ void WorkloadSettings::initFromChanges(Unit unit_, const ASTCreateWorkloadQuery:
     // Compute concurrent thread limit as minimum of two possible values: (1) exact limit and (2) ratio to cores limit.
     // Zero setting value means unlimited number of threads.
     Int64 limit = unlimited;
-    Int64 exact_number = get_value(specific.max_concurrent_threads, regular.max_concurrent_threads, 0l);
+    Int64 exact_number = get_value(specific.max_concurrent_threads, regular.max_concurrent_threads, Int64(0));
     Float64 ratio_to_cores = get_value(specific.max_concurrent_threads_ratio_to_cores, regular.max_concurrent_threads_ratio_to_cores, 0.0);
     if (exact_number > 0 && exact_number < limit)
         limit = exact_number;
