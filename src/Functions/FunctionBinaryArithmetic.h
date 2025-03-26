@@ -2453,7 +2453,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 auto null_map_col = ColumnUInt8::create(input_rows_count, 0);
                 PaddedPODArray<UInt8> & null_map_data = null_map_col->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    null_map_data[i] = left_argument.column->isNullAt(i) | !right_argument.column->getBool(i);
+                    null_map_data[i] = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
                 auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, right_nullmap);
                 return wrapInNullable(res, std::move(null_map_col));
             }
