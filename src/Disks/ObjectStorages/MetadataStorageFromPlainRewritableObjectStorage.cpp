@@ -142,7 +142,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
                     /// Assuming that local and the object storage clocks are synchronized.
                     last_modified = object_metadata->last_modified;
 
-                    /// Load the list of files inside the directory
+                    /// Load the list of files inside the directory.
                     fs::path full_remote_path = object_storage->getCommonKeyPrefix() / remote_path;
                     size_t prefix_length = remote_path.string().size() + 1; /// randomlygenerated/
                     for (auto dir_iterator = object_storage->iterate(full_remote_path, 0); dir_iterator->isValid(); dir_iterator->next())
@@ -151,6 +151,12 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
                         String remote_file_path = remote_file->getPath();
                         chassert(remote_file_path.starts_with(full_remote_path.string()));
                         auto filename = fs::path(remote_file_path).filename();
+                        /// Skip metadata files.
+                        if (filename == PREFIX_PATH_FILE_NAME)
+                        {
+                            LOG_WARNING(log, "Legacy layout is in use, ignoring '{}'", remote_file_path);
+                            continue;
+                        }
 
                         /// Check that the file is a direct child.
                         if (remote_file_path.substr(prefix_length) == filename)
