@@ -1190,7 +1190,7 @@ void ProjectionMutationContext::prepareAllPart(bool always_use_copy_instead_of_h
             source_part->index_granularity,
             Tx::PrehistoricTID,
             source_part->getBytesUncompressedOnDisk(),
-            /*reset_columns=*/ false,
+            /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
             write_settings);
 
@@ -1766,6 +1766,10 @@ private:
         bool lightweight_delete_drop = lightweight_delete_mode
             && (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::DROP;
 
+        std::unordered_set<String> projections_to_mutate;
+        for (const auto & mutation_context : ctx->projection_mutation_contexts)
+            projections_to_mutate.insert(mutation_context->name);
+
         const auto & projections = ctx->metadata_snapshot->getProjections();
         for (const auto & projection : projections)
         {
@@ -1776,8 +1780,10 @@ private:
                 (ctx->materialized_projections.contains(projection.name)
                 || (!is_full_part_storage
                     && ctx->source_part->hasProjection(projection.name)
-                    && !ctx->source_part->hasBrokenProjection(projection.name)))
-                && !lightweight_delete_drop;
+                    && !ctx->source_part->hasBrokenProjection(projection.name))
+                )
+                && !lightweight_delete_drop
+                && !projections_to_mutate.contains(projection.name);
 
             if (need_recalculate)
             {
