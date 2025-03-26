@@ -398,10 +398,10 @@ bool WorkloadEntityStorageBase::storeEntity(
             }
 
             WorkloadSettings io_validator;
-            io_validator.updateFromChanges(WorkloadSettings::Unit::IOByte, workload->changes);
+            io_validator.initFromChanges(WorkloadSettings::Unit::IOByte, workload->changes);
 
             WorkloadSettings cpu_validator;
-            cpu_validator.updateFromChanges(WorkloadSettings::Unit::CPUSlot, workload->changes);
+            cpu_validator.initFromChanges(WorkloadSettings::Unit::CPUSlot, workload->changes);
         }
 
         // Validate resource
@@ -444,7 +444,7 @@ bool WorkloadEntityStorageBase::storeEntity(
 
                         // Validate that we could parse the settings for specific resource
                         WorkloadSettings validator;
-                        validator.updateFromChanges(target_resource->unit, workload->changes, target);
+                        validator.initFromChanges(target_resource->unit, workload->changes, target);
                         break;
                     }
                 }
