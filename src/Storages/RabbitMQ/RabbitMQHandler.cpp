@@ -1,9 +1,14 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <Core/Field.h>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /* The object of this class is shared between concurrent consumers (who share the same connection == share the same
  * event loop and handler).
@@ -34,6 +39,9 @@ void RabbitMQHandler::onReady(AMQP::TcpConnection * /* connection */)
 
 void RabbitMQHandler::startLoop()
 {
+    if (loop_state == Loop::SHUTDOWN)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot run loop after shutdown");
+
     std::lock_guard lock(startup_mutex);
 
     LOG_DEBUG(log, "Background loop started");
@@ -48,6 +56,9 @@ void RabbitMQHandler::startLoop()
 
 int RabbitMQHandler::iterateLoop()
 {
+    if (loop_state == Loop::SHUTDOWN)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot run loop after shutdown");
+
     std::unique_lock lock(startup_mutex, std::defer_lock);
     if (lock.try_lock())
         return uv_run(loop, UV_RUN_NOWAIT);
@@ -58,6 +69,9 @@ int RabbitMQHandler::iterateLoop()
 /// initial RabbitMQ setup - at this point there is no background loop thread.
 int RabbitMQHandler::startBlockingLoop()
 {
+    if (loop_state == Loop::SHUTDOWN)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot run loop after shutdown");
+
     LOG_DEBUG(log, "Started blocking loop.");
     return uv_run(loop, UV_RUN_DEFAULT);
 }
@@ -66,6 +80,20 @@ void RabbitMQHandler::stopLoop()
 {
     LOG_DEBUG(log, "Implicit loop stop.");
     uv_stop(loop);
+}
+
+void RabbitMQHandler::updateLoopState(UInt8 state)
+{
+    if (state == Loop::RUN)
+    {
+        if (loop_state == Loop::SHUTDOWN)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot start loop on SHUTDOWN state");
+        if (loop_state == Loop::RUN)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Loop is already in state RUN");
+    }
+
+    LOG_TRACE(log, "Updaing loop state from {} to {}", toString(loop_state.load()), toString(state));
+    loop_state.store(state);
 }
 
 }
