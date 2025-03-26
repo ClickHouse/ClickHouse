@@ -3475,6 +3475,11 @@ message DictionaryLifetime {
     optional uint32 max = 2;
 }
 
+message DictionaryRange {
+    required Expr min = 1;
+    required Expr max = 2;
+}
+
 message CreateDictionary {
     required CreateReplaceOption create_opt = 1;
     optional bool if_not_exists = 2;
@@ -3485,9 +3490,10 @@ message CreateDictionary {
     required TableKey primary_key = 7;
     required DictionarySource source = 8;
     required DictionaryLayout layout = 9;
-    required DictionaryLifetime lifetime = 10;
-    optional SettingValues setting_values = 11;
-    optional string comment = 12;
+    optional DictionaryRange range = 10;
+    required DictionaryLifetime lifetime = 11;
+    optional SettingValues setting_values = 12;
+    optional string comment = 13;
 }
 
 message ApplyDeleteMask {

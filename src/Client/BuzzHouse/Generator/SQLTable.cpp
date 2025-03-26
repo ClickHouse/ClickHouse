@@ -1849,7 +1849,9 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     uint32_t tname = 0;
     uint32_t col_counter = 0;
     const bool replace = collectionCount<SQLDictionary>(attached_dictionaries) > 3 && rg.nextMediumNumber() < 16;
-    const uint32_t dictionary_ncols = (rg.nextMediumNumber() % 5) + 1;
+    const DictionaryLayouts & dl = rg.pickRandomly(allDictionaryLayoutSettings);
+    const bool isRange = dl == COMPLEX_KEY_RANGE_HASHED || dl == RANGE_HASHED;
+    const uint32_t dictionary_ncols = (rg.nextMediumNumber() % 5) + (isRange ? 2 : 1); /// Range requires 2 cols for min and max
     SettingValues * svs = nullptr;
     DictionarySource * source = cd->mutable_source();
     DictionaryLayout * layout = cd->mutable_layout();
@@ -1924,21 +1926,9 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         dc->set_is_object_id(rg.nextMediumNumber() < 3);
         next.cols[ncname] = std::move(col);
     }
-
-    /// Add Primary Key
-    flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
-    const size_t ocols = (rg.nextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
-    std::shuffle(entries.begin(), entries.end(), rg.generator);
-    TableKey * tkey = cd->mutable_primary_key();
-    for (size_t i = 0; i < ocols; i++)
-    {
-        columnPathRef(this->entries[i], tkey->add_exprs()->mutable_expr());
-    }
-    this->entries.clear();
     setClusterInfo(rg, next);
 
     /// Layout properties
-    const DictionaryLayouts & dl = rg.pickRandomly(allDictionaryLayoutSettings);
     const auto & layoutSettings = allDictionaryLayoutSettings.at(dl);
     layout->set_layout(dl);
     if (!layoutSettings.empty() && rg.nextSmallNumber() < 5)
@@ -1957,6 +1947,25 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         sv->set_property("PATH");
         sv->set_value("'" + ncache + "'");
     }
+
+    /// Add Primary Key
+    flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
+    const size_t ocols = (rg.nextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
+    std::shuffle(entries.begin(), entries.end(), rg.generator);
+    TableKey * tkey = cd->mutable_primary_key();
+    for (size_t i = 0; i < ocols; i++)
+    {
+        columnPathRef(this->entries[i], tkey->add_exprs()->mutable_expr());
+    }
+    if (isRange)
+    {
+        DictionaryRange * dr = cd->mutable_range();
+
+        std::shuffle(entries.begin(), entries.end(), rg.generator);
+        columnPathRef(this->entries[0], dr->mutable_min());
+        columnPathRef(this->entries[1], dr->mutable_max());
+    }
+    this->entries.clear();
 
     /// Lifetime properties
     life->set_min(rg.pickRandomly(lifeValues));

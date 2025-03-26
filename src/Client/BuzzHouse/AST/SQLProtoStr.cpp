@@ -3563,6 +3563,15 @@ CONV_FN(DictionaryLayout, dl)
     ret += "))";
 }
 
+CONV_FN(DictionaryRange, dr)
+{
+    ret += " RANGE(MIN ";
+    ExprToString(ret, dr.min());
+    ret += "MAX ";
+    ExprToString(ret, dr.max());
+    ret += ")";
+}
+
 CONV_FN(DictionaryLifetime, dl)
 {
     ret += " LIFETIME(";
@@ -3604,6 +3613,10 @@ CONV_FN(CreateDictionary, create_dictionary)
     TableKeyToString(ret, create_dictionary.primary_key());
     DictionarySourceToString(ret, create_dictionary.source());
     DictionaryLayoutToString(ret, create_dictionary.layout());
+    if (create_dictionary.has_range())
+    {
+        DictionaryRangeToString(ret, create_dictionary.range());
+    }
     DictionaryLifetimeToString(ret, create_dictionary.lifetime());
     if (create_dictionary.has_setting_values())
     {
