@@ -1305,8 +1305,8 @@ arrayJoin
 arrayLast
 arrayLastIndex
 arrayLastOrNull
-arrayLevenshtein
-arrayLevenshteinWeighted
+arrayLevenshteinDistance
+arrayLevenshteinDistanceWeighted
 arrayMap
 arrayMax
 arrayMin

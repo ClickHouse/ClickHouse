@@ -3374,98 +3374,98 @@ Result:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayLevenshtein {#arraylevenshtein}
+## arrayLevenshteinDistance {#arraylevenshteindistance}
 
 Calculates Levenshtein distance for two arrays.
 
 **Syntax**
 
 ```sql
-arrayLevenshtein(lhs, rhs)
+arrayLevenshteinDistance(from, to)
 ```
 
 **Arguments**
 
-- `lhs` — left-hand side array
-- `rhs` — right-hand side array
+- `from` — first array
+- `to` — second array
 
 **Returned Value**
 
-- Levenshtein distance between left-hand and right-hand arrays
+- Levenshtein distance between the first and the second arrays
 
 **Examples**
 
 Query:
 
-``` sql
-SELECT arrayLevenshtein([1, 2, 3, 4], [1, 2, 3, 4])
+```sql
+SELECT arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])
 ```
 
 Result:
 
-``` text
+```text
 
-┌─arrayLevenshtein([1, 2, 4], [1, 2, 3])─┐
-│                                      1 │
-└────────────────────────────────────────┘
+┌─arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
 
 ```
 
-## arrayLevenshteinWeighted {#arraylevenshteinweighted}
+## arrayLevenshteinDistanceWeighted {#arraylevenshteindistanceweighted}
 
 Calculates Levenshtein distance for two arrays with custom weights for each element. Number of elements for array and its weights should match
 
 **Syntax**
 
 ```sql
-arrayLevenshteinWeighted(lhs, rhs, lhs_weights, rhs_weights)
+arrayLevenshteinDistanceWeighted(from, to, from_weights, to_weights)
 ```
 
 **Arguments**
 
-- `lhs` — left-hand side array
-- `rhs` — right-hand side array
-- `lhs_weights` — right-hand side weights
-- `rhs_weights` — right-hand side weights
+- `from` — first array
+- `to` — second array
+- `from_weights` — weights for the first array
+- `to_weights` — weights for the second array
 
 **Returned Value**
 
-- Levenshtein distance between left-hand and right-hand arrays with custom weights for each element
+- Levenshtein distance between the first and the second arrays with custom weights for each element
 
 **Examples**
 
 Query:
 
-``` sql
-SELECT arrayLevenshteinWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])
+```sql
+SELECT arrayLevenshteinDistanceWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])
 ```
 
 Result:
 
-``` text
+```text
 
-┌─arrayLevenshteinWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
-│                                                                                   14 │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌─arrayLevenshteinDistanceWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
+│                                                                                           14 │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ```
 
 ## arraySimilarity {#arraysimilarity}
 
-Calculates arrays' similarity from 0 to 1 based on weighed Levenshtein distance. Accepts the same arguments as `arrayLevenshteinWeighted` function.
+Calculates arrays' similarity from 0 to 1 based on weighed Levenshtein distance. Accepts the same arguments as `arrayLevenshteinDistanceWeighted` function.
 
 **Syntax**
 
 ```sql
-arraySimilarity(lhs, rhs, lhs_weights, rhs_weights)
+arraySimilarity(from, to, from_weights, to_weights)
 ```
 
 **Arguments**
 
-- `lhs` — left-hand side array
-- `rhs` — right-hand side array
-- `lhs_weights` — right-hand side weights
-- `rhs_weights` — right-hand side weights
+- `from` — first array
+- `to` — second array
+- `from_weights` — weights for the first array
+- `to_weights` — weights for the second array
 
 **Returned Value**
 
@@ -3475,13 +3475,13 @@ arraySimilarity(lhs, rhs, lhs_weights, rhs_weights)
 
 Query:
 
-``` sql
+```sql
 SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])
 ```
 
 Result:
 
-``` text
+```text
 
 ┌─arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
 │                                                          0.2222222222222222 │

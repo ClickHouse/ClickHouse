@@ -28,8 +28,8 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
-/// arrayLevenshtein([1,2,3,4], [1,3,2,4]) = 2
-/// arrayLevenshteinWeighted([1,2,3,4], [1,3,2,4]) = 2
+/// arrayLevenshteinDistance([1,2,3,4], [1,3,2,4]) = 2
+/// arrayLevenshteinDistanceWeighted([1,2,3,4], [1,3,2,4]) = 2
 template <typename T>
 class FunctionArrayLevenshtein : public IFunction
 {
@@ -109,7 +109,7 @@ private:
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Unknown function {}. "
-            "Supported names: 'arrayLevenshtein', 'arrayLevenshteinWeighted', 'arraySimilarity'",
+            "Supported names: 'arrayLevenshteinDistance', 'arrayLevenshteinDistanceWeighted', 'arraySimilarity'",
             getName());
     }
 
@@ -513,7 +513,7 @@ private:
 
 struct SimpleLevenshtein
 {
-    static constexpr auto name{"arrayLevenshtein"};
+    static constexpr auto name{"arrayLevenshteinDistance"};
     static constexpr size_t arguments = 2;
 };
 
@@ -538,7 +538,7 @@ ColumnPtr FunctionArrayLevenshtein<SimpleLevenshtein>::execute(std::vector<const
 
 struct Weighted
 {
-    static constexpr auto name{"arrayLevenshteinWeighted"};
+    static constexpr auto name{"arrayLevenshteinDistanceWeighted"};
     static constexpr size_t arguments = 4;
 };
 
@@ -584,16 +584,16 @@ REGISTER_FUNCTION(ArrayLevenshtein)
         {.description = R"(
 Calculates Levenshtein distance for two arrays.
 )",
-         .syntax{"arrayLevenshtein(lhs, rhs)"},
-         .arguments{{"lhs", "left-hand side array"}, {"rhs", "right-hand side array"}},
-         .returned_value{"Levenshtein distance between left-hand and right-hand arrays"},
+         .syntax{"arrayLevenshteinDistance(from, to)"},
+         .arguments{{"from", "first array"}, {"to", "second array"}},
+         .returned_value{"Levenshtein distance between the first and the second arrays"},
          .examples{{{
              "Query",
-             "SELECT arrayLevenshtein([1, 2, 3, 4], [1, 2, 3, 4])",
+             "SELECT arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])",
              R"(
-┌─arrayLevenshtein([1, 2, 4], [1, 2, 3])─┐
-│                                      1 │
-└────────────────────────────────────────┘
+┌─arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
 )",
          }}},
          .category{"Arrays"}});
@@ -602,35 +602,35 @@ Calculates Levenshtein distance for two arrays.
         {.description = R"(
 Calculates Levenshtein distance for two arrays with custom weights for each element. Number of elements for array and its weights should match
 )",
-         .syntax{"arrayLevenshteinWeighted(lhs, rhs, lhs_weights, rhs_weights)"},
+         .syntax{"arrayLevenshteinDistanceWeighted(from, to, from_weights, to_weights)"},
          .arguments{
-             {"lhs", "left-hand side array"},
-             {"rhs", "right-hand side array"},
-             {"lhs_weights", "right-hand side weights"},
-             {"rhs_weights", "right-hand side weights"},
+             {"from", "first array"},
+             {"to", "second array"},
+             {"from_weights", "weights for the first array"},
+             {"to_weights", "weights for the second array"},
          },
-         .returned_value{"Levenshtein distance between left-hand and right-hand arrays with custom weights for each element"},
+         .returned_value{"Levenshtein distance between the first and the second arrays with custom weights for each element"},
          .examples{{{
             "Query",
-            "SELECT arrayLevenshteinWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])",
+            "SELECT arrayLevenshteinDistanceWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])",
             R"(
-┌─arrayLevenshteinWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
-│                                                                                   14 │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌─arrayLevenshteinDistanceWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
+│                                                                                           14 │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
 )",
          }}},
          .category{"Arrays"}});
 
     factory.registerFunction<FunctionArrayLevenshtein<Similarity>>(
         {.description = R"(
-Calculates arrays' similarity from 0 to 1 based on weighed Levenshtein distance. Accepts the same arguments as `arrayLevenshteinWeighted` function.
+Calculates arrays' similarity from 0 to 1 based on weighed Levenshtein distance. Accepts the same arguments as `arrayLevenshteinDistanceWeighted` function.
 )",
-         .syntax{"arraySimilarity(lhs, rhs, lhs_weights, rhs_weights)"},
+         .syntax{"arraySimilarity(from, to, from_weights, to_weights)"},
          .arguments{
-             {"lhs", "left-hand side array"},
-             {"rhs", "right-hand side array"},
-             {"lhs_weights", "right-hand side weights"},
-             {"rhs_weights", "right-hand side weights"},
+             {"from", "first array"},
+             {"to", "second array"},
+             {"from_weights", "weights for the first array"},
+             {"to_weights", "weights for the second array"},
          },
          .returned_value{"Similarity of two arrays based on the weighted Levenshtein distance"},
          .examples{{{
