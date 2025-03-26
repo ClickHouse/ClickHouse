@@ -52,7 +52,9 @@ WorkloadResourceManager::NodeInfo::NodeInfo(WorkloadSettings::Unit unit, const A
     auto * create = assert_cast<ASTCreateWorkloadQuery *>(ast.get());
     name = create->getWorkloadName();
     parent = create->getWorkloadParent();
-    settings.updateFromChanges(unit, create->changes, resource_name);
+    // We ignore unknown settings here for forward-compatibility.
+    // There is no way to report error at this point other than stop server.
+    settings.updateFromChanges(unit, create->changes, resource_name, /*throw_on_unknown_setting=*/ false);
 }
 
 WorkloadResourceManager::Resource::Resource(const ASTPtr & resource_entity_)

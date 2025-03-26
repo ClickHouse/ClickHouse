@@ -47,7 +47,7 @@ struct WorkloadSettings
     Int64 getSemaphoreMaxRequests() const;
     Int64 getSemaphoreMaxCost() const;
 
-    void updateFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {});
+    void updateFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {}, bool throw_on_unknown_setting = true);
 };
 
 }

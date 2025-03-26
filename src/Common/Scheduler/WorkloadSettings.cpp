@@ -60,7 +60,7 @@ Int64 WorkloadSettings::getSemaphoreMaxCost() const
     }
 }
 
-void WorkloadSettings::updateFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name)
+void WorkloadSettings::updateFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name, bool throw_on_unknown_setting)
 {
     // Set resource unit
     unit = unit_;
@@ -121,7 +121,7 @@ void WorkloadSettings::updateFromChanges(Unit unit_, const ASTCreateWorkloadQuer
             return field.safeGet<Int64>();
         }
 
-        void read(const String & name, const Field & value)
+        void read(const String & name, const Field & value, bool throw_on_unknown_setting)
         {
             // Note that the second workload setting name options are provided for backward-compatibility
             if (name == "weight")
@@ -138,6 +138,8 @@ void WorkloadSettings::updateFromChanges(Unit unit_, const ASTCreateWorkloadQuer
                 new_max_bytes_inflight = getNotNegativeInt64(name, value);
             else if (name == "max_concurrent_threads")
                 new_max_concurrent_threads = getNotNegativeInt64(name, value);
+            else if (throw_on_unknown_setting)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown workload setting '{}'", name);
         }
     } regular, specific;
 
@@ -145,9 +147,9 @@ void WorkloadSettings::updateFromChanges(Unit unit_, const ASTCreateWorkloadQuer
     for (const auto & [name, value, resource] : changes)
     {
         if (resource.empty())
-            regular.read(name, value);
+            regular.read(name, value, throw_on_unknown_setting);
         else if (resource == resource_name)
-            specific.read(name, value);
+            specific.read(name, value, throw_on_unknown_setting);
     }
 
     auto get_value = [] <typename T> (const std::optional<T> & specific_new, const std::optional<T> & regular_new, T & old)
