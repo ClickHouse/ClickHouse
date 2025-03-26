@@ -238,14 +238,14 @@ std::unordered_map<String, CHSetting> hashedLayoutSettings
             [](RandomGenerator & rg)
             {
                 return std::to_string(
-                    rg.thresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+                    rg.thresholdGenerator<uint32_t>(0.25, 0.25, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
             },
             {},
             false)},
-       {"SHARDS", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, 10)); }, {}, false)}};
+       {"SHARDS", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 10)); }, {}, false)}};
 
 std::unordered_map<String, CHSetting> hashedArrayLayoutSettings
-    = {{"SHARDS", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, 10)); }, {}, false)}};
+    = {{"SHARDS", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 10)); }, {}, false)}};
 
 std::unordered_map<String, CHSetting> rangeHashedLayoutSettings
     = {{"RANGE_LOOKUP_STRATEGY", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'min'" : "'max'"; }, {}, false)}};
@@ -258,7 +258,7 @@ std::unordered_map<String, CHSetting> cachedLayoutSettings
             [](RandomGenerator & rg)
             {
                 return std::to_string(
-                    rg.thresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+                    rg.thresholdGenerator<uint32_t>(0.25, 0.25, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
             },
             {},
             false)},
@@ -267,7 +267,7 @@ std::unordered_map<String, CHSetting> cachedLayoutSettings
             [](RandomGenerator & rg)
             {
                 return std::to_string(
-                    rg.thresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+                    rg.thresholdGenerator<uint32_t>(0.25, 0.25, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
             },
             {},
             false)}};

@@ -1943,7 +1943,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         const std::filesystem::path & nfile = fc.db_file_path / ncache;
 
         sv->set_property("PATH");
-        sv->set_value("'" + ncache + "'");
+        sv->set_value("'" + nfile.generic_string() + "'");
     }
 
     /// Add Primary Key
