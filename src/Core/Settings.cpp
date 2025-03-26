@@ -3652,7 +3652,7 @@ Normalize function names to their canonical names
     DECLARE(Bool, enable_early_constant_folding, true, R"(
 Enable query optimization where we analyze function and subqueries results and rewrite query if there are constants there
 )", 0) \
-    DECLARE(Bool, deduplicate_blocks_in_dependent_materialized_views, false, R"(
+    DECLARE(Bool, deduplicate_blocks_in_dependent_materialized_views, true, R"(
 Enables or disables the deduplication check for materialized views that receive data from Replicated\* tables.
 
 Possible values:
@@ -3662,10 +3662,7 @@ Possible values:
 
 Usage
 
-By default, deduplication is not performed for materialized views but is done upstream, in the source table.
-If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable the insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
-At the same time, this behaviour "breaks" `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with ClickHouse Keeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
-ignoring check result for the source table, and will insert rows lost because of the first failure.
+Should or should not Materialized view do a deduplication of inserted blocks. Enabled by default to implement idempotent insertion.
 )", 0) \
     DECLARE(Bool, throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert, true, R"(
 Throw exception on INSERT query when the setting `deduplicate_blocks_in_dependent_materialized_views` is enabled along with `async_insert`. It guarantees correctness, because these features can't work together.
