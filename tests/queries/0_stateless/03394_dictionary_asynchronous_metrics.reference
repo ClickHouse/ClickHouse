@@ -1,7 +1,9 @@
 key1	value1
 0
 DictionaryLoadFailed	0	Amount of failed dictionaries
-DictionaryMaxLastSuccessfulUpdateTime	1	The maximum duration(in milliseconds) of dictionary has been failed
+DictionaryMaxLastSuccessfulUpdateTime	1	The maximum duration(in seconds) of dictionary has been failed
 0
 DictionaryLoadFailed	1	Amount of failed dictionaries
-DictionaryMaxLastSuccessfulUpdateTime	1	The maximum duration(in milliseconds) of dictionary has been failed
+DictionaryMaxLastSuccessfulUpdateTime	1	The maximum duration(in seconds) of dictionary has been failed
+DictionaryLoadFailed	0	Amount of failed dictionaries
+DictionaryMaxLastSuccessfulUpdateTime	0	The maximum duration(in seconds) of dictionary has been failed

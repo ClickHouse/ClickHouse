@@ -1,3 +1,0 @@
-<clickhouse>
-    <asynchronous_metrics>true</asynchronous_metrics>
-</clickhouse>
