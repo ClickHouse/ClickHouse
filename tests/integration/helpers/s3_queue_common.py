@@ -164,11 +164,11 @@ def create_mv(
         DROP TABLE IF EXISTS {dst_table_name};
         DROP TABLE IF EXISTS {mv_name};
 
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {src_table_name};
+
         CREATE TABLE {dst_table_name} ({format}, _path String)
         ENGINE = MergeTree()
         ORDER BY column1;
-
-        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {src_table_name};
         """
     )
 
