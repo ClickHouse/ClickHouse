@@ -33,6 +33,7 @@ from typing import List, Optional
 
 from ci_buddy import CIBuddy
 from ci_config import Labels
+from ci_utils import Shell
 from env_helper import IS_CI, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
@@ -106,12 +107,14 @@ close it.
         self.pre_check()
 
     def pre_check(self):
-        branch_updated = git_runner(
-            f"git branch -a --contains={self.pr.merge_commit_sha} "
-            f"{self.REMOTE}/{self.name}"
+        self._backported = Shell.check(
+            f"git merge-base --is-ancestor {self.pr.merge_commit_sha} {self.REMOTE}/{self.name}",
+            verbose=True,
         )
-        if branch_updated:
-            self._backported = True
+        if self._backported:
+            print(
+                f"WARNING: Backport for PR [{self.pr}] is already present on {self.name}"
+            )
 
     def pop_prs(self, prs: PullRequests) -> PullRequests:
         """the method processes all prs and pops the ReleaseBranch related prs"""
@@ -327,6 +330,11 @@ close it.
         assignees = [self.pr.user, self.pr.merged_by]
         if self.pr.assignees:
             assignees.extend(self.pr.assignees)
+        assignees = [
+            a
+            for a in assignees
+            if "robot-clickhouse" not in str(a) and "clickhouse-gh" not in str(a)
+        ]
         logging.info(
             "Assing #%s to author and assignees of the original PR: %s",
             new_pr.number,

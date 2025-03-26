@@ -23,11 +23,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.error_log LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 hostname:   clickhouse.eu-central1.internal

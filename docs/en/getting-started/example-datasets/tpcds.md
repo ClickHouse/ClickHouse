@@ -14,7 +14,7 @@ References
 
 First, checkout the TPC-DS repository and compile the data generator:
 
-``` bash
+```bash
 git clone https://github.com/gregrahn/tpcds-kit.git
 cd tpcds-kit/tools
 make
@@ -22,7 +22,7 @@ make
 
 Then, generate the data. Parameter `-scale` specifies the scale factor.
 
-``` bash
+```bash
 ./dsdgen -scale 1
 ```
 
@@ -560,7 +560,7 @@ CREATE TABLE web_site (
 
 The data can be imported as follows:
 
-``` bash
+```bash
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO call_center FORMAT CSV" < call_center.tbl
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO catalog_page FORMAT CSV" < catalog_page.tbl
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO catalog_returns FORMAT CSV" < catalog_returns.tbl

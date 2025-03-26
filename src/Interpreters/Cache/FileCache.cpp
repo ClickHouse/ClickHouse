@@ -756,17 +756,22 @@ FileCache::getOrSet(
 
         if (!file_segments.front()->range().contains(result_range.left))
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} to include {} "
-                            "(end offset: {}, aligned offset: {}, aligned end offset: {})",
-                            file_segments.front()->range().toString(), offset, result_range.right, aligned_offset, aligned_end_offset);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Expected {} to include {} "
+                "(end offset: {}, aligned offset: {}, aligned end offset: {})",
+                file_segments.front()->range().toString(), offset,
+                result_range.right, aligned_offset, aligned_end_offset);
         }
     }
 
     chassert(file_segments_limit
              ? file_segments.back()->range().left <= result_range.right
              : file_segments.back()->range().contains(result_range.right),
-             fmt::format("Unexpected state. Back: {}, result range: {}, limit: {}",
-                         file_segments.back()->range().toString(), result_range.toString(), file_segments_limit));
+             fmt::format(
+                 "Unexpected state. Back: {}, result range: {}, "
+                 "limit: {}, initial offset: {}, initial size: {}",
+                 file_segments.back()->range().toString(), result_range.toString(),
+                 file_segments_limit, offset, size));
 
     chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
 

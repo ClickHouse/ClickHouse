@@ -220,44 +220,44 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
     return ret;
 }
 
-static const constexpr char hex_digits[] = "0123456789abcdef";
+static const constexpr char hexDigits[] = "0123456789abcdef";
 
 String RandomGenerator::nextUUID()
 {
     return fmt::format(
         "{}{}{}{}{}{}{}{}-{}{}{}{}-{}{}{}{}-{}{}{}{}-{}{}{}{}{}{}{}{}{}{}{}{}",
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)]);
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)]);
 }
 
 String RandomGenerator::nextIPv4()
@@ -274,14 +274,14 @@ String RandomGenerator::nextIPv6()
 {
     return fmt::format(
         "{}:{}:{}:{}:{}:{}:{}:{}",
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)]);
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)]);
 }
 
 }

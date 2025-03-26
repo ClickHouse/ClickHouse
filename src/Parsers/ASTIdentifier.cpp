@@ -54,6 +54,11 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, A
     }
 }
 
+bool ASTIdentifier::isParam() const
+{
+    return !children.empty();
+}
+
 ASTPtr ASTIdentifier::getParam() const
 {
     assert(full_name.empty() && children.size() == 1);
@@ -201,6 +206,7 @@ ASTPtr ASTTableIdentifier::clone() const
 {
     auto ret = std::make_shared<ASTTableIdentifier>(*this);
     ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
+    ret->cloneChildren();
     return ret;
 }
 

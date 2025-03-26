@@ -13,7 +13,7 @@ If you don't specify `ALL` or `DISTINCT`, it will depend on the `union_default_m
 
 You can use `UNION` to combine any number of `SELECT` queries by extending their results. Example:
 
-``` sql
+```sql
 SELECT CounterID, 1 AS table, toInt64(count()) AS c
     FROM test.hits
     GROUP BY CounterID

@@ -163,7 +163,13 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
         timeout=60,
     )
     # Ensure that process exists
-    if call("kill -0 $(cat /var/run/clickhouse-server/clickhouse-server.pid)", shell=True) != 0:
+    if (
+        call(
+            "kill -0 $(cat /var/run/clickhouse-server/clickhouse-server.pid)",
+            shell=True,
+        )
+        != 0
+    ):
         raise ServerDied("clickhouse-server process does not exist")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(

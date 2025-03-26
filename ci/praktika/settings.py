@@ -100,9 +100,9 @@ class _Settings:
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
     CI_DB_INSERT_TIMEOUT_SEC = 5
-    SUB_RESULT_NAMES_WITH_TESTS = [
-        "Tests",
-    ]
+    # if any nested Result in top level Result has name from this array, CIDB will be filled with sub-Results from that Result,
+    #  otherwise - with sub-Results from top-level Result
+    CI_DB_SUB_RESULT_NAMES_WITH_TESTS = []
 
 
 _USER_DEFINED_SETTINGS = [
@@ -136,7 +136,7 @@ _USER_DEFINED_SETTINGS = [
     "CI_DB_DB_NAME",
     "CI_DB_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
-    "SUB_RESULT_NAMES_WITH_TESTS",
+    "CI_DB_SUB_RESULT_NAMES_WITH_TESTS",
     "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",
     "SECRET_GH_APP_PEM_KEY",
