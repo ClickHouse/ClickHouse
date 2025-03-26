@@ -9,6 +9,7 @@ DELETE FROM lwd_test WHERE id = 1;
 
 SELECT count() FROM lwd_test;
 
+SYSTEM FLUSH LOGS query_log;
 SELECT read_rows FROM system.query_log WHERE query = 'SELECT count() FROM lwd_test'
 
 DROP TABLE IF EXISTS lwd_test;
