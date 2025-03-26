@@ -1825,7 +1825,7 @@ void StatementGenerator::generateSelect(
             {
                 generateLimit(rg, ssc->has_orderby(), ncols, ssc->mutable_limit());
             }
-            else
+            else if (ssc->has_orderby() || this->allow_not_deterministic)
             {
                 generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
             }
