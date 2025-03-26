@@ -35,7 +35,6 @@
 #include <base/types.h>
 
 #include <algorithm>
-#include <exception>
 #include <numeric>
 
 using namespace DB;
@@ -81,7 +80,12 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
 
     const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
     if (!std::ranges::all_of(hash_joins, [&](const auto & hash_join) { return hash_join->data->getTotalRowCount() == ht_size; }))
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes.");
+    {
+        std::stringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        for (const auto & hash_join : hash_joins)
+            ss << hash_join->data->getTotalRowCount() << ", ";
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes: {}", ss.str());
+    }
 
     const auto source_rows = std::accumulate(
         hash_joins.begin(),
@@ -210,8 +214,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
         if (!hash_joins[0]->data->twoLevelMapIsUsed())
             return;
 
-        if (!std::uncaught_exceptions())
-            updateStatistics(hash_joins, stats_collecting_params);
+        updateStatistics(hash_joins, stats_collecting_params);
 
         for (size_t i = 0; i < slots; ++i)
         {
