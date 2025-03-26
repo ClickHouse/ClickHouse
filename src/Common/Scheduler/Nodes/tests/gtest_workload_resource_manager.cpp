@@ -375,7 +375,7 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
 struct TestQuery {
     ResourceTest & t;
 
-    std::mutex start_mutex;
+    std::mutex slots_mutex;
     std::shared_ptr<CPUSlotsAllocation> slots;
 
     std::mutex mutex;
@@ -388,8 +388,10 @@ struct TestQuery {
     UInt64 work_left = UInt64(-1);
     String name;
 
-    std::mutex threads_mutex;
-    std::vector<ThreadFromGlobalPool *> threads;
+    ThreadFromGlobalPool * master_thread = nullptr;
+
+    std::mutex worker_threads_mutex;
+    std::vector<ThreadFromGlobalPool *> worker_threads;
 
     static constexpr int us_per_work = 10;
 
@@ -400,12 +402,18 @@ struct TestQuery {
     ~TestQuery()
     {
         finish();
+        if (master_thread && master_thread->joinable())
+            master_thread->join();
+    }
+
+    void joinWorkerThreads()
+    {
         while (true)
         {
             std::vector<ThreadFromGlobalPool *> threads_to_join;
             {
-                std::scoped_lock lock{threads_mutex};
-                threads_to_join.swap(threads);
+                std::scoped_lock lock{worker_threads_mutex};
+                threads_to_join.swap(worker_threads);
             }
             if (threads_to_join.empty())
                 break;
@@ -414,7 +422,7 @@ struct TestQuery {
                 if (thread->joinable())
                     thread->join();
             }
-            // we have to repeat because threads we have just joined could have created new threads in the meantime
+            // We have to repeat because threads we have just joined could have created new threads in the meantime
         }
     }
 
@@ -427,8 +435,8 @@ struct TestQuery {
                 threadFunc(std::move(my_slot));
             });
 
-            std::scoped_lock lock{threads_mutex};
-            threads.push_back(thread);
+            std::scoped_lock lock{worker_threads_mutex};
+            worker_threads.push_back(thread);
         }
     }
 
@@ -466,7 +474,7 @@ struct TestQuery {
         while (true)
         {
             {
-                std::unique_lock lock{start_mutex};
+                std::unique_lock lock{slots_mutex};
                 if (slots && slots->isRequesting())
                     return;
             }
@@ -533,15 +541,30 @@ struct TestQuery {
         max_threads = max_threads_;
         if (runtime_us != UInt64(-1))
             work_left = runtime_us / us_per_work;
-        t.async(workload, t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName(),
+        master_thread = t.async(workload, t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName(),
             [&, workload] (ResourceLink master_link, ResourceLink worker_link)
             {
                 setThreadName(workload.c_str());
                 {
-                    std::scoped_lock lock2{start_mutex};
+                    std::scoped_lock lock2{slots_mutex};
                     slots = std::make_shared<CPUSlotsAllocation>(1, max_threads - 1, master_link, worker_link);
                 }
                 threadFunc(slots->acquire());
+
+                // We have to keep this thread alive even when threadFunc() is finished
+                // because `slots` keep references to ProfileEvent stored in thread-local storage.
+                // PipelineExecutor master thread does similar thing by joining all additional threads during finalize.
+                {
+                    std::unique_lock lock3{mutex};
+                    cv.wait(lock3, [this] () { return query_is_finished; });
+                }
+
+                // Acquired slot holds a reference to the allocation, we need to wait for release of all acquired slots
+                joinWorkerThreads();
+
+                std::unique_lock lock4{slots_mutex};
+                chassert(slots.use_count() == 1); // We need to destroy slots here, before thread exit
+                slots.reset();
             });
     }
 };
