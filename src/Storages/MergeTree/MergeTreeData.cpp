@@ -593,15 +593,10 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByPredicate(
     const StorageSnapshotPtr & storage_snapshot, const ActionsDAG * filter_dag, ContextPtr local_context) const
 {
-    if (!local_context->getSettingsRef()[Setting::allow_statistics_optimize])
-        return {};
-
     const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
 
     if (parts.empty())
         return {};
-
-    ASTPtr expression_ast;
 
     ConditionSelectivityEstimator estimator;
     PartitionPruner partition_pruner(storage_snapshot->metadata, filter_dag, local_context);
