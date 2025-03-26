@@ -26,6 +26,8 @@ void TransposedMetricLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(metric_name);
     columns[column_idx++]->insert(value);
+    columns[column_idx++]->insert(is_event);
+    columns[column_idx++]->insert(number);
 }
 
 
@@ -63,7 +65,19 @@ ColumnsDescription TransposedMetricLogElement::getColumnsDescription()
             std::make_shared<DataTypeInt64>(),
             parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
             "Metric value."
-        }
+        },
+        {
+            "is_event",
+            std::make_shared<DataTypeUInt8>(),
+            parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Is event or metric."
+        },
+        {
+            "number",
+            std::make_shared<DataTypeUInt32>(),
+            parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Event number."
+        },
     };
 }
 
@@ -83,6 +97,8 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
         auto & old_value = prev_profile_events[i];
         elem.metric_name = ProfileEvents::getName(ProfileEvents::Event(i));
         elem.value = new_value - old_value;
+        elem.number = i;
+        elem.is_event = true;
         old_value = new_value;
         this->add(std::move(elem));
     }
@@ -91,6 +107,8 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
     {
         elem.metric_name = CurrentMetrics::getName(CurrentMetrics::Metric(i));
         elem.value = CurrentMetrics::values[i];
+        elem.number = i;
+        elem.is_event = false;
         this->add(std::move(elem));
     }
 }

@@ -18,6 +18,8 @@ struct TransposedMetricLogElement
     time_t event_time;
     std::string metric_name;
     Int64 value;
+    UInt8 is_event;
+    UInt32 number;
 
     static std::string name() { return "TransposedMetricLog"; }
     static ColumnsDescription getColumnsDescription();
@@ -30,7 +32,7 @@ class TransposedMetricLog : public PeriodicLog<TransposedMetricLogElement>
     using PeriodicLog<TransposedMetricLogElement>::PeriodicLog;
 public:
     /// This table is usually queried for fixed metric name.
-    static const char * getDefaultOrderBy() { return "hostname, event_date, event_time"; }
+    static const char * getDefaultOrderBy() { return "event_date, event_time"; }
 protected:
     void stepFunction(TimePoint current_time) override;
 };
