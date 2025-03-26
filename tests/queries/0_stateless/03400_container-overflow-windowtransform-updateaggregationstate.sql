@@ -1,3 +1,5 @@
+-- Tags: no-random-merge-tree-settings
+-- Tag no-random-merge-tree-settings: we want to keep the min_rows_for_wide_part and min_bytes_for_wide_part
 SET enable_json_type = 1;
 CREATE TABLE test (`id` UInt64, `json` JSON(max_dynamic_paths = 2, `a.b.c` UInt32))
 ENGINE = MergeTree
