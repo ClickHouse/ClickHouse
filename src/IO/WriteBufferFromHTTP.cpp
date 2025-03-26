@@ -53,7 +53,7 @@ void WriteBufferFromHTTP::finalizeImpl()
     WriteBufferFromOStream::finalizeImpl();
 }
 
-std::unique_ptr<WriteBufferFromHTTP> BuilderWriteBufferFromHTTP::build()
+std::unique_ptr<WriteBufferFromHTTP> BuilderWriteBufferFromHTTP::create()
 {
     ProxyConfiguration proxy_configuration;
 
@@ -63,7 +63,7 @@ std::unique_ptr<WriteBufferFromHTTP> BuilderWriteBufferFromHTTP::build()
         proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
     }
 
-    // unique ptr vs private pointer
+    /// WriteBufferFromHTTP constructor is private and can't be used in `make_unique`
     std::unique_ptr<WriteBufferFromHTTP> ptr(new WriteBufferFromHTTP(
         connection_group, uri, method, content_type, content_encoding, additional_headers, timeouts, buffer_size_, proxy_configuration));
 

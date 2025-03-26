@@ -627,7 +627,7 @@ StorageURLSink::StorageURLSink(
         .withAdditionalHeaders(headers)
         .withTimeouts(timeouts)
         .withBufferSize(DBMS_DEFAULT_BUFFER_SIZE)
-        .build();
+        .create();
 
     const auto & settings = context->getSettingsRef();
     write_buf = wrapWriteBufferWithCompressionMethod(

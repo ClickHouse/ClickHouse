@@ -42,7 +42,7 @@ class BuilderWriteBufferFromHTTP
     Poco::URI uri;
     HTTPConnectionGroupType connection_group;
     std::string method = Poco::Net::HTTPRequest::HTTP_POST; // POST or PUT only
-    bool bypass_proxy;
+    bool bypass_proxy = false;
     std::string content_type;
     std::string content_encoding;
     HTTPHeaderEntries additional_headers = {};
@@ -66,14 +66,13 @@ public:
     setterMember(withBypassProxy, bypass_proxy)
     setterMember(withContentType, content_type)
     setterMember(withContentEncoding, content_encoding)
-    setterMember(bypassProxy, bypass_proxy)
     setterMember(withAdditionalHeaders, additional_headers)
     setterMember(withTimeouts, timeouts)
     setterMember(withBufferSize, buffer_size_)
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 
-    std::unique_ptr<WriteBufferFromHTTP> build();
+    std::unique_ptr<WriteBufferFromHTTP> create();
 };
 
 }
