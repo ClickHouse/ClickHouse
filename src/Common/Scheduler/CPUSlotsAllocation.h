@@ -6,6 +6,7 @@
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/Scheduler/ResourceRequest.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ISlotControl.h>
 
 #include <atomic>
@@ -93,6 +94,8 @@ private:
     size_t waiters = 0; // Number of threads waiting on acquire() call
     std::vector<CPUSlotRequest> requests; // Requests per every slot
     CPUSlotRequest * current_request;
+    std::optional<CurrentMetrics::Increment> scheduled_slot_increment;
+    std::optional<ProfileEvents::Timer> wait_timer;
 };
 
 }
