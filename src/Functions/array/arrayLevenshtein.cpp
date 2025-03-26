@@ -110,7 +110,7 @@ private:
             ErrorCodes::LOGICAL_ERROR,
             "Unknown function {}. "
             "Supported names: 'arrayLevenshtein', 'arrayLevenshteinWeighted', 'arraySimilarity'",
-            T::name);
+            getName());
     }
 
     template <typename N, typename Result>
@@ -142,13 +142,13 @@ private:
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Unexpected code branch of function {}. No fitting levenshteinWeightedString",
-                        T::name);
+                        getName());
                 return true;
             }
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Unexpected code branch of function {}. Wrong expected result type in levenshteinString",
-                T::name);
+                getName());
         }
         const ColumnArray::Offsets & from_offsets = columns[0]->getOffsets();
         ColumnArray::Offset prev_from_offset = 0;
@@ -208,13 +208,13 @@ private:
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Unexpected code branch of function {}. No fitting levenshteinWeightedNumber",
-                        T::name);
+                        getName());
                 return true;
             }
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Unexpected code branch of function {}. Wrong expected result type in levenshteinNumber",
-                T::name);
+                getName());
         }
 
         const ColumnArray::Offsets & from_offsets = columns[0]->getOffsets();
@@ -260,13 +260,13 @@ private:
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Unexpected code branch of function {}. No fitting levenshteinWeightedGeneric",
-                        T::name);
+                        getName());
                 return;
             }
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Unexpected code branch of function {}. Wrong expected result type in levenshteinGeneric",
-                T::name);
+                getName());
         }
 
         const ColumnArray * column_from = columns[0];
@@ -397,8 +397,8 @@ private:
             // Effective Levenshtein realization from Common/levenshteinDistance
             Array from = (*column_from)[row].safeGet<Array>();
             Array to = (*column_to)[row].safeGet<Array>();
-            const std::vector<Field> from_vec(from.begin(), from.end());
-            const std::vector<Field> to_vec(to.begin(), to.end());
+            std::span<const Field> from_vec(from.begin(), from.end());
+            std::span<const Field> to_vec(to.begin(), to.end());
 
             std::span<const W> from_weights(column_from_weights->getData().begin() + prev_from_weights_offset, from_weights_offsets[row] - prev_from_weights_offset);
             prev_from_weights_offset = from_weights_offsets[row];
@@ -472,6 +472,43 @@ private:
         levenshteinGeneric<ColumnFloat64>(columns, res_values);
         return res;
     }
+
+    template <typename W>
+    bool similarity(std::vector<const ColumnArray *> columns, ColumnPtr distance, ColumnFloat64::Container & res_values) const
+    {
+        const ColumnVector<W> * column_from_weights = checkAndGetColumn<ColumnVector<W>>(&columns[2]->getData());
+        const ColumnVector<W> * column_to_weights = checkAndGetColumn<ColumnVector<W>>(&columns[3]->getData());
+        if (!column_from_weights || !column_to_weights)
+            return false;
+
+        const ColumnArray::Offsets & from_weights_offsets = columns[2]->getOffsets();
+        ColumnArray::Offset prev_from_weights_offset = 0;
+        const ColumnArray::Offsets & to_weights_offsets = columns[3]->getOffsets();
+        ColumnArray::Offset prev_to_weights_offset = 0;
+
+        for (size_t row = 0; row < distance->size(); row++)
+        {
+            std::span<const W> from_weights(column_from_weights->getData().begin() + prev_from_weights_offset, from_weights_offsets[row] - prev_from_weights_offset);
+            prev_from_weights_offset = from_weights_offsets[row];
+            std::span<const W> to_weights(column_to_weights->getData().begin() + prev_to_weights_offset, to_weights_offsets[row] - prev_to_weights_offset);
+            prev_to_weights_offset = to_weights_offsets[row];
+
+            if (distance->getFloat64(row) == 0)
+            {
+                res_values[row] = 1.0;
+                continue;
+            }
+            W weights_sum = std::accumulate(from_weights.begin(), from_weights.end(), W{}) +
+                            std::accumulate(to_weights.begin(), to_weights.end(), W{});
+            if (weights_sum == 0)
+            {
+                res_values[row] = 1.0;
+                continue;
+            }
+            res_values[row] = 1.0 - (distance->getFloat64(row) / weights_sum);
+        }
+        return true;
+    }
 };
 
 struct SimpleLevenshtein
@@ -520,46 +557,25 @@ struct Similarity
 template <>
 ColumnPtr FunctionArrayLevenshtein<Similarity>::execute(std::vector<const ColumnArray *> columns) const
 {
-     ColumnPtr distance = weightedLevenshteinImpl(columns);
-     auto result = ColumnFloat64::create();
-     ColumnFloat64::Container & res_values = result->getData();
-     res_values.resize(distance->size());
-     const ColumnVector<Float64> * column_from_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[2]->getData());
-     const ColumnVector<Float64> * column_to_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[3]->getData());
-     if (!column_from_weights || !column_to_weights)
-         throw Exception(
-                 ErrorCodes::LOGICAL_ERROR,
-                 "Function {} wrong type of weight columns",
-                 getName());
-     const PaddedPODArray<Float64> & vec_from_weights = column_from_weights->getData();
-     const ColumnArray::Offsets & from_weights_offsets = columns[2]->getOffsets();
-     ColumnArray::Offset prev_from_weights_offset = 0;
-
-     const PaddedPODArray<Float64> & vec_to_weights = column_to_weights->getData();
-     const ColumnArray::Offsets & to_weights_offsets = columns[3]->getOffsets();
-     ColumnArray::Offset prev_to_weights_offset = 0;
-     for (size_t row = 0; row < distance->size(); row++)
-     {
-         const std::vector<Float64> from_weights(vec_from_weights.begin() + prev_from_weights_offset, vec_from_weights.begin() + from_weights_offsets[row]);
-         prev_from_weights_offset = from_weights_offsets[row];
-         const std::vector<Float64> to_weights(vec_to_weights.begin() + prev_to_weights_offset, vec_to_weights.begin() + to_weights_offsets[row]);
-         prev_to_weights_offset = to_weights_offsets[row];
-
-         if (distance->getFloat64(row) == 0)
-         {
-             res_values[row] = 1.0;
-             continue;
-         }
-         Float64 weights_sum = std::accumulate(from_weights.begin(), from_weights.end(), 0.0) +
-                               std::accumulate(to_weights.begin(), to_weights.end(), 0.0);
-         if (weights_sum == 0.0)
-         {
-             res_values[row] = 1.0;
-             continue;
-         }
-         res_values[row] = 1.0 - (distance->getFloat64(row) / weights_sum);
-     }
-     return result;
+    ColumnPtr distance = weightedLevenshteinImpl(columns);
+    auto result = ColumnFloat64::create();
+    ColumnFloat64::Container & res_values = result->getData();
+    res_values.resize(distance->size());
+    if (!(
+        similarity<UInt8>(columns, distance, res_values) || similarity<UInt16>(columns, distance, res_values)
+        || similarity<UInt16>(columns, distance, res_values) || similarity<UInt64>(columns, distance, res_values)
+        || similarity<UInt128>(columns, distance, res_values) || similarity<UInt256>(columns, distance, res_values)
+        || similarity<Int8>(columns, distance, res_values) || similarity<Int16>(columns, distance, res_values)
+        || similarity<Int16>(columns, distance, res_values) || similarity<Int64>(columns, distance, res_values)
+        || similarity<Int128>(columns, distance, res_values) || similarity<Int256>(columns, distance, res_values)
+        || similarity<Float32>(columns, distance, res_values) || similarity<Float64>(columns, distance, res_values)))
+        throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected code branch of function {}. No matching column types for {} and {}",
+                getName(),
+                columns[2]->getName(),
+                columns[3]->getName());
+    return result;
 }
 
 REGISTER_FUNCTION(ArrayLevenshtein)
