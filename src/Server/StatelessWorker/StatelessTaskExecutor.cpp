@@ -29,7 +29,14 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 
     auto task_function = [task_description, object_storage, object_storage_path, context, task_promise]() mutable
     {
-        doExecuteTask(task_description, object_storage, object_storage_path, context);
+        try
+        {
+            doExecuteTask(task_description, object_storage, object_storage_path, context);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
         task_promise->set_value();
     };
 

@@ -286,6 +286,7 @@ struct DistributedQueryPlan
     std::unordered_map<String, std::unordered_map<String, String>> stage_depends_on;
     /// Maps exchange_id to exchange description
     ExchangeDescriptions exchange_descriptions;
+    String final_result_stream_name;
 };
 
 }

@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TIMEOUT_EXCEEDED;
+}
+
 void ExchangeConnections::addConnection(const String & query_id, const String & exchange_stream_id, Poco::Net::StreamSocket socket)
 {
     std::lock_guard lock(mutex);
@@ -24,7 +29,8 @@ Poco::Net::StreamSocket ExchangeConnections::getConnection(const String & query_
 
     /// Wait until the connection is established
     /// TODO: think how to replace this synchronous wait with returning "delayed" connection
-    result.wait();
+    if (result.wait_for(std::chrono::seconds(60)) != std::future_status::ready)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout while waiting for connection to exchange stream {}", exchange_stream_id);
 
     /// Remove the entry from the map
     {

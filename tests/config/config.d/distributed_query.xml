@@ -12,6 +12,7 @@
     </stateless_worker_client>
 
     <distributed_query>
+        <streaming_exchange_port>9223</streaming_exchange_port>
         <temporary_files_storage>
             <!-- Using local object storage  -->
             <type>local</type>

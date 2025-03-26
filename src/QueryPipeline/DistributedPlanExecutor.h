@@ -12,12 +12,20 @@ struct DistributedQueryPlan;
 
 void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context);
 
+/// Contains info about hosts assigned to exchange buckets
+struct ExchangeStreamDestinations
+{
+    /// Exchange stream id -> destination host
+    std::unordered_map<String, String> stream_hosts;
+};
+
 /// Contains all info to send a task to remote worker
 struct DistributedQueryTaskDescription
 {
     DistributedQueryTask task;
     String serialized_query_plan;
     ExchangeDescriptions exchanges;
+    ExchangeStreamDestinations exchange_stream_destinations;
 };
 
 /// Executes a task locally
@@ -38,7 +46,12 @@ using ExchangeLookupPtr = std::shared_ptr<IExchangeLookup>;
 
 struct ExchangeDescription;
 
-ExchangeLookupPtr createExchangeLookup(const String & query_id, const std::unordered_map<String, ExchangeDescription> & exchanges_, TemporaryFileLookupPtr temporary_files_, ContextPtr context);
+ExchangeLookupPtr createExchangeLookup(
+    const String & query_id,
+    const std::unordered_map<String, ExchangeDescription> & exchanges_,
+    const ExchangeStreamDestinations & exchange_stream_destinations,
+    TemporaryFileLookupPtr temporary_files_,
+    ContextPtr context);
 
 class ICustomResourceHolder;
 

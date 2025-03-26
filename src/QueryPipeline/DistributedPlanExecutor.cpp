@@ -1,6 +1,7 @@
 #include <condition_variable>
 #include <future>
 #include <memory>
+#include <unordered_map>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -28,6 +29,7 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <base/getFQDNOrHostName.h>
 
 
 namespace DB
@@ -398,14 +400,19 @@ TemporaryFileLookupPtr createTemporaryFilesLookup(ObjectStoragePtr object_storag
     return std::make_shared<TemporaryFilesInObjectStorage>(object_storage_, object_storage_path_, input_temporary_files_, output_temporary_files_);
 }
 
-ExchangeLookupPtr createExchangeLookup(const String & query_id, const std::unordered_map<String, ExchangeDescription> & exchanges_, TemporaryFileLookupPtr temporary_files_, ContextPtr context)
+ExchangeLookupPtr createExchangeLookup(
+    const String & query_id,
+    const std::unordered_map<String, ExchangeDescription> & exchanges_,
+    const ExchangeStreamDestinations & exchange_stream_destinations,
+    TemporaryFileLookupPtr temporary_files_,
+    ContextPtr context)
 {
     auto persisted_exchanges = std::make_shared<ExchangeViaTemporaryFiles>(temporary_files_);
 
-    // auto streaming_exchanges = std::make_shared<ExchangeViaChunks>(query_id);
-
-    auto streaming_exchenage_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port");
-    auto streaming_exchanges = createStreamingExchangeLookup(query_id, ExchangeConnections::instance(), streaming_exchenage_port);
+    auto streaming_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
+    auto streaming_exchanges = streaming_exchange_port != 0 ?
+        createStreamingExchangeLookup(query_id, ExchangeConnections::instance(), exchange_stream_destinations, streaming_exchange_port) :
+        std::make_shared<ExchangeViaChunks>(query_id);
 
     return std::make_shared<AllKinkdsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 }
@@ -440,7 +447,12 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     auto pipeline_settings = BuildQueryPipelineSettings(context);
     pipeline_settings.temporary_file_lookup = temporary_files;
     pipeline_settings.parameter_lookup = std::make_shared<TaskParameters>(task.parameters);
-    pipeline_settings.exchange_lookup = createExchangeLookup(object_storage_path, task_description.exchanges, temporary_files, context);
+    pipeline_settings.exchange_lookup = createExchangeLookup(
+        object_storage_path,
+        task_description.exchanges,
+        task_description.exchange_stream_destinations,
+        temporary_files,
+        context);
 
     auto optimization_settings = QueryPlanOptimizationSettings(context);
 
@@ -566,6 +578,8 @@ public:
     DistributedQueryPlanExecutorRemote(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
         : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_))
     {
+        fillHostnames();
+        assignHostsForTasks();
     }
 
 protected:
@@ -601,6 +615,24 @@ protected:
         LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(hostnames, ", "));
     }
 
+    void assignHostsForTasks()
+    {
+        size_t current_host = 0;
+        for (const auto & [stage_id, stage] : distributed_query_plan.stages)
+        {
+            for (const auto & task : stage.tasks)
+            {
+                const auto & assigned_host = hostnames[current_host];
+                current_host = (current_host + 1) % hostnames.size();
+                task_hosts[task.task_id] = assigned_host;
+                for (const auto & input_stream : task.input_exchange_streams)
+                    exchange_stream_destination_hosts[input_stream] = assigned_host;
+            }
+        }
+
+        exchange_stream_destination_hosts[distributed_query_plan.final_result_stream_name] = getFQDNOrHostName();
+    }
+
     struct RunningTaskInfo
     {
         String endpoint_uri;
@@ -609,8 +641,7 @@ protected:
 
     RunningTaskInfo startTask(const DistributedQueryTaskDescription & task_description)
     {
-        String host = hostnames[current_host];
-        current_host = (current_host + 1) % hostnames.size();
+        const String host = task_hosts.at(task_description.task.task_id);
         String stateless_worker_endpoint_uri;
         if (context->getConfigRef().getBool("stateless_worker_client.enabled", true))
         {
@@ -643,9 +674,16 @@ protected:
         DistributedQueryTaskDescription task_description;
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
+
         for (const auto & task : stage.tasks)
         {
             task_description.task = task;
+
+            /// Add exchange destinations for output streams
+            task_description.exchange_stream_destinations = {};
+            for (const auto & output_stream : task.output_exchange_streams)
+                task_description.exchange_stream_destinations.stream_hosts[output_stream] = exchange_stream_destination_hosts.at(output_stream);
+
             started_tasks.emplace_back(startTask(task_description));
         }
 
@@ -677,7 +715,8 @@ protected:
 
     std::unordered_map<String, std::deque<RunningTaskInfo>> stage_tasks;
     Strings hostnames;
-    size_t current_host = 0;    /// Chose host in round-robin manner
+    std::unordered_map<String, String> task_hosts;
+    std::unordered_map<String, String> exchange_stream_destination_hosts;
 };
 
 void DistributedQueryPlanExecutor::execute()
