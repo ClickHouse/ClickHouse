@@ -354,7 +354,7 @@ struct PartsRangesIterator
     MarkRange range;
     size_t part_index;
     EventType event;
-    bool selected;
+    bool selected; /// Whether this range was selected or rejected in skip index filtering
 };
 
 struct PartRangeIndex
@@ -960,7 +960,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
             }
 
             selected_ranges.push_back(
-                {index_access.getValue(part_index, range.begin), false, range, part_index, PartsRangesIterator::EventType::RangeStart, false});
+                {index_access.getValue(part_index, range.begin), false, range, part_index, PartsRangesIterator::EventType::RangeStart, true});
             for (auto i = range.begin; i < range.end;i++)
                is_selected_range[i] = true;
         }
@@ -981,21 +981,21 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         }
     }
 
-    LOG_TRACE(logger, "findPKRangesForFinalAfterSkipIndex : processed {} parts, selected ranges {}, rejected ranges {}", ranges_in_data_parts.size(), selected_ranges.size(), rejected_ranges.size());
-
     ::sort(selected_ranges.begin(), selected_ranges.end());
 
     ::sort(rejected_ranges.begin(), rejected_ranges.end());
 
+    LOG_TRACE(logger, "findPKRangesForFinalAfterSkipIndex : sorting phase complete");
+
     std::vector<PartsRangesIterator>::iterator selected_ranges_iter = selected_ranges.begin();
     std::vector<PartsRangesIterator>::iterator rejected_ranges_iter = rejected_ranges.begin();
+    size_t more_ranges_added = 0;
 
     while (selected_ranges_iter != selected_ranges.end() && rejected_ranges_iter != rejected_ranges.end())
     {
         auto selected_range_start = selected_ranges_iter->value;
         auto selected_range_end = index_access.getValue(selected_ranges_iter->part_index, selected_ranges_iter->range.end);
         auto rejected_range_start = rejected_ranges_iter->value;
-
 
         int result1 = compareValues(rejected_range_start, selected_range_start, false);
         int result2 = compareValues(rejected_range_start, selected_range_end, false);
@@ -1004,6 +1004,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         {
             result.addRange(rejected_ranges_iter->part_index, rejected_ranges_iter->range);
             rejected_ranges_iter++;
+            more_ranges_added++;
         }
         else if (result1 > 0) /// rejected_range_start beyond [selected_range]
         {
@@ -1019,6 +1020,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
             if (result3 == 0 || result4 == 0 || (result3 > 0 && result4 < 0) || (result1 < 0 && result4 > 0))
             {
                 result.addRange(rejected_ranges_iter->part_index, rejected_ranges_iter->range);
+                more_ranges_added++;
             }
             rejected_ranges_iter++;
         }
@@ -1039,6 +1041,9 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     {
         std::sort(result_final_range.ranges.begin(), result_final_range.ranges.end());
     }
+
+    LOG_TRACE(logger, "findPKRangesForFinalAfterSkipIndex : processed {} parts, initally selected {} ranges & rejected {}, more {} ranges added", ranges_in_data_parts.size(), selected_ranges.size(), rejected_ranges.size(), more_ranges_added);
+
     return result_final_ranges;
 }
 
