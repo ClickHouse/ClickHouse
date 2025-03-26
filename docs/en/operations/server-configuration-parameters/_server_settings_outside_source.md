@@ -2284,7 +2284,7 @@ For example:
 
 See also:
 - function [`cutToFirstSignificantSubdomainCustom`](../../sql-reference/functions/url-functions.md/#cuttofirstsignificantsubdomaincustom) and variations thereof,
-which accepts a custom TLD list name, returning the part of the domain that includes top-level subdomains up to the first significant subdomain.
+  which accepts a custom TLD list name, returning the part of the domain that includes top-level subdomains up to the first significant subdomain.
 
 ## proxy {#proxy}
 
@@ -2485,4 +2485,3 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 **See Also**
 - [Workload Hierarchy](/operations/workload-scheduling.md#workloads)
 - [workload_path](#workload_path)
-
