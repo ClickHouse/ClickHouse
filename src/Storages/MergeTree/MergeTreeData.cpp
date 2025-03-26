@@ -2177,18 +2177,13 @@ void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
     auto loading_tree = PartLoadingTree::build(std::move(parts_to_load));
 
     PartLoadingTreeNodes parts_to_add;
-    //std::set<std::string> parts_to_remove;
 
     {
         auto part_lock = lockParts();
 
-        //std::set<String> active_parts_set;
-
         /// Collect only "the most covering" parts from the top level of the tree.
         loading_tree.traverse(/*recursive=*/ false, [&, this](const auto & node)
         {
-            //active_parts_set.emplace(node->name);
-
             if (auto it = data_parts_by_info.find(node->info); it == data_parts_by_info.end())
                 parts_to_add.emplace_back(node);
         });

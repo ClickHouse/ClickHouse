@@ -8,10 +8,8 @@
 #include <Common/Logger.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/ExpressionActionsSettings.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/StoragePolicy.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
@@ -29,7 +27,6 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MarkCache.h>
