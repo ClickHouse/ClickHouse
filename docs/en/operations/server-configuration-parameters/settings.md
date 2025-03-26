@@ -703,7 +703,7 @@ Type: `Double`
 
 Default: `0.9`
 
-## max_build_vector_similarity_index_thread_pool_size {#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size}
+## max_build_vector_similarity_index_thread_pool_size {#max_build_vector_similarity_index_thread_pool_size}
 
 The maximum number of threads to use for building vector indexes.
 
@@ -2865,7 +2865,7 @@ Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse serve
 curl 127.0.0.1:9363/metrics
 ```
 
-## query_log {#query-log}
+## query_log {#query_log}
 
 Setting for logging queries received with the [log_queries=1](../../operations/settings/settings.md) setting.
 

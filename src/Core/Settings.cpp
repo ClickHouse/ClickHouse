@@ -1581,7 +1581,7 @@ Lower values mean higher priority. Threads with low `nice` priority values are e
     DECLARE(Bool, log_queries, true, R"(
 Setting up query logging.
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#query-log) server configuration parameter.
+Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#query_log) server configuration parameter.
 
 Example:
 
