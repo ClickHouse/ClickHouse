@@ -407,11 +407,11 @@ def test_partition_by(started_cluster, format_version, storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
-    assert len(files) == 14  # 10 partitiions + 4 metadata files
+    assert len(files) == 14  # 10 partitions + 4 metadata files
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
-    assert int(instance.query("SELECT count() FROM system.iceberg_history")) != 0
+    assert int(instance.query(f"SELECT count() FROM system.iceberg_history WHERE table_name = '{TABLE_NAME}'")) == 1
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -1103,7 +1103,7 @@ def test_evolved_schema_simple(
         ],
     )
     print (instance.query("SELECT * FROM system.iceberg_history"))
-    assert instance.query("SELECT count() FROM system.iceberg_history") != 0
+    assert int(instance.query(f"SELECT count() FROM system.iceberg_history WHERE table_name = '{TABLE_NAME}'")) == 5
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
