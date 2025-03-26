@@ -293,5 +293,7 @@ IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
     ErrorCodes::BAD_ARGUMENTS,
     {{"lru", FileCachePolicy::LRU},
-     {"slru", FileCachePolicy::SLRU}})
+     {"LRU", FileCachePolicy::LRU},
+     {"slru", FileCachePolicy::SLRU},
+     {"SLRU", FileCachePolicy::SLRU}})
 }
