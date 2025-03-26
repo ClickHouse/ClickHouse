@@ -13,7 +13,7 @@ import pytest
 from google.protobuf.internal.encoder import _VarintBytes
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 
@@ -71,9 +71,6 @@ def rabbitmq_cluster():
     try:
         cluster.start()
         logging.debug("rabbitmq_id is {}".format(instance.cluster.rabbitmq_docker_id))
-        instance.query("CREATE DATABASE test")
-        instance3.query("CREATE DATABASE test")
-
         yield cluster
 
     finally:
@@ -83,9 +80,12 @@ def rabbitmq_cluster():
 @pytest.fixture(autouse=True)
 def rabbitmq_setup_teardown():
     logging.debug("RabbitMQ is available - running test")
+    instance.query("CREATE DATABASE test")
+    instance3.query("CREATE DATABASE test")
     yield  # run test
     instance.query("DROP DATABASE test SYNC")
-    instance.query("CREATE DATABASE test")
+    instance3.query("DROP DATABASE test SYNC")
+    cluster.reset_rabbitmq()
 
 
 # Tests

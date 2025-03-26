@@ -1,0 +1,15 @@
+profiles:
+    ci_logs_sender:
+        # The async sends will block the table shutdown for the timeout,
+        # and default timeout of 300 seconds is too big and may lead to hangs,
+        # the INSERTs will be retried anyway
+        send_timeout: 15
+        receive_timeout: 15
+users:
+    ci_logs_sender:
+        profile: ci_logs_sender
+        no_password: true
+        networks:
+            ip:
+            - ::1
+            - 127.0.0.1
