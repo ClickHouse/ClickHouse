@@ -157,12 +157,12 @@ void WorkloadSettings::initFromChanges(Unit unit_, const ASTCreateWorkloadQuery:
     }
 
     // Regular values are used for all resources, while specific values are from setting having 'FOR resource' clause and has priority over regular
-    auto get_value = [] <typename T> (const std::optional<T> & specific_value, const std::optional<T> & regular_value, T default_value)
+    auto get_value = [] <typename T> (const std::optional<T> & specific_value, const std::optional<T> & regular_value, T default_value, T zero_value = T())
     {
         if (specific_value)
-            return *specific_value;
+            return *specific_value == T() ? zero_value : *specific_value;
         if (regular_value)
-            return *regular_value;
+            return *regular_value == T() ? zero_value : *regular_value;
         return default_value;
     };
 
@@ -174,19 +174,22 @@ void WorkloadSettings::initFromChanges(Unit unit_, const ASTCreateWorkloadQuery:
     }
 
     // Choose values for given resource.
-    // Previous values are left intentionally for ALTER query to be able to skip not mentioned setting values
+    // NOTE: previous values contain defaults.
     weight = get_value(specific.weight, regular.weight, weight);
     priority = get_value(specific.priority, regular.priority, priority);
     if (specific.max_bytes_per_second || regular.max_bytes_per_second)
     {
         max_bytes_per_second = get_value(specific.max_bytes_per_second, regular.max_bytes_per_second, max_bytes_per_second);
         // We always set max_burst_bytes if max_bytes_per_second is changed.
-        // This is done for users to be able to ignore more advanced max_burst_bytes setting and rely only on max_bytes_per_second
+        // This is done for users to be able to ignore more advanced max_burst_bytes setting and rely only on max_bytes_per_second.
         max_burst_bytes = default_burst_seconds * max_bytes_per_second;
     }
     max_burst_bytes = get_value(specific.max_burst_bytes, regular.max_burst_bytes, max_burst_bytes);
-    max_io_requests = get_value(specific.max_io_requests, regular.max_io_requests, max_io_requests);
-    max_bytes_inflight = get_value(specific.max_bytes_inflight, regular.max_bytes_inflight, max_bytes_inflight);
+
+    // Choose semaphore constraint values.
+    // Zero setting value means unlimited number of requests or bytes.
+    max_io_requests = get_value(specific.max_io_requests, regular.max_io_requests, max_io_requests, unlimited);
+    max_bytes_inflight = get_value(specific.max_bytes_inflight, regular.max_bytes_inflight, max_bytes_inflight, unlimited);
 
     // Compute concurrent thread limit as minimum of two possible values: (1) exact limit and (2) ratio to cores limit.
     // Zero setting value means unlimited number of threads.
