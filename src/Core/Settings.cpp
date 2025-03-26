@@ -4543,7 +4543,7 @@ Possible values:
 - 0 — Unlimited.
 )", 0) \
     DECLARE(Bool, database_replicated_enforce_synchronous_settings, false, R"(
-Enforces synchronous waiting for some queries (see also database_atomic_wait_for_drop_and_detach_synchronously, mutation_sync, alter_sync). Not recommended to enable these settings.
+Enforces synchronous waiting for some queries (see also database_atomic_wait_for_drop_and_detach_synchronously, mutations_sync, alter_sync). Not recommended to enable these settings.
 )", 0) \
     DECLARE(UInt64, max_distributed_depth, 5, R"(
 Limits the maximum depth of recursive queries for [Distributed](../../engines/table-engines/special/distributed.md) tables.
