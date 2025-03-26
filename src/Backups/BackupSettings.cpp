@@ -26,7 +26,6 @@ namespace ErrorCodes
     M(Bool, async) \
     M(Bool, decrypt_files_from_encrypted_disks) \
     M(Bool, deduplicate_files) \
-    M(Bool, allow_s3_native_copy) \
     M(Bool, allow_azure_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
     M(Bool, use_same_password_for_base_backup) \
@@ -61,7 +60,19 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
             else
 
             LIST_OF_BACKUP_SETTINGS(GET_SETTINGS_FROM_BACKUP_QUERY_HELPER)
-            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.name);
+
+            if (setting.name == "allow_s3_native_copy")
+            {
+                SettingFieldBoolAuto bool_auto{setting.value};
+                res.allow_s3_native_copy = bool_auto.is_auto ? std::nullopt : std::make_optional(bool_auto.base.value);
+            }
+            else
+            {
+                /// (if setting.name is not the name of a field of BackupSettings)
+                res.core_settings.emplace_back(setting);
+            }
+            else
+                throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.name);
         }
     }
 
@@ -101,6 +112,12 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
     }
 
     LIST_OF_BACKUP_SETTINGS(SET_SETTINGS_IN_BACKUP_QUERY_HELPER)
+
+    if (allow_s3_native_copy)
+    {
+        query_settings->changes.emplace_back("allow_s3_native_copy", static_cast<Field>(SettingFieldBool{*allow_s3_native_copy}));
+        all_settings_are_default = false;
+    }
 
     if (all_settings_are_default)
         query_settings = nullptr;
