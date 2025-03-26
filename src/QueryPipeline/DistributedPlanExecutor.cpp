@@ -23,10 +23,10 @@
 #include <IO/ReadBufferFromString.h>
 #include <Poco/URI.h>
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
+#include <Server/DistributedQuery/StreamingExchangeLookup.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Common/Logger.h>
 #include <Common/logger_useful.h>
-#include "Core/Types.h"
 #include <Core/Settings.h>
 
 
@@ -398,10 +398,15 @@ TemporaryFileLookupPtr createTemporaryFilesLookup(ObjectStoragePtr object_storag
     return std::make_shared<TemporaryFilesInObjectStorage>(object_storage_, object_storage_path_, input_temporary_files_, output_temporary_files_);
 }
 
-ExchangeLookupPtr createExchangeLookup(const String & query_id, const std::unordered_map<String, ExchangeDescription> & exchanges_, TemporaryFileLookupPtr temporary_files_)
+ExchangeLookupPtr createExchangeLookup(const String & query_id, const std::unordered_map<String, ExchangeDescription> & exchanges_, TemporaryFileLookupPtr temporary_files_, ContextPtr context)
 {
     auto persisted_exchanges = std::make_shared<ExchangeViaTemporaryFiles>(temporary_files_);
-    auto streaming_exchanges = std::make_shared<ExchangeViaChunks>(query_id);
+
+    // auto streaming_exchanges = std::make_shared<ExchangeViaChunks>(query_id);
+
+    auto streaming_exchenage_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port");
+    auto streaming_exchanges = createStreamingExchangeLookup(query_id, ExchangeConnections::instance(), streaming_exchenage_port);
+
     return std::make_shared<AllKinkdsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 }
 
@@ -435,7 +440,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     auto pipeline_settings = BuildQueryPipelineSettings(context);
     pipeline_settings.temporary_file_lookup = temporary_files;
     pipeline_settings.parameter_lookup = std::make_shared<TaskParameters>(task.parameters);
-    pipeline_settings.exchange_lookup = createExchangeLookup(object_storage_path, task_description.exchanges, temporary_files);
+    pipeline_settings.exchange_lookup = createExchangeLookup(object_storage_path, task_description.exchanges, temporary_files, context);
 
     auto optimization_settings = QueryPlanOptimizationSettings(context);
 
@@ -464,7 +469,7 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     String config_prefix = "distributed_query.temporary_files_storage";
     ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, false);
 
-    String object_storage_path_prefix = context->getConfigRef().getString("distributed_query.temporary_files_storage.endpoint_subpath");
+    String object_storage_path_prefix = config.getString("distributed_query.temporary_files_storage.endpoint_subpath");
     String object_storage_path = object_storage_path_prefix + unique_temp_file_path;
 
     return {object_storage, object_storage_path};

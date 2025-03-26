@@ -38,7 +38,7 @@ using ExchangeLookupPtr = std::shared_ptr<IExchangeLookup>;
 
 struct ExchangeDescription;
 
-ExchangeLookupPtr createExchangeLookup(const String & query_id, const std::unordered_map<String, ExchangeDescription> & exchanges_, TemporaryFileLookupPtr temporary_files_);
+ExchangeLookupPtr createExchangeLookup(const String & query_id, const std::unordered_map<String, ExchangeDescription> & exchanges_, TemporaryFileLookupPtr temporary_files_, ContextPtr context);
 
 class ICustomResourceHolder;
 
