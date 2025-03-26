@@ -29,6 +29,15 @@ node2 = cluster.add_instance(
     keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
     macros={"shard": "shard1", "replica": "2"},
 )
+
+reading_node = cluster.add_instance(
+    "reading_node",
+    main_configs=["configs/read_only.xml"],
+    user_configs=["configs/users.xml"],
+    with_zookeeper=True,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    macros={"shard": "shard1", "replica": "3"},
+)
 nodes = [node1, node2]
 
 
@@ -223,6 +232,42 @@ def test_refreshable_mv_in_system_db(started_cluster):
 
     node1.query("drop table system.a")
 
+def test_refreshable_mv_in_read_only_node(started_cluster):
+    # writable node
+    node1.query(
+        "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+    )
+
+    # read_only node
+    reading_node.query(
+        "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+    )
+
+    # disable view sync on writable node, see if there's RefreshTask on read_only node
+    node1.query(
+        "system stop view sync"
+    )
+
+    # clear text_log ensure all logs are related to this test
+    reading_node.query(
+        "system flush logs;"
+        "truncate table system.text_log;"
+    )
+
+    # this MV will be replicated to read_only node
+    node1.query(
+        "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2)"
+    )
+
+    # refresh the view manually
+    reading_node.query("system refresh view re.a")
+
+    # slepp 3 seconds to make sure the view is refreshed
+    reading_node.query("select sleep(3)")
+
+    # check if there's RefreshTask on read_only node
+    reading_node.query("system flush logs")
+    assert reading_node.query("select count() from system.text_log where message like '%QUERY_IS_PROHIBITED%'") == "0\n"
 
 def test_refresh_vs_shutdown_smoke(started_cluster):
     for node in nodes:
