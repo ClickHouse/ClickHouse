@@ -16,8 +16,8 @@ import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
 
 The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search).
 Two general approaches exist for solving nearest neighbor search:
-- Exact nearest neighbor search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors, but since the space is explored exhaustively, it is usually too slow for real-world use.
-- Approximate nearest neighbor search refers to a group of techniques (e.g. special index structures like graphs and random forests) designed to compute a result much faster than exact nearest neighbor search. The result accuracy is typically "good enough" for practical use. Many approximate techniques provide parameters to tune the trade-off between the accurracy and runtime.
+- Exact nearest neighbor search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact nearest neighbor search can be too slow for real-world use.
+- Approximate nearest neighbor search refers to a group of techniques (e.g., special data structures like graphs and random forests) which compute results much faster than exact nearest neighbor search. The result accuracy is typically "good enough" for practical use. Many approximate techniques provide parameters to tune the trade-off between the result accuracy and the search time.
 
 A nearest neighbor search (exact or approximate) can be written in SQL as follows:
 
@@ -25,26 +25,26 @@ A nearest neighbor search (exact or approximate) can be written in SQL as follow
 WITH [...] AS reference_vector
 SELECT [...]
 FROM table
-WHERE [...] -- the WHERE clause is optional
+WHERE [...] -- a WHERE clause is optional
 ORDER BY <DistanceFunction>(vectors, reference_vector)
 LIMIT <N>
 ```
 
 The points in the vector space are stored in a column `vectors` of array type, e.g. [Array(Float64)](../../../sql-reference/data-types/array.md), [Array(Float32)](../../../sql-reference/data-types/array.md), or [Array(BFloat16)](../../../sql-reference/data-types/array.md).
-The reference vector is a constant array and given as common table expression.
+The reference vector is a constant array and given as a common table expression.
 `<DistanceFunction>` computes the distance between the reference point and all stored points.
 Any of the available [distance function](/sql-reference/functions/distance-functions) can be used for that.
 `N` specifies how many neighbors should be returned.
 
 ## Exact Nearest Neighbor Search
 
-An exact nearest neighbor search can be run using above SELECT query.
-The runtime of such queries is generally proportional to the number of stored vectors and their dimension (number of array elements).
-Also, since ClickHouse performs a brute-force scan of all vectors, the runtime also depends on the number of query threads (see setting [max_threads](../../../operations/settings/settings.md#max_threads)).
+An exact nearest neighbor search can be performed using above SELECT query as is.
+The runtime of such queries is generally proportional to the number of stored vectors and their dimension, i.e. the number of array elements.
+Also, since ClickHouse performs a brute-force scan of all vectors, the runtime depends also on the number of threads by the query (see setting [max_threads](../../../operations/settings/settings.md#max_threads)).
 
 One common approach to speed up exact nearest neighbor search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).
-For example, storing vectors of type `Array(Float32)` as `Array(BFloat16)` reduces the data size by half, and the query runtimes are expected to go down by 50% as well.
-This method is know as quantization and it might reduce the result accuracy despite doing an exhaustive scan of all vectors.
+For example, if the vectors are stored as `Array(BFloat16)` instead of `Array(Float32)`, then the data size is cut in half, and the query runtimes are expected to go down by half as well.
+This method is know as quantization and it might reduce the result accuracy despite the exhaustive scan of all vectors.
 If the precision loss is acceptable depends on the use case and typically requires experimentation.
 
 ## Example
@@ -102,26 +102,27 @@ Alternatively, to add a vector similarity index to an existing table:
 ALTER TABLE table ADD INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>) [GRANULARITY N];
 ```
 
-A vector similarity indexes is a special kind of skipping index (see [here](mergetree.md#table_engine-mergetree-data_skipping-indexes) and [here](../../../optimize/skipping-indexes)).
-Accordingly, above `ALTER TABLE` statement only causes the index to be build for new data inserted in future into the table.
-To build the index also for existing data, you need to materialize it explicitly:
+Vector similarity indexes are special kinds of skipping indexes (see [here](mergetree.md#table_engine-mergetree-data_skipping-indexes) and [here](../../../optimize/skipping-indexes)).
+Accordingly, above `ALTER TABLE` statement only causes the index to be build for future new data inserted into the table.
+To build the index for existing data as well, you need to materialize it:
 
 ```sql
-ALTER TABLE table MATERIALIZE <index_name> SETTINGS mutation_sync = 2;
+ALTER TABLE table MATERIALIZE <index_name> SETTINGS mutations_sync = 2;
 ```
 
-Parameter `distance_function` must be either
-- `L2Distance`, the [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance) which represents the length of a line between two points in Euclidean space, or
-- `cosineDistance`, the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) which represents the angle between two non-zero vectors.
+Function `<distance_function>` must be either
+- `L2Distance`, the [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance), representing the length of a line between two points in Euclidean space, or
+- `cosineDistance`, the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance), representing the angle between two non-zero vectors.
 
 For normalized data, `L2Distance` is usually the best choice, otherwise `cosineDistance` is recommended to compensate for scale.
 
 The GRANULARITY parameter `<N>` refers to the size of the index granules (see [here](../../../optimize/skipping-indexes)).
-The default value of 100 million should work reasonably well for most use cases but it can also be tuned (see below).
-Tuning is however only recommended for advanced users who understand the implications of what they are doing.
+The default value of 100 million should work reasonably well for most use cases but it can also be tuned.
+We recommend tuning only for advanced users who understand the implications of what they are doing (see below).
 
-Vector similarity indexes are generic in the sense that users can specify the actually used approximate search method as parameter `<type>`.
-As of now, the only available method is HNSW ([academic paper](https://arxiv.org/abs/1603.09320)), a state-of-the art and popular technique for approximate vector search based on hierarchical proximity graphs.
+Vector similarity indexes are generic in the sense that they can accomodate different approximate search method.
+The actually used method is specified by parameter `<type>`.
+As of now, the only available method is HNSW ([academic paper](https://arxiv.org/abs/1603.09320)), a popular and state-of-the-art technique for approximate vector search based on hierarchical proximity graphs.
 If HNSW is used as type, users may optionally specify further HNSW-specific parameters:
 
 ```sql
@@ -136,7 +137,7 @@ ORDER BY [...]
 ```
 
 These HNSW-specific parameters are available:
-- `quantization` controls if the proximity graph stores the vectors in quantized form. Possible values are `f64`, `f32`, `f16`, `bf16`, or `i8`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
+- `quantization` controls the quantization of the vectors in the proximity graph. Possible values are `f64`, `f32`, `f16`, `bf16`, or `i8`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
 - `hnsw_max_connections_per_layer` controls the number of neighbors per graph node, also known as HNSW parameter `M`. The default value is `32`. Value `0` means using the default value.
 - `hnsw_candidate_list_size_for_construction` controls the size of the dynamic candidate list during construction of the HNSW graph, also known as HNSW parameter `ef_construction`. The default value is `128`. Value `0` means using the default value.
 
@@ -144,8 +145,8 @@ All HNSW-specific parameters have reasonable default values which work well in t
 We therefore do not recommend to customize HNSW-specific parameters.
 
 Further restrictions apply:
-- Vector similarity indexes can only be build on columns of type [Array(Float32)](../../../sql-reference/data-types/array.md) or [Array(Float64)](../../../sql-reference/data-types/array.md). In particular, nullable and low-cardinality arrays (e.g., `Array(Nullable(Float32))` and `Array(LowCardinality(Float32))`) are not allowed.
-- Vector similarity indexes must be build on a single column.
+- Vector similarity indexes can only be build on columns of type [Array(Float32)](../../../sql-reference/data-types/array.md) or [Array(Float64)](../../../sql-reference/data-types/array.md). Arrays of nullable and low-cardinality floats such as `Array(Nullable(Float32))` and `Array(LowCardinality(Float32))` are not allowed.
+- Vector similarity indexes must be build on single columns.
 - Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
 - Vector similarity indexes require that all arrays in the underlying column contain the same number of elements. This is checked during index creation. To detect violations of this requirement as soon as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
 - Likewise, array values in the underlying column must not be (`[]`) or have a default value (also `[]`).
@@ -153,7 +154,7 @@ Further restrictions apply:
 ## Using a Vector Similarity Index
 
 :::note
-To use vector similarity indexes, setting [compatibility](../../../operations/settings/settings.md) has have its default value (`''`) or be `'25.1'` or newer.
+To use vector similarity indexes, setting [compatibility](../../../operations/settings/settings.md) has be `''` (the default value), or `'25.1'` or newer.
 :::
 
 Vector similarity indexes support SELECT queries of this form:
@@ -162,15 +163,15 @@ Vector similarity indexes support SELECT queries of this form:
 WITH [...] AS reference_vector
 SELECT [...]
 FROM table
-WHERE [...] -- the WHERE clause is optional
+WHERE [...] -- a WHERE clause is optional
 ORDER BY <DistanceFunction>(vectors, reference_vector)
 LIMIT <N>
 ```
 
 ClickHouse's query optimizer tries to match above query template and make use of available vector similarity indexes.
-A query can only use a vector similarity index if the distance function in the SELECT query is the same as the distance query in the index definition.
+A query can only use a vector similarity index if the distance function in the SELECT query is the same as the distance function in the index definition.
 
-Advanced users may provide a custom value for setting `hnsw_candidate_list_size_for_search` (also know as HNSW parameter `ef_search`) to tune the size of the candinate list during search (e.g.  `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
+Advanced users may provide a custom value for setting `hnsw_candidate_list_size_for_search` (also know as HNSW parameter `ef_search`) to tune the size of the candidate list during search (e.g.  `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
 The default value of the setting 256 works well in the majority of use cases.
 Higher setting values mean better accuracy at the cost of slower performance.
 
@@ -207,13 +208,13 @@ may return
 10. │             Granules: 4/4                                                                       │
 11. │           Skip                                                                                  │
 12. │             Name: idx                                                                           │
-13. │             Description: vector_similarity GRANULARITY 2                                        │
+13. │             Description: vector_similarity GRANULARITY 100000000                                │
 14. │             Parts: 1/1                                                                          │
 15. │             Granules: 2/4                                                                       │
     └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Vector similarity indexes are used if the output contains `Skip` and the name and type of the vector index.
+Vector similarity indexes are used if the output contains `Skip` and the name and type of the vector index (in the example, `idx` and `vector_similarity`).
 In this case, the vector similarity index dropped two of four granules, i.e. 50% of the data.
 The more granules can be dropped, the more effective index usage becomes.
 
@@ -277,9 +278,11 @@ Example output:
 
 **Tuning Index Creation**
 
-Vector similarity indexes are built whenever new parts are created, e.g., during [INSERT statements](https://clickhouse.com/docs/guides/inserting-data) or during [merges](https://clickhouse.com/docs/merges).
-Unfortunately, HNSW is known for long index creation times, significantly slowing down inserts and merges.
-Vector similarity indexes are ideally only used with immutable or rarely changed data.
+The life cycle of vector similarity indexes is tied to the life cycle of parts.
+In other words, whenever a new part with defined vector similarity index is created, the index is create as well.
+This typically happens when data is [inserted](https://clickhouse.com/docs/guides/inserting-data) or during [merges](https://clickhouse.com/docs/merges).
+Unfortunately, HNSW is known for long index creation times which can significantly slow down inserts and merges.
+Vector similarity indexes are ideally only used if the data is immutable or rarely changed.
 
 To speed up index creation, the following techniques can be used:
 
@@ -288,7 +291,8 @@ The maximum number of index creation threads can be configured using server sett
 For optimal performance, the setting value should be configured to the number of CPU cores.
 
 Second, to speed up INSERT statements, users may disable the creation of skipping indexes on newly inserted parts using session setting [materialize_skip_indexes_on_insert](../../../operations/settings/settings.md).
-SELECT queries on such parts will fall back to exact search but since inserted parts tend to be small compared to the total table size, the performance impact of that is expected to be negligible.
+SELECT queries on such parts will fall back to exact search.
+Since inserted parts tend to be small compared to the total table size, the performance impact of that is expected to be negligible.
 
 Third, to speed up merges, users may disable the creation of skipping indexes on merged parts using session setting [materialize_skip_indexes_on_merge](../../../operations/settings/merge-tree-settings.md#materialize_skip_indexes_on_merge).
 This, in conjunction with statement [ALTER TABLE \[...\] MATERIALIZE INDEX \[...\]](../../../sql-reference/statements/alter/skipping-index.md#materialize-index), provides explicit control over the life cycle of vector similarity indexes.
