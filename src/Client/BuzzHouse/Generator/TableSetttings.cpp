@@ -248,7 +248,7 @@ std::unordered_map<String, CHSetting> hashedArrayLayoutSettings
     = {{"SHARDS", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, 10)); }, {}, false)}};
 
 std::unordered_map<String, CHSetting> rangeHashedLayoutSettings
-    = {{"range_lookup_strategy", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'min'" : "'max'"; }, {}, false)}};
+    = {{"RANGE_LOOKUP_STRATEGY", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'min'" : "'max'"; }, {}, false)}};
 
 std::unordered_map<String, CHSetting> cachedLayoutSettings
     = {{"ALLOW_READ_EXPIRED_KEYS", CHSetting(trueOrFalse, {}, false)},
