@@ -66,13 +66,6 @@ struct Stat
     int64_t pzxid{0};
 
     bool operator==(const Stat &) const = default;
-
-    void writeImpl(WriteBuffer & out) const;
-
-    size_t size() const
-    {
-        return 68;
-    }
 };
 
 enum class Error : int32_t

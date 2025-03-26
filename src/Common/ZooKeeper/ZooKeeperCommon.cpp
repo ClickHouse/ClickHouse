@@ -284,12 +284,12 @@ size_t ZooKeeperCreateResponse::sizeImpl() const
 void ZooKeeperCreate2Response::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path_created, out);
-    zstat.writeImpl(out);
+    Coordination::write(zstat, out);
 }
 
 size_t ZooKeeperCreate2Response::sizeImpl() const
 {
-    return Coordination::size(path_created) + zstat.size();
+    return Coordination::size(path_created) + Coordination::size(zstat);
 }
 
 void ZooKeeperRemoveRequest::writeImpl(WriteBuffer & out) const
