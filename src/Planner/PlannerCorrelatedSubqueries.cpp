@@ -15,6 +15,7 @@
 #include "IO/ReadBufferFromString.h"
 #include "IO/WriteBufferFromString.h"
 #include "Interpreters/ActionsDAG.h"
+#include "Interpreters/JoinInfo.h"
 #include "Planner/Planner.h"
 #include "Planner/PlannerActionsVisitor.h"
 #include "Planner/PlannerContext.h"
@@ -104,17 +105,9 @@ QueryPlan decorrelateQueryPlan(
     QueryPlan::Node * node
 )
 {
-    LOG_DEBUG(getLogger(__func__), "Decorrelating step: {}({})\n{}", node->step->getName(), node->step->getStepDescription(), node->step->getOutputHeader().dumpNames());
-    LOG_DEBUG(getLogger(__func__), "Has correlated expressions: {}", context.correlated_plan_steps[node]);
-
     if (!context.correlated_plan_steps[node])
     {
-        LOG_DEBUG(getLogger(__func__), "Clonning LHS");
-
         auto lhs_plan = context.query_plan.clone();
-
-        LOG_DEBUG(getLogger(__func__), "Clonned LHS");
-        LOG_DEBUG(getLogger(__func__), "Clonned LHS:\n{}", dumpQueryPlan(lhs_plan));
 
         const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
 
@@ -125,7 +118,6 @@ QueryPlan decorrelateQueryPlan(
         output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan.getCurrentHeader().getColumnsWithTypeAndName());
         output_columns_and_types.insert_range(output_columns_and_types.cend(), node->step->getOutputHeader().getColumnsWithTypeAndName());
 
-        LOG_DEBUG(getLogger(__func__), "Building JoinExpressionActions");
         JoinExpressionActions join_expression_actions(
             lhs_plan_header.getColumnsWithTypeAndName(),
             decorrelated_plan_header.getColumnsWithTypeAndName(),
@@ -135,7 +127,6 @@ QueryPlan decorrelateQueryPlan(
         output_columns.insert_range(output_columns.cend(), lhs_plan.getCurrentHeader().getNames());
         output_columns.insert_range(output_columns.cend(), node->step->getOutputHeader().getNames());
 
-        LOG_DEBUG(getLogger(__func__), "Building JoinStepLogical");
         auto decorrelated_join = std::make_unique<JoinStepLogical>(
             lhs_plan_header,
             /*right_header_=*/decorrelated_plan_header,
@@ -150,53 +141,49 @@ QueryPlan decorrelateQueryPlan(
             settings[Setting::join_use_nulls],
             JoinSettings(settings),
             SortingStep::Settings(settings));
+        decorrelated_join->setStepDescription("JOIN to evaluate correlated expression");
+
         /// Add CROSS JOIN
-
-        LOG_DEBUG(getLogger(__func__), "Built JOIN step");
-
-        LOG_DEBUG(getLogger(__func__), "Built JOIN step header:\n{}", decorrelated_join->getOutputHeader().dumpStructure());
-
         QueryPlan result_plan;
 
         std::vector<QueryPlanPtr> plans;
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
         plans.emplace_back(std::make_unique<QueryPlan>(context.correlated_query_plan.extractSubplan(node)));
 
-        LOG_DEBUG(getLogger(__func__), "Going to unite plans with JOIN");
-
         result_plan.unitePlans(std::move(decorrelated_join), {std::move(plans)});
-        LOG_DEBUG(getLogger(__func__), "Built decorrelated JOIN:\n{}", dumpQueryPlan(result_plan));
 
         return result_plan;
     }
 
     if (auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
     {
-        LOG_DEBUG(getLogger(__func__), "Decorrelating child plan for ExpressionStep");
         auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
+
+        auto input_header = decorrelated_query_plan.getCurrentHeader();
+
         expression_step->decorrelateActions();
-        // expression_step->updateInputHeader(decorrelated_query_plan.getCurrentHeader());
+        expression_step->getExpression().appendInputsForUnusedColumns(input_header);
+        for (const auto & column : input_header.getColumnsWithTypeAndName())
+            expression_step->getExpression().tryRestoreColumn(column.name);
+
+        expression_step->updateInputHeader(input_header);
+
         decorrelated_query_plan.addStep(std::move(node->step));
-        LOG_DEBUG(getLogger(__func__), "Decorrelated child plan for ExpressionStep");
-        LOG_DEBUG(getLogger(__func__), "Plan after ExpressionStep:\n{}", dumpQueryPlan(decorrelated_query_plan));
         return decorrelated_query_plan;
     }
-    if ([[maybe_unused]] auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
+    if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
     {
-        LOG_DEBUG(getLogger(__func__), "Decorrelating child plan for FilterStep");
         auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
-        LOG_DEBUG(getLogger(__func__), "Decorrelated child plan for FilterStep:\n{}", dumpQueryPlan(decorrelated_query_plan));
-        LOG_DEBUG(getLogger(__func__), "FilterStep1: {}", node->step->getStepDescription());
-        LOG_DEBUG(getLogger(__func__), "FilterStep: {}", filter_step->getStepDescription());
+        auto input_header = decorrelated_query_plan.getCurrentHeader();
 
         filter_step->decorrelateActions();
-        LOG_DEBUG(getLogger(__func__), "Decorrelated actions for FilterStep");
-        LOG_DEBUG(getLogger(__func__), "Decorrelated actions for FilterStep\n{}", decorrelated_query_plan.getCurrentHeader().dumpStructure());
+        filter_step->getExpression().appendInputsForUnusedColumns(input_header);
+        for (const auto & column : input_header.getColumnsWithTypeAndName())
+            filter_step->getExpression().tryRestoreColumn(column.name);
 
-        node->step->updateInputHeader(decorrelated_query_plan.getCurrentHeader());
-        LOG_DEBUG(getLogger(__func__), "Updated header for FilterStep");
+        node->step->updateInputHeader(input_header);
+
         decorrelated_query_plan.addStep(std::move(node->step));
-        LOG_DEBUG(getLogger(__func__), "Plan after FilterStep:\n{}", dumpQueryPlan(decorrelated_query_plan));
         return decorrelated_query_plan;
     }
     throw Exception(
@@ -207,7 +194,8 @@ QueryPlan decorrelateQueryPlan(
 
 void buildPlanForAlwaysExists(
     QueryPlan & query_plan,
-    const CorrelatedSubquery & correlated_subquery
+    const CorrelatedSubquery & correlated_subquery,
+    bool project_inputs
 )
 {
     ActionsDAG dag;
@@ -216,10 +204,126 @@ void buildPlanForAlwaysExists(
     dag.addColumn(ColumnWithTypeAndName(column, result_type, correlated_subquery.action_node_name));
 
     dag.appendInputsForUnusedColumns(query_plan.getCurrentHeader());
+    if (project_inputs)
+    {
+        for (const auto & node : dag.getNodes())
+            dag.addOrReplaceInOutputs(node);
+    }
 
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
     expression_step->setStepDescription("Create result for always true EXISTS expression");
     query_plan.addStep(std::move(expression_step));
+}
+
+bool optimizeCorrelatedPlanForExists(QueryPlan & correlated_query_plan)
+{
+    auto * node = correlated_query_plan.getRootNode();
+    while (true)
+    {
+        if (typeid_cast<ExpressionStep *>(node->step.get()))
+        {
+            node = node->children[0];
+            continue;
+        }
+        if (auto * aggregation = typeid_cast<AggregatingStep *>(node->step.get()))
+        {
+            const auto & params = aggregation->getParams();
+            if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
+            {
+                /// Subquery will always produce at least one row
+                return true;
+            }
+            node = node->children[0];
+            continue;
+        }
+        break;
+    }
+
+    if (node != correlated_query_plan.getRootNode())
+    {
+        correlated_query_plan = correlated_query_plan.extractSubplan(node);
+        LOG_DEBUG(
+            getLogger(__func__),
+            "Simplified correlated subquery plan for EXISTS:\n{}",
+            dumpQueryPlan(correlated_query_plan));
+    }
+    return false;
+}
+
+QueryPlan buildLogicalJoin(
+    const PlannerContextPtr & planner_context,
+    QueryPlan left_plan,
+    QueryPlan right_plan,
+    const CorrelatedSubquery & correlated_subquery,
+    const std::vector<ColumnIdentifier> & correlated_column_identifiers
+)
+{
+    const auto & lhs_plan_header = left_plan.getCurrentHeader();
+    const auto & rhs_plan_header = right_plan.getCurrentHeader();
+
+    ColumnsWithTypeAndName output_columns_and_types;
+    output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan_header.getColumnsWithTypeAndName());
+    output_columns_and_types.emplace_back(rhs_plan_header.getByName(correlated_subquery.action_node_name));
+
+    JoinExpressionActions join_expression_actions(
+        lhs_plan_header.getColumnsWithTypeAndName(),
+        rhs_plan_header.getColumnsWithTypeAndName(),
+        output_columns_and_types);
+
+    Names output_columns;
+    output_columns.insert_range(output_columns.cend(), lhs_plan_header.getNames());
+    output_columns.push_back(correlated_subquery.action_node_name);
+
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+
+    std::vector<JoinPredicate> predicates;
+    for (const auto & column_name : correlated_column_identifiers)
+    {
+        const auto * left_node = &join_expression_actions.left_pre_join_actions->findInOutputs(column_name);
+        const auto * right_node = &join_expression_actions.right_pre_join_actions->findInOutputs(column_name);
+
+        JoinPredicate predicate{
+            .left_node = JoinActionRef(left_node, join_expression_actions.left_pre_join_actions.get()),
+            .right_node = JoinActionRef(right_node, join_expression_actions.right_pre_join_actions.get()),
+            .op = PredicateOperator::Equals
+        };
+
+        predicates.emplace_back(std::move(predicate));
+    }
+
+    /// Add LEFT OUTER JOIN
+    auto result_join = std::make_unique<JoinStepLogical>(
+        lhs_plan_header,
+        rhs_plan_header,
+        JoinInfo{
+            .expression = JoinExpression{
+                .condition = JoinCondition{
+                    .predicates = std::move(predicates),
+                    .left_filter_conditions = {},
+                    .right_filter_conditions = {},
+                    .residual_conditions = {}
+                },
+                .disjunctive_conditions = {}
+            },
+            .kind = JoinKind::Left,
+            .strictness = JoinStrictness::All,
+            .locality = JoinLocality::Local
+        },
+        std::move(join_expression_actions),
+        std::move(output_columns),
+        /*join_use_nulls=*/false,
+        JoinSettings(settings),
+        SortingStep::Settings(settings));
+    result_join->setStepDescription("JOIN to generate result stream");
+
+    QueryPlan result_plan;
+
+    std::vector<QueryPlanPtr> plans;
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_plan)));
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_plan)));
+
+    result_plan.unitePlans(std::move(result_join), {std::move(plans)});
+    return result_plan;
 }
 
 }
@@ -260,41 +364,13 @@ void buildQueryPlanForCorrelatedSubquery(
             auto & correlated_query_plan = subquery_planner.getQueryPlan();
             LOG_DEBUG(getLogger(__func__), "Correlated subquery plan:\n{}", dumpQueryPlan(correlated_query_plan));
 
-            auto * node = correlated_query_plan.getRootNode();
-            while (true)
+            if (optimizeCorrelatedPlanForExists(correlated_query_plan))
             {
-                if (typeid_cast<ExpressionStep *>(node->step.get()))
-                {
-                    node = node->children[0];
-                    continue;
-                }
-                if (auto * aggregation = typeid_cast<AggregatingStep *>(node->step.get()))
-                {
-                    const auto & params = aggregation->getParams();
-                    if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
-                    {
-                        /// Subquery will always produce at least one row
-                        buildPlanForAlwaysExists(query_plan, correlated_subquery);
-                        return;
-                    }
-                    node = node->children[0];
-                    continue;
-                }
-                break;
-            }
-
-            if (node != correlated_query_plan.getRootNode())
-            {
-                correlated_query_plan = correlated_query_plan.extractSubplan(node);
-                LOG_DEBUG(
-                    getLogger(__func__),
-                    "Simplified correlated subquery plan for EXISTS:\n{}",
-                    dumpQueryPlan(correlated_query_plan));
+                buildPlanForAlwaysExists(query_plan, correlated_subquery, false);
+                return;
             }
 
             auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
-
-            LOG_DEBUG(getLogger(__func__), "Correlated step map is built");
 
             DecorrelationContext context{
                 .planner_context = planner_context,
@@ -302,7 +378,17 @@ void buildQueryPlanForCorrelatedSubquery(
                 .correlated_query_plan = std::move(subquery_planner).extractQueryPlan(),
                 .correlated_plan_steps = std::move(correlated_step_map)
             };
-            query_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
+
+            auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
+            buildPlanForAlwaysExists(decorrelated_plan, correlated_subquery, true);
+            LOG_DEBUG(getLogger(__func__), "Decorrelated plan for subquery:\n{}", dumpQueryPlan(decorrelated_plan));
+
+            query_plan = buildLogicalJoin(
+                planner_context,
+                std::move(context.query_plan),
+                std::move(decorrelated_plan),
+                correlated_subquery,
+                correlated_column_identifiers);
             LOG_DEBUG(getLogger(__func__), "Decorrelated plan:\n{}", dumpQueryPlan(query_plan));
             break;
         }
