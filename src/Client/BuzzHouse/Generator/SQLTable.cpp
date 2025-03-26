@@ -1900,7 +1900,10 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
         col.cname = ncname;
         dc->mutable_col()->set_column("c" + std::to_string(ncname));
-        this->next_type_mask = fc.type_mask;
+        /// Many types are not allowed in dictionaries
+        this->next_type_mask = fc.type_mask
+            & ~(allow_JSON | allow_variant | allow_dynamic | allow_tuple | allow_low_cardinality | allow_map | allow_enum | allow_geo
+                | allow_fixed_strings);
         col.tp = randomNextType(rg, this->next_type_mask, col_counter, dc->mutable_type()->mutable_type());
         this->next_type_mask = type_mask_backup;
 
