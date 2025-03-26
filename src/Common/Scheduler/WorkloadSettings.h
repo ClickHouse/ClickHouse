@@ -11,7 +11,7 @@
 namespace DB
 {
 
-struct SchedulingSettings
+struct WorkloadSettings
 {
     static constexpr Int64 unlimited = std::numeric_limits<Int64>::max();
     static constexpr Float64 default_burst_seconds = 1.0;

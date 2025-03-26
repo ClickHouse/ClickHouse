@@ -1,6 +1,6 @@
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 
-#include <Common/Scheduler/SchedulingSettings.h>
+#include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -397,11 +397,11 @@ bool WorkloadEntityStorageBase::storeEntity(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second root is not allowed. You should probably add 'PARENT {}' clause.", root_name);
             }
 
-            SchedulingSettings io_validator;
-            io_validator.updateFromChanges(SchedulingSettings::Unit::IOByte, workload->changes);
+            WorkloadSettings io_validator;
+            io_validator.updateFromChanges(WorkloadSettings::Unit::IOByte, workload->changes);
 
-            SchedulingSettings cpu_validator;
-            cpu_validator.updateFromChanges(SchedulingSettings::Unit::CPUSlot, workload->changes);
+            WorkloadSettings cpu_validator;
+            cpu_validator.updateFromChanges(WorkloadSettings::Unit::CPUSlot, workload->changes);
         }
 
         // Validate resource
@@ -443,7 +443,7 @@ bool WorkloadEntityStorageBase::storeEntity(
                             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload settings should reference resource in FOR clause, not '{}'.", target);
 
                         // Validate that we could parse the settings for specific resource
-                        SchedulingSettings validator;
+                        WorkloadSettings validator;
                         validator.updateFromChanges(target_resource->unit, workload->changes, target);
                         break;
                     }

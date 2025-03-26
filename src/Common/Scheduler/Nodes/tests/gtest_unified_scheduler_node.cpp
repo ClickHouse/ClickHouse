@@ -17,7 +17,7 @@ TEST(SchedulerUnifiedNode, Smoke)
 {
     ResourceTest t;
 
-    t.addCustom<UnifiedSchedulerNode>("/", SchedulingSettings{});
+    t.addCustom<UnifiedSchedulerNode>("/", WorkloadSettings{});
 
     t.enqueue("/fifo", {10, 10});
     t.dequeue(2);
