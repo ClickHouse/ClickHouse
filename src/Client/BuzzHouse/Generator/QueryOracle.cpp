@@ -253,7 +253,7 @@ void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
 }
 
 void QueryOracle::generateImportQuery(
-    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
+    RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
 {
     SettingValues * svs = nullptr;
     Insert * nins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
@@ -275,7 +275,13 @@ void QueryOracle::generateImportQuery(
     {
         iff->set_fcomp(ff.fcomp());
     }
-    if (oins.has_setting_values())
+
+    if (!test_content && rg.nextSmallNumber() < 4)
+    {
+        svs = nins->mutable_setting_values();
+        gen.generateSettingValues(rg, serverSettings, svs);
+    }
+    else if (oins.has_setting_values())
     {
         svs = nins->mutable_setting_values();
         svs->CopyFrom(oins.setting_values());

@@ -734,7 +734,7 @@ bool Client::buzzHouse()
 
                     sq4.Clear();
                     full_query.resize(0);
-                    qo.generateImportQuery(rg, gen, t2, sq2, sq4);
+                    qo.generateImportQuery(rg, gen, test_content, t2, sq2, sq4);
                     BuzzHouse::SQLQueryToString(full_query, sq4);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
