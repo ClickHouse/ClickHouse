@@ -170,7 +170,7 @@ def get_delta_metadata(delta_metadata_file):
     return combined_json
 
 
-def get_creation_expression(
+def create_delta_table(
     storage_type,
     table_name,
     cluster,
@@ -294,7 +294,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
 
     assert len(files) == 2  # 1 metadata files + 1 data file
 
-    instance.query(get_creation_expression(storage_type, TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel))
+    instance.query(create_delta_table(storage_type, TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel))
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
@@ -324,7 +324,7 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
 
     assert len(files) == 11  # 10 partitions and 1 metadata file
 
-    instance.query(get_creation_expression(storage_type, TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel))
+    instance.query(create_delta_table(storage_type, TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel))
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
 
 
@@ -368,7 +368,7 @@ def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
             ok = True
     assert ok
 
-    instance.query(get_creation_expression(storage_type, TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
+    instance.query(create_delta_table(storage_type, TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
     assert (
         int(
             instance.query(
@@ -439,7 +439,7 @@ def test_multiple_log_files(started_cluster, use_delta_kernel):
     )
     assert len(s3_objects) == 1
 
-    instance.query(get_creation_expression("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
+    instance.query(create_delta_table("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     write_delta_from_df(
@@ -489,7 +489,7 @@ def test_metadata(started_cluster, use_delta_kernel):
     assert next(iter(stats["minValues"].values())) == 0
     assert next(iter(stats["maxValues"].values())) == 99
 
-    instance.query(get_creation_expression("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
+    instance.query(create_delta_table("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
 
@@ -590,7 +590,6 @@ def test_restart_broken(started_cluster, use_delta_kernel):
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    # instance.query(get_creation_expression("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
 
     instance.query(
         f"""
@@ -1013,7 +1012,7 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    instance.query(get_creation_expression("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
+    instance.query(create_delta_table("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
