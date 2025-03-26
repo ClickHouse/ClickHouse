@@ -32,9 +32,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageKeeperMap.h>
@@ -296,19 +294,22 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         Int32 cversion = stat.cversion;
         ::sort(hosts.begin(), hosts.end());
 
-        std::vector<zkutil::ZooKeeper::FutureGet> futures;
-        futures.reserve(hosts.size());
+        std::vector<String> host_paths;
+        host_paths.reserve(hosts.size());
         host_ids.reserve(hosts.size());
+
         for (const auto & host : hosts)
-            futures.emplace_back(zookeeper->asyncTryGet(zookeeper_path + "/replicas/" + host));
+            host_paths.emplace_back(zookeeper_path + "/replicas/" + host);
+
+        auto host_result = zookeeper->tryGet(host_paths);
 
         success = true;
-        for (auto & future : futures)
+        for (size_t i = 0; i < hosts.size(); ++i)
         {
-            auto res = future.get();
+            auto & res = host_result[i];
             if (res.error != Coordination::Error::ZOK)
                 success = false;
-            host_ids.emplace_back(res.data);
+            host_ids.emplace_back(std::move(res.data));
         }
 
         zookeeper->get(zookeeper_path + "/replicas", &stat);
@@ -806,7 +807,7 @@ void DatabaseReplicated::dumpLocalTablesForDebugOnly(const ContextPtr & local_co
     {
         auto ast_ptr = tryGetCreateTableQuery(table_name, local_context);
         if (ast_ptr)
-            LOG_DEBUG(log, "[local] Table {} create query is {}", table_name, queryToString(ast_ptr));
+            LOG_DEBUG(log, "[local] Table {} create query is {}", table_name, ast_ptr->formatForLogging());
         else
             LOG_DEBUG(log, "[local] Table {} has no create query", table_name);
     }
@@ -821,7 +822,7 @@ void DatabaseReplicated::dumpTablesInZooKeeperForDebugOnly() const
         auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
         if (query_ast)
         {
-            LOG_DEBUG(log, "[zookeeper] Table {} create query is {}", table_name, queryToString(query_ast));
+            LOG_DEBUG(log, "[zookeeper] Table {} create query is {}", table_name, query_ast->formatForLogging());
         }
         else
         {
@@ -854,17 +855,17 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
             {
                 LOG_DEBUG(log, "AST for table {} is the same (nullptr) in local and ZK", table_name);
             }
-            else if (local_ast_ptr != nullptr && zk_ast_ptr != nullptr && queryToString(local_ast_ptr) != queryToString(zk_ast_ptr))
+            else if (local_ast_ptr != nullptr && zk_ast_ptr != nullptr && local_ast_ptr->formatWithSecretsOneLine() != zk_ast_ptr->formatWithSecretsOneLine())
             {
-                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper {}", table_name, queryToString(local_ast_ptr), queryToString(zk_ast_ptr));
+                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper {}", table_name, local_ast_ptr->formatForLogging(), zk_ast_ptr->formatForLogging());
             }
             else if (local_ast_ptr == nullptr)
             {
-                LOG_ERROR(log, "AST differs for table {}, local nullptr, in zookeeper {}", table_name, queryToString(zk_ast_ptr));
+                LOG_ERROR(log, "AST differs for table {}, local nullptr, in zookeeper {}", table_name, zk_ast_ptr->formatForLogging());
             }
             else if (zk_ast_ptr == nullptr)
             {
-                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper nullptr", table_name, queryToString(local_ast_ptr));
+                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper nullptr", table_name, local_ast_ptr->formatForLogging());
             }
             else
             {
@@ -876,7 +877,7 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
             if (local_ast_ptr == nullptr)
                 LOG_ERROR(log, "Table {} exists locally, but missing in ZK", table_name);
             else
-                LOG_ERROR(log, "Table {} exists locally with AST {}, but missing in ZK", table_name, queryToString(local_ast_ptr));
+                LOG_ERROR(log, "Table {} exists locally with AST {}, but missing in ZK", table_name, local_ast_ptr->formatForLogging());
         }
     }
     for (const auto & [table_name, table_metadata] : table_name_to_metadata_in_zk)
@@ -885,7 +886,7 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
         {
             auto zk_ast_ptr = parseQueryFromMetadataInZooKeeper(table_name, table_metadata);
             if (zk_ast_ptr == nullptr)
-                LOG_ERROR(log, "Table {} exists in ZK with AST {}, but missing locally", table_name, queryToString(zk_ast_ptr));
+                LOG_ERROR(log, "Table {} exists in ZK with AST {}, but missing locally", table_name, zk_ast_ptr->formatForLogging());
             else
                 LOG_ERROR(log, "Table {} exists in ZK, but missing locally", table_name);
         }
@@ -1130,7 +1131,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     LOG_DEBUG(log, "Proposing query: {}", query->formatForLogging());
 
     DDLLogEntry entry;
-    entry.query = queryToString(query);
+    entry.query = query->formatWithSecretsOneLine();
     entry.initiator = ddl_worker->getCommonHostID();
     entry.setSettingsIfRequired(query_context);
     entry.tracing_context = OpenTelemetry::CurrentContext();
@@ -1328,6 +1329,11 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed, will retry");
 
         auto table = tryGetTable(table_name, getContext());
+        if (!table)
+        {
+            LOG_WARNING(log, "Was going to detach local table {}.{} but it's gone", db_name, table_name);
+            continue;
+        }
 
         auto move_table_to_database = [&](const String & broken_table_name, const String & to_database_name)
         {
@@ -1472,7 +1478,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 }
 
                 auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
-                LOG_INFO(log, "Executing {}", serializeAST(*query_ast));
+                LOG_INFO(log, "Executing {}", query_ast->formatForLogging());
                 auto create_query_context = make_query_context();
                 InterpreterCreateQuery(query_ast, create_query_context).execute();
             };
@@ -1535,20 +1541,32 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
         if (filter_by_table_name)
             std::erase_if(escaped_table_names, [&](const String & table) { return !filter_by_table_name(unescapeForFileName(table)); });
 
-        std::vector<zkutil::ZooKeeper::FutureGet> futures;
-        futures.reserve(escaped_table_names.size());
+        std::vector<String> paths_to_fetch;
+        paths_to_fetch.reserve(escaped_table_names.size() + 1);
+
         for (const auto & table : escaped_table_names)
-            futures.emplace_back(zookeeper->asyncTryGet(zookeeper_path + "/metadata/" + table));
+            paths_to_fetch.push_back(zookeeper_path + "/metadata/" + table);
+
+        paths_to_fetch.push_back(zookeeper_path + "/max_log_ptr");
+
+        auto table_metadata_and_version = zookeeper->tryGet(paths_to_fetch);
 
         for (size_t i = 0; i < escaped_table_names.size(); ++i)
         {
-            auto res = futures[i].get();
+            auto & res = table_metadata_and_version[i];
             if (res.error != Coordination::Error::ZOK)
                 break;
-            table_name_to_metadata.emplace(unescapeForFileName(escaped_table_names[i]), res.data);
+
+            table_name_to_metadata.emplace(unescapeForFileName(escaped_table_names[i]), std::move(res.data));
         }
 
-        UInt32 new_max_log_ptr = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
+        auto current_max_log_ptr_idx = paths_to_fetch.size() - 1;
+        auto current_max_log_ptr = table_metadata_and_version[current_max_log_ptr_idx];
+
+        if (current_max_log_ptr.error != Coordination::Error::ZOK)
+            Coordination::Exception::fromPath(current_max_log_ptr.error, zookeeper_path + "/max_log_ptr");
+
+        UInt32 new_max_log_ptr = parse<UInt32>(current_max_log_ptr.data);
         if (new_max_log_ptr == max_log_ptr && escaped_table_names.size() == table_name_to_metadata.size())
             break;
 

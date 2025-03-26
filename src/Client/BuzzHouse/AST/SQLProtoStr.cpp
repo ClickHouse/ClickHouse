@@ -12,7 +12,7 @@
 namespace BuzzHouse
 {
 
-static constexpr char hex_digits[] = "0123456789ABCDEF";
+static constexpr char hexDigits[] = "0123456789ABCDEF";
 static constexpr char digits[] = "0123456789";
 
 CONV_FN(Expr, expr);
@@ -89,8 +89,9 @@ CONV_FN(Function, func)
 
 CONV_FN(Cluster, clust)
 {
-    ret += " ON CLUSTER ";
+    ret += " ON CLUSTER '";
     ret += clust.cluster();
+    ret += "'";
 }
 
 CONV_FN(Window, win)
@@ -118,7 +119,7 @@ CONV_FN(ExprColAlias, eca)
     }
 }
 
-void convertToSQLString(String & ret, const String & s)
+static void convertToSQLString(String & ret, const String & s)
 {
     for (size_t i = 0; i < s.length(); i++)
     {
@@ -166,8 +167,8 @@ void convertToSQLString(String & ret, const String & s)
                     const uint8_t & x = static_cast<uint8_t>(c);
 
                     ret += "\\x";
-                    ret += hex_digits[(x & 0xF0) >> 4];
-                    ret += hex_digits[x & 0x0F];
+                    ret += hexDigits[(x & 0xF0) >> 4];
+                    ret += hexDigits[x & 0x0F];
                 }
             }
         }
@@ -413,8 +414,8 @@ CONV_FN(LiteralValue, lit_val)
             for (size_t i = 0; i < s.length(); i++)
             {
                 const uint8_t & x = static_cast<uint8_t>(s[i]);
-                ret += hex_digits[(x & 0xF0) >> 4];
-                ret += hex_digits[x & 0x0F];
+                ret += hexDigits[(x & 0xF0) >> 4];
+                ret += hexDigits[x & 0x0F];
             }
             ret += '\'';
         }
@@ -704,7 +705,7 @@ CONV_FN(EnumDefValue, edf)
     ret += std::to_string(edf.number());
 }
 
-void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
+static void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
 {
     using BottomTypeNameType = BottomTypeName::BottomOneOfCase;
     switch (btn.bottom_one_of_case())
@@ -764,6 +765,55 @@ void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard
         case BottomTypeNameType::kIPv6:
             ret += "IPv6";
             break;
+        case BottomTypeNameType::kDecimal: {
+            const Decimal & dec = btn.decimal();
+
+            ret += "Decimal";
+            if (dec.has_decimaln())
+            {
+                uint32_t precision = 0;
+                const DecimalN & dn = dec.decimaln();
+
+                switch (dn.precision())
+                {
+                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
+                        precision = 9;
+                        break;
+                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
+                        precision = 18;
+                        break;
+                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
+                        precision = 38;
+                        break;
+                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
+                        precision = 76;
+                        break;
+                }
+                ret += DecimalN_DecimalPrecision_Name(dn.precision()).substr(1);
+                ret += "(";
+                ret += std::to_string(dn.scale() % (precision + 1));
+                ret += ")";
+            }
+            else if (dec.has_decimal_simple())
+            {
+                const DecimalSimple & ds = dec.decimal_simple();
+
+                if (ds.has_precision())
+                {
+                    const uint32_t precision = std::max<uint32_t>(1, ds.precision() % 77);
+
+                    ret += "(";
+                    ret += std::to_string(precision);
+                    if (ds.has_scale())
+                    {
+                        ret += ",";
+                        ret += std::to_string(ds.scale() % (precision + 1));
+                    }
+                    ret += ")";
+                }
+            }
+        }
+        break;
         default: {
             if (lcard)
             {
@@ -773,55 +823,6 @@ void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard
             {
                 switch (btn.bottom_one_of_case())
                 {
-                    case BottomTypeNameType::kDecimal: {
-                        const Decimal & dec = btn.decimal();
-
-                        ret += "Decimal";
-                        if (dec.has_decimaln())
-                        {
-                            uint32_t precision = 0;
-                            const DecimalN & dn = dec.decimaln();
-
-                            switch (dn.precision())
-                            {
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
-                                    precision = 9;
-                                    break;
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
-                                    precision = 18;
-                                    break;
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
-                                    precision = 38;
-                                    break;
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
-                                    precision = 76;
-                                    break;
-                            }
-                            ret += DecimalN_DecimalPrecision_Name(dn.precision()).substr(1);
-                            ret += "(";
-                            ret += std::to_string(dn.scale() % (precision + 1));
-                            ret += ")";
-                        }
-                        else if (dec.has_decimal_simple())
-                        {
-                            const DecimalSimple & ds = dec.decimal_simple();
-
-                            if (ds.has_precision())
-                            {
-                                const uint32_t precision = std::max<uint32_t>(1, ds.precision() % 77);
-
-                                ret += "(";
-                                ret += std::to_string(precision);
-                                if (ds.has_scale())
-                                {
-                                    ret += ",";
-                                    ret += std::to_string(ds.scale() % (precision + 1));
-                                }
-                                ret += ")";
-                            }
-                        }
-                    }
-                    break;
                     case BottomTypeNameType::kJdef: {
                         const JSONDef & jdef = btn.jdef();
 
@@ -1103,20 +1104,26 @@ CONV_FN(ExprIn, ein)
         ret += "GLOBAL ";
     if (ein.not_())
         ret += "NOT ";
-    ret += "IN (";
-    if (ein.has_exprs())
+    ret += "IN ";
+    using InType = ExprIn::InOneofCase;
+    switch (ein.in_oneof_case())
     {
-        ExprListToString(ret, ein.exprs());
+        case InType::kSingleExpr:
+            ExprToString(ret, ein.single_expr());
+            break;
+        case InType::kExprs:
+            ret += "(";
+            ExprListToString(ret, ein.exprs());
+            ret += ")";
+            break;
+        case InType::kSel:
+            ret += "(";
+            ExplainQueryToString(ret, ein.sel());
+            ret += ")";
+            break;
+        default:
+            ret += "1";
     }
-    else if (ein.has_sel())
-    {
-        ExplainQueryToString(ret, ein.sel());
-    }
-    else
-    {
-        ret += "1";
-    }
-    ret += ")";
 }
 
 CONV_FN(ExprAny, eany)
@@ -1788,9 +1795,25 @@ CONV_FN(GenerateSeriesFunc, gsf)
     ret += ")";
 }
 
+static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & est)
+{
+    ret += "'";
+    if (est.has_database())
+    {
+        DatabaseToString(ret, est.database());
+    }
+    else
+    {
+        ret += "default";
+    }
+    ret += "', '";
+    TableToString(ret, est.table());
+    ret += "'";
+}
+
 CONV_FN(TableFunction, tf);
 
-void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
+static void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
 {
     using TableOrFunctionType = TableOrFunction::JtfOneofCase;
     switch (tof.jtf_oneof_case())
@@ -1798,20 +1821,7 @@ void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunctio
         case TableOrFunctionType::kEst:
             if (tudf)
             {
-                const ExprSchemaTable & est = tof.est();
-
-                ret += "'";
-                if (est.has_database())
-                {
-                    DatabaseToString(ret, est.database());
-                }
-                else
-                {
-                    ret += "default";
-                }
-                ret += "', '";
-                TableToString(ret, est.table());
-                ret += "'";
+                FlatExprSchemaTableToString(ret, tof.est());
             }
             else
             {
@@ -1988,17 +1998,52 @@ CONV_FN(ClusterFunc, cluster)
 
 CONV_FN(MergeTreeIndexFunc, mfunc)
 {
-    ret += "mergeTreeIndex('";
-    ret += mfunc.mdatabase();
-    ret += "', '";
-    ret += mfunc.mtable();
-    ret += "'";
+    ret += "mergeTreeIndex(";
+    FlatExprSchemaTableToString(ret, mfunc.est());
     if (mfunc.has_with_marks())
     {
         ret += ", with_marks = ";
         ret += mfunc.with_marks() ? "true" : "false";
     }
     ret += ")";
+}
+
+CONV_FN(GenerateRandomFunc, grfunc)
+{
+    ret += "generateRandom(";
+    ExprToString(ret, grfunc.structure());
+    if (grfunc.has_random_seed())
+    {
+        ret += ", ";
+        ret += std::to_string(grfunc.random_seed());
+    }
+    if (grfunc.has_max_string_length())
+    {
+        ret += ", ";
+        ret += std::to_string(grfunc.max_string_length());
+    }
+    if (grfunc.has_max_array_length())
+    {
+        ret += ", ";
+        ret += std::to_string(grfunc.max_array_length());
+    }
+    ret += ")";
+}
+
+static void ValuesStatementToString(String & ret, const bool tudf, const ValuesStatement & values)
+{
+    ret += "VALUES ";
+    ret += tudf ? "(" : "";
+    ret += "(";
+    ExprListToString(ret, values.expr_list());
+    ret += ")";
+    for (int i = 0; i < values.extra_expr_lists_size(); i++)
+    {
+        ret += ", (";
+        ExprListToString(ret, values.extra_expr_lists(i));
+        ret += ")";
+    }
+    ret += tudf ? ")" : "";
 }
 
 CONV_FN(TableFunction, tf)
@@ -2047,6 +2092,12 @@ CONV_FN(TableFunction, tf)
             TableOrFunctionToString(ret, true, tf.loop());
             ret += ")";
             break;
+        case TableFunctionType::kGrandom:
+            GenerateRandomFuncToString(ret, tf.grandom());
+            break;
+        case TableFunctionType::kValues:
+            ValuesStatementToString(ret, true, tf.values());
+            break;
         default:
             ret += "numbers(10)";
     }
@@ -2062,7 +2113,7 @@ CONV_FN(JoinedTableOrFunction, jtf)
         ret += " ";
         TableToString(ret, jtf.table_alias());
     }
-    if (tof.has_est() && jtf.final())
+    if (jtf.final())
     {
         ret += " FINAL";
     }
@@ -3016,71 +3067,9 @@ CONV_FN(Drop, dt)
     }
 }
 
-CONV_FN(ValuesStatement, values)
-{
-    if (values.has_setting_values())
-    {
-        ret += "SETTINGS ";
-        SettingValuesToString(ret, values.setting_values());
-        ret += " ";
-    }
-    ret += "VALUES (";
-    ExprListToString(ret, values.expr_list());
-    ret += ")";
-    for (int i = 0; i < values.extra_expr_lists_size(); i++)
-    {
-        ret += ", (";
-        ExprListToString(ret, values.extra_expr_lists(i));
-        ret += ")";
-    }
-}
-
-CONV_FN(InsertFromFile, insert_file)
-{
-    ret += "FROM INFILE '";
-    ret += insert_file.path();
-    ret += "'";
-    if (insert_file.has_fcomp())
-    {
-        ret += " COMPRESSION '";
-        ret += FileCompression_Name(insert_file.fcomp()).substr(4);
-        ret += "'";
-    }
-    if (insert_file.has_settings())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, insert_file.settings());
-    }
-    ret += " FORMAT ";
-    ret += InFormat_Name(insert_file.format()).substr(3);
-}
-
-CONV_FN(InsertSelect, insert_sel)
-{
-    if (insert_sel.has_setting_values())
-    {
-        ret += "SETTINGS ";
-        SettingValuesToString(ret, insert_sel.setting_values());
-        ret += " ";
-    }
-    SelectToString(ret, insert_sel.select());
-}
-
-CONV_FN(InsertStringQuery, insert_query)
-{
-    if (insert_query.has_setting_values())
-    {
-        ret += "SETTINGS ";
-        SettingValuesToString(ret, insert_query.setting_values());
-        ret += " ";
-    }
-    ret += "VALUES ";
-    ret += insert_query.query();
-}
-
 CONV_FN(Insert, insert)
 {
-    if (insert.has_ctes() && insert.has_est() && insert.has_insert_select())
+    if (insert.has_ctes() && insert.has_est() && insert.has_select())
     {
         CTEsToString(ret, insert.ctes());
     }
@@ -3089,10 +3078,10 @@ CONV_FN(Insert, insert)
     {
         ExprSchemaTableToString(ret, insert.est());
     }
-    else if (insert.has_tfunction())
+    else if (insert.has_tfunc())
     {
         ret += "FUNCTION ";
-        TableFunctionToString(ret, insert.tfunction());
+        TableFunctionToString(ret, insert.tfunc());
     }
     if (insert.cols_size())
     {
@@ -3108,21 +3097,45 @@ CONV_FN(Insert, insert)
         ret += ")";
     }
     ret += " ";
+    if (!insert.has_insert_file() && insert.has_setting_values())
+    {
+        ret += "SETTINGS ";
+        SettingValuesToString(ret, insert.setting_values());
+        ret += " ";
+    }
     if (insert.has_values())
     {
-        ValuesStatementToString(ret, insert.values());
+        ValuesStatementToString(ret, false, insert.values());
     }
-    else if (insert.has_insert_select())
+    else if (insert.has_select())
     {
-        InsertSelectToString(ret, insert.insert_select());
+        SelectToString(ret, insert.select());
     }
     else if (insert.has_insert_file())
     {
-        InsertFromFileToString(ret, insert.insert_file());
+        const InsertFromFile & insert_file = insert.insert_file();
+
+        ret += "FROM INFILE '";
+        ret += insert_file.path();
+        ret += "'";
+        if (insert_file.has_fcomp())
+        {
+            ret += " COMPRESSION '";
+            ret += FileCompression_Name(insert_file.fcomp()).substr(4);
+            ret += "'";
+        }
+        if (insert.has_setting_values())
+        {
+            ret += " SETTINGS ";
+            SettingValuesToString(ret, insert.setting_values());
+        }
+        ret += " FORMAT ";
+        ret += InFormat_Name(insert_file.format()).substr(3);
     }
     else if (insert.has_query())
     {
-        InsertStringQueryToString(ret, insert.query());
+        ret += "VALUES ";
+        ret += insert.query();
     }
     else
     {
@@ -3276,7 +3289,7 @@ CONV_FN(DeduplicateExpr, de)
     if (de.has_col_list())
     {
         ret += " BY ";
-        ExprColumnListToString(ret, de.col_list());
+        ColumnPathListToString(ret, 0, de.col_list());
     }
     else if (de.has_ded_star())
     {
@@ -3285,7 +3298,7 @@ CONV_FN(DeduplicateExpr, de)
     else if (de.has_ded_star_except())
     {
         ret += " BY * EXCEPT (";
-        ExprColumnListToString(ret, de.ded_star_except());
+        ColumnPathListToString(ret, 0, de.ded_star_except());
         ret += ")";
     }
 }

@@ -1,8 +1,9 @@
 ---
-slug: /operations/quotas
+description: 'Guide to configuring and managing resource usage quotas in ClickHouse'
+sidebar_label: 'Quotas'
 sidebar_position: 51
-sidebar_label: Quotas
-title: Quotas
+slug: /operations/quotas
+title: 'Quotas'
 ---
 
 Quotas allow you to limit resource usage over a period of time or track the use of resources.
@@ -17,7 +18,7 @@ In contrast to query complexity restrictions, quotas:
 
 Let's look at the section of the 'users.xml' file that defines quotas.
 
-``` xml
+```xml
 <!-- Quotas -->
 <quotas>
     <!-- Quota name. -->
@@ -42,7 +43,7 @@ Let's look at the section of the 'users.xml' file that defines quotas.
 By default, the quota tracks resource consumption for each hour, without limiting usage.
 The resource consumption calculated for each interval is output to the server log after each request.
 
-``` xml
+```xml
 <statbox>
     <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
     <interval>
@@ -96,7 +97,7 @@ If the limit is exceeded for at least one time interval, an exception is thrown 
 
 Quotas can use the "quota key" feature to report on resources for multiple keys independently. Here is an example of this:
 
-``` xml
+```xml
 <!-- For the global reports designer. -->
 <web_global>
     <!-- keyed – The quota_key "key" is passed in the query parameter,

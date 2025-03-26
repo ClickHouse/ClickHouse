@@ -333,7 +333,7 @@ bool applyTrivialCountIfPossible(
     select_query_info.optimize_trivial_count = true;
 
     /// Get number of rows
-    std::optional<UInt64> num_rows = storage->totalRows(settings);
+    std::optional<UInt64> num_rows = storage->totalRows(query_context);
     if (!num_rows)
         return false;
 
@@ -1539,7 +1539,8 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             false /*optimize_read_in_order*/,
             true /*optimize_skip_unused_shards*/);
 
-        join_step->swap_join_tables = settings[Setting::query_plan_join_swap_table].get();
+        auto setting_swap = settings[Setting::query_plan_join_swap_table];
+        join_step->swap_join_tables = setting_swap.is_auto ? std::nullopt : std::make_optional(setting_swap.base);
 
         join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
 

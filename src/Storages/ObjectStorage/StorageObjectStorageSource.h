@@ -56,7 +56,8 @@ public:
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns,
         ObjectInfos * read_keys,
-        std::function<void(FileProgress)> file_progress_callback = {});
+        std::function<void(FileProgress)> file_progress_callback = {},
+        bool ignore_archive_globs = false);
 
     static std::string getUniqueStoragePathIdentifier(
         const Configuration & configuration,
@@ -256,7 +257,8 @@ public:
         ConfigurationPtr configuration_,
         std::unique_ptr<IObjectIterator> archives_iterator_,
         ContextPtr context_,
-        ObjectInfos * read_keys_);
+        ObjectInfos * read_keys_,
+        bool ignore_archive_globs_ = false);
 
     ObjectInfoPtr next(size_t processor) override;
 
@@ -315,6 +317,8 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     /// File enumerator inside the archive.
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
+
+    bool ignore_archive_globs;
 
     std::mutex next_mutex;
 };

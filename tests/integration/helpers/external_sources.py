@@ -2,6 +2,7 @@
 import datetime
 import logging
 import os
+import urllib.parse
 import uuid
 import bson
 import warnings
@@ -10,6 +11,7 @@ import cassandra.cluster
 import pymongo
 import pymysql.cursors
 import redis
+import urllib
 
 
 class ExternalSource(object):
@@ -171,7 +173,6 @@ class SourceMongo(ExternalSource):
         user,
         password,
         secure=False,
-        legacy=False,
     ):
         ExternalSource.__init__(
             self,
@@ -184,13 +185,10 @@ class SourceMongo(ExternalSource):
             password,
         )
         self.secure = secure
-        self.legacy = legacy
 
     def get_source_str(self, table_name):
         options = ""
-        if self.secure and self.legacy:
-            options = "<options>ssl=true</options>"
-        if self.secure and not self.legacy:
+        if self.secure:
             options = "<options>tls=true&amp;tlsAllowInvalidCertificates=true</options>"
 
         return """
@@ -217,7 +215,7 @@ class SourceMongo(ExternalSource):
             host=self.internal_hostname,
             port=self.internal_port,
             user=self.user,
-            password=self.password,
+            password=urllib.parse.quote_plus(self.password),
         )
         if self.secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
@@ -264,9 +262,7 @@ class SourceMongoURI(SourceMongo):
 
     def get_source_str(self, table_name):
         options = ""
-        if self.secure and self.legacy:
-            options = "ssl=true"
-        if self.secure and not self.legacy:
+        if self.secure:
             options = "tls=true&amp;tlsAllowInvalidCertificates=true"
 
         return """
@@ -278,7 +274,7 @@ class SourceMongoURI(SourceMongo):
             host=self.docker_hostname,
             port=self.docker_port,
             user=self.user,
-            password=self.password,
+            password=urllib.parse.quote_plus(self.password),
             tbl=table_name,
             options=options,
         )

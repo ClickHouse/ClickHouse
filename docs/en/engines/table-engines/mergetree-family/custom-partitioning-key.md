@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/mergetree-family/custom-partitioning-key
+description: 'Learn how to add a custom partitioning key to MergeTree tables.'
+sidebar_label: 'Custom Partitioning Key'
 sidebar_position: 30
-sidebar_label: Custom Partitioning Key
-title: "Custom Partitioning Key"
-description: "Learn how to add a custom partitioning key to MergeTree tables."
+slug: /engines/table-engines/mergetree-family/custom-partitioning-key
+title: 'Custom Partitioning Key'
 ---
 
 # Custom Partitioning Key
@@ -20,7 +20,7 @@ A partition is a logical combination of records in a table by a specified criter
 
 The partition is specified in the `PARTITION BY expr` clause when [creating a table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table). The partition key can be any expression from the table columns. For example, to specify partitioning by month, use the expression `toYYYYMM(date_column)`:
 
-``` sql
+```sql
 CREATE TABLE visits
 (
     VisitDate Date,
@@ -34,7 +34,7 @@ ORDER BY Hour;
 
 The partition key can also be a tuple of expressions (similar to the [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries)). For example:
 
-``` sql
+```sql
 ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
 PARTITION BY (toMonday(StartDate), EventType)
 ORDER BY (CounterID, StartDate, intHash32(UserID));
@@ -52,7 +52,7 @@ A merge only works for data parts that have the same value for the partitioning 
 
 Use the [system.parts](../../../operations/system-tables/parts.md) table to view the table parts and partitions. For example, let's assume that we have a `visits` table with partitioning by month. Let's perform the `SELECT` query for the `system.parts` table:
 
-``` sql
+```sql
 SELECT
     partition,
     name,
@@ -61,7 +61,7 @@ FROM system.parts
 WHERE table = 'visits'
 ```
 
-``` text
+```text
 ┌─partition─┬─name──────────────┬─active─┐
 │ 201901    │ 201901_1_3_1      │      0 │
 │ 201901    │ 201901_1_9_2_11   │      1 │
@@ -93,11 +93,11 @@ The `active` column shows the status of the part. `1` is active; `0` is inactive
 
 As you can see in the example, there are several separated parts of the same partition (for example, `201901_1_3_1` and `201901_1_9_2`). This means that these parts are not merged yet. ClickHouse merges the inserted parts of data periodically, approximately 15 minutes after inserting. In addition, you can perform a non-scheduled merge using the [OPTIMIZE](../../../sql-reference/statements/optimize.md) query. Example:
 
-``` sql
+```sql
 OPTIMIZE TABLE visits PARTITION 201902;
 ```
 
-``` text
+```text
 ┌─partition─┬─name─────────────┬─active─┐
 │ 201901    │ 201901_1_3_1     │      0 │
 │ 201901    │ 201901_1_9_2_11  │      1 │
@@ -114,7 +114,7 @@ Inactive parts will be deleted approximately 10 minutes after merging.
 
 Another way to view a set of parts and partitions is to go into the directory of the table: `/var/lib/clickhouse/data/<database>/<table>/`. For example:
 
-``` bash
+```bash
 /var/lib/clickhouse/data/default/visits$ ls -l
 total 40
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 201901_1_3_1
@@ -144,7 +144,7 @@ because we provided with the guarantee that each group by key value cannot appea
 
 The typical example is:
 
-``` sql
+```sql
 CREATE TABLE session_log
 (
     UserID UInt64,

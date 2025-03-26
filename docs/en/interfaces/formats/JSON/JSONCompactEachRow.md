@@ -1,10 +1,11 @@
 ---
-title: JSONCompactEachRow
-slug: /interfaces/formats/JSONCompactEachRow
-keywords: [JSONCompactEachRow]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the JSONCompactEachRow format'
+input_format: true
+keywords: ['JSONCompactEachRow']
+output_format: true
+slug: /interfaces/formats/JSONCompactEachRow
+title: 'JSONCompactEachRow'
 ---
 
 | Input | Output | Alias |

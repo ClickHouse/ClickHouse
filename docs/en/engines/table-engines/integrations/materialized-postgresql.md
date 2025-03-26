@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/materialized-postgresql
+description: 'Creates a ClickHouse table with an initial data dump of a PostgreSQL
+  table and starts the replication process.'
+sidebar_label: 'MaterializedPostgreSQL'
 sidebar_position: 130
-sidebar_label: MaterializedPostgreSQL
-title: "MaterializedPostgreSQL"
-description: "Creates a ClickHouse table with an initial data dump of a PostgreSQL table and starts the replication process."
+slug: /engines/table-engines/integrations/materialized-postgresql
+title: 'MaterializedPostgreSQL'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -32,7 +33,7 @@ If more than one table is required, it is highly recommended to use the [Materia
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_table', 'postgres_user', 'postgres_password')
 PRIMARY KEY key;
@@ -67,7 +68,7 @@ PRIMARY KEY key;
 These columns do not need to be added when a table is created. They are always accessible in `SELECT` query.
 `_version` column equals `LSN` position in `WAL`, so it might be used to check how up-to-date replication is.
 
-``` sql
+```sql
 CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
 PRIMARY KEY key;

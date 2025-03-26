@@ -143,7 +143,24 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
-    if (mode == ObjectStorageQueueMode::UNORDERED
+    LOG_TRACE(
+        log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
+        table_metadata.mode, table_metadata.buckets.load(),
+        table_metadata.processing_threads_num.load(), buckets_num);
+}
+
+ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
+{
+    shutdown();
+}
+
+void ObjectStorageQueueMetadata::startup()
+{
+    if (startup_called.exchange(true))
+         return;
+
+    if (!task
+        && mode == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_limit || table_metadata.tracked_files_ttl_sec))
     {
         task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
@@ -155,15 +172,8 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
             generateRescheduleInterval(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
-    LOG_TRACE(log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
-              table_metadata.mode, table_metadata.buckets.load(), table_metadata.processing_threads_num.load(), buckets_num);
-
-    update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
-}
-
-ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
-{
-    shutdown();
+    if (!update_registry_thread)
+        update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
 }
 
 void ObjectStorageQueueMetadata::shutdown()
@@ -336,7 +346,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                         "Will do nothing", value);
                 continue;
             }
-            if (table_metadata.buckets != 0)
+            if (table_metadata.buckets > 1)
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -363,8 +373,9 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
 
 void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
 {
+    chassert(table_metadata.buckets == 0 || table_metadata.buckets == 1);
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
-    ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value);
+    ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value, /* prev_value */table_metadata.buckets);
     buckets_num = value;
     table_metadata.buckets = value;
 }
@@ -612,6 +623,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
         }
 
         if (code == Coordination::Error::ZBADVERSION
+            || code == Coordination::Error::ZNODEEXISTS
             || code == Coordination::Error::ZSESSIONEXPIRED)
             continue;
 

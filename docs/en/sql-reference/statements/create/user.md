@@ -1,15 +1,16 @@
 ---
-slug: /sql-reference/statements/create/user
+description: 'Documentation for User'
+sidebar_label: 'USER'
 sidebar_position: 39
-sidebar_label: USER
-title: "CREATE USER"
+slug: /sql-reference/statements/create/user
+title: 'CREATE USER'
 ---
 
 Creates [user accounts](../../../guides/sre/user-management/index.md#user-account-management).
 
 Syntax:
 
-``` sql
+```sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
     [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime] 
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
@@ -204,7 +205,7 @@ You can exclude any user or role by using the `EXCEPT` expression. For example, 
 
 Create the user account `mira` protected by the password `qwerty`:
 
-``` sql
+```sql
 CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty';
 ```
 
@@ -212,13 +213,13 @@ CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
 
 Create the user account `john`, assign roles to it and make this roles default:
 
-``` sql
+```sql
 CREATE USER john DEFAULT ROLE role1, role2;
 ```
 
 Create the user account `john` and make all his future roles default:
 
-``` sql
+```sql
 CREATE USER john DEFAULT ROLE ALL;
 ```
 
@@ -226,12 +227,12 @@ When some role is assigned to `john` in the future, it will become default autom
 
 Create the user account `john` and make all his future roles default excepting `role1` and `role2`:
 
-``` sql
+```sql
 CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2;
 ```
 
 Create the user account `john` and allow him to grant his privileges to the user with `jack` account:
 
-``` sql
+```sql
 CREATE USER john GRANTEES jack;
 ```

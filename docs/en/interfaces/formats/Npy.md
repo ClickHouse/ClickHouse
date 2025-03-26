@@ -1,10 +1,11 @@
 ---
-title: Npy
-slug: /interfaces/formats/Npy
-keywords: [Npy]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the Npy format'
+input_format: true
+keywords: ['Npy']
+output_format: true
+slug: /interfaces/formats/Npy
+title: 'Npy'
 ---
 
 | Input | Output | Alias |
