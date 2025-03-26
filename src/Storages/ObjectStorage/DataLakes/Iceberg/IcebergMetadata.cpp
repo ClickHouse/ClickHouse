@@ -19,7 +19,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
