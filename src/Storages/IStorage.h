@@ -173,7 +173,7 @@ public:
     virtual bool isSharedStorage() const { return false; }
 
     /// Optional size information of each physical column.
-    /// Currently it's only used by the MergeTree family for query optimizations.
+    /// Used for query optimizations by the MergeTree family of storages and by Parquet reader.
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 

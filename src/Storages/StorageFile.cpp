@@ -1012,6 +1012,37 @@ bool StorageFile::supportsSubsetOfColumns(const ContextPtr & context) const
     return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 }
 
+bool StorageFile::supportsPrewhere() const
+{
+    return supports_prewhere;
+}
+bool StorageFile::canMoveConditionsToPrewhere() const
+{
+    return supports_prewhere;
+}
+
+std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
+{
+    /// Currently don't support prewhere for virtual columns and columns with default expressions.
+    auto meta = getInMemoryMetadataPtr();
+    NameSet names;
+    for (const auto & col : meta->columns)
+        if (!col.default_desc.expression)
+            names.insert(col.name);
+    return names;
+}
+
+IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
+{
+    /// Reporting some fake sizes to enable prewhere optimization.
+    //TODO: Propagate real sizes from file metadata.
+    auto meta = getInMemoryMetadataPtr();
+    ColumnSizeByName sizes;
+    for (const auto & col : meta->columns)
+        sizes[col.name] = ColumnSize {.marks = 1000, .data_compressed = 100000000, .data_uncompressed = 1000000000};
+    return sizes;
+}
+
 bool StorageFile::prefersLargeBlocks() const
 {
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
@@ -1097,6 +1128,12 @@ StorageFile::StorageFile(CommonArguments args)
 {
     if (format_name != "Distributed" && format_name != "auto")
         FormatFactory::instance().checkFormatName(format_name);
+
+    /// What happens if this constructor is called directly, and format_name == "auto"?
+    /// Will the "auto" be propagated all the way to FormatFactory::getInput and throw exception?
+    /// Is this constructor meant to only be called from the other constructors, which then call
+    /// setStorageMetadata, which detects format and assigns format_name?
+    /// If you know answers to these questions, consider adding a comment or something.
 }
 
 void StorageFile::setStorageMetadata(CommonArguments args)
@@ -1140,6 +1177,8 @@ void StorageFile::setStorageMetadata(CommonArguments args)
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), paths.empty() ? "" : paths[0], format_settings));
     setInMemoryMetadata(storage_metadata);
+
+    supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
 }
 
 static std::chrono::seconds getLockTimeout(const ContextPtr & context)
@@ -1200,6 +1239,7 @@ StorageFileSource::StorageFileSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<StorageFile> storage_,
     const ContextPtr & context_,
+    PrewhereInfoPtr prewhere_info_,
     UInt64 max_block_size_,
     FilesIteratorPtr files_iterator_,
     std::unique_ptr<ReadBuffer> read_buf_,
@@ -1207,6 +1247,7 @@ StorageFileSource::StorageFileSource(
     FormatParserGroupPtr parser_group_)
     : ISource(info.source_header, false), WithContext(context_)
     , storage(std::move(storage_))
+    , prewhere_info(std::move(prewhere_info_))
     , files_iterator(std::move(files_iterator_))
     , read_buf(std::move(read_buf_))
     , parser_group(std::move(parser_group_))
@@ -1443,6 +1484,9 @@ Chunk StorageFileSource::generate()
             if (need_only_count)
                 input_format->needOnlyCount();
 
+            if (prewhere_info)
+                input_format->setPrewhereInfo(prewhere_info);
+
             QueryPipelineBuilder builder;
             builder.init(Pipe(input_format));
 
@@ -1547,19 +1591,19 @@ public:
     std::string getName() const override { return "ReadFromFile"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
     ReadFromFile(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
         std::shared_ptr<StorageFile> storage_,
         ReadFromFormatInfo info_,
         const bool need_only_count_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(info_.source_header, column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , info(std::move(info_))
         , need_only_count(need_only_count_)
@@ -1590,6 +1634,14 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
         predicate = filter_actions_dag->getOutputs().at(0);
 
     createIterator(predicate);
+}
+
+void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
+{
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
+    query_info.prewhere_info = prewhere_info_value;
+    prewhere_info = prewhere_info_value;
+    output_header = info.source_header;
 }
 
 void StorageFile::read(
@@ -1628,8 +1680,10 @@ void StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, context, supportsSubsetOfColumns(context));
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, context, supportsSubsetOfColumns(context), supports_prewhere);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
         && context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto reading = std::make_unique<ReadFromFile>(
@@ -1637,7 +1691,6 @@ void StorageFile::read(
         query_info,
         storage_snapshot,
         context,
-        read_from_format_info.source_header,
         std::move(this_ptr),
         std::move(read_from_format_info),
         need_only_count,
@@ -1703,6 +1756,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             info,
             storage,
             ctx,
+            prewhere_info,
             max_block_size,
             files_iterator,
             std::move(read_buffer),

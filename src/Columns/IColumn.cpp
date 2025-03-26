@@ -221,6 +221,11 @@ size_t IColumn::sizeOfValueIfFixed() const
     throw Exception(ErrorCodes::CANNOT_GET_SIZE_OF_FIELD, "Values of column {} are not fixed size.", getName());
 }
 
+std::span<char> IColumn::insertRawUninitialized(size_t)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertRawUninitialized is not supported for {}.", getName());
+}
+
 bool isColumnNullable(const IColumn & column)
 {
     return checkColumn<ColumnNullable>(column);
