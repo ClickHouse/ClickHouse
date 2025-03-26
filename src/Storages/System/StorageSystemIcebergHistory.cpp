@@ -49,6 +49,7 @@ void StorageSystemIcebergHistory::fillData(MutableColumns & res_columns, Context
             return;
         }
 
+#if USE_AVRO
         auto current_metadata = IcebergMetadata::create(
                         object_storage->getObjectStorage(),
                         object_storage->getConfiguration(),
@@ -69,6 +70,7 @@ void StorageSystemIcebergHistory::fillData(MutableColumns & res_columns, Context
                 res_columns[column_index++]->insert(iceberg_history_item.is_current_ancestor);
             }
         }
+#endif
 
 
     };
