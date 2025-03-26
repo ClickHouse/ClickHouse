@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class StorageView final : public IStorage
+class StorageView : public IStorage
 {
 public:
     StorageView(

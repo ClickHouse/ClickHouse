@@ -30,7 +30,7 @@ class TransposedMetricLog : public PeriodicLog<TransposedMetricLogElement>
     using PeriodicLog<TransposedMetricLogElement>::PeriodicLog;
 public:
     /// This table is usually queried for fixed metric name.
-    static const char * getDefaultOrderBy() { return "metric, event_date, event_time"; }
+    static const char * getDefaultOrderBy() { return "hostname, event_date, event_time"; }
 protected:
     void stepFunction(TimePoint current_time) override;
 };
