@@ -13,7 +13,7 @@ This type allows to store values of any type inside it without knowing all of th
 
 To declare a column of `Dynamic` type, use the following syntax:
 
-```sql
+``` sql
 <column_name> Dynamic(max_types=N)
 ```
 

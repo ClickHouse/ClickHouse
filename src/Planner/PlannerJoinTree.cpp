@@ -333,7 +333,7 @@ bool applyTrivialCountIfPossible(
     select_query_info.optimize_trivial_count = true;
 
     /// Get number of rows
-    std::optional<UInt64> num_rows = storage->totalRows(query_context);
+    std::optional<UInt64> num_rows = storage->totalRows(settings);
     if (!num_rows)
         return false;
 
@@ -1156,19 +1156,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             else
             {
                 /// Create step which reads from empty source if storage has no data.
-                const auto & column_names = table_expression_data.getColumnNames();
+                const auto & column_names = table_expression_data.getSelectedColumnsNames();
                 auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
                 Pipe pipe(std::make_shared<NullSource>(source_header));
                 auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
                 read_from_pipe->setStepDescription("Read from NullSource");
                 query_plan.addStep(std::move(read_from_pipe));
-
-                auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
-                if (!alias_column_expressions.empty())
-                {
-                    auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
-                    query_plan.addStep(std::move(alias_column_step));
-                }
             }
         }
     }

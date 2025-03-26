@@ -27,6 +27,7 @@ workflow = Workflow.Config(
             for a in ArtifactConfigs.clickhouse_binaries
             if a.name == ArtifactNames.CH_AMD_BINARY
         ],
+        ArtifactConfigs.fast_test,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,

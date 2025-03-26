@@ -143,24 +143,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
-    LOG_TRACE(
-        log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
-        table_metadata.mode, table_metadata.buckets.load(),
-        table_metadata.processing_threads_num.load(), buckets_num);
-}
-
-ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
-{
-    shutdown();
-}
-
-void ObjectStorageQueueMetadata::startup()
-{
-    if (startup_called.exchange(true))
-         return;
-
-    if (!task
-        && mode == ObjectStorageQueueMode::UNORDERED
+    if (mode == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_limit || table_metadata.tracked_files_ttl_sec))
     {
         task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
@@ -172,8 +155,15 @@ void ObjectStorageQueueMetadata::startup()
             generateRescheduleInterval(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
-    if (!update_registry_thread)
-        update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
+    LOG_TRACE(log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
+              table_metadata.mode, table_metadata.buckets.load(), table_metadata.processing_threads_num.load(), buckets_num);
+
+    update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
+}
+
+ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
+{
+    shutdown();
 }
 
 void ObjectStorageQueueMetadata::shutdown()
@@ -346,7 +336,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                         "Will do nothing", value);
                 continue;
             }
-            if (table_metadata.buckets > 1)
+            if (table_metadata.buckets != 0)
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -373,9 +363,8 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
 
 void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
 {
-    chassert(table_metadata.buckets == 0 || table_metadata.buckets == 1);
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
-    ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value, /* prev_value */table_metadata.buckets);
+    ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value);
     buckets_num = value;
     table_metadata.buckets = value;
 }
