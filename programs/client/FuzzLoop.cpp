@@ -633,9 +633,7 @@ bool Client::buzzHouse()
             {
                 const uint32_t correctness_oracle = 30;
                 const uint32_t settings_oracle = 30;
-                const uint32_t dump_oracle = 15
-                    * static_cast<uint32_t>(fuzz_config->use_dump_table_oracle
-                                            && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_dump_table_oracle));
+                const uint32_t dump_oracle = 15 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables));
                 const uint32_t peer_oracle
                     = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t run_query = 910;
@@ -695,14 +693,15 @@ bool Client::buzzHouse()
                 }
                 else if (dump_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + 1))
                 {
-                    const bool to_same_table = rg.nextBool();
-                    const auto & t1 = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_dump_table_oracle));
-                    const auto & t2 = to_same_table
-                        ? t1
-                        : rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_dump_table_oracle));
-
                     /// Test in and out formats
-                    if (to_same_table)
+                    /// When testing content, we have to export and import to the same table
+                    const bool test_content = fuzz_config->dump_table_oracle_compare_content && rg.nextBool()
+                        && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_compare_content);
+                    const auto & t1 = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
+                        test_content ? gen.attached_tables_to_compare_content : gen.attached_tables));
+                    const auto & t2 = test_content ? t1 : rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables));
+
+                    if (test_content)
                     {
                         /// Dump table content and read it later to look for correctness
                         full_query2.resize(0);
@@ -719,7 +718,7 @@ bool Client::buzzHouse()
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
 
-                    if (to_same_table)
+                    if (test_content)
                     {
                         /// Clear table, before inserting data again, when testing for correctness
                         qo.setIntermediateStepSuccess(!have_error);
@@ -740,7 +739,7 @@ bool Client::buzzHouse()
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
 
-                    if (to_same_table)
+                    if (test_content)
                     {
                         qo.setIntermediateStepSuccess(!have_error);
 
