@@ -8,7 +8,7 @@
 #include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Scheduler/Nodes/FifoQueue.h>
 #include <Common/Scheduler/ISchedulerNode.h>
-#include <Common/Scheduler/SchedulingSettings.h>
+#include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Exception.h>
 
 #include <memory>
@@ -34,7 +34,7 @@ using UnifiedSchedulerNodePtr = std::shared_ptr<UnifiedSchedulerNode>;
  * Unified node is capable of updating its internal structure based on:
  * 1. Number of children (fifo if =0 or fairness/priority if >0).
  * 2. Priorities of its children (for subtree structure).
- * 3. `SchedulingSettings` associated with unified node (for throttler and semaphore constraints).
+ * 3. `WorkloadSettings` associated with unified node (for throttler and semaphore constraints).
  *
  * In general, unified node has "internal" subtree with the following structure:
  *
@@ -317,10 +317,10 @@ private:
         SchedulerNodePtr throttler;
         SchedulerNodePtr semaphore;
         QueueOrChildrenBranch branch;
-        SchedulingSettings settings;
+        WorkloadSettings settings;
 
         // Should be called after constructor, before any other methods
-        [[nodiscard]] SchedulerNodePtr initialize(EventQueue * event_queue_, const SchedulingSettings & settings_)
+        [[nodiscard]] SchedulerNodePtr initialize(EventQueue * event_queue_, const WorkloadSettings & settings_)
         {
             settings = settings_;
             SchedulerNodePtr node = branch.initialize(event_queue_);
@@ -376,7 +376,7 @@ private:
 
         /// Updates constraint-related nodes.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
-        [[nodiscard]] SchedulerNodePtr updateSchedulingSettings(EventQueue * event_queue_, const SchedulingSettings & new_settings)
+        [[nodiscard]] SchedulerNodePtr updateSchedulingSettings(EventQueue * event_queue_, const WorkloadSettings & new_settings)
         {
             SchedulerNodePtr node = branch.getRoot();
 
@@ -422,7 +422,7 @@ private:
     };
 
 public:
-    explicit UnifiedSchedulerNode(EventQueue * event_queue_, const SchedulingSettings & settings)
+    explicit UnifiedSchedulerNode(EventQueue * event_queue_, const WorkloadSettings & settings)
         : ISchedulerNode(event_queue_, SchedulerNodeInfo(settings.weight, settings.priority))
     {
         immediate_child = impl.initialize(event_queue, settings);
@@ -453,14 +453,14 @@ public:
             reparent(new_child, this);
     }
 
-    static bool updateRequiresDetach(const String & old_parent, const String & new_parent, const SchedulingSettings & old_settings, const SchedulingSettings & new_settings)
+    static bool updateRequiresDetach(const String & old_parent, const String & new_parent, const WorkloadSettings & old_settings, const WorkloadSettings & new_settings)
     {
         return old_parent != new_parent || old_settings.priority != new_settings.priority;
     }
 
     /// Updates scheduling settings. Set of constraints might change.
     /// NOTE: Caller is responsible for detaching and attaching if `updateRequiresDetach` returns true
-    void updateSchedulingSettings(const SchedulingSettings & new_settings)
+    void updateSchedulingSettings(const WorkloadSettings & new_settings)
     {
         info.setPriority(new_settings.priority);
         info.setWeight(new_settings.weight);
@@ -468,7 +468,7 @@ public:
             reparent(new_child, this);
     }
 
-    const SchedulingSettings & getSettings() const
+    const WorkloadSettings & getSettings() const
     {
         return impl.settings;
     }

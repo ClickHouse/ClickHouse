@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-#include <Common/Scheduler/SchedulingSettings.h>
+#include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/SchedulerRoot.h>
 #include <Common/Scheduler/ResourceGuard.h>
@@ -133,12 +133,12 @@ public:
         ResourceTestBase::add<TClass>(&event_queue, root_node, path, std::forward<Args>(args)...);
     }
 
-    UnifiedSchedulerNodePtr createUnifiedNode(const String & basename, const SchedulingSettings & settings = {})
+    UnifiedSchedulerNodePtr createUnifiedNode(const String & basename, const WorkloadSettings & settings = {})
     {
         return createUnifiedNode(basename, {}, settings);
     }
 
-    UnifiedSchedulerNodePtr createUnifiedNode(const String & basename, const UnifiedSchedulerNodePtr & parent, const SchedulingSettings & settings = {})
+    UnifiedSchedulerNodePtr createUnifiedNode(const String & basename, const UnifiedSchedulerNodePtr & parent, const WorkloadSettings & settings = {})
     {
         auto node = std::make_shared<UnifiedSchedulerNode>(&event_queue, settings);
         node->basename = basename;
@@ -158,7 +158,7 @@ public:
     // Unit test implementation must make sure that all needed queues and constraints are not going to be destroyed.
     // Normally it is the responsibility of WorkloadResourceManager, but we do not use it here, so manual version control is required.
     // (see WorkloadResourceManager::Resource::updateCurrentVersion() fo details)
-    void updateUnifiedNode(const UnifiedSchedulerNodePtr & node, const UnifiedSchedulerNodePtr & old_parent, const UnifiedSchedulerNodePtr & new_parent, const SchedulingSettings & new_settings)
+    void updateUnifiedNode(const UnifiedSchedulerNodePtr & node, const UnifiedSchedulerNodePtr & old_parent, const UnifiedSchedulerNodePtr & new_parent, const WorkloadSettings & new_settings)
     {
         EXPECT_TRUE((old_parent && new_parent) || (!old_parent && !new_parent)); // changing root node is not supported
         bool detached = false;

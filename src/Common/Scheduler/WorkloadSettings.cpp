@@ -1,5 +1,5 @@
 #include <limits>
-#include <Common/Scheduler/SchedulingSettings.h>
+#include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-bool SchedulingSettings::hasThrottler() const
+bool WorkloadSettings::hasThrottler() const
 {
     switch (unit) {
         case Unit::IOByte: return max_bytes_per_second != 0;
@@ -20,7 +20,7 @@ bool SchedulingSettings::hasThrottler() const
     }
 }
 
-Float64 SchedulingSettings::getThrottlerMaxSpeed() const
+Float64 WorkloadSettings::getThrottlerMaxSpeed() const
 {
     switch (unit) {
         case Unit::IOByte: return max_bytes_per_second;
@@ -28,7 +28,7 @@ Float64 SchedulingSettings::getThrottlerMaxSpeed() const
     }
 }
 
-Float64 SchedulingSettings::getThrottlerMaxBurst() const
+Float64 WorkloadSettings::getThrottlerMaxBurst() const
 {
     switch (unit) {
         case Unit::IOByte: return max_burst_bytes;
@@ -36,7 +36,7 @@ Float64 SchedulingSettings::getThrottlerMaxBurst() const
     }
 }
 
-bool SchedulingSettings::hasSemaphore() const
+bool WorkloadSettings::hasSemaphore() const
 {
     switch (unit) {
         case Unit::IOByte: return max_io_requests != unlimited || max_bytes_inflight != unlimited;
@@ -44,7 +44,7 @@ bool SchedulingSettings::hasSemaphore() const
     }
 }
 
-Int64 SchedulingSettings::getSemaphoreMaxRequests() const
+Int64 WorkloadSettings::getSemaphoreMaxRequests() const
 {
     switch (unit) {
         case Unit::IOByte: return max_io_requests;
@@ -52,7 +52,7 @@ Int64 SchedulingSettings::getSemaphoreMaxRequests() const
     }
 }
 
-Int64 SchedulingSettings::getSemaphoreMaxCost() const
+Int64 WorkloadSettings::getSemaphoreMaxCost() const
 {
     switch (unit) {
         case Unit::IOByte: return max_bytes_inflight;
@@ -60,7 +60,7 @@ Int64 SchedulingSettings::getSemaphoreMaxCost() const
     }
 }
 
-void SchedulingSettings::updateFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name)
+void WorkloadSettings::updateFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name)
 {
     // Set resource unit
     unit = unit_;
