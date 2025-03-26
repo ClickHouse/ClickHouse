@@ -633,7 +633,8 @@ bool Client::buzzHouse()
             {
                 const uint32_t correctness_oracle = 30;
                 const uint32_t settings_oracle = 30;
-                const uint32_t dump_oracle = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables));
+                const uint32_t dump_oracle
+                    = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
                 const uint32_t peer_oracle
                     = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t run_query = 910;
@@ -698,8 +699,10 @@ bool Client::buzzHouse()
                     const bool test_content = fuzz_config->dump_table_oracle_compare_content && rg.nextBool()
                         && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_compare_content);
                     const auto & t1 = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
-                        test_content ? gen.attached_tables_to_compare_content : gen.attached_tables));
-                    const auto & t2 = test_content ? t1 : rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables));
+                        test_content ? gen.attached_tables_to_compare_content : gen.attached_tables_to_test_format));
+                    const auto & t2 = test_content
+                        ? t1
+                        : rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
 
                     if (test_content)
                     {
@@ -713,7 +716,7 @@ bool Client::buzzHouse()
                     }
 
                     sq2.Clear();
-                    qo.generateExportQuery(rg, gen, t1, sq2);
+                    qo.generateExportQuery(rg, gen, test_content, t1, sq2);
                     BuzzHouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
@@ -734,7 +737,7 @@ bool Client::buzzHouse()
 
                     sq4.Clear();
                     full_query.resize(0);
-                    qo.generateImportQuery(rg, gen, test_content, t2, sq2, sq4);
+                    qo.generateImportQuery(rg, gen, t2, sq2, sq4);
                     BuzzHouse::SQLQueryToString(full_query, sq4);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);

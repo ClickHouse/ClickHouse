@@ -190,7 +190,8 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
-void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2)
+void QueryOracle::generateExportQuery(
+    RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, SQLQuery & sq2)
 {
     String buf;
     bool first = true;
@@ -201,6 +202,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
     OutFormat outf = rg.pickRandomly(outIn);
 
+    can_test_query_success &= test_content;
     /// Remove the file if exists
     if (!std::filesystem::remove(nfile, ec) && ec)
     {
@@ -239,6 +241,15 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     if (rg.nextSmallNumber() < 4)
     {
         gen.generateSettingValues(rg, serverSettings, ins->mutable_setting_values());
+        const SettingValues & svs = ins->setting_values();
+
+        for (int i = 0; i < (svs.other_values_size() + 1) && can_test_query_success; i++)
+        {
+            const SetValue & osv = i == 0 ? svs.set_value() : svs.other_values(i - 1);
+            const CHSetting & ochs = serverSettings.at(osv.property());
+
+            can_test_query_success &= !ochs.changes_behavior;
+        }
     }
     /// Set the table on select
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
@@ -253,7 +264,7 @@ void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
 }
 
 void QueryOracle::generateImportQuery(
-    RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
+    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
 {
     SettingValues * svs = nullptr;
     Insert * nins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
@@ -276,8 +287,9 @@ void QueryOracle::generateImportQuery(
         iff->set_fcomp(ff.fcomp());
     }
 
-    if (!test_content && rg.nextSmallNumber() < 4)
+    if (!can_test_query_success && rg.nextSmallNumber() < 4)
     {
+        /// If can't test success, swap settings sometimes
         svs = nins->mutable_setting_values();
         gen.generateSettingValues(rg, serverSettings, svs);
     }
