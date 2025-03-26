@@ -81,6 +81,7 @@
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 #include <Storages/ReadInOrderOptimizer.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <Columns/Collator.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -193,6 +194,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
+    extern const SettingsBool allow_statistics_optimize;
 }
 
 namespace ServerSetting
@@ -800,11 +802,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
                 Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
+                bool use_statistics = settings[Setting::allow_statistics_optimize];
 
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
-                    storage->getConditionSelectivityEstimatorByPredicate(storage_snapshot, nullptr, context),
+                    use_statistics ? storage->getConditionSelectivityEstimatorByPredicate(storage_snapshot, nullptr, context) : ConditionSelectivityEstimator(),
                     queried_columns,
                     supported_prewhere_columns,
                     log};
