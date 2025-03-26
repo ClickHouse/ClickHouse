@@ -236,7 +236,10 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     {
         ff->set_fcomp(static_cast<FileCompression>((rg.nextRandomUInt32() % static_cast<uint32_t>(FileCompression_MAX)) + 1));
     }
-
+    if (rg.nextSmallNumber() < 4)
+    {
+        gen.generateSettingValues(rg, serverSettings, ins->mutable_setting_values());
+    }
     /// Set the table on select
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
@@ -252,16 +255,18 @@ void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
 void QueryOracle::generateImportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
 {
-    Insert * ins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
-    InsertFromFile * iff = ins->mutable_insert_file();
-    const FileFunc & ff = sq2.explain().inner_query().insert().tfunc().file();
+    SettingValues * svs = nullptr;
+    Insert * nins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
+    InsertFromFile * iff = nins->mutable_insert_file();
+    const Insert & oins = sq2.explain().inner_query().insert();
+    const FileFunc & ff = oins.tfunc().file();
     const OutFormat & outf = ff.outformat();
 
-    t.setName(ins->mutable_est(), false);
+    t.setName(nins->mutable_est(), false);
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
-        gen.columnPathRef(entry, ins->add_cols());
+        gen.columnPathRef(entry, nins->add_cols());
     }
     gen.entries.clear();
     iff->set_path(ff.path());
@@ -270,9 +275,15 @@ void QueryOracle::generateImportQuery(
     {
         iff->set_fcomp(ff.fcomp());
     }
+    if (oins.has_setting_values())
+    {
+        svs = nins->mutable_setting_values();
+        svs->CopyFrom(oins.setting_values());
+    }
     if (outf == OutFormat::OUT_CSV || outf == OutFormat::OUT_Parquet)
     {
-        SetValue * sv = ins->mutable_setting_values()->mutable_set_value();
+        svs = svs ? svs : nins->mutable_setting_values();
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
         if (outf == OutFormat::OUT_CSV)
         {
