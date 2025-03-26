@@ -26,6 +26,12 @@ struct StatsCollectingParams
     bool isCollectionAndUseEnabled() const { return key != 0; }
     void disable() { key = 0; }
 
+    StatsCollectingParams & setKey(UInt64 key_)
+    {
+        key = key_;
+        return *this;
+    }
+
     UInt64 key = 0;
     const size_t max_entries_for_hash_table_stats = 0;
     const size_t max_size_to_preallocate = 0;

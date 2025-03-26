@@ -20,6 +20,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 
+#include <limits>
 #include <memory>
 #include <Core/Joins.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -344,18 +345,19 @@ optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanO
     auto lhs_estimation = estimateReadRowsCount(*node.children[0]);
     auto rhs_estimation = estimateReadRowsCount(*node.children[1]);
 
-    if (const auto & hash_table_key_hashes = join_step->getHashTableKeyHashes())
+    /// Consider estimations from hash table sizes cache too
+    if (const auto & hash_table_key_hashes = join_step->getHashTableKeyHashes();
+        hash_table_key_hashes && optimization_settings.collect_hash_table_stats_during_joins)
     {
         StatsCollectingParams params{
-            hash_table_key_hashes->key_hash_left,
+            /*key_=*/0,
             /*enable=*/true,
             optimization_settings.max_entries_for_hash_table_stats,
             optimization_settings.max_size_to_preallocate_for_joins};
-        if (auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params))
-            lhs_estimation = lhs_estimation ? std::min(*lhs_estimation, hint->source_rows) : hint->source_rows;
-        params.key = hash_table_key_hashes->key_hash_right;
-        if (auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params))
-            rhs_estimation = rhs_estimation ? std::min(*rhs_estimation, hint->source_rows) : hint->source_rows;
+        if (auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params.setKey(hash_table_key_hashes->key_hash_left)))
+            lhs_estimation = std::min(lhs_estimation.value_or(std::numeric_limits<UInt64>::max()), hint->source_rows);
+        if (auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params.setKey(hash_table_key_hashes->key_hash_right)))
+            rhs_estimation = std::min(rhs_estimation.value_or(std::numeric_limits<UInt64>::max()), hint->source_rows);
     }
 
     LOG_TRACE(

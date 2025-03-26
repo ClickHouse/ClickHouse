@@ -35,6 +35,7 @@
 #include <base/types.h>
 
 #include <algorithm>
+#include <exception>
 #include <numeric>
 
 using namespace DB;
@@ -88,7 +89,7 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
         0ull,
         [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
     if (ht_size)
-        DB::getHashTablesStatistics<DB::HashJoinEntry>().update(DB::HashJoinEntry{.ht_size = ht_size, .source_rows = source_rows}, params);
+        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)
@@ -209,7 +210,8 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
         if (!hash_joins[0]->data->twoLevelMapIsUsed())
             return;
 
-        updateStatistics(hash_joins, stats_collecting_params);
+        if (!std::uncaught_exceptions())
+            updateStatistics(hash_joins, stats_collecting_params);
 
         for (size_t i = 0; i < slots; ++i)
         {

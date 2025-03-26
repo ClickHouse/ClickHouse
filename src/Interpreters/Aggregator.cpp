@@ -3,7 +3,6 @@
 #include <numeric>
 #include <optional>
 #include <Core/Settings.h>
-#include <Poco/Util/Application.h>
 
 #ifdef OS_LINUX
 #    include <unistd.h>
@@ -140,8 +139,7 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
     std::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
-    DB::getHashTablesStatistics<DB::AggregationEntry>().update(
-        DB::AggregationEntry{.sum_of_sizes = sum_of_sizes, .median_size = *median_size}, params);
+    DB::getHashTablesStatistics<DB::AggregationEntry>().update({.sum_of_sizes = sum_of_sizes, .median_size = *median_size}, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
