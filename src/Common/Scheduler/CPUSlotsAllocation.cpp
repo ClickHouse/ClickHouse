@@ -6,15 +6,18 @@
 #include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentThread.h>
 
 namespace ProfileEvents
 {
+    extern const Event ConcurrencyControlWaitMicroseconds;
     extern const Event ConcurrencyControlSlotsAcquired;
     extern const Event ConcurrencyControlSlotsAcquiredNonCompeting;
 }
 
 namespace CurrentMetrics
 {
+    extern const Metric ConcurrencyControlScheduled;
     extern const Metric ConcurrencyControlAcquired;
     extern const Metric ConcurrencyControlAcquiredNonCompeting;
 }
@@ -69,6 +72,8 @@ CPUSlotsAllocation::CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker
         if (ISchedulerQueue * queue = getCurrentQueue(lock)) // competing slot - use scheduler
         {
             queue->enqueueRequest(current_request);
+            scheduled_slot_increment.emplace(CurrentMetrics::ConcurrencyControlScheduled);
+            wait_timer.emplace(CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
             break;
         }
         else // noncompeting slot - provide for free
@@ -166,6 +171,8 @@ void CPUSlotsAllocation::failed(const std::exception_ptr & ptr)
     exception = ptr;
     noncompeting.store(exception_value);
     allocated = total_slots + 1;
+    scheduled_slot_increment.reset();
+    wait_timer.reset();
     schedule_cv.notify_all();
 }
 
@@ -185,9 +192,16 @@ void CPUSlotsAllocation::grant()
     {
         // TODO(serxa): we should not request more slots if we already have at least 2 granted and not acquired slots to avoid holding unnecessary slots
         if (ISchedulerQueue * queue = getCurrentQueue(lock)) // competing slot - use scheduler
+        {
             queue->enqueueRequest(current_request);
+            return;
+        }
         // NOTE: if the next slot is noncompeting - postpone granting it to avoid it being acquired too early
     }
+
+    // If no new request was enqueued - update metrics and profile events
+    scheduled_slot_increment.reset();
+    wait_timer.reset();
 }
 
 ISchedulerQueue * CPUSlotsAllocation::getCurrentQueue(const std::unique_lock<std::mutex> &)

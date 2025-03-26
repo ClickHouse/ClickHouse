@@ -181,7 +181,6 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         if (node->exception)
             std::rethrow_exception(node->exception);
 
-    single_thread_cpu_slot.reset();
     finalizeExecution();
 
     return false;
@@ -219,6 +218,12 @@ void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
 
 void PipelineExecutor::finalizeExecution()
 {
+    single_thread_cpu_slot.reset();
+    {
+        std::lock_guard lock(spawn_mutex);
+        cpu_slots.reset();
+    }
+
     checkTimeLimit();
 
     auto status = execution_status.load();
@@ -439,7 +444,7 @@ void PipelineExecutor::spawnThreads()
 
 void PipelineExecutor::spawnThreadsImpl(AcquiredSlotPtr slot)
 {
-    while (true)
+    while (cpu_slots)
     {
         if (!slot && tasks.shouldSpawn())
             slot = cpu_slots->tryAcquire();
