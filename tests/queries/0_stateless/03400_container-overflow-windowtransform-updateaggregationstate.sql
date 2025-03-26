@@ -1,5 +1,5 @@
 SET enable_json_type = 1;
-CREATE OR REPLACE TABLE test (`id` UInt64, `json` JSON(max_dynamic_paths = 2, `a.b.c` UInt32))
+CREATE TABLE test (`id` UInt64, `json` JSON(max_dynamic_paths = 2, `a.b.c` UInt32))
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
