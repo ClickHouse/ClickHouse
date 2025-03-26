@@ -23,7 +23,7 @@ Poco::Net::StreamSocket ExchangeConnections::getConnection(const String & query_
     }
 
     /// Wait until the connection is established
-    /// TODO: think how to replace this syncronous wait with returnig "delayed" connection
+    /// TODO: think how to replace this synchronous wait with returning "delayed" connection
     result.wait();
 
     /// Remove the entry from the map
