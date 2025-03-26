@@ -633,7 +633,7 @@ bool Client::buzzHouse()
             {
                 const uint32_t correctness_oracle = 30;
                 const uint32_t settings_oracle = 30;
-                const uint32_t dump_oracle = 15 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables));
+                const uint32_t dump_oracle = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables));
                 const uint32_t peer_oracle
                     = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t run_query = 910;

@@ -15,30 +15,30 @@ namespace BuzzHouse
 {
 
 static const std::unordered_map<OutFormat, InFormat> outIn{
+    {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
+    {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream}, //It's giving different results
+    {OutFormat::OUT_Avro, InFormat::IN_Avro},
+    {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
     {OutFormat::OUT_CSV, InFormat::IN_CSV},
     {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
     {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
-    {OutFormat::OUT_Values, InFormat::IN_Values},
     {OutFormat::OUT_JSON, InFormat::IN_JSON},
     {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
     {OutFormat::OUT_JSONColumnsWithMetadata, InFormat::IN_JSONColumnsWithMetadata},
     {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
-    {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
     {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
-    {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
-    {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
+    {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
+    {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack},
+    {OutFormat::OUT_Native, InFormat::IN_Native},
+    {OutFormat::OUT_ORC, InFormat::IN_ORC},
+    {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
     {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
     {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
-    {OutFormat::OUT_Avro, InFormat::IN_Avro},
-    {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
-    {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
-    ///{OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream}, It's giving different results
-    {OutFormat::OUT_ORC, InFormat::IN_ORC},
     {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
     {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
     {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
-    {OutFormat::OUT_Native, InFormat::IN_Native},
-    {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack}};
+    {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
+    {OutFormat::OUT_Values, InFormat::IN_Values}};
 
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
