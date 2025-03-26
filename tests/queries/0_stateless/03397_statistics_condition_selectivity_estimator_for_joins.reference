@@ -1,0 +1,152 @@
+TOTAL ROWS IN t_left = 100_000, t_right = 10_000
+
+=== DUMMY ESTIMATOR ===
+*** Test case - x < 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+*** Test case - x > 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+*** Test case - x > 100 and x > 200 and x > 300 and x > 400 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_right) (default.t_left)
+Initial join order - t_right, t_left
+Real join order - (default.t_right) (default.t_left)
+*** Test case - x = 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_right) (default.t_left)
+Initial join order - t_right, t_left
+Real join order - (default.t_right) (default.t_left)
+*** Test case - y = 0 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+
+=== MinMax STATISTICS ===
+*** Test case - x < 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_right) (default.t_left)
+Initial join order - t_right, t_left
+Real join order - (default.t_right) (default.t_left)
+*** Test case - x > 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+*** Test case - x = 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_right) (default.t_left)
+Initial join order - t_right, t_left
+Real join order - (default.t_right) (default.t_left)
+
+=== TDigest STATISTICS ===
+*** Test case - x < 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_right) (default.t_left)
+Initial join order - t_right, t_left
+Real join order - (default.t_right) (default.t_left)
+*** Test case - x > 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+*** Test case - x = 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_right) (default.t_left)
+Initial join order - t_right, t_left
+Real join order - (default.t_right) (default.t_left)
+
+=== CountMinSketch STATISTICS ===
+*** Test case - x > 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+*** Test case - x = 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_right) (default.t_left)
+Initial join order - t_right, t_left
+Real join order - (default.t_right) (default.t_left)
+*** Test case - y = 0 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+
+=== TDigest AND Uniq STATISTICS ===
+*** Test case - x < 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_right) (default.t_left)
+Initial join order - t_right, t_left
+Real join order - (default.t_right) (default.t_left)
+*** Test case - x > 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+*** Test case - x = 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_right) (default.t_left)
+Initial join order - t_right, t_left
+Real join order - (default.t_right) (default.t_left)
+*** Test case - y = 0 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+
+TOTAL ROWS IN t_left = 1_000, t_right = 1_000_000
+
+=== MinMax AND CountMinSketch STATISTICS ON t_right TABLE  ===
+*** Test case - y < 51 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_right) (default.t_left)
+Initial join order - t_right, t_left
+Real join order - (default.t_right) (default.t_left)
+*** Test case - y < 51 and y > 49 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+*** Test case - y = 100 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+*** Test case - y > 10 and y > 20 and y > 15 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_right) (default.t_left)
+Initial join order - t_right, t_left
+Real join order - (default.t_right) (default.t_left)
+*** Test case - y > 10 and y < 1000 and y < 51 and y > 49 ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+
+=== TEST WITH CASTS ===
+*** Test case - y < '51' ***
+Initial join order - t_left, t_right
+Real join order - (default.t_right) (default.t_left)
+Initial join order - t_right, t_left
+Real join order - (default.t_right) (default.t_left)
+*** Test case - y < '51' and y > '49' ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+*** Test case - y = '100' ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
+*** Test case - y = CAST(100, 'UInt16') ***
+Initial join order - t_left, t_right
+Real join order - (default.t_left) (default.t_right)
+Initial join order - t_right, t_left
+Real join order - (default.t_left) (default.t_right)
