@@ -1,4 +1,5 @@
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/queryToString.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>

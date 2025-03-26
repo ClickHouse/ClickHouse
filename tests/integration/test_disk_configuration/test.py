@@ -4,7 +4,6 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import minio_secret_key
 from minio.deleteobjects import DeleteObject
 
 cluster = ClickHouseCluster(__file__)
@@ -171,7 +170,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
                 type=s3,
                 endpoint='http://minio1:9001/root/data/',
                 access_key_id='minio',
-                secret_access_key='{minio_secret_key}');
+                secret_access_key='minio123');
     """
     )
 
@@ -200,7 +199,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
                 type=s3,
                 endpoint='http://minio1:9001/root/data/',
                 access_key_id='minio',
-                secret_access_key='{minio_secret_key}');
+                secret_access_key='minio123');
     """
     )
 
@@ -227,7 +226,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
                 type=s3,
                 endpoint='http://minio1:9001/root/data2/',
                 access_key_id='minio',
-                secret_access_key='{minio_secret_key}');
+                secret_access_key='minio123');
     """
     )
 
@@ -288,7 +287,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
                 type=s3,
                 endpoint='http://minio1:9001/root/data2/',
                 access_key_id='minio',
-                secret_access_key='{minio_secret_key}');
+                secret_access_key='minio123');
     """
     )
 
@@ -351,7 +350,7 @@ def test_merge_tree_nested_custom_disk_setting(start_cluster):
                     type=s3,
                     endpoint='http://minio1:9001/root/data/',
                     access_key_id='minio',
-                    secret_access_key='{minio_secret_key}'));
+                    secret_access_key='minio123'));
     """
     )
 
@@ -482,7 +481,7 @@ def test_merge_tree_setting_override(start_cluster):
                 type=s3,
                 endpoint='http://minio1:9001/root/data/',
                 access_key_id='minio',
-                secret_access_key='{minio_secret_key}');
+                secret_access_key='minio123');
     """
     )
 

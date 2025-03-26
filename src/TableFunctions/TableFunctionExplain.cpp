@@ -1,10 +1,10 @@
 #include <Core/Settings.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 #include <Storages/StorageValues.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -87,7 +87,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     if (!kind_literal || kind_literal->value.getType() != Field::Types::String)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table function '{}' requires a String argument for EXPLAIN kind, got '{}'",
-            getName(), kind_arg->formatForErrorMessage());
+            getName(), queryToString(kind_arg));
 
     ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
     auto explain_query = std::make_shared<ASTExplainQuery>(kind);
@@ -96,7 +96,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     if (!settings_arg || settings_arg->value.getType() != Field::Types::String)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table function '{}' requires a serialized string settings argument, got '{}'",
-            getName(), function->arguments->children[1]->formatForErrorMessage());
+            getName(), queryToString(function->arguments->children[1]));
 
     const auto & settings_str = settings_arg->value.safeGet<String>();
     if (!settings_str.empty())
@@ -118,7 +118,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
         if (!subquery)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table function '{}' requires a subquery argument, got '{}'",
-                getName(), subquery_arg->formatForErrorMessage());
+                getName(), queryToString(subquery_arg));
 
         if (subquery->children.empty())
             throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
@@ -129,7 +129,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
         if (!query_arg->as<ASTSelectWithUnionQuery>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table function '{}' requires a EXPLAIN's SELECT query argument, got '{}'",
-                getName(), query_arg->formatForErrorMessage());
+                getName(), queryToString(query_arg));
 
         explain_query->setExplainedQuery(query_arg);
     }

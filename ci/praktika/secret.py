@@ -9,25 +9,21 @@ class Secret:
         AWS_SSM_VAR = "aws parameter"
         AWS_SSM_SECRET = "aws secret"
         GH_SECRET = "gh secret"
-        GH_VAR = "gh var"
 
     @dataclasses.dataclass
     class Config:
         name: str
         type: str
 
-        def is_gh_secret(self):
+        def is_gh(self):
             return self.type == Secret.Type.GH_SECRET
-
-        def is_gh_var(self):
-            return self.type == Secret.Type.GH_VAR
 
         def get_value(self):
             if self.type == Secret.Type.AWS_SSM_VAR:
                 return self.get_aws_ssm_var()
             if self.type == Secret.Type.AWS_SSM_SECRET:
                 return self.get_aws_ssm_secret()
-            elif self.type in (Secret.Type.GH_SECRET, Secret.Type.GH_VAR):
+            elif self.type == Secret.Type.GH_SECRET:
                 return self.get_gh_secret()
             else:
                 assert False, f"Not supported secret type, secret [{self}]"

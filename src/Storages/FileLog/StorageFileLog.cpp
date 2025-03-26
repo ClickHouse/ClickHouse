@@ -175,7 +175,7 @@ StorageFileLog::StorageFileLog(
     , path(path_)
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
-    , log(getLogger("StorageFileLog (" + table_id_.getFullTableName() + ")"))
+    , log(getLogger("StorageFileLog (" + table_id_.table_name + ")"))
     , disk(getContext()->getStoragePolicy("default")->getDisks().at(0))
     , milliseconds_to_wait((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds())
 {
@@ -514,7 +514,7 @@ void StorageFileLog::openFilesAndSetPos()
                     "Last saved offsset for File {} is bigger than file size ({} > {})",
                     file,
                     meta.last_writen_position,
-                    std::streamoff{file_end});
+                    file_end);
             }
             /// update file end at the moment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
@@ -819,7 +819,7 @@ bool StorageFileLog::streamToViews()
     }
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
-    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows.load(), table_id.getNameForLogs(), milliseconds);
+    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows, table_id.getNameForLogs(), milliseconds);
 
     return updateFileInfos();
 }

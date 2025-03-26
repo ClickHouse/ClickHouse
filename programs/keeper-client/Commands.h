@@ -24,8 +24,7 @@ public:
 
     String generateHelpString() const
     {
-        String n = getName();
-        return fmt::vformat(getHelpMessage(), fmt::make_format_args(n));
+        return fmt::vformat(getHelpMessage(), fmt::make_format_args(getName()));
     }
 
 };

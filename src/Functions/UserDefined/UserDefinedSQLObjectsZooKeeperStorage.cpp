@@ -4,6 +4,7 @@
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/sleep.h>
 #include <Common/Exception.h>
@@ -217,8 +218,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::storeObjectImpl(
     LOG_DEBUG(log, "Storing user-defined object {} at zk path {}", backQuote(object_name), path);
 
     WriteBufferFromOwnString create_statement_buf;
-    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite=*/false);
-    create_object_query->format(create_statement_buf, format_settings);
+    formatAST(*create_object_query, create_statement_buf, false);
     writeChar('\n', create_statement_buf);
     String create_statement = create_statement_buf.str();
 

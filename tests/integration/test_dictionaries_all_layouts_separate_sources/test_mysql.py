@@ -6,7 +6,6 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Dictionary, DictionaryStructure, Field, Layout, Row
 from helpers.external_sources import SourceMySQL
-from helpers.config_cluster import mysql_pass
 
 from .common import *
 
@@ -35,7 +34,7 @@ def setup_module(module):
         cluster.mysql8_host,
         cluster.mysql8_port,
         "root",
-        mysql_pass,
+        "clickhouse",
     )
 
     simple_tester = SimpleLayoutTester(test_name)

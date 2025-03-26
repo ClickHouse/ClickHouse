@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Common/Exception.h>
-#include <IO/Operators.h>
 
 namespace DB
 {
@@ -204,17 +203,11 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 
     BlockAndProgress res = {
         .block = std::move(block),
-        .read_mark_ranges = read_result.read_mark_ranges,
         .row_count = read_result.num_rows,
         .num_read_rows = num_read_rows,
         .num_read_bytes = num_read_bytes };
 
     return res;
-}
-
-void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_)
-{
-    prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }
 
 }

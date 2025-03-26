@@ -618,20 +618,24 @@ class PackageDownloader:
         "clickhouse-server",
     )
 
-    PACKAGE_ARCHS = ("amd", "arm")
+    EXTRA_PACKAGES = (
+        "clickhouse-library-bridge",
+        "clickhouse-odbc-bridge",
+    )
+    PACKAGE_TYPES = (CI.BuildNames.PACKAGE_RELEASE, CI.BuildNames.PACKAGE_AARCH64)
     MACOS_PACKAGE_TO_BIN_SUFFIX = {
-        "amd": "macos",
-        "arm": "macos-aarch64",
+        CI.BuildNames.BINARY_DARWIN: "macos",
+        CI.BuildNames.BINARY_DARWIN_AARCH64: "macos-aarch64",
     }
     LOCAL_DIR = "/tmp/packages"
 
     @classmethod
     def _get_arch_suffix(cls, package_arch, repo_type):
-        if package_arch == "amd":
+        if package_arch == CI.BuildNames.PACKAGE_RELEASE:
             return (
                 "amd64" if repo_type in (RepoTypes.DEBIAN, RepoTypes.TGZ) else "x86_64"
             )
-        if package_arch == "arm":
+        if package_arch == CI.BuildNames.PACKAGE_AARCH64:
             return (
                 "arm64" if repo_type in (RepoTypes.DEBIAN, RepoTypes.TGZ) else "aarch64"
             )
@@ -639,14 +643,11 @@ class PackageDownloader:
 
     def __init__(self, release, commit_sha, version):
         assert version.startswith(release), "Invalid release branch or version"
+        major, minor = map(int, release.split("."))
         self.package_names = list(self.PACKAGES)
+        if major > 24 or (major == 24 and minor > 3):
+            self.package_names += list(self.EXTRA_PACKAGES)
         self.release = release
-        major_version = int(release.split(".")[0])
-        minor_version = int(release.split(".")[1])
-        self.is_new_ci = (
-            major_version >= 25 and minor_version >= 3
-        ) or major_version > 25
-        self.s3_release_prefix = f"REFs/{release}" if self.is_new_ci else release
         self.commit_sha = commit_sha
         self.version = version
         self.s3 = S3Helper()
@@ -655,47 +656,26 @@ class PackageDownloader:
         self.tgz_package_files = []
         # just binaries for macos
         self.macos_package_files = ["clickhouse-macos", "clickhouse-macos-aarch64"]
-        self.file_to_job_name = {}
-        self.macos_binary_to_job_name = {}
+        self.file_to_type = {}
 
         Shell.check(f"mkdir -p {self.LOCAL_DIR}")
 
-        for package_arch in self.PACKAGE_ARCHS:
-            if not self.is_new_ci:
-                if package_arch == "amd":
-                    job_name = "package_release"
-                    job_name_darwin = "binary_darwin"
-                else:
-                    job_name = "package_aarch64"
-                    job_name_darwin = "binary_darwin_aarch64"
-            else:
-                if package_arch == "amd":
-                    job_name = "build_amd_release"
-                    job_name_darwin = "build_amd_darwin"
-                else:
-                    job_name = "build_arm_release"
-                    job_name_darwin = "build_arm_darwin"
+        for package_type in self.PACKAGE_TYPES:
             for package in self.package_names:
-                deb_package_file_name = f"{package}_{self.version}_{self._get_arch_suffix(package_arch, RepoTypes.DEBIAN)}.deb"
+                deb_package_file_name = f"{package}_{self.version}_{self._get_arch_suffix(package_type, RepoTypes.DEBIAN)}.deb"
                 self.deb_package_files.append(deb_package_file_name)
-                self.file_to_job_name[deb_package_file_name] = job_name
+                self.file_to_type[deb_package_file_name] = package_type
 
-                rpm_package_file_name = f"{package}-{self.version}.{self._get_arch_suffix(package_arch, RepoTypes.RPM)}.rpm"
+                rpm_package_file_name = f"{package}-{self.version}.{self._get_arch_suffix(package_type, RepoTypes.RPM)}.rpm"
                 self.rpm_package_files.append(rpm_package_file_name)
-                self.file_to_job_name[rpm_package_file_name] = job_name
+                self.file_to_type[rpm_package_file_name] = package_type
 
-                tgz_package_file_name = f"{package}-{self.version}-{self._get_arch_suffix(package_arch, RepoTypes.TGZ)}.tgz"
+                tgz_package_file_name = f"{package}-{self.version}-{self._get_arch_suffix(package_type, RepoTypes.TGZ)}.tgz"
                 self.tgz_package_files.append(tgz_package_file_name)
-                self.file_to_job_name[tgz_package_file_name] = job_name
+                self.file_to_type[tgz_package_file_name] = package_type
                 tgz_package_file_name += ".sha512"
                 self.tgz_package_files.append(tgz_package_file_name)
-                self.file_to_job_name[tgz_package_file_name] = job_name
-
-                destination_binary_name = (
-                    f"clickhouse-{self.MACOS_PACKAGE_TO_BIN_SUFFIX[package_arch]}"
-                )
-                assert destination_binary_name in self.macos_package_files
-                self.macos_binary_to_job_name[destination_binary_name] = job_name_darwin
+                self.file_to_type[tgz_package_file_name] = package_type
 
     def get_deb_packages_files(self):
         return self.deb_package_files
@@ -735,9 +715,9 @@ class PackageDownloader:
             print(f"Downloading: [{package_file}]")
             s3_path = "/".join(
                 [
-                    self.s3_release_prefix,
+                    self.release,
                     self.commit_sha,
-                    self.file_to_job_name[package_file],
+                    self.file_to_type[package_file],
                     package_file,
                 ]
             )
@@ -747,20 +727,25 @@ class PackageDownloader:
                 local_file_path="/".join([self.LOCAL_DIR, package_file]),
             )
 
-        for macos_binary, job_name in self.macos_binary_to_job_name.items():
-            print(f"Downloading: [{job_name}] binary to [{macos_binary}]")
+        for macos_package, bin_suffix in self.MACOS_PACKAGE_TO_BIN_SUFFIX.items():
+            binary_name = "clickhouse"
+            destination_binary_name = f"{binary_name}-{bin_suffix}"
+            assert destination_binary_name in self.macos_package_files
+            print(
+                f"Downloading: [{macos_package}] binary to [{destination_binary_name}]"
+            )
             s3_path = "/".join(
                 [
-                    self.s3_release_prefix,
+                    self.release,
                     self.commit_sha,
-                    job_name,
-                    "clickhouse",
+                    macos_package,
+                    binary_name,
                 ]
             )
             self.s3.download_file(
                 bucket=CI.Envs.S3_BUILDS_BUCKET,
                 s3_path=s3_path,
-                local_file_path="/".join([self.LOCAL_DIR, macos_binary]),
+                local_file_path="/".join([self.LOCAL_DIR, destination_binary_name]),
             )
 
     def local_deb_packages_ready(self) -> bool:

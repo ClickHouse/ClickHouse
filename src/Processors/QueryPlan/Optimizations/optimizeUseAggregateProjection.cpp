@@ -26,6 +26,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {

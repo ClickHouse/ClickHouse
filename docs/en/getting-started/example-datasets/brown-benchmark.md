@@ -1,8 +1,8 @@
 ---
-description: 'A new analytical benchmark for machine-generated log data'
-sidebar_label: 'Brown University Benchmark'
+description: "A new analytical benchmark for machine-generated log data"
 slug: /getting-started/example-datasets/brown-benchmark
-title: 'Brown University Benchmark'
+sidebar_label: Brown University Benchmark
+title: "Brown University Benchmark"
 ---
 
 `MgBench` is a new analytical benchmark for machine-generated log data, [Andrew Crotty](http://cs.brown.edu/people/acrotty/).
@@ -91,7 +91,7 @@ clickhouse-client --query "INSERT INTO mgbench.logs2 FORMAT CSVWithNames" < mgbe
 clickhouse-client --query "INSERT INTO mgbench.logs3 FORMAT CSVWithNames" < mgbench3.csv
 ```
 
-## Run benchmark queries: {#run-benchmark-queries}
+## Run benchmark queries:
 
 ```sql
 USE mgbench;

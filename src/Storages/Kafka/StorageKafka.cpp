@@ -2,7 +2,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -183,7 +182,7 @@ StorageKafka::StorageKafka(
     , max_rows_per_message((*kafka_settings)[KafkaSetting::kafka_max_rows_per_message].value)
     , schema_name(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_schema].value, macros_info))
     , num_consumers((*kafka_settings)[KafkaSetting::kafka_num_consumers].value)
-    , log(getLogger("StorageKafka (" + table_id_.getFullTableName() + ")"))
+    , log(getLogger("StorageKafka (" + table_id_.table_name + ")"))
     , intermediate_commit((*kafka_settings)[KafkaSetting::kafka_commit_every_batch].value)
     , settings_adjustments(StorageKafkaUtils::createSettingsAdjustments(*kafka_settings, schema_name))
     , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
@@ -288,10 +287,6 @@ void StorageKafka::startup()
 
 void StorageKafka::shutdown(bool)
 {
-    // Interrupt streaming, inform consumers to stop
-    for (auto & task : tasks)
-        task->stream_cancelled = true;
-
     shutdown_called = true;
     cleanup_cv.notify_one();
 
@@ -311,6 +306,9 @@ void StorageKafka::shutdown(bool)
         Stopwatch watch;
         for (auto & task : tasks)
         {
+            // Interrupt streaming thread
+            task->stream_cancelled = true;
+
             LOG_TEST(log, "Waiting for cleanup of a task");
             task->holder->deactivate();
         }
