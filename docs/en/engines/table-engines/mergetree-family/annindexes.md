@@ -120,7 +120,7 @@ The GRANULARITY parameter `<N>` refers to the size of the index granules (see [h
 The default value of 100 million should work reasonably well for most use cases but it can also be tuned.
 We recommend tuning only for advanced users who understand the implications of what they are doing (see below).
 
-Vector similarity indexes are generic in the sense that they can accomodate different approximate search method.
+Vector similarity indexes are generic in the sense that they can accommodate different approximate search method.
 The actually used method is specified by parameter `<type>`.
 As of now, the only available method is HNSW ([academic paper](https://arxiv.org/abs/1603.09320)), a popular and state-of-the-art technique for approximate vector search based on hierarchical proximity graphs.
 If HNSW is used as type, users may optionally specify further HNSW-specific parameters:
