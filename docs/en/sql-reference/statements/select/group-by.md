@@ -27,7 +27,7 @@ Here's an example to show what this means.
 
 Assume you have this table:
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │    2 │
 │ 2 │ ᴺᵁᴸᴸ │
@@ -39,7 +39,7 @@ Assume you have this table:
 
 The query `SELECT sum(x), y FROM t_null_big GROUP BY y` results in:
 
-``` text
+```text
 ┌─sum(x)─┬────y─┐
 │      4 │    2 │
 │      3 │    3 │
@@ -258,7 +258,7 @@ You can use `WITH TOTALS` in subqueries, including subqueries in the [JOIN](/sql
 
 For example:
 
-``` sql
+```sql
 SELECT
     a * 2,
     b,
@@ -269,7 +269,7 @@ GROUP BY ALL
 
 is the same as
 
-``` sql
+```sql
 SELECT
     a * 2,
     b,
@@ -282,7 +282,7 @@ For a special case that if there is a function having both aggregate functions a
 
 For example:
 
-``` sql
+```sql
 SELECT
     substring(a, 4, 2),
     substring(substring(a, 1, 2), 1, count(b))
@@ -292,7 +292,7 @@ GROUP BY ALL
 
 is the same as
 
-``` sql
+```sql
 SELECT
     substring(a, 4, 2),
     substring(substring(a, 1, 2), 1, count(b))
@@ -304,7 +304,7 @@ GROUP BY substring(a, 4, 2), substring(a, 1, 2)
 
 Example:
 
-``` sql
+```sql
 SELECT
     count(),
     median(FetchTiming > 60 ? 60 : FetchTiming),
@@ -316,7 +316,7 @@ As opposed to MySQL (and conforming to standard SQL), you can't get some value o
 
 Example:
 
-``` sql
+```sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     count(),
