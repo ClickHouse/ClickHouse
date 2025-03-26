@@ -3,12 +3,17 @@ import org.w3c.dom.events.Event;
 
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ZooKeeperWatcher implements Watcher {
     private static final String ZOOKEEPER_ADDRESS = "localhost:9181";
     private static final int SESSION_TIMEOUT = 3000;
     private static final String NODE_PATH = "/testPersistentWatch2";
     private static final String FAKE_PATH = "/fakeNode";
+
+    private final CountDownLatch firstPoint = new CountDownLatch(1);
+    private final CountDownLatch secondPoint = new CountDownLatch(2);
+    private final CountDownLatch thirdPoint = new CountDownLatch(3);
 
     private ZooKeeper zooKeeper;
     private final CountDownLatch connectedSignal = new CountDownLatch(1);
@@ -34,6 +39,11 @@ public class ZooKeeperWatcher implements Watcher {
         if (event.getType() == Event.EventType.NodeDataChanged) {
             System.out.println("PERSISTENT Watch triggered: " + event.getPath());
         }
+        if (event.getType() == Event.EventType.NodeDataChanged || event.getType() == Event.EventType.PersistentWatchRemoved) {
+            firstPoint.countDown();
+            secondPoint.countDown();
+            thirdPoint.countDown();
+        }
     }
 
     public void testPersistentWatch() throws Exception {
@@ -57,11 +67,11 @@ public class ZooKeeperWatcher implements Watcher {
         System.out.println("Updating node data...");
         zooKeeper.setData(NODE_PATH, "New data".getBytes(), -1);
 
-        Thread.sleep(300);
+        firstPoint.await();
         System.out.println("Updating node data again...");
         zooKeeper.setData(NODE_PATH, "New data 2".getBytes(), -1);
 
-        Thread.sleep(300);
+        secondPoint.await();
         System.out.println("Updating fake node data...");
         zooKeeper.setData(FAKE_PATH, "New data 2".getBytes(), -1);
         try {
@@ -72,8 +82,8 @@ public class ZooKeeperWatcher implements Watcher {
             System.out.println("Failed to remove PERSISTENT watch: " + e.getMessage());
         }
 
-        Thread.sleep(300);
-        System.out.println("Updating node data again...");
+        thirdPoint.await();
+        System.out.println("Updating node data again..." );
         zooKeeper.setData(NODE_PATH, "Another update".getBytes(), -1);
 
         System.out.println("Test finished.");

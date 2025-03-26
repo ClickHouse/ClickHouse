@@ -11,6 +11,10 @@ public class ZooKeeperRecursiveWatcher implements Watcher {
     private static final String CHILD_NODE = "/testPersistentWatch2/child";
     private static final String FAKE_PATH = "/fakeNode";
 
+    private final CountDownLatch firstPoint = new CountDownLatch(1);
+    private final CountDownLatch secondPoint = new CountDownLatch(2);
+    private final CountDownLatch thirdPoint = new CountDownLatch(3);
+
     private ZooKeeper zooKeeper;
     private final CountDownLatch connectedSignal = new CountDownLatch(1);
 
@@ -32,8 +36,13 @@ public class ZooKeeperRecursiveWatcher implements Watcher {
         if (event.getState() == Event.KeeperState.SyncConnected) {
             connectedSignal.countDown();
         }
-        if (event.getPath() != null) {
-            System.out.println("PERSISTENT Watch triggered: " + event.getPath() + " " + event.getType());
+        if (event.getType() == Event.EventType.NodeDataChanged) {
+            System.out.println("PERSISTENT Watch triggered: " + event.getPath());
+        }
+        if (event.getType() == Event.EventType.NodeDataChanged || event.getType() == Event.EventType.PersistentWatchRemoved) {
+            firstPoint.countDown();
+            secondPoint.countDown();
+            thirdPoint.countDown();
         }
     }
 
@@ -60,11 +69,11 @@ public class ZooKeeperRecursiveWatcher implements Watcher {
         System.out.println("Updating node data...");
         zooKeeper.setData(NODE_PATH, "New data".getBytes(), -1);
          
-        Thread.sleep(300);
+        firstPoint.await();
         System.out.println("Updating child node data...");
         zooKeeper.setData(CHILD_NODE, "New data 2".getBytes(), -1);
          
-        Thread.sleep(300);
+        secondPoint.await();
         System.out.println("Updating fake node data...");
         zooKeeper.setData(FAKE_PATH, "New data 2".getBytes(), -1);
 
@@ -76,7 +85,7 @@ public class ZooKeeperRecursiveWatcher implements Watcher {
             System.out.println("Failed to remove PERSISTENT watch: " + e.getMessage());
         }
          
-        Thread.sleep(300);
+        thirdPoint.await();
         System.out.println("Updating node data...");
         zooKeeper.setData(NODE_PATH, "Another update".getBytes(), -1);
 
