@@ -20,6 +20,7 @@ create workload invalid in all settings weight = 0; -- {serverError INVALID_SCHE
 create workload invalid in all settings weight = -1; -- {serverError BAD_ARGUMENTS}
 create workload invalid in all settings max_speed = -1; -- {serverError BAD_ARGUMENTS}
 create workload invalid in all settings max_bytes_inflight = -1; -- {serverError BAD_ARGUMENTS}
+create workload invalid in all settings unknown_setting = 42; -- {serverError BAD_ARGUMENTS}
 create workload invalid in all settings max_io_requests = -1; -- {serverError BAD_ARGUMENTS}
 create workload invalid in all settings max_io_requests = 1.5; -- {serverError BAD_GET}
 create or replace workload all in production; -- {serverError BAD_ARGUMENTS}
