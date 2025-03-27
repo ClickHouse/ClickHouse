@@ -6,7 +6,7 @@
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Parsers/IAST_fwd.h>
 
 
@@ -46,23 +46,25 @@ public:
 
     bool unregisterFunction(const ContextMutablePtr & context, const String & function_name, bool throw_if_not_exists);
 
-    FunctionOverloadResolverPtr get(const String & function_name, ContextPtr context);
+    FunctionOverloadResolverPtr get(const String & function_name) const;
 
-    FunctionOverloadResolverPtr tryGet(const String & function_name, ContextPtr context);
+    FunctionOverloadResolverPtr tryGet(const String & function_name) const;
 
-    bool has(const String & function_name);
+    bool has(const String & function_name) const;
 
-    std::vector<String> getRegisteredNames();
+    std::vector<String> getAllRegisteredNames() const;
+
+    bool empty() const;
 
 private:
-    void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const ASTPtr & query);
-    void checkDriverExists(const ASTPtr & query);
+    void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const ASTPtr & query) const;
+    void checkDriverExists(const ASTPtr & query) const;
     void registerDrivers();
 
     static void checkCanBeUnregistered(const ContextPtr & context, const String & function_name);
 
     std::unordered_map<String, DriverConfiguration> drivers;
-    std::unordered_map<String, UserDefinedDriverFunctionConfiguration> functions;
+    ContextPtr global_context = Context::getGlobalContextInstance();
 };
 
 }

@@ -2,6 +2,8 @@
 
 #include <base/types.h>
 
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
+#include <Functions/UserDefined/UserDefinedTypedObject.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <Parsers/IAST_fwd.h>
@@ -12,6 +14,7 @@ namespace DB
 class IAST;
 struct Settings;
 enum class UserDefinedSQLObjectType : uint8_t;
+
 
 /// Interface for a storage of user-defined SQL objects.
 /// Implementations: UserDefinedSQLObjectsDiskStorage, UserDefinedSQLObjectsZooKeeperStorage
@@ -28,22 +31,22 @@ public:
     virtual void loadObjects() = 0;
 
     /// Get object by name. If no object stored with object_name throws exception.
-    virtual ASTPtr get(const String & object_name) const = 0;
+    virtual ASTPtr get(const String & object_name, UserDefinedSQLObjectType object_type) const = 0;
 
     /// Get object by name. If no object stored with object_name return nullptr.
-    virtual ASTPtr tryGet(const String & object_name) const = 0;
+    virtual ASTPtr tryGet(const String & object_name, UserDefinedSQLObjectType object_type) const = 0;
 
     /// Check if object with object_name is stored.
-    virtual bool has(const String & object_name) const = 0;
+    virtual bool has(const String & object_name, UserDefinedSQLObjectType object_type) const = 0;
 
     /// Get all user defined object names.
-    virtual std::vector<String> getAllObjectNames() const = 0;
+    virtual std::vector<String> getAllObjectNames(UserDefinedSQLObjectType object_type) const = 0;
 
     /// Get all user defined objects.
-    virtual std::vector<std::pair<String, ASTPtr>> getAllObjects() const = 0;
+    virtual std::vector<std::pair<String, ASTPtr>> getAllObjects(UserDefinedSQLObjectType object_type) const = 0;
 
     /// Check whether any UDFs have been stored.
-    virtual bool empty() const = 0;
+    virtual bool empty(UserDefinedSQLObjectType object_type) const = 0;
 
     /// Stops watching.
     virtual void stopWatching() {}
