@@ -265,6 +265,24 @@ def test_refreshable_mv_in_read_only_node(started_cluster):
     # check if there's RefreshTask on read_only node
     reading_node.query("system flush logs")
     assert reading_node.query("select count() from system.text_log where message like '%QUERY_IS_PROHIBITED%'") == "0\n"
+    assert reading_node.query("select count() from system.view_refreshes where exception != ''") == "0\n"
+
+    # start sync and chek refresh task works well on node1
+    node1.query("system start view sync")
+    node1.query("system refresh view re.a")
+    assert_eq_with_retry(
+        node1,
+        "select * from re.a order by x",
+        "0\n10\n",
+    )
+    assert_eq_with_retry(
+        node1,
+        "select count() from system.view_refreshes where exception = '' and last_refresh_replica = '1'",
+        "1\n",
+    )
+
+    reading_node.query("drop database re sync")
+    node1.query("drop database re sync")
 
 def test_refresh_vs_shutdown_smoke(started_cluster):
     for node in nodes:
