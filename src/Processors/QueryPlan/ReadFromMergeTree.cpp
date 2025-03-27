@@ -1647,12 +1647,7 @@ static void buildIndexes(
             condition = index_helper->createIndexCondition(filter_actions_dag, context);
         }
 
-        if (const auto * bloom_filter_index_condition = typeid_cast<const MergeTreeIndexConditionBloomFilter *>(condition.get()))
-        {
-            if (bloom_filter_index_condition->isIndexUseful())
-                skip_indexes.useful_indices.emplace_back(index_helper, condition);
-        }
-        else if (!condition->alwaysUnknownOrTrue())
+        if (!condition->alwaysUnknownOrTrue())
         {
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
         }

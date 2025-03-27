@@ -1,4 +1,4 @@
---- Checks if the skip indices are correctly used depending on the filter predicates.
+--- Checks if the skip indices are correctly used depending on the filter predicates -- issue #75228.
 
 DROP TABLE IF EXISTS `example`;
 CREATE TABLE `example`
@@ -54,3 +54,5 @@ EXPLAIN indexes = 1
 SELECT count()
 FROM `example`
 WHERE id IN (0,1,2,3,4) AND (colB = 'bb' AND 1 = 2); -- short circuit, neither primary index nor skip indices needed
+
+DROP TABLE `example`;

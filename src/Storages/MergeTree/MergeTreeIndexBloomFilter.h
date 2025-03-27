@@ -78,8 +78,6 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
 
-    bool isIndexUseful() const;
-
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override
     {
         if (const auto & bf_granule = typeid_cast<const MergeTreeIndexGranuleBloomFilter *>(granule.get()))
