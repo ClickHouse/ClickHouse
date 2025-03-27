@@ -5203,6 +5203,42 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     }
 }
 
+static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & table_expression)
+{
+    NameSet existing_columns;
+
+    if (const auto * table_node = table_expression->as<TableNode>())
+    {
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+        for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
+            existing_columns.insert(column.name);
+    }
+    else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
+    {
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+        for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
+            existing_columns.insert(column.name);
+    }
+    else if (const auto * query_node = table_expression->as<QueryNode>())
+    {
+        for (const auto & column : query_node->getProjectionColumns())
+            existing_columns.insert(column.name);
+    }
+    else if (const auto * union_node = table_expression->as<UnionNode>())
+    {
+        for (const auto & column : union_node->computeProjectionColumns())
+            existing_columns.insert(column.name);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
+            table_expression->getNodeTypeName(),
+            table_expression->formatASTForErrorMessage());
+    }
+    return existing_columns;
+}
+
 /// Resolve join node in scope
 void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
@@ -5264,7 +5300,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
               * Example: SELECT a + 1 AS b FROM (SELECT 1 AS a) t1 JOIN (SELECT 2 AS b) USING b
               * In this case `b` is not in the left table expression, but it is in the parent subquery projection.
               */
-            auto try_resolve_identifier_from_query_projection = [this](String identifier_full_name_,
+            auto try_resolve_identifier_from_query_projection = [this](const String & identifier_full_name_,
                                                                        const QueryTreeNodePtr & left_table_expression,
                                                                        const IdentifierResolveScope & scope_) -> QueryTreeNodePtr
             {
@@ -5288,45 +5324,14 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                         if (resolved_nodes.size() == 1)
                         {
                             /// Added column should not conflict with existing column names
-                            NameSet existing_columns;
-                            if (const auto * left_table_node = left_table_expression->as<TableNode>())
-                            {
-                                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-                                for (const auto & column : left_table_node->getStorageSnapshot()->getColumns(get_column_options))
-                                    existing_columns.insert(column.name);
-                            }
-                            else if (const auto * left_table_function_node = left_table_expression->as<TableFunctionNode>())
-                            {
-                                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-                                for (const auto & column : left_table_function_node->getStorageSnapshot()->getColumns(get_column_options))
-                                    existing_columns.insert(column.name);
-                            }
-                            else if (const auto * left_query_node = left_table_expression->as<QueryNode>())
-                            {
-                                for (const auto & column : left_query_node->getProjectionColumns())
-                                    existing_columns.insert(column.name);
-                            }
-                            else if (const auto * left_union_node = left_table_expression->as<UnionNode>())
-                            {
-                                for (const auto & column : left_union_node->computeProjectionColumns())
-                                    existing_columns.insert(column.name);
-                            }
-                            else
-                            {
-                                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                    "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
-                                    left_table_expression->getNodeTypeName(),
-                                    left_table_expression->formatASTForErrorMessage());
-                            }
+                            NameSet existing_columns = getColumnsFromTableExpression(left_table_expression);
 
-                            while (existing_columns.contains(identifier_full_name_))
-                                identifier_full_name_ = "_" + identifier_full_name_;
+                            NameAndTypePair column_name_type(identifier_full_name_, resolved_nodes.front()->getResultType());
+                            while (existing_columns.contains(column_name_type.name))
+                                column_name_type.name = "_" + column_name_type.name;
 
                             /// Create ColumnNode with expression from parent projection
-                            return std::make_shared<ColumnNode>(
-                                NameAndTypePair{identifier_full_name_, resolved_nodes.front()->getResultType()},
-                                resolved_nodes.front(),
-                                left_table_expression);
+                            return std::make_shared<ColumnNode>(std::move(column_name_type), resolved_nodes.front(), left_table_expression);
                         }
                     }
                 }
