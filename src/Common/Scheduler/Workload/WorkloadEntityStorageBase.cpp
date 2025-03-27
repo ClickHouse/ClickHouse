@@ -6,8 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
+#include <Parsers/formatAST.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 
 #include <boost/container/flat_set.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -620,7 +620,7 @@ void WorkloadEntityStorageBase::applyEvent(
 {
     if (event.entity) // CREATE || CREATE OR REPLACE
     {
-        LOG_DEBUG(log, "Create or replace workload entity: {}", event.entity->formatForLogging());
+        LOG_DEBUG(log, "Create or replace workload entity: {}", serializeAST(*event.entity));
 
         auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(event.entity.get());
 
@@ -762,10 +762,9 @@ String WorkloadEntityStorageBase::serializeAllEntities(std::optional<Event> chan
     std::unique_lock<std::recursive_mutex> lock;
     auto ordered_entities = orderEntities(entities, change);
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings settings(/*one_line=*/true, /*hilite=*/false);
     for (const auto & event : ordered_entities)
     {
-        event.entity->format(buf, settings);
+        formatAST(*event.entity, buf, false, true);
         buf.write(";\n", 2);
     }
     return buf.str();

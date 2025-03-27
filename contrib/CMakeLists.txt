@@ -69,6 +69,8 @@ add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
 add_contrib (murmurhash)
 add_contrib (replxx-cmake replxx)
+add_contrib (unixodbc-cmake unixodbc)
+add_contrib (nanodbc-cmake nanodbc)
 add_contrib (capnproto-cmake capnproto)
 add_contrib (yaml-cpp-cmake yaml-cpp)
 add_contrib (re2-cmake re2)
@@ -89,7 +91,6 @@ add_contrib (msgpack-c-cmake msgpack-c)
 add_contrib (libarchive-cmake libarchive)
 
 add_contrib (corrosion-cmake corrosion)
-add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -185,35 +186,13 @@ add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
 
-if (OS_LINUX AND ARCH_AMD64 AND ENABLE_SSE42)
-    option (ENABLE_QPL "Enable Intel® Query Processing Library (QPL)" ${ENABLE_LIBRARIES})
-elseif(ENABLE_QPL)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64 with SSE 4.2 or higher")
-endif()
-if (ENABLE_QPL)
-    add_contrib (idxd-config-cmake idxd-config)
-    add_contrib (qpl-cmake qpl) # requires: idxd-config
-else()
-    message(STATUS "Not using QPL")
-endif ()
-
 if (OS_LINUX AND ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER)
     option (ENABLE_QATLIB "Enable Intel® QuickAssist Technology Library (QATlib)" ${ENABLE_LIBRARIES})
 elseif(ENABLE_QATLIB)
     message (${RECONFIGURE_MESSAGE_LEVEL} "QATLib is only supported on x86_64")
 endif()
 if (ENABLE_QATLIB)
-    option (ENABLE_QAT_USDM_DRIVER "A User Space DMA-able Memory (USDM) component which allocates/frees DMA-able memory" OFF)
-    option (ENABLE_QAT_OUT_OF_TREE_BUILD "Using out-of-tree driver, user needs to customize ICP_ROOT variable" OFF)
-    set(ICP_ROOT "" CACHE STRING "ICP_ROOT variable to define the path of out-of-tree driver package")
-    if (ENABLE_QAT_OUT_OF_TREE_BUILD)
-        if (ICP_ROOT STREQUAL "")
-            message(FATAL_ERROR "Please define the path of out-of-tree driver package with -DICP_ROOT=xxx or disable out-of-tree build with -DENABLE_QAT_OUT_OF_TREE_BUILD=OFF; \
-                                 If you want out-of-tree build but have no package available, please download and build ICP package from: https://www.intel.com/content/www/us/en/download/765501.html")
-        endif ()
-    else()
-        add_contrib (qatlib-cmake qatlib) # requires: isa-l
-    endif ()
+    add_contrib (qatlib-cmake qatlib) # requires: isa-l
     add_contrib (QAT-ZSTD-Plugin-cmake QAT-ZSTD-Plugin)
 else()
     message(STATUS "Not using QATLib")
@@ -249,9 +228,6 @@ add_contrib (numactl-cmake numactl)
 add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl
 
 add_contrib (jwt-cpp-cmake jwt-cpp)
-
-add_contrib (sha3iuf-cmake SHA3IUF)
-
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

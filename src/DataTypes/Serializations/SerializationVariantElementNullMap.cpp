@@ -27,13 +27,6 @@ struct DeserializeBinaryBulkStateVariantElementNullMap : public ISerialization::
     /// substream cache correctly.
     ColumnPtr discriminators;
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
-
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
-    {
-        auto new_state = std::make_shared<DeserializeBinaryBulkStateVariantElementNullMap>();
-        new_state->discriminators_state = discriminators_state ? discriminators_state->clone() : nullptr;
-        return new_state;
-    }
 };
 
 void SerializationVariantElementNullMap::enumerateStreams(
@@ -175,7 +168,7 @@ DataTypePtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::
     return std::make_shared<DataTypeUInt8>();
 }
 
-SerializationPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::create(const DB::SerializationPtr &, const DataTypePtr &) const
+SerializationPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::create(const DB::SerializationPtr &) const
 {
     return std::make_shared<SerializationVariantElementNullMap>(variant_element_name, global_variant_discriminator);
 }

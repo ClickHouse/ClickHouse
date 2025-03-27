@@ -26,16 +26,16 @@ public:
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
     using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
 
-    struct ObjectStorageQueueObjectInfo : public ObjectInfo
+    struct ObjectStorageQueueObjectInfo : public Source::ObjectInfo
     {
         ObjectStorageQueueObjectInfo(
-            const ObjectInfo & object_info,
+            const Source::ObjectInfo & object_info,
             FileMetadataPtr file_metadata_);
 
         FileMetadataPtr file_metadata;
     };
 
-    class FileIterator : public IObjectIterator, private WithContext
+    class FileIterator : public StorageObjectStorageSource::IIterator, WithContext
     {
     public:
         FileIterator(
@@ -54,13 +54,13 @@ public:
 
         bool isFinished() const;
 
-        ObjectInfoPtr next(size_t processor) override;
+        Source::ObjectInfoPtr nextImpl(size_t processor) override;
 
         size_t estimatedKeysCount() override;
 
         /// If the key was taken from iterator via next() call,
         /// we might later want to return it back for retrying.
-        void returnForRetry(ObjectInfoPtr object_info, FileMetadataPtr file_metadata);
+        void returnForRetry(Source::ObjectInfoPtr object_info);
 
         /// Release hold buckets.
         /// In fact, they could be released in destructors of BucketHolder,
@@ -92,7 +92,7 @@ public:
         std::mutex next_mutex;
         size_t index = 0;
 
-        std::pair<ObjectInfoPtr, FileMetadataPtr> next();
+        std::pair<Source::ObjectInfoPtr, FileMetadataPtr> next();
         void filterProcessableFiles(Source::ObjectInfos & objects);
         void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
 
@@ -102,7 +102,7 @@ public:
 
         struct ListedKeys
         {
-            std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> keys;
+            std::deque<Source::ObjectInfoPtr> keys;
             std::optional<Processor> processor;
         };
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
@@ -115,15 +115,9 @@ public:
         std::atomic_bool iterator_finished = false;
 
         /// Only for processing without buckets.
-        std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry;
+        std::deque<Source::ObjectInfoPtr> objects_to_retry;
 
-        struct NextKeyFromBucket
-        {
-            ObjectInfoPtr object_info;
-            FileMetadataPtr file_metadata;
-            ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
-        };
-        NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor);
+        std::pair<Source::ObjectInfoPtr, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
         bool hasKeysForProcessor(const Processor & processor) const;
     };
 
@@ -141,8 +135,6 @@ public:
         std::atomic<size_t> processed_rows = 0;
         std::atomic<size_t> processed_bytes = 0;
         Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
-
-        std::mutex processed_files_mutex;
     };
     using ProcessingProgressPtr = std::shared_ptr<ProcessingProgress>;
 
@@ -203,7 +195,6 @@ private:
     const CommitSettings commit_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;
-    const ObjectStorageQueueMode mode;
 
     const std::atomic<bool> & shutdown_called;
     const std::atomic<bool> & table_is_being_dropped;

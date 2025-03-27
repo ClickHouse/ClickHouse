@@ -3,7 +3,6 @@
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #include <Client/BuzzHouse/Generator/FuzzConfig.h>
 #include <Client/BuzzHouse/Generator/RandomGenerator.h>
-#include <Client/BuzzHouse/Generator/SQLTypes.h>
 
 #include <cstdint>
 #include <functional>
@@ -12,90 +11,83 @@
 namespace BuzzHouse
 {
 
-const RandomSettingParameter trueOrFalse = [](RandomGenerator & rg) { return rg.nextBool() ? "1" : "0"; };
+const std::function<void(RandomGenerator &, std::string &)> trueOrFalse
+    = [](RandomGenerator & rg, std::string & ret) { ret += rg.nextBool() ? "1" : "0"; };
 
-const RandomSettingParameter zeroOneTwo = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 2)); };
+const std::function<void(RandomGenerator &, std::string &)> zeroOneTwo
+    = [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(0, 2)); };
 
-const RandomSettingParameter zeroToThree = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); };
+const std::function<void(RandomGenerator &, std::string &)> zeroToThree
+    = [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(0, 3)); };
 
-extern std::unordered_map<String, CHSetting> performanceSettings;
+extern std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> serverSettings;
 
-extern std::unordered_map<String, CHSetting> serverSettings;
+extern std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> mergeTreeTableSettings;
 
-const std::unordered_map<String, CHSetting> memoryTableSettings
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> memoryTableSettings
     = {{"min_bytes_to_keep",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"max_bytes_to_keep",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"min_rows_to_keep",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"max_rows_to_keep",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
-       {"compress", CHSetting(trueOrFalse, {}, false)}};
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
+       {"compress", trueOrFalse}};
 
-const std::unordered_map<String, CHSetting> setTableSettings = {{"persistent", CHSetting(trueOrFalse, {}, false)}};
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> setTableSettings = {{"persistent", trueOrFalse}};
 
-const std::unordered_map<String, CHSetting> joinTableSettings = {{"persistent", CHSetting(trueOrFalse, {}, false)}};
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> joinTableSettings = {{"persistent", trueOrFalse}};
 
-const std::unordered_map<String, CHSetting> embeddedRocksDBTableSettings = {
-    {"optimize_for_bulk_insert", CHSetting(trueOrFalse, {}, false)},
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> embeddedRocksDBTableSettings = {
+    {"optimize_for_bulk_insert", trueOrFalse},
     {"bulk_insert_block_size",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
 };
 
-const std::unordered_map<String, CHSetting> mySQLTableSettings
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> mySQLTableSettings
     = {{"connection_pool_size",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 7)); }, {}, false)},
-       {"connection_max_tries", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
-       {"connection_auto_close", CHSetting(trueOrFalse, {}, false)}};
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 7)); }},
+       {"connection_max_tries", [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1, 16)); }},
+       {"connection_auto_close", trueOrFalse}};
 
-const std::unordered_map<String, CHSetting> fileTableSettings
-    = {{"engine_file_allow_create_multiple_files", CHSetting(trueOrFalse, {}, false)},
-       {"engine_file_empty_if_not_exists", CHSetting(trueOrFalse, {}, false)},
-       {"engine_file_skip_empty_files", CHSetting(trueOrFalse, {}, false)},
-       {"engine_file_truncate_on_insert", CHSetting(trueOrFalse, {}, false)},
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> fileTableSettings
+    = {{"engine_file_allow_create_multiple_files", trueOrFalse},
+       {"engine_file_empty_if_not_exists", trueOrFalse},
+       {"engine_file_skip_empty_files", trueOrFalse},
+       {"engine_file_truncate_on_insert", trueOrFalse},
        {"storage_file_read_method",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
-                return rg.pickRandomly(choices);
-            },
-            {},
-            false)}};
+        [](RandomGenerator & rg, std::string & ret)
+        {
+            const std::vector<std::string> & choices = {"read", "pread", "mmap"};
+            ret += "'";
+            ret += rg.pickRandomlyFromVector(choices);
+            ret += "'";
+        }}};
 
-const std::unordered_map<String, CHSetting> s3QueueTableSettings = {
-    {"after_processing",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices = {"''", "'keep'", "'delete'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
-    {"enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
-    {"processing_threads_num",
-     CHSetting(
-         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, std::thread::hardware_concurrency())); }, {}, false)}};
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> s3QueueTableSettings
+    = {{"after_processing",
+        [](RandomGenerator & rg, std::string & ret)
+        {
+            const std::vector<std::string> & choices = {"", "keep", "delete"};
+            ret += "'";
+            ret += rg.pickRandomlyFromVector(choices);
+            ret += "'";
+        }},
+       {"enable_logging_to_s3queue_log", trueOrFalse},
+       {"processing_threads_num",
+        [](RandomGenerator & rg, std::string & ret)
+        { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); }}};
 
-const std::unordered_map<String, CHSetting> distributedTableSettings
-    = {{"background_insert_batch", CHSetting(trueOrFalse, {}, false)},
-       {"background_insert_split_batch_on_failure", CHSetting(trueOrFalse, {}, false)},
-       {"flush_on_detach", CHSetting(trueOrFalse, {}, false)},
-       {"fsync_after_insert", CHSetting(trueOrFalse, {}, false)},
-       {"fsync_directories", CHSetting(trueOrFalse, {}, false)},
-       {"skip_unavailable_shards", CHSetting(trueOrFalse, {}, false)}};
+extern std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>> allTableSettings;
 
-extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
-
-const std::unordered_map<String, CHSetting> mergeTreeColumnSettings
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> mergeTreeColumnSettings
     = {{"min_compress_block_size",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"max_compress_block_size",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)}};
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }}};
 
-const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings
+const std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>> allColumnSettings
     = {{MergeTree, mergeTreeColumnSettings},
        {ReplacingMergeTree, mergeTreeColumnSettings},
        {SummingMergeTree, mergeTreeColumnSettings},
@@ -122,35 +114,13 @@ const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting
        {Hudi, {}},
        {DeltaLake, {}},
        {IcebergS3, {}},
-       {Merge, {}},
-       {Distributed, {}}};
+       {Merge, {}}};
 
-const std::unordered_map<String, CHSetting> backupSettings
-    = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},
-       {"allow_backup_broken_projections", CHSetting(trueOrFalse, {}, false)},
-       {"allow_checksums_from_remote_paths", CHSetting(trueOrFalse, {}, false)},
-       {"allow_s3_native_copy", CHSetting(trueOrFalse, {}, false)},
-       {"async", CHSetting(trueOrFalse, {}, false)},
-       {"azure_attempt_to_create_container", CHSetting(trueOrFalse, {}, false)},
-       {"check_parts", CHSetting(trueOrFalse, {}, false)},
-       {"check_projection_parts", CHSetting(trueOrFalse, {}, false)},
-       {"decrypt_files_from_encrypted_disks", CHSetting(trueOrFalse, {}, false)},
-       {"deduplicate_files", CHSetting(trueOrFalse, {}, false)},
-       {"experimental_lightweight_snapshot", CHSetting(trueOrFalse, {}, false)},
-       {"internal", CHSetting(trueOrFalse, {}, false)},
-       {"read_from_filesystem_cache", CHSetting(trueOrFalse, {}, false)},
-       {"s3_storage_class", CHSetting([](RandomGenerator &) { return "'STANDARD'"; }, {}, false)},
-       {"structure_only", CHSetting(trueOrFalse, {}, false)},
-       {"write_access_entities_dependents", CHSetting(trueOrFalse, {}, false)}};
-
-extern std::unordered_map<String, CHSetting> restoreSettings;
-
-extern std::unique_ptr<SQLType> size_tp, null_tp;
-
-extern std::unordered_map<String, DB::Strings> systemTables;
-
-void loadFuzzerServerSettings(const FuzzConfig & fc);
-void loadFuzzerTableSettings(const FuzzConfig & fc);
-void loadSystemTables(const FuzzConfig & fc);
+void setRandomSetting(
+    RandomGenerator & rg,
+    const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
+    std::string & ret,
+    SetValue * set);
+void loadFuzzerSettings(const FuzzConfig & fc);
 
 }

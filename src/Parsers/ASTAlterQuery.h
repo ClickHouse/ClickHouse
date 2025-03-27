@@ -82,8 +82,6 @@ public:
 
         MODIFY_COMMENT,
         MODIFY_SQL_SECURITY,
-
-        UNLOCK_SNAPSHOT,
     };
 
     Type type = NO_TYPE;
@@ -216,9 +214,6 @@ public:
     String to_database;
     String to_table;
 
-    String snapshot_name;
-    IAST * snapshot_desc;
-
     /// Which property user want to remove
     String remove_property;
 
@@ -255,8 +250,6 @@ public:
     bool isSettingsAlter() const;
 
     bool isFreezeAlter() const;
-
-    bool isUnlockSnapshot() const;
 
     bool isAttachAlter() const;
 

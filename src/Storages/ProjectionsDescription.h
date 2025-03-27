@@ -4,16 +4,13 @@
 
 #include <memory>
 #include <vector>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
-
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 

@@ -33,7 +33,7 @@ profile = "black"
 src_paths = ["src", "tests/ci", "tests/sqllogic", "tests/queries", "tests/integration"]
 
 [tool.black]
-required-version = 25
+required-version = 24
 
 [tool.pylint.SIMILARITIES]
 # due to SQL

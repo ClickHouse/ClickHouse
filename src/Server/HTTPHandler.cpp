@@ -28,7 +28,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -37,6 +36,7 @@
 #include <Server/HTTP/authenticateUserByHTTP.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
+#include <boost/container/flat_set.hpp>
 
 #include <Poco/Net/HTTPMessage.h>
 
@@ -723,7 +723,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         response.setContentType("text/plain; charset=UTF-8");
-        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code");
+        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())

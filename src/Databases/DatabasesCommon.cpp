@@ -11,6 +11,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>
@@ -30,9 +31,8 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsBool fsync_metadata;
-extern const SettingsUInt64 max_parser_backtracks;
-extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
 }
 namespace ErrorCodes
 {
@@ -48,7 +48,7 @@ namespace
 void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
 {
     /// First validate that the query can be parsed
-    const auto serialized_query = query.formatWithSecretsOneLine();
+    const auto serialized_query = serializeAST(query);
     ParserCreateQuery parser;
     ASTPtr new_query_raw = parseQuery(
         parser,
@@ -301,27 +301,6 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
 
     query.format_ast = nullptr;
     query.out_file = nullptr;
-}
-
-String readMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path)
-{
-    auto read_buf = db_disk->readFile(file_path, getReadSettingsForMetadata());
-    String content;
-    readStringUntilEOF(content, *read_buf);
-
-    return content;
-}
-
-void writeMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path, std::string_view content, bool fsync_metadata)
-{
-    auto out = db_disk->writeFile(file_path, content.size(), WriteMode::Rewrite, getWriteSettingsForMetadata());
-    writeString(content, *out);
-
-    out->next();
-    if (fsync_metadata)
-        out->sync();
-    out->finalize();
-    out.reset();
 }
 
 

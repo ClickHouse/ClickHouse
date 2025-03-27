@@ -1,12 +1,10 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
 {
-
 /* One block storage used for values table function
  * It's structure is similar to IStorageSystemOneBlock
  */

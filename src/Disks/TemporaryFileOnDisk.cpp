@@ -1,6 +1,5 @@
 #include <Core/UUID.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <IO/WriteHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 

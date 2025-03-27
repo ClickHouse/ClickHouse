@@ -24,6 +24,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
+}
 
 namespace ErrorCodes
 {
@@ -246,20 +251,19 @@ void flushBlocksToBuckets(Blocks & blocks, const GraceHashJoin::Buckets & bucket
 }
 
 GraceHashJoin::GraceHashJoin(
-    size_t initial_num_buckets_,
-    size_t max_num_buckets_,
+    ContextPtr context_,
     std::shared_ptr<TableJoin> table_join_,
     const Block & left_sample_block_,
     const Block & right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     bool any_take_last_row_)
     : log{getLogger("GraceHashJoin")}
+    , context{context_}
     , table_join{std::move(table_join_)}
     , left_sample_block{left_sample_block_}
     , right_sample_block{right_sample_block_}
     , any_take_last_row{any_take_last_row_}
-    , initial_num_buckets(initial_num_buckets_)
-    , max_num_buckets(max_num_buckets_)
+    , max_num_buckets{context->getSettingsRef()[Setting::grace_hash_join_max_buckets]}
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(tmp_data_->childScope(CurrentMetrics::TemporaryFilesForJoin))
@@ -275,10 +279,12 @@ void GraceHashJoin::initBuckets()
     if (!buckets.empty())
         return;
 
-    size_t initial_rounded_num_buckets = roundUpToPowerOfTwoOrZero(
-        std::clamp<size_t>(initial_num_buckets, 1, max_num_buckets));
+    const auto & settings = context->getSettingsRef();
 
-    addBuckets(initial_rounded_num_buckets);
+    size_t initial_num_buckets = roundUpToPowerOfTwoOrZero(
+        std::clamp<size_t>(settings[Setting::grace_hash_join_initial_buckets], 1, settings[Setting::grace_hash_join_max_buckets]));
+
+    addBuckets(initial_num_buckets);
 
     if (buckets.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No buckets created");
@@ -310,8 +316,6 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool /*check_limits*/)
 
 bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) const
 {
-    if (force_spill)
-        return true;
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
@@ -327,8 +331,6 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
 
 bool GraceHashJoin::hasMemoryOverflow(const BlocksList & blocks) const
 {
-    if (force_spill)
-        return true;
     size_t total_rows = 0;
     size_t total_bytes = 0;
     for (const auto & block : blocks)
@@ -341,8 +343,6 @@ bool GraceHashJoin::hasMemoryOverflow(const BlocksList & blocks) const
 
 bool GraceHashJoin::hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const
 {
-    if (force_spill)
-        return true;
     size_t total_rows = hash_join_->getTotalRowCount();
     size_t total_bytes = hash_join_->getTotalByteCount();
 
@@ -729,7 +729,6 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
 
         // Must use the latest buckets snapshot in case that it has been rehashed by other threads.
         buckets_snapshot = rehashBuckets();
-        force_spill = false;
         auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
         hash_join = nullptr;
 

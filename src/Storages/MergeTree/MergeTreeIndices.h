@@ -1,29 +1,27 @@
 #pragma once
-#include "config.h"
 
-#include <Storages/IndicesDescription.h>
-
-#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <memory>
+#include <Core/Block.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/MergeTree/GinIndexStore.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
+#include <Interpreters/ExpressionActions.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+
+#include "config.h"
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
 namespace DB
 {
 
-class ActionsDAG;
-class Block;
-class IDataPartStorage;
 struct MergeTreeWriterSettings;
-struct SelectQueryInfo;
-
-class GinIndexStore;
-using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
-
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 namespace ErrorCodes
 {
@@ -72,9 +70,6 @@ struct IMergeTreeIndexGranule
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
 
     virtual bool empty() const = 0;
-
-    /// The in-memory size of the granule. Not expected to be 100% accurate.
-    virtual size_t memoryUsageBytes() const = 0;
 };
 
 using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
@@ -175,8 +170,12 @@ struct IMergeTreeIndex
     /// Returns extension for deserialization.
     ///
     /// Return pair<extension, version>.
-    virtual MergeTreeIndexFormat
-    getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const;
+    virtual MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
+    {
+        if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
+            return {1, ".idx"};
+        return {0 /*unknown*/, ""};
+    }
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
@@ -208,7 +207,7 @@ struct IMergeTreeIndex
             "MergedCondition is not implemented for index of type {}", index.type);
     }
 
-    Names getColumnsRequiredForIndexCalc() const;
+    Names getColumnsRequiredForIndexCalc() const { return index.expression->getRequiredColumns(); }
 
     const IndexDescription & index;
 };

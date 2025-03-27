@@ -4,7 +4,6 @@
 #include <Common/GWPAsan.h>
 #include <Common/ShellCommandsHolder.h>
 #include <Common/CurrentThread.h>
-#include <Common/SymbolIndex.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
 #include <base/sleep.h>
@@ -271,29 +270,8 @@ void blockSignals(const std::vector<int> & signals)
 }
 
 
-SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_)
-    : daemon(daemon_), log(log_)
-{
-}
-
 void SignalListener::run()
 {
-    if (daemon)
-    {
-        build_id = [this]{ return daemon->build_id; };
-    }
-    else
-    {
-        /// This is the case of clickhouse-client and clickhouse-local.
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-        /// This operation is heavy (0.5 sec under TSan) - we don't do it in constructor to not slow-down clickhouse-client,
-        /// Do it lazily to not slow-down the termination of clickhouse-client.
-        build_id = []{ return SymbolIndex::instance().getBuildIDHex(); };
-#else
-        build_id = [] { return String("<unknown>"); };
-#endif
-    }
-
     static_assert(PIPE_BUF >= 512);
     static_assert(signal_pipe_buf_size <= PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
     char buf[signal_pipe_buf_size];
@@ -384,7 +362,7 @@ void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) co
     size_t pos = message.find('\n');
 
     LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) {}",
-              VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH, thread_num, message.substr(0, pos));
+              VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", GIT_HASH, thread_num, message.substr(0, pos));
 
     /// Print trace from std::terminate exception line-by-line to make it easy for grep.
     while (pos != std::string_view::npos)
@@ -418,7 +396,7 @@ try
 
     LOG_FATAL(log, "########## Short fault info ############");
     LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {}",
-              VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH, Poco::Environment::osArchitecture(),
+              VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", GIT_HASH, Poco::Environment::osArchitecture(),
               thread_num, sig);
 
     std::string signal_description = "Unknown signal";
@@ -484,13 +462,13 @@ try
     if (query_id.empty())
     {
         LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) (no query) Received signal {} ({})",
-                  VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH,
+                  VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", GIT_HASH,
                   thread_num, signal_description, sig);
     }
     else
     {
         LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
-                  VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH,
+                  VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", GIT_HASH,
                   thread_num, query_id, query, signal_description, sig);
     }
 
@@ -527,6 +505,7 @@ try
             }
         }
     );
+
 
 #if defined(OS_LINUX)
     /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
@@ -579,8 +558,10 @@ try
         /// Advice the user to send it manually.
         if (std::string_view(VERSION_OFFICIAL).contains("official build"))
         {
+            const auto & date_lut = DateLUT::instance();
+
             /// Approximate support period, upper bound.
-            if (time(nullptr) - makeDate(DateLUT::instance(), 2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
+            if (time(nullptr) - date_lut.makeDate(2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
             {
                 LOG_FATAL(log, "Report this error to https://github.com/ClickHouse/ClickHouse/issues");
             }

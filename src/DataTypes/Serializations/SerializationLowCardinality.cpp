@@ -219,11 +219,6 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
     bool need_update_dictionary = false;
 
     explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
-
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
-    {
-        return std::make_shared<DeserializeStateLowCardinality>(*this);
-    }
 };
 
 void SerializationLowCardinality::serializeBinaryBulkStatePrefix(

@@ -1,18 +1,16 @@
-#include <Columns/ColumnSparse.h>
-#include <Compression/CompressedReadBufferFromFile.h>
-#include <Compression/CompressionFactory.h>
-#include <DataTypes/Serializations/ISerialization.h>
-#include <Interpreters/Context.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
-#include <Storages/MergeTree/MergeTreeMarksLoader.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <Common/SipHash.h>
+#include <Interpreters/Context.h>
+#include <Compression/CompressionFactory.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Common/escapeForFileName.h>
+#include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MarkCache.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {
@@ -261,7 +259,7 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
     }
 }
 
-void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermutation * permutation)
+void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Permutation * permutation)
 {
     Block block_to_write = block;
 

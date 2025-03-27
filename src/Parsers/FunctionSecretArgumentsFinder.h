@@ -188,24 +188,6 @@ protected:
         result.replacement = std::move(uri);
     }
 
-    void findRedisSecretArguments()
-    {
-        /// Redis does not have URL/address argument,
-        /// only 'host:port' and separate "password" argument.
-
-        if (isNamedCollectionName(0))
-        {
-            if (findSecretNamedArgument("password", 1))
-                return;
-        }
-        else
-        {
-            // Redis('host:port', 'db_index', 'password', 'pool_size')
-            markSecretArgument(2, false);
-            return;
-        }
-    }
-
     /// Returns the number of arguments excluding "headers" and "extra_credentials" (which should
     /// always be at the end). Marks "headers" as secret, if found.
     size_t excludeS3OrURLNestedMaps()
@@ -505,13 +487,9 @@ protected:
         {
             findURLSecretArguments();
         }
-        else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
+        else if (engine_name == "AzureBlobStorage")
         {
             findAzureBlobStorageTableEngineSecretArguments();
-        }
-        else if (engine_name == "Redis")
-        {
-            findRedisSecretArguments();
         }
     }
 
@@ -655,7 +633,7 @@ protected:
             /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key])
             markSecretArgument(2);
         }
-        else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
+        else if (engine_name == "AzureBlobStorage")
         {
             findAzureBlobStorageTableEngineSecretArguments();
         }

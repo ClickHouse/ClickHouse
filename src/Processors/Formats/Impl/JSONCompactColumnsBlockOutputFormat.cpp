@@ -2,7 +2,6 @@
 #include <IO/WriteHelpers.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
-#include <Processors/Port.h>
 
 namespace DB
 {

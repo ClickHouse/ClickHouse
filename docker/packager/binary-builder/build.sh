@@ -3,7 +3,9 @@ set -x -e
 
 exec &> >(ts)
 
-sccache_status () {
+ccache_status () {
+    ccache --show-config ||:
+    ccache --show-stats ||:
     SCCACHE_NO_DAEMON=1 sccache --show-stats ||:
 }
 
@@ -13,6 +15,11 @@ if [ "$EXTRACT_TOOLCHAIN_DARWIN" = "1" ]; then
   mkdir -p /build/cmake/toolchain/darwin-x86_64
   tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1
   ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64
+
+  if [ "$EXPORT_SOURCES_WITH_SUBMODULES" = "1" ]; then
+    cd /build
+    tar --exclude-vcs-ignores --exclude-vcs --exclude build --exclude build_docker --exclude debian --exclude .git --exclude .github --exclude .cache --exclude docs --exclude tests/integration -c . | pigz -9 > /output/source_sub.tar.gz
+  fi
 fi
 
 
@@ -32,7 +39,9 @@ if [ -n "$MAKE_DEB" ]; then
 fi
 
 
-sccache_status
+ccache_status
+# clear cache stats
+ccache --zero-stats ||:
 
 function check_prebuild_exists() {
   local path="$1"
@@ -94,7 +103,7 @@ git submodule foreach --quiet git ls-files --others --exclude-standard | grep . 
 
 ls -la ./programs
 
-sccache_status
+ccache_status
 
 if [ -n "$MAKE_DEB" ]; then
   # No quotes because I want it to expand to nothing if empty.
@@ -166,8 +175,6 @@ then
     git -C "$PERF_OUTPUT"/ch tag | xargs git -C "$PERF_OUTPUT"/ch tag -d >/dev/null
     git -C "$PERF_OUTPUT"/ch reset --soft pr
     git -C "$PERF_OUTPUT"/ch log -5
-    # Unlike git log, git show requires trees
-    git -C "$PERF_OUTPUT"/ch show -s
     (
         cd "$PERF_OUTPUT"/..
         tar -cv --zstd -f /output/performance.tar.zst output
@@ -183,6 +190,20 @@ then
     mv "$COMBINED_OUTPUT.tar.zst" /output
 fi
 
-sccache_status
+ccache_status
+ccache --evict-older-than 1d
+
+if [ "${CCACHE_DEBUG:-}" == "1" ]
+then
+    find . -name '*.ccache-*' -print0 \
+        | tar -c -I pixz -f /output/ccache-debug.txz --null -T -
+fi
+
+if [ -n "$CCACHE_LOGFILE" ]
+then
+    # Compress the log as well, or else the CI will try to compress all log
+    # files in place, and will fail because this directory is not writable.
+    tar -cv -I pixz -f /output/ccache.log.txz "$CCACHE_LOGFILE"
+fi
 
 ls -l /output

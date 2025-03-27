@@ -117,27 +117,23 @@ def main():
     htmltest_log = test_output / "htmltest.log"
 
     test_sw.reset()
-
-    if build_status == OK:
-        with TeePopen(
-            f"{cmd} htmltest -c /ClickHouse/docs/.htmltest.yml /output_path/build",
-            htmltest_log,
-        ) as process:
-            retcode = process.wait()
-            if retcode == 0:
-                logging.info("Run successfully")
-                test_results.append(
-                    TestResult("htmltest", OK, test_sw.duration_seconds, [htmltest_log])
-                )
-            else:
-                description = "Docs check failed (htmltest failed)"
-                job_status = FAILURE
-                logging.info("Run failed")
-                test_results.append(
-                    TestResult(
-                        "htmltest", "FAIL", test_sw.duration_seconds, [htmltest_log]
-                    )
-                )
+    with TeePopen(
+        f"{cmd} htmltest -c /ClickHouse/docs/.htmltest.yml /output_path/build",
+        htmltest_log,
+    ) as process:
+        retcode = process.wait()
+        if retcode == 0:
+            logging.info("Run successfully")
+            test_results.append(
+                TestResult("htmltest", OK, test_sw.duration_seconds, [htmltest_log])
+            )
+        else:
+            description = "Docs check failed (htmltest failed)"
+            job_status = FAILURE
+            logging.info("Run failed")
+            test_results.append(
+                TestResult("htmltest", "FAIL", test_sw.duration_seconds, [htmltest_log])
+            )
 
     JobReport(
         description=description,

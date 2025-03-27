@@ -9,10 +9,14 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/IJoin.h>
+#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
 
-#include <Core/Block_fwd.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Core/Block.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
@@ -28,7 +32,6 @@ namespace DB
 
 class TableJoin;
 class ExpressionActions;
-using Sizes = std::vector<size_t>;
 
 namespace JoinStuff
 {

@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getMostSubtype.h>
@@ -44,11 +45,6 @@ struct ArrayModeIntersect
 struct ArrayModeUnion
 {
     static constexpr auto name = "arrayUnion";
-};
-
-struct ArrayModeSymmetricDifference
-{
-    static constexpr auto name = "arraySymmetricDifference";
 };
 
 template <typename Mode>
@@ -245,11 +241,6 @@ ColumnPtr FunctionArrayIntersect<Mode>::castRemoveNullable(const ColumnPtr & col
                 ErrorCodes::LOGICAL_ERROR, "Cannot cast tuple column to type {} in function {}", data_type->getName(), getName());
 
         auto columns_number = column_tuple->tupleSize();
-
-        /// Empty tuple
-        if (columns_number == 0)
-            return column;
-
         Columns columns(columns_number);
 
         const auto & types = tuple_type->getElements();
@@ -581,8 +572,8 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
         map.clear();
 
         bool all_has_nullable = all_nullable;
+        bool has_a_null = false;
         bool current_has_nullable = false;
-        size_t null_count = 0;
 
         for (size_t arg_num = 0; arg_num < args; ++arg_num)
         {
@@ -633,8 +624,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
             if (!current_has_nullable)
                 all_has_nullable = false;
             else
-                null_count++;
-
+                has_a_null = true;
         }
 
         // We have NULL in output only once if it should be there
@@ -648,26 +638,11 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
             {
                 typename Map::LookupResult pair = map.find(p.getKey());
                 if (pair && pair->getMapped() >= 1)
+                {
                     insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
+                }
             }
-            if (null_count > 0 && !null_added)
-            {
-                ++result_offset;
-                result_data.insertDefault();
-                null_map.push_back(1);
-                null_added = true;
-            }
-        }
-        else if constexpr (std::is_same_v<Mode, ArrayModeSymmetricDifference>)
-        {
-            use_null_map = has_nullable;
-            for (auto & p : map)
-            {
-                typename Map::LookupResult pair = map.find(p.getKey());
-                if (pair && pair->getMapped() >= 1 && pair->getMapped() < args)
-                    insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
-            }
-            if (null_count > 0 && null_count < args && !null_added)
+            if (has_a_null && !null_added)
             {
                 ++result_offset;
                 result_data.insertDefault();
@@ -705,7 +680,9 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                         continue;
                 }
                 else if constexpr (is_numeric_column)
+                {
                     pair = map.find(columns[0]->getElement(i));
+                }
                 else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
                     pair = map.find(columns[0]->getDataAt(i));
                 else
@@ -723,7 +700,9 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                 // Add the value if all arrays have the value for intersect
                 // or if there was at least one occurrence in all of the arrays for union
                 if (pair && pair->getMapped() == args)
+                {
                     insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
+                }
             }
         }
 
@@ -761,13 +740,11 @@ void FunctionArrayIntersect<Mode>::insertElement(typename Map::LookupResult & pa
 
 using ArrayIntersect = FunctionArrayIntersect<ArrayModeIntersect>;
 using ArrayUnion = FunctionArrayIntersect<ArrayModeUnion>;
-using ArraySymmetricDifference = FunctionArrayIntersect<ArrayModeSymmetricDifference>;
 
 REGISTER_FUNCTION(ArrayIntersect)
 {
     factory.registerFunction<ArrayIntersect>();
     factory.registerFunction<ArrayUnion>();
-    factory.registerFunction<ArraySymmetricDifference>();
 }
 
 }

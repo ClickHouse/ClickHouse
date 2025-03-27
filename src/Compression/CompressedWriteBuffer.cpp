@@ -79,8 +79,6 @@ CompressedWriteBuffer::CompressedWriteBuffer(
     , use_adaptive_buffer_size(use_adaptive_buffer_size_)
     , adaptive_buffer_max_size(buf_size)
 {
-    if (!codec)
-        codec = CompressionCodecFactory::instance().getDefaultCodec();
 }
 
 void CompressedWriteBuffer::cancelImpl() noexcept

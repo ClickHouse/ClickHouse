@@ -2,7 +2,7 @@
 #include "config.h"
 
 #include <filesystem>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
@@ -64,8 +64,6 @@ public:
 
     ~ObjectStorageQueueMetadata();
 
-    /// Startup background threads.
-    void startup();
     /// Shutdown background threads.
     void shutdown();
 
@@ -176,7 +174,7 @@ private:
     LoggerPtr log;
 
     std::atomic_bool shutdown_called = false;
-    BackgroundSchedulePoolTaskHolder task;
+    BackgroundSchedulePool::TaskHolder task;
 
     class LocalFileStatuses;
     std::shared_ptr<LocalFileStatuses> local_file_statuses;

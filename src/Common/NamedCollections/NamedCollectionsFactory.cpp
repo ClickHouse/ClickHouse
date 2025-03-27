@@ -4,8 +4,6 @@
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Core/BackgroundSchedulePool.h>
 
 namespace DB
 {

@@ -8,12 +8,13 @@ namespace DB
 
 StoragePtr TableFunctionURLCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/) const
+    const std::string & table_name, const String & /*compression_method_*/) const
 {
+    StoragePtr storage;
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         //On worker node this uri won't contain globs
-        return std::make_shared<StorageURL>(
+        storage = std::make_shared<StorageURL>(
             filename,
             StorageID(getDatabaseName(), table_name),
             format,
@@ -28,17 +29,20 @@ StoragePtr TableFunctionURLCluster::getStorage(
             nullptr,
             /*distributed_processing=*/ true);
     }
-
-    return std::make_shared<StorageURLCluster>(
-        context,
-        cluster_name,
-        filename,
-        format,
-        compression_method,
-        StorageID(getDatabaseName(), table_name),
-        getActualTableStructure(context, /* is_insert_query */ true),
-        ConstraintsDescription{},
-        configuration);
+    else
+    {
+        storage = std::make_shared<StorageURLCluster>(
+            context,
+            cluster_name,
+            filename,
+            format,
+            compression_method,
+            StorageID(getDatabaseName(), table_name),
+            getActualTableStructure(context, /* is_insert_query */ true),
+            ConstraintsDescription{},
+            configuration);
+    }
+    return storage;
 }
 
 void registerTableFunctionURLCluster(TableFunctionFactory & factory)

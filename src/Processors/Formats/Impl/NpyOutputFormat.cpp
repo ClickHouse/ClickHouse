@@ -1,6 +1,5 @@
 #include <Processors/Formats/Impl/NpyOutputFormat.h>
 
-#include <Common/assert_cast.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -11,7 +10,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Port.h>
+
+#include <Common/assert_cast.h>
 
 
 namespace DB

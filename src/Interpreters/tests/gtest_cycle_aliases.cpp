@@ -2,6 +2,7 @@
 
 #include <Interpreters/QueryNormalizer.h>
 #include <Parsers/IAST.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Core/Settings.h>

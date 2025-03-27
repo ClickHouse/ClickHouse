@@ -10,7 +10,6 @@
 #include <base/hex.h>
 #include <base/scope_guard.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/assert_cast.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>

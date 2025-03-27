@@ -9,17 +9,17 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/queryToString.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
-#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
-#include <Common/thread_local_rng.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
@@ -34,6 +34,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -44,7 +45,6 @@
 #include <Storages/WindowView/StorageWindowView.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
@@ -133,7 +133,6 @@ namespace Setting
     extern const SettingsDefaultTableEngine default_temporary_table_engine;
     extern const SettingsString default_view_definer;
     extern const SettingsUInt64 distributed_ddl_entry_format_version;
-    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool flatten_nested;
     extern const SettingsBool fsync_metadata;
@@ -205,7 +204,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
-    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
+    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw];
     if (db_num_limit > 0 && !internal)
     {
         size_t db_count = DatabaseCatalog::instance().getDatabases().size();
@@ -275,7 +274,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                   || (create.columns_list->projections && !create.columns_list->projections->children.empty()))))
     {
         /// Currently, there are no database engines, that support any arguments.
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->formatForErrorMessage());
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
     }
 
     if (create.storage && !create.storage->engine)
@@ -350,8 +349,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.if_not_exists = false;
 
         WriteBufferFromOwnString statement_buf;
-        IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite=*/false);
-        create.format(statement_buf, format_settings);
+        formatAST(create, statement_buf, false);
         writeChar('\n', statement_buf);
         String statement = statement_buf.str();
 
@@ -359,11 +357,14 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         db_disk->removeFileIfExists(metadata_file_tmp_path);
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
-        writeMetadataFile(
-            db_disk,
-            /*file_path=*/metadata_file_tmp_path,
-            /*content=*/statement,
-            /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
+        auto out = db_disk->writeFile(metadata_file_tmp_path, statement.size());
+        writeString(statement, *out);
+
+        out->next();
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+            out->sync();
+        out->finalize();
+        out.reset();
     }
 
     /// We attach database before loading it's tables, so do not allow concurrent DDL queries
@@ -643,7 +644,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
     bool sanity_check_compression_codecs = !skip_checks && !context_->getSettingsRef()[Setting::allow_suspicious_codecs];
     bool allow_experimental_codecs = skip_checks || context_->getSettingsRef()[Setting::allow_experimental_codecs];
-    bool enable_deflate_qpl_codec = skip_checks || context_->getSettingsRef()[Setting::enable_deflate_qpl_codec];
     bool enable_zstd_qat_codec = skip_checks || context_->getSettingsRef()[Setting::enable_zstd_qat_codec];
 
     ColumnsDescription res;
@@ -705,7 +705,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.default_specifier == "ALIAS")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
+                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_zstd_qat_codec);
         }
 
         if (col_decl.statistics_desc)
@@ -881,7 +881,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS with tables of the MergeTree family");
 
                 /// Ensure that as_storage and the new storage has the same primary key, sorting key and partition key
-                auto query_to_string = [](const IAST * ast) { return ast ? ast->formatWithSecretsOneLine() : ""; };
+                auto query_to_string = [](const IAST * ast) { return ast ? queryToString(*ast) : ""; };
 
                 const String as_storage_sorting_key_str = query_to_string(as_storage_metadata->getSortingKeyAST().get());
                 const String as_storage_primary_key_str = query_to_string(as_storage_metadata->getPrimaryKeyAST().get());
@@ -1445,10 +1445,10 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
                             "3. ATTACH {} {} FROM '/path/to/data/' <table definition>;\n"
                             "4. ATTACH {} {} UUID '<uuid>' <table definition>;",
                             kind_upper,
-                            kind_upper, create.table->formatForErrorMessage(),
-                            kind_upper, create.table->formatForErrorMessage(),
-                            kind_upper, create.table->formatForErrorMessage(),
-                            kind_upper, create.table->formatForErrorMessage());
+                            kind_upper, create.table,
+                            kind_upper, create.table,
+                            kind_upper, create.table,
+                            kind_upper, create.table);
         }
 
         create.generateRandomUUIDs();
@@ -1591,8 +1591,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         chassert(!ddl_guard);
 
+        auto db_disk = getContext()->getDatabaseDisk();
+
         fs::path user_files = fs::path(getContext()->getUserFilesPath()).lexically_normal();
-        fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
+        fs::path root_path = fs::path(db_disk->getPath()).lexically_normal();
 
         if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
@@ -1665,12 +1667,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Check type compatible for materialized dest table and select columns
     if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
-    {
-        // An MV with a flattened nested column in an inner table can never be filled
-        if (create.is_materialized_view_with_inner_table())
-            getContext()->setSetting("flatten_nested", false);
         validateMaterializedViewColumnsAndEngine(create, properties, database);
-    }
 
     bool is_storage_replicated = false;
     if (create.storage && isReplicated(*create.storage))
@@ -1844,10 +1841,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     data_path = database->getTableDataPath(create);
-    // When creating a table, when checking if the data path exists, it should use the local disk to check, not the database disk. Because the database disk stores metadata files only.
-    auto full_data_path = fs::path{getContext()->getPath()} / data_path;
+    auto db_disk = getContext()->getDatabaseDisk();
 
-    if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
+    if (!create.attach && !data_path.empty() && db_disk->existsDirectory(data_path))
     {
         if (getContext()->getZooKeeperMetadataTransaction() &&
             !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery() &&
@@ -1859,11 +1855,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// We don't have a table with this UUID (and all metadata is loaded),
             /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
 
-            fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
+            fs::path trash_path = fs::path("trash") / data_path / getHexUIntLowercase(thread_local_rng());
             LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
-            fs::create_directories(trash_path.parent_path());
-            renameNoReplace(full_data_path, trash_path);
+            db_disk->createDirectories(trash_path.parent_path());
+            db_disk->moveFile(data_path, trash_path);
         }
         else
         {
@@ -1912,6 +1908,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// Before actually creating the table, check if it will lead to cyclic dependencies.
     checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, getContext());
 
+    /// Initial queries in Replicated database at this point have query_kind = ClientInfo::QueryKind::SECONNDARY_QUERY,
+    /// so we need to check whether the query is initial through getZooKeeperMetadataTransaction()->isInitialQuery()
+    bool is_initial_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY ||
+                            (getContext()->getZooKeeperMetadataTransaction() && getContext()->getZooKeeperMetadataTransaction()->isInitialQuery());
+    if (!internal && is_initial_query)
+        throwIfTooManyEntities(create);
+
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
@@ -1925,7 +1928,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
         /// and because storage lifetime is bigger than query context lifetime.
-        res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
+        res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
     }
     else
@@ -1993,10 +1996,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    bool is_initial_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
-    if (!internal && is_initial_query)
-        throwIfTooManyEntities(create, res);
-
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
     /// Move table data to the proper place. Wo do not move data earlier to avoid situations
@@ -2022,7 +2021,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 }
 
 
-void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create, StoragePtr storage) const
+void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create) const
 {
     auto check_and_throw = [&](auto setting, CurrentMetrics::Metric metric, String setting_name, String entity_name)
         {
@@ -2035,12 +2034,15 @@ void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create, Sto
                                 entity_name, setting_name, num_limit, attached_count);
         };
 
-    if (typeid_cast<StorageReplicatedMergeTree *>(storage.get()) != nullptr)
-        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
-    else if (create.is_dictionary)
+    String engine_name = create.storage && create.storage->engine ? create.storage->engine->name : "";
+    bool is_replicated = engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree");
+
+    if (create.is_dictionary)
         check_and_throw(ServerSetting::max_dictionary_num_to_throw, CurrentMetrics::AttachedDictionary, "max_dictionary_num_to_throw", "dictionaries");
     else if (create.isView())
         check_and_throw(ServerSetting::max_view_num_to_throw, CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
+    else if (is_replicated)
+        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
     else
         check_and_throw(ServerSetting::max_table_num_to_throw, CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
 }
@@ -2174,14 +2176,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (created && !renamed)
         {
             auto drop_context = make_drop_context();
-            try
-            {
-                InterpreterDropQuery(ast_drop, drop_context).execute();
-            }
-            catch (...)
-            {
-                tryLogCurrentException("InterpreterCreateQuery", "Cannot DROP temporary table");
-            }
+            InterpreterDropQuery(ast_drop, drop_context).execute();
         }
         throw;
     }
@@ -2264,7 +2259,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     if (cluster->maybeCrossReplication())
     {
-        auto on_cluster_version = local_context->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value;
+        auto on_cluster_version = local_context->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION <= on_cluster_version)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Value {} of setting distributed_ddl_entry_format_version "
                                                          "is incompatible with cross-replication", on_cluster_version);
@@ -2516,11 +2511,15 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     String table_metadata_path = database->getObjectMetadataPath(create.getTable());
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement = DB::getObjectDefinitionFromCreateQuery(create.clone());
-    writeMetadataFile(
-        db_disk,
-        /*file_path=*/table_metadata_tmp_path,
-        /*content=*/statement,
-        /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
+    {
+        auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
+        writeString(statement, *out);
+        out->next();
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+            out->sync();
+        out->finalize();
+        out.reset();
+    }
     db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
 }
 

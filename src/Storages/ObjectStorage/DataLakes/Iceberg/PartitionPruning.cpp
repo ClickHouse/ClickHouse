@@ -1,144 +1,133 @@
-#include "config.h"
+#include "Common/ErrorCodes.h"
+#include "Common/logger_useful.h"
+#include "Columns/ColumnNullable.h"
+#include "Columns/ColumnsDateTime.h"
+#include "DataTypes/DataTypeNullable.h"
 
-#if USE_AVRO
 
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsDateTime.h>
-#include <Common/DateLUTImpl.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Common/logger_useful.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTLiteral.h>
-#include <IO/ReadHelpers.h>
-#include <Common/quoteString.h>
+#include "Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h"
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+
+namespace DB::ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 using namespace DB;
 
 namespace Iceberg
 {
 
-DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name)
+Iceberg::PartitionTransform getTransform(const String & transform_name)
 {
-    std::string transform_name = Poco::toLower(transform_name_src);
-
     if (transform_name == "year" || transform_name == "years")
-        return makeASTFunction("toYearNumSinceEpoch", std::make_shared<DB::ASTIdentifier>(column_name));
-
-    if (transform_name == "month" || transform_name == "months")
-        return makeASTFunction("toMonthNumSinceEpoch", std::make_shared<DB::ASTIdentifier>(column_name));
-
-    if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
-        return makeASTFunction("toRelativeDayNum", std::make_shared<DB::ASTIdentifier>(column_name));
-
-    if (transform_name == "hour" || transform_name == "hours")
-        return makeASTFunction("toRelativeHourNum", std::make_shared<DB::ASTIdentifier>(column_name));
-
-    if (transform_name == "identity")
-        return std::make_shared<ASTIdentifier>(column_name);
-
-    if (transform_name == "void")
-        return makeASTFunction("tuple");
-
-    if (transform_name.starts_with("truncate"))
     {
-        /// should look like transform[N]
-
-        if (transform_name.back() != ']')
-            return nullptr;
-
-        auto argument_start = transform_name.find('[');
-
-        if (argument_start == std::string::npos)
-            return nullptr;
-
-        auto argument_width = transform_name.length() - 2 - argument_start;
-        std::string width = transform_name.substr(argument_start + 1, argument_width);
-        size_t truncate_width;
-        bool parsed = DB::tryParse<size_t>(truncate_width, width);
-
-        if (!parsed)
-            return nullptr;
-
-        return makeASTFunction("icebergTruncate", std::make_shared<DB::ASTLiteral>(truncate_width), std::make_shared<DB::ASTIdentifier>(column_name));
+        return Iceberg::PartitionTransform::Year;
+    }
+    else if (transform_name == "month" || transform_name == "months")
+    {
+        return Iceberg::PartitionTransform::Month;
+    }
+    else if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
+    {
+        return Iceberg::PartitionTransform::Day;
+    }
+    else if (transform_name == "hour" || transform_name == "hours")
+    {
+        return Iceberg::PartitionTransform::Hour;
+    }
+    else if (transform_name == "identity")
+    {
+        return Iceberg::PartitionTransform::Identity;
+    }
+    else if (transform_name == "void")
+    {
+        return Iceberg::PartitionTransform::Void;
     }
     else
     {
-        return nullptr;
+        return Iceberg::PartitionTransform::Unsupported;
     }
 }
 
-std::unique_ptr<DB::ActionsDAG> PartitionPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, Int32 manifest_schema_id, const std::vector<Int32> & partition_column_ids) const
+// This function is used to convert the value to the start of the corresponding time period (internal ClickHouse representation)
+DateLUTImpl::Values getDateLUTImplValues(Int32 value, Iceberg::PartitionTransform transform)
 {
-    if (source_dag == nullptr)
-        return nullptr;
-
-    ActionsDAG dag_with_renames;
-    for (const auto column_id : partition_column_ids)
+    switch (transform)
     {
-        auto column = schema_processor.tryGetFieldCharacteristics(current_schema_id, column_id);
-
-        /// Columns which we dropped and doesn't exist in current schema
-        /// cannot be queried in WHERE expression.
-        if (!column.has_value())
-            continue;
-
-        /// We take data type from manifest schema, not latest type
-        auto column_type = schema_processor.getFieldCharacteristics(manifest_schema_id, column_id).type;
-        auto numeric_column_name = DB::backQuote(DB::toString(column_id));
-        const auto * node = &dag_with_renames.addInput(numeric_column_name, column_type);
-        node = &dag_with_renames.addAlias(*node, column->name);
-        dag_with_renames.getOutputs().push_back(node);
+        case Iceberg::PartitionTransform::Year:
+            return DateLUT::instance().lutIndexByYearSinceEpochStartsZeroIndexing(value);
+        case Iceberg::PartitionTransform::Month:
+            return DateLUT::instance().lutIndexByMonthSinceEpochStartsZeroIndexing(static_cast<UInt32>(value));
+        case Iceberg::PartitionTransform::Day:
+            return DateLUT::instance().getValues(static_cast<ExtendedDayNum>(value));
+        case Iceberg::PartitionTransform::Hour:
+        {
+            DateLUTImpl::Values values = DateLUT::instance().getValues(static_cast<ExtendedDayNum>(value / 24));
+            values.date += (value % 24) * 3600;
+            return values;
+        }
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition transform for get values function: {}", transform);
     }
-    auto result = std::make_unique<DB::ActionsDAG>(DB::ActionsDAG::merge(std::move(dag_with_renames), source_dag->clone()));
-    result->removeUnusedActions();
-    return result;
-
 }
 
-PartitionPruner::PartitionPruner(
-    const DB::IcebergSchemaProcessor & schema_processor_,
-    Int32 current_schema_id_,
-    const DB::ActionsDAG * filter_dag,
-    const ManifestFileContent & manifest_file,
-    DB::ContextPtr context)
-    : schema_processor(schema_processor_)
-    , current_schema_id(current_schema_id_)
+// This function is used to convert the value to the start of the corresponding time period (in seconds)
+Int64 getTime(Int32 value, Iceberg::PartitionTransform transform)
 {
-    if (manifest_file.hasPartitionKey())
-    {
-        partition_key = &manifest_file.getPartitionKeyDescription();
-        auto transformed_dag = transformFilterDagForManifest(filter_dag, manifest_file.getSchemaId(), manifest_file.getPartitionKeyColumnIDs());
-        if (transformed_dag != nullptr)
-            key_condition.emplace(transformed_dag.get(), context, partition_key->column_names, partition_key->expression, true /* single_point */);
-    }
+    DateLUTImpl::Values values = getDateLUTImplValues(value, transform);
+    return values.date;
 }
 
-bool PartitionPruner::canBePruned(const ManifestFileEntry & entry) const
+// This function is used to convert the value to the start of the corresponding date period (in days)
+Int16 getDay(Int32 value, Iceberg::PartitionTransform transform)
 {
-    if (!key_condition.has_value())
-        return false;
+    DateLUTImpl::Time got_time = getTime(value, transform);
+    return DateLUT::instance().toDayNum(got_time);
+}
 
-    const auto & partition_value = entry.partition_key_value;
-    std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
-    for (auto & field : index_value)
+
+Range getPartitionRange(
+    Iceberg::PartitionTransform partition_transform, size_t index, ColumnPtr partition_column, DataTypePtr column_data_type)
+{
+    if (partition_transform == Iceberg::PartitionTransform::Unsupported)
     {
-        // NULL_LAST
-        if (field.isNull())
-            field = POSITIVE_INFINITY;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition transform: {}", partition_transform);
+    }
+    if (partition_transform == Iceberg::PartitionTransform::Identity)
+    {
+        Field entry = (*partition_column.get())[index];
+        return Range{entry, true, entry, true};
+    }
+    if (partition_column->getDataType() != TypeIndex::Int32)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition column type: {}", partition_column->getFamilyName());
     }
 
-    bool can_be_true = key_condition->mayBeTrueInRange(
-        partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
+    auto nested_data_type = removeNullable(column_data_type);
 
-    return !can_be_true;
+    const auto * casted_innner_column = assert_cast<const ColumnInt32 *>(partition_column.get());
+    Int32 value = casted_innner_column->getElement(index);
+
+    if ((WhichDataType(nested_data_type).isDate() || WhichDataType(nested_data_type).isDate32())
+        && (partition_transform != Iceberg::PartitionTransform::Hour))
+    {
+        const UInt16 begin_range_value = getDay(value, partition_transform);
+        const UInt16 end_range_value = getDay(value + 1, partition_transform);
+        return Range{begin_range_value, true, end_range_value, false};
+    }
+    else if (WhichDataType(nested_data_type).isDateTime64() || WhichDataType(nested_data_type).isDateTime())
+    {
+        const UInt64 begin_range_value = getTime(value, partition_transform);
+        const UInt64 end_range_value = getTime(value + 1, partition_transform);
+        return Range{begin_range_value, true, end_range_value, false};
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Partition transform {} is not supported for the type: {}", partition_transform, nested_data_type);
+    }
 }
 
 
 }
-
-#endif

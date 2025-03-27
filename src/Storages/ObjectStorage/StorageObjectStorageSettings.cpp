@@ -17,12 +17,6 @@ namespace DB
     DECLARE(Bool, allow_dynamic_metadata_for_data_lakes, false, R"(
 If enabled, indicates that metadata is taken from iceberg specification that is pulled from cloud before each query.
 )", 0) \
-    DECLARE(Bool, allow_experimental_delta_kernel_rs, false, R"(
-If enabled, the engine would use delta-kernel-rs for DeltaLake metadata parsing
-)", 0) \
-    DECLARE(String, iceberg_metadata_file_path, "", R"(
-Explicit path to desired Iceberg metadata file, should be relative to path in object storage. Make sense for table function use case only.
-)", 0) \
 
 // clang-format on
 
@@ -67,9 +61,12 @@ StorageObjectStorageSettings::~StorageObjectStorageSettings() = default;
 STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES(StorageObjectStorageSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
 
-void StorageObjectStorageSettings::loadFromQuery(ASTSetQuery & settings_ast)
+void StorageObjectStorageSettings::loadFromQuery(ASTStorage & storage_def)
 {
-    impl->applyChanges(settings_ast.changes);
+    if (storage_def.settings)
+    {
+        impl->applyChanges(storage_def.settings->changes);
+    }
 }
 
 Field StorageObjectStorageSettings::get(const std::string & name)

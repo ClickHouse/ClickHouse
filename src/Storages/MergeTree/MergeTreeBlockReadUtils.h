@@ -12,7 +12,16 @@ namespace DB
 struct MergeTreeReaderSettings;
 class IMergeTreeDataPartInfoForReader;
 
-PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
+/** If some of the requested columns are not in the part,
+  * then find out which columns may need to be read further,
+  * so that you can calculate the DEFAULT expression for these columns.
+  * Adds them to the `columns`.
+  */
+NameSet injectRequiredColumns(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const StorageSnapshotPtr & storage_snapshot,
+    bool with_subcolumns,
+    Names & columns);
 
 MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
@@ -23,12 +32,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns);
-
-MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
-    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
-    const StorageSnapshotPtr & storage_snapshot,
-    const Names & required_columns,
-    const PrewhereExprSteps & mutation_steps);
 
 struct MergeTreeBlockSizePredictor
 {

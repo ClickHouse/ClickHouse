@@ -1,8 +1,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnCompressed.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -22,11 +20,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnMap::Ptr ColumnMap::create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets)
-{
-    auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{keys, values}), offsets);
-    return ColumnMap::create(nested_column);
-}
 
 std::string ColumnMap::getName() const
 {
@@ -81,7 +74,7 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t size = offsets[n] - offsets[n - 1];
 
     res = Map();
-    auto & map = res.safeGet<Map>();
+    auto & map = res.safeGet<Map &>();
     map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -128,7 +121,7 @@ void ColumnMap::insertData(const char *, size_t)
 
 void ColumnMap::insert(const Field & x)
 {
-    const auto & map = x.safeGet<Map>();
+    const auto & map = x.safeGet<const Map &>();
     nested->insert(Array(map.begin(), map.end()));
 }
 
@@ -137,7 +130,7 @@ bool ColumnMap::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Map)
         return false;
 
-    const auto & map = x.safeGet<Map>();
+    const auto & map = x.safeGet<const Map &>();
     return nested->tryInsert(Array(map.begin(), map.end()));
 }
 
@@ -359,23 +352,12 @@ void ColumnMap::rollback(const ColumnCheckpoint & checkpoint)
     nested->rollback(checkpoint);
 }
 
-void ColumnMap::forEachMutableSubcolumn(MutableColumnCallback callback)
+void ColumnMap::forEachSubcolumn(MutableColumnCallback callback)
 {
     callback(nested);
 }
 
-void ColumnMap::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
-{
-    callback(*nested);
-    nested->forEachMutableSubcolumnRecursively(callback);
-}
-
-void ColumnMap::forEachSubcolumn(ColumnCallback callback) const
-{
-    callback(nested);
-}
-
-void ColumnMap::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void ColumnMap::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
     callback(*nested);
     nested->forEachSubcolumnRecursively(callback);
@@ -393,26 +375,6 @@ bool ColumnMap::dynamicStructureEquals(const IColumn & rhs) const
     if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))
         return nested->dynamicStructureEquals(*rhs_map->nested);
     return false;
-}
-
-const ColumnArray & ColumnMap::getNestedColumn() const
-{
-    return assert_cast<const ColumnArray &>(*nested);
-}
-
-ColumnArray & ColumnMap::getNestedColumn()
-{
-    return assert_cast<ColumnArray &>(*nested);
-}
-
-const ColumnTuple & ColumnMap::getNestedData() const
-{
-    return assert_cast<const ColumnTuple &>(getNestedColumn().getData());
-}
-
-ColumnTuple & ColumnMap::getNestedData()
-{
-    return assert_cast<ColumnTuple &>(getNestedColumn().getData());
 }
 
 ColumnPtr ColumnMap::compress(bool force_compression) const

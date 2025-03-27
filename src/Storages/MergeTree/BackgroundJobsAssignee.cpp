@@ -2,10 +2,9 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/randomSeed.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
+#include <pcg_random.hpp>
 #include <random>
-
 
 namespace DB
 {

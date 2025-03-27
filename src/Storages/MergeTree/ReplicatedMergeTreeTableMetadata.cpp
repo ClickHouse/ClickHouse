@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -9,8 +10,6 @@
 #include <Common/SipHash.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-
-#include <fmt/ranges.h>
 
 
 namespace DB
@@ -31,7 +30,9 @@ static String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    return ast->formatWithSecretsOneLine();
+    WriteBufferFromOwnString buf;
+    formatAST(*ast, buf, false, true);
+    return buf.str();
 }
 
 static String formattedASTNormalized(const ASTPtr & ast)
@@ -40,7 +41,9 @@ static String formattedASTNormalized(const ASTPtr & ast)
         return "";
     auto ast_normalized = ast->clone();
     FunctionNameNormalizer::visit(ast_normalized.get());
-    return ast_normalized->formatWithSecretsOneLine();
+    WriteBufferFromOwnString buf;
+    formatAST(*ast_normalized, buf, false, true);
+    return buf.str();
 }
 
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
@@ -344,9 +347,7 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
     }
 
     auto parsed_primary_key = KeyDescription::parse(primary_key, columns, context, true);
-    // Strict checking of suspicious TTL is not needed here
-    String parsed_zk_ttl_table = formattedAST(
-        TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, /* is_attach = */ true).definition_ast);
+    String parsed_zk_ttl_table = formattedAST(TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key).definition_ast);
     if (ttl_table != parsed_zk_ttl_table)
     {
         throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in TTL. "

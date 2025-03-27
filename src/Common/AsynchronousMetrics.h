@@ -8,6 +8,7 @@
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <optional>
@@ -70,8 +71,7 @@ public:
         unsigned update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
         bool update_jemalloc_epoch_,
-        bool update_rss_,
-        const ContextPtr & context_);
+        bool update_rss_);
 
     virtual ~AsynchronousMetrics();
 
@@ -91,9 +91,7 @@ protected:
     LoggerPtr log;
 private:
     virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
-    virtual void logImpl(AsynchronousMetricValues &) { }
-    static auto tryGetMetricValue(const AsynchronousMetricValues & values, const String & metric, size_t default_value = 0);
-    void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
+    virtual void logImpl(AsynchronousMetricValues &) {}
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
@@ -122,13 +120,6 @@ private:
 
     [[maybe_unused]] const bool update_jemalloc_epoch;
     [[maybe_unused]] const bool update_rss;
-    ContextPtr context;
-
-
-    Int64 prev_cpu_wait_microseconds = 0;
-    Int64 prev_cpu_virtual_time_microseconds = 0;
-
-    double getCPUOverloadMetric();
 
 #if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);
@@ -250,6 +241,7 @@ private:
         double num_cpus_to_normalize,
         const ProcStatValuesCPU & delta_values_all_cpus,
         double multiplier);
+
 #endif
 
     void run();

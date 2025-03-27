@@ -48,7 +48,14 @@ void ParallelCompressedWriteBuffer::nextImpl()
     current_buffer->uncompressed_size = offset();
     pool.scheduleOrThrowOnError([this, my_current_buffer = current_buffer, thread_group = CurrentThread::getGroup()]
     {
-        ThreadGroupSwitcher switcher(thread_group, "ParallelCompres");
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachFromGroupIfNotDetached();
+        );
+
+        if (thread_group)
+            CurrentThread::attachToGroupIfDetached(thread_group);
+        setThreadName("ParallelCompres");
 
         compress(my_current_buffer);
     });

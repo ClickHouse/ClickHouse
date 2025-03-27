@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <Core/Field.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/NamePrompter.h>
@@ -12,9 +13,6 @@ constexpr auto IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX = "auto_minmax_index_";
 
 namespace DB
 {
-
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /// Description of non-primary index for Storage
 struct IndexDescription

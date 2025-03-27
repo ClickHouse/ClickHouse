@@ -209,12 +209,7 @@ void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & co
 {
     disk_selector->initialize(config, "storage_configuration.disks", Context::getGlobalContextInstance(), diskValidator);
 
-    #if USE_ROCKSDB
-    if (config.getBool("keeper_server.coordination_settings.experimental_use_rocksdb", false))
-    {
-        rocksdb_storage = getRocksDBPathFromConfig(config);
-    }
-    #endif
+    rocksdb_storage = getRocksDBPathFromConfig(config);
 
     log_storage = getLogsPathFromConfig(config);
 
@@ -600,24 +595,7 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS);
         case Coordination::OpNum::RemoveRecursive:
             return feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE);
-        case Coordination::OpNum::Close:
-        case Coordination::OpNum::Error:
-        case Coordination::OpNum::Create:
-        case Coordination::OpNum::Remove:
-        case Coordination::OpNum::Exists:
-        case Coordination::OpNum::Get:
-        case Coordination::OpNum::Set:
-        case Coordination::OpNum::GetACL:
-        case Coordination::OpNum::SetACL:
-        case Coordination::OpNum::SimpleList:
-        case Coordination::OpNum::Sync:
-        case Coordination::OpNum::Heartbeat:
-        case Coordination::OpNum::List:
-        case Coordination::OpNum::Check:
-        case Coordination::OpNum::Multi:
-        case Coordination::OpNum::Reconfig:
-        case Coordination::OpNum::Auth:
-        case Coordination::OpNum::SessionID:
+        default:
             return true;
     }
 }

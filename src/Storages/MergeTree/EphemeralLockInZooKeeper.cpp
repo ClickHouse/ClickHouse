@@ -3,7 +3,7 @@
 #include <Common/logger_useful.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
-#include <IO/ReadHelpers.h>
+
 
 namespace DB
 {
@@ -93,24 +93,12 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
     return EphemeralLockInZooKeeper{path_prefix_, zookeeper_, path};
 }
 
-UInt64 EphemeralLockInZooKeeper::getNumber() const
-{
-    checkCreated();
-    return parse<UInt64>(path.c_str() + path_prefix.size(), path.size() - path_prefix.size());
-}
-
 void EphemeralLockInZooKeeper::unlock()
 {
     Coordination::Requests ops;
     getUnlockOp(ops);
     zookeeper->multi(ops);
     zookeeper = nullptr;
-}
-
-void EphemeralLockInZooKeeper::checkCreated() const
-{
-    if (!isLocked())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "EphemeralLock is not created");
 }
 
 void EphemeralLockInZooKeeper::getUnlockOp(Coordination::Requests & ops)

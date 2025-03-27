@@ -1,7 +1,7 @@
+#include "config.h"
+
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <Common/SipHash.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
@@ -25,11 +25,6 @@ namespace ProfileEvents
 {
     extern const Event ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds;
     extern const Event ObjectStorageQueueLockLocalFileStatusesMicroseconds;
-};
-
-namespace CurrentMetrics
-{
-    extern const Metric ObjectStorageQueueRegisteredServers;
 };
 
 namespace DB
@@ -143,21 +138,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
-    LOG_TRACE(
-        log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
-        table_metadata.mode, table_metadata.buckets.load(),
-        table_metadata.processing_threads_num.load(), buckets_num);
-}
-
-ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
-{
-    shutdown();
-}
-
-void ObjectStorageQueueMetadata::startup()
-{
-    if (!task
-        && mode == ObjectStorageQueueMode::UNORDERED
+    if (mode == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_limit || table_metadata.tracked_files_ttl_sec))
     {
         task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
@@ -169,8 +150,15 @@ void ObjectStorageQueueMetadata::startup()
             generateRescheduleInterval(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
-    if (!update_registry_thread)
-        update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
+    LOG_TRACE(log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
+              table_metadata.mode, table_metadata.buckets, table_metadata.processing_threads_num, buckets_num);
+
+    update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
+}
+
+ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
+{
+    shutdown();
 }
 
 void ObjectStorageQueueMetadata::shutdown()
@@ -343,7 +331,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                         "Will do nothing", value);
                 continue;
             }
-            if (table_metadata.buckets > 1)
+            if (table_metadata.buckets != 0)
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -370,9 +358,8 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
 
 void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
 {
-    chassert(table_metadata.buckets == 0 || table_metadata.buckets == 1);
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
-    ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value, /* prev_value */table_metadata.buckets);
+    ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value);
     buckets_num = value;
     table_metadata.buckets = value;
 }
@@ -663,23 +650,12 @@ size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id
     const auto registry_path = zookeeper_path / "registry";
     const auto table_path = registry_path / getProcessorID(storage_id);
 
-    auto code = zk_client->tryRemove(table_path);
+    zk_client->tryRemove(table_path);
     const size_t remaining_nodes_num = zk_client->getChildren(registry_path).size();
 
-    const auto self = Info::create(storage_id);
-    if (code == Coordination::Error::ZOK)
-    {
-        LOG_TRACE(log, "Table '{}' has been removed from the active registry (remaining nodes: {})", self.table_id, remaining_nodes_num);
-    }
-    else
-    {
-        LOG_DEBUG(
-            log,
-            "Cannot remove table '{}' from the active registry, reason: {} (remaining nodes: {})",
-            self.table_id,
-            Coordination::errorMessage(code),
-            remaining_nodes_num);
-    }
+    LOG_TRACE(
+        log, "Removed {} from active registry (remaining: {})",
+        storage_id.getFullTableName(), remaining_nodes_num);
 
     return remaining_nodes_num;
 }
@@ -727,15 +703,12 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
             }
         }
         if (!found)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: table '{}' is not registered", self.table_id);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: not registered");
 
         code = zk_client->trySet(registry_path, new_registry_str, stat.version);
 
         if (code == Coordination::Error::ZOK)
-        {
-            LOG_TRACE(log, "Table '{}' has been removed from the registry", self.table_id);
             return count;
-        }
 
         if (Coordination::isHardwareError(code)
             || code == Coordination::Error::ZBADVERSION)
@@ -877,12 +850,7 @@ void ObjectStorageQueueMetadata::updateRegistry(const DB::Strings & registered_)
         return;
 
     std::unique_lock lock(active_servers_mutex);
-
-    CurrentMetrics::sub(CurrentMetrics::ObjectStorageQueueRegisteredServers, active_servers.size());
-
     active_servers = registered_set;
-
-    CurrentMetrics::add(CurrentMetrics::ObjectStorageQueueRegisteredServers, active_servers.size());
 
     if (!active_servers_hash_ring)
         active_servers_hash_ring = std::make_shared<ServersHashRing>(1000, log); /// TODO: Add a setting.
@@ -1051,7 +1019,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     };
 
     LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}",
-             table_metadata.tracked_files_limit.load(), table_metadata.tracked_files_ttl_sec.load(), get_nodes_str());
+             table_metadata.tracked_files_limit, table_metadata.tracked_files_ttl_sec, get_nodes_str());
 
     static constexpr size_t keeper_multi_batch_size = 100;
     Coordination::Requests remove_requests;

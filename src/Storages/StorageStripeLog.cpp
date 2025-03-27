@@ -3,14 +3,13 @@
 
 #include <optional>
 
+#include <Common/escapeForFileName.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/assert_cast.h>
 
 #include <Core/Settings.h>
 
 #include <IO/WriteBufferFromFileBase.h>
-#include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -574,9 +573,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     disk->createDirectories(temp_dir);
 
     const auto & read_settings = backup_entries_collector.getReadSettings();
-    const auto & backup_settings = backup_entries_collector.getBackupSettings();
-    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
-    bool allow_checksums_from_remote_paths = backup_settings.allow_checksums_from_remote_paths;
+    bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
 
     /// data.bin
     {
@@ -585,7 +582,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file_path), allow_checksums_from_remote_paths);
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file_path));
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
     }
@@ -597,7 +594,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         String hardlink_file_path = temp_dir / index_file_name;
         disk->createHardLink(index_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(index_file_path), allow_checksums_from_remote_paths);
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(index_file_path));
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / index_file_name, std::move(backup_entry));
     }

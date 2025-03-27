@@ -16,6 +16,18 @@ def start_cluster():
     try:
         cluster.start()
 
+        for i, node in enumerate((node1,)):
+            node_name = "node" + str(i + 1)
+            node.query(
+                """
+                CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table', '{}')
+                PARTITION BY date ORDER BY id
+                """.format(
+                    node_name
+                )
+            )
+
         yield cluster
 
     finally:
@@ -23,15 +35,6 @@ def start_cluster():
 
 
 def test_old_dirs_cleanup(start_cluster):
-    node1.query("DROP TABLE IF EXISTS test_table SYNC")
-    node1.query(
-        """
-        CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table', 'node1')
-        PARTITION BY date ORDER BY id
-        """
-    )
-
     node1.query("INSERT INTO test_table VALUES (toDate('2020-01-01'), 1, 10)")
     assert node1.query("SELECT count() FROM test_table") == "1\n"
 
@@ -59,5 +62,3 @@ def test_old_dirs_cleanup(start_cluster):
 
     assert_logs_contain_with_retry(node1, "Removing temporary directory")
     assert_logs_contain_with_retry(node1, "delete_tmp_20200101_0_0_0")
-
-    node1.query("DROP TABLE test_table SYNC")

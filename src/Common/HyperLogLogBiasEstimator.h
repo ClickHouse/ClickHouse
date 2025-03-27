@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/Exception.h>
+
 #include <algorithm>
 #include <limits>
 #include <tuple>

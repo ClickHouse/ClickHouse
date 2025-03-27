@@ -8,6 +8,7 @@
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -49,18 +50,20 @@ TEST_P(ParserTest, parseQuery)
     {
         if (std::string(expected_ast).starts_with("throws"))
         {
-            EXPECT_THROW(parseQuery(*parser, input_text.data(), input_text.data() + input_text.size(), 0, 0, 0), DB::Exception);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            EXPECT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
         }
         else
         {
             ASTPtr ast;
-            ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.data(), input_text.data() + input_text.size(), 0, 0, 0));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0));
             if (std::string("CREATE USER or ALTER USER query") != parser->getName()
                     && std::string("ATTACH access entity query") != parser->getName())
             {
                 ASTPtr ast_clone = ast->clone();
                 {
-                    String formatted_ast = ast_clone->formatWithSecretsMultiLine();
+                    WriteBufferFromOwnString buf;
+                    formatAST(*ast_clone, buf, false, false);
+                    String formatted_ast = buf.str();
                     EXPECT_EQ(expected_ast, formatted_ast);
                 }
 
@@ -74,7 +77,9 @@ TEST_P(ParserTest, parseQuery)
                 }
 
                 {
-                    String formatted_ast = ast_clone->formatWithSecretsMultiLine();
+                    WriteBufferFromOwnString buf;
+                    formatAST(*ast_clone, buf, false, false);
+                    String formatted_ast = buf.str();
                     EXPECT_EQ(expected_ast, formatted_ast);
                 }
             }
@@ -87,7 +92,9 @@ TEST_P(ParserTest, parseQuery)
                 }
                 else
                 {
-                    String formatted_ast = ast->clone()->formatWithSecretsMultiLine();
+                    WriteBufferFromOwnString buf;
+                    formatAST(*ast->clone(), buf, false, false);
+                    String formatted_ast = buf.str();
                     EXPECT_TRUE(re2::RE2::FullMatch(formatted_ast, expected_ast));
                 }
             }
@@ -95,7 +102,7 @@ TEST_P(ParserTest, parseQuery)
     }
     else
     {
-        ASSERT_THROW(parseQuery(*parser, input_text.data(), input_text.data() + input_text.size(), 0, 0, 0), DB::Exception);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        ASSERT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
     }
 }
 
@@ -251,11 +258,11 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateDatabaseQuery, ParserTest,
             "CREATE DATABASE db\nTABLE OVERRIDE tbl\n(\n    COLUMNS\n    (\n        `created` DateTime CODEC(Delta)\n    )\n    PARTITION BY toYYYYMM(created)\n)"
         },
         {
-            "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1",
+            "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1", 
             "CREATE DATABASE db\nENGINE = Foo\nSETTINGS a = 1"
         },
         {
-            "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1, b = 2",
+            "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1, b = 2", 
             "CREATE DATABASE db\nENGINE = Foo\nSETTINGS a = 1, b = 2"
         },
         {

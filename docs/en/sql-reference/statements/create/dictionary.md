@@ -1,16 +1,15 @@
 ---
-description: 'Documentation for Dictionary'
-sidebar_label: 'DICTIONARY'
+slug: /en/sql-reference/statements/create/dictionary
 sidebar_position: 38
-slug: /sql-reference/statements/create/dictionary
-title: 'CREATE DICTIONARY'
+sidebar_label: DICTIONARY
+title: "CREATE DICTIONARY"
 ---
 
-Creates a new [dictionary](../../../sql-reference/dictionaries/index.md) with given [structure](../../../sql-reference/dictionaries/index.md#dictionary-key-and-fields), [source](../../../sql-reference/dictionaries/index.md#dictionary-sources), [layout](/sql-reference/dictionaries#storing-dictionaries-in-memory) and [lifetime](/sql-reference/dictionaries#refreshing-dictionary-data-using-lifetime).
+Creates a new [dictionary](../../../sql-reference/dictionaries/index.md) with given [structure](../../../sql-reference/dictionaries/index.md#dictionary-key-and-fields), [source](../../../sql-reference/dictionaries/index.md#dictionary-sources), [layout](../../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory) and [lifetime](../../../sql-reference/dictionaries/index.md#dictionary-updates).
 
-## Syntax {#syntax}
+## Syntax
 
-```sql
+``` sql
 CREATE [OR REPLACE] DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 (
     key1 type1  [DEFAULT|EXPRESSION expr1] [IS_OBJECT_ID],
@@ -30,9 +29,9 @@ The dictionary structure consists of attributes. Dictionary attributes are speci
 
 `ON CLUSTER` clause allows creating dictionary on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
-Depending on dictionary [layout](/sql-reference/dictionaries#storing-dictionaries-in-memory) one or more attributes can be specified as dictionary keys.
+Depending on dictionary [layout](../../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory) one or more attributes can be specified as dictionary keys.
 
-## SOURCE {#source}
+## SOURCE
 
 The source for a dictionary can be a:
 - table in the current ClickHouse service
@@ -40,11 +39,11 @@ The source for a dictionary can be a:
 - file available by HTTP(S)
 - another database
 
-### Create a dictionary from a table in the current ClickHouse service {#create-a-dictionary-from-a-table-in-the-current-clickhouse-service}
+### Create a dictionary from a table in the current ClickHouse service
 
 Input table `source_table`:
 
-```text
+``` text
 ┌─id─┬─value──┐
 │  1 │ First  │
 │  2 │ Second │
@@ -53,7 +52,7 @@ Input table `source_table`:
 
 Creating the dictionary:
 
-```sql
+``` sql
 CREATE DICTIONARY id_value_dictionary
 (
     id UInt64,
@@ -67,7 +66,7 @@ LIFETIME(MIN 0 MAX 1000)
 
 Output the dictionary:
 
-```sql
+``` sql
 SHOW CREATE DICTIONARY id_value_dictionary;
 ```
 
@@ -112,11 +111,11 @@ LAYOUT(FLAT())
 LIFETIME(MIN 0 MAX 1000);
 ```
 
-### Create a dictionary from a table in a remote ClickHouse service {#create-a-dictionary-from-a-table-in-a-remote-clickhouse-service}
+### Create a dictionary from a table in a remote ClickHouse service
 
 Input table (in the remote ClickHouse service) `source_table`:
 
-```text
+``` text
 ┌─id─┬─value──┐
 │  1 │ First  │
 │  2 │ Second │
@@ -125,7 +124,7 @@ Input table (in the remote ClickHouse service) `source_table`:
 
 Creating the dictionary:
 
-```sql
+``` sql
 CREATE DICTIONARY id_value_dictionary
 (
     id UInt64,
@@ -137,7 +136,7 @@ LAYOUT(FLAT())
 LIFETIME(MIN 0 MAX 1000)
 ```
 
-### Create a dictionary from a file available by HTTP(S) {#create-a-dictionary-from-a-file-available-by-https}
+### Create a dictionary from a file available by HTTP(S)
 
 ```sql
 CREATE DICTIONARY default.taxi_zone_dictionary
@@ -153,9 +152,9 @@ LIFETIME(MIN 0 MAX 0)
 LAYOUT(HASHED())
 ```
 
-### Create a dictionary from another database {#create-a-dictionary-from-another-database}
+### Create a dictionary from another database
 
-Please see the details in [Dictionary sources](/sql-reference/dictionaries#dbms).
+Please see the details in [Dictionary sources](/docs/en/sql-reference/dictionaries/index.md#dictionary-sources/#dbms).
 
 **See Also**
 

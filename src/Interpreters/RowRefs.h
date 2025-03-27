@@ -1,10 +1,16 @@
 #pragma once
 
+#include <algorithm>
+#include <cassert>
+#include <list>
+#include <mutex>
 #include <optional>
+#include <variant>
 
-#include <Columns/IColumn_fwd.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/IColumn.h>
 #include <Core/Joins.h>
-#include <Core/TypeId.h>
+#include <base/sort.h>
 #include <Common/Arena.h>
 
 

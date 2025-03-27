@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
 

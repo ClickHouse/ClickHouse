@@ -13,12 +13,12 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
+#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
 
-#include <tuple>
-
+#include <unordered_map>
 
 namespace DB
 {
@@ -38,7 +38,7 @@ public:
         const DB::ContextPtr & context_,
         Int32 metadata_version_,
         Int32 format_version_,
-        const Poco::JSON::Object::Ptr & metadata_object);
+        const Poco::JSON::Object::Ptr & object);
 
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
@@ -47,10 +47,11 @@ public:
     Strings getDataFiles() const override { return getDataFilesImpl(nullptr); }
 
     /// Get table schema parsed from metadata.
-    NamesAndTypesList getTableSchema() const override
-    {
-        return *schema_processor.getClickhouseTableSchemaById(relevant_snapshot_schema_id);
-    }
+    NamesAndTypesList getTableSchema() const override { return *schema_processor.getClickhouseTableSchemaById(current_schema_id); }
+
+    const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
+
+    const DataLakePartitionColumns & getPartitionColumns() const override { return partition_columns; }
 
     bool operator==(const IDataLakeMetadata & other) const override
     {
@@ -58,11 +59,10 @@ public:
         return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
     }
 
-    static DataLakeMetadataPtr create(
-        const ObjectStoragePtr & object_storage,
-        const ConfigurationObserverPtr & configuration,
-        const ContextPtr & local_context);
+    static DataLakeMetadataPtr
+    create(const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context);
 
+    size_t getVersion() const { return current_metadata_version; }
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
     {
@@ -74,7 +74,7 @@ public:
     {
         auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
         return version_if_outdated.has_value()
-            ? schema_processor.getSchemaTransformationDagByIds(version_if_outdated.value(), relevant_snapshot_schema_id)
+            ? schema_processor.getSchemaTransformationDagByIds(version_if_outdated.value(), current_schema_id)
             : nullptr;
     }
 
@@ -87,52 +87,39 @@ public:
 
     bool update(const ContextPtr & local_context) override;
 
+
     Strings makePartitionPruning(const ActionsDAG & filter_dag) override;
 
     bool supportsPartitionPruning() override { return true; }
 
 private:
-    using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFilePtr>;
-    using ManifestFilesStorage = std::unordered_map<String, Iceberg::ManifestFilePtr>;
-    using ManifestListsStorage = std::unordered_map<String, Iceberg::ManifestListPtr>;
+    using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileEntry>;
 
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 
-    mutable ManifestFilesStorage manifest_files_by_name;
-    mutable ManifestListsStorage manifest_lists_by_name;
-    mutable ManifestEntryByDataFile manifest_file_by_data_file;
+    mutable Iceberg::ManifestFilesByName manifest_files_by_name;
+    mutable Iceberg::ManifestListsByName manifest_lists_by_name;
+    mutable ManifestEntryByDataFile manifest_entry_by_data_file;
 
-    std::tuple<Int64, Int32> getVersion() const { return std::make_tuple(relevant_snapshot_id, relevant_snapshot_schema_id); }
-
-    Int32 last_metadata_version;
-    Poco::JSON::Object::Ptr last_metadata_object;
+    Int32 current_metadata_version;
     Int32 format_version;
+    Int32 current_schema_id;
+    std::optional<Iceberg::IcebergSnapshot> current_snapshot;
 
+    mutable std::optional<Strings> cached_unprunned_files_for_current_snapshot;
 
-    Int32 relevant_snapshot_schema_id;
-    std::optional<Iceberg::IcebergSnapshot> relevant_snapshot;
-    Int64 relevant_snapshot_id{-1};
-    String table_location;
+    Iceberg::ManifestList initializeManifestList(const String & manifest_list_file) const;
 
-    mutable std::optional<Strings> cached_unprunned_files_for_last_processed_snapshot;
-
-    void updateState(const ContextPtr & local_context);
-
-    void updateSnapshot();
-
-    Iceberg::ManifestList initializeManifestList(const String & filename) const;
-    mutable std::vector<Iceberg::ManifestFileEntry> positional_delete_files_for_current_query;
-
-    void addTableSchemaById(Int32 schema_id);
-
-    Iceberg::ManifestListPtr getManifestList(const String & filename) const;
+    Iceberg::IcebergSnapshot getSnapshot(const String & manifest_list_file) const;
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
-    Iceberg::ManifestFilePtr initializeManifestFile(const String & filename, Int64 inherited_sequence_number) const;
+    Iceberg::ManifestFileEntry getManifestFile(const String & manifest_file) const;
+
+    Iceberg::ManifestFileEntry initializeManifestFile(const String & filename, const ConfigurationPtr & configuration_ptr) const;
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
 
@@ -140,8 +127,11 @@ private:
 
     Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
-    Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
+    //Fields are needed only for providing dynamic polymorphism
+    std::unordered_map<String, String> column_name_to_physical_name;
+    DataLakePartitionColumns partition_columns;
 };
+
 }
 
 #endif

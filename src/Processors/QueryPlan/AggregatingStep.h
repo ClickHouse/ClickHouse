@@ -1,11 +1,8 @@
 #pragma once
-
-#include <Core/Block.h>
-#include <Core/Block_fwd.h>
-#include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Interpreters/Aggregator.h>
 
 namespace DB
 {
@@ -79,7 +76,6 @@ public:
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 

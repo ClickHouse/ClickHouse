@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
@@ -106,9 +104,6 @@ public:
 
     Status prepare() override;
     void work() override;
-
-    ProcessorMemoryStats getMemoryStats() override;
-    bool spillOnSize(size_t bytes) override;
 
 private:
     JoinPtr join;

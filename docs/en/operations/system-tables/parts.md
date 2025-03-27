@@ -1,11 +1,7 @@
 ---
-description: 'System table containing information about parts of MergeTree'
-keywords: ['system table', 'parts']
-slug: /operations/system-tables/parts
-title: 'system.parts'
+slug: /en/operations/system-tables/parts
 ---
-
-# system.parts
+# parts {#system_tables-parts}
 
 Contains information about parts of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -13,7 +9,7 @@ Each row describes one data part.
 
 Columns:
 
-- `partition` ([String](../../sql-reference/data-types/string.md)) – The partition name. To learn what a partition is, see the description of the [ALTER](/sql-reference/statements/alter) query.
+- `partition` ([String](../../sql-reference/data-types/string.md)) – The partition name. To learn what a partition is, see the description of the [ALTER](../../sql-reference/statements/alter/index.md#query_language_queries_alter) query.
 
     Formats:
 
@@ -22,7 +18,7 @@ Columns:
 
 - `name` ([String](../../sql-reference/data-types/string.md)) – Name of the data part. The part naming structure can be used to determine many aspects of the data, ingest, and merge patterns. The part naming format is the following:
 
-```text
+```
 <partition_id>_<minimum_block_number>_<maximum_block_number>_<level>_<data_version>
 ```
 
@@ -44,7 +40,7 @@ Columns:
 
     Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table.
 
-- `active` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging.
+- `active` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging.
 
 - `marks` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint does not work for adaptive granularity).
 
@@ -94,7 +90,7 @@ Columns:
 
 - `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) reserved for primary key values.
 
-- `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. For more details, see [FREEZE PARTITION](/sql-reference/statements/alter/partition#freeze-partition)
+- `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. For more details, see [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md/#alter_freeze-partition)
 
 - `database` ([String](../../sql-reference/data-types/string.md)) – Name of the database.
 
@@ -106,11 +102,11 @@ Columns:
 
 - `disk_name` ([String](../../sql-reference/data-types/string.md)) – Name of a disk that stores the data part.
 
-- `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#siphash128) of compressed files.
+- `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md/#hash_functions-siphash128) of compressed files.
 
-- `hash_of_uncompressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#siphash128) of uncompressed files (files with marks, index file etc.).
+- `hash_of_uncompressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md/#hash_functions-siphash128) of uncompressed files (files with marks, index file etc.).
 
-- `uncompressed_hash_of_compressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#siphash128) of data in the compressed files as if they were uncompressed.
+- `uncompressed_hash_of_compressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md/#hash_functions-siphash128) of data in the compressed files as if they were uncompressed.
 
 - `delete_ttl_info_min` ([DateTime](../../sql-reference/data-types/datetime.md)) — The minimum value of the date and time key for [TTL DELETE rule](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-ttl).
 
@@ -132,11 +128,11 @@ The `move_ttl_info.expression` array is kept mostly for backward compatibility, 
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.parts LIMIT 1 FORMAT Vertical;
 ```
 
-```text
+``` text
 Row 1:
 ──────
 partition:                             tuple()

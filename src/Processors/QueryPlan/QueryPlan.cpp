@@ -493,7 +493,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     }
     catch (Exception & e)
     {
-        if (e.code() == ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK || e.code() == ErrorCodes::LOGICAL_ERROR)
+        if (e.code() == ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
             e.addMessage("while optimizing query plan:\n{}", dumpQueryPlan(*this));
         throw;
     }
