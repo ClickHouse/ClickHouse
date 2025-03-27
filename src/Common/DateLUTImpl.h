@@ -5,7 +5,6 @@
 #include <base/types.h>
 
 #include <ctime>
-#include <cassert>
 #include <string>
 #include <type_traits>
 
@@ -284,7 +283,7 @@ private:
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
-        assert(divisor > 0);
+        chassert(divisor > 0);
 
         if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
         {
@@ -659,6 +658,9 @@ public:
     template <typename DateOrTime>
     Int16 toYear(DateOrTime v) const { return lut[toLUTIndex(v)].year; }
 
+    template <typename DateOrTime>
+    Int16 toYearSinceEpoch(DateOrTime v) const { return lut[toLUTIndex(v)].year - 1970; }
+
     /// 1-based, starts on Monday
     template <typename DateOrTime>
     UInt8 toDayOfWeek(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_week; }
@@ -953,6 +955,13 @@ public:
     }
 
     template <typename DateOrTime>
+    Int32 toMonthNumSinceEpoch(DateOrTime v) const
+    {
+        const LUTIndex i = toLUTIndex(v);
+        return (lut[i].year - 1970) * 12 + lut[i].month - 1;
+    }
+
+    template <typename DateOrTime>
     Int32 toRelativeQuarterNum(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
@@ -1167,10 +1176,6 @@ public:
         /// When date is out of range, default value is DATE_LUT_SIZE - 1 (2299-12-31)
         return LUTIndex{std::min(index, static_cast<UInt32>(DATE_LUT_SIZE - 1))};
     }
-
-    Values lutIndexByMonthSinceEpochStartsZeroIndexing(Int32 months) const;
-
-    Values lutIndexByYearSinceEpochStartsZeroIndexing(Int16 years) const;
 
     /// Create DayNum from year, month, day of month.
     ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const

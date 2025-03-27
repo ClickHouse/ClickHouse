@@ -3550,7 +3550,7 @@ def test_kafka_json_type(kafka_cluster):
 
     instance.query(
         """
-        SET allow_experimental_json_type = 1;
+        SET enable_json_type = 1;
         CREATE TABLE test.dst (
             a Int64,
         )

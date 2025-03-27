@@ -76,6 +76,15 @@ void UserDefinedSQLFunctionVisitor::visit(IAST * ast, ContextPtr context_)
         visit(child, context_);
 }
 
+namespace
+{
+bool isVariadic(const ASTPtr & arg)
+{
+    return arg->as<ASTAsterisk>() || arg->as<ASTQualifiedAsterisk>() || arg->as<ASTColumnsRegexpMatcher>()
+        || arg->as<ASTColumnsListMatcher>() || arg->as<ASTQualifiedColumnsRegexpMatcher>() || arg->as<ASTQualifiedColumnsListMatcher>();
+}
+}
+
 ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_)
 {
     if (udf_in_replace_process.find(function.name) != udf_in_replace_process.end())
@@ -103,16 +112,22 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
             identifiers_raw.size(),
             function_arguments.size());
 
-    for (auto & arg : function_arguments)
+    for (const auto & arg : function_arguments)
     {
-        if (arg->as<ASTAsterisk>() || arg->as<ASTQualifiedAsterisk>() || arg->as<ASTColumnsRegexpMatcher>()
-            || arg->as<ASTColumnsListMatcher>() || arg->as<ASTQualifiedColumnsRegexpMatcher>() || arg->as<ASTQualifiedColumnsListMatcher>())
+        if (isVariadic(arg))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "It is not possible to replace a variadic argument '{}' in UDF {}",
                 arg->getColumnName(),
                 function.name);
     }
+
+    if (isVariadic(function_core_expression->children.at(1)))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "It is not possible to replace a variadic argument '{}' in UDF {}",
+            function_core_expression->children.at(1)->getColumnName(),
+            function.name);
 
     std::unordered_map<std::string, ASTPtr> identifier_name_to_function_argument;
 

@@ -78,13 +78,22 @@ class ChannelCallback
 public:
     using DescriptorSet = IClientDescriptorSet::DescriptorSet;
 
-    explicit ChannelCallback(::ssh::SSHChannel && channel_, std::unique_ptr<Session> && dbSession_)
-        : channel(std::move(channel_)), db_session(std::move(dbSession_)), log(&Poco::Logger::get("SSHChannelCallback"))
+    explicit ChannelCallback
+    (
+        ::ssh::SSHChannel && channel_,
+        std::unique_ptr<Session> && dbSession_,
+        const SSHPtyHandler::Options & options_
+    )
+        : channel(std::move(channel_))
+        , db_session(std::move(dbSession_))
+        , log(&Poco::Logger::get("SSHChannelCallback"))
+        , enable_client_options_passing(options_.enable_client_options_passing)
     {
         channel_cb.userdata = this;
         channel_cb.channel_pty_request_function = ptyRequestAdapter<ssh_session, ssh_channel, const char *, int, int, int, int>;
         channel_cb.channel_shell_request_function = shellRequestAdapter<ssh_session, ssh_channel>;
         channel_cb.channel_data_function = dataFunctionAdapter<ssh_session, ssh_channel, void *, uint32_t, int>;
+        channel_cb.channel_eof_function = eofFunctionAdapter<ssh_session, ssh_channel>;
         channel_cb.channel_pty_window_change_function = ptyResizeAdapter<ssh_session, ssh_channel, int, int, int, int>;
         channel_cb.channel_env_request_function = envRequestAdapter<ssh_session, ssh_channel, const char *, const char*>;
         channel_cb.channel_exec_request_function = execRequestAdapter<ssh_session, ssh_channel, const char *>;
@@ -93,14 +102,18 @@ public:
     }
 
     bool hasClientFinished() { return client_runner.has_value() && client_runner->hasFinished(); }
+    int getClientExitCode() { return client_runner.has_value() && client_runner->getExitCode(); }
 
 
     DescriptorSet client_input_output;
     ::ssh::SSHChannel channel;
     std::unique_ptr<Session> db_session;
-    NameToNameMap env;
     std::optional<ClientEmbeddedRunner> client_runner;
     Poco::Logger * log;
+
+    /// The functionality to pass options
+    const bool enable_client_options_passing;
+    NameToNameMap env;
 
 private:
     int ptyRequest(ssh_session, ssh_channel, const char * term, int width, int height, int width_pixels, int height_pixels) noexcept
@@ -158,6 +171,16 @@ private:
 
     GENERATE_ADAPTER_FUNCTION(ChannelCallback, dataFunction, int)
 
+    void eofFunction(ssh_session, ssh_channel) const noexcept
+    {
+        if (!client_runner.has_value())
+            return;
+
+        client_runner->closeStdIn();
+    }
+
+    GENERATE_ADAPTER_FUNCTION(ChannelCallback, eofFunction, void)
+
     int subsystemRequest(ssh_session, ssh_channel, const char * subsystem) noexcept
     {
         LOG_TRACE(log, "Received subsystem request");
@@ -211,8 +234,9 @@ private:
 
     int envRequest(ssh_session, ssh_channel, const char * env_name, const char * env_value)
     {
-        LOG_TRACE(log, "Received env request");
-        env[env_name] = env_value;
+        LOG_TEST(log, "Received env request. Client options passing is {}enabled", enable_client_options_passing ? "" : "not ");
+        if (enable_client_options_passing)
+            env[env_name] = env_value;
         return SSH_OK;
     }
 
@@ -240,7 +264,6 @@ private:
 
     int execRequest(ssh_session, ssh_channel, const char * command)
     {
-        LOG_TRACE(log, "Received exec request");
         if (client_runner.has_value() && (client_runner->hasStarted() || !client_runner->hasPty()))
         {
             return SSH_ERROR;
@@ -308,8 +331,17 @@ int process_stderr(socket_t fd, int revents, void * userdata)
 class SessionCallback
 {
 public:
-    explicit SessionCallback(::ssh::SSHSession & session, IServer & server, const Poco::Net::SocketAddress & address_)
-        : server_context(server.context()), peer_address(address_), log(&Poco::Logger::get("SSHSessionCallback"))
+    explicit SessionCallback
+    (
+        ::ssh::SSHSession & session,
+        IServer & server,
+        const Poco::Net::SocketAddress & address_,
+        const SSHPtyHandler::Options & options_
+    )
+        : server_context(server.context())
+        , peer_address(address_)
+        , log(&Poco::Logger::get("SSHSessionCallback"))
+        , options(options_)
     {
         server_cb.userdata = this;
         server_cb.auth_pubkey_function = authPublickeyAdapter<ssh_session, const char *, ssh_key, char>;
@@ -327,6 +359,7 @@ public:
     Poco::Net::SocketAddress peer_address;
     std::unique_ptr<ChannelCallback> channel_callback;
     Poco::Logger * log;
+    const SSHPtyHandler::Options options;
 
     ssh_channel channelOpen(ssh_session session) noexcept
     {
@@ -338,7 +371,7 @@ public:
         try
         {
             auto channel = ::ssh::SSHChannel(session);
-            channel_callback = std::make_unique<ChannelCallback>(std::move(channel), std::move(db_session));
+            channel_callback = std::make_unique<ChannelCallback>(std::move(channel), std::move(db_session), options);
             return channel_callback->channel.getCChannelPtr();
         }
         catch (...)
@@ -406,44 +439,40 @@ public:
 SSHPtyHandler::SSHPtyHandler(
     IServer & server_,
     ::ssh::SSHSession session_,
-    const Poco::Net::StreamSocket & socket,
-    unsigned int max_auth_attempts_,
-    unsigned int auth_timeout_seconds_,
-    unsigned int finish_timeout_seconds_,
-    unsigned int event_poll_interval_milliseconds_)
-    : Poco::Net::TCPServerConnection(socket)
+    const Poco::Net::StreamSocket & socket_,
+    const Options & options_)
+    : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , log(&Poco::Logger::get("SSHPtyHandler"))
     , session(std::move(session_))
-    , max_auth_attempts(max_auth_attempts_)
-    , auth_timeout_seconds(auth_timeout_seconds_)
-    , finish_timeout_seconds(finish_timeout_seconds_)
-    , event_poll_interval_milliseconds(event_poll_interval_milliseconds_)
+    , options(options_)
 {
+}
+
+SSHPtyHandler::~SSHPtyHandler()
+{
+    session.disconnect();
 }
 
 void SSHPtyHandler::run()
 {
     ::ssh::SSHEvent event;
-    SessionCallback sdata(session, server, socket().peerAddress());
+    SessionCallback sdata(session, server, socket().peerAddress(), options);
     session.handleKeyExchange();
     event.addSession(session);
-    int max_iterations = auth_timeout_seconds * 1000 / event_poll_interval_milliseconds;
+    int max_iterations = options.auth_timeout_seconds * 1000 / options.event_poll_interval_milliseconds;
     int n = 0;
     while (!sdata.authenticated || !sdata.channel_callback)
     {
         /* If the user has used up all attempts, or if he hasn't been able to
          * authenticate in auth_timeout_seconds, disconnect. */
-        if (sdata.auth_attempts >= max_auth_attempts || n >= max_iterations)
-        {
+        if (sdata.auth_attempts >= options.max_auth_attempts || n >= max_iterations)
             return;
-        }
 
         if (server.isCancelled())
-        {
             return;
-        }
-        event.poll(event_poll_interval_milliseconds);
+
+        event.poll(options.event_poll_interval_milliseconds);
         n++;
     }
     bool fds_set = false;
@@ -452,27 +481,25 @@ void SSHPtyHandler::run()
     {
         /* Poll the main event which takes care of the session, the channel and
          * even our client's stdout/stderr (once it's started). */
-        event.poll(event_poll_interval_milliseconds);
+        event.poll(options.event_poll_interval_milliseconds);
 
         /* If client's stdout/stderr has been registered with the event,
          * or the client hasn't started yet, continue. */
         if (fds_set || sdata.channel_callback->client_input_output.out == -1)
-        {
             continue;
-        }
+
         /* Executed only once, once the client starts. */
         fds_set = true;
 
         /* If stdout valid, add stdout to be monitored by the poll event. */
         if (sdata.channel_callback->client_input_output.out != -1)
-        {
             event.addFd(sdata.channel_callback->client_input_output.out, POLLIN, process_stdout, sdata.channel_callback->channel.getCChannelPtr());
-        }
+
         if (sdata.channel_callback->client_input_output.err != -1)
-        {
             event.addFd(sdata.channel_callback->client_input_output.err, POLLIN, process_stderr, sdata.channel_callback->channel.getCChannelPtr());
-        }
-    } while (sdata.channel_callback->channel.isOpen() && !sdata.channel_callback->hasClientFinished() && !server.isCancelled());
+
+    }
+    while (sdata.channel_callback->channel.isOpen() && !sdata.channel_callback->hasClientFinished() && !server.isCancelled());
 
     LOG_DEBUG(
         log,
@@ -485,14 +512,14 @@ void SSHPtyHandler::run()
 
 
     sdata.channel_callback->channel.sendEof();
+    sdata.channel_callback->channel.sendExitStatus(sdata.channel_callback->getClientExitCode());
     sdata.channel_callback->channel.close();
 
     /* Wait up to finish_timeout_seconds seconds for the client to terminate the session. */
-    max_iterations = finish_timeout_seconds * 1000 / event_poll_interval_milliseconds;
+    max_iterations = options.finish_timeout_seconds * 1000 / options.event_poll_interval_milliseconds;
     for (n = 0; n < max_iterations && !session.hasFinished(); n++)
-    {
-        event.poll(event_poll_interval_milliseconds);
-    }
+        event.poll(options.event_poll_interval_milliseconds);
+
     LOG_DEBUG(log, "Connection closed");
 }
 

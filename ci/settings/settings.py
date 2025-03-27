@@ -33,6 +33,7 @@ DOCKERHUB_SECRET = "dockerhub_robot_password"
 
 CI_DB_DB_NAME = "default"
 CI_DB_TABLE_NAME = "checks"
+CI_DB_SUB_RESULT_NAMES_WITH_TESTS = ["Tests"]
 SECRET_CI_DB_URL = "clickhouse-test-stat-url"
 SECRET_CI_DB_USER = "clickhouse-test-stat-login"
 SECRET_CI_DB_PASSWORD = "clickhouse-test-stat-password"
