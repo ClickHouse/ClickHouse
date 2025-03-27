@@ -339,6 +339,23 @@ protected:
     template <typename T>
     struct HasForEachMapped<T, std::void_t<decltype(std::declval<const T&>().forEachMapped())>> : std::true_type {};
 
+    template <typename T, typename = void>
+    struct HasKey : std::false_type {};
+    
+    template <typename T>
+    struct HasKey<T, std::void_t<decltype(std::declval<const T&>().key)>> : std::true_type {};
+
+    template <typename T, typename ArgType, typename = void>
+    struct HasErase : std::false_type {};
+
+    template <typename T, typename ArgType>
+    struct HasErase<T, ArgType, std::void_t<decltype(std::declval<T>().erase(std::declval<ArgType>()))>> : std::true_type {};
+
+    template <typename KeyHolder>
+    bool compareKeyHolders(KeyHolder & lhs, KeyHolder & rhs) {
+        return lhs < rhs; // TODO implement
+    }
+
     // 72610: key_holder -- указатель на ключ
     // 72610: data -- мап (или сет)
     // 72610: emplaceImpl пытается вставить в мап и возвращает получилось ли и итератор, если да
@@ -392,18 +409,37 @@ protected:
         if (data.size() >= limit_length + 1) { // TODO do == and assert <=
             std::cout << "data.size() >= limit_length + 1" << std::endl;
             if constexpr (HasBegin<Data>::value) {
-                auto min_key = key_holder;
-                (void)min_key;
-                for (const auto& data_it : data) {
-                    (void)data_it;
-                    // if (data_it.getKey() < min_key) {
-                    //     min_key = data_it.getKey();
-                    // }
+                auto min_key_holder = key_holder;
+                for (const auto& data_el : data) {
+                    if constexpr (HasKey<KeyHolder>::value) {
+                        const auto& key = data_el.getKey();
+                        (void)key;
+                        if (compareKeyHolders(key, min_key_holder.key)) { // TODO compare according to order by
+                            min_key_holder.key = key;
+                        }
+                    } else {
+                        if (compareKeyHolders(data_el.getKey(), min_key_holder)) { // TODO compare according to order by
+                            min_key_holder = data_el.getKey();
+                        }
+                    }
                 }
-                // data.erase(min_key);
-                // if (min_key == key_holder) {
-                //     return EmplaceResult(false);
-                // }    
+                if constexpr (HasKey<KeyHolder>::value) {
+                    if constexpr (HasErase<Data, decltype(min_key_holder.key)>::value) {
+                        data.erase(min_key_holder.key);
+                        if (min_key_holder.key == key_holder.key) {
+                            if constexpr (!has_mapped)
+                                return EmplaceResult(inserted);
+                        }
+                    }
+                } else {
+                    if constexpr (HasErase<Data, KeyHolder>::value) {
+                        data.erase(min_key_holder);
+                        if (min_key_holder == key_holder) {
+                            if constexpr (!has_mapped)
+                                return EmplaceResult(inserted);
+                        }
+                    }
+                }
             } else if constexpr(HasForEachMapped<Data>::value) {
                 // data.forEachMapped([](auto el) {
                 //     std::cout << "forEachMapped el: " << el << std::endl;
