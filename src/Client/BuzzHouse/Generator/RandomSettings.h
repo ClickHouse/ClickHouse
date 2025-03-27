@@ -22,6 +22,8 @@ extern std::unordered_map<String, CHSetting> performanceSettings;
 
 extern std::unordered_map<String, CHSetting> serverSettings;
 
+extern std::unordered_map<String, CHSetting> formatSettings;
+
 const std::unordered_map<String, CHSetting> memoryTableSettings
     = {{"min_bytes_to_keep",
         CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},

@@ -240,13 +240,13 @@ void QueryOracle::generateExportQuery(
     }
     if (rg.nextSmallNumber() < 4)
     {
-        gen.generateSettingValues(rg, serverSettings, ins->mutable_setting_values());
+        gen.generateSettingValues(rg, formatSettings, ins->mutable_setting_values());
         const SettingValues & svs = ins->setting_values();
 
         for (int i = 0; i < (svs.other_values_size() + 1) && can_test_query_success; i++)
         {
             const SetValue & osv = i == 0 ? svs.set_value() : svs.other_values(i - 1);
-            const CHSetting & ochs = serverSettings.at(osv.property());
+            const CHSetting & ochs = formatSettings.at(osv.property());
 
             can_test_query_success &= !ochs.changes_behavior;
         }
@@ -291,7 +291,7 @@ void QueryOracle::generateImportQuery(
     {
         /// If can't test success, swap settings sometimes
         svs = nins->mutable_setting_values();
-        gen.generateSettingValues(rg, serverSettings, svs);
+        gen.generateSettingValues(rg, formatSettings, svs);
     }
     else if (oins.has_setting_values())
     {
