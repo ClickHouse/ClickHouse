@@ -135,6 +135,33 @@ def test_psql_client(started_cluster):
     )
 
 
+def test_authentification(started_cluster):
+    node = cluster.instances["node"]
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    cur = ch.cursor()
+    cur.execute("CREATE DATABASE x")
+    cur.execute("USE x")
+    cur.execute("CREATE USER name7 IDENTIFIED WITH scram_sha256_password BY 'my_password'")
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="name7",
+        password="my_password",
+        database="x",
+    )
+    cur = ch.cursor()
+    cur.execute("select 1;")
+    assert cur.fetchall() == [(1,)]
+
+
 def test_python_client(started_cluster):
     node = cluster.instances["node"]
 
