@@ -548,7 +548,7 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
 
     for (uint32_t i = 0; i < nparams; i++)
     {
-        const String buf = String(1, 'x' + i);
+        const String buf = String(1, 'a' + i);
         lexpr->add_args()->set_column(buf);
         rel.cols.emplace_back(SQLRelationCol("", {buf}));
     }

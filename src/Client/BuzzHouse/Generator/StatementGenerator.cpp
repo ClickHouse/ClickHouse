@@ -138,7 +138,7 @@ void StatementGenerator::generateNextCreateFunction(RandomGenerator & rg, Create
     const uint32_t fname = this->function_counter++;
 
     next.fname = fname;
-    next.nargs = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % (rg.nextBool() ? 4 : 10)));
+    next.nargs = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1));
     if ((next.is_deterministic = rg.nextBool()))
     {
         /// If this function is later called by an oracle, then don't call it
@@ -221,7 +221,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     SQLView next;
     uint32_t tname = 0;
     const bool replace = collectionCount<SQLView>(attached_views) > 3 && rg.nextMediumNumber() < 16;
-    const uint32_t view_ncols = (rg.nextMediumNumber() % 5) + 1;
+    const uint32_t view_ncols = (rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1);
 
     if (replace)
     {
@@ -928,7 +928,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             }
             else
             {
-                v.staged_ncols = v.has_with_cols ? static_cast<uint32_t>(v.cols.size()) : ((rg.nextMediumNumber() % 5) + 1);
+                v.staged_ncols
+                    = v.has_with_cols ? static_cast<uint32_t>(v.cols.size()) : ((rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1));
 
                 if (v.is_deterministic)
                 {

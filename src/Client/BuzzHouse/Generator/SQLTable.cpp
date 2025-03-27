@@ -1674,7 +1674,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         uint32_t added_sign = 0;
         uint32_t added_is_deleted = 0;
         uint32_t added_version = 0;
-        const uint32_t to_addcols = (rg.nextMediumNumber() % 5) + 1;
+        const uint32_t to_addcols = (rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1);
         const uint32_t to_addidxs
             = (rg.nextMediumNumber() % 4) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
         const uint32_t to_addprojs
@@ -1851,7 +1851,8 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const bool replace = collectionCount<SQLDictionary>(attached_dictionaries) > 3 && rg.nextMediumNumber() < 16;
     const DictionaryLayouts & dl = rg.pickRandomly(allDictionaryLayoutSettings);
     const bool isRange = dl == COMPLEX_KEY_RANGE_HASHED || dl == RANGE_HASHED;
-    const uint32_t dictionary_ncols = (rg.nextMediumNumber() % 5) + (isRange ? 2 : 1); /// Range requires 2 cols for min and max
+    /// Range requires 2 cols for min and max
+    const uint32_t dictionary_ncols = std::max((rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1), isRange ? UINT32_C(2) : UINT32_C(1));
     SettingValues * svs = nullptr;
     DictionarySource * source = cd->mutable_source();
     DictionaryLayout * layout = cd->mutable_layout();
