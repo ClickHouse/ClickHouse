@@ -1,7 +1,14 @@
--- Tags: no-random-merge-tree-settings
--- Tag no-random-merge-tree-settings: we want to keep the min_rows_for_wide_part and min_bytes_for_wide_part
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# We just want to ensure the following query doesn't create an ASAN container-overflow
+# https://github.com/ClickHouse/ClickHouse/issues/75660
+res=$($CLICKHOUSE_CLIENT --query """
 SET enable_json_type = 1;
-CREATE TABLE test (`id` UInt64, `json` JSON(max_dynamic_paths = 2, `a.b.c` UInt32))
+CREATE TABLE test (\`id\` UInt64, \`json\` JSON(max_dynamic_paths = 2, \`a.b.c\` UInt32))
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
@@ -19,3 +26,6 @@ SELECT count(65536) IGNORE NULLS OVER (ORDER BY json.b.b._28.:Int64 DESC NULLS L
 FROM test
 ORDER BY id DESC NULLS LAST
 FORMAT JSONColumns;
+""")
+
+echo "OK"

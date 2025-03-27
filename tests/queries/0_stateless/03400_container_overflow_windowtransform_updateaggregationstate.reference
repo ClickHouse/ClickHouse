@@ -1,4 +1,1 @@
-{
-	"count(65536) OVER (ORDER BY json.b.b._28.:`Int64` DESC NULLS LAST RANGE BETWEEN UNBOUNDED PRECEDING AND 10 PRECEDING)": ["10", "10", "10", "10", "10", "10", "10", "10", "10", "10"],
-	"json.b.b.e.:`String`": [null, null, null, null, null, null, null, null, null, null]
-}
+OK
