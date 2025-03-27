@@ -16,6 +16,7 @@ public:
         , in(socket)
         , stream_name(stream_name_)
     {
+        socket.setReceiveBufferSize(10 * 1024 * 1024);
     }
 
     String getName() const override { return "StreamingExchangeSource(" + stream_name + ")"; }
