@@ -14,7 +14,7 @@ class Logger;
 using LoggerPtr = std::shared_ptr<Logger>;
 }
 
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
+using LoggerPtr = Poco::LoggerPtr;
 using LoggerRawPtr = Poco::Logger *;
 
 /** RAII wrappers around Poco/Logger.h.

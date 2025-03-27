@@ -3,12 +3,9 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Storages/StorageSnapshot.h>
-#include <Storages/IStorage.h>
 
 #include <QueryPipeline/Chain.h>
-#include "Common/ThreadStatus.h"
 #include <Common/Logger.h>
-#include "Interpreters/ExpressionAnalyzer.h"
 
 #include <exception>
 #include <map>
@@ -18,40 +15,29 @@
 namespace DB
 {
 
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
+
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
 class ViewsManager : public std::enable_shared_from_this<ViewsManager>
 {
 private:
-    friend class FinalizingViewsTransform;
-
+    // This class just releases some restriction from StorageID
+    // StorageIDPrivate has default c-tor implemented as StorageID::createEmpty()
     struct StorageIDPrivate : public StorageID
     {
         using StorageID::StorageID;
 
-        StorageIDPrivate()
-            : StorageIDPrivate(StorageID::createEmpty())
-        {}
+        StorageIDPrivate();
+        StorageIDPrivate(const StorageID & other); // NOLINT this is an implicit c-tor
 
-        StorageIDPrivate(const StorageID & other) // NOLINT this is an implicit c-tor
-            : StorageID(other)
-        {}
-
-        bool operator < (const StorageID & other) const
-        {
-            if (hasUUID() && other.hasUUID())
-                return uuid < other.uuid;
-            return std::tuple(database_name, table_name) < std::tuple(other.database_name, other.table_name);
-        }
-
-        bool operator == (const StorageID & other) const
-        {
-            if (empty() && other.empty())
-                return true;
-            if (empty())
-                return false;
-            if (other.empty())
-                return false;
-            return StorageID::operator==(other);
-        }
+        bool operator<(const StorageID & other) const;
+        bool operator==(const StorageID & other) const;
     };
 
     struct BundleID
@@ -62,6 +48,7 @@ private:
 
     class VisitedPath
     {
+    private:
         std::vector<StorageIDPrivate> path;
         std::set<StorageIDPrivate> visited;
 
@@ -80,7 +67,7 @@ private:
         String debugString() const;
     };
 
-    using MapIdManyId = std::map<StorageIDPrivate, std::vector<StorageIDPrivate>>;
+    using MapIdManyId = std::map<StorageIDPrivate, std::vector<StorageID>>;
     using MapIdId = std::map<StorageIDPrivate, StorageIDPrivate>;
     using MapIdStorage = std::map<StorageIDPrivate, StoragePtr>;
     using MapIdMetadata = std::map<StorageIDPrivate, StorageMetadataPtr>;
@@ -110,8 +97,6 @@ public:
     Chain createPostSink() const;
     Chain createRetry(VisitedPath path);
 
-    static QueryViewsLogElement::ViewStatus getQueryViewStatus(std::exception_ptr exception, bool before_start);
-
     void logQueryView(StorageID view_id, std::exception_ptr exception, bool before_start = false) const;
 
 protected:
@@ -120,10 +105,13 @@ protected:
 private:
     bool registerPath(VisitedPath path);
     void buildRelaitions();
-    Chain createSelect(StorageIDPrivate view_id) const;
+
     Chain createPreSink(StorageIDPrivate view_id) const;
+    Chain createSelect(StorageIDPrivate view_id) const;
     Chain createSink(StorageIDPrivate view_id) const;
-    Chain createPostSink(StorageIDPrivate view_id, size_t level) const;
+    Chain createPostSink(StorageIDPrivate view_id) const;
+
+    static QueryViewsLogElement::ViewStatus getQueryViewStatus(std::exception_ptr exception, bool before_start);
 
     StorageID init_table_id;
     StoragePtr init_storage;
@@ -134,12 +122,11 @@ private:
     bool skip_destination_table;
     bool allow_materialized = false;
 
-    BundleID root;
+    StorageIDPrivate root_view;
 
     MapIdManyId dependent_views;
     MapIdId inner_tables;
     MapIdId source_tables;
-
     MapIdStorage storages;
     MapIdViewType view_types;
     MapIdLock storage_locks;
@@ -147,12 +134,9 @@ private:
     MapIdAST select_queries;
     MapIdContext insert_contexts;
     MapIdContext select_contexts;
-
     MapIdBlock input_headers;
     MapIdBlock output_headers;
-
     MapIdThreadGroup thread_groups;
-
     LoggerPtr logger;
 
 public:

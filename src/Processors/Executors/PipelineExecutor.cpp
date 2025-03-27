@@ -88,7 +88,7 @@ const Processors & PipelineExecutor::getProcessors() const
 
 void PipelineExecutor::cancel(ExecutionStatus reason)
 {
-    LOG_DEBUG(log, "cancel with reason {}", reason);
+    LOG_DEBUG(log, "cancel with reason {} at {}", reason, StackTrace().toString());
 
     /// It is allowed to cancel not started query by user.
     if (reason == ExecutionStatus::CancelledByUser)

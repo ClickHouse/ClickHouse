@@ -247,7 +247,7 @@ class FinalizingViewsTransform final : public IProcessor
     }
 
 public:
-    explicit FinalizingViewsTransform(std::vector<Block> headers, std::vector<ViewsManager::StorageIDPrivate> views, ViewsManager::ConstPtr views_manager_)
+    explicit FinalizingViewsTransform(std::vector<Block> headers, std::vector<StorageID> views, ViewsManager::ConstPtr views_manager_)
         : IProcessor(initPorts(std::move(headers)), {Block()})
         , output(outputs.front())
         , views_manager(views_manager_)
@@ -632,20 +632,20 @@ ViewsManager::ViewsManager(StoragePtr table, ASTPtr query, Block insert_header,
 Chain ViewsManager::createPreSink() const
 {
     chassert(!skip_destination_table);
-    return createPreSink(root.view_id);
+    return createPreSink(root_view);
 }
 
 
 Chain ViewsManager::createSink() const
 {
     chassert(!skip_destination_table);
-    return createSink(root.view_id);
+    return createSink(root_view);
 }
 
 
 Chain ViewsManager::createPostSink() const
 {
-    auto chain = createPostSink(root.view_id, 0);
+    auto chain = createPostSink(root_view);
     chain.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
     chain.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);
     return chain;
@@ -706,8 +706,9 @@ bool ViewsManager::registerPath(VisitedPath path)
     metadata_snapshots[current] = metadata;
     storage_locks[current] = std::move(lock);
 
-    auto set_defaults = [&] (const StorageIDPrivate & root_view)
+    auto set_defaults_for_root_view = [&] (const StorageIDPrivate & root_view_)
     {
+        root_view = root_view_;
         LOG_DEBUG(logger, "set defaults for {}", root_view);
         select_queries[root_view] = init_query->as<ASTInsertQuery>()->select;
         select_contexts[root_view] = init_context;
@@ -721,9 +722,8 @@ bool ViewsManager::registerPath(VisitedPath path)
     {
         if (current == init_table_id)
         {
-            set_defaults(current);
+            set_defaults_for_root_view(init_table_id);
             view_types[current] = QueryViewsLogElement::ViewType::MATERIALIZED;
-            // root is filled at next call register_path
             return true;
         }
 
@@ -792,9 +792,8 @@ bool ViewsManager::registerPath(VisitedPath path)
     {
         if (current == init_table_id)
         {
-            set_defaults(current);
+            set_defaults_for_root_view(init_table_id);
             view_types[current] = QueryViewsLogElement::ViewType::LIVE;
-            root = {init_table_id, init_table_id};
             return true;
         }
 
@@ -823,9 +822,8 @@ bool ViewsManager::registerPath(VisitedPath path)
     {
         if (current == init_table_id)
         {
-            set_defaults(current);
+            set_defaults_for_root_view(init_table_id);
             view_types[current] = QueryViewsLogElement::ViewType::WINDOW;
-            root = {init_table_id, init_table_id};
             return true;
         }
 
@@ -861,16 +859,10 @@ bool ViewsManager::registerPath(VisitedPath path)
 
         if (current == init_table_id)
         {
-            set_defaults({});
+            set_defaults_for_root_view({});
             output_headers[{}] = metadata->getSampleBlock(); // InterpreterInsertQuery::getSampleBlockForInsertion(init_header.getNames(), storage, metadata, skip_destination_table, allow_materialized);
             view_types[{}] = QueryViewsLogElement::ViewType::DEFAULT;
-            root = {{}, init_table_id};
             return true;
-        }
-
-        if (parent == init_table_id)
-        {
-            root = {{init_table_id}, current};
         }
 
         const auto & view_id = path.parent();
@@ -960,13 +952,13 @@ void ViewsManager::buildRelaitions()
 
     if (skip_destination_table)
     {
-        output_headers[root.view_id] = init_header;
-        for (const auto & child_id : dependent_views.at(root.view_id))
+        output_headers[root_view] = init_header;
+        for (const auto & child_id : dependent_views.at(root_view))
         {
             input_headers[child_id] = init_header;
         }
     }
-    LOG_DEBUG(logger, "buildRelaitions2: {}, root is ({}, {})", init_table_id, root.view_id, root.inner_id);
+    LOG_DEBUG(logger, "buildRelaitions2: {}, root is {}", init_table_id, root_view);
 }
 
 
@@ -1233,7 +1225,7 @@ Chain ViewsManager::createSink(StorageIDPrivate view_id) const
 }
 
 
-Chain ViewsManager::createPostSink(StorageIDPrivate view_id, size_t level) const
+Chain ViewsManager::createPostSink(StorageIDPrivate view_id) const
 {
     auto inner_table = inner_tables.at(view_id);
     LOG_DEBUG(logger, "createPostSink: {} ({})", view_id, inner_table);
@@ -1277,7 +1269,7 @@ Chain ViewsManager::createPostSink(StorageIDPrivate view_id, size_t level) const
             chain.appendChainNotStrict(std::move(tmp));
         }
         {
-            auto tmp = createPostSink(child_view_id, level+1);
+            auto tmp = createPostSink(child_view_id);
             if (!tmp.empty())
                 LOG_DEBUG(logger, "createPostSink: {} ({}) --> {},"
                     " createPostSink with input header {} || output header {}", view_id, inner_table, child_view_id, tmp.getInputHeader().dumpStructure(), tmp.getOutputHeader().dumpStructure());
@@ -1417,6 +1409,7 @@ void ViewsManager::logQueryView(StorageID view_id, std::exception_ptr exception,
     }
 }
 
+
 void ViewsManager::VisitedPath::pushBack(StorageIDPrivate id)
 {
     if (visited.contains(id))
@@ -1452,4 +1445,35 @@ QueryViewsLogElement::ViewStatus ViewsManager::getQueryViewStatus(std::exception
     return QueryViewsLogElement::ViewStatus::QUERY_FINISH;
 }
 
+
+ViewsManager::StorageIDPrivate::StorageIDPrivate()
+    : StorageIDPrivate(StorageID::createEmpty())
+{
+}
+
+
+ViewsManager::StorageIDPrivate::StorageIDPrivate(const StorageID & other) // NOLINT this is an implicit c-tor
+    : StorageID(other)
+{
+}
+
+
+bool ViewsManager::StorageIDPrivate::operator<(const StorageID & other) const
+{
+    if (hasUUID() && other.hasUUID())
+        return uuid < other.uuid;
+    return std::tuple(database_name, table_name) < std::tuple(other.database_name, other.table_name);
+}
+
+
+bool ViewsManager::StorageIDPrivate::operator==(const StorageID & other) const
+{
+    if (empty() && other.empty())
+        return true;
+    if (empty())
+        return false;
+    if (other.empty())
+        return false;
+    return StorageID::operator==(other);
+}
 }
