@@ -37,7 +37,7 @@ class GH:
 
     @classmethod
     def post_pr_comment(
-        cls, comment_body, or_update_comment_with_substring, pr=None, repo=None
+        cls, comment_body, or_update_comment_with_substring="", pr=None, repo=None
     ):
         if not repo:
             repo = _Environment.get().REPOSITORY
