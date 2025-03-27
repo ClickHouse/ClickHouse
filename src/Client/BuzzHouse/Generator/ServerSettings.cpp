@@ -991,6 +991,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          {"input_format_csv_detect_header", CHSetting(trueOrFalse, {}, false)},
          {"input_format_custom_detect_header", CHSetting(trueOrFalse, {}, false)},
          {"input_format_json_empty_as_default", CHSetting(trueOrFalse, {}, false)},
+         {"input_format_msgpack_number_of_columns",
+          CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(0, 20)); }, {}, false)},
          {"input_format_native_decode_types_in_binary_format", CHSetting(trueOrFalse, {}, false)},
          {"input_format_tsv_crlf_end_of_line", CHSetting(trueOrFalse, {}, false)},
          {"input_format_tsv_detect_header", CHSetting(trueOrFalse, {}, false)},
@@ -999,6 +1001,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          {"low_cardinality_allow_in_native_format", CHSetting(trueOrFalse, {}, false)},
          {"output_format_binary_encode_types_in_binary_format", CHSetting(trueOrFalse, {}, false)},
          {"output_format_csv_crlf_end_of_line", CHSetting(trueOrFalse, {}, false)},
+         {"output_format_msgpack_uuid_representation", CHSetting(nastyStrings, {}, false)},
          {"output_format_native_encode_types_in_binary_format", CHSetting(trueOrFalse, {}, false)},
          {"output_format_tsv_crlf_end_of_line", CHSetting(trueOrFalse, {}, false)}});
 }
