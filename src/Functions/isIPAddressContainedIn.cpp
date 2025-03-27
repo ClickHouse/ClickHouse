@@ -194,7 +194,7 @@ namespace DB
                     return parseIP<IPKind::String>(inner_string_column, 0);
             }
 
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT , "The IP column type must be one of: String, IPv4, IPv6, Nullable(IPv4), Nullable(IPv6), or Nullable(String).");
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The IP column type must be one of: String, IPv4, IPv6, Nullable(IPv4), Nullable(IPv6), or Nullable(String).");
         }
 
 
@@ -352,7 +352,7 @@ namespace DB
                     return executeImpl<IPKind::String>(nullable_column, inner_string_column, cidr, input_rows_count);
             }
 
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT , "The IP column type must be one of: String, IPv4, IPv6, Nullable(IPv4), Nullable(IPv6), or Nullable(String).");
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The IP column type must be one of: String, IPv4, IPv6, Nullable(IPv4), Nullable(IPv6), or Nullable(String).");
         }
 
 
