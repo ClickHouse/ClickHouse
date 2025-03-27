@@ -132,10 +132,17 @@ public:
                         return false;
             }
 
-            if (!re->match(pos, end - pos, matches) || !matches[0].length)
+            auto res = re->match(pos, end - pos, matches);
+            if (!res)
             {
                 token_end = end;
                 pos = end + 1;
+            }
+            else if (!matches[0].length)
+            {
+                token_end = (pos == end ? end : pos + 1);
+                ++pos;
+                ++splits;
             }
             else
             {
