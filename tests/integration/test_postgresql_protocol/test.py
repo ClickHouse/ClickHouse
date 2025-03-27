@@ -135,7 +135,7 @@ def test_psql_client(started_cluster):
     )
 
 
-def test_authentification(started_cluster):
+def test_new_user(started_cluster):
     node = cluster.instances["node"]
 
     ch = py_psql.connect(
