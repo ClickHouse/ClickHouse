@@ -54,7 +54,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char storage_merge_tree_background_clear_old_parts_pause[];
-};
+}
 
 namespace Setting
 {
