@@ -237,7 +237,7 @@ struct PositiveModuloOrNullImpl : PositiveModuloImpl<A, B>
         if (unlikely(divisionLeadsToFPE(a, b)))
             return 0;
         else
-            return PositiveModuloOrNullImpl<A, B>::apply(a, b);
+            return PositiveModuloImpl<A, B>::apply(a, b);
     }
 };
 

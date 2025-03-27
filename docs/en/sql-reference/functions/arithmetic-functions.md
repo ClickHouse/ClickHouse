@@ -300,7 +300,7 @@ Result:
 
 ## positiveModuloOrNull(a, b) {#positivemoduloornulla-b}
 
-Like [positiveModulo](#positivemodulo) but returns null when the divisor is zero.
+Like [positiveModulo](#positivemoduloa-b) but returns null when the divisor is zero.
 
 **Syntax**
 
