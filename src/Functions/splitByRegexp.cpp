@@ -40,6 +40,7 @@ private:
     std::optional<size_t> max_splits;
     size_t splits;
     bool max_substrings_includes_remaining_string;
+    bool last_match_zero_length;
 
 public:
     static constexpr auto name = "splitByRegexp";
@@ -77,6 +78,7 @@ public:
         pos = pos_;
         end = end_;
         splits = 0;
+        last_match_zero_length = false;
     }
 
     /// Get the next token, if any, or return false.
@@ -111,7 +113,7 @@ public:
         }
         else
         {
-            if (!pos || pos > end)
+            if (!pos || pos > end || (pos == end && last_match_zero_length))
                 return false;
 
             token_begin = pos;
@@ -137,18 +139,21 @@ public:
             {
                 token_end = end;
                 pos = end + 1;
+                last_match_zero_length = false;
             }
             else if (!matches[0].length)
             {
                 token_end = (pos == end ? end : pos + 1);
                 ++pos;
                 ++splits;
+                last_match_zero_length = true;
             }
             else
             {
                 token_end = pos + matches[0].offset;
                 pos = token_end + matches[0].length;
                 ++splits;
+                last_match_zero_length = false;
             }
         }
 

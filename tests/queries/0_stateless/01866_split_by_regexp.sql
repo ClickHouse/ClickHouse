@@ -22,4 +22,14 @@ select splitByRegexp('|', 'a|b|c');
 select splitByRegexp('\\', 'a\\b\\c');
 
 SELECT 'AST Fuzzer failure';
-SELECT splitByRegexp(materialize(1), NULL, 3) -- { serverError ILLEGAL_COLUMN }
+SELECT splitByRegexp(materialize(1), NULL, 3); -- { serverError ILLEGAL_COLUMN }
+
+SELECT 'Test splitByRegexp when match part is empty';
+select splitByRegexp('', '');
+select splitByRegexp('', 'abc');
+select splitByRegexp('x|', 'abc');
+select splitByRegexp('x|', 'x');
+select splitByRegexp('x|', 'abcxefg');
+select splitByRegexp('|x', 'abc');
+select splitByRegexp('|x', 'x');
+select splitByRegexp('|x', 'abcxefg');
