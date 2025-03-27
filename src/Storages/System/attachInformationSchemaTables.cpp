@@ -90,9 +90,7 @@ static constexpr std::string_view tables = R"(
         total_rows AS table_rows,
         total_bytes AS data_length,
         sum(p.primary_key_size + p.marks_bytes
-            + p.secondary_indices_compressed_bytes
-            + p.secondary_indices_uncompressed_bytes
-            + p.secondary_indices_marks_bytes
+            + p.secondary_indices_compressed_bytes + p.secondary_indices_marks_bytes
         ) AS index_length,
         'utf8mb4_0900_ai_ci' AS table_collation,
         comment              AS table_comment,
