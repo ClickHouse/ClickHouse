@@ -167,10 +167,8 @@ private:
         {
             const size_t m = from_offsets[row] - prev_from_offset;
             const size_t n = to_offsets[row] - prev_to_offset;
-            const std::vector<StringRef> from_vec = extract_array(from_data, prev_from_offset, m);
-            const std::vector<StringRef> to_vec = extract_array(to_data, prev_to_offset, n);
-            std::span<const StringRef> from(from_vec.begin(), m);
-            std::span<const StringRef> to(to_vec.begin(), n);
+            const std::vector<StringRef> from = extract_array(from_data, prev_from_offset, m);
+            const std::vector<StringRef> to = extract_array(to_data, prev_to_offset, n);
             prev_from_offset = from_offsets[row];
             prev_to_offset = to_offsets[row];
             res_values[row] = levenshteinDistance<StringRef>(from, to);
@@ -276,9 +274,7 @@ private:
             // Effective Levenshtein realization from Common/levenshteinDistance
             Array from = (*column_from)[row].safeGet<Array>();
             Array to = (*column_to)[row].safeGet<Array>();
-            std::span<const Field> from_vec(from.begin(), from.end());
-            std::span<const Field> to_vec(to.begin(), to.end());
-            res_values[row] = levenshteinDistance<Field>(from_vec, to_vec);
+            res_values[row] = levenshteinDistance<Field>(from, to);
         }
     }
 
@@ -318,10 +314,8 @@ private:
         {
             const size_t m = from_offsets[row] - prev_from_offset;
             const size_t n = to_offsets[row] - prev_to_offset;
-            const std::vector<StringRef> from_vec = extract_array(from_data, prev_from_offset, m);
-            const std::vector<StringRef> to_vec = extract_array(to_data, prev_to_offset, n);
-            std::span<const StringRef> from(from_vec.begin(), m);
-            std::span<const StringRef> to(to_vec.begin(), n);
+            const std::vector<StringRef> from = extract_array(from_data, prev_from_offset, m);
+            const std::vector<StringRef> to = extract_array(to_data, prev_to_offset, n);
             prev_from_offset = from_offsets[row];
             prev_to_offset = to_offsets[row];
 
@@ -397,8 +391,6 @@ private:
             // Effective Levenshtein realization from Common/levenshteinDistance
             Array from = (*column_from)[row].safeGet<Array>();
             Array to = (*column_to)[row].safeGet<Array>();
-            std::span<const Field> from_vec(from.begin(), from.end());
-            std::span<const Field> to_vec(to.begin(), to.end());
 
             std::span<const W> from_weights(column_from_weights->getData().begin() + prev_from_weights_offset, from_weights_offsets[row] - prev_from_weights_offset);
             prev_from_weights_offset = from_weights_offsets[row];
