@@ -47,28 +47,12 @@ instance3 = cluster.add_instance(
 # Helpers
 
 
-def kill_rabbitmq(rabbitmq_cluster):
-    try:
-        p = subprocess.Popen(("docker", "stop", rabbitmq_cluster.rabbitmq_docker_id), stdout=subprocess.PIPE)
-        p.wait(timeout=30)
-        return p.returncode == 0
-    except Exception as ex:
-        print("Exception stopping rabbit MQ, will try forcefully", ex)
-        try:
-            p = subprocess.Popen(
-                ("docker", "stop", "-s", "9", rabbitmq_cluster.rabbitmq_docker_id), stdout=subprocess.PIPE
-            )
-            p.wait(timeout=30)
-            return p.returncode == 0
-        except Exception as e:
-            print("Exception stopping rabbit MQ forcefully", e)
-    finally:
-        time.sleep(4)
+def suspend_rabbitmq(rabbitmq_cluster):
+    rabbitmq_cluster.stop_rabbitmq_app()
 
 
-def revive_rabbitmq(rabbitmq_cluster):
-    p = subprocess.Popen(("docker", "start", rabbitmq_cluster.rabbitmq_docker_id), stdout=subprocess.PIPE)
-    p.wait(timeout=60)
+def resume_rabbitmq(rabbitmq_cluster):
+    rabbitmq_cluster.start_rabbitmq_app()
     rabbitmq_cluster.wait_rabbitmq_to_start()
 
 
@@ -80,9 +64,6 @@ def rabbitmq_cluster():
     try:
         cluster.start()
         logging.debug("rabbitmq_id is {}".format(instance.cluster.rabbitmq_docker_id))
-        instance.query("CREATE DATABASE test")
-        instance3.query("CREATE DATABASE test")
-
         yield cluster
 
     finally:
@@ -92,9 +73,12 @@ def rabbitmq_cluster():
 @pytest.fixture(autouse=True)
 def rabbitmq_setup_teardown():
     logging.debug("RabbitMQ is available - running test")
+    instance.query("CREATE DATABASE test")
+    instance3.query("CREATE DATABASE test")
     yield  # run test
     instance.query("DROP DATABASE test SYNC")
-    instance.query("CREATE DATABASE test")
+    instance3.query("DROP DATABASE test SYNC")
+    cluster.reset_rabbitmq()
 
 
 # Tests
@@ -167,8 +151,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     else:
         pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
 
-    kill_rabbitmq(rabbitmq_cluster)
-    revive_rabbitmq(rabbitmq_cluster)
+    suspend_rabbitmq(rabbitmq_cluster)
+    resume_rabbitmq(rabbitmq_cluster)
 
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
@@ -251,8 +235,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     else:
         pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
 
-    kill_rabbitmq(rabbitmq_cluster)
-    revive_rabbitmq(rabbitmq_cluster)
+    suspend_rabbitmq(rabbitmq_cluster)
+    resume_rabbitmq(rabbitmq_cluster)
 
     # while int(instance.query('SELECT count() FROM test.view')) == 0:
     #    time.sleep(0.1)

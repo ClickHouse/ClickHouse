@@ -11,7 +11,7 @@ sleep_us:             300
 profile_select_rows:  300
 profile_select_bytes: 3600
 profile_insert_rows:  201
-profile_insert_bytes: 2808
+profile_insert_bytes: 3608
 Row 1:
 ──────
 stage:                Depending views
@@ -27,7 +27,7 @@ sleep_us:             100
 profile_select_rows:  100
 profile_select_bytes: 2000
 profile_insert_rows:  100
-profile_insert_bytes: 800
+profile_insert_bytes: 1600
 
 Row 2:
 ──────
