@@ -15,6 +15,7 @@
 #include <Poco/Timestamp.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
@@ -23,6 +24,11 @@
 #    include <azure/storage/common/storage_exception.hpp>
 #endif
 
+
+namespace ProfileEvents
+{
+extern const Event DiskPlainRewritableLegacyLayoutDiskCount;
+}
 
 namespace DB
 {
@@ -46,7 +52,7 @@ constexpr auto METADATA_PATH_TOKEN = "__meta/";
 }
 
 
-void MetadataStorageFromPlainRewritableObjectStorage::load()
+void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 {
     ThreadPool & pool = getIOThreadPool().get();
     ThreadPoolCallbackRunnerLocal<void> runner(pool, "PlainRWMetaLoad");
@@ -82,7 +88,20 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
 
     std::set<std::string> set_of_remote_paths;
 
-    if (!object_storage->existsOrHasAnyChild(metadata_key_prefix))
+    bool has_metadata = object_storage->existsOrHasAnyChild(metadata_key_prefix);
+
+    if (is_initial_load)
+    {
+        bool has_data = object_storage->existsOrHasAnyChild(fs::path(object_storage->getCommonKeyPrefix()) / "");
+        /// Legacy layout is in use.
+        if (has_data && !has_metadata)
+        {
+            ProfileEvents::increment(ProfileEvents::DiskPlainRewritableLegacyLayoutDiskCount, 1);
+            LOG_WARNING(log, "Legacy disk layout is in use");
+        }
+    }
+
+    if (!has_metadata)
     {
         LOG_DEBUG(log, "Loaded metadata (empty)");
         return;
@@ -234,7 +253,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
 
 void MetadataStorageFromPlainRewritableObjectStorage::refresh()
 {
-    load();
+    load(/*is_initial_load*/ false);
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(
@@ -251,7 +270,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
             "MetadataStorageFromPlainRewritableObjectStorage is not compatible with write-once storage '{}'",
             object_storage->getName());
 
-    load();
+    load(/*is_initial_load*/ true);
 
     /// Use flat directory structure if the metadata is stored separately from the table data.
     auto keys_gen = std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
