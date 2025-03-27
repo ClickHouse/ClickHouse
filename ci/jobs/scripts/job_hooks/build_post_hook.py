@@ -22,10 +22,7 @@ BUILD_TYPE_TO_STATIC_LOCATION = {
 
 def check():
     info = Info()
-    if (
-        not info.pr_number
-        and info.repo_name == "ClickHouse/ClickHouse"
-    ):
+    if not info.pr_number and info.repo_name == "ClickHouse/ClickHouse":
         for build_type, prefix in BUILD_TYPE_TO_STATIC_LOCATION.items():
             if build_type in info.job_name:
                 try:

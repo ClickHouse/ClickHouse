@@ -110,27 +110,6 @@ def main():
 
     res = True
     results = []
-    version = CHVersion.get_version()
-
-    # if res and JobStages.UNSHALLOW in stages:
-    #     results.append(
-    #         Result.from_commands_run(
-    #             name="Repo Unshallow",
-    #             command="git rev-parse --is-shallow-repository | grep -q true && git fetch --depth 10000 --no-tags --filter=tree:0 origin $(git rev-parse --abbrev-ref HEAD) ||:",
-    #             with_log=True,
-    #         )
-    #     )
-    #     res = results[-1].is_ok()
-    #     if res:
-    #         try:
-    #             version = CHVersion().get_version()
-    #             assert version
-    #             print(f"Got version from repo [{version}]")
-    #         except Exception as e:
-    #             results[-1].set_failed().set_info(
-    #                 f"Failed to get version from repo, ex [{e}]"
-    #             )
-    #             res = False
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
@@ -142,8 +121,14 @@ def main():
         )
         res = results[-1].is_ok()
 
+    if info.pr_number == 0:
+        version_dict = info.get_custom_data("version")
+    else:
+        version_dict = CHVersion.get_current_version_as_dict()
+
     if res and JobStages.CMAKE in stages:
-        CHVersion.set_binary_version()
+        assert version_dict, "Failed to determine build version"
+        CHVersion.set_binary_version(version_dict=version_dict)
         if "darwin" in build_type:
             Shell.check(
                 f"rm -rf {current_directory}/cmake/toolchain/darwin-x86_64 {current_directory}/cmake/toolchain/darwin-aarch64"
@@ -203,7 +188,7 @@ def main():
                 command=[
                     f"DESTDIR={build_dir}/root ninja programs/install",
                     f"ln -sf {build_dir}/root {Utils.cwd()}/packages/root",
-                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={temp_dir} BUILD_TYPE={BUILD_TYPE_TO_DEB_PACKAGE_TYPE[build_type]} VERSION_STRING={version} DEB_ARCH={deb_arch} ./build --deb {'--rpm --tgz' if 'release' in build_type else ''}",
+                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={temp_dir} BUILD_TYPE={BUILD_TYPE_TO_DEB_PACKAGE_TYPE[build_type]} VERSION_STRING={version_dict['string']} DEB_ARCH={deb_arch} ./build --deb {'--rpm --tgz' if 'release' in build_type else ''}",
                 ],
                 workdir=build_dir,
                 with_log=True,
