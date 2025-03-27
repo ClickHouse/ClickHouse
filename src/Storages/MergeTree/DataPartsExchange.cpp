@@ -129,8 +129,6 @@ MergeTreeData::DataPartPtr Service::processQueryImpl(const HTMLForm & params, Re
 {
     String part_name = params.get("part");
 
-    const auto data_settings = data.getSettings();
-
     /// Validation of the input that may come from malicious replica.
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
@@ -144,14 +142,6 @@ MergeTreeData::DataPartPtr Service::processQueryImpl(const HTMLForm & params, Re
         randomDelayForMaxMilliseconds(test_delay, log, "DataPartsExchange: Before sending part");
 
     MergeTreeData::DataPartPtr part;
-
-    auto report_broken_part = [&]()
-    {
-        if (part)
-            data.reportBrokenPart(part);
-        else
-            LOG_TRACE(log, "Part {} was not found, do not report it as broken", part_name);
-    };
 
     try
     {
@@ -186,22 +176,6 @@ MergeTreeData::DataPartPtr Service::processQueryImpl(const HTMLForm & params, Re
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
             writeUUIDText(part->uuid, out);
 
-        String remote_fs_metadata = parse<String>(params.get("remote_fs_metadata", ""));
-
-        /// Tokenize capabilities from remote_fs_metadata
-        /// E.g. remote_fs_metadata = "local, s3_plain, web" --> capabilities = ["local", "s3_plain", "web"]
-        Strings capabilities;
-        const String delimiter(", ");
-        size_t pos_start = 0;
-        size_t pos_end;
-        while ((pos_end = remote_fs_metadata.find(delimiter, pos_start)) != std::string::npos)
-        {
-            const String token = remote_fs_metadata.substr(pos_start, pos_end - pos_start);
-            pos_start = pos_end + delimiter.size();
-            capabilities.push_back(token);
-        }
-        capabilities.push_back(remote_fs_metadata.substr(pos_start));
-
         if (send_projections)
         {
             const auto & projections = part->getProjectionParts();
@@ -213,7 +187,7 @@ MergeTreeData::DataPartPtr Service::processQueryImpl(const HTMLForm & params, Re
     catch (...)
     {
         if (!isRetryableException(std::current_exception()))
-            report_broken_part();
+            report_broken_part(part);
         throw;
     }
 }
@@ -233,7 +207,6 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuff
     int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
     bool send_projections = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION;
     MergeTreeData::DataPartPtr part = processQueryImpl(params, body, out, response, client_protocol_version, send_projections);
-    // TODO zero-copy: maybe redundant catch
     try
     {
         sendPartFromDisk(part, out, client_protocol_version, send_projections);
@@ -252,16 +225,38 @@ void ServiceZeroCopy::processQuery(const HTMLForm & params, ReadBuffer & body, W
 {
     int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
     bool send_projections = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION;
+
+    /// Tokenize capabilities from remote_fs_metadata
+    /// E.g. remote_fs_metadata = "local, s3_plain, web" --> capabilities = ["local", "s3_plain", "web"]
+    String remote_fs_metadata = parse<String>(params.get("remote_fs_metadata", ""));
+    const String delimiter(", ");
+    size_t pos_start = 0;
+    size_t pos_end;
+    Strings capabilities;
+    while ((pos_end = remote_fs_metadata.find(delimiter, pos_start)) != std::string::npos)
+    {
+        const String token = remote_fs_metadata.substr(pos_start, pos_end - pos_start);
+        pos_start = pos_end + delimiter.size();
+        capabilities.push_back(token);
+    }
+    capabilities.push_back(remote_fs_metadata.substr(pos_start));
+
     MergeTreeData::DataPartPtr part = processQueryImpl(params, body, out, response, client_protocol_version, send_projections);
-    // TODO zero-copy: maybe redundant catch
     try
     {
-        // TODO zero-copy: what if not?
-        // if (!client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
-        //     throw ...
         auto disk_type = part->getDataPartStorage().getDiskType();
+        if (part->getDataPartStorage().supportZeroCopyReplication()
+            && std::find(capabilities.begin(), capabilities.end(), disk_type) != capabilities.end()
+            && client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
+        {
         response.addCookie({"remote_fs_metadata", disk_type});
         sendPartFromDisk(part, out, client_protocol_version, send_projections);
+    }
+        else
+        {
+            Service::sendPartFromDisk(part, out, client_protocol_version, send_projections);
+            data.addLastSentPart(part->info);
+        }
     }
     catch (...)
     {
@@ -378,8 +373,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     NameSet files_to_replicate = getFilesToReplicate(part, client_protocol_version);
 
     auto data_part_storage = part->getDataPartStoragePtr();
-    IDataPartStorage::ReplicatedFilesDescription replicated_description;
-    replicated_description = data_part_storage->getReplicatedFilesDescription(files_to_replicate);
+    IDataPartStorage::ReplicatedFilesDescription replicated_description = data_part_storage->getReplicatedFilesDescription(files_to_replicate);
 
     MergeTreeData::DataPart::Checksums data_checksums = sendPartFromDiskImpl(part, replicated_description, out, client_protocol_version, send_projections);
     if (isFullPartStorage(part->getDataPartStorage()))
@@ -398,8 +392,8 @@ MergeTreeData::DataPart::Checksums ServiceZeroCopy::sendPartFromDisk(
     NameSet files_to_replicate = getFilesToReplicate(part, client_protocol_version);
 
     auto data_part_storage = part->getDataPartStoragePtr();
-    IDataPartStorage::ReplicatedFilesDescription replicated_description;
-    replicated_description = data_part_storage->getReplicatedFilesDescriptionForRemoteDisk(files_to_replicate);
+    IDataPartStorage::ReplicatedFilesDescription replicated_description = data_part_storage->getReplicatedFilesDescriptionForRemoteDisk(files_to_replicate);
+
     if (!part->isProjectionPart())
         writeStringBinary(replicated_description.unique_id, out);
 
