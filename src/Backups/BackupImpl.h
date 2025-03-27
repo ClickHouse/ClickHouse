@@ -113,7 +113,7 @@ private:
     const bool use_archive;
     const ArchiveParams archive_params;
     const OpenMode open_mode;
-    std::shared_ptr<IBackupWriter> writer;
+    std::shared_ptr<IBackupWriter> writer; // 对于S3，就是BackupWriterS3
     std::shared_ptr<IBackupReader> reader;
     /// Only used for lightweight backup, we read data from original object storage so the endpoint may be different from the backup files.
     std::shared_ptr<IBackupReader> lightweight_snapshot_reader;
