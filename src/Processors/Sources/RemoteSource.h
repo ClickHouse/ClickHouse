@@ -55,7 +55,7 @@ private:
 
     const bool async_read;
     const bool async_query_sending;
-    bool is_async_state = false;
+    std::atomic_bool is_async_state = false;
     int fd = -1;
     size_t rows = 0;
     bool manually_add_rows_before_limit_counter = false;

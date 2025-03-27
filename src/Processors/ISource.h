@@ -5,9 +5,6 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
-#include <atomic>
-#include <mutex>
-
 
 namespace DB
 {
@@ -15,9 +12,8 @@ namespace DB
 class ISource : public IProcessor
 {
 private:
-    std::mutex read_progress_mutex;
     ReadProgressCounters read_progress;
-    std::atomic_bool read_progress_was_set = false;
+    bool read_progress_was_set = false;
     bool auto_progress;
 
 protected:
