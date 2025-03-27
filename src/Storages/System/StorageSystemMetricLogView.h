@@ -2,14 +2,20 @@
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
 
+
 class CustomMetricLogStep : public ITransformingStep
 {
+private:
+    const HashMap<StringRef, size_t> & events_mapping;
+    const HashMap<StringRef, size_t> & metrics_mapping;
+
 public:
-    CustomMetricLogStep(Block input_header_, Block output_header_);
+    CustomMetricLogStep(Block input_header_, Block output_header_, const HashMap<StringRef, size_t> & events_,  const HashMap<StringRef, size_t> & metrics_);
 
     String getName() const override
     {
@@ -45,6 +51,10 @@ public:
 
 private:
     StorageView internal_view;
+    HashMap<StringRef, size_t> events_mapping;
+    HashMap<StringRef, size_t> metrics_mapping;
+    size_t events_count;
+    size_t metrics_count;
 
 };
 
