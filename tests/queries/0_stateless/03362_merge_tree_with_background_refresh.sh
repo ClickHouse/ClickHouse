@@ -13,7 +13,7 @@ ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE writer (s String) ORDER BY ()
 SETTINGS table_disk = true,
   disk = disk(
-      name = 03362_writer,
+      name = 03362_writer_${CLICKHOUSE_DATABASE},
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
@@ -25,7 +25,7 @@ CREATE TABLE reader (s String) ORDER BY ()
 SETTINGS table_disk = true, refresh_parts_interval = 1,
   disk = disk(
       readonly = true,
-      name = 03362_reader,
+      name = 03362_reader_${CLICKHOUSE_DATABASE},
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
