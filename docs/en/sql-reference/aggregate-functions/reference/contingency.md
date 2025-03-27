@@ -15,7 +15,7 @@ The `contingency` function calculates the [contingency coefficient](https://en.w
 
 **Syntax**
 
-``` sql
+```sql
 contingency(column1, column2)
 ```
 
@@ -33,7 +33,7 @@ contingency(column1, column2)
 
 The two columns being compared below have a small association with each other. We have included the result of `cramersV` also (as a comparison):
 
-``` sql
+```sql
 SELECT
     cramersV(a, b),
     contingency(a ,b)

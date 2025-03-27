@@ -28,6 +28,8 @@ public:
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
+    bool hasSecretParts() const override;
+
     QueryKind getQueryKind() const override { return QueryKind::Set; }
 
     void appendColumnName(WriteBuffer & ostr) const override;

@@ -30,7 +30,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::filesystem::path user_files_dir = std::filesystem::temp_directory_path();
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
-    static const SettingEntries config_entries
+    static const SettingEntries configEntries
         = {{"hostname", [&](const JSONObjectType & value) { hostname = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
            {"mysql_port", [&](const JSONObjectType & value) { mysql_port = static_cast<uint32_t>(value.getUInt64()); }},
@@ -45,11 +45,11 @@ static std::optional<ServerCredentials> loadServerCredentials(
     {
         const String & nkey = String(key);
 
-        if (config_entries.find(nkey) == config_entries.end())
+        if (configEntries.find(nkey) == configEntries.end())
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server option: {}", nkey);
         }
-        config_entries.at(nkey)(value);
+        configEntries.at(nkey)(value);
     }
 
     return std::optional<ServerCredentials>(
@@ -63,7 +63,7 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     uint32_t threshold = default_minimum;
     uint32_t minimum = default_threshold;
 
-    static const SettingEntries metric_entries
+    static const SettingEntries metricEntries
         = {{"enabled", [&](const JSONObjectType & value) { enabled = value.getBool(); }},
            {"threshold", [&](const JSONObjectType & value) { threshold = value.getUInt64(); }},
            {"minimum", [&](const JSONObjectType & value) { minimum = value.getUInt64(); }}};
@@ -72,11 +72,11 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     {
         const String & nkey = String(key);
 
-        if (metric_entries.find(nkey) == metric_entries.end())
+        if (metricEntries.find(nkey) == metricEntries.end())
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown metric option: {}", nkey);
         }
-        metric_entries.at(nkey)(value);
+        metricEntries.at(nkey)(value);
     }
 
     return PerformanceMetric(enabled, threshold, minimum);
@@ -101,7 +101,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Parsed BuzzHouse JSON configuration file is not an object");
     }
 
-    static const SettingEntries config_entries = {
+    static const SettingEntries configEntries = {
         {"db_file_path",
          [&](const JSONObjectType & value)
          {
@@ -193,11 +193,11 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     {
         const String & nkey = String(key);
 
-        if (config_entries.find(nkey) == config_entries.end())
+        if (configEntries.find(nkey) == configEntries.end())
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown BuzzHouse option: {}", nkey);
         }
-        config_entries.at(nkey)(value);
+        configEntries.at(nkey)(value);
     }
     if (min_insert_rows > max_insert_rows)
     {
