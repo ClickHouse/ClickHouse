@@ -64,7 +64,7 @@ public:
             if (!(isFloat(nested_type) || isInteger(nested_type)))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} of function {} must be array of Float64. Found {} instead.",
+                    "Argument {} of function {} must be a numeric array. Found {} instead.",
                     toString(index + 1),
                     getName(),
                     nested_type->getName());
@@ -167,8 +167,8 @@ private:
         {
             const size_t m = from_offsets[row] - prev_from_offset;
             const size_t n = to_offsets[row] - prev_to_offset;
-            const std::vector<StringRef> & from_vec = extract_array(from_data, prev_from_offset, m);
-            const std::vector<StringRef> & to_vec = extract_array(to_data, prev_to_offset, n);
+            const std::vector<StringRef> from_vec = extract_array(from_data, prev_from_offset, m);
+            const std::vector<StringRef> to_vec = extract_array(to_data, prev_to_offset, n);
             std::span<const StringRef> from(from_vec.begin(), m);
             std::span<const StringRef> to(to_vec.begin(), n);
             prev_from_offset = from_offsets[row];
@@ -318,8 +318,8 @@ private:
         {
             const size_t m = from_offsets[row] - prev_from_offset;
             const size_t n = to_offsets[row] - prev_to_offset;
-            const std::vector<StringRef> & from_vec = extract_array(from_data, prev_from_offset, m);
-            const std::vector<StringRef> & to_vec = extract_array(to_data, prev_to_offset, n);
+            const std::vector<StringRef> from_vec = extract_array(from_data, prev_from_offset, m);
+            const std::vector<StringRef> to_vec = extract_array(to_data, prev_to_offset, n);
             std::span<const StringRef> from(from_vec.begin(), m);
             std::span<const StringRef> to(to_vec.begin(), n);
             prev_from_offset = from_offsets[row];
