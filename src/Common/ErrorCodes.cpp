@@ -1,3 +1,4 @@
+#include <Common/CurrentThread.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <chrono>
@@ -723,6 +724,7 @@ namespace ErrorCodes
         error.message = message;
         error.trace = trace;
         error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        error.query_id = CurrentThread::getQueryId();
 
         return error_index;
     }
