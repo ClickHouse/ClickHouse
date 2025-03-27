@@ -112,8 +112,10 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery()
     std::shared_ptr<ASTExpressionList> order_by = std::make_shared<ASTExpressionList>();
     std::shared_ptr<ASTOrderByElement> order_by_date = std::make_shared<ASTOrderByElement>();
     order_by_date->children.emplace_back(std::make_shared<ASTIdentifier>("event_date"));
+    order_by_date->direction = 1;
     std::shared_ptr<ASTOrderByElement> order_by_time = std::make_shared<ASTOrderByElement>();
     order_by_time->children.emplace_back(std::make_shared<ASTIdentifier>("event_time"));
+    order_by_time->direction = 1;
     order_by->children.emplace_back(order_by_date);
     order_by->children.emplace_back(order_by_time);
 
@@ -341,12 +343,23 @@ public:
                 hostnames.push_back(hostname_column.getDataAt(i).toString());
             }
 
+            StringRef metric_name = metric_column.getDataAt(i);
             if (is_event)
             {
-                buffer_events[events_mapping.at(metric_column.getDataAt(i))].push_back(value);
+                size_t event_index = events_mapping.at(metric_name);
+                if (buffer_events[event_index].size() == times.size())
+                    buffer_events[event_index].back() = value;
+                else
+                    buffer_events[event_index].push_back(value);
             }
             else
-                buffer_metrics[metrics_mapping.at(metric_column.getDataAt(i))].push_back(value);
+            {
+                size_t metric_index = metrics_mapping.at(metric_name);
+                if (buffer_metrics[metric_index].size() == times.size())
+                    buffer_metrics[metric_index].back() = value;
+                else
+                    buffer_metrics[metric_index].push_back(value);
+            }
         }
     }
 };
