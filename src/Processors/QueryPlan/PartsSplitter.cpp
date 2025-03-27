@@ -1042,7 +1042,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         std::sort(result_final_range.ranges.begin(), result_final_range.ranges.end());
     }
 
-    LOG_TRACE(logger, "findPKRangesForFinalAfterSkipIndex : processed {} parts, initally selected {} ranges & rejected {}, more {} ranges added", ranges_in_data_parts.size(), selected_ranges.size(), rejected_ranges.size(), more_ranges_added);
+    LOG_TRACE(logger, "findPKRangesForFinalAfterSkipIndex : processed {} parts, initially selected {} ranges & rejected {}, more {} ranges added", ranges_in_data_parts.size(), selected_ranges.size(), rejected_ranges.size(), more_ranges_added);
 
     return result_final_ranges;
 }
