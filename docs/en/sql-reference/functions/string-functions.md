@@ -2502,7 +2502,7 @@ Result:
 Finds all substrings of a given string that have a length of at least `n`, 
 where the hashes of the (n-1)-grams at the borders of the substring
 are strictly greater than those of any (n-1)-gram inside the substring.
-Uses [crc32](./string-functions.md#crc32-crc32) as a hash function.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
 
 **Syntax**
 
@@ -2536,7 +2536,7 @@ Result:
 Finds all substrings of a given string that have a length of at least `n`,
 where the hashes of the (n-1)-grams at the borders of the substring
 are strictly greater than those of any (n-1)-gram inside the substring.
-Uses [crc32](./string-functions.md#crc32-crc32) as a hash function.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
 Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence.
 
 **Syntax**
@@ -2570,7 +2570,7 @@ Result:
 Finds hashes of all substrings of a given string that have a length of at least `n`,
 where the hashes of the (n-1)-grams at the borders of the substring
 are strictly greater than those of any (n-1)-gram inside the substring.
-Uses [crc32](./string-functions.md#crc32-crc32) as a hash function.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
 
 **Syntax**
 
@@ -2604,7 +2604,7 @@ Result:
 Finds hashes of all substrings of a given string that have a length of at least `n`,
 where the hashes of the (n-1)-grams at the borders of the substring
 are strictly greater than those of any (n-1)-gram inside the substring.
-Uses [crc32](./string-functions.md#crc32-crc32) as a hash function.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
 Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence.
 
 **Syntax**

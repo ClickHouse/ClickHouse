@@ -14,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -56,6 +55,9 @@ private:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect utf8 symbol");
                 byte_offset += len;
             }
+            if (pos + byte_offset != end)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect utf8 symbol");
+
             utf8_offsets.push_back(byte_offset);
 
             for (size_t i = 0; i + min_ngram_length - 1 < utf8_offsets.size(); ++i)
@@ -139,6 +141,7 @@ public:
         left = 0;
         right = 1;
 
+        ngram_hashes.clear();
         if constexpr (is_utf8)
             utf8_offsets.clear();
 
@@ -166,6 +169,12 @@ public:
         }
         return true;
     }
+
+    // Minimal substring are guaranteed to return.
+    UInt64 estimateResultLength() const
+    {
+        return ngram_hashes.empty() ? 0 : ngram_hashes.size() - 1;
+    }
 };
 
 template <bool is_utf8>
@@ -183,12 +192,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & args) const override
     {
-        impl.checkArguments(*this, args);
+        SparseGramsImpl<is_utf8>::checkArguments(*this, args);
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        SparseGramsImpl<is_utf8> impl;
         impl.init(arguments, false);
 
         auto col_res_nested = ColumnUInt32::create();
@@ -203,11 +213,13 @@ public:
 
         if (const auto * col_non_const = typeid_cast<const ColumnString *>(&src_column))
         {
+            ColumnArray::Offset offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::vector<UInt32> row_result = getHashes(col_non_const->getDataAt(i).toView());
+                std::vector<UInt32> row_result = getHashes(impl, col_non_const->getDataAt(i).toView());
+                offset += row_result.size();
+                res_offsets_data.push_back(offset);
                 res_nested_data.insert(row_result.begin(), row_result.end());
-                res_offsets_data.push_back(row_result.size());
             }
         }
         else
@@ -217,12 +229,12 @@ public:
     }
 
 private:
-    std::vector<UInt32> getHashes(std::string_view input_str) const
+    std::vector<UInt32> getHashes(SparseGramsImpl<is_utf8> & impl, std::string_view input_str) const
     {
         impl.set(input_str.data(), input_str.data() + input_str.size());
 
         std::vector<UInt32> result;
-        result.reserve(input_str.size()); // Reserve at least for every (n-1)gram
+        result.reserve(impl.estimateResultLength()); // Reserve at least for every minimal ngram
 
         Pos start{};
         Pos end{};
@@ -231,8 +243,6 @@ private:
 
         return result;
     }
-
-    mutable SparseGramsImpl<is_utf8> impl;
 };
 
 using FunctionSparseGrams = FunctionTokens<SparseGramsImpl<false>>;
@@ -242,11 +252,31 @@ using FunctionSparseGramsUTF8 = FunctionTokens<SparseGramsImpl<true>>;
 
 REGISTER_FUNCTION(SparseGrams)
 {
-    factory.registerFunction<FunctionSparseGrams>();
-    factory.registerFunction<FunctionSparseGramsUTF8>();
+    const FunctionDocumentation description = {
+        .description=R"(Finds all substrings of a given string that have a length of at least `n`,
+where the hashes of the (n-1)-grams at the borders of the substring
+are strictly greater than those of any (n-1)-gram inside the substring.)",
+        .arguments={
+            {"s", "An input string"},
+            {"min_ngram_length", "The minimum length of extracted ngram. The default and minimal value is 3"},
+        },
+        .returned_value="An array of selected substrings",
+        .category{"String"}
+    };
+    const FunctionDocumentation hashes_description {
+        .description = R"(Finds hashes of all substrings of a given string that have a length of at least `n`,
+where the hashes of the (n-1)-grams at the borders of the substring
+are strictly greater than those of any (n-1)-gram inside the substring.)",
+        .arguments = description.arguments,
+        .returned_value="An array of selected substrings hashes",
+        .category = description.category
+    };
 
-    factory.registerFunction<SparseGramsHashes<false>>();
-    factory.registerFunction<SparseGramsHashes<true>>();
+    factory.registerFunction<FunctionSparseGrams>(description);
+    factory.registerFunction<FunctionSparseGramsUTF8>(description);
+
+    factory.registerFunction<SparseGramsHashes<false>>(hashes_description);
+    factory.registerFunction<SparseGramsHashes<true>>(hashes_description);
 }
 
 }
