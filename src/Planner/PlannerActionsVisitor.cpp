@@ -1012,7 +1012,20 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     size_t exists_function_level = actions_stack.size() - 1;
     actions_stack[exists_function_level].addInputColumnIfNecessary(function_node_name, function_node.getResultType());
-    correlated_subtrees.subqueries.emplace_back(function_node.getArguments().getNodes().front(), CorrelatedSubqueryKind::EXISTS, function_node_name);
+
+    auto * subquery = function_node.getArguments().getNodes().front()->as<QueryNode>();
+
+    ColumnIdentifiers correlated_column_identifiers;
+    for (const auto & column : subquery->getCorrelatedColumns())
+    {
+        correlated_column_identifiers.push_back(action_node_name_helper.calculateActionNodeName(column));
+    }
+
+    correlated_subtrees.subqueries.emplace_back(
+        function_node.getArguments().getNodes().front(),
+        CorrelatedSubqueryKind::EXISTS,
+        function_node_name,
+        std::move(correlated_column_identifiers));
     return { function_node_name, Levels(exists_function_level) };
 }
 

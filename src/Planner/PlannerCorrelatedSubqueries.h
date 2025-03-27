@@ -17,6 +17,9 @@ using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
+using ColumnIdentifier = std::string;
+using ColumnIdentifiers = std::vector<ColumnIdentifier>;
+
 enum class CorrelatedSubqueryKind
 {
     SCALAR,
@@ -25,15 +28,17 @@ enum class CorrelatedSubqueryKind
 
 struct CorrelatedSubquery
 {
-    CorrelatedSubquery(QueryTreeNodePtr query_tree_, CorrelatedSubqueryKind kind_, const String & action_node_name_)
+    CorrelatedSubquery(QueryTreeNodePtr query_tree_, CorrelatedSubqueryKind kind_, const String & action_node_name_, ColumnIdentifiers correlated_column_identifiers_)
         : query_tree(std::move(query_tree_))
         , kind(kind_)
         , action_node_name(action_node_name_)
+        , correlated_column_identifiers(std::move(correlated_column_identifiers_))
     {}
 
     QueryTreeNodePtr query_tree;
     CorrelatedSubqueryKind kind;
     String action_node_name;
+    ColumnIdentifiers correlated_column_identifiers;
 };
 
 using CorrelatedSubqueries = std::vector<CorrelatedSubquery>;

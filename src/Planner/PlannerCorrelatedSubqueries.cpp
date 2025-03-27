@@ -3,6 +3,7 @@
 #include <ranges>
 #include <string_view>
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <fmt/format.h>
 #include "Common/Exception.h"
 #include "Common/Logger.h"
 #include "Common/logger_useful.h"
@@ -194,21 +195,14 @@ QueryPlan decorrelateQueryPlan(
 
 void buildPlanForAlwaysExists(
     QueryPlan & query_plan,
-    const CorrelatedSubquery & correlated_subquery,
-    bool project_inputs
+    const CorrelatedSubquery & correlated_subquery
 )
 {
-    ActionsDAG dag;
+    ActionsDAG dag(query_plan.getCurrentHeader().getNamesAndTypesList());
     auto result_type = std::make_shared<DataTypeUInt8>();
     auto column = result_type->createColumnConst(1, 1);
-    dag.addColumn(ColumnWithTypeAndName(column, result_type, correlated_subquery.action_node_name));
-
-    dag.appendInputsForUnusedColumns(query_plan.getCurrentHeader());
-    if (project_inputs)
-    {
-        for (const auto & node : dag.getNodes())
-            dag.addOrReplaceInOutputs(node);
-    }
+    const auto * exists_result = &dag.addColumn(ColumnWithTypeAndName(column, result_type, correlated_subquery.action_node_name));
+    dag.addOrReplaceInOutputs(*exists_result);
 
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
     expression_step->setStepDescription("Create result for always true EXISTS expression");
@@ -254,8 +248,7 @@ QueryPlan buildLogicalJoin(
     const PlannerContextPtr & planner_context,
     QueryPlan left_plan,
     QueryPlan right_plan,
-    const CorrelatedSubquery & correlated_subquery,
-    const std::vector<ColumnIdentifier> & correlated_column_identifiers
+    const CorrelatedSubquery & correlated_subquery
 )
 {
     const auto & lhs_plan_header = left_plan.getCurrentHeader();
@@ -277,7 +270,7 @@ QueryPlan buildLogicalJoin(
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
 
     std::vector<JoinPredicate> predicates;
-    for (const auto & column_name : correlated_column_identifiers)
+    for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
     {
         const auto * left_node = &join_expression_actions.left_pre_join_actions->findInOutputs(column_name);
         const auto * right_node = &join_expression_actions.right_pre_join_actions->findInOutputs(column_name);
@@ -339,12 +332,7 @@ void buildQueryPlanForCorrelatedSubquery(
 
     LOG_DEBUG(getLogger(__func__), "Planning:\n{}", correlated_subquery.query_tree->dumpTree());
 
-    std::vector<ColumnIdentifier> correlated_column_identifiers;
-    for (const auto & column : query_node->getCorrelatedColumns())
-    {
-        correlated_column_identifiers.push_back(planner_context->getColumnNodeIdentifierOrThrow(column));
-    }
-    LOG_DEBUG(getLogger(__func__), "Correlated Identifiers:\n{}", fmt::join(correlated_column_identifiers, ", "));
+    LOG_DEBUG(getLogger(__func__), "Correlated Identifiers:\n{}", fmt::join(correlated_subquery.correlated_column_identifiers, ", "));
 
     switch (correlated_subquery.kind)
     {
@@ -366,7 +354,7 @@ void buildQueryPlanForCorrelatedSubquery(
 
             if (optimizeCorrelatedPlanForExists(correlated_query_plan))
             {
-                buildPlanForAlwaysExists(query_plan, correlated_subquery, false);
+                buildPlanForAlwaysExists(query_plan, correlated_subquery);
                 return;
             }
 
@@ -380,15 +368,14 @@ void buildQueryPlanForCorrelatedSubquery(
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
-            buildPlanForAlwaysExists(decorrelated_plan, correlated_subquery, true);
+            buildPlanForAlwaysExists(decorrelated_plan, correlated_subquery);
             LOG_DEBUG(getLogger(__func__), "Decorrelated plan for subquery:\n{}", dumpQueryPlan(decorrelated_plan));
 
             query_plan = buildLogicalJoin(
                 planner_context,
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
-                correlated_subquery,
-                correlated_column_identifiers);
+                correlated_subquery);
             LOG_DEBUG(getLogger(__func__), "Decorrelated plan:\n{}", dumpQueryPlan(query_plan));
             break;
         }

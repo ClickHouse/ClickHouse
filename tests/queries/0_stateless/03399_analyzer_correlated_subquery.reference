@@ -1,0 +1,9 @@
+-- { echoOn }
+
+SET allow_experimental_correlated_subqueries = 1;
+SELECT * FROM users u1
+WHERE EXISTS (
+  SELECT * FROM users2 u2
+  WHERE u1.age = u2.age
+);
+1231	John	33
