@@ -19,11 +19,17 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Core/Settings.h>
 
 static constexpr auto TIME_SCALE = 6;
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
 {
@@ -82,6 +88,12 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 StoragePtr storage = iterator->table();
+
+                TableLockHolder lock = storage->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+                if (!lock)
+                    // Table was dropped while acquiring the lock, skipping table
+                    continue;
+
                 if (auto *object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get()))
                 {
                     add_row(iterator, object_storage_table);
