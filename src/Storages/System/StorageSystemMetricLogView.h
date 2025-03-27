@@ -7,15 +7,24 @@
 namespace DB
 {
 
+struct MetricOptions
+{
+    bool need_time{false};
+    bool need_date{false};
+    bool need_hostname{false};
+};
 
 class CustomMetricLogStep : public ITransformingStep
 {
 private:
     const HashMap<StringRef, size_t> & events_mapping;
     const HashMap<StringRef, size_t> & metrics_mapping;
+    Names actual_events;
+    Names actual_metrics;
+    MetricOptions options;
 
 public:
-    CustomMetricLogStep(Block input_header_, Block output_header_, const HashMap<StringRef, size_t> & events_,  const HashMap<StringRef, size_t> & metrics_);
+    CustomMetricLogStep(Block input_header_, Block output_header_, const HashMap<StringRef, size_t> & events_, const HashMap<StringRef, size_t> & metrics_, const Names & actual_events_, const Names & actual_metrics_, MetricOptions options_);
 
     String getName() const override
     {
