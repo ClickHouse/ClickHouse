@@ -14,11 +14,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.build_options LIMIT 5
 ```
 
-``` text
+```text
 ┌─name─────────────┬─value─┐
 │ USE_BROTLI       │ 1     │
 │ USE_BZIP2        │ 1     │

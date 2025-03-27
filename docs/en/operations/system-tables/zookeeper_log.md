@@ -60,13 +60,13 @@ Columns with request response parameters:
 
 Query:
 
-``` sql
+```sql
 SELECT * FROM system.zookeeper_log WHERE (session_id = '106662742089334927') AND (xid = '10858') FORMAT Vertical;
 ```
 
 Result:
 
-``` text
+```text
 Row 1:
 ──────
 hostname:         clickhouse.eu-central1.internal

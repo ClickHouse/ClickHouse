@@ -170,7 +170,8 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
             /// This is a special case for the function count().
             /// We can assume that 'count(expr) == count()' if expr is not nullable,
             /// which can be verified by simply casting to `AggregateFunctionCount *`.
-            if (typeid_cast<const AggregateFunctionCount *>(aggregate.function.get()))
+            if (typeid_cast<const AggregateFunctionCount *>(aggregate.function.get())
+                && typeid_cast<const AggregateFunctionCount *>(candidate.function.get()))
             {
                 /// we can ignore arguments for count()
                 found_match = true;
@@ -664,6 +665,8 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
                 chassert(ordinary_reading_marks == 0);
         }
 
+        auto logger = getLogger("optimizeUseAggregateProjections");
+
         /// Selecting best candidate.
         for (auto & candidate : candidates.real)
         {
@@ -684,10 +687,37 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
                 continue;
 
             if (candidate.sum_marks > ordinary_reading_marks)
+            {
+                LOG_DEBUG(
+                    logger,
+                    "Projection {} is usable but it needs to read {} marks, which is no better than reading {} marks from original table",
+                    candidate.projection->name,
+                    candidate.sum_marks,
+                    ordinary_reading_marks);
                 continue;
+            }
 
             if (best_candidate == nullptr || best_candidate->sum_marks > candidate.sum_marks)
+            {
+                LOG_DEBUG(
+                    logger,
+                    "Projection {} is selected as current best candidate with {} marks to read, while original table needs to scan {} "
+                    "marks",
+                    candidate.projection->name,
+                    candidate.sum_marks,
+                    ordinary_reading_marks);
                 best_candidate = &candidate;
+            }
+            else
+            {
+                LOG_DEBUG(
+                    logger,
+                    "Projection {} with {} marks is less efficient than current best candidate {} with {} marks",
+                    candidate.projection->name,
+                    candidate.sum_marks,
+                    best_candidate->projection->name,
+                    best_candidate->sum_marks);
+            }
         }
 
         if (!best_candidate)

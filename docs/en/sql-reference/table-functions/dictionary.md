@@ -13,7 +13,7 @@ Displays the [dictionary](../../sql-reference/dictionaries/index.md) data as a C
 
 **Syntax**
 
-``` sql
+```sql
 dictionary('dict')
 ```
 
@@ -29,7 +29,7 @@ A ClickHouse table.
 
 Input table `dictionary_source_table`:
 
-``` text
+```text
 ┌─id─┬─value─┐
 │  0 │     0 │
 │  1 │     1 │
@@ -38,20 +38,20 @@ Input table `dictionary_source_table`:
 
 Create a dictionary:
 
-``` sql
+```sql
 CREATE DICTIONARY new_dictionary(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dictionary_source_table')) LAYOUT(DIRECT());
 ```
 
 Query:
 
-``` sql
+```sql
 SELECT * FROM dictionary('new_dictionary');
 ```
 
 Result:
 
-``` text
+```text
 ┌─id─┬─value─┐
 │  0 │     0 │
 │  1 │     1 │

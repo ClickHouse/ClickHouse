@@ -45,13 +45,13 @@ Columns:
 
 Query:
 
-``` sql
+```sql
 SELECT * FROM system.asynchronous_insert_log LIMIT 1 \G;
 ```
 
 Result:
 
-``` text
+```text
 hostname:                clickhouse.eu-central1.internal
 event_date:              2023-06-08
 event_time:              2023-06-08 10:08:53

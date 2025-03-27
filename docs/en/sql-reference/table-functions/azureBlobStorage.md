@@ -17,7 +17,7 @@ Provides a table-like interface to select/insert files in [Azure Blob Storage](h
 
 **Syntax**
 
-``` sql
+```sql
 azureBlobStorage(- connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
 ```
 
@@ -69,7 +69,7 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
     'testcontainer', 'test_3.csv', 'CSV', 'auto' , 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-``` text
+```text
 ┌─count()─┐
 │      2  │
 └─────────┘
@@ -94,7 +94,7 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 
 Use virtual column, created with Hive-style partitioning
 
-``` sql
+```sql
 SELECT * from azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 

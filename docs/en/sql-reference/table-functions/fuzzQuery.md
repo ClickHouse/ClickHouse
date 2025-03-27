@@ -10,7 +10,7 @@ title: 'fuzzQuery'
 
 Perturbs the given query string with random variations.
 
-``` sql
+```sql
 fuzzQuery(query[, max_query_length[, random_seed]])
 ```
 

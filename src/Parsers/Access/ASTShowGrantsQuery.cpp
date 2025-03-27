@@ -1,6 +1,5 @@
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 

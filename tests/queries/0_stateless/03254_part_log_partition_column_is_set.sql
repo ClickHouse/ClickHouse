@@ -10,7 +10,7 @@ ALTER TABLE test UPDATE z = x || y WHERE 1;
 SELECT * FROM test ORDER BY ALL;
 TRUNCATE TABLE test;
 DROP TABLE test SYNC;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 -- SELECT * FROM system.part_log WHERE database = currentDatabase() FORMAT Vertical;
 SELECT DISTINCT throwIf(empty(partition)) FROM system.part_log WHERE database = currentDatabase();

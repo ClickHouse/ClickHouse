@@ -13,7 +13,7 @@ This engine provides an integration with the [Azure Blob Storage](https://azure.
 
 ## Create Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE test (name String, value UInt32)
     ENGINE = AzureQueue(...)
     [SETTINGS]
@@ -58,7 +58,7 @@ When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the 
 
 Example:
 
-``` sql
+```sql
 CREATE TABLE azure_queue_engine_table (key UInt64, data String)
   ENGINE=AzureQueue('<endpoint>', 'CSV', 'gzip')
   SETTINGS

@@ -264,9 +264,18 @@ void StorageObjectStorageQueue::startup()
     /// Register the metadata in startup(), unregister in shutdown.
     /// (If startup is never called, shutdown also won't be called.)
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(temp_metadata), getStorageID());
-
-    if (task)
-        task->activateAndSchedule();
+    try
+    {
+        files_metadata->startup();
+        if (task)
+            task->activateAndSchedule();
+    }
+    catch (...)
+    {
+        files_metadata->shutdown();
+        throw;
+    }
+    startup_finished = true;
 }
 
 void StorageObjectStorageQueue::shutdown(bool is_drop)
@@ -742,7 +751,7 @@ void checkNormalizedSetting(const std::string & name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting is not normalized: {}", name);
 }
 
-static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
+bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
 {
     checkNormalizedSetting(name);
 
@@ -1001,6 +1010,13 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
+const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetadata() const
+{
+    if (!files_metadata)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Files metadata is empty");
+    return files_metadata->getTableMetadata();
+}
+
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
@@ -1037,6 +1053,10 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
+    /// If startup() for a table was not called, just use the default queue settings
+    if (!startup_finished)
+        return settings;
+
     const auto & table_metadata = getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;

@@ -12,7 +12,7 @@ The compensation works only for [Float](../../../sql-reference/data-types/float.
 
 **Syntax**
 
-``` sql
+```sql
 sumKahan(x)
 ```
 
@@ -28,13 +28,13 @@ sumKahan(x)
 
 Query:
 
-``` sql
+```sql
 SELECT sum(0.1), sumKahan(0.1) FROM numbers(10);
 ```
 
 Result:
 
-``` text
+```text
 ┌───────────sum(0.1)─┬─sumKahan(0.1)─┐
 │ 0.9999999999999999 │             1 │
 └────────────────────┴───────────────┘

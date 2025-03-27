@@ -84,8 +84,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
 
                 const uint32_t type_mask_backup = this->next_type_mask;
                 this->next_type_mask = fc.type_mask & ~(allow_nested);
-                SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, tpn->mutable_type());
-                delete tp;
+                auto tp = std::unique_ptr<SQLType>(randomNextType(rg, this->next_type_mask, col_counter, tpn->mutable_type()));
                 this->next_type_mask = type_mask_backup;
             }
         }
@@ -95,8 +94,8 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
 
             const uint32_t type_mask_backup = this->next_type_mask;
             this->next_type_mask = fc.type_mask & ~(allow_nested);
-            SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, expr->mutable_dynamic_subtype()->mutable_type());
-            delete tp;
+            auto tp = std::unique_ptr<SQLType>(
+                randomNextType(rg, this->next_type_mask, col_counter, expr->mutable_dynamic_subtype()->mutable_type()));
             this->next_type_mask = type_mask_backup;
         }
         if (nsuboption < 6)
@@ -119,33 +118,40 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
     }
 }
 
-void StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr)
+void StatementGenerator::addSargableColRef(RandomGenerator & rg, const SQLRelationCol & rel_col, Expr * expr)
 {
+    if (rg.nextMediumNumber() < 6)
+    {
+        /// Add non sargable reference
+        SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+
+        sfc->mutable_func()->set_catalog_func(static_cast<SQLFunc>(rg.pickRandomly(this->one_arg_funcs).fnum));
+        expr = sfc->add_args()->mutable_expr();
+    }
     ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
     ExprColumn * ecol = estc->mutable_col();
 
-    if (!gcol.col.rel_name.empty())
+    if (!rel_col.rel_name.empty())
     {
-        estc->mutable_table()->set_table(gcol.col.rel_name);
+        estc->mutable_table()->set_table(rel_col.rel_name);
     }
-    gcol.col.AddRef(ecol);
-    if (gcol.gexpr == nullptr)
+    rel_col.AddRef(ecol);
+    addFieldAccess(rg, expr, 6);
+    addColNestedAccess(rg, ecol, 6);
+}
+
+void StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr)
+{
+    chassert(gcol.col.has_value() || gcol.gexpr);
+    if (gcol.gexpr)
     {
-        addFieldAccess(rg, expr, 6);
-        addColNestedAccess(rg, ecol, 6);
+        /// Use grouping column
+        expr->CopyFrom(*(gcol.gexpr));
     }
     else
     {
-        const ExprColumn & gecol = gcol.gexpr->comp_expr().expr_stc().col();
-
-        if (gcol.gexpr->has_field())
-        {
-            expr->mutable_field()->CopyFrom(gcol.gexpr->field());
-        }
-        if (gecol.has_subcols())
-        {
-            ecol->mutable_subcols()->CopyFrom(gecol.subcols());
-        }
+        //// Otherwise reference the column
+        addSargableColRef(rg, gcol.col.value(), expr);
     }
 }
 
@@ -428,6 +434,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         }
         else if (this->width < this->fc.max_width && noption < 501)
         {
+            const uint32_t nopt2 = rg.nextSmallNumber();
             const uint32_t nclauses = std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 4) + 1);
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprIn * ein = cexpr->mutable_expr_in();
@@ -441,11 +448,11 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             {
                 this->generateExpression(rg, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
             }
-            if (rg.nextBool())
+            if (nopt2 < 5)
             {
-                generateSubquery(rg, ein->mutable_sel());
+                this->generateSubquery(rg, ein->mutable_sel());
             }
-            else
+            else if (nopt2 < 8)
             {
                 ExprList * elist2 = ein->mutable_exprs();
 
@@ -453,6 +460,10 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
                 {
                     this->generateExpression(rg, i == 0 ? elist2->mutable_expr() : elist2->add_extra_exprs());
                 }
+            }
+            else
+            {
+                this->generateExpression(rg, ein->mutable_single_expr());
             }
             this->depth--;
         }
@@ -826,8 +837,8 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 
         this->depth++;
         this->next_type_mask = fc.type_mask & ~(allow_nested);
-        SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, casexpr->mutable_type_name()->mutable_type());
-        delete tp;
+        auto tp
+            = std::unique_ptr<SQLType>(randomNextType(rg, this->next_type_mask, col_counter, casexpr->mutable_type_name()->mutable_type()));
         this->next_type_mask = type_mask_backup;
         this->generateExpression(rg, casexpr->mutable_expr());
         this->depth--;
@@ -1064,7 +1075,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         }
         if (!this->allow_not_deterministic || (this->width < this->fc.max_width && rg.nextSmallNumber() < 4))
         {
-            generateOrderBy(rg, 0, true, wdf->mutable_order_by());
+            generateOrderBy(rg, 0, true, false, wdf->mutable_order_by());
         }
         if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
         {
