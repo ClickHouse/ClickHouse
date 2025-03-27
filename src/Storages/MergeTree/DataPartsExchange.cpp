@@ -214,6 +214,8 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             auto disk_type = part->getDataPartStorage().getDiskType();
             if (part->getDataPartStorage().supportZeroCopyReplication() && std::find(capabilities.begin(), capabilities.end(), disk_type) != capabilities.end())
             {
+                data.lockSharedData(*part, false, {});
+
                 /// Send metadata if the receiver's capabilities covers the source disk type.
                 response.addCookie({"remote_fs_metadata", disk_type});
                 sendPartFromDisk(part, out, client_protocol_version, true, send_projections);
