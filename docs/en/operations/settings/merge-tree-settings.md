@@ -4,6 +4,9 @@ slug: /operations/settings/merge-tree-settings
 title: 'MergeTree tables settings'
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge\';
+import BetaBadge from '@theme/badges/BetaBadge\';
+
 System table `system.merge_tree_settings` shows the globally set MergeTree settings.
 
 MergeTree settings can be set in the `merge_tree` section of the server config file, or specified for each `MergeTree` table individually in
