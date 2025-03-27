@@ -1,4 +1,3 @@
-
 ## asynchronous_metric_log {#asynchronous_metric_log}
 
 Enabled by default on ClickHouse Cloud deployments.
@@ -644,7 +643,7 @@ A username and a password used to connect to other servers during [replication](
 - By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
 - `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
 - These credentials are common for replication via `HTTP` and `HTTPS`.
-  :::
+:::
 
 The following settings can be configured by sub-tags:
 
@@ -1544,7 +1543,7 @@ The following settings are available:
 :::note
 - Changed settings take effect immediately.
 - Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `max_size_in_bytes` or disable the query cache altogether.
-  :::
+:::
 
 **Example**
 
@@ -1881,7 +1880,7 @@ Port for communicating with clients over MySQL protocol.
 :::note
 - Positive integers specify the port number to listen to
 - Empty values are used to disable communication with clients over MySQL protocol.
-  :::
+:::
 
 **Example**
 
@@ -1896,7 +1895,7 @@ Port for communicating with clients over PostgreSQL protocol.
 :::note
 - Positive integers specify the port number to listen to
 - Empty values are used to disable communication with clients over MySQL protocol.
-  :::
+:::
 
 **Example**
 
@@ -1911,7 +1910,7 @@ Path on the local filesystem to store temporary data for processing large querie
 :::note
 - Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
 - The trailing slash is mandatory.
-  :::
+:::
 
 **Example**
 
