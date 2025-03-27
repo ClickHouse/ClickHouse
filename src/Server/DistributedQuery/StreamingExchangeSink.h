@@ -22,7 +22,7 @@ public:
     {
     }
 
-    String getName() const override { return "StreamingExchangeSink"; }
+    String getName() const override { return "StreamingExchangeSink(" + stream_name + ")"; }
 
 private:
     void onStart() override;

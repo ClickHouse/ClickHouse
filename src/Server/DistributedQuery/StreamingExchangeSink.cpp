@@ -3,10 +3,10 @@
 #include <Formats/NativeWriter.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/WriteHelpers.h>
+#include <Common/logger_useful.h>
 
 /// TODO: use separate protocol for streaming exchange
 #include <Core/Protocol.h>
-#include "IO/VarInt.h"
 
 namespace DB
 {
@@ -26,6 +26,12 @@ void StreamingExchangeSink::onStart()
 void StreamingExchangeSink::consume(Chunk chunk)
 {
     rows_written += chunk.getNumRows();
+
+    if (chunk.getNumRows() == 0 && chunk.getNumColumns() != 0)
+    {
+        LOG_WARNING(log, "Unexpected chunk with 0 rows to exchange stream {}", stream_name);
+        return;
+    }
 
     LOG_TEST(log, "Writing chunk with {} rows to exchange stream {}", chunk.getNumRows(), stream_name);
 
@@ -60,6 +66,11 @@ void StreamingExchangeSink::onFinish()
     consume({});
 
     out->finalize();
+
+    size_t total_bytes_sent = out->count();
+
+    LOG_TEST(log, "Finished writing to exchange stream {}, total rows: {}, bytes: {}",
+        stream_name, rows_written, total_bytes_sent);
 }
 
 void StreamingExchangeSink::connect()

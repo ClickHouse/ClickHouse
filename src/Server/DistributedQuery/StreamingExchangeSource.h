@@ -18,11 +18,15 @@ public:
     {
     }
 
-    String getName() const override { return "StreamingExchangeSource"; }
+    String getName() const override { return "StreamingExchangeSource(" + stream_name + ")"; }
+
+    Status prepare() override;
+    int schedule() override;
 
 private:
     Chunk generate() override;
 
+    bool finished_reading = false;
     Poco::Net::StreamSocket socket;
     ReadBufferFromPocoSocketChunked in;
     const String stream_name;
