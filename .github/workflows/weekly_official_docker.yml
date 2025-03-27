@@ -5,10 +5,9 @@ env:
   PYTHONUNBUFFERED: 1
 
 "on":
-  ### Disabled until the workflow will work ###
-  # schedule:
-  #   # Fridays 09:55 UTC
-  #   - cron: '55 9 * * 5'
+  schedule:
+    # Fridays 09:55 UTC
+    - cron: '55 9 * * 5'
   workflow_dispatch:
     inputs:
       dry-run:
@@ -34,7 +33,7 @@ jobs:
       - name: Set envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          DRY_RUN=${{ github.event.inputs.dry-run && '--dry-run' || '' }}
+          DRY_RUN=${{ github.event.inputs.dry-run == 'true' && '--dry-run' || '' }}
           ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
           ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
           RCSK
