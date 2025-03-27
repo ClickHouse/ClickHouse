@@ -206,7 +206,6 @@ bool UserDefinedSQLFunctionFactory::has(const String & function_name) const
 
 std::vector<std::string> UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
 {
-    // TODO: only sql, no driver
     return global_context->getUserDefinedSQLObjectsStorage().getAllObjectNames(UserDefinedSQLObjectType::SQLFunction);
 }
 

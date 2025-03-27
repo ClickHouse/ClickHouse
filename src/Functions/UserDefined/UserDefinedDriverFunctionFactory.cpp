@@ -78,7 +78,7 @@ void UserDefinedDriverFunctionFactory::registerDrivers()
 {
     // TODO: code to cmd
     DriverConfiguration docker_python3_tabsep = {"DockerPy3:TabSep", "TabSeparated",
-        "docker run -i --rm python:3 /bin/bash -c \"echo \"print(2)\" >> tmp.py; python ./tmp.py\""};
+        "docker run -i --rm python:3 /bin/bash -c \"echo \"TODO\" >> tmp.py; python ./tmp.py\""};
 
     drivers["DockerPy3"] = docker_python3_tabsep;
     drivers["DockerPy3:TabSep"] = docker_python3_tabsep;

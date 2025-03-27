@@ -177,27 +177,29 @@ std::unique_lock<std::recursive_mutex> UserDefinedSQLObjectsStorageBase::getLock
 
 void UserDefinedSQLObjectsStorageBase::setAllObjects(const std::vector<std::pair<String, UserDefinedTypedObject>> & new_objects)
 {
-    std::unordered_map<String, UserDefinedTypedObject> normalized_functions;
+    std::lock_guard lock(mutex);
+
     for (const auto & [function_name, object] : new_objects)
     {
+        UserDefinedTypedObject typed_object;
         const auto & [create_query, type] = object;
+
         switch (type)
         {
             case UserDefinedSQLObjectType::SQLFunction:
             {
-                normalized_functions[function_name] = {normalizeCreateFunctionQuery(*create_query, global_context), type};
+                typed_object = {normalizeCreateFunctionQuery(*create_query, global_context), type};
                 break;
             }
             case UserDefinedSQLObjectType::DriverFunction:
             {
-                normalized_functions[function_name] = {normalizeCreateDriverFunctionQuery(*create_query), type};
+                typed_object = {normalizeCreateDriverFunctionQuery(*create_query), type};
                 break;
             }
         }
-    }
 
-    std::lock_guard lock(mutex);
-    object_name_to_create_object_map = std::move(normalized_functions);
+        object_name_to_create_object_map[function_name] = std::move(typed_object);
+    }
 }
 
 std::vector<std::pair<String, ASTPtr>> UserDefinedSQLObjectsStorageBase::getAllObjects(UserDefinedSQLObjectType object_type) const
@@ -206,8 +208,10 @@ std::vector<std::pair<String, ASTPtr>> UserDefinedSQLObjectsStorageBase::getAllO
     std::vector<std::pair<String, ASTPtr>> all_objects;
     all_objects.reserve(object_name_to_create_object_map.size());
 
-    for (const auto & [name, typed_query] : object_name_to_create_object_map) {
-        if (typed_query.object_type == object_type) {
+    for (const auto & [name, typed_query] : object_name_to_create_object_map)
+    {
+        if (typed_query.object_type == object_type)
+        {
             all_objects.emplace_back(name, typed_query.object);
         }
     }

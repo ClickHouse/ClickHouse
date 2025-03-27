@@ -133,6 +133,7 @@ void UserDefinedSQLObjectsDiskStorage::loadObjects()
     {
         loadObjectsImpl(UserDefinedSQLObjectType::SQLFunction);
         loadObjectsImpl(UserDefinedSQLObjectType::DriverFunction);
+        LOG_DEBUG(log, "User defined objects loaded");
     }
 }
 
@@ -141,6 +142,7 @@ void UserDefinedSQLObjectsDiskStorage::reloadObjects()
 {
     loadObjectsImpl(UserDefinedSQLObjectType::SQLFunction);
     loadObjectsImpl(UserDefinedSQLObjectType::DriverFunction);
+    LOG_DEBUG(log, "User defined objects reloaded");
 }
 
 
@@ -198,8 +200,6 @@ void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl(UserDefinedSQLObjectType 
 
     setAllObjects(function_names_and_queries);
     objects_loaded = true;
-
-    LOG_DEBUG(log, "User defined objects loaded");
 }
 
 
