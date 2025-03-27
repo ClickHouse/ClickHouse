@@ -388,6 +388,9 @@
     M(BlockQueueThreads, "Number of threads in the BlockQueue thread pool.") \
     M(BlockQueueThreadsActive, "Number of threads in the BlockQueue thread pool running a task.") \
     M(BlockQueueThreadsScheduled, "Number of queued or active jobs in the BlockQueue thread pool.") \
+    \
+    M(TotalMergeFailures, "Number of all failed merges since startup, including the ones that were aborted") \
+    M(NonAbortedMergeFailures, "Number of failed merges since startup, excluding the merges that were aborted") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

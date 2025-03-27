@@ -39,7 +39,11 @@ void SerializationDetached::serializeBinaryBulk(
 }
 
 void SerializationDetached::deserializeBinaryBulk(
-    IColumn & column, ReadBuffer & istr, [[maybe_unused]] size_t limit, [[maybe_unused]] double avg_value_size_hint) const
+    IColumn & column,
+    ReadBuffer & istr,
+    [[maybe_unused]] size_t rows_offset,
+    [[maybe_unused]] size_t limit,
+    [[maybe_unused]] double avg_value_size_hint) const
 {
     // We will read directly from the uncompressed buffer.
     ReadBuffer * uncompressed_buf = &istr;
@@ -60,6 +64,7 @@ void SerializationDetached::deserializeBinaryBulk(
 
 void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -78,7 +83,7 @@ void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
     };
 
     auto column_blob = ColumnPtr(ColumnBlob::create(std::move(task), concrete_column, limit));
-    ISerialization::deserializeBinaryBulkWithMultipleStreams(column_blob, limit, settings, state, cache);
+    ISerialization::deserializeBinaryBulkWithMultipleStreams(column_blob, rows_offset, limit, settings, state, cache);
     column = column_blob;
 }
 
