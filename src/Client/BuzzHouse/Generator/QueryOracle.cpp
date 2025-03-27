@@ -272,7 +272,8 @@ void QueryOracle::generateImportQuery(
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.explain().inner_query().insert();
     const FileFunc & ff = oins.tfunc().file();
-    const OutFormat & outf = ff.outformat();
+    const InFormat & inf
+        = (!can_test_query_success && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(outIn) : outIn.at(ff.outformat());
 
     t.setName(nins->mutable_est(), false);
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
@@ -282,7 +283,7 @@ void QueryOracle::generateImportQuery(
     }
     gen.entries.clear();
     iff->set_path(ff.path());
-    iff->set_format(outIn.at(outf));
+    iff->set_format(inf);
     if (ff.has_fcomp())
     {
         iff->set_fcomp(ff.fcomp());
@@ -299,22 +300,22 @@ void QueryOracle::generateImportQuery(
         svs = nins->mutable_setting_values();
         svs->CopyFrom(oins.setting_values());
     }
-    if (outf == OutFormat::OUT_CSV || outf == OutFormat::OUT_Parquet)
+    if ((can_test_query_success && inf == InFormat::IN_CSV) || inf == InFormat::IN_Parquet)
     {
         svs = svs ? svs : nins->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
-        if (outf == OutFormat::OUT_CSV)
-        {
-            /// The oracle expects to read all the lines from the file
-            sv->set_property("input_format_csv_detect_header");
-            sv->set_value("0");
-        }
-        else
+        if (inf == InFormat::IN_Parquet)
         {
             /// Use available Parquet readers
             sv->set_property("input_format_parquet_use_native_reader");
             sv->set_value(rg.nextBool() ? "1" : "0");
+        }
+        else
+        {
+            /// The oracle expects to read all the lines from the file
+            sv->set_property("input_format_csv_detect_header");
+            sv->set_value("0");
         }
     }
 }
