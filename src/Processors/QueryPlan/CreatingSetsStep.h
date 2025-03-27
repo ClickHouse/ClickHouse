@@ -68,7 +68,6 @@ public:
     PreparedSets::Subqueries detachSets() { return std::move(subqueries); }
 
     void serialize(Serialization &) const override {}
-    bool isSerializable() const override { return true; }
 
 private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }

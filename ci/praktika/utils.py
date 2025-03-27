@@ -483,7 +483,6 @@ class Utils:
             ("-", "_"),
             (":", "_"),
             ('"', "_"),
-            ("&", "_"),
         ):
             res = res.replace(*r)
             res = re.sub(r"_+", "_", res)
@@ -540,12 +539,16 @@ class Utils:
         for path in include_paths:
             included_files_.update(cls.traverse_path(path, file_suffixes=file_suffixes))
 
-        exclude_paths = ["./" + p.removeprefix("./") for p in exclude_paths]
-        res = [
-            f
-            for f in included_files_
-            if not any(f.startswith(exclude_path) for exclude_path in exclude_paths)
-        ]
+        excluded_files = set()
+        for path in exclude_paths:
+            res = cls.traverse_path(path, not_exists_ok=not_exists_ok)
+            if not res:
+                print(
+                    f"WARNING: Utils.traverse_paths excluded 0 files by path [{path}] in exclude_paths"
+                )
+            else:
+                excluded_files.update(res)
+        res = [f for f in included_files_ if f not in excluded_files]
         if sorted:
             res.sort(reverse=True)
         return res

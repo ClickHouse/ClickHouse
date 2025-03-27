@@ -42,13 +42,7 @@ public:
 private:
     FileStreams streams;
 
-    void prefetchForAllColumns(
-        Priority priority,
-        size_t num_columns,
-        size_t from_mark,
-        size_t current_task_last_mark,
-        bool continue_reading,
-        bool deserialize_prefixes);
+    void prefetchForAllColumns(Priority priority, size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading);
 
     void addStreams(
         const NameAndTypePair & name_and_type,
@@ -75,7 +69,8 @@ private:
         size_t current_task_last_mark,
         size_t max_rows_to_read,
         ISerialization::SubstreamsCache & cache,
-        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
+        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
+        bool was_prefetched);
 
     /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers (column streams).
     void prefetchForColumn(

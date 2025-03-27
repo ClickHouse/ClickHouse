@@ -64,8 +64,6 @@ public:
 
     ~ObjectStorageQueueMetadata();
 
-    /// Startup background threads.
-    void startup();
     /// Shutdown background threads.
     void shutdown();
 

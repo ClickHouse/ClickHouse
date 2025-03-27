@@ -69,6 +69,8 @@ add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
 add_contrib (murmurhash)
 add_contrib (replxx-cmake replxx)
+add_contrib (unixodbc-cmake unixodbc)
+add_contrib (nanodbc-cmake nanodbc)
 add_contrib (capnproto-cmake capnproto)
 add_contrib (yaml-cpp-cmake yaml-cpp)
 add_contrib (re2-cmake re2)
@@ -249,9 +251,6 @@ add_contrib (numactl-cmake numactl)
 add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl
 
 add_contrib (jwt-cpp-cmake jwt-cpp)
-
-add_contrib (sha3iuf-cmake SHA3IUF)
-
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

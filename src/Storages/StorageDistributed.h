@@ -4,7 +4,6 @@
 #include <Storages/IStorageCluster.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/getStructureOfRemoteTable.h>
-#include <Columns/IColumn.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>

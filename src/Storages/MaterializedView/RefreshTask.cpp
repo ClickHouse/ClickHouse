@@ -10,14 +10,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Cache/QueryResultCache.h>
-#include <Interpreters/executeQuery.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -129,20 +125,13 @@ OwnedRefreshTask RefreshTask::create(
     return OwnedRefreshTask(task);
 }
 
-bool RefreshTask::canCreateOrDropOtherTables() const
-{
-    return !refresh_append;
-}
-
 void RefreshTask::startup()
 {
     if (view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
     auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
-
-    std::lock_guard guard(mutex);
-    scheduleRefresh(guard);
+    refresh_task->schedule();
 }
 
 void RefreshTask::shutdown()
@@ -226,10 +215,9 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
                 deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
 
         /// Update dependency graph.
-        if (set_handle)
-            set_handle.changeDependencies(deps);
+        set_handle.changeDependencies(deps);
 
-        scheduleRefresh(guard);
+        refresh_task->schedule();
         scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
 
         refresh_settings = {};
@@ -243,7 +231,7 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
 RefreshTask::Info RefreshTask::getInfo() const
 {
     std::lock_guard guard(mutex);
-    return Info {.view_id = set_handle.getID(), .state = state, .next_refresh_time = next_refresh_time, .znode = coordination.root_znode, .refresh_running = coordination.running_znode_exists, .progress = execution.progress.getValues(), .unexpected_error = scheduling.unexpected_error};
+    return Info {.view_id = set_handle.getID(), .state = state, .next_refresh_time = next_refresh_time, .znode = coordination.root_znode, .refresh_running = coordination.running_znode_exists, .progress = execution.progress.getValues()};
 }
 
 void RefreshTask::start()
@@ -251,8 +239,7 @@ void RefreshTask::start()
     std::lock_guard guard(mutex);
     if (!std::exchange(scheduling.stop_requested, false))
         return;
-    scheduling.unexpected_error = std::nullopt;
-    scheduleRefresh(guard);
+    refresh_task->schedule();
 }
 
 void RefreshTask::stop()
@@ -261,7 +248,7 @@ void RefreshTask::stop()
     if (std::exchange(scheduling.stop_requested, true))
         return;
     interruptExecution();
-    scheduleRefresh(guard);
+    refresh_task->schedule();
 }
 
 void RefreshTask::run()
@@ -269,14 +256,14 @@ void RefreshTask::run()
     std::lock_guard guard(mutex);
     if (std::exchange(scheduling.out_of_schedule_refresh_requested, true))
         return;
-    scheduleRefresh(guard);
+    refresh_task->schedule();
 }
 
 void RefreshTask::cancel()
 {
     std::lock_guard guard(mutex);
     interruptExecution();
-    scheduleRefresh(guard);
+    refresh_task->schedule();
 }
 
 void RefreshTask::wait()
@@ -350,7 +337,7 @@ void RefreshTask::notify()
     if (view && view->getContext()->getRefreshSet().refreshesStopped())
         interruptExecution();
     scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
-    scheduleRefresh(guard);
+    refresh_task->schedule();
 }
 
 void RefreshTask::setFakeTime(std::optional<Int64> t)
@@ -422,10 +409,10 @@ void RefreshTask::refreshTask()
             }
 
             /// Check if it's time to refresh.
-            auto start_time = currentTime();
-            auto start_time_seconds = std::chrono::floor<std::chrono::seconds>(start_time);
-            Stopwatch stopwatch;
-            auto [when, timeslot, start_znode] = determineNextRefreshTime(start_time_seconds);
+            auto now = currentTime();
+            auto start_time = std::chrono::floor<std::chrono::seconds>(now);
+            auto start_time_steady = std::chrono::steady_clock::now();
+            auto [when, timeslot, start_znode] = determineNextRefreshTime(start_time);
             next_refresh_time = when;
             bool out_of_schedule = scheduling.out_of_schedule_refresh_requested;
             if (out_of_schedule)
@@ -433,9 +420,9 @@ void RefreshTask::refreshTask()
                 chassert(start_znode.attempt_number > 0);
                 start_znode.attempt_number -= 1;
             }
-            else if (start_time < when)
+            else if (now < when)
             {
-                size_t delay_ms = std::chrono::duration_cast<std::chrono::milliseconds>(when - start_time).count();
+                size_t delay_ms = std::chrono::duration_cast<std::chrono::milliseconds>(when - now).count();
                 /// If we're in a test that fakes the clock, poll every 100ms.
                 if (scheduling.fake_clock.load(std::memory_order_relaxed) != INT64_MIN)
                     delay_ms = 100;
@@ -474,34 +461,52 @@ void RefreshTask::refreshTask()
             int32_t root_znode_version = coordination.coordinated ? coordination.root_znode.version : -1;
             CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
 
-            String log_comment = fmt::format("refresh of {}", view->getStorageID().getFullTableName());
-            if (start_znode.attempt_number > 1)
-                log_comment += fmt::format(" (attempt {}/{})", start_znode.attempt_number, refresh_settings[RefreshSetting::refresh_retries] + 1);
-
             lock.unlock();
 
+            bool refreshed = false;
             String error_message;
-            auto new_table_uuid = executeRefreshUnlocked(append, root_znode_version, start_time, stopwatch, log_comment, error_message);
-            bool refreshed = new_table_uuid.has_value();
+            UUID new_table_uuid;
+
+            try
+            {
+                new_table_uuid = executeRefreshUnlocked(append, root_znode_version);
+                refreshed = true;
+            }
+            catch (...)
+            {
+                if (execution.interrupt_execution.load())
+                {
+                    error_message = "cancelled";
+                    LOG_INFO(log, "{}: Refresh cancelled", view->getStorageID().getFullTableName());
+                }
+                else
+                {
+                    error_message = getCurrentExceptionMessage(true);
+                    LOG_ERROR(log, "{}: Refresh failed (attempt {}/{}): {}", view->getStorageID().getFullTableName(), start_znode.attempt_number, refresh_settings[RefreshSetting::refresh_retries] + 1, error_message);
+                }
+            }
 
             lock.lock();
 
             setState(RefreshState::Scheduling, lock);
 
-            auto end_time_seconds = std::chrono::floor<std::chrono::seconds>(currentTime());
+            auto end_time = std::chrono::floor<std::chrono::seconds>(currentTime());
             auto znode = coordination.root_znode;
-            znode.last_attempt_time = end_time_seconds;
-            znode.last_attempt_error = error_message;
+            znode.last_attempt_time = end_time;
             if (refreshed)
             {
                 znode.last_attempt_succeeded = true;
-                znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, start_time_seconds, end_time_seconds, out_of_schedule);
-                znode.last_success_time = start_time_seconds;
-                znode.last_success_duration = std::chrono::milliseconds(stopwatch.elapsedMilliseconds());
-                znode.last_success_table_uuid = *new_table_uuid;
+                znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, start_time, end_time, out_of_schedule);
+                znode.last_success_time = start_time;
+                znode.last_success_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time_steady);
+                znode.last_success_table_uuid = new_table_uuid;
                 znode.previous_attempt_error = "";
                 znode.attempt_number = 0;
                 znode.randomize();
+            }
+            else
+            {
+                znode.last_attempt_error = error_message;
             }
 
             bool ok = updateCoordinationState(znode, false, zookeeper, lock);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
@@ -530,18 +535,13 @@ void RefreshTask::refreshTask()
         if (!lock.owns_lock())
             lock.lock();
         scheduling.stop_requested = true;
-        scheduling.unexpected_error = getCurrentExceptionMessage(true);
         coordination.watches->should_reread_znodes.store(true);
         coordination.running_znode_exists = false;
-        setState(RefreshState::Scheduling, lock);
-        refresh_task->schedule();
         lock.unlock();
 
         tryLogCurrentException(log,
-            "Exception in refresh scheduling. The view will be stopped.");
+            "Unexpected exception in refresh scheduling, please investigate. The view will be stopped.");
 #ifdef DEBUG_OR_SANITIZER_BUILD
-        /// There's at least one legitimate case where this may happen: if the user (DEFINER) was dropped.
-        /// But it's unexpected in tests.
         abortOnFailedAssertion("Unexpected exception in refresh scheduling");
 #else
         if (coordination.coordinated)
@@ -550,28 +550,20 @@ void RefreshTask::refreshTask()
     }
 }
 
-std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t root_znode_version, std::chrono::system_clock::time_point start_time, const Stopwatch & stopwatch, const String & log_comment, String & out_error_message)
+UUID RefreshTask::executeRefreshUnlocked(bool append, int32_t root_znode_version)
 {
-    StorageID view_storage_id = view->getStorageID();
-    LOG_DEBUG(log, "Refreshing view {}", view_storage_id.getFullTableName());
+    LOG_DEBUG(log, "Refreshing view {}", view->getStorageID().getFullTableName());
     execution.progress.reset();
 
-    ContextMutablePtr refresh_context = view->createRefreshContext(log_comment);
+    ContextMutablePtr refresh_context = view->createRefreshContext();
 
     if (!append)
     {
-        refresh_context->setParentTable(view_storage_id.uuid);
+        refresh_context->setParentTable(view->getStorageID().uuid);
         refresh_context->setDDLQueryCancellation(execution.cancel_ddl_queries.get_token());
         if (root_znode_version != -1)
             refresh_context->setDDLAdditionalChecksOnEnqueue({zkutil::makeCheckRequest(coordination.path, root_znode_version)});
     }
-
-    std::optional<QueryLogElement> query_log_elem;
-    std::shared_ptr<ASTInsertQuery> refresh_query;
-    String query_for_logging;
-    UInt64 normalized_query_hash = 0;
-    std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");
-    ProcessList::EntryPtr process_list_entry;
 
     std::optional<StorageID> table_to_drop;
     auto new_table_id = StorageID::createEmpty();
@@ -579,18 +571,15 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     {
         {
             /// Create a table.
-            query_for_logging = "(create target table)";
-            normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-            std::unique_ptr<CurrentThread::QueryScope> query_scope;
-            std::tie(refresh_query, query_scope) = view->prepareRefresh(append, refresh_context, table_to_drop);
+            auto [refresh_query, query_scope] = view->prepareRefresh(append, refresh_context, table_to_drop);
             new_table_id = refresh_query->table_id;
 
             /// Add the query to system.processes and allow it to be killed with KILL QUERY.
-            query_for_logging = refresh_query->formatForLogging(
+            String query_for_logging = refresh_query->formatForLogging(
                 refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
-            normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+            UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
-            process_list_entry = refresh_context->getProcessList().insert(
+            auto process_list_entry = refresh_context->getProcessList().insert(
                 query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
@@ -601,22 +590,14 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
 
             /// Run the query.
 
-            InterpreterInsertQuery interpreter(
+            BlockIO block_io = InterpreterInsertQuery(
                 refresh_query,
                 refresh_context,
                 /* allow_materialized */ false,
                 /* no_squash */ false,
                 /* no_destination */ false,
-                /* async_isnert */ false);
-            BlockIO block_io = interpreter.execute();
+                /* async_isnert */ false).execute();
             QueryPipeline & pipeline = block_io.pipeline;
-
-            /// We log the refresh as one INSERT SELECT query, but the timespan and exceptions also
-            /// cover the surrounding CREATE, EXCHANGE, and DROP queries.
-            query_log_elem = logQueryStart(
-                start_time, refresh_context, query_for_logging, normalized_query_hash, refresh_query, pipeline,
-                &interpreter, /*internal*/ false, view_storage_id.database_name,
-                view_storage_id.table_name, /*async_insert*/ false);
 
             if (!pipeline.completed())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for view refresh must be completed");
@@ -645,52 +626,21 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             ///    (specifically, the assert in ~WriteBuffer()).
             if (execution.interrupt_execution.load())
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh cancelled");
-
-            logQueryFinish(*query_log_elem, refresh_context, refresh_query, pipeline, /*pulling_pipeline*/ false, query_span, QueryResultCacheUsage::None, /*internal*/ false);
-            query_log_elem = std::nullopt;
-            query_span = nullptr;
-            process_list_entry.reset(); // otherwise it needs to be alive for logQueryException
         }
 
         /// Exchange tables.
         if (!append)
-        {
-            query_for_logging = "(exchange tables)";
-            normalized_query_hash = normalizedQueryHash(query_for_logging, false);
             table_to_drop = view->exchangeTargetTable(new_table_id, refresh_context);
-        }
     }
     catch (...)
     {
-        bool cancelled = execution.interrupt_execution.load();
-
         if (table_to_drop.has_value())
-        {
-            String discard_error_message;
-            view->dropTempTable(table_to_drop.value(), refresh_context, discard_error_message);
-        }
-
-        if (query_log_elem.has_value())
-        {
-            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ false, /*log_error*/ !cancelled);
-        }
-        else
-        {
-            /// Failed when creating new table or when swapping tables.
-            logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context,
-                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds());
-        }
-
-        if (cancelled)
-            out_error_message = "cancelled";
-        else
-            out_error_message = getCurrentExceptionMessage(true);
-
-        return std::nullopt;
+            view->dropTempTable(table_to_drop.value(), refresh_context);
+        throw;
     }
 
     if (table_to_drop.has_value())
-        view->dropTempTable(table_to_drop.value(), refresh_context, out_error_message);
+        view->dropTempTable(table_to_drop.value(), refresh_context);
 
     return new_table_id.uuid;
 }
@@ -796,13 +746,6 @@ RefreshTask::determineNextRefreshTime(std::chrono::sys_seconds now)
     znode.last_attempt_succeeded = false;
 
     return {when, timeslot, znode};
-}
-
-void RefreshTask::scheduleRefresh(std::lock_guard<std::mutex> &)
-{
-    if (state != RefreshState::Running)
-        state = RefreshState::Scheduling;
-    refresh_task->schedule();
 }
 
 void RefreshTask::setState(RefreshState s, std::unique_lock<std::mutex> & lock)

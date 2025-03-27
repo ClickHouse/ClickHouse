@@ -2,16 +2,13 @@
 import datetime
 import logging
 import os
-import urllib.parse
 import uuid
-import bson
 import warnings
 
 import cassandra.cluster
 import pymongo
 import pymysql.cursors
 import redis
-import urllib
 
 
 class ExternalSource(object):
@@ -173,6 +170,7 @@ class SourceMongo(ExternalSource):
         user,
         password,
         secure=False,
+        legacy=False,
     ):
         ExternalSource.__init__(
             self,
@@ -185,10 +183,13 @@ class SourceMongo(ExternalSource):
             password,
         )
         self.secure = secure
+        self.legacy = legacy
 
     def get_source_str(self, table_name):
         options = ""
-        if self.secure:
+        if self.secure and self.legacy:
+            options = "<options>ssl=true</options>"
+        if self.secure and not self.legacy:
             options = "<options>tls=true&amp;tlsAllowInvalidCertificates=true</options>"
 
         return """
@@ -215,7 +216,7 @@ class SourceMongo(ExternalSource):
             host=self.internal_hostname,
             port=self.internal_port,
             user=self.user,
-            password=urllib.parse.quote_plus(self.password),
+            password=self.password,
         )
         if self.secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
@@ -223,11 +224,15 @@ class SourceMongo(ExternalSource):
         self.converters = {}
         for field in structure.get_all_fields():
             if field.field_type == "Date":
-                self.converters[field.name] = lambda x: datetime.datetime.strptime(x, "%Y-%m-%d")
+                self.converters[field.name] = lambda x: datetime.datetime.strptime(
+                    x, "%Y-%m-%d"
+                )
             elif field.field_type == "DateTime":
-                self.converters[field.name] = lambda x: datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S")
-            elif field.field_type == "UUID":
-                self.converters[field.name] = lambda x: bson.Binary(uuid.UUID(x).bytes, subtype=4)
+
+                def converter(x):
+                    return datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S")
+
+                self.converters[field.name] = converter
             else:
                 self.converters[field.name] = lambda x: x
 
@@ -262,7 +267,9 @@ class SourceMongoURI(SourceMongo):
 
     def get_source_str(self, table_name):
         options = ""
-        if self.secure:
+        if self.secure and self.legacy:
+            options = "ssl=true"
+        if self.secure and not self.legacy:
             options = "tls=true&amp;tlsAllowInvalidCertificates=true"
 
         return """
@@ -274,7 +281,7 @@ class SourceMongoURI(SourceMongo):
             host=self.docker_hostname,
             port=self.docker_port,
             user=self.user,
-            password=urllib.parse.quote_plus(self.password),
+            password=self.password,
             tbl=table_name,
             options=options,
         )

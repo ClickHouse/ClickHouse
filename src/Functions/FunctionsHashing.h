@@ -332,14 +332,13 @@ struct SipHash128ReferenceKeyedImpl
 
     static UInt128 combineHashesKeyed(const Key & key, UInt128 h1, UInt128 h2)
     {
-        if constexpr (std::endian::native == std::endian::big)
-        {
-            UInt128 tmp;
-            reverseMemcpy(&tmp, &h1, sizeof(UInt128));
-            h1 = tmp;
-            reverseMemcpy(&tmp, &h2, sizeof(UInt128));
-            h2 = tmp;
-        }
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        UInt128 tmp;
+        reverseMemcpy(&tmp, &h1, sizeof(UInt128));
+        h1 = tmp;
+        reverseMemcpy(&tmp, &h2, sizeof(UInt128));
+        h2 = tmp;
+#endif
         UInt128 hashes[] = {h1, h2};
         return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt128));
     }

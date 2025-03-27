@@ -1,11 +1,8 @@
 ---
-description: 'Documentation for Approximate Nearest Neighbor Search with Vector Similarity
-  Indexes'
-keywords: ['vector-similarity search', 'text search', 'ann', 'indices', 'index', 'nearest
-    neighbour']
-sidebar_label: 'Vector Similarity Indexes'
 slug: /engines/table-engines/mergetree-family/annindexes
-title: 'Approximate Nearest Neighbor Search with Vector Similarity Indexes'
+sidebar_label: Vector Similarity Indexes
+description: Approximate Nearest Neighbor Search with Vector Similarity Indexes
+keywords: [vector-similarity search, text search, ann, indices, index, nearest neighbour]
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -30,7 +27,7 @@ Blogs:
 
 In terms of SQL, a nearest neighborhood search can be expressed as follows:
 
-```sql
+``` sql
 SELECT [...]
 FROM table, [...]
 ORDER BY DistanceFunction(vectors, reference_vector)
@@ -39,8 +36,8 @@ LIMIT N
 
 where
 - `DistanceFunction` computes a distance between two vectors (e.g. the
-  [L2Distance](/sql-reference/functions/distance-functions#l2distance) or
-  [cosineDistance](/sql-reference/functions/distance-functions#cosinedistance),
+  [L2Distance](../../../sql-reference/functions/distance-functions.md#L2Distance) or
+  [cosineDistance](../../../sql-reference/functions/distance-functions.md#cosineDistance)),
 - `vectors` is a column of type [Array(Float64)](../../../sql-reference/data-types/array.md) or
   [Array(Float32)](../../../sql-reference/data-types/array.md), or [Array(BFloat16)](../../../sql-reference/data-types/array.md), typically
   storing embeddings,
@@ -105,7 +102,7 @@ ORDER BY id;
 ```
 
 All arrays must have same length. To avoid errors, you can use a
-[CONSTRAINT](/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT constraint_name_1 CHECK
+[CONSTRAINT](/docs/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT constraint_name_1 CHECK
 length(vectors) = 256`. Empty `Arrays` and unspecified `Array` values in INSERT statements (i.e. default values) are not supported as well.
 
 Vector similarity indexes are based on the [USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
@@ -121,23 +118,16 @@ are ideally used only with immutable or rarely changed data, respectively when a
 additional techniques are recommended to speed up index creation:
 - Index creation can be parallelized. The maximum number of threads can be configured using server setting
   [max_build_vector_similarity_index_thread_pool_size](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size).
-  It is recommended to configure the setting to the number of CPU cores of the machine.
-- Index creation on newly inserted parts may be disabled using session setting
-  [`materialize_skip_indexes_on_insert`](../../../operations/settings/settings.md). Searches on such parts will fall back to exact search
-  but as inserted parts are typically small compared to the total table size, the performance impact is expected to be negligible.
-- ClickHouse merges multiple parts incrementally in the background into bigger parts. These new parts are potentially merged later into even
-  bigger parts ("write amplification"). Each merge re-builds the vector similarity index of the output part from scratch (as well as other
-  skipping indexes), meaning that vector similarity indexes are potentially created unnecessarily. To avoid that, it is possible to suppress
-  the creation of vector similarity indexes during merge using merge tree setting
-  [materialize_skip_indexes_on_merge](../../../operations/settings/merge-tree-settings.md#materialize_skip_indexes_on_merge). This, in
-  conjunction with statement [ALTER TABLE \[...\] MATERIALIZE INDEX
-  \[...\]](../../../sql-reference/statements/alter/skipping-index.md#materialize-index), provides explicit control over the life cycle of
-  vector similarity indexes. For example, index building can be deferred to a period of low load (e.g. the weekend) or after a large data
-  ingestion.
+- Index creation on newly inserted parts may be disabled using setting `materialize_skip_indexes_on_insert`. Search on such parts will fall
+  back to exact search but as inserted parts are typically small compared to the total table size, the performance impact is negligible.
+- As parts are incrementally merged into bigger parts, and these new parts are merged into even bigger parts ("write amplification"),
+  vector similarity indexes are possibly build multiple times for the same vectors. To avoid that, you may suppress merges during insert
+  using statement [`SYSTEM STOP MERGES`](../../../sql-reference/statements/system.md), respectively start merges once all data has been
+  inserted using `SYSTEM START MERGES`.
 
 Vector similarity indexes support this type of query:
 
-```sql
+``` sql
 WITH [...] AS reference_vector
 SELECT *
 FROM table
@@ -150,15 +140,10 @@ To search using a different value of HNSW parameter `hnsw_candidate_list_size_fo
 original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473), run the `SELECT` query with `SETTINGS hnsw_candidate_list_size_for_search
 = <value>`.
 
-Repeated reads from a vector similarity index benefit from a large vector similarity index cache. The maximum cache size can be configured using
-server setting
-[vector_similarity_index_cache_size](../../../operations/server-configuration-parameters/settings.md#vector_similarity_index_cache_size). By
-default, it is configured to be at most 5 GB large.
-
 **Restrictions**: Approximate vector search algorithms require a limit, hence queries without `LIMIT` clause cannot utilize vector
 similarity indexes. The limit must also be smaller than setting `max_limit_for_ann_queries` (default: 100).
 
-**Differences to Regular Skip Indexes** Similar to regular [skip indexes](/optimize/skipping-indexes), vector
+**Differences to Regular Skip Indexes** Similar to regular [skip indexes](/docs/optimize/skipping-indexes), vector
 similarity indexes are constructed over granules and each indexed block consists of `GRANULARITY = [N]`-many granules (`[N]` = 1 by default
 for normal skip indexes). For example, if the primary index granularity of the table is 8192 (setting `index_granularity = 8192`) and
 `GRANULARITY = 2`, then each indexed block will contain 16384 rows. However, data structures and algorithms for approximate neighborhood

@@ -256,19 +256,16 @@ bool DisksApp::processQueryText(const String & text)
 
 void DisksApp::runInteractiveReplxx()
 {
-    auto reader_options = ReplxxLineReader::Options
-    {
-        .suggest = suggest,
-        .history_file_path = history_file,
-        .history_max_entries = history_max_entries,
-        .multiline = false,
-        .ignore_shell_suspend = false,
-        .extenders = query_extenders,
-        .delimiters = query_delimiters,
-        .word_break_characters = word_break_characters,
-        .highlighter = {},
-    };
-    ReplxxLineReader lr(std::move(reader_options));
+    ReplxxLineReader lr(
+        suggest,
+        history_file,
+        history_max_entries,
+        /* multiline= */ false,
+        /* ignore_shell_suspend= */ false,
+        query_extenders,
+        query_delimiters,
+        word_break_characters.c_str(),
+        /* highlighter_= */ {});
     lr.enableBracketedPaste();
 
     while (true)

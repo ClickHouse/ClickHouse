@@ -56,7 +56,7 @@ constexpr time_t MAX_DATETIME64_TIMESTAMP = 10413791999LL;    //  1900-01-01 00:
 constexpr time_t MIN_DATETIME64_TIMESTAMP = -2208988800LL;    //  2299-12-31 23:59:59 UTC
 constexpr time_t MAX_DATETIME_TIMESTAMP = 0xFFFFFFFF;
 constexpr time_t MAX_DATE_TIMESTAMP = 5662310399;       // 2149-06-06 23:59:59 UTC
-constexpr time_t MAX_DATETIME_DAY_NUM =  49709;         // 2106-02-06 America/Hermosillo
+constexpr time_t MAX_DATETIME_DAY_NUM =  49710;               // 2106-02-07
 
 [[noreturn]] void throwDateIsNotSupported(const char * name);
 [[noreturn]] void throwDate32IsNotSupported(const char * name);
@@ -1735,38 +1735,6 @@ struct ToRelativeYearNumImpl
 };
 
 template <ResultPrecision precision_>
-struct ToYearNumSinceEpochImpl
-{
-    static constexpr auto name = "toYearNumSinceEpoch";
-
-    static auto execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        if constexpr (precision_ == ResultPrecision::Extended)
-            return time_zone.toYearSinceEpoch(t);
-        else
-            return static_cast<UInt16>(time_zone.toYearSinceEpoch(t));
-    }
-    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toYearSinceEpoch(static_cast<time_t>(t));
-    }
-    static auto execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        if constexpr (precision_ == ResultPrecision::Extended)
-            return time_zone.toYearSinceEpoch(ExtendedDayNum(d));
-        else
-            return static_cast<UInt16>(time_zone.toYearSinceEpoch(ExtendedDayNum(d)));
-    }
-    static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toYearSinceEpoch(DayNum(d));
-    }
-    static constexpr bool hasPreimage() { return false; }
-
-    using FactorTransform = ZeroTransform;
-};
-
-template <ResultPrecision precision_>
 struct ToRelativeQuarterNumImpl
 {
     static constexpr auto name = "toRelativeQuarterNum";
@@ -1824,38 +1792,6 @@ struct ToRelativeMonthNumImpl
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toRelativeMonthNum(DayNum(d));
-    }
-    static constexpr bool hasPreimage() { return false; }
-
-    using FactorTransform = ZeroTransform;
-};
-
-template <ResultPrecision precision_>
-struct ToMonthNumSinceEpochImpl
-{
-    static constexpr auto name = "toMonthNumSinceEpoch";
-
-    static auto execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        if constexpr (precision_ == ResultPrecision::Extended)
-            return time_zone.toMonthNumSinceEpoch(t);
-        else
-            return static_cast<UInt16>(time_zone.toMonthNumSinceEpoch(t));
-    }
-    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toMonthNumSinceEpoch(static_cast<time_t>(t));
-    }
-    static auto execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        if constexpr (precision_ == ResultPrecision::Extended)
-            return time_zone.toMonthNumSinceEpoch(ExtendedDayNum(d));
-        else
-            return static_cast<UInt16>(time_zone.toMonthNumSinceEpoch(ExtendedDayNum(d)));
-    }
-    static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toMonthNumSinceEpoch(DayNum(d));
     }
     static constexpr bool hasPreimage() { return false; }
 

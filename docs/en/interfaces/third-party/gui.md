@@ -1,23 +1,12 @@
 ---
-description: 'List of third-party GUI tools and applications for working with ClickHouse'
-sidebar_label: 'Visual Interfaces'
-sidebar_position: 28
 slug: /interfaces/third-party/gui
-title: 'Visual Interfaces from Third-party Developers'
+sidebar_position: 28
+sidebar_label: Visual Interfaces
 ---
 
 # Visual Interfaces from Third-party Developers
 
 ## Open-Source {#open-source}
-
-### agx {#agx}
-
-[agx](https://github.com/agnosticeng/agx) is a desktop application built with Tauri and SvelteKit that provides a modern interface for exploring and querying data using ClickHouse's embedded database engine (chdb).
-
-- Leverage ch-db when running the native application.
-- Can connect to a Clickhouse instance when running the web instance.
-- Monaco editor so you'll feel at home.
-- Multiple and evolving data visualizations.
 
 ### ch-ui {#ch-ui}
 

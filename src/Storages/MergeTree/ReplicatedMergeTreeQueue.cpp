@@ -17,6 +17,7 @@
 #include <Storages/MutationCommands.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
+#include <Parsers/formatAST.h>
 #include <base/sort.h>
 #include <cassert>
 #include <ranges>
@@ -1548,7 +1549,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 {
                     constexpr auto fmt_string = "Not executing log entry {} for part {} because {} merges with TTL already executing, maximum {}.";
                     LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name, total_merges_with_ttl,
-                              (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool].value);
+                              (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool]);
                     return false;
                 }
             }
@@ -2374,8 +2375,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
         for (const MutationCommand & command : entry.commands)
         {
             WriteBufferFromOwnString buf;
-            IAST::FormatSettings format_settings(/*one_line=*/true, /*hilite=*/false);
-            command.ast->format(buf, format_settings);
+            formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.znode_name,

@@ -9,6 +9,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/queryToString.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
@@ -34,6 +35,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -44,7 +46,6 @@
 #include <Storages/WindowView/StorageWindowView.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
@@ -205,7 +206,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
-    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
+    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw];
     if (db_num_limit > 0 && !internal)
     {
         size_t db_count = DatabaseCatalog::instance().getDatabases().size();
@@ -275,7 +276,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                   || (create.columns_list->projections && !create.columns_list->projections->children.empty()))))
     {
         /// Currently, there are no database engines, that support any arguments.
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->formatForErrorMessage());
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
     }
 
     if (create.storage && !create.storage->engine)
@@ -350,8 +351,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.if_not_exists = false;
 
         WriteBufferFromOwnString statement_buf;
-        IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite=*/false);
-        create.format(statement_buf, format_settings);
+        formatAST(create, statement_buf, false);
         writeChar('\n', statement_buf);
         String statement = statement_buf.str();
 
@@ -881,7 +881,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS with tables of the MergeTree family");
 
                 /// Ensure that as_storage and the new storage has the same primary key, sorting key and partition key
-                auto query_to_string = [](const IAST * ast) { return ast ? ast->formatWithSecretsOneLine() : ""; };
+                auto query_to_string = [](const IAST * ast) { return ast ? queryToString(*ast) : ""; };
 
                 const String as_storage_sorting_key_str = query_to_string(as_storage_metadata->getSortingKeyAST().get());
                 const String as_storage_primary_key_str = query_to_string(as_storage_metadata->getPrimaryKeyAST().get());
@@ -1445,10 +1445,10 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
                             "3. ATTACH {} {} FROM '/path/to/data/' <table definition>;\n"
                             "4. ATTACH {} {} UUID '<uuid>' <table definition>;",
                             kind_upper,
-                            kind_upper, create.table->formatForErrorMessage(),
-                            kind_upper, create.table->formatForErrorMessage(),
-                            kind_upper, create.table->formatForErrorMessage(),
-                            kind_upper, create.table->formatForErrorMessage());
+                            kind_upper, create.table,
+                            kind_upper, create.table,
+                            kind_upper, create.table,
+                            kind_upper, create.table);
         }
 
         create.generateRandomUUIDs();
@@ -1912,6 +1912,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// Before actually creating the table, check if it will lead to cyclic dependencies.
     checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, getContext());
 
+    /// Initial queries in Replicated database at this point have query_kind = ClientInfo::QueryKind::SECONNDARY_QUERY,
+    /// so we need to check whether the query is initial through getZooKeeperMetadataTransaction()->isInitialQuery()
+    bool is_initial_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY ||
+                            (getContext()->getZooKeeperMetadataTransaction() && getContext()->getZooKeeperMetadataTransaction()->isInitialQuery());
+    if (!internal && is_initial_query)
+        throwIfTooManyEntities(create);
+
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
@@ -1925,7 +1932,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
         /// and because storage lifetime is bigger than query context lifetime.
-        res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
+        res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
     }
     else
@@ -1993,10 +2000,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    bool is_initial_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
-    if (!internal && is_initial_query)
-        throwIfTooManyEntities(create, res);
-
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
     /// Move table data to the proper place. Wo do not move data earlier to avoid situations
@@ -2022,7 +2025,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 }
 
 
-void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create, StoragePtr storage) const
+void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create) const
 {
     auto check_and_throw = [&](auto setting, CurrentMetrics::Metric metric, String setting_name, String entity_name)
         {
@@ -2035,12 +2038,15 @@ void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create, Sto
                                 entity_name, setting_name, num_limit, attached_count);
         };
 
-    if (typeid_cast<StorageReplicatedMergeTree *>(storage.get()) != nullptr)
-        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
-    else if (create.is_dictionary)
+    String engine_name = create.storage && create.storage->engine ? create.storage->engine->name : "";
+    bool is_replicated = engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree");
+
+    if (create.is_dictionary)
         check_and_throw(ServerSetting::max_dictionary_num_to_throw, CurrentMetrics::AttachedDictionary, "max_dictionary_num_to_throw", "dictionaries");
     else if (create.isView())
         check_and_throw(ServerSetting::max_view_num_to_throw, CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
+    else if (is_replicated)
+        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
     else
         check_and_throw(ServerSetting::max_table_num_to_throw, CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
 }
@@ -2174,14 +2180,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (created && !renamed)
         {
             auto drop_context = make_drop_context();
-            try
-            {
-                InterpreterDropQuery(ast_drop, drop_context).execute();
-            }
-            catch (...)
-            {
-                tryLogCurrentException("InterpreterCreateQuery", "Cannot DROP temporary table");
-            }
+            InterpreterDropQuery(ast_drop, drop_context).execute();
         }
         throw;
     }
@@ -2264,7 +2263,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     if (cluster->maybeCrossReplication())
     {
-        auto on_cluster_version = local_context->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value;
+        auto on_cluster_version = local_context->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION <= on_cluster_version)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Value {} of setting distributed_ddl_entry_format_version "
                                                          "is incompatible with cross-replication", on_cluster_version);

@@ -1,9 +1,8 @@
 ---
-description: 'System table containing a list of database engines supported by the
-  server.'
-keywords: ['system table', 'database_engines']
+description: "System table containing a list of database engines supported by the server."
 slug: /operations/system-tables/database_engines
-title: 'system.database_engines'
+title: "database_engines"
+keywords: ["system table", "database_engines"]
 ---
 
 Contains the list of database engines supported by the server.
@@ -14,13 +13,13 @@ This table contains the following columns (the column type is shown in brackets)
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.database_engines
 WHERE name in ('Atomic', 'Lazy', 'Ordinary')
 ```
 
-```text
+``` text
 ┌─name─────┐
 │ Ordinary │
 │ Atomic   │

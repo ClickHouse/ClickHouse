@@ -116,7 +116,7 @@ public:
     {
     }
 
-    uint64_t getSeed() const;
+    uint32_t getSeed() const;
 
     uint32_t nextSmallNumber();
 
@@ -194,17 +194,29 @@ public:
         return d(generator);
     }
 
-    template <typename Container>
-    const auto & pickRandomly(const Container & container)
+    template <typename T>
+    const T & pickRandomlyFromVector(const std::vector<T> & vals)
     {
-        std::uniform_int_distribution<size_t> d{0, container.size() - 1};
-        auto it = container.begin();
-        std::advance(it, d(generator));
+        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
+        return vals[d(generator)];
+    }
 
-        if constexpr (requires { it->first; })
-            return it->first;
-        else
-            return *it;
+    template <typename T>
+    const T & pickRandomlyFromSet(const std::unordered_set<T> & vals)
+    {
+        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
+        auto it = vals.begin();
+        std::advance(it, d(generator));
+        return *it;
+    }
+
+    template <typename K, typename V>
+    const K & pickKeyRandomlyFromMap(const std::unordered_map<K, V> & vals)
+    {
+        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
+        auto it = vals.begin();
+        std::advance(it, d(generator));
+        return it->first;
     }
 
     template <typename K, typename V>
@@ -216,6 +228,15 @@ public:
         return it->second;
     }
 
+    template <typename K, typename V>
+    std::tuple<K, V> pickPairRandomlyFromMap(const std::unordered_map<K, V> & vals)
+    {
+        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
+        auto it = vals.begin();
+        std::advance(it, d(generator));
+        return std::make_tuple(it->first, it->second);
+    }
+
     String nextJSONCol();
 
     String nextString(const String & delimiter, bool allow_nasty, uint32_t limit);
@@ -225,23 +246,6 @@ public:
     String nextIPv4();
 
     String nextIPv6();
-};
-
-using RandomSettingParameter = std::function<String(RandomGenerator &)>;
-
-struct CHSetting
-{
-public:
-    const RandomSettingParameter random_func;
-    const std::unordered_set<String> oracle_values;
-    const bool changes_behavior;
-
-    CHSetting(const RandomSettingParameter & rf, const std::unordered_set<String> & ov, const bool cb)
-        : random_func(rf)
-        , oracle_values(ov)
-        , changes_behavior(cb)
-    {
-    }
 };
 
 }

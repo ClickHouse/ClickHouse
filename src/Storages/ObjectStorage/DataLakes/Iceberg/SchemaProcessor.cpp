@@ -157,7 +157,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
         return DataTypeFactory::instance().get("Bool");
     if (type_name == "int")
         return std::make_shared<DataTypeInt32>();
-    if (type_name == "long" || type_name == "bigint")
+    if (type_name == "long")
         return std::make_shared<DataTypeInt64>();
     if (type_name == "float")
         return std::make_shared<DataTypeFloat32>();
@@ -423,8 +423,4 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSch
     return it->second;
 }
 
-bool IcebergSchemaProcessor::hasClickhouseTableSchemaById(Int32 id) const
-{
-    return clickhouse_table_schemas_by_ids.find(id) != clickhouse_table_schemas_by_ids.end();
-}
 }

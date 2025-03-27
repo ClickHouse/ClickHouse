@@ -1,23 +1,22 @@
 ---
-alias: []
-description: 'Documentation for the Vertical format'
-input_format: false
-keywords: ['Vertical']
-output_format: true
+title : Vertical
 slug: /interfaces/formats/Vertical
-title: 'Vertical'
+keywords : [Vertical]
+input_format: false
+output_format: true
+alias: []
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✗     | ✔      |       |
 
-## Description {#description}
+## Description
 
 Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows if each row consists of a large number of columns.
-[`NULL`](/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
+[`NULL`](/docs/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
-## Example Usage {#example-usage}
+## Example Usage
 
 Example:
 
@@ -47,5 +46,5 @@ test: string with 'quotes' and      with some special
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-## Format Settings {#format-settings}
+## Format Settings
 

@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
@@ -23,7 +22,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/StringUtils.h>
@@ -122,7 +120,7 @@ ColumnPtr getFilteredTables(
         }
         else
         {
-            for (auto table_it = database->getLightweightTablesIterator(context); table_it->isValid(); table_it->next())
+            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
             {
                 database_column->insert(table_it->name());
                 if (engine_column)
@@ -163,11 +161,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"create_table_query", std::make_shared<DataTypeString>(), "The query that was used to create the table."},
         {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the table engine."},
         {"as_select", std::make_shared<DataTypeString>(), "SELECT query for view."},
-        {"parametrized_view_paramters",
-         std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
-             DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"name", "type"})),
-         "Parameters of parametrized view."
-        },
         {"partition_key", std::make_shared<DataTypeString>(), "The partition key expression specified in the table."},
         {"sorting_key", std::make_shared<DataTypeString>(), "The sorting key expression specified in the table."},
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
@@ -248,35 +241,6 @@ public:
     String getName() const override { return "Tables"; }
 
 protected:
-    NameToNameMap getSelectParamters(const StorageMetadataPtr & metadata_snapshot)
-    {
-        const SelectQueryDescription & query_description = metadata_snapshot->getSelectQuery();
-        ASTPtr inner_query = query_description.inner_query;
-        if (!inner_query || !inner_query->as<ASTSelectWithUnionQuery>())
-            return {};
-
-        return inner_query->as<ASTSelectWithUnionQuery>()->getQueryParameters();
-    }
-
-    void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
-    {
-        if (table)
-        {
-            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
-
-            NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
-            if (!query_parameters_array.empty())
-            {
-                Array changes;
-                for (const auto & [key, value] : query_parameters_array)
-                    changes.push_back(Tuple{key, value});
-                columns[res_index++]->insert(changes);
-            }
-            else
-                columns[res_index++]->insertDefault();
-        }
-    }
-
     Chunk generate() override
     {
         if (done)
@@ -381,12 +345,7 @@ protected:
                         while (src_index < columns_mask.size())
                         {
                             // total_rows
-                            if (src_index == 14 && columns_mask[src_index])
-                            {
-                                // parametrized view parameters
-                                fillParametralizedViewData(res_columns, table.second, res_index);
-                            }
-                            else if (src_index == 20 && columns_mask[src_index])
+                            if (src_index == 19 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -403,7 +362,7 @@ protected:
                                 }
                             }
                             // total_bytes
-                            else if (src_index == 21 && columns_mask[src_index])
+                            else if (src_index == 20 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -435,7 +394,7 @@ protected:
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getLightweightTablesIterator(context);
+                tables_it = database->getTablesIterator(context);
 
             const bool need_table = needTable(database, getPort().getHeader());
 
@@ -586,10 +545,6 @@ protected:
                 }
                 else
                     src_index += 3;
-
-                // parametrized view parameters
-                if (columns_mask[src_index++])
-                    fillParametralizedViewData(res_columns, table, res_index);
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
