@@ -15,7 +15,7 @@ title: 'Distributed Table Engine'
 To create a distributed table engine in the cloud, you can use the [remote and remoteSecure](../../../sql-reference/table-functions/remote) table functions. The `Distributed(...)` syntax cannot be used in ClickHouse Cloud.
 :::
 
-Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers. Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.
+Tables with using the Distributed table engine do not store any data of their own, but allow distributed query processing on multiple servers. Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.
 
 ## Creating a Table {#distributed-creating-a-table}
 
