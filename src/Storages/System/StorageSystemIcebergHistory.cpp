@@ -38,9 +38,9 @@ ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
     };
 }
 
-#if USE_AVRO
-void StorageSystemIcebergHistory::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res_columns, [[maybe_unused]] ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
+#if USE_AVRO
     const auto access = context->getAccess();
 
     auto add_row = [&](const DatabaseTablesIteratorPtr &it, StorageObjectStorage *object_storage)
@@ -89,6 +89,6 @@ void StorageSystemIcebergHistory::fillData(MutableColumns & res_columns, Context
             }
         }
     }
-}
 #endif
+}
 }
