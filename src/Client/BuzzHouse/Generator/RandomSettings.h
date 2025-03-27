@@ -18,9 +18,11 @@ const RandomSettingParameter zeroOneTwo = [](RandomGenerator & rg) { return std:
 
 const RandomSettingParameter zeroToThree = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); };
 
+extern std::unordered_map<String, CHSetting> serverSettings;
+
 extern std::unordered_map<String, CHSetting> performanceSettings;
 
-extern std::unordered_map<String, CHSetting> serverSettings;
+extern std::unordered_map<String, CHSetting> queryOracleSettings;
 
 extern std::unordered_map<String, CHSetting> formatSettings;
 

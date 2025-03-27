@@ -594,7 +594,6 @@ bool Client::buzzHouse()
         fuzz_config->loadServerConfigurations();
         loadFuzzerServerSettings(*fuzz_config);
         loadFuzzerTableSettings(*fuzz_config);
-        loadFuzzerOracleSettings(*fuzz_config);
         loadSystemTables(*fuzz_config);
 
         full_query2.reserve(8192);

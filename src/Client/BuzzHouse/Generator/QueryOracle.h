@@ -51,7 +51,8 @@ public:
     void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1);
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
     void generateClearQuery(const SQLTable & t, SQLQuery & sq3);
-    void generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4);
+    void
+    generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
 
     /// Run query with different settings oracle
     void generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
@@ -64,7 +65,5 @@ public:
     void replaceQueryWithTablePeers(
         RandomGenerator & rg, const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2);
 };
-
-void loadFuzzerOracleSettings(const FuzzConfig & fc);
 
 }
