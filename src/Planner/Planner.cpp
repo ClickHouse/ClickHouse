@@ -476,6 +476,46 @@ void addFilterStep(
     query_plan.addStep(std::move(where_step));
 }
 
+std::optional<std::vector<UInt64>> FindOptimizationSublistIndexes(const auto& group_by_nodes, const auto& order_by_nodes) {
+    // TODO think what if ORDER BY section, maybe there is already an optimization for this case?
+    std::vector<UInt64> result; // TODO reserve
+    (void)group_by_nodes;
+    size_t i = 0;
+    (void)i;
+    for (const auto& order_by_node : order_by_nodes) {
+        const auto& order_by_node_typed = order_by_node->template as<SortNode &>();
+        const auto& order_by_expression = order_by_node_typed.getExpression();
+        if (order_by_expression->getNodeType() != QueryTreeNodeType::COLUMN) {
+            return std::nullopt; // TODO now it is MVP. FUNCTION and maybe some others are actually also possible for optimization
+        }
+        const auto& order_by_expression_as_column = order_by_expression->template as<ColumnNode &>();
+        (void)order_by_expression_as_column;
+        auto order_by_column_name = order_by_expression_as_column.getColumnName();
+        std::cout << "order_by_column_name: " << order_by_column_name << std::endl;
+        bool found = false;
+        while (i < group_by_nodes.size()) {
+            if (group_by_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN) {
+                ++i;
+                continue;
+            }
+            const auto& group_by_node_typed = group_by_nodes[i]->template as<ColumnNode &>();
+            const auto& group_by_column_name = group_by_node_typed.getColumnName();
+            std::cout << "group_by_column_name: " << group_by_column_name << std::endl;
+            if (order_by_column_name == group_by_column_name) { // TODO also check sort order
+                result.push_back(i);
+                found = true;
+                ++i;
+                break;
+            }
+            ++i;
+        }
+        if (!found) {
+            return std::nullopt;
+        }
+    }
+    return result;
+}
+
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
@@ -502,6 +542,11 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     auto limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
     std::cout << "Planner.Cpp: getAggregatorParams: limit: " << limit_length << std::endl;
     std::cout << "Planner.Cpp: getAggregatorParams: query_analysis_result.limit_length: " << query_analysis_result.limit_length << std::endl;
+
+    const auto& order_by_nodes = query_node.getOrderBy().getNodes();
+    const auto& group_by_nodes = query_node.getGroupBy().getNodes();
+    auto optimization_indexes = FindOptimizationSublistIndexes(group_by_nodes, order_by_nodes);
+
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
@@ -525,7 +570,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
-        query_analysis_result.limit_length);
+        query_analysis_result.limit_length,
+        optimization_indexes);
 
     return aggregator_params;
 }

@@ -112,6 +112,10 @@ struct SerializedKeyHolder
 {
     StringRef key;
     Arena & pool;
+
+    bool operator==(const SerializedKeyHolder& other) {
+      return &key == &other.key && &pool == &other.pool;
+    }
 };
 
 }
