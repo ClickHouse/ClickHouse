@@ -24,10 +24,10 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 
-
 namespace ProfileEvents
 {
     extern const Event IcebergPartitionPrunnedFiles;
+    extern const Event IcebergTrivialCountOptimizationApplied;
 }
 
 namespace DB
@@ -347,10 +347,24 @@ void IcebergMetadata::updateSnapshot()
                     "No manifest list found for snapshot id `{}` for iceberg table `{}`",
                     relevant_snapshot_id,
                     configuration_ptr->getPath());
+            std::optional<size_t> total_rows;
+            std::optional<size_t> total_bytes;
+
+            if (snapshot->has("summary"))
+            {
+                auto summary_object = snapshot->get("summary").extract<Poco::JSON::Object::Ptr>();
+                if (summary_object->has("total-records"))
+                    total_rows = summary_object->getValue<Int64>("total-records");
+
+                if (summary_object->has("total-files-size"))
+                    total_bytes = summary_object->getValue<Int64>("total-files-size");
+            }
+
             relevant_snapshot = IcebergSnapshot{
                 getManifestList(getProperFilePathFromMetadataInfo(
                     snapshot->getValue<String>(MANIFEST_LIST_PATH_FIELD), configuration_ptr->getPath(), table_location)),
-                relevant_snapshot_id};
+                relevant_snapshot_id, total_rows, total_bytes};
+
             if (!snapshot->has("schema-id"))
                 throw Exception(
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -592,6 +606,69 @@ Strings IcebergMetadata::makePartitionPruning(const ActionsDAG & filter_dag)
     }
     return getDataFilesImpl(&filter_dag);
 }
+
+std::optional<size_t> IcebergMetadata::totalRows() const
+{
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
+
+    if (!relevant_snapshot)
+    {
+        ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
+        return 0;
+    }
+
+    /// All these "hints" with total rows or bytes are optional both in
+    /// metadata files and in manifest files, so we try all of them one by one
+    if (relevant_snapshot->total_rows.has_value())
+    {
+        ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
+        return relevant_snapshot->total_rows;
+    }
+
+    Int64 result = 0;
+    for (const auto & manifest_list_entry : *(relevant_snapshot->manifest_list))
+    {
+        auto count = manifest_list_entry->getRowsCountInAllDataFilesExcludingDeleted();
+        if (!count.has_value())
+            return {};
+
+        result += count.value();
+    }
+
+    ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
+    return result;
+}
+
+
+std::optional<size_t> IcebergMetadata::totalBytes() const
+{
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
+
+    if (!relevant_snapshot)
+        return 0;
+
+    /// All these "hints" with total rows or bytes are optional both in
+    /// metadata files and in manifest files, so we try all of them one by one
+    if (relevant_snapshot->total_bytes.has_value())
+        return relevant_snapshot->total_bytes;
+
+    Int64 result = 0;
+    for (const auto & manifest_list_entry : *(relevant_snapshot->manifest_list))
+    {
+        auto count = manifest_list_entry->getBytesCountInAllDataFiles();
+        if (!count.has_value())
+            return {};
+
+        result += count.value();
+    }
+
+    return result;
+}
+
 }
 
 #endif

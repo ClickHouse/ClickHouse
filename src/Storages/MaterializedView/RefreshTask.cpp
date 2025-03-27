@@ -619,7 +619,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
                 view_storage_id.table_name, /*async_insert*/ false);
 
             if (!pipeline.completed())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for view refresh must be completed");
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Pipeline for view {} refresh must be completed", view_storage_id.getFullTableName());
 
             PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
             executor.setReadProgressCallback(pipeline.getReadProgressCallback());
@@ -627,7 +628,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             {
                 std::unique_lock exec_lock(execution.executor_mutex);
                 if (execution.interrupt_execution.load())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh cancelled");
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
                 execution.executor = &executor;
             }
             SCOPE_EXIT({
@@ -644,7 +645,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             ///    being unexpectedly destroyed before completion and without uncaught exception
             ///    (specifically, the assert in ~WriteBuffer()).
             if (execution.interrupt_execution.load())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh cancelled");
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
 
             logQueryFinish(*query_log_elem, refresh_context, refresh_query, pipeline, /*pulling_pipeline*/ false, query_span, QueryResultCacheUsage::None, /*internal*/ false);
             query_log_elem = std::nullopt;
