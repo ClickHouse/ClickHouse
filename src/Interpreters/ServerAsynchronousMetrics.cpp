@@ -6,23 +6,17 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
+
+#include <Common/PageCache.h>
 
 #include <Databases/IDatabase.h>
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
-#include <Common/PageCache.h>
-#include <Common/quoteString.h>
-
-#include "config.h"
-#if USE_AWS_S3
-#include <IO/S3/Client.h>
-#endif
 
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MarkCache.h>
@@ -60,14 +54,10 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
     unsigned update_period_seconds,
-    bool update_heavy_metrics_,
     unsigned heavy_metrics_update_period_seconds,
-    const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
-    bool update_jemalloc_epoch_,
-    bool update_rss_)
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_, global_context_)
-    , update_heavy_metrics(update_heavy_metrics_)
+    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
     /// sanity check
@@ -89,20 +79,14 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["MarkCacheFiles"] = { mark_cache->count(), "Total number of mark files cached in the mark cache" };
     }
 
-    if (auto primary_index_cache = getContext()->getPrimaryIndexCache())
-    {
-        new_values["PrimaryIndexCacheBytes"] = { primary_index_cache->sizeInBytes(), "Total size of primary index cache in bytes" };
-        new_values["PrimaryIndexCacheFiles"] = { primary_index_cache->count(), "Total number of index files cached in the primary index cache" };
-    }
-
     if (auto page_cache = getContext()->getPageCache())
     {
-        new_values["PageCacheMaxBytes"] = { page_cache->maxSizeInBytes(),
-            "Current limit on the size of userspace page cache, in bytes." };
-        new_values["PageCacheBytes"] = { page_cache->sizeInBytes(),
-            "Total size of userspace page cache in bytes." };
-        new_values["PageCacheCells"] = { page_cache->count(),
-            "Total number of entries in the userspace page cache." };
+        auto rss = page_cache->getResidentSetSize();
+        new_values["PageCacheBytes"] = { rss.page_cache_rss, "Userspace page cache memory usage in bytes" };
+        new_values["PageCachePinnedBytes"] = { page_cache->getPinnedSize(), "Userspace page cache memory that's currently in use and can't be evicted" };
+
+        if (rss.unreclaimable_rss.has_value())
+            new_values["UnreclaimableRSS"] = { *rss.unreclaimable_rss, "The amount of physical memory used by the server process, in bytes, excluding memory reclaimable by the OS (MADV_FREE)" };
     }
 
     if (auto uncompressed_cache = getContext()->getUncompressedCache())
@@ -135,10 +119,10 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             " The files opened with `mmap` are kept in the cache to avoid costly TLB flushes."};
     }
 
-    if (auto query_result_cache = getContext()->getQueryResultCache())
+    if (auto query_cache = getContext()->getQueryCache())
     {
-        new_values["QueryCacheBytes"] = { query_result_cache->sizeInBytes(), "Total size of the query cache in bytes." };
-        new_values["QueryCacheEntries"] = { query_result_cache->count(), "Total number of entries in the query cache." };
+        new_values["QueryCacheBytes"] = { query_cache->sizeInBytes(), "Total size of the query cache in bytes." };
+        new_values["QueryCacheEntries"] = { query_cache->count(), "Total number of entries in the query cache." };
     }
 
     {
@@ -426,8 +410,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 #endif
 
-    if (update_heavy_metrics)
-        updateHeavyMetricsIfNeeded(current_time, update_time, force_update, first_run, new_values);
+    updateHeavyMetricsIfNeeded(current_time, update_time, force_update, first_run, new_values);
 }
 
 void ServerAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
@@ -437,10 +420,9 @@ void ServerAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
         asynchronous_metric_log->addValues(new_values);
 }
 
-void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
+void ServerAsynchronousMetrics::updateDetachedPartsStats()
 {
     DetachedPartsStats current_values{};
-    MutationStats current_mutation_stats{};
 
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
@@ -465,28 +447,20 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
 
                     ++current_values.count;
                 }
-
-                // mutation status
-                for (const auto & mutation_status : table_merge_tree->getMutationsStatus())
-                {
-                    if (!mutation_status.is_done)
-                        ++current_mutation_stats.pending_mutations;
-                }
             }
         }
     }
 
     detached_parts_stats = current_values;
-    mutation_stats = current_mutation_stats;
 }
 
 void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
 {
     const auto time_since_previous_update = current_time - heavy_metric_previous_update_time;
-    const bool need_update_heavy_metrics = (time_since_previous_update >= heavy_metric_update_period) || force_update || first_run;
+    const bool update_heavy_metrics = (time_since_previous_update >= heavy_metric_update_period) || force_update || first_run;
 
     Stopwatch watch;
-    if (need_update_heavy_metrics)
+    if (update_heavy_metrics)
     {
         heavy_metric_previous_update_time = update_time;
         if (first_run)
@@ -495,7 +469,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
             heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count() / 1e6;
 
         /// Test shows that listing 100000 entries consuming around 0.15 sec.
-        updateMutationAndDetachedPartsStats();
+        updateDetachedPartsStats();
 
         watch.stop();
 
@@ -522,8 +496,6 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
 
     new_values["NumberOfDetachedParts"] = { detached_parts_stats.count, "The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts and they can be removed." };
     new_values["NumberOfDetachedByUserParts"] = { detached_parts_stats.detached_by_user, "The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed." };
-    new_values["NumberOfPendingMutations"] = { mutation_stats.pending_mutations, "The total number of mutations that are in left to be mutated." };
-    new_values["NumberOfStuckMutations"] = { mutation_stats.stuck_mutations, "The total number of mutations which have data part left to be mutated over the last 1 hour." };
 }
 
 }

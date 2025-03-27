@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Core/StreamingHandleErrorMode.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Common/Macros.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
-#include <Common/Macros.h>
+#include <Storages/Kafka/KafkaSettings.h>
 #include <Common/SettingsChanges.h>
-#include <Common/ThreadPool_fwd.h>
 
 #include <Poco/Semaphore.h>
 
@@ -19,7 +19,6 @@
 namespace DB
 {
 
-struct KafkaSettings;
 class ReadFromStorageKafka;
 class StorageSystemKafkaConsumers;
 class ThreadStatus;
@@ -81,7 +80,7 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    StreamingHandleErrorMode getStreamingHandleErrorMode() const;
+    StreamingHandleErrorMode getStreamingHandleErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
     struct SafeConsumers
     {
@@ -91,9 +90,6 @@ public:
     };
 
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
-
-    bool supportsDynamicSubcolumns() const override { return true; }
-    bool supportsSubcolumns() const override { return true; }
 
 private:
     friend class ReadFromStorageKafka;
@@ -124,9 +120,9 @@ private:
     // Stream thread
     struct TaskContext
     {
-        BackgroundSchedulePoolTaskHolder holder;
+        BackgroundSchedulePool::TaskHolder holder;
         std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePoolTaskHolder&& task_) : holder(std::move(task_))
+        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
         {
         }
     };

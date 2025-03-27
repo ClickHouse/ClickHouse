@@ -5,9 +5,6 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <Core/UUID.h>
-
-#include <Common/EventFD.h>
-
 namespace DB
 {
 
@@ -34,7 +31,7 @@ public:
     /// Stop reading from stream if output port is finished.
     void onUpdatePorts() override;
 
-    int schedule() override;
+    int schedule() override { return fd; }
 
     void onAsyncJobReady() override;
 
@@ -45,7 +42,7 @@ protected:
     void onCancel() noexcept override;
 
 private:
-    std::atomic_bool was_query_sent = false;
+    bool was_query_sent = false;
     bool need_drain = false;
     bool executor_finished = false;
     bool add_aggregation_info = false;
@@ -59,8 +56,7 @@ private:
     int fd = -1;
     size_t rows = 0;
     bool manually_add_rows_before_limit_counter = false;
-    std::atomic_bool preprocessed_packet = false;
-    EventFD startup_event_fd;
+    bool preprocessed_packet = false;
 };
 
 /// Totals source from RemoteQueryExecutor.

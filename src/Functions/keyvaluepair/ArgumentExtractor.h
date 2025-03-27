@@ -1,16 +1,14 @@
 #pragma once
 
+#include <Columns/IColumn.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
 #include <list>
 #include <optional>
-#include <vector>
 
 namespace DB
 {
-
-class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
 
 /*
  * Validate (API level validation, no business logic validation) and extracts input arguments from

@@ -5,31 +5,19 @@
 #include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
 #include <Poco/SHA1Engine.h>
-#include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
 #include <Access/Common/SSLCertificateSubjects.h>
 
-#include <base/types.h>
 #include "config.h"
-
-#if USE_SSL
-#   include <openssl/evp.h>
-#   include <openssl/hmac.h>
-#   include <openssl/sha.h>
-#   include <openssl/buffer.h>
-#   include <openssl/rand.h>
-#   include <openssl/bio.h>
-#   include <openssl/err.h>
-#endif
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -95,228 +83,14 @@ namespace
                 return true;
         return false;
     }
-
-    bool hasPublicKey(const std::vector<SSHKey> & keys, const SSHKey & key)
-    {
-        return std::ranges::find_if(keys, [&](const auto & x) { return key.isEqual(x); }) != keys.end();
-    }
-#endif
-
-    bool checkKerberosAuthentication(
-        const GSSAcceptorContext * gss_acceptor_context,
-        const AuthenticationData & authentication_method,
-        const ExternalAuthenticators & external_authenticators)
-    {
-        return authentication_method.getType() == AuthenticationType::KERBEROS
-            && external_authenticators.checkKerberosCredentials(authentication_method.getKerberosRealm(), *gss_acceptor_context);
-    }
-
-#if USE_SSL
-    std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t>& key, const std::string& data)
-    {
-        unsigned int len = SHA256_DIGEST_LENGTH;
-        std::vector<uint8_t> result(len);
-        HMAC(
-            EVP_sha256(),
-            key.data(),
-            static_cast<Int32>(key.size()),
-            reinterpret_cast<const uint8_t*>(data.data()),
-            data.size(),
-            result.data(),
-            &len);
-        return result;
-    }
-
-    std::vector<uint8_t> sha256(const std::vector<uint8_t>& data)
-    {
-        std::vector<uint8_t> hash(SHA256_DIGEST_LENGTH);
-        SHA256_CTX sha256;
-        SHA256_Init(&sha256);
-        SHA256_Update(&sha256, data.data(), data.size());
-        SHA256_Final(hash.data(), &sha256);
-        return hash;
-    }
-
-#endif
-
-    std::string computeScramSHA256ClientProof(const std::vector<uint8_t> & salted_password [[maybe_unused]], const std::string& auth_message [[maybe_unused]])
-    {
-#if USE_SSL
-        auto client_key = hmacSHA256(salted_password, "Client Key");
-        auto stored_key = sha256(client_key);
-        auto client_signature = hmacSHA256(stored_key, auth_message);
-
-        String client_proof(client_key.size(), 0);
-        for (size_t i = 0; i < client_key.size(); ++i)
-            client_proof[i] = client_key[i] ^ client_signature[i];
-
-        return base64Encode(client_proof);
-#else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Client proof can be computed only with USE_SSL compile flag.");
-#endif
-    }
-
-    bool checkScramSHA256Authentication(
-        const ScramSHA256Credentials * scram_sha256_credentials,
-        const AuthenticationData & authentication_method)
-    {
-        const auto & client_proof = scram_sha256_credentials->getClientProof();
-        const auto & auth_message = scram_sha256_credentials->getAuthMessage();
-        const auto & salt = authentication_method.getSalt();
-        const auto & password = authentication_method.getPasswordHashBinary();
-        auto computed_client_proof = computeScramSHA256ClientProof(password, auth_message);
-
-        if (computed_client_proof.size() != client_proof.size())
-            return false;
-
-        for (size_t i = 0; i < computed_client_proof.size(); ++i)
-        {
-            if (static_cast<UInt8>(computed_client_proof[i]) != static_cast<UInt8>(client_proof[i]))
-                return false;
-        }
-        return true;
-    }
-
-    bool checkMySQLAuthentication(
-        const MySQLNative41Credentials * mysql_credentials,
-        const AuthenticationData & authentication_method)
-    {
-        switch (authentication_method.getType())
-        {
-            case AuthenticationType::PLAINTEXT_PASSWORD:
-                return checkPasswordPlainTextMySQL(
-                    mysql_credentials->getScramble(),
-                    mysql_credentials->getScrambledPassword(),
-                    authentication_method.getPasswordHashBinary());
-            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-                return checkPasswordDoubleSHA1MySQL(
-                    mysql_credentials->getScramble(),
-                    mysql_credentials->getScrambledPassword(),
-                    authentication_method.getPasswordHashBinary());
-            default:
-                return false;
-        }
-    }
-
-    bool checkBasicAuthentication(
-        const BasicCredentials * basic_credentials,
-        const AuthenticationData & authentication_method,
-        const ExternalAuthenticators & external_authenticators,
-        const ClientInfo & client_info,
-        SettingsChanges & settings)
-    {
-        switch (authentication_method.getType())
-        {
-            case AuthenticationType::NO_PASSWORD:
-            {
-                return true; // N.B. even if the password is not empty!
-            }
-            case AuthenticationType::PLAINTEXT_PASSWORD:
-            {
-                return checkPasswordPlainText(basic_credentials->getPassword(), authentication_method.getPasswordHashBinary());
-            }
-            case AuthenticationType::SHA256_PASSWORD:
-            {
-                return checkPasswordSHA256(
-                    basic_credentials->getPassword(), authentication_method.getPasswordHashBinary(), authentication_method.getSalt());
-            }
-            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            {
-                return checkPasswordDoubleSHA1(basic_credentials->getPassword(), authentication_method.getPasswordHashBinary());
-            }
-            case AuthenticationType::LDAP:
-            {
-                return external_authenticators.checkLDAPCredentials(authentication_method.getLDAPServerName(), *basic_credentials);
-            }
-            case AuthenticationType::BCRYPT_PASSWORD:
-            {
-                return checkPasswordBcrypt(basic_credentials->getPassword(), authentication_method.getPasswordHashBinary());
-            }
-            case AuthenticationType::HTTP:
-            {
-                if (authentication_method.getHTTPAuthenticationScheme() == HTTPAuthenticationScheme::BASIC)
-                {
-                    return external_authenticators.checkHTTPBasicCredentials(
-                        authentication_method.getHTTPAuthenticationServerName(), *basic_credentials, client_info, settings);
-                }
-                break;
-            }
-            default:
-                break;
-        }
-
-        return false;
-    }
-
-    bool checkSSLCertificateAuthentication(
-        const SSLCertificateCredentials * ssl_certificate_credentials,
-        const AuthenticationData & authentication_method)
-    {
-        if (AuthenticationType::SSL_CERTIFICATE != authentication_method.getType())
-        {
-            return false;
-        }
-
-        for (SSLCertificateSubjects::Type type : {SSLCertificateSubjects::Type::CN, SSLCertificateSubjects::Type::SAN})
-        {
-            for (const auto & subject : authentication_method.getSSLCertificateSubjects().at(type))
-            {
-                if (ssl_certificate_credentials->getSSLCertificateSubjects().at(type).contains(subject))
-                    return true;
-
-                // Wildcard support (1 only)
-                if (subject.contains('*'))
-                {
-                    auto prefix = std::string_view(subject).substr(0, subject.find('*'));
-                    auto suffix = std::string_view(subject).substr(subject.find('*') + 1);
-                    auto slashes = std::count(subject.begin(), subject.end(), '/');
-
-                    for (const auto & certificate_subject : ssl_certificate_credentials->getSSLCertificateSubjects().at(type))
-                    {
-                        bool matches_wildcard = certificate_subject.starts_with(prefix) && certificate_subject.ends_with(suffix);
-
-                        // '*' must not represent a '/' in URI, so check if the number of '/' are equal
-                        bool matches_slashes = slashes == count(certificate_subject.begin(), certificate_subject.end(), '/');
-
-                        if (matches_wildcard && matches_slashes)
-                            return true;
-                    }
-                }
-            }
-        }
-
-        return false;
-    }
-
-#if USE_SSH
-    bool checkSshAuthentication(
-        const SshCredentials * ssh_credentials,
-        const AuthenticationData & authentication_method)
-    {
-        return AuthenticationType::SSH_KEY == authentication_method.getType()
-            && checkSshSignature(authentication_method.getSSHKeys(), ssh_credentials->getSignature(), ssh_credentials->getOriginal());
-    }
-
-    /**
-     * The idea behind this simple check is that the most of the work and verification is done by libssh.
-     * What we need to do is to compare the public key extracted from the user's private key and compare it
-     * to our database of keys associated with the user. Similar to how it is done with ~/.ssh/authorized_keys
-     */
-    bool checkSSHLoginAuthentication(
-        const SSHPTYCredentials * ssh_login_credentials,
-        const AuthenticationData & authentication_method)
-    {
-        return AuthenticationType::SSH_KEY == authentication_method.getType()
-            && hasPublicKey(authentication_method.getSSHKeys(), ssh_login_credentials->getKey());
-    }
 #endif
 }
 
+
 bool Authentication::areCredentialsValid(
     const Credentials & credentials,
-    const AuthenticationData & authentication_method,
+    const AuthenticationData & auth_data,
     const ExternalAuthenticators & external_authenticators,
-    const ClientInfo & client_info,
     SettingsChanges & settings)
 {
     if (!credentials.isReady())
@@ -324,45 +98,204 @@ bool Authentication::areCredentialsValid(
 
     if (const auto * gss_acceptor_context = typeid_cast<const GSSAcceptorContext *>(&credentials))
     {
-        return checkKerberosAuthentication(gss_acceptor_context, authentication_method, external_authenticators);
+        switch (auth_data.getType())
+        {
+            case AuthenticationType::NO_PASSWORD:
+            case AuthenticationType::PLAINTEXT_PASSWORD:
+            case AuthenticationType::SHA256_PASSWORD:
+            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+            case AuthenticationType::BCRYPT_PASSWORD:
+            case AuthenticationType::LDAP:
+            case AuthenticationType::HTTP:
+                throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
+
+            case AuthenticationType::JWT:
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+
+            case AuthenticationType::KERBEROS:
+                return external_authenticators.checkKerberosCredentials(auth_data.getKerberosRealm(), *gss_acceptor_context);
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
+
+            case AuthenticationType::SSH_KEY:
+#if USE_SSH
+                throw Authentication::Require<SshCredentials>("SSH Keys Authentication");
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+#endif
+
+            case AuthenticationType::MAX:
+                break;
+        }
     }
 
     if (const auto * mysql_credentials = typeid_cast<const MySQLNative41Credentials *>(&credentials))
     {
-        return checkMySQLAuthentication(mysql_credentials, authentication_method);
+        switch (auth_data.getType())
+        {
+            case AuthenticationType::NO_PASSWORD:
+                return true; // N.B. even if the password is not empty!
+
+            case AuthenticationType::PLAINTEXT_PASSWORD:
+                return checkPasswordPlainTextMySQL(mysql_credentials->getScramble(), mysql_credentials->getScrambledPassword(), auth_data.getPasswordHashBinary());
+
+            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+                return checkPasswordDoubleSHA1MySQL(mysql_credentials->getScramble(), mysql_credentials->getScrambledPassword(), auth_data.getPasswordHashBinary());
+
+            case AuthenticationType::SHA256_PASSWORD:
+            case AuthenticationType::BCRYPT_PASSWORD:
+            case AuthenticationType::LDAP:
+            case AuthenticationType::KERBEROS:
+            case AuthenticationType::HTTP:
+                throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
+
+            case AuthenticationType::JWT:
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+
+            case AuthenticationType::SSH_KEY:
+#if USE_SSH
+                throw Authentication::Require<SshCredentials>("SSH Keys Authentication");
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+#endif
+
+            case AuthenticationType::MAX:
+                break;
+        }
     }
 
     if (const auto * basic_credentials = typeid_cast<const BasicCredentials *>(&credentials))
     {
-        return checkBasicAuthentication(basic_credentials, authentication_method, external_authenticators, client_info, settings);
-    }
+        switch (auth_data.getType())
+        {
+            case AuthenticationType::NO_PASSWORD:
+                return true; // N.B. even if the password is not empty!
 
-    if (const auto * scram_shh256_credentials = typeid_cast<const ScramSHA256Credentials *>(&credentials))
-    {
-        return checkScramSHA256Authentication(scram_shh256_credentials, authentication_method);
+            case AuthenticationType::PLAINTEXT_PASSWORD:
+                return checkPasswordPlainText(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
+
+            case AuthenticationType::SHA256_PASSWORD:
+                return checkPasswordSHA256(basic_credentials->getPassword(), auth_data.getPasswordHashBinary(), auth_data.getSalt());
+
+            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+                return checkPasswordDoubleSHA1(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
+
+            case AuthenticationType::LDAP:
+                return external_authenticators.checkLDAPCredentials(auth_data.getLDAPServerName(), *basic_credentials);
+
+            case AuthenticationType::KERBEROS:
+                throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
+
+            case AuthenticationType::SSH_KEY:
+#if USE_SSH
+                throw Authentication::Require<SshCredentials>("SSH Keys Authentication");
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+#endif
+
+            case AuthenticationType::JWT:
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+
+            case AuthenticationType::BCRYPT_PASSWORD:
+                return checkPasswordBcrypt(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
+
+            case AuthenticationType::HTTP:
+                switch (auth_data.getHTTPAuthenticationScheme())
+                {
+                    case HTTPAuthenticationScheme::BASIC:
+                        return external_authenticators.checkHTTPBasicCredentials(
+                            auth_data.getHTTPAuthenticationServerName(), *basic_credentials, settings);
+                }
+
+            case AuthenticationType::MAX:
+                break;
+        }
     }
 
     if (const auto * ssl_certificate_credentials = typeid_cast<const SSLCertificateCredentials *>(&credentials))
     {
-        return checkSSLCertificateAuthentication(ssl_certificate_credentials, authentication_method);
+        switch (auth_data.getType())
+        {
+            case AuthenticationType::NO_PASSWORD:
+            case AuthenticationType::PLAINTEXT_PASSWORD:
+            case AuthenticationType::SHA256_PASSWORD:
+            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+            case AuthenticationType::BCRYPT_PASSWORD:
+            case AuthenticationType::LDAP:
+            case AuthenticationType::HTTP:
+                throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
+
+            case AuthenticationType::JWT:
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+
+            case AuthenticationType::KERBEROS:
+                throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                for (SSLCertificateSubjects::Type type : {SSLCertificateSubjects::Type::CN, SSLCertificateSubjects::Type::SAN})
+                {
+                    for (const auto & subject : auth_data.getSSLCertificateSubjects().at(type))
+                    {
+                        if (ssl_certificate_credentials->getSSLCertificateSubjects().at(type).contains(subject))
+                            return true;
+                    }
+                }
+                return false;
+
+            case AuthenticationType::SSH_KEY:
+#if USE_SSH
+                throw Authentication::Require<SshCredentials>("SSH Keys Authentication");
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+#endif
+
+            case AuthenticationType::MAX:
+                break;
+        }
     }
 
 #if USE_SSH
     if (const auto * ssh_credentials = typeid_cast<const SshCredentials *>(&credentials))
     {
-        return checkSshAuthentication(ssh_credentials, authentication_method);
-    }
+        switch (auth_data.getType())
+        {
+            case AuthenticationType::NO_PASSWORD:
+            case AuthenticationType::PLAINTEXT_PASSWORD:
+            case AuthenticationType::SHA256_PASSWORD:
+            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+            case AuthenticationType::BCRYPT_PASSWORD:
+            case AuthenticationType::LDAP:
+            case AuthenticationType::HTTP:
+                throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
-    if (const auto * ssh_login_credentials = typeid_cast<const SSHPTYCredentials *>(&credentials))
-    {
-        return checkSSHLoginAuthentication(ssh_login_credentials, authentication_method);
+            case AuthenticationType::JWT:
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+
+            case AuthenticationType::KERBEROS:
+                throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<SSLCertificateCredentials>("ClickHouse X.509 Authentication");
+
+            case AuthenticationType::SSH_KEY:
+                return checkSshSignature(auth_data.getSSHKeys(), ssh_credentials->getSignature(), ssh_credentials->getOriginal());
+            case AuthenticationType::MAX:
+                break;
+        }
     }
 #endif
 
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "areCredentialsValid(): authentication type {} not supported", toString(auth_data.getType()));
 }
 
 }

@@ -238,7 +238,6 @@ template class SerializationNumber<Int32>;
 template class SerializationNumber<Int64>;
 template class SerializationNumber<Int128>;
 template class SerializationNumber<Int256>;
-template class SerializationNumber<BFloat16>;
 template class SerializationNumber<Float32>;
 template class SerializationNumber<Float64>;
 

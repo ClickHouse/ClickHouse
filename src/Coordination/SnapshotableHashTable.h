@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 template<typename V>
 struct ListNode
 {
@@ -103,10 +98,15 @@ private:
 
     enum OperationType
     {
-        INSERT_OR_REPLACE = 0,
-        ERASE = 1,
-        UPDATE = 2,
-        CLEAR = 3,
+        INSERT = 0,
+        INSERT_OR_REPLACE = 1,
+        ERASE = 2,
+        UPDATE_VALUE = 3,
+        GET_VALUE = 4,
+        FIND = 5,
+        CONTAINS = 6,
+        CLEAR = 7,
+        CLEAR_OUTDATED_NODES = 8
     };
 
     /// Update hash table approximate data size
@@ -119,16 +119,30 @@ private:
     {
         switch (op_type)
         {
-            case INSERT_OR_REPLACE:
+            case INSERT:
                 approximate_data_size += key_size;
                 approximate_data_size += value_size;
-                if (remove_old && old_value_size != 0)
+                break;
+            case INSERT_OR_REPLACE:
+                /// replace
+                if (old_value_size != 0)
                 {
-                    approximate_data_size -= key_size;
-                    approximate_data_size -= old_value_size;
+                    approximate_data_size += key_size;
+                    approximate_data_size += value_size;
+                    if (!snapshot_mode)
+                    {
+                        approximate_data_size -= key_size;
+                        approximate_data_size -= old_value_size;
+                    }
+                }
+                /// insert
+                else
+                {
+                    approximate_data_size += key_size;
+                    approximate_data_size += value_size;
                 }
                 break;
-            case UPDATE:
+            case UPDATE_VALUE:
                 approximate_data_size += key_size;
                 approximate_data_size += value_size;
                 if (remove_old)
@@ -146,6 +160,12 @@ private:
                 break;
             case CLEAR:
                 approximate_data_size = 0;
+                break;
+            case CLEAR_OUTDATED_NODES:
+                approximate_data_size -= key_size;
+                approximate_data_size -= value_size;
+                break;
+            default:
                 break;
         }
     }
@@ -220,7 +240,7 @@ public:
             chassert(inserted);
 
             it->getMapped() = itr;
-            updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), 0);
+            updateDataSize(INSERT, key.size(), value.sizeInBytes(), 0);
             return std::make_pair(it, true);
         }
 
@@ -297,8 +317,7 @@ public:
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
-        if (it == map.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key.toView());
+        chassert(it != map.end());
 
         auto list_itr = it->getMapped();
         uint64_t old_value_size = list_itr->value.sizeInBytes();
@@ -337,7 +356,7 @@ public:
             ret = list_itr;
         }
 
-        updateDataSize(UPDATE, key.size, ret->value.sizeInBytes(), old_value_size, remove_old_size);
+        updateDataSize(UPDATE_VALUE, key.size, ret->value.sizeInBytes(), old_value_size, remove_old_size);
         return ret;
     }
 
@@ -354,8 +373,7 @@ public:
     const V & getValue(StringRef key) const
     {
         auto it = map.find(key);
-        if (it == map.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key.toView());
+        chassert(it);
         return it->getMapped()->value;
     }
 
@@ -363,9 +381,8 @@ public:
     {
         for (auto & itr : snapshot_invalid_iters)
         {
-            if (itr->isActiveInMap())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not active in map", itr->key.toView());
-            updateDataSize(ERASE, itr->key.size, 0, itr->value.sizeInBytes(), /*remove_old=*/true);
+            chassert(!itr->isActiveInMap());
+            updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
             if (itr->getFreeKey())
                 arena.free(const_cast<char *>(itr->key.data), itr->key.size);
             list.erase(itr);

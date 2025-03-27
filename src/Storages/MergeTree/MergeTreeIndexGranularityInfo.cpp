@@ -8,13 +8,6 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool compress_marks;
-    extern const MergeTreeSettingsUInt64 index_granularity;
-    extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -69,7 +62,7 @@ MarkType::MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Valu
 
 bool MarkType::isMarkFileExtension(std::string_view extension)
 {
-    return extension.contains("mrk");
+    return extension.find("mrk") != std::string_view::npos;
 }
 
 std::string MarkType::getFileExtension() const
@@ -103,29 +96,21 @@ std::optional<MarkType> MergeTreeIndexGranularityInfo::getMarksTypeFromFilesyste
 {
     if (data_part_storage.exists())
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
-            if (std::string ext = fs::path(it->name()).extension(); MarkType::isMarkFileExtension(ext))
-                return MarkType(ext);
+            if (it->isFile())
+                if (std::string ext = fs::path(it->name()).extension(); MarkType::isMarkFileExtension(ext))
+                    return MarkType(ext);
     return {};
 }
 
-MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
-    MarkType mark_type_, size_t index_granularity_, size_t index_granularity_bytes_)
-    : mark_type(mark_type_)
-    , fixed_index_granularity(index_granularity_)
-    , index_granularity_bytes(index_granularity_bytes_)
-{
-}
-
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_)
-    : MergeTreeIndexGranularityInfo(storage, {storage.canUseAdaptiveGranularity(), (*storage.getSettings())[MergeTreeSetting::compress_marks], type_.getValue()})
+    : MergeTreeIndexGranularityInfo(storage, {storage.canUseAdaptiveGranularity(), storage.getSettings()->compress_marks, type_.getValue()})
 {
 }
 
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MarkType mark_type_)
     : mark_type(mark_type_)
-    , fixed_index_granularity((*storage.getSettings())[MergeTreeSetting::index_granularity])
-    , index_granularity_bytes((*storage.getSettings())[MergeTreeSetting::index_granularity_bytes])
 {
+    fixed_index_granularity = storage.getSettings()->index_granularity;
 }
 
 void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const IDataPartStorage & data_part_storage)
@@ -142,9 +127,10 @@ size_t MergeTreeIndexGranularityInfo::getMarkSizeInBytes(size_t columns_num) con
 {
     if (mark_type.part_type == MergeTreeDataPartType::Wide)
         return mark_type.adaptive ? getAdaptiveMrkSizeWide() : getNonAdaptiveMrkSizeWide();
-    if (mark_type.part_type == MergeTreeDataPartType::Compact)
+    else if (mark_type.part_type == MergeTreeDataPartType::Compact)
         return getAdaptiveMrkSizeCompact(columns_num);
-    throw Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unknown part type");
+    else
+        throw Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unknown part type");
 }
 
 std::string MergeTreeIndexGranularityInfo::describe() const

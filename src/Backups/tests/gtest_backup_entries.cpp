@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <Common/tests/gtest_global_context.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
@@ -75,7 +74,7 @@ protected:
 
     static const constexpr std::string_view NO_CHECKSUM = "no checksum";
 
-    static String getPartialChecksum(const BackupEntryPtr & backup_entry, UInt64 prefix_length)
+    static String getPartialChecksum(const BackupEntryPtr & backup_entry, size_t prefix_length)
     {
         auto partial_checksum = backup_entry->getPartialChecksum(prefix_length, {});
         if (!partial_checksum)
@@ -115,7 +114,7 @@ TEST_F(BackupEntriesTest, BackupEntryFromImmutableFile)
     auto entry = std::make_shared<BackupEntryFromImmutableFile>(local_disk, "a.txt");
     EXPECT_EQ(entry->getSize(), 9);
     EXPECT_EQ(getChecksum(entry), SOME_TEXT_CHECKSUM);
-    EXPECT_EQ(getPartialChecksum(entry, 0), NO_CHECKSUM);
+    EXPECT_EQ(getPartialChecksum(entry, 0), ZERO_CHECKSUM);
     EXPECT_EQ(getPartialChecksum(entry, 1), NO_CHECKSUM);
     EXPECT_EQ(getPartialChecksum(entry, 8), NO_CHECKSUM);
     EXPECT_EQ(getPartialChecksum(entry, 9), SOME_TEXT_CHECKSUM);
@@ -136,7 +135,7 @@ TEST_F(BackupEntriesTest, BackupEntryFromImmutableFile)
     EXPECT_EQ(precalculated_entry->getSize(), PRECALCULATED_SIZE);
 
     EXPECT_EQ(getChecksum(precalculated_entry), PRECALCULATED_CHECKSUM);
-    EXPECT_EQ(getPartialChecksum(precalculated_entry, 0), NO_CHECKSUM);
+    EXPECT_EQ(getPartialChecksum(precalculated_entry, 0), ZERO_CHECKSUM);
     EXPECT_EQ(getPartialChecksum(precalculated_entry, 1), NO_CHECKSUM);
     EXPECT_EQ(getPartialChecksum(precalculated_entry, PRECALCULATED_SIZE - 1), NO_CHECKSUM);
     EXPECT_EQ(getPartialChecksum(precalculated_entry, PRECALCULATED_SIZE), PRECALCULATED_CHECKSUM);
@@ -218,9 +217,8 @@ TEST_F(BackupEntriesTest, PartialChecksumBeforeFullChecksum)
 
 TEST_F(BackupEntriesTest, BackupEntryFromSmallFile)
 {
-    auto read_settings = getContext().context->getReadSettings();
     writeFile(local_disk, "a.txt");
-    auto entry = std::make_shared<BackupEntryFromSmallFile>(local_disk, "a.txt", read_settings);
+    auto entry = std::make_shared<BackupEntryFromSmallFile>(local_disk, "a.txt", ReadSettings{});
 
     local_disk->removeFile("a.txt");
 
@@ -236,18 +234,17 @@ TEST_F(BackupEntriesTest, BackupEntryFromSmallFile)
 
 TEST_F(BackupEntriesTest, DecryptedEntriesFromEncryptedDisk)
 {
-    auto read_settings = getContext().context->getReadSettings();
     {
         writeFile(encrypted_disk, "a.txt");
         std::pair<BackupEntryPtr, bool /* partial_checksum_allowed */> test_cases[]
             = {{std::make_shared<BackupEntryFromImmutableFile>(encrypted_disk, "a.txt"), false},
                {std::make_shared<BackupEntryFromAppendOnlyFile>(encrypted_disk, "a.txt"), true},
-               {std::make_shared<BackupEntryFromSmallFile>(encrypted_disk, "a.txt", read_settings), true}};
+               {std::make_shared<BackupEntryFromSmallFile>(encrypted_disk, "a.txt", ReadSettings{}), true}};
         for (const auto & [entry, partial_checksum_allowed] : test_cases)
         {
             EXPECT_EQ(entry->getSize(), 9);
             EXPECT_EQ(getChecksum(entry), SOME_TEXT_CHECKSUM);
-            EXPECT_EQ(getPartialChecksum(entry, 0), partial_checksum_allowed ? ZERO_CHECKSUM : NO_CHECKSUM);
+            EXPECT_EQ(getPartialChecksum(entry, 0), ZERO_CHECKSUM);
             EXPECT_EQ(getPartialChecksum(entry, 1), partial_checksum_allowed ? S_CHECKSUM : NO_CHECKSUM);
             EXPECT_EQ(getPartialChecksum(entry, 8), partial_checksum_allowed ? SOME_TEX_CHECKSUM : NO_CHECKSUM);
             EXPECT_EQ(getPartialChecksum(entry, 9), SOME_TEXT_CHECKSUM);
@@ -261,7 +258,7 @@ TEST_F(BackupEntriesTest, DecryptedEntriesFromEncryptedDisk)
         BackupEntryPtr entries[]
             = {std::make_shared<BackupEntryFromImmutableFile>(encrypted_disk, "empty.txt"),
                std::make_shared<BackupEntryFromAppendOnlyFile>(encrypted_disk, "empty.txt"),
-               std::make_shared<BackupEntryFromSmallFile>(encrypted_disk, "empty.txt", read_settings)};
+               std::make_shared<BackupEntryFromSmallFile>(encrypted_disk, "empty.txt", ReadSettings{})};
         for (const auto & entry : entries)
         {
             EXPECT_EQ(entry->getSize(), 0);
@@ -276,7 +273,7 @@ TEST_F(BackupEntriesTest, DecryptedEntriesFromEncryptedDisk)
         auto precalculated_entry = std::make_shared<BackupEntryFromImmutableFile>(encrypted_disk, "a.txt", false, PRECALCULATED_SIZE, PRECALCULATED_CHECKSUM_UINT128);
         EXPECT_EQ(precalculated_entry->getSize(), PRECALCULATED_SIZE);
         EXPECT_EQ(getChecksum(precalculated_entry), PRECALCULATED_CHECKSUM);
-        EXPECT_EQ(getPartialChecksum(precalculated_entry, 0), NO_CHECKSUM);
+        EXPECT_EQ(getPartialChecksum(precalculated_entry, 0), ZERO_CHECKSUM);
         EXPECT_EQ(getPartialChecksum(precalculated_entry, 1), NO_CHECKSUM);
         EXPECT_EQ(getPartialChecksum(precalculated_entry, PRECALCULATED_SIZE), PRECALCULATED_CHECKSUM);
         EXPECT_EQ(getPartialChecksum(precalculated_entry, 1000), PRECALCULATED_CHECKSUM);
@@ -286,13 +283,12 @@ TEST_F(BackupEntriesTest, DecryptedEntriesFromEncryptedDisk)
 
 TEST_F(BackupEntriesTest, EncryptedEntriesFromEncryptedDisk)
 {
-    auto read_settings = getContext().context->getReadSettings();
     {
         writeFile(encrypted_disk, "a.txt");
         BackupEntryPtr entries[]
             = {std::make_shared<BackupEntryFromImmutableFile>(encrypted_disk, "a.txt", /* copy_encrypted= */ true),
                std::make_shared<BackupEntryFromAppendOnlyFile>(encrypted_disk, "a.txt", /* copy_encrypted= */ true),
-               std::make_shared<BackupEntryFromSmallFile>(encrypted_disk, "a.txt", read_settings, /* copy_encrypted= */ true)};
+               std::make_shared<BackupEntryFromSmallFile>(encrypted_disk, "a.txt", ReadSettings{}, /* copy_encrypted= */ true)};
 
         auto encrypted_checksum = getChecksum(entries[0]);
         EXPECT_NE(encrypted_checksum, NO_CHECKSUM);
@@ -312,6 +308,7 @@ TEST_F(BackupEntriesTest, EncryptedEntriesFromEncryptedDisk)
         {
             EXPECT_EQ(entry->getSize(), 9 + FileEncryption::Header::kSize);
             EXPECT_EQ(getChecksum(entry), encrypted_checksum);
+            EXPECT_EQ(getPartialChecksum(entry, 0), ZERO_CHECKSUM);
             auto encrypted_checksum_9 = getPartialChecksum(entry, 9);
             EXPECT_TRUE(encrypted_checksum_9 == NO_CHECKSUM || encrypted_checksum_9 == partial_checksum);
             EXPECT_EQ(getPartialChecksum(entry, 9 + FileEncryption::Header::kSize), encrypted_checksum);
@@ -325,7 +322,7 @@ TEST_F(BackupEntriesTest, EncryptedEntriesFromEncryptedDisk)
         BackupEntryPtr entries[]
             = {std::make_shared<BackupEntryFromImmutableFile>(encrypted_disk, "empty.txt", /* copy_encrypted= */ true),
                std::make_shared<BackupEntryFromAppendOnlyFile>(encrypted_disk, "empty.txt", /* copy_encrypted= */ true),
-               std::make_shared<BackupEntryFromSmallFile>(encrypted_disk, "empty.txt", read_settings, /* copy_encrypted= */ true)};
+               std::make_shared<BackupEntryFromSmallFile>(encrypted_disk, "empty.txt", ReadSettings{}, /* copy_encrypted= */ true)};
         for (const auto & entry : entries)
         {
             EXPECT_EQ(entry->getSize(), 0);
@@ -346,7 +343,7 @@ TEST_F(BackupEntriesTest, EncryptedEntriesFromEncryptedDisk)
         EXPECT_NE(encrypted_checksum, SOME_TEXT_CHECKSUM);
         EXPECT_NE(encrypted_checksum, PRECALCULATED_CHECKSUM);
 
-        EXPECT_EQ(getPartialChecksum(precalculated_entry, 0), NO_CHECKSUM);
+        EXPECT_EQ(getPartialChecksum(precalculated_entry, 0), ZERO_CHECKSUM);
         EXPECT_EQ(getPartialChecksum(precalculated_entry, 1), NO_CHECKSUM);
         EXPECT_EQ(getPartialChecksum(precalculated_entry, PRECALCULATED_SIZE), NO_CHECKSUM);
         EXPECT_EQ(getPartialChecksum(precalculated_entry, PRECALCULATED_SIZE + FileEncryption::Header::kSize), encrypted_checksum);

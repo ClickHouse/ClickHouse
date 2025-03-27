@@ -9,6 +9,7 @@
 
 namespace DB
 {
+class DB;
 class ProtobufSerializer;
 class ProtobufWriter;
 class WriteBuffer;

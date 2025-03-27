@@ -141,7 +141,7 @@ ClickHouse знает, что файл использует формат, раз
 ```
 
 :::tip
-В имени файла разрешается использовать [Шаблоны поиска](/ru/sql-reference/table-functions/file.md/#globs-in-path).
+В имени файла разрешается использовать [Шаблоны поиска](/docs/ru/sql-reference/table-functions/file.md/#globs-in-path).
 
 Примеры:
 

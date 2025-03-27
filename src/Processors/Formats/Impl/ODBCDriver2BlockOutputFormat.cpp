@@ -1,7 +1,6 @@
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ODBCDriver2BlockOutputFormat.h>
-#include <Processors/Port.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -102,7 +101,6 @@ void registerOutputFormatODBCDriver2(FormatFactory & factory)
         {
             return std::make_shared<ODBCDriver2BlockOutputFormat>(buf, sample, format_settings);
         });
-    factory.markOutputFormatNotTTYFriendly("ODBCDriver2");
 }
 
 }

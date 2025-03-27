@@ -16,28 +16,18 @@ public:
     {
     }
 
-    struct DynamicSerializationVersion
+    struct DynamicStructureSerializationVersion
     {
         enum Value
         {
-            /// V1 serialization:
-            /// - DynamicStructure stream:
-            ///     <max_dynamic_types parameter>
-            ///     <actual number of dynamic types>
-            ///     <list of dynamic types (list of variants in nested Variant column without SharedVariant)>
-            ///     <statistics with number of values for each dynamic type> (only in MergeTree serialization)
-            ///     <statistics with number of values for some types in SharedVariant> (only in MergeTree serialization)
-            /// - DynamicData stream: contains the data of nested Variant column.
-            V1 = 1,
-            /// V2 serialization: the same as V1 but without max_dynamic_types parameter in DynamicStructure stream.
-            V2 = 2,
+            VariantTypeName = 1,
         };
 
         Value value;
 
         static void checkVersion(UInt64 version);
 
-        explicit DynamicSerializationVersion(UInt64 version);
+        explicit DynamicStructureSerializationVersion(UInt64 version);
     };
 
     void enumerateStreams(
@@ -123,19 +113,14 @@ private:
 
     struct DeserializeBinaryBulkStateDynamicStructure : public ISerialization::DeserializeBinaryBulkState
     {
-        DynamicSerializationVersion structure_version;
+        DynamicStructureSerializationVersion structure_version;
         DataTypePtr variant_type;
-        size_t num_dynamic_types;
+        size_t max_dynamic_types;
         ColumnDynamic::StatisticsPtr statistics;
 
         explicit DeserializeBinaryBulkStateDynamicStructure(UInt64 structure_version_)
             : structure_version(structure_version_)
         {
-        }
-
-        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
-        {
-            return std::make_shared<DeserializeBinaryBulkStateDynamicStructure>(*this);
         }
     };
 

@@ -1,7 +1,7 @@
 As we have multiple projects we use a workspace to manage them (it's way simpler and leads to less issues). In order
 to vendor all the dependencies we need to store both the registry and the packages themselves.
 
-Note that this includes the exact `std` dependencies for the rustc version used in CI (currently nightly-2024-12-01),
+Note that this includes the exact `std` dependencies for the rustc version used in CI (currently nightly-2024-04-01),
 so you need to install `rustup component add rust-src` for the specific version.
 
 * First step: (Re)-generate the Cargo.lock file (run under `workspace/`).
@@ -16,7 +16,7 @@ Note that we use both commands to vendor both registry and crates. No idea why b
 
   * First we need to install the tool if you don't already have it:
 ```bash
-cargo install --version 0.2.7 cargo-local-registry
+cargo install --version 0.2.6 cargo-local-registry
 ```
 
   * Now add the local packages:
@@ -24,30 +24,15 @@ cargo install --version 0.2.7 cargo-local-registry
 ```bash
 export CH_TOP_DIR=$(git rev-parse --show-toplevel)
 export RUSTC_ROOT=$(rustc --print=sysroot)
-# Currently delta-lake is built outside the workspace (TODO)
-export DELTA_LAKE_DIR="$CH_TOP_DIR"/contrib/delta-kernel-rs
-
-# Clean the vendor repo
-rm -rf "$CH_TOP_DIR"/contrib/rust_vendor/*
 
 cd "$CH_TOP_DIR"/rust/workspace
+
 cargo local-registry --git --sync Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
-
-# Now handle delta-lake
-cd "$DELTA_LAKE_DIR"
-cargo generate-lockfile
-cargo local-registry --no-delete --git --sync "$DELTA_LAKE_DIR/Cargo.lock" "$CH_TOP_DIR"/contrib/rust_vendor
-
-# Standard library deps
-cp "$RUSTC_ROOT"/lib/rustlib/src/rust/library/Cargo.lock "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/
+cp "$RUSTC_ROOT"/lib/rustlib/src/rust/Cargo.lock "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/
 cargo local-registry --no-delete --git --sync "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
-cp "$RUSTC_ROOT"/lib/rustlib/src/rust/library/Cargo.lock "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/
+cp "$RUSTC_ROOT"/lib/rustlib/src/rust/Cargo.lock "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/
 cargo local-registry --no-delete --git --sync "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
 
-# Now we vendor the modules themselves
-cd "$CH_TOP_DIR"/rust/workspace
-cargo vendor --no-delete --locked "$CH_TOP_DIR"/contrib/rust_vendor
-cd "$DELTA_LAKE_DIR"
 cargo vendor --no-delete --locked "$CH_TOP_DIR"/contrib/rust_vendor
 cd "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/
 cargo vendor --no-delete "$CH_TOP_DIR"/contrib/rust_vendor

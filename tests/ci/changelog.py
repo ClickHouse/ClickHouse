@@ -15,11 +15,12 @@ from github.NamedUser import NamedUser
 from thefuzz.fuzz import ratio  # type: ignore
 
 from cache_utils import GitHubCache
-from ci_utils import Shell
 from env_helper import TEMP_PATH
 from git_helper import git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
 from s3_helper import S3Helper
+from get_robot_token import get_best_robot_token
+from ci_utils import Shell
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     get_abs_path,
@@ -114,6 +115,7 @@ def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
         # pylint: enable=protected-access
         if repo_name not in repos:
             repos[repo_name] = pr.base.repo
+        in_changelog = False
         merge_commit = pr.merge_commit_sha
         if merge_commit is None:
             logging.warning("PR %s does not have merge-commit, skipping", pr.number)
@@ -171,6 +173,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gh-user-or-token",
         help="user name or GH token to authenticate",
+        default=get_best_robot_token(),
     )
     parser.add_argument(
         "--gh-password",
@@ -288,7 +291,7 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     # Normalize bug fixes
     if (
         re.match(
-            r"(?i).*bug\Wfix",
+            r"(?i)bug\Wfix",
             category,
         )
         # Map "Critical Bug Fix" to "Bug fix" category for changelog
@@ -348,7 +351,7 @@ def write_changelog(
 
 
 def check_refs(from_ref: Optional[str], to_ref: str, with_testing_tags: bool) -> None:
-    global FROM_REF, TO_REF  # pylint:disable=global-statement
+    global FROM_REF, TO_REF
     TO_REF = to_ref
 
     # Check TO_REF
@@ -386,7 +389,7 @@ def check_refs(from_ref: Optional[str], to_ref: str, with_testing_tags: bool) ->
 
 
 def set_sha_in_changelog():
-    global SHA_IN_CHANGELOG  # pylint:disable=global-statement
+    global SHA_IN_CHANGELOG
     SHA_IN_CHANGELOG = runner.run(
         f"git log --format=format:%H {FROM_REF}..{TO_REF}"
     ).split("\n")
@@ -450,7 +453,7 @@ def main():
     )
 
     # Get all PRs for the given time frame
-    global gh  # pylint:disable=global-statement
+    global gh
     gh = GitHub(
         args.gh_user_or_token,
         args.gh_password,
@@ -467,19 +470,17 @@ def main():
     if branch and patch and Shell.check(f"git show-ref --quiet {branch}"):
         if patch > 1:
             query += f" base:{branch}"
-            logging.info(
-                "NOTE: It's a patch [%s]. will use base branch to filter PRs [%s]",
-                patch,
-                branch,
+            print(
+                f"NOTE: It's a patch [{patch}]. will use base branch to filter PRs [{branch}]"
             )
         else:
-            logging.info(
-                "NOTE: It's a first patch version. should count PRs merged on master - won't filter PRs by branch"
+            print(
+                f"NOTE: It's a first patch version. should count PRs merged on master - won't filter PRs by branch"
             )
     else:
-        logging.error("ERROR: invalid branch %s - pass", branch)
+        print(f"ERROR: invalid branch {branch} - pass")
 
-    logging.info("Fetch PRs with query %s", query)
+    print(f"Fetch PRs with query {query}")
     prs = gh.get_pulls_from_search(
         query=query, merged=merged, sort="created", progress_func=tqdm.tqdm
     )

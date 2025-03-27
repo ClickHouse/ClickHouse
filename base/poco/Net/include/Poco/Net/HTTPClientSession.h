@@ -226,7 +226,7 @@ namespace Net
         /// Returns the current fraction of keep alive timeout when connection is considered safe to use
         /// It helps to avoid situation when a client uses nearly expired connection and receives NoMessageException
 
-        virtual std::ostream & sendRequest(HTTPRequest & request, uint64_t * connect_time, uint64_t * first_byte_time);
+        virtual std::ostream & sendRequest(HTTPRequest & request);
         /// Sends the header for the given HTTP request to
         /// the server.
         ///
@@ -245,8 +245,6 @@ namespace Net
         /// be reused and persistent connections are enabled
         /// to ensure a new connection will be set up
         /// for the next request.
-
-        std::ostream & sendRequest(HTTPRequest & request) { return sendRequest(request, nullptr, nullptr); }
 
         virtual std::istream & receiveResponse(HTTPResponse & response);
         /// Receives the header for the response to the previous
@@ -327,7 +325,7 @@ namespace Net
             DEFAULT_KEEP_ALIVE_TIMEOUT = 8
         };
 
-        virtual void reconnect(uint64_t * connect_time);
+        virtual void reconnect();
         /// Connects the underlying socket to the HTTP server.
 
         int write(const char * buffer, std::streamsize length);

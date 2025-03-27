@@ -65,10 +65,6 @@ rect.zoom-panel {
     stroke-dasharray:0;
 }
 
-.bar-u {
-    opacity: 0.2;
-}
-
 .bar:hover {
     stroke-width: 1px;
     stroke: black;

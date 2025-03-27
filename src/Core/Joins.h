@@ -5,9 +5,6 @@
 namespace DB
 {
 
-class ReadBuffer;
-class WriteBuffer;
-
 /// Join method.
 enum class JoinKind : uint8_t
 {
@@ -19,9 +16,6 @@ enum class JoinKind : uint8_t
     Comma, /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
     Paste, /// Used to join parts without `ON` clause.
 };
-
-void serializeJoinKind(JoinKind kind, WriteBuffer & out);
-JoinKind deserializeJoinKind(ReadBuffer & in);
 
 const char * toString(JoinKind kind);
 
@@ -36,8 +30,6 @@ constexpr bool isInnerOrRight(JoinKind kind) { return kind == JoinKind::Inner ||
 constexpr bool isInnerOrLeft(JoinKind kind)  { return kind == JoinKind::Inner || kind == JoinKind::Left; }
 constexpr bool isPaste(JoinKind kind)        { return kind == JoinKind::Paste; }
 
-JoinKind reverseJoinKind(JoinKind kind);
-
 /// Allows more optimal JOIN for typical cases.
 enum class JoinStrictness : uint8_t
 {
@@ -50,9 +42,6 @@ enum class JoinStrictness : uint8_t
     Anti, /// LEFT or RIGHT. Same as SEMI JOIN but filter values that are NOT exists in other table.
 };
 
-void serializeJoinStrictness(JoinStrictness strictness, WriteBuffer & out);
-JoinStrictness deserializeJoinStrictness(ReadBuffer & in);
-
 const char * toString(JoinStrictness strictness);
 
 /// Algorithm for distributed query processing.
@@ -62,9 +51,6 @@ enum class JoinLocality : uint8_t
     Local, /// Perform JOIN, using only data available on same servers (co-located data).
     Global /// Collect and merge data from remote servers, and broadcast it to each server.
 };
-
-void serializeJoinLocality(JoinLocality locality, WriteBuffer & out);
-JoinLocality deserializeJoinLocality(ReadBuffer & in);
 
 const char * toString(JoinLocality locality);
 
@@ -100,11 +86,11 @@ constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality inequa
 {
     if (inequality == ASOFJoinInequality::Less)
         return ASOFJoinInequality::Greater;
-    if (inequality == ASOFJoinInequality::Greater)
+    else if (inequality == ASOFJoinInequality::Greater)
         return ASOFJoinInequality::Less;
-    if (inequality == ASOFJoinInequality::LessOrEquals)
+    else if (inequality == ASOFJoinInequality::LessOrEquals)
         return ASOFJoinInequality::GreaterOrEquals;
-    if (inequality == ASOFJoinInequality::GreaterOrEquals)
+    else if (inequality == ASOFJoinInequality::GreaterOrEquals)
         return ASOFJoinInequality::LessOrEquals;
 
     return ASOFJoinInequality::None;
@@ -112,7 +98,7 @@ constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality inequa
 
 enum class JoinAlgorithm : uint8_t
 {
-    DEFAULT = 0, /// deprecated, equivalent to "direct,hash"
+    DEFAULT = 0,
     AUTO,
     HASH,
     PARTIAL_MERGE,

@@ -9,18 +9,16 @@
 
 namespace Poco
 {
-namespace Util
-{
-    class AbstractConfiguration;
-}
-class Logger;
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+    class Logger;
 }
 
 
 namespace DB
 {
-
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 /** Apply substitutions from the macros in config to the string.
   */

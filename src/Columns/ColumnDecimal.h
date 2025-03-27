@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/FieldVisitorToString.h>
-#include <DataTypes/FieldToDataType.h>
 #include <base/sort.h>
 #include <base/TypeName.h>
 #include <Core/Field.h>
@@ -41,8 +39,8 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const override;
-    TypeIndex getDataType() const override;
+    const char * getFamilyName() const override { return TypeName<T>.data(); }
+    TypeIndex getDataType() const override { return TypeToTypeIndex<T>; }
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
@@ -100,7 +98,7 @@ public:
         return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
-    Float64 getFloat64(size_t n) const final;
+    Float64 getFloat64(size_t n) const final { return DecimalUtils::convertTo<Float64>(data[n], scale); }
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
@@ -123,10 +121,6 @@ public:
 
     Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
-    {
-        return {FieldVisitorToString()(data[n], scale), FieldToDataType()(data[n], scale)};
-    }
     bool getBool(size_t n) const override { return bool(data[n].value); }
     Int64 getInt(size_t n) const override { return Int64(data[n].value); }
     UInt64 get64(size_t n) const override;
@@ -151,7 +145,7 @@ public:
         return false;
     }
 
-    ColumnPtr compress(bool force_compression) const override;
+    ColumnPtr compress() const override;
 
     void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }

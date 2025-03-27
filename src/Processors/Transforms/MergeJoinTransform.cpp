@@ -19,7 +19,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Chunk.h>
-#include <Processors/Port.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
 
 
@@ -647,13 +646,14 @@ void dispatchKind(JoinKind kind, Args && ... args)
 {
     if (Impl<JoinKind::Inner>::enabled && kind == JoinKind::Inner)
         return Impl<JoinKind::Inner>::join(std::forward<Args>(args)...);
-    if (Impl<JoinKind::Left>::enabled && kind == JoinKind::Left)
+    else if (Impl<JoinKind::Left>::enabled && kind == JoinKind::Left)
         return Impl<JoinKind::Left>::join(std::forward<Args>(args)...);
-    if (Impl<JoinKind::Right>::enabled && kind == JoinKind::Right)
+    else if (Impl<JoinKind::Right>::enabled && kind == JoinKind::Right)
         return Impl<JoinKind::Right>::join(std::forward<Args>(args)...);
-    if (Impl<JoinKind::Full>::enabled && kind == JoinKind::Full)
+    else if (Impl<JoinKind::Full>::enabled && kind == JoinKind::Full)
         return Impl<JoinKind::Full>::join(std::forward<Args>(args)...);
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
 }
 
 MutableColumns MergeJoinAlgorithm::getEmptyResultColumns() const
@@ -1103,7 +1103,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
 
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO: implement ASOF equality join");
         }
-        if (cmp < 0)
+        else if (cmp < 0)
         {
             if (asof_join_state.hasMatch(left_cursor, asof_inequality))
             {
@@ -1116,9 +1116,10 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 left_cursor->next();
                 continue;
             }
-
-            asof_join_state.reset();
-
+            else
+            {
+                asof_join_state.reset();
+            }
 
             /// no matches for rows in left table, just pass them through
             size_t num = nextDistinct(*left_cursor);

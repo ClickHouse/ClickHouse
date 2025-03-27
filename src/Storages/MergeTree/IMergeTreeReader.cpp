@@ -9,7 +9,6 @@
 #include <Columns/ColumnArray.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 
 
 namespace DB
@@ -188,10 +187,10 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
         if (dag)
         {
-            dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
+            dag->addMaterializingOutputActions();
             auto actions = std::make_shared<ExpressionActions>(
                 std::move(*dag),
-                ExpressionActionsSettings(data_part_info_for_read->getContext()->getSettingsRef()));
+                ExpressionActionsSettings::fromSettings(data_part_info_for_read->getContext()->getSettingsRef()));
             actions->execute(additional_columns);
         }
 

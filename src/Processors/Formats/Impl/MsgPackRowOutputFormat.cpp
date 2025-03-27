@@ -2,9 +2,8 @@
 
 #if USE_MSGPACK
 
+#include <Formats/FormatFactory.h>
 #include <Common/assert_cast.h>
-
-#include <Core/UUID.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -25,10 +24,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnLowCardinality.h>
 
-#include <Formats/FormatFactory.h>
 #include <Formats/MsgPackExtensionTypes.h>
-
-#include <Processors/Port.h>
 
 namespace DB
 {
@@ -309,7 +305,6 @@ void registerOutputFormatMsgPack(FormatFactory & factory)
         return std::make_shared<MsgPackRowOutputFormat>(buf, sample, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("MsgPack");
-    factory.markOutputFormatNotTTYFriendly("MsgPack");
 }
 
 }

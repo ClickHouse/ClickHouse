@@ -27,7 +27,7 @@ jobs:
         id: runconfig
         run: |
             echo "::group::configure CI run"
-            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --workflow NightlyBuilds --outfile ${{ runner.temp }}/ci_run_data.json
+            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --skip-jobs --outfile ${{ runner.temp }}/ci_run_data.json
             echo "::endgroup::"
 
             echo "::group::CI run configure results"
@@ -43,40 +43,10 @@ jobs:
     uses: ./.github/workflows/docker_test_images.yml
     with:
       data: "${{ needs.RunConfig.outputs.data }}"
-      set_latest: ${{ github.ref == 'refs/heads/master' }}
-
-  Builds_1:
-    needs: [RunConfig]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_1') }}
-    uses: ./.github/workflows/reusable_build_stage.yml
-    with:
-      stage: Builds_1
-      data: ${{ needs.RunConfig.outputs.data }}
-  Tests_1:
-    needs: [RunConfig, Builds_1]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_1') }}
-    uses: ./.github/workflows/reusable_test_stage.yml
-    with:
-      stage: Tests_1
-      data: ${{ needs.RunConfig.outputs.data }}
-  Builds_2:
-    needs: [RunConfig, Builds_1]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_2') }}
-    uses: ./.github/workflows/reusable_build_stage.yml
-    with:
-      stage: Builds_2
-      data: ${{ needs.RunConfig.outputs.data }}
-  Tests_2:
-    needs: [RunConfig, Builds_1, Tests_1]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2') }}
-    uses: ./.github/workflows/reusable_test_stage.yml
-    with:
-      stage: Tests_2
-      data: ${{ needs.RunConfig.outputs.data }}
-
+      set_latest: true
   CheckWorkflow:
     if: ${{ !cancelled() }}
-    needs: [RunConfig, BuildDockers, Tests_2]
+    needs: [RunConfig, BuildDockers]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code

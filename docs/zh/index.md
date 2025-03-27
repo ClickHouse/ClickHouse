@@ -2,7 +2,6 @@
 slug: /zh/
 sidebar_position: 0
 sidebar_label: 什么是ClickHouse？
-displayed_sidebar: chinese
 ---
 
 

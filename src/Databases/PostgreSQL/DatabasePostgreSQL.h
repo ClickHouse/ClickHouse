@@ -5,7 +5,7 @@
 #if USE_LIBPQXX
 
 #include <Databases/DatabasesCommon.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
@@ -72,8 +72,7 @@ private:
 
     mutable Tables cached_tables;
     std::unordered_set<std::string> detached_or_dropped;
-    BackgroundSchedulePoolTaskHolder cleaner_task;
-    std::shared_ptr<IDisk> db_disk;
+    BackgroundSchedulePool::TaskHolder cleaner_task;
     LoggerPtr log;
 
     String getTableNameForLogs(const String & table_name) const;

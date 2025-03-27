@@ -8,17 +8,18 @@ using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
-TEST(SchedulerPriorityPolicy, Factory)
+/// Tests disabled because of leaks in the test themselves: https://github.com/ClickHouse/ClickHouse/issues/67678
+
+TEST(DISABLED_SchedulerPriorityPolicy, Factory)
 {
     ResourceTest t;
 
     Poco::AutoPtr cfg = new Poco::Util::XMLConfiguration();
-    EventQueue event_queue;
-    SchedulerNodePtr prio = SchedulerNodeFactory::instance().get("priority", &event_queue, *cfg, "");
+    SchedulerNodePtr prio = SchedulerNodeFactory::instance().get("priority", /* event_queue = */ nullptr, *cfg, "");
     EXPECT_TRUE(dynamic_cast<PriorityPolicy *>(prio.get()) != nullptr);
 }
 
-TEST(SchedulerPriorityPolicy, Priorities)
+TEST(DISABLED_SchedulerPriorityPolicy, Priorities)
 {
     ResourceTest t;
 
@@ -52,7 +53,7 @@ TEST(SchedulerPriorityPolicy, Priorities)
     t.consumed("C", 0);
 }
 
-TEST(SchedulerPriorityPolicy, Activation)
+TEST(DISABLED_SchedulerPriorityPolicy, Activation)
 {
     ResourceTest t;
 
@@ -93,7 +94,7 @@ TEST(SchedulerPriorityPolicy, Activation)
     t.consumed("C", 0);
 }
 
-TEST(SchedulerPriorityPolicy, SinglePriority)
+TEST(DISABLED_SchedulerPriorityPolicy, SinglePriority)
 {
     ResourceTest t;
 

@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeSet.h>
 
 #include <Common/FieldVisitorToString.h>
-#include <Common/quoteString.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Columns/ColumnSet.h>
@@ -25,9 +24,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/indexHint.h>
 
-#include <Interpreters/ExpressionActionsSettings.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Set.h>
 
 #include <Planner/PlannerContext.h>
 #include <Planner/TableExpressionData.h>
@@ -38,11 +36,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool enable_named_columns_in_function_tuple;
-    extern const SettingsBool transform_null_in;
-}
 
 namespace ErrorCodes
 {
@@ -62,16 +55,13 @@ namespace
  */
 String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_node)
 {
-    const auto & [name, type] = constant_node.getValueNameAndType();
-    bool requires_cast_call = constant_node.hasSourceExpression() || ConstantNode::requiresCastCall(type, constant_node.getResultType());
-
     WriteBufferFromOwnString buffer;
-    if (requires_cast_call)
+    if (constant_node.requiresCastCall())
         buffer << "_CAST(";
 
-    buffer << name << "_" << constant_node.getResultType()->getName();
+    buffer << calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
 
-    if (requires_cast_call)
+    if (constant_node.requiresCastCall())
     {
         /// Projection name for constants is <value>_<type> so for _cast(1, 'String') we will have _cast(1_Uint8, 'String'_String)
         buffer << ", '" << constant_node.getResultType()->getName() << "'_String)";
@@ -165,7 +155,7 @@ public:
                             result = calculateActionNodeName(constant_node.getSourceExpression());
                     }
                     else
-                        result = calculateConstantActionNodeName(constant_node);
+                        result = calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
                 }
                 break;
             }
@@ -188,7 +178,7 @@ public:
                     break;
                 }
 
-                if (planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
+                if (planner_context.getQueryContext()->getSettingsRef().enable_named_columns_in_function_tuple)
                 {
                     /// Function "tuple" which generates named tuple should use argument aliases to construct its name.
                     if (function_node.getFunctionName() == "tuple")
@@ -327,19 +317,15 @@ public:
 
     static String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type)
     {
-        auto constant_name = applyVisitor(FieldVisitorToString(), constant_literal);
+        auto constant_name = (isBool(constant_type) && isInt64OrUInt64FieldType(constant_literal.getType())) ?
+            applyVisitor(FieldVisitorToString(), Field(constant_literal.safeGet<UInt64>() != 0)) :
+            applyVisitor(FieldVisitorToString(), constant_literal);
         return constant_name + "_" + constant_type->getName();
     }
 
     static String calculateConstantActionNodeName(const Field & constant_literal)
     {
         return calculateConstantActionNodeName(constant_literal, applyVisitor(FieldToDataType(), constant_literal));
-    }
-
-    static String calculateConstantActionNodeName(const ConstantNode & constant_node)
-    {
-        const auto & [name, type] = constant_node.getValueNameAndType();
-        return name + "_" + constant_node.getResultType()->getName();
     }
 
     String calculateWindowNodeActionName(const QueryTreeNodePtr & function_nodew_node_, const QueryTreeNodePtr & window_node_)
@@ -402,9 +388,6 @@ public:
 
                     if (sort_node.hasFillStep())
                         buffer << " STEP " << calculateActionNodeName(sort_node.getFillStep());
-
-                    if (sort_node.hasFillStaleness())
-                        buffer << " STALENESS " << calculateActionNodeName(sort_node.getFillStaleness());
                 }
 
                 if (i + 1 != order_by_nodes_size)
@@ -661,9 +644,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     if (node_type == QueryTreeNodeType::COLUMN)
         return visitColumn(node);
-    if (node_type == QueryTreeNodeType::CONSTANT)
+    else if (node_type == QueryTreeNodeType::CONSTANT)
         return visitConstant(node);
-    if (node_type == QueryTreeNodeType::FUNCTION)
+    else if (node_type == QueryTreeNodeType::FUNCTION)
         return visitFunction(node);
 
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -697,6 +680,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstant(const QueryTreeNodePtr & node)
 {
     const auto & constant_node = node->as<ConstantNode &>();
+    const auto & constant_literal = constant_node.getValue();
     const auto & constant_type = constant_node.getResultType();
 
     auto constant_node_name = [&]()
@@ -731,21 +715,25 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         {
             return calculateActionNodeNameWithCastIfNeeded(constant_node);
         }
-
-        // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-        if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+        else
         {
-            if (constant_node.receivedFromInitiatorServer())
-                return calculateActionNodeNameWithCastIfNeeded(constant_node);
-            return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
+            // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+            if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+            {
+                if (constant_node.receivedFromInitiatorServer())
+                    return calculateActionNodeNameWithCastIfNeeded(constant_node);
+                else
+                    return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
+            }
+            else
+                return calculateConstantActionNodeName(constant_literal, constant_type);
         }
-        return calculateConstantActionNodeName(constant_node);
     }();
 
     ColumnWithTypeAndName column;
     column.name = constant_node_name;
     column.type = constant_type;
-    column.column = constant_node.getColumn();
+    column.column = column.type->createColumnConst(1, constant_literal);
 
     actions_stack[0].addConstantIfNecessary(constant_node_name, column);
 
@@ -757,6 +745,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     return {constant_node_name, Levels(0)};
+
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitLambda(const QueryTreeNodePtr & node)
@@ -787,9 +776,12 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     lambda_actions_dag.getOutputs().push_back(actions_stack.back().getNodeOrThrow(lambda_expression_node_name));
     lambda_actions_dag.removeUnusedActions(Names(1, lambda_expression_node_name));
 
+    auto expression_actions_settings = ExpressionActionsSettings::fromContext(planner_context->getQueryContext(), CompileExpressions::yes);
+    auto lambda_actions = std::make_shared<ExpressionActions>(std::move(lambda_actions_dag), expression_actions_settings);
+
     Names captured_column_names;
     ActionsDAG::NodeRawConstPtrs lambda_children;
-    Names required_column_names = lambda_actions_dag.getRequiredColumnsNames();
+    Names required_column_names = lambda_actions->getRequiredColumns();
 
     actions_stack.pop_back();
     levels.reset(actions_stack.size());
@@ -808,10 +800,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         }
     }
 
-    auto expression_actions_settings = ExpressionActionsSettings(planner_context->getQueryContext(), CompileExpressions::yes);
     auto lambda_node_name = calculateActionNodeName(node, *planner_context);
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
-        std::move(lambda_actions_dag), expression_actions_settings, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name, true);
+        lambda_actions, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name);
 
     // TODO: Pass IFunctionBase here not FunctionCaptureOverloadResolver.
     const auto * actions_node = actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), function_capture);
@@ -856,8 +847,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         if (left_tuple_type && left_tuple_type->getElements().size() != 1)
             set_element_types = left_tuple_type->getElements();
 
-        set_element_types
-            = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef()[Setting::transform_null_in]);
+        set_element_types = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef().transform_null_in);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
     else
@@ -873,7 +863,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             PreparedSets::toString(set_key, set_element_types));
 
     ColumnWithTypeAndName column;
-    column.name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
+    column.name = planner_context->createSetKey(in_first_argument->getResultType(), in_second_argument);
     column.type = std::make_shared<DataTypeSet>();
 
     bool set_is_created = set->get() != nullptr;
@@ -933,7 +923,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
-
     if (function_node.getFunctionName() == "indexHint")
         return visitIndexHintFunction(node);
 
@@ -1061,11 +1050,6 @@ String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerConte
 String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type)
 {
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal, constant_type);
-}
-
-String calculateConstantActionNodeName(const ConstantNode & constant_node)
-{
-    return ActionNodeNameHelper::calculateConstantActionNodeName(constant_node);
 }
 
 String calculateConstantActionNodeName(const Field & constant_literal)

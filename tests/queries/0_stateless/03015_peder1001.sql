@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: upper/lowerUTF8 use ICU
-
 DROP TABLE IF EXISTS test_data;
 
 CREATE TABLE test_data

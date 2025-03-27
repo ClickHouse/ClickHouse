@@ -114,7 +114,7 @@ struct CrossTabData
 
 
 template <typename Data>
-class AggregateFunctionCrossTab final : public IAggregateFunctionDataHelper<Data, AggregateFunctionCrossTab<Data>>
+class AggregateFunctionCrossTab : public IAggregateFunctionDataHelper<Data, AggregateFunctionCrossTab<Data>>
 {
 public:
     explicit AggregateFunctionCrossTab(const DataTypes & arguments)

@@ -54,7 +54,6 @@ int main(int argc, char ** argv)
     Cache cache(cache_size);
 
     std::vector<std::thread> threads;
-    threads.reserve(num_threads);
     for (size_t i = 0; i < num_threads; ++i)
     {
         threads.emplace_back([&]

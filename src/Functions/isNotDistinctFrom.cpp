@@ -19,7 +19,7 @@ Currently, this function can only be used in the `JOIN ON` section of a query.
         .examples{
             {"join_on_is_not_distinct_from", "SELECT * FROM (SELECT NULL AS a) AS t1 JOIN (SELECT NULL AS b) AS t2 ON isNotDistinctFrom(t1.a, t2.b)", "NULL\tNULL"},
         },
-        .category = {"Nullable"},
+        .categories = {"Comparison", "Join Operators"},
     });
 
 }

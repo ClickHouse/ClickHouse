@@ -1,16 +1,8 @@
 # docker build -t clickhouse/docs-builder .
-FROM golang:alpine AS htmltest-builder
+# nodejs 17 prefers ipv6 and is broken in our environment
+FROM node:16-alpine
 
-ARG HTMLTEST_VERSION=0.17.0
-
-RUN CGO_ENABLED=0 go install github.com/wjdp/htmltest@v${HTMLTEST_VERSION} \
-    && mv "${GOPATH}/bin/htmltest" /usr/bin/htmltest
-
-FROM node:20-bookworm-slim
-
-RUN apt-get update && \
-    apt install -y --no-install-recommends git openssh-server bash ca-certificates curl python3 python3-venv rsync && \
-    rm -rf /var/lib/apt/lists/*:
+RUN apk add --no-cache git openssh bash
 
 # At this point we want to really update /opt/clickhouse-docs directory
 # So we reset the cache
@@ -25,14 +17,6 @@ RUN yarn config set registry https://registry.npmjs.org \
     && yarn install \
     && yarn cache clean
 
-ENV HOME=/opt/clickhouse-docs
-
-RUN mkdir /output_path \
-  && chmod -R a+w . /output_path \
-  && git config --global --add safe.directory /opt/clickhouse-docs
-
 COPY run.sh /run.sh
-COPY --from=htmltest-builder /usr/bin/htmltest /usr/bin/htmltest
 
 ENTRYPOINT ["/run.sh"]
-# Rebuilt Fri 14 Mar 18:01 GMT+1

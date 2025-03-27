@@ -28,27 +28,27 @@ namespace ErrorCodes
  * Resource scheduler root node with a dedicated thread.
  * Immediate children correspond to different resources.
  */
-class SchedulerRoot final : public ISchedulerNode
+class SchedulerRoot : public ISchedulerNode
 {
 private:
-    struct Resource
+    struct TResource
     {
         SchedulerNodePtr root;
 
         // Intrusive cyclic list of active resources
-        Resource * next = nullptr;
-        Resource * prev = nullptr;
+        TResource * next = nullptr;
+        TResource * prev = nullptr;
 
-        explicit Resource(const SchedulerNodePtr & root_)
+        explicit TResource(const SchedulerNodePtr & root_)
             : root(root_)
         {
             root->info.parent.ptr = this;
         }
 
         // Get pointer stored by ctor in info
-        static Resource * get(SchedulerNodeInfo & info)
+        static TResource * get(SchedulerNodeInfo & info)
         {
-            return reinterpret_cast<Resource *>(info.parent.ptr);
+            return reinterpret_cast<TResource *>(info.parent.ptr);
         }
     };
 
@@ -60,8 +60,6 @@ public:
     ~SchedulerRoot() override
     {
         stop();
-        while (!children.empty())
-            removeChild(children.begin()->first);
     }
 
     /// Runs separate scheduler thread
@@ -97,17 +95,11 @@ public:
         }
     }
 
-    const String & getTypeName() const override
-    {
-        static String type_name("scheduler");
-        return type_name;
-    }
-
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * _ = dynamic_cast<SchedulerRoot *>(other))
+        if (auto * o = dynamic_cast<SchedulerRoot *>(other))
             return true;
         return false;
     }
@@ -187,11 +179,16 @@ public:
 
     void activateChild(ISchedulerNode * child) override
     {
-        activate(Resource::get(child->info));
+        activate(TResource::get(child->info));
+    }
+
+    void setParent(ISchedulerNode *) override
+    {
+        abort(); // scheduler must be the root and this function should not be called
     }
 
 private:
-    void activate(Resource * value)
+    void activate(TResource * value)
     {
         assert(value->next == nullptr && value->prev == nullptr);
         if (current == nullptr) // No active children
@@ -209,7 +206,7 @@ private:
         }
     }
 
-    void deactivate(Resource * value)
+    void deactivate(TResource * value)
     {
         if (value->next == nullptr)
             return; // Already deactivated
@@ -224,8 +221,8 @@ private:
                 busy_periods++;
                 return;
             }
-            // Just move current to next to avoid invalidation
-            current = current->next;
+            else // Just move current to next to avoid invalidation
+                current = current->next;
         }
         value->prev->next = value->next;
         value->next->prev = value->prev;
@@ -254,8 +251,8 @@ private:
         request->execute();
     }
 
-    Resource * current = nullptr; // round-robin pointer
-    std::unordered_map<ISchedulerNode *, Resource> children; // resources by pointer
+    TResource * current = nullptr; // round-robin pointer
+    std::unordered_map<ISchedulerNode *, TResource> children; // resources by pointer
     std::atomic<bool> stop_flag = false;
     EventQueue events;
     ThreadFromGlobalPool scheduler;

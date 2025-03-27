@@ -49,9 +49,9 @@ struct NormalDistribution
     static constexpr const char * getName() { return "randNormal"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    static void generate(Float64 mean, Float64 stddev, ColumnFloat64::Container & container)
+    static void generate(Float64 mean, Float64 variance, ColumnFloat64::Container & container)
     {
-        auto distribution = std::normal_distribution<>(mean, stddev);
+        auto distribution = std::normal_distribution<>(mean, variance);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
     }
@@ -63,9 +63,9 @@ struct LogNormalDistribution
     static constexpr const char * getName() { return "randLogNormal"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    static void generate(Float64 mean, Float64 stddev, ColumnFloat64::Container & container)
+    static void generate(Float64 mean, Float64 variance, ColumnFloat64::Container & container)
     {
-        auto distribution = std::lognormal_distribution<>(mean, stddev);
+        auto distribution = std::lognormal_distribution<>(mean, variance);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
     }
@@ -331,21 +331,21 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randUniform(0, 1) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .categories{"Distribution"}
     });
 
     factory.registerFunction<FunctionRandomDistribution<NormalDistribution>>(
     FunctionDocumentation{
     .description=R"(
 Returns a random number from the normal distribution.
-Accepts two parameters - mean and standard deviation.
+Accepts two parameters - mean and variance.
 
 Typical usage:
 [example:typical]
 )",
     .examples{
         {"typical", "SELECT randNormal(0, 5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .categories{"Distribution"}
     });
 
 
@@ -353,14 +353,14 @@ Typical usage:
     FunctionDocumentation{
     .description=R"(
 Returns a random number from the lognormal distribution (a distribution of a random variable whose logarithm is normally distributed).
-Accepts two parameters - mean and standard deviation.
+Accepts two parameters - mean and variance.
 
 Typical usage:
 [example:typical]
 )",
     .examples{
         {"typical", "SELECT randLogNormal(0, 5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .categories{"Distribution"}
     });
 
 
@@ -375,7 +375,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randExponential(0, 5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .categories{"Distribution"}
     });
 
 
@@ -390,7 +390,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randChiSquared(5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .categories{"Distribution"}
     });
 
     factory.registerFunction<FunctionRandomDistribution<StudentTDistribution>>(
@@ -404,7 +404,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randStudentT(5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .categories{"Distribution"}
     });
 
 
@@ -420,7 +420,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randFisherF(5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .categories{"Distribution"}
     });
 
 
@@ -435,7 +435,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randBernoulli(0.1) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .categories{"Distribution"}
     });
 
 
@@ -450,7 +450,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randBinomial(10, 0.1) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .categories{"Distribution"}
     });
 
 
@@ -465,7 +465,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randNegativeBinomial(10, 0.1) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .categories{"Distribution"}
     });
 
 
@@ -480,7 +480,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randPoisson(3) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .categories{"Distribution"}
     });
 }
 

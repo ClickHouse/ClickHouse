@@ -19,13 +19,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_result_bytes;
-    extern const SettingsUInt64 max_result_rows;
-}
 
 namespace ErrorCodes
 {
@@ -51,7 +44,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
             return table_function_ptr->getActualTableStructure(context, /*is_insert_query*/ true);
         }
 
-        auto table_func_name = table_func_ptr->formatWithSecretsOneLine();
+        auto table_func_name = queryToString(table_func_ptr);
         query = "DESC TABLE " + table_func_name;
     }
     else
@@ -73,8 +66,8 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     /// since this is a service query and should not lead to query failure.
     {
         Settings new_settings = new_context->getSettingsCopy();
-        new_settings[Setting::max_result_rows] = 0;
-        new_settings[Setting::max_result_bytes] = 0;
+        new_settings.max_result_rows = 0;
+        new_settings.max_result_bytes = 0;
         new_context->setSettings(new_settings);
     }
 
@@ -109,19 +102,19 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         {
             ColumnDescription column;
 
-            column.name = (*name)[i].safeGet<String>();
+            column.name = (*name)[i].safeGet<const String &>();
 
-            String data_type_name = (*type)[i].safeGet<String>();
+            String data_type_name = (*type)[i].safeGet<const String &>();
             column.type = data_type_factory.get(data_type_name);
 
-            String kind_name = (*default_kind)[i].safeGet<String>();
+            String kind_name = (*default_kind)[i].safeGet<const String &>();
             if (!kind_name.empty())
             {
                 column.default_desc.kind = columnDefaultKindFromString(kind_name);
-                String expr_str = (*default_expr)[i].safeGet<String>();
+                String expr_str = (*default_expr)[i].safeGet<const String &>();
                 column.default_desc.expression = parseQuery(
                     expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression",
-                    0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                    0, settings.max_parser_depth, settings.max_parser_backtracks);
             }
 
             res.add(column);
@@ -214,8 +207,8 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
             size_t size = name_col.size();
             for (size_t i = 0; i < size; ++i)
             {
-                auto name = name_col[i].safeGet<String>();
-                auto type_name = type_col[i].safeGet<String>();
+                auto name = name_col[i].safeGet<const String &>();
+                auto type_name = type_col[i].safeGet<const String &>();
 
                 auto storage_column = storage_columns.tryGetPhysical(name);
                 if (storage_column && storage_column->type->hasDynamicSubcolumnsDeprecated())

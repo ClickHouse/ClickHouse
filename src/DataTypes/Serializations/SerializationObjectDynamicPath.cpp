@@ -18,7 +18,7 @@ SerializationObjectDynamicPath::SerializationObjectDynamicPath(
     , path(path_)
     , path_subcolumn(path_subcolumn_)
     , dynamic_serialization(std::make_shared<SerializationDynamic>())
-    , shared_data_serialization(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
+    , shared_data_serialization(SerializationObject::getTypeOfSharedData()->getDefaultSerialization())
     , max_dynamic_types(max_dynamic_types_)
 {
 }
@@ -29,14 +29,6 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
     ISerialization::DeserializeBinaryBulkStatePtr nested_state;
     bool read_from_shared_data;
     ColumnPtr shared_data;
-
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
-    {
-        auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectDynamicPath>(*this);
-        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
-        new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
-        return new_state;
-    }
 };
 
 void SerializationObjectDynamicPath::enumerateStreams(
@@ -75,8 +67,8 @@ void SerializationObjectDynamicPath::enumerateStreams(
     {
         settings.path.push_back(Substream::ObjectSharedData);
         auto shared_data_substream_data = SubstreamData(shared_data_serialization)
-                                              .withType(data.type ? DataTypeObject::getTypeOfSharedData() : nullptr)
-                                              .withColumn(data.column ? DataTypeObject::getTypeOfSharedData()->createColumn() : nullptr)
+                                              .withType(data.type ? SerializationObject::getTypeOfSharedData() : nullptr)
+                                              .withColumn(data.column ? SerializationObject::getTypeOfSharedData()->createColumn() : nullptr)
                                               .withSerializationInfo(data.serialization_info)
                                               .withDeserializeState(deserialize_state->nested_state);
         settings.path.back().data = shared_data_substream_data;
@@ -172,7 +164,7 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
         settings.path.push_back(Substream::ObjectSharedData);
         /// Initialize shared_data column if needed.
         if (result_column->empty())
-            dynamic_path_state->shared_data = DataTypeObject::getTypeOfSharedData()->createColumn();
+            dynamic_path_state->shared_data = SerializationObject::getTypeOfSharedData()->createColumn();
         size_t prev_size = result_column->size();
         shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_path_state->shared_data, limit, settings, dynamic_path_state->nested_state, cache);
         /// If we need to read a subcolumn from Dynamic column, create an empty Dynamic column, fill it and extract subcolumn.

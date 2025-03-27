@@ -2,11 +2,10 @@
 
 #include <Parsers/IAST_fwd.h>
 
-#include <Common/CurrentThread.h>
-
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/MaterializedView/RefreshTask.h>
+
+#include <Storages/MaterializedView/RefreshTask_fwd.h>
 
 namespace DB
 {
@@ -33,7 +32,7 @@ public:
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
-    bool supportsDynamicSubcolumns() const override;
+    bool supportsDynamicSubcolumns() const override { return getTargetTable()->supportsDynamicSubcolumns(); }
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
@@ -68,13 +67,10 @@ public:
     void renameInMemory(const StorageID & new_table_id) override;
 
     void startup() override;
-    void flushAndPrepareForShutdown() override;
     void shutdown(bool is_drop) override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
-
-    bool canCreateOrDropOtherTables() const;
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
@@ -110,8 +106,8 @@ private:
     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();
 
-    OwnedRefreshTask refresher;
-    bool refresh_coordinated = false;
+    RefreshTaskHolder refresher;
+    bool refresh_on_start = false;
 
     bool has_inner_table = false;
 
@@ -123,16 +119,12 @@ private:
 
     void checkStatementCanBeForwarded() const;
 
-    ContextMutablePtr createRefreshContext(const String & log_comment) const;
-    /// Prepare to refresh a refreshable materialized view: create temporary table (if needed) and
-    /// form the insert-select query.
-    /// out_temp_table_id may be assigned before throwing an exception, in which case the caller
-    /// must drop the temp table before rethrowing.
-    std::tuple<std::shared_ptr<ASTInsertQuery>, std::unique_ptr<CurrentThread::QueryScope>>
-    prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const;
-    std::optional<StorageID> exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context) const;
-    void dropTempTable(StorageID table, ContextMutablePtr refresh_context, String & out_exception);
+    /// Prepare to refresh a refreshable materialized view: create query context, create temporary
+    /// table, form the insert-select query.
+    std::tuple<ContextMutablePtr, std::shared_ptr<ASTInsertQuery>> prepareRefresh() const;
+    StorageID exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context);
 
+    void setTargetTableId(StorageID id);
     void updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name);
 };
 

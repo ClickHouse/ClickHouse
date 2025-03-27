@@ -100,7 +100,7 @@ SHOW DATABASES LIMIT 2
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Выводит содержимое таблицы [system.processes](/operations/system-tables/processes), которая содержит список запросов, выполняющихся в данный момент времени, кроме самих запросов `SHOW PROCESSLIST`.
+Выводит содержимое таблицы [system.processes](../../operations/system-tables/processes.md#system_tables-processes), которая содержит список запросов, выполняющихся в данный момент времени, кроме самих запросов `SHOW PROCESSLIST`.
 
 Запрос `SELECT * FROM system.processes` возвращает данные обо всех текущих запросах.
 
@@ -234,19 +234,16 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 ### Синтаксис {#show-grants-syntax}
 
 ``` sql
-SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
+SHOW GRANTS [FOR user]
 ```
 
 Если пользователь не задан, запрос возвращает привилегии текущего пользователя.
 
-`WITH IMPLICIT` добавляет неявные привилегии (например `GRANT SELECT ON system.one`).
-
-`FINAL` объединяет все текущие привилегии с привилегиями всех ролей пользователя (с наследованием).
 
 
 ## SHOW CREATE USER {#show-create-user-statement}
 
-Выводит параметры, использованные при [создании пользователя](/sql-reference/statements/create/user).
+Выводит параметры, использованные при [создании пользователя](create/user.md#create-user-statement).
 
 `SHOW CREATE USER` не возвращает пароль пользователя.
 
@@ -258,7 +255,7 @@ SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
 
 ## SHOW CREATE ROLE {#show-create-role-statement}
 
-Выводит параметры, использованные при [создании роли](/sql-reference/statements/create/role).
+Выводит параметры, использованные при [создании роли](create/role.md#create-role-statement).
 
 ### Синтаксис {#show-create-role-syntax}
 
@@ -298,7 +295,7 @@ SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 
 ## SHOW USERS {#show-users-statement}
 
-Выводит список [пользовательских аккаунтов](../../operations/access-rights.md#user-account-management). Для просмотра параметров пользовательских аккаунтов, см. системную таблицу [system.users](/operations/system-tables/users).
+Выводит список [пользовательских аккаунтов](../../operations/access-rights.md#user-account-management). Для просмотра параметров пользовательских аккаунтов, см. системную таблицу [system.users](../../operations/system-tables/users.md#system_tables-users).
 
 ### Синтаксис {#show-users-syntax}
 
@@ -308,7 +305,7 @@ SHOW USERS
 
 ## SHOW ROLES {#show-roles-statement}
 
-Выводит список [ролей](../../operations/access-rights.md#role-management). Для просмотра параметров ролей, см. системные таблицы [system.roles](/operations/system-tables/roles) и [system.role_grants](/operations/system-tables/role-grants).
+Выводит список [ролей](../../operations/access-rights.md#role-management). Для просмотра параметров ролей, см. системные таблицы [system.roles](../../operations/system-tables/roles.md#system_tables-roles) и [system.role_grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
 
 ### Синтаксис {#show-roles-syntax}
 
@@ -318,7 +315,7 @@ SHOW [CURRENT|ENABLED] ROLES
 
 ## SHOW PROFILES {#show-profiles-statement}
 
-Выводит список [профилей настроек](../../operations/access-rights.md#settings-profiles-management). Для просмотра других параметров профилей настроек, см. системную таблицу [settings_profiles](/operations/system-tables/settings_profiles).
+Выводит список [профилей настроек](../../operations/access-rights.md#settings-profiles-management). Для просмотра других параметров профилей настроек, см. системную таблицу [settings_profiles](../../operations/system-tables/settings_profiles.md#system_tables-settings_profiles).
 
 ### Синтаксис {#show-profiles-syntax}
 
@@ -328,7 +325,7 @@ SHOW [SETTINGS] PROFILES
 
 ## SHOW POLICIES {#show-policies-statement}
 
-Выводит список [политик доступа к строкам](../../operations/access-rights.md#row-policy-management) для указанной таблицы. Для просмотра других параметров, см. системную таблицу [system.row_policies](/operations/system-tables/row_policies).
+Выводит список [политик доступа к строкам](../../operations/access-rights.md#row-policy-management) для указанной таблицы. Для просмотра других параметров, см. системную таблицу [system.row_policies](../../operations/system-tables/row_policies.md#system_tables-row_policies).
 
 ### Синтаксис {#show-policies-syntax}
 
@@ -338,7 +335,7 @@ SHOW [ROW] POLICIES [ON [db.]table]
 
 ## SHOW QUOTAS {#show-quotas-statement}
 
-Выводит список [квот](../../operations/access-rights.md#quotas-management). Для просмотра параметров квот, см. системную таблицу [system.quotas](/operations/system-tables/quotas).
+Выводит список [квот](../../operations/access-rights.md#quotas-management). Для просмотра параметров квот, см. системную таблицу [system.quotas](../../operations/system-tables/quotas.md#system_tables-quotas).
 
 ### Синтаксис {#show-quotas-syntax}
 
@@ -348,7 +345,7 @@ SHOW QUOTAS
 
 ## SHOW QUOTA {#show-quota-statement}
 
-Выводит потребление [квоты](../../operations/quotas.md) для всех пользователей или только для текущего пользователя. Для просмотра других параметров, см. системные таблицы [system.quotas_usage](/operations/system-tables/quotas_usage) и [system.quota_usage](/operations/system-tables/quota_usage).
+Выводит потребление [квоты](../../operations/quotas.md) для всех пользователей или только для текущего пользователя. Для просмотра других параметров, см. системные таблицы [system.quotas_usage](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) и [system.quota_usage](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).
 
 ### Синтаксис {#show-quota-syntax}
 

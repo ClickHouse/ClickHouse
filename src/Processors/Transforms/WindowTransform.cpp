@@ -9,12 +9,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeString.h>
@@ -22,7 +23,6 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
-#include <algorithm>
 #include <limits>
 
 
@@ -112,13 +112,18 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
             // We know that because offset is >= 0.
             return 1;
         }
-
-        // Overflow to the positive, [compared] must be less.
-        return -1;
+        else
+        {
+            // Overflow to the positive, [compared] must be less.
+            return -1;
+        }
     }
-
-    // No overflow, compare normally.
-    return compared_value < reference_value ? -1 : compared_value == reference_value ? 0 : 1;
+    else
+    {
+        // No overflow, compare normally.
+        return compared_value < reference_value ? -1
+            : compared_value == reference_value ? 0 : 1;
+    }
 }
 
 // A specialization of compareValuesWithOffset for floats.
@@ -211,11 +216,11 @@ static int compareValuesWithOffsetNullable(const IColumn * _compared_column,
     {
         return -1;
     }
-    if (compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
+    else if (compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
     {
         return 0;
     }
-    if (!compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
+    else if (!compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
     {
         return 1;
     }
@@ -365,7 +370,8 @@ WindowTransform::WindowTransform(const Block & input_header_,
                 window_description.frame.begin_offset,
                 *entry.type);
 
-            if (accurateLess(window_description.frame.begin_offset, Field(0)))
+            if (applyVisitor(FieldVisitorAccurateLess{},
+                window_description.frame.begin_offset, Field(0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Window frame start offset must be nonnegative, {} given",
@@ -379,7 +385,8 @@ WindowTransform::WindowTransform(const Block & input_header_,
                 window_description.frame.end_offset,
                 *entry.type);
 
-            if (accurateLess(window_description.frame.end_offset, Field(0)))
+            if (applyVisitor(FieldVisitorAccurateLess{},
+                window_description.frame.end_offset, Field(0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Window frame start offset must be nonnegative, {} given",
@@ -1150,7 +1157,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Initialize output columns.
         for (auto & ws : workspaces)
         {
-            block.cast_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
+            block.casted_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
 
             block.output_columns.push_back(ws.aggregate_function->getResultType()
                 ->createColumn());
@@ -1477,7 +1484,8 @@ void WindowTransform::work()
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
     assert(prev_frame_start <= frame_start);
-    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block});
+    const auto first_used_block = std::min(next_output_block_number,
+        std::min(prev_frame_start.block, current_row.block));
     if (first_block_number < first_used_block)
     {
         blocks.erase(blocks.begin(),
@@ -2347,7 +2355,7 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
             }
         };
 
-        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size(), /* dry_run = */ false);
+        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size());
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, const std::string & name_)
@@ -2398,8 +2406,8 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
             {
                 // Column with default values is specified.
                 const IColumn & default_column =
-                    current_block.cast_columns[function_index] ?
-                        *current_block.cast_columns[function_index].get() :
+                    current_block.casted_columns[function_index] ?
+                        *current_block.casted_columns[function_index].get() :
                         *current_block.input_columns[workspace.argument_column_indices[2]].get();
 
                 to.insert(default_column[transform->current_row.row]);
@@ -2466,7 +2474,7 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
         if (offset <= 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The offset for function {} must be in (1, {}], {} given",
+                "The offset for function {} must be in (0, {}], {} given",
                 getName(), INT64_MAX, offset);
         }
 

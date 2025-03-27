@@ -82,7 +82,7 @@ public:
 
         DataTypePtr create(const DataTypePtr & prev) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        SerializationPtr create(const SerializationPtr & prev) const override;
     };
 private:
     friend SerializationVariant;

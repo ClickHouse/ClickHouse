@@ -1,11 +1,8 @@
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/NamedCollections/NamedCollectionConfiguration.h>
+#include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Core/Settings.h>
 #include <base/sleep.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/NamedCollections/NamedCollectionConfiguration.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Core/BackgroundSchedulePool.h>
 
 namespace DB
 {
@@ -95,7 +92,7 @@ MutableNamedCollectionPtr NamedCollectionFactory::getMutable(
             "There is no named collection `{}`",
             collection_name);
     }
-    if (!collection->isMutable())
+    else if (!collection->isMutable())
     {
         throw Exception(
             ErrorCodes::NAMED_COLLECTION_IS_IMMUTABLE,

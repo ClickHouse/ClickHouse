@@ -80,20 +80,9 @@ class ClickHouseVersion:
             self._tweak = 1
         else:
             self._major += 1
-            self._minor = 1
             self._revision += 1
             self._patch = 1
             self._tweak = 1
-        return self
-
-    def bump_patch(self) -> "ClickHouseVersion":
-        self._revision += 1
-        self._patch += 1
-        self._tweak = 1
-        return self
-
-    def reset_tweak(self) -> "ClickHouseVersion":
-        self._tweak = 1
         return self
 
     def major_update(self) -> "ClickHouseVersion":
@@ -113,6 +102,13 @@ class ClickHouseVersion:
             self._git.update()
         return ClickHouseVersion(
             self.major, self.minor, self.patch + 1, self.revision, self._git
+        )
+
+    def reset_tweak(self) -> "ClickHouseVersion":
+        if self._git is not None:
+            self._git.update()
+        return ClickHouseVersion(
+            self.major, self.minor, self.patch, self.revision, self._git, 1
         )
 
     @property
@@ -164,11 +160,6 @@ class ClickHouseVersion:
     def is_lts(self) -> bool:
         """our X.3 and X.8 are LTS"""
         return self.minor % 5 == 3
-
-    @property
-    def is_supported(self) -> bool:
-        "we can support only versions with VersionType STABLE or LTS"
-        return self.description in (VersionType.STABLE, VersionType.LTS)
 
     def get_stable_release_type(self) -> str:
         if self.is_lts:
@@ -228,7 +219,7 @@ class ClickHouseVersion:
         for part in ("major", "minor", "patch", "tweak"):
             if getattr(self, part) < getattr(other, part):
                 return True
-            if getattr(self, part) > getattr(other, part):
+            elif getattr(self, part) > getattr(other, part):
                 return False
 
         return False
@@ -371,7 +362,7 @@ def get_supported_versions(
         versions = list(versions)
     else:
         # checks that repo is not shallow in background
-        versions = [v for v in get_tagged_versions() if v.is_supported]
+        versions = get_tagged_versions()
     versions.sort()
     versions.reverse()
     for version in versions:

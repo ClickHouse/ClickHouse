@@ -210,7 +210,6 @@ public:
 
     bool setBackgroundDownloadThreads(size_t threads_num);
     size_t getBackgroundDownloadThreads() const { return download_threads.size(); }
-
     bool setBackgroundDownloadQueueSizeLimit(size_t size);
 
     bool isBackgroundDownloadEnabled();
@@ -325,6 +324,8 @@ struct LockedKey : private boost::noncopyable
         size_t offset,
         bool can_be_broken = false,
         bool invalidate_queue_entry = true);
+
+    void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
 
     bool addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &);
 

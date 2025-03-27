@@ -7,12 +7,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool group_by_use_nulls;
-    extern const SettingsBool join_use_nulls;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -38,14 +32,16 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
     else if (auto * query_node = scope_node->as<QueryNode>())
     {
         context = query_node->getContext();
-        group_by_use_nulls = context->getSettingsRef()[Setting::group_by_use_nulls]
-            && (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
+        group_by_use_nulls = context->getSettingsRef().group_by_use_nulls &&
+            (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
     }
 
     if (context)
-        join_use_nulls = context->getSettingsRef()[Setting::join_use_nulls];
+        join_use_nulls = context->getSettingsRef().join_use_nulls;
     else if (parent_scope)
         join_use_nulls = parent_scope->join_use_nulls;
+
+    aliases.alias_name_to_expression_node = &aliases.alias_name_to_expression_node_before_group_by;
 }
 
 [[maybe_unused]] const IdentifierResolveScope * IdentifierResolveScope::getNearestQueryScope() const
@@ -106,77 +102,76 @@ const AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDa
 
 void IdentifierResolveScope::pushExpressionNode(const QueryTreeNodePtr & node)
 {
+    bool had_aggregate_function = expressions_in_resolve_process_stack.hasAggregateFunction();
     expressions_in_resolve_process_stack.push(node);
+    if (group_by_use_nulls && had_aggregate_function != expressions_in_resolve_process_stack.hasAggregateFunction())
+        aliases.alias_name_to_expression_node = &aliases.alias_name_to_expression_node_before_group_by;
 }
 
 void IdentifierResolveScope::popExpressionNode()
 {
+    bool had_aggregate_function = expressions_in_resolve_process_stack.hasAggregateFunction();
     expressions_in_resolve_process_stack.pop();
-}
-
-namespace
-{
-
-void dump_mapping(WriteBuffer & buffer, const String & mapping_name, const std::unordered_map<std::string, QueryTreeNodePtr> & mapping)
-{
-    if (mapping.empty())
-        return;
-
-    buffer << mapping_name << " table size: " << mapping.size() << '\n';
-    for (const auto & [alias_name, node] : mapping)
-        buffer << " { '" << alias_name << "' : " << node->formatASTForErrorMessage() << " }\n";
-}
-
-void dump_list(WriteBuffer & buffer, const String & list_name, const std::ranges::viewable_range auto & list)
-{
-    if (list.empty())
-        return;
-
-    buffer << list_name << " table size: " << list.size() << '\n';
-    for (const auto & node : list)
-        buffer << " { '" << node->getAlias() << "' : " << node->formatASTForErrorMessage() << " }\n";
-}
-
+    if (group_by_use_nulls && had_aggregate_function != expressions_in_resolve_process_stack.hasAggregateFunction())
+        aliases.alias_name_to_expression_node = &aliases.alias_name_to_expression_node_after_group_by;
 }
 
 /// Dump identifier resolve scope
 [[maybe_unused]] void IdentifierResolveScope::dump(WriteBuffer & buffer) const
 {
-    buffer << "Scope node " << scope_node->formatConvertedASTForErrorMessage() << '\n';
-
-    buffer << "Identifier lookup to resolve state " << identifier_in_lookup_process.size() << '\n';
-    for (const auto & [identifier, state] : identifier_in_lookup_process)
+    buffer << "Scope node " << scope_node->formatASTForErrorMessage() << '\n';
+    buffer << "Identifier lookup to resolve state " << identifier_lookup_to_resolve_state.size() << '\n';
+    for (const auto & [identifier, state] : identifier_lookup_to_resolve_state)
     {
-        buffer << " { '" << identifier.dump() << "' : ";
-        buffer << state.count;
-        buffer << " }\n";
+        buffer << "Identifier " << identifier.dump() << " resolve result ";
+        state.resolve_result.dump(buffer);
+        buffer << '\n';
     }
 
-    dump_mapping(buffer, "Expression argument name to node", expression_argument_name_to_node);
-    dump_mapping(buffer, "Alias name to expression node", aliases.alias_name_to_expression_node);
-    dump_mapping(buffer, "Alias name to function node", aliases.alias_name_to_lambda_node);
-    dump_mapping(buffer, "Alias name to table expression node", aliases.alias_name_to_table_expression_node);
-    dump_mapping(buffer, "CTE name to query node", cte_name_to_query_node);
-    dump_mapping(buffer, "WINDOW name to window node", window_name_to_window_node);
+    buffer << "Expression argument name to node " << expression_argument_name_to_node.size() << '\n';
+    for (const auto & [alias_name, node] : expression_argument_name_to_node)
+        buffer << "Alias name " << alias_name << " node " << node->formatASTForErrorMessage() << '\n';
 
-    dump_list(buffer, "Nodes with duplicated aliases size ", aliases.nodes_with_duplicated_aliases);
-    dump_list(buffer, "Nodes to remove aliases ", aliases.node_to_remove_aliases);
+    buffer << "Alias name to expression node table size " << aliases.alias_name_to_expression_node->size() << '\n';
+    for (const auto & [alias_name, node] : *aliases.alias_name_to_expression_node)
+        buffer << "Alias name " << alias_name << " expression node " << node->dumpTree() << '\n';
 
+    buffer << "Alias name to function node table size " << aliases.alias_name_to_lambda_node.size() << '\n';
+    for (const auto & [alias_name, node] : aliases.alias_name_to_lambda_node)
+        buffer << "Alias name " << alias_name << " lambda node " << node->formatASTForErrorMessage() << '\n';
+
+    buffer << "Alias name to table expression node table size " << aliases.alias_name_to_table_expression_node.size() << '\n';
+    for (const auto & [alias_name, node] : aliases.alias_name_to_table_expression_node)
+        buffer << "Alias name " << alias_name << " node " << node->formatASTForErrorMessage() << '\n';
+
+    buffer << "CTE name to query node table size " << cte_name_to_query_node.size() << '\n';
+    for (const auto & [cte_name, node] : cte_name_to_query_node)
+        buffer << "CTE name " << cte_name << " node " << node->formatASTForErrorMessage() << '\n';
+
+    buffer << "WINDOW name to window node table size " << window_name_to_window_node.size() << '\n';
+    for (const auto & [window_name, node] : window_name_to_window_node)
+        buffer << "CTE name " << window_name << " node " << node->formatASTForErrorMessage() << '\n';
+
+    buffer << "Nodes with duplicated aliases size " << aliases.nodes_with_duplicated_aliases.size() << '\n';
+    for (const auto & node : aliases.nodes_with_duplicated_aliases)
+        buffer << "Alias name " << node->getAlias() << " node " << node->formatASTForErrorMessage() << '\n';
+
+    buffer << "Expression resolve process stack " << '\n';
     expressions_in_resolve_process_stack.dump(buffer);
 
-    if (!table_expressions_in_resolve_process.empty())
-    {
-        buffer << "Table expressions in resolve process size " << table_expressions_in_resolve_process.size() << '\n';
-        for (const auto & node : table_expressions_in_resolve_process)
-            buffer << " { " << node->formatASTForErrorMessage() << " }\n";
-    }
+    buffer << "Table expressions in resolve process size " << table_expressions_in_resolve_process.size() << '\n';
+    for (const auto & node : table_expressions_in_resolve_process)
+        buffer << "Table expression " << node->formatASTForErrorMessage() << '\n';
 
-    buffer << "Table expression node to data: " << table_expression_node_to_data.size() << '\n';
+    buffer << "Non cached identifier lookups during expression resolve " << non_cached_identifier_lookups_during_expression_resolve.size() << '\n';
+    for (const auto & identifier_lookup : non_cached_identifier_lookups_during_expression_resolve)
+        buffer << "Identifier lookup " << identifier_lookup.dump() << '\n';
+
+    buffer << "Table expression node to data " << table_expression_node_to_data.size() << '\n';
     for (const auto & [table_expression_node, table_expression_data] : table_expression_node_to_data)
-        buffer << " { " << table_expression_node->formatASTForErrorMessage() << " data:\n  " << table_expression_data.dump() << " }\n";
+        buffer << "Table expression node " << table_expression_node->formatASTForErrorMessage() << " data " << table_expression_data.dump() << '\n';
 
-    dump_list(buffer, "Registered table expression nodes", registered_table_expression_nodes);
-
+    buffer << "Use identifier lookup to result cache " << use_identifier_lookup_to_result_cache << '\n';
     buffer << "Subquery depth " << subquery_depth << '\n';
 }
 

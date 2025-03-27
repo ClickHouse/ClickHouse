@@ -1,13 +1,8 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
-#include <Analyzer/Resolve/QueryAnalyzer.h>
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/TableNode.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -19,43 +14,23 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/Set.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Planner/CollectSets.h>
-#include <Planner/CollectTableExpressionData.h>
-#include <Planner/PlannerActionsVisitor.h>
-#include <Planner/PlannerContext.h>
-#include <Planner/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/StorageDummy.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
-#include <optional>
 #include <unordered_map>
 
-#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool normalize_function_names;
-    extern const SettingsBool allow_experimental_analyzer;
-}
 
 namespace ErrorCodes
 {
@@ -96,74 +71,33 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(ast);
 
-    String result_name;
+    /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
+    /// already normalized on initiator node, or not normalized and should remain unnormalized for
+    /// compatibility.
+    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
+        FunctionNameNormalizer::visit(ast.get());
+
+    auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
+    if (!syntax_result)
+        return {};
+
+    /// AST potentially could be transformed to literal during TreeRewriter analyze.
+    /// For example if we have SQL user defined function that return literal AS subquery.
+    if (ASTLiteral * literal = ast->as<ASTLiteral>())
+        return getFieldAndDataTypeFromLiteral(literal);
+
+    auto actions = ExpressionAnalyzer(ast, syntax_result, context).getConstActionsDAG();
 
     ColumnPtr result_column;
     DataTypePtr result_type;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    String result_name = ast->getColumnName();
+    for (const auto & action_node : actions.getOutputs())
     {
-        result_name = ast->getColumnName();
-
-        auto execution_context = Context::createCopy(context);
-        auto expression = buildQueryTree(ast, execution_context);
-
-        ColumnsDescription fake_column_descriptions(source_columns);
-        auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-        QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
-
-        QueryAnalyzer analyzer(false);
-        analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
-
-        GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
-        auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
-
-        collectSourceColumns(expression, planner_context, false /*keep_alias_columns*/);
-        collectSets(expression, *planner_context);
-
-        auto actions = buildActionsDAGFromExpressionNode(expression, {}, planner_context);
-
-        if (actions.getOutputs().size() != 1)
+        if ((action_node->result_name == result_name) && action_node->column)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ActionsDAG contains more than 1 output for expression: {}", ast->formatForLogging());
-        }
-
-        const auto & output = actions.getOutputs()[0];
-        if (output->column)
-        {
-            result_column = output->column;
-            result_type = output->result_type;
-        }
-    }
-    else
-    {
-        /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
-        /// already normalized on initiator node, or not normalized and should remain unnormalized for
-        /// compatibility.
-        if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
-            && context->getSettingsRef()[Setting::normalize_function_names])
-            FunctionNameNormalizer::visit(ast.get());
-
-        result_name = ast->getColumnName();
-
-        auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
-        if (!syntax_result)
-            return {};
-
-        /// AST potentially could be transformed to literal during TreeRewriter analyze.
-        /// For example if we have SQL user defined function that return literal AS subquery.
-        if (ASTLiteral * literal = ast->as<ASTLiteral>())
-            return getFieldAndDataTypeFromLiteral(literal);
-
-        auto actions = ExpressionAnalyzer(ast, syntax_result, context).getConstActionsDAG();
-
-        for (const auto & action_node : actions.getOutputs())
-        {
-            if ((action_node->result_name == result_name) && action_node->column)
-            {
-                result_column = action_node->column;
-                result_type = action_node->result_type;
-                break;
-            }
+            result_column = action_node->column;
+            result_type = action_node->result_type;
+            break;
         }
     }
 
@@ -319,7 +253,7 @@ namespace
             --limit;
             return analyzeEquals(identifier, literal, expr);
         }
-        if (fn->name == "in")
+        else if (fn->name == "in")
         {
             const auto * left = fn->arguments->children.front().get();
             const auto * right = fn->arguments->children.back().get();
@@ -363,7 +297,7 @@ namespace
             {
                 if (tuple_literal->value.getType() == Field::Types::Tuple)
                 {
-                    const auto & tuple = tuple_literal->value.safeGet<Tuple>();
+                    const auto & tuple = tuple_literal->value.safeGet<const Tuple &>();
                     for (const auto & child : tuple)
                     {
                         const auto dnf = analyzeEquals(identifier, child, expr);
@@ -389,7 +323,7 @@ namespace
 
             return result;
         }
-        if (fn->name == "or")
+        else if (fn->name == "or")
         {
             const auto * args = fn->children.front()->as<ASTExpressionList>();
 
@@ -415,7 +349,7 @@ namespace
 
             return result;
         }
-        if (fn->name == "and")
+        else if (fn->name == "and")
         {
             const auto * args = fn->children.front()->as<ASTExpressionList>();
 
@@ -601,15 +535,15 @@ namespace
         if (column->size() > max_elements)
             return {};
 
-        ColumnPtr cast_col;
+        ColumnPtr casted_col;
         const NullMap * null_map = nullptr;
 
         if (!type->equals(*node->result_type))
         {
-            cast_col = tryCastColumn(column, value->result_type, node->result_type);
-            if (!cast_col)
+            casted_col = tryCastColumn(column, value->result_type, node->result_type);
+            if (!casted_col)
                 return {};
-            const auto & col_nullable = assert_cast<const ColumnNullable &>(*cast_col);
+            const auto & col_nullable = assert_cast<const ColumnNullable &>(*casted_col);
             null_map = &col_nullable.getNullMapData();
             column = col_nullable.getNestedColumnPtr();
         }
@@ -690,11 +624,8 @@ namespace
                 if (lists.empty())
                     return {};
 
-                /// clang-tidy says the comparator might be called on moved-from object of type 'std::list'
-                /// NOLINTBEGIN(clang-analyzer-cplusplus.Move)
                 std::sort(lists.begin(), lists.end(),
                     [](const auto & lhs, const auto & rhs) { return lhs.size() < rhs.size(); });
-                /// NOLINTEND(clang-analyzer-cplusplus.Move)
 
                 DisjunctionList res;
                 bool first = true;
@@ -863,7 +794,8 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
         // Check if it's always true or false.
         if (literal->value.getType() == Field::Types::UInt64 && literal->value.safeGet<UInt64>() == 0)
             return {result};
-        return {};
+        else
+            return {};
     }
 
     return {result};

@@ -15,20 +15,20 @@ bool addPlansForSets(QueryPlan & root_plan, QueryPlan::Node & node, QueryPlan::N
     auto plans = DelayedCreatingSetsStep::makePlansForSets(std::move(*delayed));
     node.children.reserve(1 + plans.size());
 
-    Headers input_headers;
-    input_headers.reserve(1 + plans.size());
-    input_headers.push_back(node.children.front()->step->getOutputHeader());
+    DataStreams input_streams;
+    input_streams.reserve(1 + plans.size());
+    input_streams.push_back(node.children.front()->step->getOutputStream());
 
     for (const auto & plan : plans)
     {
-        input_headers.push_back(plan->getCurrentHeader());
+        input_streams.push_back(plan->getCurrentDataStream());
         node.children.push_back(plan->getRootNode());
         auto [add_nodes, add_resources] = QueryPlan::detachNodesAndResources(std::move(*plan));
         nodes.splice(nodes.end(), std::move(add_nodes));
         root_plan.addResources(std::move(add_resources));
     }
 
-    auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_headers));
+    auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_streams));
     creating_sets->setStepDescription("Create sets before main query execution");
     node.step = std::move(creating_sets);
     return true;

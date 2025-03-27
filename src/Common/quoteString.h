@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <base/StringRef.h>
+#include <concepts>
 
 
 namespace DB

@@ -1,9 +1,9 @@
+import pytest
 import random
 import string
 
-import pytest
-
 from helpers.cluster import ClickHouseCluster
+
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -69,7 +69,3 @@ def test_aliases_in_default_expr_not_break_table_structure(start_cluster, engine
     assert node.query(f"SELECT col2 FROM {table_name}").strip() == "col2-val"
 
     node.query(f"DROP TABLE {table_name}")
-
-    # smoke test for the keeper_response_time_ms metric
-    counters_ok = int(node.query("SELECT sum(value) > 0 FROM system.histogram_metrics WHERE name = 'keeper_response_time_ms'").strip())
-    assert counters_ok

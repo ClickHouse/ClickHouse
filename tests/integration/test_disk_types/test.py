@@ -1,5 +1,4 @@
 import pytest
-
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.test_tools import TSV
 
@@ -8,6 +7,10 @@ disk_types = {
     "disk_s3": "S3",
     "disk_encrypted": "S3",
 }
+
+# do not test HDFS on ARM
+if not is_arm():
+    disk_types["disk_hdfs"] = "HDFS"
 
 
 @pytest.fixture(scope="module")
@@ -20,6 +23,7 @@ def cluster():
                 ["configs/storage_arm.xml"] if is_arm() else ["configs/storage_amd.xml"]
             ),
             with_minio=True,
+            with_hdfs=not is_arm(),
         )
         cluster.start()
 

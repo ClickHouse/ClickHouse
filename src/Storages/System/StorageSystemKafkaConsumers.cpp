@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -13,8 +14,6 @@
 #include <Access/ContextAccess.h>
 #include <Storages/System/StorageSystemKafkaConsumers.h>
 #include <Storages/Kafka/StorageKafka.h>
-#include <base/Decimal_fwd.h>
-
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -43,7 +42,7 @@ ColumnsDescription StorageSystemKafkaConsumers::getColumnsDescription()
         {"num_rebalance_revocations", std::make_shared<DataTypeUInt64>(), "Number of times the consumer was revoked its partitions."},
         {"num_rebalance_assignments", std::make_shared<DataTypeUInt64>(), "Number of times the consumer was assigned to Kafka cluster."},
         {"is_currently_used", std::make_shared<DataTypeUInt8>(), "The flag which shows whether the consumer is in use."},
-        {"last_used", std::make_shared<DataTypeDateTime64>(6), "The last time this consumer was in use."},
+        {"last_used", std::make_shared<DataTypeUInt64>(), "The last time this consumer was in use, unix time in microseconds."},
         {"rdkafka_stat", std::make_shared<DataTypeString>(), "Library internal statistic. Set statistics_interval_ms to 0 disable, default is 3000 (once in three seconds)."},
     };
 }
@@ -80,7 +79,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & num_rebalance_revocations = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & num_rebalance_assigments = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & is_currently_used = assert_cast<ColumnUInt8 &>(*res_columns[index++]);
-    auto & last_used = assert_cast<ColumnDateTime64 &>(*res_columns[index++]);
+    auto & last_used = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & rdkafka_stat = assert_cast<ColumnString &>(*res_columns[index++]);
 
     const auto access = context->getAccess();
@@ -128,7 +127,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
             for (const auto & exc : consumer_stat.exceptions_buffer)
             {
                 exceptions_text.insertData(exc.text.data(), exc.text.size());
-                exceptions_time.insert(exc.timestamp);
+                exceptions_time.insert(exc.timestamp_usec);
             }
             exceptions_num += consumer_stat.exceptions_buffer.size();
             exceptions_text_offset.push_back(exceptions_num);
@@ -137,15 +136,15 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
             last_poll_time.insert(consumer_stat.last_poll_time);
             num_messages_read.insert(consumer_stat.num_messages_read);
-            last_commit_time.insert(consumer_stat.last_commit_timestamp);
+            last_commit_time.insert(consumer_stat.last_commit_timestamp_usec);
             num_commits.insert(consumer_stat.num_commits);
-            last_rebalance_time.insert(consumer_stat.last_rebalance_timestamp);
+            last_rebalance_time.insert(consumer_stat.last_rebalance_timestamp_usec);
 
             num_rebalance_revocations.insert(consumer_stat.num_rebalance_revocations);
             num_rebalance_assigments.insert(consumer_stat.num_rebalance_assignments);
 
             is_currently_used.insert(consumer_stat.in_use);
-            last_used.insert(static_cast<Decimal64>(consumer_stat.last_used_usec));
+            last_used.insert(consumer_stat.last_used_usec);
 
             rdkafka_stat.insertData(consumer_stat.rdkafka_stat.data(), consumer_stat.rdkafka_stat.size());
         }

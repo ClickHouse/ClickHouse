@@ -11,13 +11,8 @@ namespace DB
 {
 
 StorageDummy::StorageDummy(
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    const StorageSnapshotPtr & original_storage_snapshot_,
-    bool supports_replication_)
-    : IStorage(table_id_)
-    , original_storage_snapshot(original_storage_snapshot_)
-    , supports_replication(supports_replication_)
+    const StorageID & table_id_, const ColumnsDescription & columns_, const StorageSnapshotPtr & original_storage_snapshot_)
+    : IStorage(table_id_), original_storage_snapshot(original_storage_snapshot_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -56,8 +51,10 @@ ReadFromDummy::ReadFromDummy(
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
     const StorageDummy & storage_)
-    : SourceStepWithFilter(SourceStepWithFilter::applyPrewhereActions(
-                storage_snapshot_->getSampleBlockForColumns(column_names_), query_info_.prewhere_info),
+    : SourceStepWithFilter(
+        DataStream{
+            .header = SourceStepWithFilter::applyPrewhereActions(
+                storage_snapshot_->getSampleBlockForColumns(column_names_), query_info_.prewhere_info)},
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -69,7 +66,7 @@ ReadFromDummy::ReadFromDummy(
 
 void ReadFromDummy::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    Pipe pipe(std::make_shared<SourceFromSingleChunk>(getOutputHeader()));
+    Pipe pipe(std::make_shared<SourceFromSingleChunk>(getOutputStream().header));
     pipeline.init(std::move(pipe));
 }
 

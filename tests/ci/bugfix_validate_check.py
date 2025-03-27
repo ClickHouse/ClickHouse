@@ -10,7 +10,6 @@ from typing import List, Sequence, Tuple
 from ci_config import CI
 from env_helper import TEMP_PATH
 from functional_test_check import NO_CHANGES_MSG
-from pr_info import PRInfo
 from report import (
     ERROR,
     FAIL,
@@ -74,7 +73,7 @@ def process_all_results(
         all_results.extend(test_results)
     if has_error:
         status = ERROR
-        description = "Some error(s) occurred in tests"
+        description = "Some error(s) occured in tests"
     elif has_ok:
         status = SUCCESS
         description = "New test(s) reproduced a bug"
@@ -92,17 +91,6 @@ def main():
     logging.basicConfig(level=logging.INFO)
     # args = parse_args()
     stopwatch = Stopwatch()
-    if CI.Labels.PR_BUGFIX not in PRInfo().labels:
-        JobReport(
-            description="",
-            test_results=[],
-            status=SKIPPED.lower(),
-            start_time=stopwatch.start_time_str,
-            duration=stopwatch.duration_seconds,
-            additional_files=[],
-        ).dump()
-        return
-
     jobs_to_validate = [
         CI.JobNames.STATELESS_TEST_RELEASE,
         CI.JobNames.INTEGRATION_TEST,
@@ -151,20 +139,13 @@ def main():
         jr = JobReport.load(from_file=report_file)
         additional_files.append(report_file)
         for file in set(jr.additional_files):
-            orig_file = Path(file)
-            file_name = orig_file.name
+            file_ = Path(file)
+            file_name = file_.name
             file_name = file_name.replace(
                 ".", "__" + CI.Utils.normalize_string(job_id) + ".", 1
             )
-            new_file = orig_file.rename(orig_file.parent / file_name)
-            for tr in test_results:
-                if tr.log_files is None:
-                    continue
-                tr.log_files = [
-                    new_file if (Path(log_file) == orig_file) else Path(log_file)
-                    for log_file in tr.log_files
-                ]
-            additional_files.append(new_file)
+            file_ = file_.rename(file_.parent / file_name)
+            additional_files.append(file_)
 
     JobReport(
         description=description,

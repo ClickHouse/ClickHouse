@@ -98,7 +98,7 @@ namespace
             for (auto filter_type : collections::range(RowPolicyFilterType::MAX))
             {
                 std::string_view command = RowPolicyFilterTypeInfo::get(filter_type).command;
-                if (ParserKeyword::createDeprecated({command.data(), command.size()}).ignore(pos, expected))
+                if (ParserKeyword::createDeprecated(command.data()).ignore(pos, expected))
                 {
                     res_commands.emplace(command);
                     return true;

@@ -13,7 +13,6 @@ set(SRCS
     ${SRC_DIR}/gl/c-ctype.c
     ${SRC_DIR}/gl/float.c
     ${SRC_DIR}/gl/printf-args.c
-    ${SRC_DIR}/gl/strverscmp.c
     ${SRC_DIR}/gl/hmac-sha1.c
     ${SRC_DIR}/gl/itold.c
     ${SRC_DIR}/gl/hmac-md5.c

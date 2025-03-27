@@ -1,7 +1,5 @@
-#include <Access/Credentials.h>
 #include <Server/PrometheusRequestHandlerFactory.h>
 
-#include <Core/Types_fwd.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include <Server/PrometheusRequestHandler.h>
@@ -85,11 +83,6 @@ namespace
         res.type = PrometheusRequestHandlerConfig::Type::RemoteRead;
         res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
         parseCommonConfig(config, res);
-        if (config.has(config_prefix + ".user"))
-        {
-            AlwaysAllowCredentials credentials(config.getString(config_prefix + ".user"));
-            res.connection_config.credentials.emplace(credentials);
-        }
         return res;
     }
 
@@ -108,12 +101,12 @@ namespace
 
         if (type == "expose_metrics")
             return parseExposeMetricsConfig(config, config_prefix);
-        if (type == "remote_write")
+        else if (type == "remote_write")
             return parseRemoteWriteConfig(config, config_prefix);
-        if (type == "remote_read")
+        else if (type == "remote_read")
             return parseRemoteReadConfig(config, config_prefix);
-        throw Exception(
-            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", type);
+        else
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", type);
     }
 
     /// Returns true if the protocol represented by a passed config can be handled.
@@ -129,7 +122,8 @@ namespace
     {
         if (for_keeper)
             return std::make_unique<KeeperPrometheusMetricsWriter>();
-        return std::make_unique<PrometheusMetricsWriter>();
+        else
+            return std::make_unique<PrometheusMetricsWriter>();
     }
 
     /// Base function for making a factory for PrometheusRequestHandler. This function can return nullptr.

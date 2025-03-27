@@ -17,11 +17,6 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsUInt64 extract_key_value_pairs_max_pairs_per_row;
-}
-
 template <typename Name, bool WITH_ESCAPING>
 class ExtractKeyValuePairs : public IFunction
 {
@@ -49,11 +44,11 @@ class ExtractKeyValuePairs : public IFunction
             builder.withQuotingCharacter(parsed_arguments.quoting_character.value());
         }
 
-        bool is_number_of_pairs_unlimited = context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row] == 0;
+        bool is_number_of_pairs_unlimited = context->getSettingsRef().extract_key_value_pairs_max_pairs_per_row == 0;
 
         if (!is_number_of_pairs_unlimited)
         {
-            builder.withMaxNumberOfPairs(context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row]);
+            builder.withMaxNumberOfPairs(context->getSettingsRef().extract_key_value_pairs_max_pairs_per_row);
         }
 
         return builder.build();
@@ -161,7 +156,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             A key-value pair consists of a key followed by a `key_value_delimiter` and a value. Quoted keys and values are also supported. Key value pairs must be separated by pair delimiters.
 
             **Syntax**
-            ```sql
+            ``` sql
             extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
             ```
 
@@ -179,7 +174,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             Query:
 
             **Simple case**
-            ```sql
+            ``` sql
             arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 
             SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
@@ -192,7 +187,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ```
 
             **Single quote as quoting character**
-            ```sql
+            ``` sql
             arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
             SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
@@ -205,7 +200,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ```
 
             **Escape sequences without escape sequences support**
-            ```sql
+            ``` sql
             arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
 
             SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
@@ -234,7 +229,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             Leading escape sequences will be skipped in keys and will be considered invalid for values.
 
             **Escape sequences with escape sequence support turned on**
-            ```sql
+            ``` sql
             arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
 
             SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv

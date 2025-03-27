@@ -11,12 +11,12 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/VarInt.h>
+#include <magic_enum.hpp>
 #include <memory>
 #include <string>
-#include <IO/ReadHelpers.h>
-#include <IO/VarInt.h>
-#include <IO/WriteHelpers.h>
-#include <base/EnumReflection.h>
 
 namespace DB
 {
@@ -151,13 +151,6 @@ struct SerializationObjectDeprecated<Parser>::DeserializeStateObject : public IS
     DataTypePtr nested_type;
     SerializationPtr nested_serialization;
     DeserializeBinaryBulkStatePtr nested_state;
-
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
-    {
-        auto new_state = std::make_shared<SerializationObjectDeprecated<Parser>::DeserializeStateObject>(*this);
-        new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
-        return new_state;
-    }
 };
 
 template <typename Parser>
@@ -301,7 +294,7 @@ void SerializationObjectDeprecated<Parser>::serializeBinaryBulkWithMultipleStrea
     }
 
     settings.path.push_back(Substream::DeprecatedObjectData);
-    if (auto * /*stream*/ _ = settings.getter(settings.path))
+    if (auto * stream = settings.getter(settings.path))
     {
         state_object->nested_serialization->serializeBinaryBulkWithMultipleStreams(
             *tuple_column, offset, limit, settings, state_object->nested_state);
@@ -562,13 +555,13 @@ void SerializationObjectDeprecated<Parser>::serializeTextJSONPretty(const IColum
         if (it != subcolumns.begin())
             writeCString(",\n", ostr);
 
-        writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+        writeChar(' ', (indent + 1) * 4, ostr);
         writeDoubleQuoted(entry->path.getPath(), ostr);
         writeCString(": ", ostr);
         serializeTextFromSubcolumn<true>(entry->data, row_num, ostr, settings, indent + 1);
     }
     writeChar('\n', ostr);
-    writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+    writeChar(' ', indent * 4, ostr);
     writeChar('}', ostr);
 }
 

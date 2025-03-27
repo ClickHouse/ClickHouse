@@ -1,26 +1,24 @@
 ---
-description: 'Documentation for Conditional Functions'
-sidebar_label: 'Conditional'
+slug: /en/sql-reference/functions/conditional-functions
 sidebar_position: 40
-slug: /sql-reference/functions/conditional-functions
-title: 'Conditional Functions'
+sidebar_label: Conditional
 ---
 
 # Conditional Functions
 
-## if {#if}
+## if
 
 Performs conditional branching.
 
 If the condition `cond` evaluates to a non-zero value, the function returns the result of the expression `then`. If `cond` evaluates to zero or `NULL`, then the result of the `else` expression is returned.
 
-Setting [short_circuit_function_evaluation](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used. If enabled, the `then` expression is evaluated only on rows where `cond` is `true` and the `else` expression where `cond` is `false`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)`.
+Setting [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) controls whether short-circuit evaluation is used. If enabled, the `then` expression is evaluated only on rows where `cond` is `true` and the `else` expression where `cond` is `false`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)`.
 
 `then` and `else` must be of a similar type.
 
 **Syntax**
 
-```sql
+``` sql
 if(cond, then, else)
 ```
 Alias: `cond ? then : else` (ternary operator)
@@ -37,29 +35,29 @@ The result of either the `then` and `else` expressions, depending on condition `
 
 **Example**
 
-```sql
+``` sql
 SELECT if(1, plus(2, 2), plus(2, 6));
 ```
 
 Result:
 
-```text
+``` text
 ┌─plus(2, 2)─┐
 │          4 │
 └────────────┘
 ```
 
-## multiIf {#multiif}
+## multiIf
 
-Allows to write the [CASE](../../sql-reference/operators/index.md#conditional-expression) operator more compactly in the query.
+Allows to write the [CASE](../../sql-reference/operators/index.md#operator_case) operator more compactly in the query.
 
 **Syntax**
 
-```sql
+``` sql
 multiIf(cond_1, then_1, cond_2, then_2, ..., else)
 ```
 
-Setting [short_circuit_function_evaluation](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used. If enabled, the `then_i` expression is evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` is `true`, `cond_i` will be evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` is `true`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)`.
+Setting [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) controls whether short-circuit evaluation is used. If enabled, the `then_i` expression is evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` is `true`, `cond_i` will be evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` is `true`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)`.
 
 **Arguments**
 
@@ -76,7 +74,7 @@ The result of either any of the `then_N` or `else` expressions, depending on the
 
 Assuming this table:
 
-```text
+``` text
 ┌─left─┬─right─┐
 │ ᴺᵁᴸᴸ │     4 │
 │    1 │     3 │
@@ -86,7 +84,7 @@ Assuming this table:
 └──────┴───────┘
 ```
 
-```sql
+``` sql
 SELECT
     left,
     right,
@@ -102,11 +100,11 @@ FROM LEFT_RIGHT
 └──────┴───────┴─────────────────┘
 ```
 
-## Using Conditional Results Directly {#using-conditional-results-directly}
+## Using Conditional Results Directly
 
 Conditionals always result to `0`, `1` or `NULL`. So you can use conditional results directly like this:
 
-```sql
+``` sql
 SELECT left < right AS is_small
 FROM LEFT_RIGHT
 
@@ -119,11 +117,11 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-## NULL Values in Conditionals {#null-values-in-conditionals}
+## NULL Values in Conditionals
 
 When `NULL` values are involved in conditionals, the result will also be `NULL`.
 
-```sql
+``` sql
 SELECT
     NULL < 1,
     2 < NULL,
@@ -139,7 +137,7 @@ So you should construct your queries carefully if the types are `Nullable`.
 
 The following example demonstrates this by failing to add equals condition to `multiIf`.
 
-```sql
+``` sql
 SELECT
     left,
     right,
@@ -155,7 +153,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴──────────────────┘
 ```
 
-## greatest {#greatest}
+## greatest
 
 Returns the greatest across a list of values.  All of the list members must be of comparable types.
 
@@ -193,10 +191,10 @@ SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
 ```
 
 :::note
-The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+The type returned is a DateTime64 as the DataTime32 must be promoted to 64 bit for the comparison.
 :::
 
-## least {#least}
+## least
 
 Returns the least across a list of values.  All of the list members must be of comparable types.
 
@@ -234,16 +232,16 @@ SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
 ```
 
 :::note
-The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+The type returned is a DateTime64 as the DataTime32 must be promoted to 64 bit for the comparison.
 :::
 
-## clamp {#clamp}
+## clamp
 
 Constrain the return value between A and B.
 
 **Syntax**
 
-```sql
+``` sql
 clamp(value, min, max)
 ```
 

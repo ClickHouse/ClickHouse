@@ -1,19 +1,19 @@
 ---
-description: 'A new analytical benchmark for machine-generated log data'
-sidebar_label: 'Brown University Benchmark'
-slug: /getting-started/example-datasets/brown-benchmark
-title: 'Brown University Benchmark'
+slug: /en/getting-started/example-datasets/brown-benchmark
+sidebar_label: Brown University Benchmark
+description: A new analytical benchmark for machine-generated log data
+title: "Brown University Benchmark"
 ---
 
 `MgBench` is a new analytical benchmark for machine-generated log data, [Andrew Crotty](http://cs.brown.edu/people/acrotty/).
 
 Download the data:
-```bash
+```
 wget https://datasets.clickhouse.com/mgbench{1..3}.csv.xz
 ```
 
 Unpack the data:
-```bash
+```
 xz -v -d mgbench{1..3}.csv.xz
 ```
 
@@ -85,13 +85,13 @@ ORDER BY (event_type, log_time);
 
 Insert data:
 
-```bash
+```
 clickhouse-client --query "INSERT INTO mgbench.logs1 FORMAT CSVWithNames" < mgbench1.csv
 clickhouse-client --query "INSERT INTO mgbench.logs2 FORMAT CSVWithNames" < mgbench2.csv
 clickhouse-client --query "INSERT INTO mgbench.logs3 FORMAT CSVWithNames" < mgbench3.csv
 ```
 
-## Run benchmark queries: {#run-benchmark-queries}
+## Run benchmark queries:
 
 ```sql
 USE mgbench;
@@ -453,4 +453,4 @@ ORDER BY yr,
          mo;
 ```
 
-The data is also available for interactive queries in the [Playground](https://sql.clickhouse.com), [example](https://sql.clickhouse.com?query_id=1MXMHASDLEQIP4P1D1STND).
+The data is also available for interactive queries in the [Playground](https://play.clickhouse.com/play?user=play), [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1hY2hpbmVfbmFtZSwKICAgICAgIE1JTihjcHUpIEFTIGNwdV9taW4sCiAgICAgICBNQVgoY3B1KSBBUyBjcHVfbWF4LAogICAgICAgQVZHKGNwdSkgQVMgY3B1X2F2ZywKICAgICAgIE1JTihuZXRfaW4pIEFTIG5ldF9pbl9taW4sCiAgICAgICBNQVgobmV0X2luKSBBUyBuZXRfaW5fbWF4LAogICAgICAgQVZHKG5ldF9pbikgQVMgbmV0X2luX2F2ZywKICAgICAgIE1JTihuZXRfb3V0KSBBUyBuZXRfb3V0X21pbiwKICAgICAgIE1BWChuZXRfb3V0KSBBUyBuZXRfb3V0X21heCwKICAgICAgIEFWRyhuZXRfb3V0KSBBUyBuZXRfb3V0X2F2ZwpGUk9NICgKICBTRUxFQ1QgbWFjaGluZV9uYW1lLAogICAgICAgICBDT0FMRVNDRShjcHVfdXNlciwgMC4wKSBBUyBjcHUsCiAgICAgICAgIENPQUxFU0NFKGJ5dGVzX2luLCAwLjApIEFTIG5ldF9pbiwKICAgICAgICAgQ09BTEVTQ0UoYnl0ZXNfb3V0LCAwLjApIEFTIG5ldF9vdXQKICBGUk9NIG1nYmVuY2gubG9nczEKICBXSEVSRSBtYWNoaW5lX25hbWUgSU4gKCdhbmFuc2knLCdhcmFnb2cnLCd1cmQnKQogICAgQU5EIGxvZ190aW1lID49IFRJTUVTVEFNUCAnMjAxNy0wMS0xMSAwMDowMDowMCcKKSBBUyByCkdST1VQIEJZIG1hY2hpbmVfbmFtZQ==).

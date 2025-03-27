@@ -1,15 +1,12 @@
 #pragma once
 
+#include <memory>
 #include <Core/Types.h>
+#include <Common/Exception.h>
 #include <Interpreters/Cache/FileSegmentInfo.h>
 #include <Interpreters/Cache/Guards.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/UserInfo.h>
-
-#include <atomic>
-#include <memory>
-
-#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -36,7 +33,7 @@ public:
         std::atomic<size_t> size;
         size_t hits = 0;
 
-        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size.load()); }
+        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size); }
 
         bool isEvicting(const CachePriorityGuard::Lock &) const { return evicting; }
         bool isEvicting(const LockedKey &) const { return evicting; }

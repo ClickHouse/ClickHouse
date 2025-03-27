@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
+import pytest
+from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
+from kazoo.client import KazooClient
+from kazoo.retry import KazooRetry
+from kazoo.security import make_acl
+from kazoo.handlers.threading import KazooTimeoutError
 import os
 import time
-
-import pytest
-from kazoo.handlers.threading import KazooTimeoutError
-from kazoo.security import make_acl
-
-import helpers.keeper_utils as keeper_utils
-from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -138,16 +138,23 @@ def started_cluster():
 
 
 def get_fake_zk(timeout=60.0):
-    return keeper_utils.get_fake_zk(cluster, "node", timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip("node") + ":9181", timeout=timeout
+    )
+    _fake_zk_instance.start()
+    return _fake_zk_instance
 
 
 def get_genuine_zk(timeout=60.0):
     CONNECTION_RETRIES = 100
     for i in range(CONNECTION_RETRIES):
         try:
-            _genuine_zk_instance = cluster.get_kazoo_client(
-                "node", timeout=timeout, external_port=2181
+            _genuine_zk_instance = KazooClient(
+                hosts=cluster.get_instance_ip("node") + ":2181",
+                timeout=timeout,
+                connection_retry=KazooRetry(max_tries=20),
             )
+            _genuine_zk_instance.start()
             return _genuine_zk_instance
         except KazooTimeoutError:
             if i == CONNECTION_RETRIES - 1:

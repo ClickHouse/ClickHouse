@@ -10,7 +10,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/SipHash.h>
 #include <Core/Field.h>
 
 namespace DB
@@ -55,7 +54,7 @@ void SerializationLowCardinality::enumerateStreams(
         .withSerializationInfo(data.serialization_info);
 
     settings.path.back().data = dict_data;
-    callback(settings.path);
+    dict_inner_serialization->enumerateStreams(settings, callback, dict_data);
 
     settings.path.back() = Substream::DictionaryIndexes;
     settings.path.back().data = data;
@@ -219,11 +218,6 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
     bool need_update_dictionary = false;
 
     explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
-
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
-    {
-        return std::make_shared<DeserializeStateLowCardinality>(*this);
-    }
 };
 
 void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
@@ -417,13 +411,15 @@ namespace
     {
         if (auto * data_uint8 = getIndexesData<UInt8>(column))
             return mapIndexWithAdditionalKeys(*data_uint8, dict_size);
-        if (auto * data_uint16 = getIndexesData<UInt16>(column))
+        else if (auto * data_uint16 = getIndexesData<UInt16>(column))
             return mapIndexWithAdditionalKeys(*data_uint16, dict_size);
-        if (auto * data_uint32 = getIndexesData<UInt32>(column))
+        else if (auto * data_uint32 = getIndexesData<UInt32>(column))
             return mapIndexWithAdditionalKeys(*data_uint32, dict_size);
-        if (auto * data_uint64 = getIndexesData<UInt64>(column))
+        else if (auto * data_uint64 = getIndexesData<UInt64>(column))
             return mapIndexWithAdditionalKeys(*data_uint64, dict_size);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for mapIndexWithAdditionalKeys must be UInt, got {}", column.getName());
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for mapIndexWithAdditionalKeys must be UInt, got {}",
+                            column.getName());
     }
 }
 

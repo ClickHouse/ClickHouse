@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/Exception.h>
+
 #include <algorithm>
 #include <limits>
 #include <tuple>
@@ -39,28 +41,30 @@ public:
         {
             return biases[estimates.size() - 1];
         }
-        if (*it == raw_estimate)
+        else if (*it == raw_estimate)
         {
             size_t index = std::distance(estimates.begin(), it);
             return biases[index];
         }
-        if (it == estimates.begin())
+        else if (it == estimates.begin())
         {
             return biases[0];
         }
+        else
+        {
+            /// We get the error estimate by linear interpolation.
+            size_t index = std::distance(estimates.begin(), it);
 
-        /// We get the error estimate by linear interpolation.
-        size_t index = std::distance(estimates.begin(), it);
+            double estimate1 = estimates[index - 1];
+            double estimate2 = estimates[index];
 
-        double estimate1 = estimates[index - 1];
-        double estimate2 = estimates[index];
+            double bias1 = biases[index - 1];
+            double bias2 = biases[index];
+            /// It is assumed that the estimate1 < estimate2 condition is always satisfied.
+            double slope = (bias2 - bias1) / (estimate2 - estimate1);
 
-        double bias1 = biases[index - 1];
-        double bias2 = biases[index];
-        /// It is assumed that the estimate1 < estimate2 condition is always satisfied.
-        double slope = (bias2 - bias1) / (estimate2 - estimate1);
-
-        return bias1 + slope * (raw_estimate - estimate1);
+            return bias1 + slope * (raw_estimate - estimate1);
+        }
     }
 
 private:

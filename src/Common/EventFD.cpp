@@ -57,7 +57,7 @@ EventFD::~EventFD()
 {
     if (fd != -1)
     {
-        [[maybe_unused]] int err = close(fd);
+        int err = close(fd);
         chassert(!err || errno == EINTR);
     }
 }

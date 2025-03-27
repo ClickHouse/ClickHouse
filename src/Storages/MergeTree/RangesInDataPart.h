@@ -5,7 +5,8 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/MergeTreePartInfo.h>
+#include "Storages/MergeTree/AlterConversions.h"
+#include "Storages/MergeTree/MergeTreePartInfo.h"
 
 
 namespace DB
@@ -35,12 +36,13 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
     String describe() const;
     void deserialize(ReadBuffer & in);
 
-    void merge(const RangesInDataPartsDescription & other);
+    void merge(RangesInDataPartsDescription & other);
 };
 
 struct RangesInDataPart
 {
     DataPartPtr data_part;
+    AlterConversionsPtr alter_conversions;
     size_t part_index_in_query;
     MarkRanges ranges;
     MarkRanges exact_ranges;
@@ -49,13 +51,14 @@ struct RangesInDataPart
 
     RangesInDataPart(
         const DataPartPtr & data_part_,
+        const AlterConversionsPtr & alter_conversions_,
         const size_t part_index_in_query_,
         const MarkRanges & ranges_ = MarkRanges{})
         : data_part{data_part_}
+        , alter_conversions{alter_conversions_}
         , part_index_in_query{part_index_in_query_}
         , ranges{ranges_}
-    {
-    }
+    {}
 
     RangesInDataPartDescription getDescription() const;
 
