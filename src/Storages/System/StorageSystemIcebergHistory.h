@@ -31,8 +31,9 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
+#if USE_AVRO
     void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
-
+#endif
 };
 
 }

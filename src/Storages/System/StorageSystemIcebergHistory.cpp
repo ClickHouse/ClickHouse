@@ -38,6 +38,7 @@ ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
     };
 }
 
+#if USE_AVRO
 void StorageSystemIcebergHistory::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
@@ -49,7 +50,6 @@ void StorageSystemIcebergHistory::fillData(MutableColumns & res_columns, Context
             return;
         }
 
-#if USE_AVRO
         auto current_metadata = IcebergMetadata::create(
                         object_storage->getObjectStorage(),
                         object_storage->getConfiguration(),
@@ -70,9 +70,6 @@ void StorageSystemIcebergHistory::fillData(MutableColumns & res_columns, Context
                 res_columns[column_index++]->insert(iceberg_history_item.is_current_ancestor);
             }
         }
-#endif
-
-
     };
 
     const bool show_tables_granted = access->isGranted(AccessType::SHOW_TABLES);
@@ -91,7 +88,7 @@ void StorageSystemIcebergHistory::fillData(MutableColumns & res_columns, Context
                 }
             }
         }
-
     }
 }
+#endif
 }
