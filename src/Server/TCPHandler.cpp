@@ -123,6 +123,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool validate_tcp_client_information;
+    extern const ServerSettingsBool process_query_plan_packet;
 }
 }
 
@@ -547,6 +548,11 @@ void TCPHandler::runImpl()
 
             if (query_state->stage == QueryProcessingStage::QueryPlan)
             {
+                if (!session->globalContext()->getServerSettings()[ServerSetting::process_query_plan_packet])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Reading of QueryPlan packed is disabled. "
+                        "Enable process_query_plan_packet is server config or disable serialize_query_plan setting.");
+
                 query_state->query_context->setQueryPlanDeserializationCallback([&query_state]()
                 {
                     if (!query_state->plan_and_sets)
