@@ -2211,6 +2211,11 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, std::op
     return Pipe::unitePipes(std::move(pipes));
 }
 
+QueryPlanStepPtr ReadFromMergeTree::clone() const
+{
+    return std::make_unique<ReadFromMergeTree>(*this);
+}
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto result = getAnalysisResult();
