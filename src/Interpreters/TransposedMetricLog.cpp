@@ -118,7 +118,7 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
         elem.metric_name += ProfileEvents::getName(ProfileEvents::Event(i));
         elem.value = new_value - old_value;
         old_value = new_value;
-        this->add(std::move(elem));
+        this->add(elem);
     }
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
@@ -126,7 +126,7 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
         elem.metric_name += CURRENT_METRIC_PREFIX;
         elem.metric_name += CurrentMetrics::getName(CurrentMetrics::Metric(i));
         elem.value = CurrentMetrics::values[i];
-        this->add(std::move(elem));
+        this->add(elem);
     }
 }
 
