@@ -92,12 +92,18 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 
     if (is_initial_load)
     {
-        bool has_data = object_storage->existsOrHasAnyChild(fs::path(object_storage->getCommonKeyPrefix()) / "");
-        /// Legacy layout is in use.
+        /// Use iteration to determine if the disk contains data.
+        /// LocalObjectStorage creates an empty top-level directory even when no data is stored,
+        /// unlike blob storage, which has no concept of directories, therefore existsOrHasAnyChild
+        /// is not applicable.
+        auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
+        auto dir_iter = object_storage->iterate(common_key_prefix, 1);
+        bool has_data = dir_iter->isValid();
+        /// No metadata directory: legacy layout is likely in use.
         if (has_data && !has_metadata)
         {
             ProfileEvents::increment(ProfileEvents::DiskPlainRewritableLegacyLayoutDiskCount, 1);
-            LOG_WARNING(log, "Legacy disk layout is in use");
+            LOG_WARNING(log, "Legacy layout is likely used for disk '{}'", object_storage->getCommonKeyPrefix());
         }
     }
 
