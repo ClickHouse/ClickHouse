@@ -1,7 +1,4 @@
 #include "MySQLHandlerFactory.h"
-#include <Common/OpenSSLHelpers.h>
-#include <Poco/Crypto/EVPPKey.h>
-#include <Poco/Crypto/RSAKey.h>
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Poco/Util/Application.h>
 #include <Common/logger_useful.h>
@@ -10,6 +7,9 @@
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>
+#    include <Poco/Crypto/EVPPKey.h>
+#    include <Poco/Crypto/RSAKey.h>
+#    include <Common/OpenSSLHelpers.h>
 #endif
 
 namespace DB
