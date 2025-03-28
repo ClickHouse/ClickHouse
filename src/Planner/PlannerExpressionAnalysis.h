@@ -10,6 +10,7 @@
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
+#include "Core/NamesAndTypes.h"
 
 namespace DB
 {
@@ -31,8 +32,17 @@ struct FilterAnalysisResult
 
 struct AggregationAnalysisResult
 {
+    Names getAggregationKeyNames() const
+    {
+        Names result;
+        result.reserve(aggregation_keys.size());
+        for (const auto & key : aggregation_keys)
+            result.push_back(key.name);
+        return result;
+    }
+
     ActionsAndProjectInputsFlagPtr before_aggregation_actions;
-    Names aggregation_keys;
+    NamesAndTypes aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
@@ -93,6 +103,11 @@ public:
         return aggregation_analysis_result;
     }
 
+    const AggregationAnalysisResult & getAggregation() const
+    {
+        return aggregation_analysis_result;
+    }
+
     void addAggregation(AggregationAnalysisResult aggregation_analysis_result_)
     {
         aggregation_analysis_result = std::move(aggregation_analysis_result_);
@@ -149,6 +164,11 @@ public:
     }
 
     SortAnalysisResult & getSort()
+    {
+        return sort_analysis_result;
+    }
+
+    const SortAnalysisResult & getSort() const
     {
         return sort_analysis_result;
     }
