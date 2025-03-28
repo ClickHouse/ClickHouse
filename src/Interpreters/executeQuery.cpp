@@ -329,7 +329,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.query_duration_ms = elapsed_microseconds / 1000;
 
     ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, elapsed_microseconds);
-    if (query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
+    if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
     {
         ProfileEvents::increment(ProfileEvents::SelectQueryTimeMicroseconds, elapsed_microseconds);
     }
@@ -422,10 +422,10 @@ QueryLogElement logQueryStart(
 
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
-    if (settings[Setting::log_formatted_queries])
+    if (query_ast && settings[Setting::log_formatted_queries])
         elem.formatted_query = query_ast->formatWithSecretsOneLine();
     elem.normalized_query_hash = normalized_query_hash;
-    elem.query_kind = query_ast->getQueryKind();
+    elem.query_kind = query_ast ? query_ast->getQueryKind() : IAST::QueryKind::Select;
 
     elem.client_info = context->getClientInfo();
 
@@ -691,7 +691,7 @@ void logQueryException(
     }
 
     ProfileEvents::increment(ProfileEvents::FailedQuery);
-    if (query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
+    if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
         ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
     else if (query_ast->as<ASTInsertQuery>())
         ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
@@ -938,7 +938,11 @@ static BlockIO executeQueryImpl(
     /// Parse the query from string.
     try
     {
-        if (settings[Setting::dialect] == Dialect::kusto && !internal)
+        if (stage == QueryProcessingStage::QueryPlan)
+        {
+            /// Do not parse Query
+        }
+        else if (settings[Setting::dialect] == Dialect::kusto && !internal)
         {
             if (!settings[Setting::allow_experimental_kusto_dialect])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for Kusto Query Engine (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
@@ -1023,25 +1027,29 @@ static BlockIO executeQueryImpl(
         }
 
         const char * query_end = end;
-        if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
-            query_end = insert_query->data;
-
         bool is_create_parameterized_view = false;
-        if (const auto * create_query = out_ast->as<ASTCreateQuery>())
+
+        if (out_ast)
         {
-            is_create_parameterized_view = create_query->isParameterizedView();
-        }
-        else if (const auto * explain_query = out_ast->as<ASTExplainQuery>())
-        {
-            if (!explain_query->children.empty())
-                if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
-                    is_create_parameterized_view = create_of_explain_query->isParameterizedView();
+            if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
+                query_end = insert_query->data;
+
+            if (const auto * create_query = out_ast->as<ASTCreateQuery>())
+            {
+                is_create_parameterized_view = create_query->isParameterizedView();
+            }
+            else if (const auto * explain_query = out_ast->as<ASTExplainQuery>())
+            {
+                if (!explain_query->children.empty())
+                    if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
+                        is_create_parameterized_view = create_of_explain_query->isParameterizedView();
+            }
         }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
-        if (!is_create_parameterized_view && probably_has_params)
+        if (out_ast && !is_create_parameterized_view && probably_has_params)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(out_ast);
@@ -1060,7 +1068,7 @@ static BlockIO executeQueryImpl(
         /// MUST go before any modification (except for prepared statements,
         /// since it substitute parameters and without them query does not contain
         /// parameters), to keep query as-is in query_log and server log.
-        if (out_ast->hasSecretParts())
+        if (out_ast && out_ast->hasSecretParts())
         {
             /// IAST::formatForLogging() wipes secret parts in AST and then calls wipeSensitiveDataAndCutToLength().
             query_for_logging = out_ast->formatForLogging(log_queries_cut_to_length);
@@ -1116,27 +1124,12 @@ static BlockIO executeQueryImpl(
         {
             chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
             chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
-            if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !out_ast->as<ASTTransactionControl>() && !out_ast->as<ASTExplainQuery>())
+            bool is_special_query = out_ast && (out_ast->as<ASTTransactionControl>() || out_ast->as<ASTExplainQuery>());
+            if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !is_special_query)
                 throw Exception(
                     ErrorCodes::INVALID_TRANSACTION,
                     "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
         }
-
-        /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
-        /// to allow settings to take effect.
-        InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
-        validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
-
-        if (settings[Setting::enforce_strict_identifier_format])
-        {
-            WriteBufferFromOwnString buf;
-            IAST::FormatSettings enforce_strict_identifier_format_settings(true);
-            enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
-            out_ast->format(buf, enforce_strict_identifier_format_settings);
-        }
-
-        if (auto * insert_query = out_ast->as<ASTInsertQuery>())
-            insert_query->tail = istr;
 
         /// There is an option of probabilistic logging of queries.
         /// If it is used - do the random sampling and "collapse" the settings.
@@ -1150,36 +1143,55 @@ static BlockIO executeQueryImpl(
             context->setSetting("log_queries_probability", 1.0);
         }
 
-        if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
-        {
-            query_database = query_with_table_output->getDatabase();
-            query_table = query_with_table_output->getTable();
-        }
-
         logQuery(query_for_logging, context, internal, stage);
 
-        /// Propagate WITH statement to children ASTSelect.
-        if (settings[Setting::enable_global_with_statement])
+        if (out_ast)
         {
-            ApplyWithGlobalVisitor::visit(out_ast);
-        }
+            /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
+            /// to allow settings to take effect.
+            InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+            validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
-        {
-            SelectIntersectExceptQueryVisitor::Data data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
-            SelectIntersectExceptQueryVisitor{data}.visit(out_ast);
-        }
+            if (settings[Setting::enforce_strict_identifier_format])
+            {
+                WriteBufferFromOwnString buf;
+                IAST::FormatSettings enforce_strict_identifier_format_settings(true);
+                enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
+                out_ast->format(buf, enforce_strict_identifier_format_settings);
+            }
 
-        {
-            /// Normalize SelectWithUnionQuery
-            NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
-            NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
-        }
+            if (auto * insert_query = out_ast->as<ASTInsertQuery>())
+                insert_query->tail = istr;
 
-        /// Check the limits.
-        checkASTSizeLimits(*out_ast, settings);
+            if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
+            {
+                query_database = query_with_table_output->getDatabase();
+                query_table = query_with_table_output->getTable();
+            }
+
+            /// Propagate WITH statement to children ASTSelect.
+            if (settings[Setting::enable_global_with_statement])
+            {
+                ApplyWithGlobalVisitor::visit(out_ast);
+            }
+
+            {
+                SelectIntersectExceptQueryVisitor::Data data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
+                SelectIntersectExceptQueryVisitor{data}.visit(out_ast);
+            }
+
+            {
+                /// Normalize SelectWithUnionQuery
+                NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
+                NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
+            }
+
+            /// Check the limits.
+            checkASTSizeLimits(*out_ast, settings);
+        }
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
-        if (!internal && !out_ast->as<ASTShowProcesslistQuery>())
+        if (!internal && !(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
         {
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart());
@@ -1188,8 +1200,13 @@ static BlockIO executeQueryImpl(
 
         /// Load external tables if they were provided
         context->initializeExternalTablesIfSet();
+        std::shared_ptr<QueryPlanAndSets> query_plan;
+        if (stage == QueryProcessingStage::QueryPlan)
+            query_plan = context->getDeserializedQueryPlan();
 
-        auto * insert_query = out_ast->as<ASTInsertQuery>();
+        ASTInsertQuery * insert_query = nullptr;
+        if (out_ast)
+            insert_query = out_ast->as<ASTInsertQuery>();
         bool async_insert_enabled = settings[Setting::async_insert];
 
         /// Resolve database before trying to use async insert feature - to properly hash the query.
@@ -1357,7 +1374,7 @@ static BlockIO executeQueryImpl(
             /// then set a pipeline with a source populated by the query result cache.
             auto get_result_from_query_result_cache = [&]()
             {
-                if (can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
+                if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
                 {
                     QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
                     QueryResultCacheReader reader = query_result_cache->createReader(key);
@@ -1392,10 +1409,11 @@ static BlockIO executeQueryImpl(
                     }
                 }
 
-                interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
+                if (out_ast)
+                    interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
 
                 const auto & query_settings = context->getSettingsRef();
-                if (context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
+                if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
                 {
                     if (!interpreter->supportsTransactions())
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", out_ast->getID());
@@ -1409,12 +1427,12 @@ static BlockIO executeQueryImpl(
                 if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
                     interpreter_with_analyzer->getQueryPlan();
 
-                if (!interpreter->ignoreQuota() && !quota_checked)
+                if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
                 {
                     quota = context->getQuota();
                     if (quota)
                     {
-                        if (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                        if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
                         {
                             quota->used(QuotaType::QUERY_SELECTS, 1);
                         }
@@ -1427,35 +1445,36 @@ static BlockIO executeQueryImpl(
                     }
                 }
 
-                if (!interpreter->ignoreLimits())
+                if (interpreter)
                 {
-                    limits.mode = LimitsMode::LIMITS_CURRENT;
-                    limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
-                }
+                    if (interpreter->ignoreLimits())
+                    {
+                        limits.mode = LimitsMode::LIMITS_CURRENT;
+                        limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
+                    }
 
-                if (auto * insert_interpreter = typeid_cast<InterpreterInsertQuery *>(&*interpreter))
-                {
-                    /// Save insertion table (not table function). TODO: support remote() table function.
-                    auto table_id = insert_interpreter->getDatabaseTable();
-                    if (!table_id.empty())
-                        context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
+                    if (auto * insert_interpreter = typeid_cast<InterpreterInsertQuery *>(interpreter.get()))
+                    {
+                        /// Save insertion table (not table function). TODO: support remote() table function.
+                        auto table_id = insert_interpreter->getDatabaseTable();
+                        if (!table_id.empty())
+                            context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
 
-                    if (insert_data_buffer_holder)
-                        insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
-                }
+                        if (insert_data_buffer_holder)
+                            insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
+                    }
 
-                if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
-                {
-                    create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
-                    create_interpreter->setInternal(internal);
-                }
+                    if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
+                    {
+                        create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+                        create_interpreter->setInternal(internal);
+                    }
 
-                {
                     std::unique_ptr<OpenTelemetry::SpanHolder> span;
                     if (OpenTelemetry::CurrentContext().isTraceEnabled())
                     {
                         auto * raw_interpreter_ptr = interpreter.get();
-                        String class_name(demangle(typeid(*raw_interpreter_ptr).name()));
+                        String class_name = raw_interpreter_ptr ? demangle(typeid(*raw_interpreter_ptr).name()) : "QueryPlan";
                         span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                     }
 
@@ -1530,6 +1549,25 @@ static BlockIO executeQueryImpl(
 
         /// Hold element of process list till end of query execution.
         res.process_list_entry = process_list_entry;
+
+        if (query_plan)
+        {
+            auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
+
+            plan.resolveStorages(context);
+            plan.optimize(QueryPlanOptimizationSettings(context));
+
+            WriteBufferFromOwnString buf;
+            plan.explainPlan(buf, {.header=true, .actions=true});
+            LOG_TRACE(getLogger("executeQuery"), "Deserialized Query Plan:\n{}", buf.str());
+
+            auto pipeline = plan.buildQueryPipeline(
+                    QueryPlanOptimizationSettings(context),
+                    BuildQueryPipelineSettings(context),
+                    /*do_optimize=*/ false);
+
+            res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline));
+        }
 
         auto & pipeline = res.pipeline;
 
@@ -1618,321 +1656,6 @@ static BlockIO executeQueryImpl(
     return res;
 }
 
-
-static std::pair<ASTPtr, BlockIO> executeQueryImpl(
-    ContextMutablePtr context,
-    QueryFlags flags,
-    std::string_view query)
-{
-    /// Used for logging query start time in system.query_log
-    auto query_start_time = std::chrono::system_clock::now();
-
-    /// Used for:
-    /// * Setting the watch in QueryStatus (controls timeouts and progress) and the output formats
-    /// * Logging query duration (system.query_log)
-    Stopwatch start_watch{CLOCK_MONOTONIC};
-
-    const Settings & settings = context->getSettingsRef();
-
-    String query_for_logging;
-    UInt64 normalized_query_hash;
-    ASTPtr ast;
-    const bool internal = flags.internal;
-    size_t log_queries_cut_to_length = context->getSettingsRef()[Setting::log_queries_cut_to_length];
-
-    /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
-    /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
-    /// to make sure SpanHolders in current stack ends in correct order, we disable this span for these internal queries
-    ///
-    /// This does not have impact on the final span logs, because these internal queries are issued by external queries,
-    /// we still have enough span logs for the execution of external queries.
-    std::shared_ptr<OpenTelemetry::SpanHolder> query_span = internal ? nullptr : std::make_shared<OpenTelemetry::SpanHolder>("query");
-    if (query_span && query_span->trace_id != UUID{})
-        LOG_TRACE(getLogger("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
-
-    try
-    {
-        ParserQuery parser(query.data() + query.size(), settings[Setting::allow_settings_after_format_in_insert]);
-        /// TODO: parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-
-        /// Wipe any sensitive information (e.g. passwords) from the query.
-        /// MUST go before any modification (except for prepared statements,
-        /// since it substitute parameters and without them query does not contain
-        /// parameters), to keep query as-is in query_log and server log.
-        if (ast->hasSecretParts())
-        {
-            /// IAST::formatForLogging() wipes secret parts in AST and then calls wipeSensitiveDataAndCutToLength().
-            query_for_logging = ast->formatForLogging(log_queries_cut_to_length);
-        }
-        else
-        {
-            query_for_logging = wipeSensitiveDataAndCutToLength(std::string(query), log_queries_cut_to_length);
-        }
-
-        normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-    }
-    catch (...)
-    {
-        query_for_logging = wipeSensitiveDataAndCutToLength(std::string(query), log_queries_cut_to_length);
-        logQuery(query_for_logging, context, internal, QueryProcessingStage::QueryPlan);
-        normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-
-        if (!internal)
-            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, ast, query_span, start_watch.elapsedMilliseconds());
-        throw;
-    }
-
-    const auto & client_info = context->getClientInfo();
-
-    if (!internal && client_info.initial_query_start_time == 0)
-    {
-        // If it's not an internal query and we don't see an initial_query_start_time yet, initialize it
-        // to current time. Internal queries are those executed without an independent client context,
-        // thus should not set initial_query_start_time, because it might introduce data race. It's also
-        // possible to have unset initial_query_start_time for non-internal and non-initial queries. For
-        // example, the query is from an initiator that is running an old version of clickhouse.
-        // On the other hand, if it's initialized then take it as the start of the query
-        context->setInitialQueryStartTime(query_start_time);
-    }
-
-    assert(internal || CurrentThread::get().getQueryContext());
-    assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
-
-    /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
-    ProcessList::EntryPtr process_list_entry;
-    BlockIO res;
-    auto implicit_txn_control = std::make_shared<bool>(false);
-    String query_database;
-    String query_table;
-
-    auto execute_implicit_tcl_query = [implicit_txn_control](const ContextMutablePtr & query_context, ASTTransactionControl::QueryType tcl_type)
-    {
-        /// Unset the flag on COMMIT and ROLLBACK
-        SCOPE_EXIT({ if (tcl_type != ASTTransactionControl::BEGIN) *implicit_txn_control = false; });
-
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(tcl_type);
-        InterpreterTransactionControlQuery tc(tcl_ast, query_context);
-        tc.execute();
-
-        /// Set the flag after successful BIGIN
-        if (tcl_type == ASTTransactionControl::BEGIN)
-            *implicit_txn_control = true;
-    };
-
-    try
-    {
-        ProfileEvents::increment(ProfileEvents::Query);
-
-        if (auto txn = context->getCurrentTransaction())
-        {
-            chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
-            chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
-            if (txn->getState() == MergeTreeTransaction::ROLLED_BACK)
-                throw Exception(
-                    ErrorCodes::INVALID_TRANSACTION,
-                    "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
-        }
-
-        logQuery({}, context, internal, QueryProcessingStage::QueryPlan);
-
-        /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
-        if (!internal)
-        {
-            /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
-            process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, ast.get(), context, start_watch.getStart());
-            context->setProcessListElement(process_list_entry->getQueryStatus());
-        }
-
-        /// Load external tables if they were provided
-        context->initializeExternalTablesIfSet();
-        auto query_plan = context->getDeserializedQueryPlan();
-
-        /// reset Input callbacks if query is not INSERT SELECT
-        context->resetInputCallbacks();
-
-        StreamLocalLimits limits;
-        std::shared_ptr<const EnabledQuota> quota;
-
-        auto logger = getLogger("executeQuery");
-
-        bool quota_checked = false;
-        std::unique_ptr<ReadBuffer> insert_data_buffer_holder;
-
-        if (true)
-        {
-            if (true)
-            {
-                /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
-                if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction])
-                {
-                    try
-                    {
-                        if (context->isGlobalContext())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
-
-                        execute_implicit_tcl_query(context, ASTTransactionControl::BEGIN);
-                    }
-                    catch (Exception & e)
-                    {
-                        e.addMessage("while starting a transaction with 'implicit_transaction'");
-                        throw;
-                    }
-                }
-
-                const auto & query_settings = context->getSettingsRef();
-                if (context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
-                {
-                    //if (!interpreter->supportsTransactions())
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query (QueryPlan)");
-
-                }
-
-                if (!quota_checked)
-                {
-                    quota = context->getQuota();
-                    if (quota)
-                    {
-                        // if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-                        {
-                            quota->used(QuotaType::QUERY_SELECTS, 1);
-                        }
-                        // else if (ast->as<ASTInsertQuery>())
-                        // {
-                        //     quota->used(QuotaType::QUERY_INSERTS, 1);
-                        // }
-                        quota->used(QuotaType::QUERIES, 1);
-                        quota->checkExceeded(QuotaType::ERRORS);
-                    }
-                }
-
-                if (true)
-                {
-                    limits.mode = LimitsMode::LIMITS_CURRENT;
-                    limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
-                }
-
-                {
-                    std::unique_ptr<OpenTelemetry::SpanHolder> span;
-                    if (OpenTelemetry::CurrentContext().isTraceEnabled())
-                    {
-                        // auto * raw_interpreter_ptr = interpreter.get();
-                        // String class_name(demangle(typeid(*raw_interpreter_ptr).name()));
-                        span = std::make_unique<OpenTelemetry::SpanHolder>("QueryPlan::execute()");
-                    }
-
-                    auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
-
-                    plan.resolveStorages(context);
-                    plan.optimize(QueryPlanOptimizationSettings(context));
-
-                    WriteBufferFromOwnString buf;
-                    plan.explainPlan(buf, {.header=true, .actions=true});
-                    LOG_TRACE(getLogger("executeQuery"), "Deserialized Query Plan:\n{}", buf.str());
-
-                    auto pipeline = plan.buildQueryPipeline(
-                            QueryPlanOptimizationSettings(context),
-                            BuildQueryPipelineSettings(context),
-                            /*do_optimize=*/ false);
-
-                    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline));
-
-                }
-            }
-        }
-
-        if (process_list_entry)
-        {
-            /// Query was killed before execution
-            if (process_list_entry->getQueryStatus()->isKilled())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
-                    "Query '{}' is killed in pending state", process_list_entry->getQueryStatus()->getInfo().client_info.current_query_id);
-        }
-
-        /// Hold element of process list till end of query execution.
-        res.process_list_entry = process_list_entry;
-
-        auto & pipeline = res.pipeline;
-
-        if (pipeline.pulling() || pipeline.completed())
-        {
-            /// Limits on the result, the quota on the result, and also callback for progress.
-            /// Limits apply only to the final result.
-            pipeline.setProgressCallback(context->getProgressCallback());
-            pipeline.setProcessListElement(context->getProcessListElement());
-            // if (stage == QueryProcessingStage::Complete && pipeline.pulling())
-            //     pipeline.setLimitsAndQuota(limits, quota);
-        }
-        else if (pipeline.pushing())
-        {
-            pipeline.setProcessListElement(context->getProcessListElement());
-        }
-
-        /// Everything related to query log.
-        {
-            QueryLogElement elem = logQueryStart(
-                query_start_time,
-                context,
-                query_for_logging,
-                normalized_query_hash,
-                ast,
-                pipeline,
-                nullptr,
-                internal,
-                query_database,
-                query_table,
-                false);
-            /// Also make possible for caller to log successful query finish and exception during execution.
-            auto finish_callback = [elem,
-                                    context,
-                                    ast,
-                                    internal,
-                                    implicit_txn_control,
-                                    execute_implicit_tcl_query,
-                                    pulling_pipeline = pipeline.pulling(),
-                                    query_span](QueryPipeline & query_pipeline) mutable
-            {
-                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, QueryResultCacheUsage::None, internal);
-
-                if (*implicit_txn_control)
-                    execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
-            };
-
-            auto exception_callback =
-                [start_watch, elem, context, ast, internal, my_quota(quota), implicit_txn_control, execute_implicit_tcl_query, query_span](
-                    bool log_error) mutable
-            {
-                if (*implicit_txn_control)
-                    execute_implicit_tcl_query(context, ASTTransactionControl::ROLLBACK);
-                else if (auto txn = context->getCurrentTransaction())
-                    txn->onException();
-
-                if (my_quota)
-                    my_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
-
-                logQueryException(elem, context, start_watch, ast, query_span, internal, log_error);
-            };
-
-            res.finish_callback = std::move(finish_callback);
-            res.exception_callback = std::move(exception_callback);
-        }
-    }
-    catch (...)
-    {
-        if (*implicit_txn_control)
-            execute_implicit_tcl_query(context, ASTTransactionControl::ROLLBACK);
-        else if (auto txn = context->getCurrentTransaction())
-            txn->onException();
-
-        if (!internal)
-            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, ast, query_span, start_watch.elapsedMilliseconds());
-
-        throw;
-    }
-
-    return std::make_tuple(std::move(ast), std::move(res));
-}
-
 std::pair<ASTPtr, BlockIO> executeQuery(
     const String & query,
     ContextMutablePtr context,
@@ -1942,14 +1665,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     ASTPtr ast;
     BlockIO res;
 
-    if (stage == QueryProcessingStage::QueryPlan)
-    {
-        std::tie(ast, res) = executeQueryImpl(context, flags, query);
-    }
-    else
-    {
-        res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr, ast);
-    }
+    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr, ast);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
