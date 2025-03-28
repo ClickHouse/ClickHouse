@@ -100,7 +100,6 @@ struct SystemLogSettings
 
     String engine;
     bool symbolize_traces = false;
-    bool with_wide_view = false;
     std::string view_name_for_transposed_metric_log;
 };
 
