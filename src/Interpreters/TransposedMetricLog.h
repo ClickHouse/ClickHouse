@@ -28,6 +28,7 @@ struct TransposedMetricLogElement
     void appendToBlock(MutableColumns & columns) const;
 };
 
+/// Transposed version of system.metric_log
 class TransposedMetricLog : public PeriodicLog<TransposedMetricLogElement>
 {
     /// Optionally creates "wide" schema view for compatibility
