@@ -411,13 +411,20 @@ void StorageSystemMetricLogView::read(
 
     internal_view.read(query_plan, input_header.getNames(), snapshot_for_view, query_info, context, processed_stage, max_block_size, num_streams);
 
-    addFilterByMetricNameStep(query_plan, column_names, context);
-
     Block full_output_header = getInMemoryMetadataPtr()->getSampleBlock();
+
+    /// Doesn't make sense to filter by metric, we will not filter out anything
+    bool read_all_columns = full_output_header.columns() == column_names.size();
+    if (!read_all_columns)
+        addFilterByMetricNameStep(query_plan, column_names, context);
 
     Block output_header;
     for (const auto & name : column_names)
         output_header.insert(full_output_header.getByName(name));
+
+    /// Otherwise we can allocate too much memory
+    if (column_names.size() > 100)
+        max_block_size = std::min(8192UL, max_block_size);
 
     query_plan.addStep(std::make_unique<CustomMetricLogStep>(input_header, output_header, max_block_size));
 }
