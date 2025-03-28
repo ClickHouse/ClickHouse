@@ -678,7 +678,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::atomic<size_t> sum_parts_pk = 0;
 
     RangesInDataParts parts_with_ranges(parts.size());
-    std::vector<bool> skip_index_used_in_part(parts.size(), false);
+    std::vector<size_t> skip_index_used_in_part(parts.size(), 0);
 
     /// Let's find what range to read from each part.
     {
@@ -721,7 +721,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
 
             CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
-            bool was_skip_index_used = false;
 
             for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
             {
@@ -749,7 +748,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                 if (ranges.ranges.empty())
                     stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
-                was_skip_index_used = true;
+                skip_index_used_in_part[part_index] = 1; /// thread-safe
             }
 
             for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
@@ -776,7 +775,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
 
             parts_with_ranges[part_index] = std::move(ranges);
-            skip_index_used_in_part[part_index] = was_skip_index_used;
         };
 
         size_t num_threads = std::min<size_t>(num_streams, parts.size());
