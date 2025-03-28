@@ -4,6 +4,7 @@ import datetime
 import decimal
 import logging
 import os
+import random
 import uuid
 
 import psycopg
@@ -146,8 +147,10 @@ def test_new_user(started_cluster):
         database="",
     )
     cur = ch.cursor()
-    cur.execute("CREATE DATABASE x")
-    cur.execute("USE x")
+
+    db_id = f"x_{random.randint(0, 1000000)}"
+    cur.execute(f"CREATE DATABASE {db_id}")
+    cur.execute(f"USE {db_id}")
     cur.execute("CREATE USER name7 IDENTIFIED WITH scram_sha256_password BY 'my_password'")
 
     ch = py_psql.connect(
@@ -155,11 +158,21 @@ def test_new_user(started_cluster):
         port=server_port,
         user="name7",
         password="my_password",
-        database="x",
+        database=db_id,
     )
     cur = ch.cursor()
     cur.execute("select 1;")
     assert cur.fetchall() == [(1,)]
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    cur = ch.cursor()
+    cur.execute(f"DROP DATABASE {db_id}")
 
 
 def test_python_client(started_cluster):
