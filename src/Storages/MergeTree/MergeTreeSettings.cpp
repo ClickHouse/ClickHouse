@@ -1171,9 +1171,9 @@ namespace ErrorCodes
     Enable outdated parts check. Only available in ClickHouse Cloud
     )", 0) \
     DECLARE(Float, shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations, 0.5, R"(
-    Will reload merge predicate in merge/mutate selecting task when <candidate
+    Will reload merge predicate in merge/mutate selecting task when `<candidate
     partitions for mutations only (partitions that cannot be merged)>/<candidate
-    partitions for mutations> ratio is higher than the setting. Only available
+    partitions for mutations>` ratio is higher than the setting. Only available
     in ClickHouse Cloud
     )", 0) \
     DECLARE(UInt64, shared_merge_tree_parts_load_batch_size, 32, R"(
