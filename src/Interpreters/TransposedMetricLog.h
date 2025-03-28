@@ -30,6 +30,16 @@ class TransposedMetricLog : public PeriodicLog<TransposedMetricLogElement>
 {
     using PeriodicLog<TransposedMetricLogElement>::PeriodicLog;
 public:
+    static constexpr auto HOSTNAME_NAME = "hostname";
+    static constexpr auto EVENT_DATE_NAME = "event_date";
+    static constexpr auto EVENT_TIME_NAME = "event_time";
+    static constexpr auto METRIC_NAME = "metric";
+    static constexpr auto VALUE_NAME = "value";
+
+    static constexpr std::string_view PROFILE_EVENT_PREFIX = "ProfileEvent_";
+    static constexpr std::string_view CURRENT_METRIC_PREFIX = "CurrentMetric_";
+
+
     /// This table is usually queried for fixed metric name.
     static const char * getDefaultOrderBy() { return "event_date, event_time, metric"; }
 protected:

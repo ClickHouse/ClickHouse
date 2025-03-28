@@ -246,7 +246,8 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
 
     attach<StorageSystemLatencyBuckets>(context, system_database, "latency_buckets", "Contains buckets bounds used by latency log.");
-    attachNoDescription<StorageSystemMetricLogView>(context, system_database, "metric_log_view", "Metric log view");
+
+    attachNoDescription<StorageSystemMetricLogView>(context, system_database, "metric_log", "Metric log view");
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)

@@ -101,6 +101,7 @@ struct SystemLogSettings
     String engine;
     bool symbolize_traces = false;
     bool transposed = false;
+    bool with_wide_view = false;
 };
 
 template <typename LogElement>

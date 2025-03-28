@@ -26,7 +26,6 @@ void TransposedMetricLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(metric_name);
     columns[column_idx++]->insert(value);
-    columns[column_idx++]->insert(is_event);
 }
 
 
@@ -64,12 +63,6 @@ ColumnsDescription TransposedMetricLogElement::getColumnsDescription()
             std::make_shared<DataTypeInt64>(),
             parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
             "Metric value."
-        },
-        {
-            "is_event",
-            std::make_shared<DataTypeUInt8>(),
-            parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-            "Is event or metric."
         }
     };
 }
@@ -88,18 +81,27 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
     {
         const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
         auto & old_value = prev_profile_events[i];
-        elem.metric_name = ProfileEvents::getName(ProfileEvents::Event(i));
+
+        /// Profile event counters are supposed to be monotonic. However, at least the `NetworkReceiveBytes` can be inaccurate.
+        /// So, since in the future the counter should always have a bigger value than in the past, we skip this event.
+        /// It can be reproduced with the following integration tests:
+        /// - test_hedged_requests/test.py::test_receive_timeout2
+        /// - test_secure_socket::test
+        if (new_value < old_value)
+            continue;
+
+        elem.metric_name += PROFILE_EVENT_PREFIX;
+        elem.metric_name += ProfileEvents::getName(ProfileEvents::Event(i));
         elem.value = new_value - old_value;
-        elem.is_event = true;
         old_value = new_value;
         this->add(std::move(elem));
     }
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
     {
-        elem.metric_name = CurrentMetrics::getName(CurrentMetrics::Metric(i));
+        elem.metric_name += CURRENT_METRIC_PREFIX;
+        elem.metric_name += CurrentMetrics::getName(CurrentMetrics::Metric(i));
         elem.value = CurrentMetrics::values[i];
-        elem.is_event = false;
         this->add(std::move(elem));
     }
 }
