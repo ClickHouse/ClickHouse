@@ -152,27 +152,12 @@ namespace
             if (!cache.default_column && arguments.size() == 4)
             {
                 default_non_const = castColumn(arguments[3], result_type); /// While converting NULL to Nullable(string), the size of default_non_const becomes 0
-                if (default_non_const->empty())
-                {
-                    // Create a single-row column with one NULL value
-                    auto mutable_col = default_non_const->cloneEmpty()->assumeMutable();
-                    mutable_col->insertDefault();  // Insert one NULL
-                    default_non_const = std::move(mutable_col);
-                }
-
-                // Now simply ensure it is a constant column
-                if (!isColumnConst(*default_non_const))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Fourth argument of function {} must be a constant (single-value) expression",
-                        getName()
-                    );
 
                 if (arguments[1].column.get()->size() > default_non_const->size() || arguments[2].column.get()->size() > default_non_const->size())
                 {
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Fourth argument of function {} must be at least as big as the second and third arguments",
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Fourth argument of function {} must be constant at least as big as the second and third arguments",
                         getName());
                 }
             }
