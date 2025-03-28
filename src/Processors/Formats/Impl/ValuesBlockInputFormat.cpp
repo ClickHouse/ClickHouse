@@ -1,6 +1,7 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/castColumn.h>
 #include <Parsers/TokenIterator.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -568,7 +569,19 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                         std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
     }
 
-    column.insert(value);
+    /// Insert value into the column.
+    /// For Dynamic type we cannot just insert Field as we loose information about the data type.
+    /// Instead try to create a column with single element and cast it to the destination type.
+    if (type.hasDynamicSubcolumns())
+    {
+        auto const_column = value_raw.second->createColumnConst(1, expression_value);
+        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
+        column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
+    }
+    else
+    {
+        column.insert(value);
+    }
     return true;
 }
 
