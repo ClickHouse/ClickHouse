@@ -6,6 +6,7 @@
 #include <Storages/PartitionedSink.h>
 #include <Functions/generateSnowflakeID.h>
 #include <Interpreters/Context.h>
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -25,21 +26,6 @@ namespace
         auto syntax_result = TreeRewriter(context).analyze(pby_clone, sample_block.getNamesAndTypesList());
         auto exp_analyzer = ExpressionAnalyzer(pby_clone, syntax_result, context).getActions(false);
         return exp_analyzer->getRequiredColumns();
-    }
-
-    static std::string formatToFileExtension(const std::string & format)
-    {
-        if (format == "Parquet")
-        {
-            return "parquet";
-        }
-
-        if (format == "CSV")
-        {
-            return "csv";
-        }
-
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for format {}", format);
     }
 }
 
@@ -74,7 +60,7 @@ StringfiedPartitionStrategy::StringfiedPartitionStrategy(ASTPtr partition_by_, c
 
 StringfiedPartitionStrategy::PartitionExpressionActionsAndColumnName StringfiedPartitionStrategy::getExpression()
 {
-    StringfiedPartitionStrategy::PartitionExpressionActionsAndColumnName actions_with_column_name;
+    PartitionExpressionActionsAndColumnName actions_with_column_name;
 
     ASTs arguments(1, partition_by);
     ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
@@ -100,7 +86,7 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(ASTPtr partition_by_, con
 
 HiveStylePartitionStrategy::PartitionExpressionActionsAndColumnName HiveStylePartitionStrategy::getExpression()
 {
-    StringfiedPartitionStrategy::PartitionExpressionActionsAndColumnName actions_with_column_name;
+    PartitionExpressionActionsAndColumnName actions_with_column_name;
 
     const Names partition_expression_required_columns = extractPartitionRequiredColumns(partition_by, sample_block, context);
     ASTs concat_args;
@@ -150,7 +136,14 @@ std::string HiveStylePartitionStrategy::getPath(
         path += prefix + "/";
     }
 
-    return path + partition_key + "/" + std::to_string(generateSnowflakeID()) + "." + formatToFileExtension(file_format);
+    /*
+     * File extension is toLower(format)
+     * This isn't ideal, but I guess multiple formats can be specified and introduced.
+     * So I think it is simpler to keep it this way.
+     *
+     * Or perhaps implement something like `IInputFormat::getFileExtension()`
+     */
+    return path + partition_key + "/" + std::to_string(generateSnowflakeID()) + "." + Poco::toLower(file_format);
 }
 
 }

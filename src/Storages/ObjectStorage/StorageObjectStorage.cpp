@@ -48,6 +48,78 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+    void sanityCheckPartitioningConfiguration(
+        const ASTPtr & table_level_partition_by,
+        const ASTPtr & query_partition_by,
+        const StorageObjectStorage::ConfigurationPtr & configuration)
+    {
+        if (!table_level_partition_by && !query_partition_by)
+        {
+            // do we want to assert that `partitioning_style` is not set to something different style AND
+            // wildcard is not set either?
+            return;
+        }
+
+        if (table_level_partition_by && query_partition_by)
+        {
+            // should never happen because parser should not allow that
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table level partition expression and query level partition expression can't be specified together, this is a bug");
+        }
+
+        static std::unordered_map<std::string, bool> partitioning_style_to_wildcard_acceptance =
+        {
+            {"auto", true},
+            {"hive", false}
+        };
+
+        if (!partitioning_style_to_wildcard_acceptance.contains(configuration->partitioning_style))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unknown partitioning style '{}'",
+                configuration->partitioning_style);
+        }
+
+        bool has_partition_wildcard = configuration->withPartitionWildcard();
+
+        if (has_partition_wildcard && !partitioning_style_to_wildcard_acceptance.at(configuration->partitioning_style))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The {} wildcard can't be used with {} partitioning style",
+                PartitionedSink::PARTITION_ID_WILDCARD, configuration->partitioning_style);
+        }
+
+        if (!has_partition_wildcard && partitioning_style_to_wildcard_acceptance.at(configuration->partitioning_style))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Partitioning style '{}' requires {} wildcard",
+                configuration->partitioning_style,
+                PartitionedSink::PARTITION_ID_WILDCARD);
+        }
+    }
+
+    ASTPtr getPartitionByAst(const ASTPtr & table_level_partition_by, const ASTPtr & query, const StorageObjectStorage::ConfigurationPtr & configuration)
+    {
+        ASTPtr query_partition_by = nullptr;
+        if (const auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query))
+        {
+            if (insert_query->partition_by)
+            {
+                query_partition_by = insert_query->partition_by;
+            }
+        }
+
+        sanityCheckPartitioningConfiguration(table_level_partition_by, query_partition_by, configuration);
+
+        if (table_level_partition_by)
+        {
+            return table_level_partition_by;
+        }
+
+        return query_partition_by;
+    }
+}
+
 String StorageObjectStorage::getPathSample(ContextPtr context)
 {
     auto query_settings = configuration->getQuerySettings(context);
@@ -101,11 +173,7 @@ StorageObjectStorage::StorageObjectStorage(
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
 
-    if (configuration->partitioning_style != "auto" && configuration->withPartitionWildcard())
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The {} macro can't be used with {} partitioning style",
-                        PartitionedSink::PARTITION_ID_WILDCARD, configuration->partitioning_style);
-    }
+    sanityCheckPartitioningConfiguration(partition_by, nullptr, configuration);
 
     bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
     bool failed_init = false;
@@ -410,23 +478,11 @@ SinkToStoragePtr StorageObjectStorage::write(
                         configuration->getPath());
     }
 
-    if (partition_by || configuration->withPartitionWildcard())
+    if (ASTPtr partition_by_ast = getPartitionByAst(partition_by, query, configuration))
     {
-        ASTPtr partition_by_ast = nullptr;
-        if (auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query))
-        {
-            if (insert_query->partition_by)
-                partition_by_ast = insert_query->partition_by;
-            else
-                partition_by_ast = partition_by;
-        }
-
-        if (partition_by_ast)
-        {
-            auto partition_strategy = PartitionStrategyProvider::get(partition_by_ast, sample_block, local_context, configuration->format, configuration->partitioning_style);
-            return std::make_shared<PartitionedStorageObjectStorageSink>(
-                partition_strategy, object_storage, configuration, format_settings, sample_block, local_context);
-        }
+        auto partition_strategy = PartitionStrategyProvider::get(partition_by_ast, sample_block, local_context, configuration->format, configuration->partitioning_style);
+        return std::make_shared<PartitionedStorageObjectStorageSink>(
+            partition_strategy, object_storage, configuration, format_settings, sample_block, local_context);
     }
 
     auto paths = configuration->getPaths();
@@ -598,6 +654,10 @@ void StorageObjectStorage::Configuration::initialize(
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
+
+    if (configuration_to_initialize.isNamespaceWithGlobs())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Expression can not have wildcards inside {} name", configuration_to_initialize.getNamespaceType());
 
     if (configuration_to_initialize.format == "auto")
     {

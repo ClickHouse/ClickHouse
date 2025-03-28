@@ -15,12 +15,6 @@
 namespace DB
 {
 
-namespace Setting
-{
-extern const SettingsBool use_hive_partitioning;
-}
-
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;

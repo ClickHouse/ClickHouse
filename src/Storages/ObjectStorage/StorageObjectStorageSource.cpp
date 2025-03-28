@@ -144,10 +144,6 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         return distributed_iterator;
     }
 
-    if (configuration->isNamespaceWithGlobs())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Expression can not have wildcards inside {} name", configuration->getNamespaceType());
-
     std::unique_ptr<IObjectIterator> iterator;
     if (configuration->isPathWithGlobs())
     {
@@ -689,10 +685,6 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , local_context(context_)
     , file_progress_callback(file_progress_callback_)
 {
-    if (configuration->isNamespaceWithGlobs())
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
-    }
     if (configuration->isPathWithGlobs())
     {
         const auto key_with_globs = configuration_->getPath();
