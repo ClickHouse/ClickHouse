@@ -1949,10 +1949,10 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
     /// Add Primary Key
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
-    const size_t ocols = (rg.nextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
+    const size_t kcols = dl == IP_TRIE ? 1 : ((rg.nextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1);
     std::shuffle(entries.begin(), entries.end(), rg.generator);
     TableKey * tkey = cd->mutable_primary_key();
-    for (size_t i = 0; i < ocols; i++)
+    for (size_t i = 0; i < kcols; i++)
     {
         columnPathRef(this->entries[i], tkey->add_exprs()->mutable_expr());
     }
