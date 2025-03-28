@@ -151,7 +151,7 @@ def test_new_user(started_cluster):
     cur = ch.cursor()
     cur.execute(f"CREATE DATABASE {db_id}")
     cur.execute(f"USE {db_id}")
-    cur.execute("CREATE USER name7 IDENTIFIED WITH scram_sha256_password BY 'my_password'")
+    cur.execute("CREATE USER IF NOT EXISTS name7 IDENTIFIED WITH scram_sha256_password BY 'my_password'")
 
     ch = py_psql.connect(
         host=node.ip_address,
