@@ -343,11 +343,13 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
     if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed")
     {
-        transposed_metric_log = createSystemLog<TransposedMetricLog>(global_context, "system", "metric_log", config, "metric_log", "");
+        transposed_metric_log = createSystemLog<TransposedMetricLog>(
+            global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
     }
     else if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view")
     {
-        transposed_metric_log = createSystemLog<TransposedMetricLog>(global_context, "system", "transposed_metric_log", config, "metric_log", "");
+        transposed_metric_log = createSystemLog<TransposedMetricLog>(
+            global_context, "system", "transposed_metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
     }
 
 
@@ -357,7 +359,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         for (auto & log : getAllLogs())
         {
             log->startup();
-            if (should_prepare)
+            if (should_prepare || log->mustBePreparedAtStartup())
                 log->prepareTable();
         }
     }

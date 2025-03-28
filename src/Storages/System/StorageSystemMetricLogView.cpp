@@ -35,6 +35,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/TransposedMetricLog.h>
 
 namespace DB
 {
@@ -55,26 +56,23 @@ namespace Setting
 namespace
 {
 
-constexpr auto EVENT_TIME_NAME = "event_time";
-constexpr auto VALUE_NAME = "value";
-constexpr auto EVENT_DATE_NAME = "event_date";
-constexpr auto METRIC_NAME = "metric";
-constexpr auto HOSTNAME_NAME = "hostname";
-
-constexpr auto VIEW_COLUMNS_ORDER = {
-    EVENT_TIME_NAME, VALUE_NAME, METRIC_NAME, HOSTNAME_NAME, EVENT_DATE_NAME
+constexpr auto VIEW_COLUMNS_ORDER =
+{
+    TransposedMetricLog::EVENT_TIME_NAME,
+    TransposedMetricLog::VALUE_NAME,
+    TransposedMetricLog::METRIC_NAME,
+    TransposedMetricLog::HOSTNAME_NAME,
+    TransposedMetricLog::EVENT_DATE_NAME
 };
 
+/// Order for elements in view
 constexpr size_t EVENT_TIME_POSITION = 0;
 constexpr size_t VALUE_POSITION = 1;
 constexpr size_t METRIC_POSITION = 2;
 constexpr size_t HOSTNAME_POSITION = 3;
 constexpr size_t EVENT_DATE_POSITION = 4;
 
-constexpr std::string_view PROFILE_EVENT_PREFIX = "ProfileEvent_";
-constexpr std::string_view CURRENT_METRIC_PREFIX = "CurrentMetric_";
-
-
+/// SELECT event_time, value ..., metric FROM system.transposed_metric_log ORDER BY event_time;
 std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source_storage_id)
 {
     std::shared_ptr<ASTSelectWithUnionQuery> result = std::make_shared<ASTSelectWithUnionQuery>();
@@ -97,10 +95,10 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source
 
     std::shared_ptr<ASTExpressionList> order_by = std::make_shared<ASTExpressionList>();
     std::shared_ptr<ASTOrderByElement> order_by_date = std::make_shared<ASTOrderByElement>();
-    order_by_date->children.emplace_back(std::make_shared<ASTIdentifier>(EVENT_DATE_NAME));
+    order_by_date->children.emplace_back(std::make_shared<ASTIdentifier>(TransposedMetricLog::EVENT_DATE_NAME));
     order_by_date->direction = 1;
     std::shared_ptr<ASTOrderByElement> order_by_time = std::make_shared<ASTOrderByElement>();
-    order_by_time->children.emplace_back(std::make_shared<ASTIdentifier>(HOSTNAME_NAME));
+    order_by_time->children.emplace_back(std::make_shared<ASTIdentifier>(TransposedMetricLog::HOSTNAME_NAME));
     order_by_time->direction = 1;
     order_by->children.emplace_back(order_by_date);
     order_by->children.emplace_back(order_by_time);
@@ -127,17 +125,18 @@ ASTCreateQuery getCreateQuery(const StorageID & source_storage_id)
 ColumnsDescription getColumnsDescription()
 {
     NamesAndTypesList result;
-    result.push_back(NameAndTypePair(HOSTNAME_NAME, std::make_shared<DataTypeString>()));
-    result.push_back(NameAndTypePair(EVENT_DATE_NAME, std::make_shared<DataTypeDate>()));
-    result.push_back(NameAndTypePair(EVENT_TIME_NAME, std::make_shared<DataTypeDateTime>()));
+    result.push_back(NameAndTypePair(TransposedMetricLog::HOSTNAME_NAME, std::make_shared<DataTypeString>()));
+    result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_DATE_NAME, std::make_shared<DataTypeDate>()));
+    result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_TIME_NAME, std::make_shared<DataTypeDateTime>()));
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-        result.push_back(NameAndTypePair(std::string{PROFILE_EVENT_PREFIX} + ProfileEvents::getName(ProfileEvents::Event(i)), std::make_shared<DataTypeInt64>()));
+        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + ProfileEvents::getName(ProfileEvents::Event(i)), std::make_shared<DataTypeInt64>()));
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-        result.push_back(NameAndTypePair(std::string{CURRENT_METRIC_PREFIX} + CurrentMetrics::getName(CurrentMetrics::Metric(i)), std::make_shared<DataTypeInt64>()));
+        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::CURRENT_METRIC_PREFIX} + CurrentMetrics::getName(CurrentMetrics::Metric(i)), std::make_shared<DataTypeInt64>()));
 
+    /// Doesn't support subsecond precision, it's just an alias
     NamesAndAliases aliases;
-    aliases.push_back(NameAndAliasPair("event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "toDateTime64(event_time, 6)"));
+    aliases.push_back(NameAndAliasPair(TransposedMetricLog::EVENT_TIME_MICROSECONDS_NAME, std::make_shared<DataTypeDateTime64>(6), "toDateTime64(event_time, 6)"));
 
     return ColumnsDescription{result, aliases};
 }
@@ -145,11 +144,11 @@ ColumnsDescription getColumnsDescription()
 ColumnsDescription getColumnsDescriptionForView()
 {
     NamesAndTypesList result;
-    result.push_back(NameAndTypePair(EVENT_TIME_NAME, std::make_shared<DataTypeDateTime>()));
-    result.push_back(NameAndTypePair(VALUE_NAME, std::make_shared<DataTypeInt64>()));
-    result.push_back(NameAndTypePair(METRIC_NAME, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
-    result.push_back(NameAndTypePair(HOSTNAME_NAME, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
-    result.push_back(NameAndTypePair(EVENT_DATE_NAME, std::make_shared<DataTypeDate>()));
+    result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_TIME_NAME, std::make_shared<DataTypeDateTime>()));
+    result.push_back(NameAndTypePair(TransposedMetricLog::VALUE_NAME, std::make_shared<DataTypeInt64>()));
+    result.push_back(NameAndTypePair(TransposedMetricLog::METRIC_NAME, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
+    result.push_back(NameAndTypePair(TransposedMetricLog::HOSTNAME_NAME, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
+    result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_DATE_NAME, std::make_shared<DataTypeDate>()));
 
     return ColumnsDescription{result};
 }
@@ -173,6 +172,8 @@ void StorageSystemMetricLogView::checkAlterIsPossible(const AlterCommands &, Con
 namespace
 {
 
+/// Transpose structure with metrics/events as rows to
+/// to columnar view.
 class CustomFilterTransform : public IInflatingTransform
 {
     HashMap<StringRef, size_t> mapping;
@@ -189,39 +190,43 @@ public:
     bool need_hostname = false;
     bool need_date = false;
 
-    CustomFilterTransform(Block input_header, Block output_header)
+    size_t max_block_size;
+
+    CustomFilterTransform(Block input_header, Block output_header, size_t max_block_size_)
         : IInflatingTransform(input_header, output_header)
+        , max_block_size(max_block_size_)
     {
         size_t counter = 0;
         column_names.reserve(output_header.columns());
 
+        /// Preserve memory for each column
         for (const auto & column : output_header)
         {
             column_names.push_back(column.name);
             const auto & column_name = column_names.back();
-            if (column_name.starts_with(PROFILE_EVENT_PREFIX) || column_name.starts_with(CURRENT_METRIC_PREFIX))
+            if (column_name.starts_with(TransposedMetricLog::PROFILE_EVENT_PREFIX) || column_name.starts_with(TransposedMetricLog::CURRENT_METRIC_PREFIX))
             {
                 mapping[column_name] = counter;
-                buffer[counter].reserve(8192);
+                buffer[counter].reserve(max_block_size);
                 counter++;
             }
-            else if (column_name == HOSTNAME_NAME)
+            else if (column_name == TransposedMetricLog::HOSTNAME_NAME)
                 need_hostname = true;
-            else if (column_name == EVENT_DATE_NAME)
+            else if (column_name == TransposedMetricLog::EVENT_DATE_NAME)
                 need_date = true;
         }
 
-        times.reserve(8192);
+        times.reserve(max_block_size);
 
         if (need_date)
-            dates.reserve(8192);
+            dates.reserve(max_block_size);
         if (need_hostname)
-            hostnames.reserve(8192);
+            hostnames.reserve(max_block_size);
     }
 
     bool canGenerate() override
     {
-        return times.size() >= 8192;
+        return times.size() >= max_block_size;
     }
 
     Chunk generate() override
@@ -237,22 +242,22 @@ public:
 
         for (const auto & column_name : column_names)
         {
-            if (column_name == EVENT_TIME_NAME)
+            if (column_name == TransposedMetricLog::EVENT_TIME_NAME)
             {
                 output_columns.push_back(ColumnDateTime::create(times.begin(), times.end()));
             }
-            else if (column_name == EVENT_DATE_NAME)
+            else if (column_name == TransposedMetricLog::EVENT_DATE_NAME)
             {
                 output_columns.push_back(ColumnDate::create(dates.begin(), dates.end()));
             }
-            else if (column_name == HOSTNAME_NAME)
+            else if (column_name == TransposedMetricLog::HOSTNAME_NAME)
             {
                 auto string_column = ColumnString::create();
                 for (const auto & hostname : hostnames)
                     string_column->insertData(hostname.data(), hostname.size());
                 output_columns.push_back(std::move(string_column));
             }
-            else if (column_name.starts_with(PROFILE_EVENT_PREFIX) || column_name.starts_with(CURRENT_METRIC_PREFIX))
+            else if (column_name.starts_with(TransposedMetricLog::PROFILE_EVENT_PREFIX) || column_name.starts_with(TransposedMetricLog::CURRENT_METRIC_PREFIX))
             {
                 auto & column = buffer[mapping.at(column_name)];
                 output_columns.push_back(ColumnInt64::create(column.begin(), column.end()));
@@ -307,6 +312,8 @@ public:
         {
             auto time = event_time_column.getInt(i);
 
+            /// We cannot have more than 1 hostname or 1 event_date per one
+            /// second
             if (time != times.back())
             {
                 alignMissingRows();
@@ -339,29 +346,30 @@ public:
 }
 
 CustomMetricLogStep::CustomMetricLogStep(
-    Block input_header_, Block output_header_)
+    Block input_header_, Block output_header_, size_t max_block_size_)
      : ITransformingStep(
          input_header_, output_header_,
          ITransformingStep::Traits{
             .data_stream_traits = ITransformingStep::DataStreamTraits{.returns_single_stream = true, .preserves_number_of_streams = false, .preserves_sorting = true},
             .transform_traits = ITransformingStep::TransformTraits{.preserves_number_of_rows = false}
      })
+    , max_block_size(max_block_size_)
 {
 }
 
 void CustomMetricLogStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.resize(1);
-    pipeline.addTransform(std::make_shared<CustomFilterTransform>(input_headers[0], *output_header));
+    pipeline.addTransform(std::make_shared<CustomFilterTransform>(input_headers[0], *output_header, max_block_size));
 }
 
-
+/// Adds filter to view similar to WHERE metric_name IN ('Metric1', 'Event1', ...)
 void StorageSystemMetricLogView::addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context)
 {
     MutableColumnPtr column_for_set = ColumnString::create();
     for (const auto & column_name : column_names)
     {
-        if (column_name.starts_with(PROFILE_EVENT_PREFIX) || column_name.starts_with(CURRENT_METRIC_PREFIX))
+        if (column_name.starts_with(TransposedMetricLog::PROFILE_EVENT_PREFIX) || column_name.starts_with(TransposedMetricLog::CURRENT_METRIC_PREFIX))
             column_for_set->insertData(column_name.data(), column_name.size());
     }
 
@@ -380,7 +388,7 @@ void StorageSystemMetricLogView::addFilterByMetricNameStep(QueryPlan & query_pla
     ColumnWithTypeAndName set_for_dag(std::move(column_set), std::make_shared<DataTypeSet>(), "_filter");
 
     ActionsDAG dag(query_plan.getCurrentHeader().getColumnsWithTypeAndName());
-    const auto & metric_input = dag.findInOutputs(METRIC_NAME);
+    const auto & metric_input = dag.findInOutputs(TransposedMetricLog::METRIC_NAME);
     const auto & filter_dag_column = dag.addColumn(set_for_dag);
     const auto & output = dag.addFunction(in_function, {&metric_input, &filter_dag_column}, "_special_filter_for_metric_log");
     dag.getOutputs().push_back(&output);
@@ -411,7 +419,7 @@ void StorageSystemMetricLogView::read(
     for (const auto & name : column_names)
         output_header.insert(full_output_header.getByName(name));
 
-    query_plan.addStep(std::make_unique<CustomMetricLogStep>(input_header, output_header));
+    query_plan.addStep(std::make_unique<CustomMetricLogStep>(input_header, output_header, max_block_size));
 }
 
 }

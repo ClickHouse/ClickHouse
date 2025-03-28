@@ -30,22 +30,30 @@ struct TransposedMetricLogElement
 
 class TransposedMetricLog : public PeriodicLog<TransposedMetricLogElement>
 {
+    /// Optionally creates "wide" schema view for compatibility
     std::string view_name;
-
 public:
+    static constexpr auto DESCRIPTION = R"(
+        Contains history of metrics values from tables system.metrics and system.events.
+        Periodically flushed to disk. Transposed form of system.metrics_log.)";
     static constexpr auto HOSTNAME_NAME = "hostname";
     static constexpr auto EVENT_DATE_NAME = "event_date";
     static constexpr auto EVENT_TIME_NAME = "event_time";
+    static constexpr auto EVENT_TIME_MICROSECONDS_NAME = "event_time_microseconds";
     static constexpr auto METRIC_NAME = "metric";
     static constexpr auto VALUE_NAME = "value";
 
     static constexpr std::string_view PROFILE_EVENT_PREFIX = "ProfileEvent_";
     static constexpr std::string_view CURRENT_METRIC_PREFIX = "CurrentMetric_";
 
-    /// This table is usually queried for fixed metric name.
+    /// This table is usually queried by time range + some fixed metric name.
     static const char * getDefaultOrderBy() { return "event_date, event_time, metric"; }
 
     void prepareTable() override;
+
+    /// We need to create view at startup, otherwise util first flush view will not exist
+    /// even if transposed table itself exists
+    bool mustBePreparedAtStartup() const override { return !view_name.empty(); }
 
     TransposedMetricLog(
         ContextPtr context_,

@@ -7,29 +7,12 @@
 namespace DB
 {
 
-struct MetricOptions
-{
-    bool need_time{false};
-    bool need_date{false};
-    bool need_hostname{false};
-};
 
-class CustomMetricLogStep : public ITransformingStep
-{
-public:
-    CustomMetricLogStep(Block input_header_, Block output_header_);
-
-    String getName() const override
-    {
-        return "CustomMetricLogStep";
-    }
-
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-
-    void updateOutputHeader() override {}
-};
-
-
+/// Special view for transposed representation of system.metric_log.
+/// Can be used as compatibility layer, when you want to store transposed table, but your queries want wide table.
+///
+/// This view is not attached by default, it's attached by TransposedMetricLog, because
+/// it depend on it.
 class StorageSystemMetricLogView final : public IStorage
 {
 public:
@@ -38,8 +21,6 @@ public:
     std::string getName() const override { return "SystemMetricLogView"; }
 
     bool isSystemStorage() const override { return true; }
-
-    bool isView() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
@@ -56,6 +37,30 @@ public:
     void addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context);
 private:
     StorageView internal_view;
+};
+
+
+/// Unfortunately the logic of this view is not easy to express with
+/// default SQL operators in effective way. All attempts with GROUP BY are terribly slow and resource consuming.
+/// That is why it's not just a normal StorageView, but a custom pipeline on top of StorageView.
+///
+/// This is one of the steps of this custom pipeline. It's public because we need to allow
+/// filter push down through it and it's possible only with custom code in filterPushDown.cpp
+class CustomMetricLogStep : public ITransformingStep
+{
+private:
+    size_t max_block_size;
+public:
+    CustomMetricLogStep(Block input_header_, Block output_header_, size_t max_block_size_);
+
+    String getName() const override
+    {
+        return "CustomMetricLogStep";
+    }
+
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    void updateOutputHeader() override {}
 };
 
 }
