@@ -17,11 +17,11 @@ namespace ErrorCodes
 
 /// How many steps if we want to change lhs to rhs.
 /// Details in https://en.wikipedia.org/wiki/Levenshtein_distance
-size_t levenshteinDistance(const String & lhs, const String & rhs);
+size_t levenshteinDistanceCaseInsensitive(const String & lhs, const String & rhs);
 
-/// The same function as DB::levenshteinDistance, but for a more generic approach
-template <class Underlying>
-size_t levenshteinDistance(std::span<const Underlying> lhs, std::span<const Underlying> rhs)
+/// The same function as DB::levenshteinDistanceCaseInsensitive, but case sensitive for a more generic approach
+template <class Element = char>
+size_t levenshteinDistance(std::span<const Element> lhs, std::span<const Element> rhs)
 {
     const size_t m = lhs.size();
     const size_t n = rhs.size();
@@ -49,8 +49,8 @@ size_t levenshteinDistance(std::span<const Underlying> lhs, std::span<const Unde
 };
 
 /// Levenshtein Distance with weights, is used to calculate custom distance from lhs to rhs
-template <class Underlying, class Weight>
-Weight levenshteinDistanceWeighted(std::span<const Underlying> lhs, std::span<const Underlying> rhs,
+template <class Element, class Weight>
+Weight levenshteinDistanceWeighted(std::span<const Element> lhs, std::span<const Element> rhs,
                                    std::span<const Weight> lhs_weights, std::span<const Weight> rhs_weights)
 {
     if (lhs.size() != lhs_weights.size() || rhs.size() != rhs_weights.size())
