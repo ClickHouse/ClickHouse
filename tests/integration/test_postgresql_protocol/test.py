@@ -139,6 +139,8 @@ def test_psql_client(started_cluster):
 def test_new_user(started_cluster):
     node = cluster.instances["node"]
 
+    db_id = f"x_{random.randint(0, 1000000)}"
+
     ch = py_psql.connect(
         host=node.ip_address,
         port=server_port,
@@ -147,8 +149,6 @@ def test_new_user(started_cluster):
         database="",
     )
     cur = ch.cursor()
-
-    db_id = f"x_{random.randint(0, 1000000)}"
     cur.execute(f"CREATE DATABASE {db_id}")
     cur.execute(f"USE {db_id}")
     cur.execute("CREATE USER name7 IDENTIFIED WITH scram_sha256_password BY 'my_password'")
