@@ -169,12 +169,6 @@ public:
         }
         return true;
     }
-
-    // Minimal substring are guaranteed to return.
-    UInt64 estimateResultLength() const
-    {
-        return ngram_hashes.empty() ? 0 : ngram_hashes.size() - 1;
-    }
 };
 
 template <bool is_utf8>
@@ -201,47 +195,40 @@ public:
         SparseGramsImpl<is_utf8> impl;
         impl.init(arguments, false);
 
-        auto col_res_nested = ColumnUInt32::create();
-        auto & res_nested_data = col_res_nested->getData();
+        auto col_res = ColumnUInt32::create();
+        auto & res_data = col_res->getData();
 
         auto col_res_offsets = ColumnArray::ColumnOffsets::create();
         auto & res_offsets_data = col_res_offsets->getData();
-        res_offsets_data.reserve(input_rows_count);
 
-        const auto & src = arguments[0];
-        const auto & src_column = *src.column;
+        auto string_arg = arguments[impl.strings_argument_position].column.get();
 
-        if (const auto * col_non_const = typeid_cast<const ColumnString *>(&src_column))
+        if (const auto * col_string = checkAndGetColumn<ColumnString>(string_arg))
         {
-            ColumnArray::Offset offset = 0;
+            const auto & src_data = col_string->getChars();
+            const auto & src_offsets = col_string->getOffsets();
+
+            res_offsets_data.reserve(input_rows_count);
+            res_data.reserve(src_data.size());
+
+            ColumnString::Offset current_src_offset = 0;
+            Pos start{};
+            Pos end{};
+
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::vector<UInt32> row_result = getHashes(impl, col_non_const->getDataAt(i).toView());
-                offset += row_result.size();
-                res_offsets_data.push_back(offset);
-                res_nested_data.insert(row_result.begin(), row_result.end());
+                impl.set(reinterpret_cast<Pos>(&src_data[current_src_offset]), reinterpret_cast<Pos>(&src_data[current_src_offset + src_offsets[i]]) - 1);
+                while (impl.get(start, end))
+                    res_data.push_back(crc32_z(0UL, reinterpret_cast<const unsigned char *>(start), end - start));
+
+                current_src_offset += src_offsets[i];
+                res_offsets_data.push_back(res_data.size());
             }
+
+            return ColumnArray::create(std::move(col_res), std::move(col_res_offsets));
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
 
-        return ColumnArray::create(std::move(col_res_nested), std::move(col_res_offsets));
-    }
-
-private:
-    std::vector<UInt32> getHashes(SparseGramsImpl<is_utf8> & impl, std::string_view input_str) const
-    {
-        impl.set(input_str.data(), input_str.data() + input_str.size());
-
-        std::vector<UInt32> result;
-        result.reserve(impl.estimateResultLength()); // Reserve at least for every minimal ngram
-
-        Pos start{};
-        Pos end{};
-        for (bool has_data = impl.get(start, end); has_data; has_data = impl.get(start, end))
-            result.push_back(crc32_z(0UL, reinterpret_cast<const unsigned char *>(start), end - start));
-
-        return result;
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
     }
 };
 
