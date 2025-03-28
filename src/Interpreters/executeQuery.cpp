@@ -941,6 +941,8 @@ static BlockIO executeQueryImpl(
         if (stage == QueryProcessingStage::QueryPlan)
         {
             /// Do not parse Query
+            /// Increment ProfileEvents::Query here because Interpreter is not created.
+            ProfileEvents::increment(ProfileEvents::Query);
         }
         else if (settings[Setting::dialect] == Dialect::kusto && !internal)
         {
@@ -1447,7 +1449,7 @@ static BlockIO executeQueryImpl(
 
                 if (interpreter)
                 {
-                    if (interpreter->ignoreLimits())
+                    if (!interpreter->ignoreLimits())
                     {
                         limits.mode = LimitsMode::LIMITS_CURRENT;
                         limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
