@@ -50,6 +50,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, const ProfileEvents:
 
         String public_key_file = config.getString(certificate_file_property);
         String private_key_file = config.getString(private_key_file_property);
+
         private_key = Poco::Crypto::RSAKey(public_key_file, private_key_file);
     }
     catch (...)
@@ -67,7 +68,14 @@ Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poc
     uint32_t connection_id = last_connection_id++;
     LOG_TRACE(log, "MySQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());
 #if USE_SSL
-    return new MySQLHandlerSSL(server, tcp_server, socket, ssl_enabled, connection_id, *private_key.impl()->getRSA(), *private_key.impl()->getRSA());
+    return new MySQLHandlerSSL(
+        server,
+        tcp_server,
+        socket,
+        ssl_enabled,
+        connection_id,
+        Poco::Crypto::EVPPKey(&private_key)
+    );
 #else
     return new MySQLHandler(server, tcp_server, socket, ssl_enabled, connection_id);
 #endif

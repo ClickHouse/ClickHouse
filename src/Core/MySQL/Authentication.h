@@ -61,7 +61,7 @@ private:
 class Sha256Password : public IPlugin
 {
 public:
-    Sha256Password(RSA & public_key_, RSA & private_key_, LoggerPtr log_);
+    Sha256Password(EVP_PKEY * private_key_, LoggerPtr log_);
 
     String getName() override { return "sha256_password"; }
 
@@ -72,8 +72,8 @@ public:
         std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address) override;
 
 private:
-    RSA & public_key;
-    RSA & private_key;
+    EVP_PKEY * private_key;
+
     LoggerPtr log;
     String scramble;
 };
