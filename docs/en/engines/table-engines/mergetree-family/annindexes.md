@@ -1,6 +1,6 @@
 ---
 description: 'Documentation for Exact and Approximate Nearest Neighbor Search'
-keywords: ['vector similarity search', 'ann', 'indices', 'index', 'nearest neighbor']
+keywords: ['vector similarity search', 'ann', 'knn', 'hnsw', 'indices', 'index', 'nearest neighbor']
 sidebar_label: 'Exact and Approximate Nearest Neighbor Search'
 slug: /engines/table-engines/mergetree-family/annindexes
 title: 'Exact and Approximate Nearest Neighbor Search'
@@ -227,7 +227,7 @@ To enforce index usage, you can run the SELECT query with setting [force_data_sk
 Users may optionally specify a `WHERE` clause with additional filter conditions in SELECT queries.
 Depending on these filter conditions, ClickHouse will utilize post-filtering or pre-filtering.
 These two strategies determine the order in which the filters are evaluated:
-- With post-filtering, the vector similarity index is evaluated first, afterwards ClickHouse evaluates the additional filter specified of the `WHERE` clause.
+- With post-filtering, the vector similarity index is evaluated first, afterwards ClickHouse evaluates the additional filter(s) specified of the `WHERE` clause.
 - With pre-filtering, the filter evaluation order is the other way round.
 
 Both strategies have different trade-offs:
@@ -324,6 +324,8 @@ FROM system.query_log
 WHERE type = 'QueryFinish' AND query_id = '<...>'
 ORDER BY event_time_microseconds;
 ```
+
+For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.
 
 ## Differences to Regular Skipping Indexes {#differences-to-regular-skipping-indexes}
 
