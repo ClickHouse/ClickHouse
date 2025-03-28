@@ -19,6 +19,9 @@
 
 
 #include <openssl/crypto.h>
+#include <openssl/evp.h>
+#include <openssl/provider.h>
+
 #include "Poco/AtomicCounter.h"
 #include "Poco/Crypto/Crypto.h"
 #include "Poco/Mutex.h"
@@ -92,7 +95,7 @@ namespace Crypto
     inline bool OpenSSLInitializer::isFIPSEnabled()
     {
 #ifdef OPENSSL_FIPS
-        return FIPS_mode() ? true : false;
+        return EVP_default_properties_is_fips_enabled(nullptr) ? true : false;
 #else
         return false;
 #endif
@@ -101,7 +104,18 @@ namespace Crypto
 #ifdef OPENSSL_FIPS
     inline void OpenSSLInitializer::enableFIPSMode(bool enabled)
     {
-        FIPS_mode_set(enabled);
+        if (!enabled)
+        {
+            EVP_default_properties_enable_fips(NULL, 0);
+            return;
+        }
+
+        OSSL_PROVIDER * fips = OSSL_PROVIDER_load(NULL, "fips");
+        if (!fips)
+            throw Exception("Failed to load FIPS provider");
+
+        if (EVP_default_properties_enable_fips(NULL, 1) != 1)
+            throw Exception("Failed to enable FIPS mode");
     }
 #else
     inline void OpenSSLInitializer::enableFIPSMode(bool /*enabled*/)
