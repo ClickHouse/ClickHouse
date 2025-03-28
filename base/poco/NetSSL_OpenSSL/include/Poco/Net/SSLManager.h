@@ -19,6 +19,7 @@
 
 #include <unordered_map>
 
+#include <openssl/evp.h>
 #include <openssl/ssl.h>
 #include "Poco/BasicEvent.h"
 #include "Poco/Mutex.h"
@@ -381,7 +382,7 @@ namespace Net
     inline bool SSLManager::isFIPSEnabled()
     {
 #ifdef OPENSSL_FIPS
-        return FIPS_mode() ? true : false;
+        return EVP_default_properties_is_fips_enabled(nullptr) ? true : false;
 #else
         return false;
 #endif
