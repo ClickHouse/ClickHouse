@@ -197,7 +197,6 @@ namespace DB
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The IP column type must be one of: String, IPv4, IPv6, Nullable(IPv4), Nullable(IPv6), or Nullable(String).");
         }
 
-
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* return_type */, size_t input_rows_count) const override
         {
             const IColumn * col_addr = arguments[0].column.get();
@@ -355,15 +354,12 @@ namespace DB
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The IP column type must be one of: String, IPv4, IPv6, Nullable(IPv4), Nullable(IPv6), or Nullable(String).");
         }
 
-
-
         /// CIDR is constant.
         static ColumnPtr executeImpl(const IColumn & col_addr, const ColumnConst & col_cidr_const, size_t input_rows_count)
         {
             const auto cidr = parseIPWithCIDR(col_cidr_const.getDataAt(0).toView());
             return executeImpl<IPAddressCIDR>(col_addr, cidr, input_rows_count);
         }
-
 
         template <IPKind kind>
         static ColumnPtr executeImpl(const IPTrait<kind>::ColumnType * col_addr, const IColumn & col_cidr, size_t input_rows_count)
