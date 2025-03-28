@@ -19,6 +19,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -30,6 +31,11 @@
 
 namespace DB
 {
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
+    extern const MergeTreeSettingsBool load_existing_rows_count_for_old_parts;
+}
 namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
@@ -398,7 +404,17 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
-    bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection;
+    auto ordinary_reading_select_result = reading.selectRangesToRead();
+    size_t granules = ordinary_reading_select_result->selected_marks;
+    LOG_DEBUG(getLogger("optimizeUseProjections"), "Granules: {}", granules);
+    
+    // If the following MergeTree settings are enabled and there is only one granule, lightweight delete masks can be ignored.
+    bool can_ignore_lwd = ((*reading.getMergeTreeData().getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge]
+        && (*reading.getMergeTreeData().getSettings())[MergeTreeSetting::load_existing_rows_count_for_old_parts]);
+    
+    bool can_use_minmax_projection = allow_implicit_projections
+        && metadata->minmax_count_projection
+        && (!reading.getMergeTreeData().has_lightweight_delete_parts.load() || can_ignore_lwd);
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;
@@ -450,6 +466,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
                 minmax.block = std::move(block);
                 minmax.candidate.projection = projection;
                 candidates.minmax_projection.emplace(std::move(minmax));
+                LOG_DEBUG(getLogger("optimizeUseProjections"), "has min max projection");
             }
         }
         else
@@ -462,6 +479,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     if (!candidates.minmax_projection)
     {
+        LOG_DEBUG(getLogger("optimizeUseProjections"), "hasn't min max projection");
         auto it = std::find_if(
             agg_projections.begin(),
             agg_projections.end(),
@@ -557,6 +575,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
             ordinary_reading_select_result = reading->selectRangesToRead(find_exact_ranges);
 
         size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
+        LOG_DEBUG(getLogger("optimizeUseProjections"), "after Granules: {}", ordinary_reading_marks);
 
         /// Nothing to read. Ignore projections.
         if (ordinary_reading_marks == 0)

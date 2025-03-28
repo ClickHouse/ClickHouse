@@ -7752,8 +7752,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             auto & column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns.back());
             if (part->existing_rows_count.has_value())
                 insert(column, part->existing_rows_count.value());
-            else 
-                insert(column, part->rows_count);
+            else insert(column, part->rows_count);
         }
     }
 
