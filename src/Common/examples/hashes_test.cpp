@@ -7,7 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include "config.h"
 #if USE_SSL
-#   include <openssl/md5.h>
+#   include <openssl/evp.h>
 #endif
 
 
@@ -113,13 +113,16 @@ int main(int, char **)
     {
         Stopwatch watch;
 
+        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+
         for (size_t i = 0; i < rows; ++i)
         {
-            MD5_CTX state;
-            MD5_Init(&state);
-            MD5_Update(&state, reinterpret_cast<const unsigned char *>(strings[i].data()), strings[i].size());
-            MD5_Final(reinterpret_cast<unsigned char *>(&hashes[i * 16]), &state);
+            EVP_DigestInit_ex(ctx, EVP_md5(), nullptr);
+            EVP_DigestUpdate(ctx, strings[i].data(), strings[i].size());
+            EVP_DigestFinal_ex(ctx, reinterpret_cast<unsigned char*>(&hashes[i * 16]), nullptr);
         }
+
+        EVP_MD_CTX_free(ctx);
 
         watch.stop();
 

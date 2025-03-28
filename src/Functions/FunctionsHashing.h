@@ -19,7 +19,7 @@
 #include <Common/HashTable/Hash.h>
 
 #if USE_SSL
-#    include <openssl/md5.h>
+#    include <openssl/evp.h>
 #endif
 
 #include <bit>
@@ -245,10 +245,11 @@ struct HalfMD5Impl
             uint64_t uint64_data;
         } buf;
 
-        MD5_CTX ctx;
-        MD5_Init(&ctx);
-        MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        MD5_Final(buf.char_data, &ctx);
+        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(ctx, EVP_md5(), nullptr);
+        EVP_DigestUpdate(ctx, begin, size);
+        EVP_DigestFinal_ex(ctx, buf.char_data, nullptr);
+        EVP_MD_CTX_free(ctx);
 
         /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
         transformEndianness<std::endian::big>(buf.uint64_data);

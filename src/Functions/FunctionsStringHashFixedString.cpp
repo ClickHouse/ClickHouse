@@ -15,10 +15,10 @@
 
 #if USE_SSL
 #    include <openssl/evp.h>
-#    include <openssl/md4.h>
-#    include <openssl/md5.h>
 #    include <openssl/ripemd.h>
 #    include <openssl/sha.h>
+#    include <openssl/md4.h>
+#    include <openssl/md5.h>
 #endif
 
 #if USE_SHA3IUF
@@ -51,12 +51,13 @@ struct MD4Impl
         length = MD4_DIGEST_LENGTH
     };
 
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        MD4_CTX ctx;
-        MD4_Init(&ctx);
-        MD4_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        MD4_Final(out_char_data, &ctx);
+        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(ctx, EVP_md4(), nullptr);
+        EVP_DigestUpdate(ctx, begin, size);
+        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
+        EVP_MD_CTX_free(ctx);
     }
 };
 
@@ -68,12 +69,13 @@ struct MD5Impl
         length = MD5_DIGEST_LENGTH
     };
 
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        MD5_CTX ctx;
-        MD5_Init(&ctx);
-        MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        MD5_Final(out_char_data, &ctx);
+        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(ctx, EVP_md5(), nullptr);
+        EVP_DigestUpdate(ctx, begin, size);
+        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
+        EVP_MD_CTX_free(ctx);
     }
 };
 
@@ -85,12 +87,13 @@ struct SHA1Impl
         length = SHA_DIGEST_LENGTH
     };
 
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        SHA_CTX ctx;
-        SHA1_Init(&ctx);
-        SHA1_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        SHA1_Final(out_char_data, &ctx);
+        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(ctx, EVP_sha1(), nullptr);
+        EVP_DigestUpdate(ctx, begin, size);
+        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
+        EVP_MD_CTX_free(ctx);
     }
 };
 
@@ -102,12 +105,13 @@ struct SHA224Impl
         length = SHA224_DIGEST_LENGTH
     };
 
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        SHA256_CTX ctx;
-        SHA224_Init(&ctx);
-        SHA224_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        SHA224_Final(out_char_data, &ctx);
+        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(ctx, EVP_sha224(), nullptr);
+        EVP_DigestUpdate(ctx, begin, size);
+        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
+        EVP_MD_CTX_free(ctx);
     }
 };
 
@@ -119,12 +123,13 @@ struct SHA256Impl
         length = SHA256_DIGEST_LENGTH
     };
 
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        SHA256_CTX ctx;
-        SHA256_Init(&ctx);
-        SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        SHA256_Final(out_char_data, &ctx);
+        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr);
+        EVP_DigestUpdate(ctx, begin, size);
+        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
+        EVP_MD_CTX_free(ctx);
     }
 };
 
@@ -136,12 +141,13 @@ struct SHA384Impl
         length = SHA384_DIGEST_LENGTH
     };
 
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        SHA512_CTX ctx;
-        SHA384_Init(&ctx);
-        SHA384_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        SHA384_Final(out_char_data, &ctx);
+        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(ctx, EVP_sha384(), nullptr);
+        EVP_DigestUpdate(ctx, begin, size);
+        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
+        EVP_MD_CTX_free(ctx);
     }
 };
 
@@ -153,12 +159,13 @@ struct SHA512Impl
         length = 64
     };
 
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        SHA512_CTX ctx;
-        SHA512_Init(&ctx);
-        SHA512_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        SHA512_Final(out_char_data, &ctx);
+        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(ctx, EVP_sha512(), nullptr);
+        EVP_DigestUpdate(ctx, begin, size);
+        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
+        EVP_MD_CTX_free(ctx);
     }
 };
 
@@ -192,12 +199,13 @@ struct RIPEMD160Impl
         length = RIPEMD160_DIGEST_LENGTH
     };
 
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        RIPEMD160_CTX ctx;
-        RIPEMD160_Init(&ctx);
-        RIPEMD160_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        RIPEMD160_Final(out_char_data, &ctx);
+        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(ctx, EVP_ripemd160(), nullptr);
+        EVP_DigestUpdate(ctx, begin, size);
+        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
+        EVP_MD_CTX_free(ctx);
     }
 };
 #endif
