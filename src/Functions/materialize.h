@@ -68,7 +68,7 @@ public:
     {
         /// Depending on the argument the function materialize() is either a constant or works as identity().
         /// In both cases this function is monotonic and non-decreasing.
-        return {.is_monotonic = true, .is_always_monotonic = true};
+        return {.is_monotonic = true, .is_always_monotonic = true, .is_identity = true};
     }
 };
 
