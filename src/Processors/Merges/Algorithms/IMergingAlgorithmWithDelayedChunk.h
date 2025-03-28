@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
-#include <Processors/Merges/Algorithms/RowRef.h>
+#include <Core/Block.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
+#include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
+#include <Processors/Merges/Algorithms/RowRef.h>
 
 namespace DB
 {

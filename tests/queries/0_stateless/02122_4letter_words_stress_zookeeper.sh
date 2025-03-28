@@ -11,7 +11,7 @@ function four_letter_thread()
     declare -a FOUR_LETTER_COMMANDS=("conf" "cons" "crst" "envi" "ruok" "srst" "srvr" "stat" "wchc" "wchs" "dirs" "mntr" "isro")
     while true; do
         command=${FOUR_LETTER_COMMANDS[$RANDOM % ${#FOUR_LETTER_COMMANDS[@]} ]}
-        echo $command | nc ${CLICKHOUSE_HOST} ${CLICKHOUSE_PORT_KEEPER} 1>/dev/null
+        $CLICKHOUSE_KEEPER_CLIENT -q "$command" 1>/dev/null
     done
 
 }
@@ -31,10 +31,10 @@ export -f create_drop_thread;
 
 TIMEOUT=15
 
-timeout $TIMEOUT bash -c four_letter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c four_letter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c four_letter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c four_letter_thread 2> /dev/null &
+timeout $TIMEOUT bash -c four_letter_thread &
+timeout $TIMEOUT bash -c four_letter_thread &
+timeout $TIMEOUT bash -c four_letter_thread &
+timeout $TIMEOUT bash -c four_letter_thread &
 
 timeout $TIMEOUT bash -c create_drop_thread 2> /dev/null &
 timeout $TIMEOUT bash -c create_drop_thread 2> /dev/null &

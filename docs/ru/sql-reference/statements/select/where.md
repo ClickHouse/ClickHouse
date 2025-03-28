@@ -14,7 +14,7 @@ ClickHouse использует в выражении индексы, если �
 :::note Примечание
 Существует оптимизация фильтрации под названием [PREWHERE](prewhere.md).
 :::
-Если в секции необходимо проверить [NULL](../../../sql-reference/syntax.md#null-literal), то используйте операторы [IS NULL](../../operators/index.md#operator-is-null) и [IS NOT NULL](../../operators/index.md#is-not-null), а также соответствующие функции [isNull](../../../sql-reference/functions/functions-for-nulls.md#isnull) и [isNotNull](../../../sql-reference/functions/functions-for-nulls.md#isnotnull). В противном случае выражение будет считаться всегда не выполненным.
+Если в секции необходимо проверить [NULL](../../../sql-reference/syntax.md#null-literal), то используйте операторы [IS NULL](/sql-reference/operators#is_null) и [IS NOT NULL](/sql-reference/operators#is_not_null), а также соответствующие функции [isNull](../../../sql-reference/functions/functions-for-nulls.md#isnull) и [isNotNull](../../../sql-reference/functions/functions-for-nulls.md#isnotnull). В противном случае выражение будет считаться всегда не выполненным.
 
 **Пример**
 

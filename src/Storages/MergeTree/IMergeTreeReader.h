@@ -17,7 +17,7 @@ class IMergeTreeReader : private boost::noncopyable
 public:
     using ValueSizeMap = std::map<std::string, double>;
     using VirtualFields = std::unordered_map<String, Field>;
-    using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
+    using DeserializeBinaryBulkStateMap = std::unordered_map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
     IMergeTreeReader(
@@ -34,8 +34,10 @@ public:
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
     /// current_task_last mark is needed for asynchronous reading (mainly from remote fs).
+    /// If rows_offset is not 0, when reading from MergeTree, the first rows_offset rows will be skipped.
     virtual size_t readRows(size_t from_mark, size_t current_task_last_mark,
-                            bool continue_reading, size_t max_rows_to_read, Columns & res_columns) = 0;
+                            bool continue_reading, size_t max_rows_to_read,
+                            size_t rows_offset, Columns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 
@@ -66,12 +68,15 @@ public:
 
     virtual void prefetchBeginOfRange(Priority) {}
 
+    MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
+
 protected:
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
-    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
+
+    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;

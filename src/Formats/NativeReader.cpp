@@ -6,6 +6,8 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <Columns/ColumnLazy.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
@@ -89,12 +91,12 @@ static void readData(const ISerialization & serialization, ColumnPtr & column, R
     settings.avg_value_size_hint = avg_value_size_hint;
     settings.position_independent_encoding = false;
     settings.native_format = true;
-    settings.data_types_binary_encoding = format_settings && format_settings->native.decode_types_in_binary_format;
+    settings.format_settings = format_settings ? &*format_settings : nullptr;
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
     serialization.deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-    serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
+    serialization.deserializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state, nullptr);
 
     if (column->size() != rows)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
@@ -181,7 +183,28 @@ Block NativeReader::read()
         setVersionToAggregateFunctions(column.type, true, server_revision);
 
         SerializationPtr serialization;
-        if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        ColumnPtr read_column;
+        const ColumnLazy * column_lazy = nullptr;
+        bool skip_reading = false;
+
+        if (const auto * tmp_header_column = header.findByName(column.name))
+            column_lazy = checkAndGetColumn<ColumnLazy>(tmp_header_column->column.get());
+
+        if (column_lazy)
+        {
+            if (!column_lazy->getColumns().empty())
+            {
+                serialization = column_lazy->getDefaultSerialization();
+                const auto & tmp_columns = column_lazy->getColumns();
+                read_column = ColumnTuple::create(tmp_columns)->cloneEmpty();
+            }
+            else
+            {
+                read_column = ColumnLazy::create(rows);
+                skip_reading = true;
+            }
+        }
+        else if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             auto info = column.type->createSerializationInfo({});
 
@@ -191,10 +214,12 @@ Block NativeReader::read()
                 info->deserializeFromKindsBinary(istr);
 
             serialization = column.type->getSerialization(*info);
+            read_column = column.type->createColumn(*serialization);
         }
         else
         {
             serialization = column.type->getDefaultSerialization();
+            read_column = column.type->createColumn(*serialization);
         }
 
         if (use_index)
@@ -206,11 +231,8 @@ Block NativeReader::read()
                 throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong type: corrupted index or data");
         }
 
-        /// Data
-        ColumnPtr read_column = column.type->createColumn(*serialization);
-
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
-        if (rows)    /// If no rows, nothing to read.
+        if (!skip_reading && rows)    /// If no rows, nothing to read.
             readData(*serialization, read_column, istr, format_settings, rows, avg_value_size_hint);
 
         column.column = std::move(read_column);
@@ -224,6 +246,16 @@ Block NativeReader::read()
 
                 if (format_settings && format_settings->null_as_default)
                     insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
+
+                if (!skip_reading && column_lazy)
+                {
+                    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.column.get()))
+                        column.column = ColumnLazy::create(column_tuple->getColumns());
+                    else
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} and data type {} found while reading data in Native format",
+                                        column.name,
+                                        column.column->getDataType());
+                }
 
                 if (!header_column.type->equals(*column.type))
                 {

@@ -370,9 +370,9 @@ inline const char * find_first_symbols_dispatch(const std::string_view haystack,
 {
 #if defined(__SSE4_2__)
     if (symbols.str.size() >= 5)
-        return find_first_symbols_sse42<positive, return_mode>(haystack.begin(), haystack.end(), symbols);
+        return find_first_symbols_sse42<positive, return_mode>(haystack.data(), haystack.data() + haystack.size(), symbols);
 #endif
-    return find_first_symbols_sse2<positive, return_mode>(haystack.begin(), haystack.end(), symbols.str.data(), symbols.str.size());
+    return find_first_symbols_sse2<positive, return_mode>(haystack.data(), haystack.data() + haystack.size(), symbols.str.data(), symbols.str.size());
 }
 
 template <bool positive, ReturnMode return_mode, char... symbols>
@@ -385,7 +385,7 @@ inline const char * find_last_symbols_dispatch(const char * begin, const char * 
 template <bool positive, ReturnMode return_mode>
 inline const char * find_last_symbols_dispatch(const std::string_view haystack, const SearchSymbols & symbols)
 {
-    return find_last_symbols_sse2<positive, return_mode>(haystack.begin(), haystack.end(), symbols.str.data(), symbols.str.size());
+    return find_last_symbols_sse2<positive, return_mode>(haystack.data(), haystack.data() + haystack.size(), symbols.str.data(), symbols.str.size());
 }
 
 }

@@ -156,7 +156,7 @@ then
       old_settings.value AS old_value
   FROM new_settings
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
-  WHERE (new_value != old_value)
+  WHERE (old_value IS NULL OR new_value != old_value)
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
@@ -175,7 +175,7 @@ then
       old_merge_tree_settings.value AS old_value
   FROM new_merge_tree_settings
   LEFT JOIN old_merge_tree_settings ON new_merge_tree_settings.name = old_merge_tree_settings.name
-  WHERE (new_value != old_value)
+  WHERE (old_value IS NULL OR new_value != old_value)
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM

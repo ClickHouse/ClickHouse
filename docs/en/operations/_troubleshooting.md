@@ -24,22 +24,22 @@ Please use the manual from the [setup](../getting-started/install.md#setup-the-d
 
 - The completed warning messages are as one of following:
 
-```
+```bash
 N: Skipping acquire of configured file 'main/binary-i386/Packages' as repository 'https://packages.clickhouse.com/deb stable InRelease' doesn't support architecture 'i386'
 ```
 
-```
+```bash
 E: Failed to fetch https://packages.clickhouse.com/deb/dists/stable/main/binary-amd64/Packages.gz  File has unexpected size (30451 != 28154). Mirror sync in progress?
 ```
 
-```
+```text
 E: Repository 'https://packages.clickhouse.com/deb stable InRelease' changed its 'Origin' value from 'Artifactory' to 'ClickHouse'
 E: Repository 'https://packages.clickhouse.com/deb stable InRelease' changed its 'Label' value from 'Artifactory' to 'ClickHouse'
 N: Repository 'https://packages.clickhouse.com/deb stable InRelease' changed its 'Suite' value from 'stable' to ''
 N: This must be accepted explicitly before updates for this repository can be applied. See apt-secure(8) manpage for details.
 ```
 
-```
+```bash
 Err:11 https://packages.clickhouse.com/deb stable InRelease
   400  Bad Request [IP: 172.66.40.249 443]
 ```
@@ -52,24 +52,24 @@ sudo apt-get clean
 sudo apt-get autoclean
 ```
 
-### You Can't Get Packages With Yum Because Of Wrong Signature
+### You Can't Get Packages With Yum Because Of Wrong Signature {#you-cant-get-packages-with-yum-because-of-wrong-signature}
 
 Possible issue: the cache is wrong, maybe it's broken after updated GPG key in 2022-09.
 
 The solution is to clean out the cache and lib directory for yum:
 
-```
+```bash
 sudo find /var/lib/yum/repos/ /var/cache/yum/ -name 'clickhouse-*' -type d -exec rm -rf {} +
 sudo rm -f /etc/yum.repos.d/clickhouse.repo
 ```
 
 After that follow the [install guide](../getting-started/install.md#from-rpm-packages)
 
-### You Can't Run Docker Container
+### You Can't Run Docker Container {#you-cant-run-docker-container}
 
 You are running a simple `docker run clickhouse/clickhouse-server` and it crashes with a stack trace similar to following:
 
-```
+```bash
 $ docker run -it clickhouse/clickhouse-server
 ........
 2024.11.06 21:04:48.912036 [ 1 ] {} <Information> SentryWriter: Sending crash reports is disabled
@@ -106,13 +106,13 @@ Possible issues:
 
 Command:
 
-``` bash
+```bash
 $ sudo service clickhouse-server status
 ```
 
 If the server is not running, start it with the command:
 
-``` bash
+```bash
 $ sudo service clickhouse-server start
 ```
 
@@ -127,19 +127,19 @@ If the server started successfully, you should see the strings:
 
 If `clickhouse-server` start failed with a configuration error, you should see the `<Error>` string with an error description. For example:
 
-``` text
+```text
 2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
 ```
 
 If you do not see an error at the end of the file, look through the entire file starting from the string:
 
-``` text
+```text
 <Information> Application: starting up.
 ```
 
 If you try to start a second instance of `clickhouse-server` on the server, you see the following log:
 
-``` text
+```text
 2019.01.11 15:25:11.151730 [ 1 ] {} <Information> : Starting ClickHouse 19.1.0 with revision 54413
 2019.01.11 15:25:11.154578 [ 1 ] {} <Information> Application: starting up
 2019.01.11 15:25:11.156361 [ 1 ] {} <Information> StatusFile: Status file ./status already exists - unclean restart. Contents:
@@ -157,13 +157,13 @@ Revision: 54413
 
 If you do not find any useful information in `clickhouse-server` logs or there aren't any logs, you can view `system.d` logs using the command:
 
-``` bash
+```bash
 $ sudo journalctl -u clickhouse-server
 ```
 
 **Start clickhouse-server in interactive mode**
 
-``` bash
+```bash
 $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
 ```
 
@@ -204,7 +204,7 @@ Check:
 
 If ClickHouse is not able to process the query, it sends an error description to the client. In the `clickhouse-client` you get a description of the error in the console. If you are using the HTTP interface, ClickHouse sends the error description in the response body. For example:
 
-``` bash
+```bash
 $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```

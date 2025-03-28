@@ -1,17 +1,18 @@
 ---
-title : TabSeparatedWithNames
-slug : /en/interfaces/formats/TabSeparatedWithNames
-keywords : [TabSeparatedWithNames]
-input_format: true
-output_format: true
 alias: ['TSVWithNames']
+description: 'Documentation for the TabSeparatedWithNames format'
+input_format: true
+keywords: ['TabSeparatedWithNames']
+output_format: true
+slug: /interfaces/formats/TabSeparatedWithNames
+title: 'TabSeparatedWithNames'
 ---
 
 | Input | Output | Alias                          |
 |-------|--------|--------------------------------|
-| 	✔    | 	✔     | `TSVWithNames`, `RawWithNames` |
+|     ✔    |     ✔     | `TSVWithNames`, `RawWithNames` |
 
-## Description
+## Description {#description}
 
 Differs from the [`TabSeparated`](./TabSeparated.md) format in that the column names are written in the first row.
 
@@ -23,6 +24,6 @@ the columns from the input data will be mapped to the columns of the table by th
 Otherwise, the first row will be skipped.
 :::
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}

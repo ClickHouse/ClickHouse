@@ -4,6 +4,8 @@
 #include <Formats/FormatFactory.h>
 #include <Interpreters/ProcessList.h>
 
+#include <Processors/Port.h>
+
 namespace DB
 {
 

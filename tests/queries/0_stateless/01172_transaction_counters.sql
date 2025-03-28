@@ -40,7 +40,7 @@ insert into txn_counters(n) values (5);
 alter table txn_counters drop partition id 'all';
 rollback;
 
-system flush logs;
+system flush logs transactions_info_log;
 select indexOf((select arraySort(groupUniqArray(tid)) from system.transactions_info_log where database=currentDatabase() and table='txn_counters'), tid),
        type,
        thread_id!=0,

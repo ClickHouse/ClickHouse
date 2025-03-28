@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Interpreters/Context.h>
 
@@ -35,8 +34,8 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
         return "Waiting for covered parts to be removed first";
     case DB::DataPartRemovalState::REMOVE:
         return "Part was selected to be removed";
-    case DB::DataPartRemovalState::REMOVE_ROLLBACKED:
-        return "Part was selected to be removed but then it had been rollbacked. The remove will be retried";
+    case DB::DataPartRemovalState::REMOVE_ROLLED_BACK:
+        return "Part was selected to be removed but then it had been rolled back. The remove will be retried";
     case DB::DataPartRemovalState::REMOVE_RETRY:
         return "Retry to remove part";
     }
@@ -317,7 +316,7 @@ void StorageSystemParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.moves_ttl);
 
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(queryToString(part->default_codec->getCodecDesc()));
+            columns[res_index++]->insert(part->default_codec->getCodecDesc()->formatForLogging());
 
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
         add_ttl_info_map(part->ttl_infos.group_by_ttl);

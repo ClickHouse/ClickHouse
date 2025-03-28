@@ -79,8 +79,10 @@ public:
         NO_TYPE,
 
         MODIFY_DATABASE_SETTING,
+        MODIFY_DATABASE_COMMENT,
 
         MODIFY_COMMENT,
+
         MODIFY_SQL_SECURITY,
 
         UNLOCK_SNAPSHOT,
@@ -215,6 +217,9 @@ public:
     /// MOVE PARTITION partition TO TABLE db.table
     String to_database;
     String to_table;
+
+    String snapshot_name;
+    IAST * snapshot_desc;
 
     /// Which property user want to remove
     String remove_property;

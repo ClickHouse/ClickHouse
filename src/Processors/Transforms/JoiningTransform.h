@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>

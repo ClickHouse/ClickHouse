@@ -21,6 +21,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/DateLUT.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -29,10 +30,13 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadPool.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 
 #include <boost/range/adaptor/map.hpp>
 
+
+#include <Parsers/ASTAlterQuery.h>
 
 namespace CurrentMetrics
 {
@@ -1058,7 +1062,7 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, const S
     info.query_id = query_id;
     info.internal = internal;
     info.status = status;
-    info.start_time = std::chrono::system_clock::now();
+    info.start_time_us = timeInMicroseconds(std::chrono::system_clock::now());
 
     bool is_final_status = isFinalStatus(status);
 
@@ -1070,7 +1074,7 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, const S
     }
 
     if (is_final_status)
-        info.end_time = info.start_time;
+        info.end_time_us = info.start_time_us;
 
     std::lock_guard lock{infos_mutex};
 
@@ -1119,7 +1123,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     }
 
     if (is_final_status)
-        info.end_time = std::chrono::system_clock::now();
+        info.end_time_us = timeInMicroseconds(std::chrono::system_clock::now());
 
     if (isFailedOrCancelled(status))
     {
