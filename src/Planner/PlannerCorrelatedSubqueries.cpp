@@ -193,16 +193,32 @@ QueryPlan decorrelateQueryPlan(
         node->step->getStepDescription());
 }
 
-void buildPlanForAlwaysExists(
+void buildExistsResultExpression(
     QueryPlan & query_plan,
-    const CorrelatedSubquery & correlated_subquery
+    const CorrelatedSubquery & correlated_subquery,
+    bool project_only_correlated_columns
 )
 {
     ActionsDAG dag(query_plan.getCurrentHeader().getNamesAndTypesList());
     auto result_type = std::make_shared<DataTypeUInt8>();
     auto column = result_type->createColumnConst(1, 1);
     const auto * exists_result = &dag.addColumn(ColumnWithTypeAndName(column, result_type, correlated_subquery.action_node_name));
-    dag.addOrReplaceInOutputs(*exists_result);
+
+    if (project_only_correlated_columns)
+    {
+        ActionsDAG::NodeRawConstPtrs new_outputs;
+        new_outputs.reserve(correlated_subquery.correlated_column_identifiers.size() + 1);
+
+        for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
+            new_outputs.push_back(dag.tryFindInOutputs(column_name));
+        new_outputs.push_back(exists_result);
+
+        dag.getOutputs() = std::move(new_outputs);
+    }
+    else
+    {
+        dag.addOrReplaceInOutputs(*exists_result);
+    }
 
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
     expression_step->setStepDescription("Create result for always true EXISTS expression");
@@ -354,7 +370,7 @@ void buildQueryPlanForCorrelatedSubquery(
 
             if (optimizeCorrelatedPlanForExists(correlated_query_plan))
             {
-                buildPlanForAlwaysExists(query_plan, correlated_subquery);
+                buildExistsResultExpression(query_plan, correlated_subquery, /*project_only_correlated_columns=*/false);
                 return;
             }
 
@@ -368,7 +384,7 @@ void buildQueryPlanForCorrelatedSubquery(
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
-            buildPlanForAlwaysExists(decorrelated_plan, correlated_subquery);
+            buildExistsResultExpression(decorrelated_plan, correlated_subquery, /*project_only_correlated_columns=*/true);
             LOG_DEBUG(getLogger(__func__), "Decorrelated plan for subquery:\n{}", dumpQueryPlan(decorrelated_plan));
 
             query_plan = buildLogicalJoin(
