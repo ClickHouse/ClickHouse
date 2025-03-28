@@ -17,45 +17,23 @@
 namespace DB
 {
 
-class QuerySlot: public boost::noncopyable
+class QuerySlot final: private ResourceRequest, public boost::noncopyable
 {
-private:
-    class Request;
-    friend class Request; // for grant() and failed()
-
-    // Represents a resource request for a cpu slot for a single thread
-    class Request final : public ResourceRequest
-    {
-    public:
-        Request() = default;
-        ~Request() override = default;
-
-        /// Callback to trigger resource consumption.
-        void execute() override;
-
-        /// Callback to trigger an error in case if resource is unavailable.
-        void failed(const std::exception_ptr & ptr) override;
-
-        QuerySlot * slot = nullptr;
-    };
-
 public:
     /// Blocks until a query slot is acquired
     /// May throw if time limit exceeded
     /// NOTE: mutex is shared with ProcessList to avoid blocking whole ProcessList while we wait for a slot
-    QuerySlot(ResourceLink link_);
-
-    ~QuerySlot();
+    explicit QuerySlot(ResourceLink link_);
+    ~QuerySlot() override;
 
 private:
-    // Resource request failed
-    void failed(const std::exception_ptr & ptr);
+    /// Callback to trigger resource consumption.
+    void execute() override;
 
-    // Enqueue resource request if necessary
-    void grant();
+    /// Callback to trigger an error in case if resource is unavailable.
+    void failed(const std::exception_ptr & ptr) override;
 
     ResourceLink link;
-    Request request;
 
     std::mutex mutex;
     std::condition_variable cv;

@@ -25,21 +25,11 @@ namespace ErrorCodes
     extern const int RESOURCE_ACCESS_DENIED;
 }
 
-void QuerySlot::Request::execute()
-{
-    slot->grant();
-}
-
-void QuerySlot::Request::failed(const std::exception_ptr & ptr)
-{
-    slot->failed(ptr);
-}
-
 QuerySlot::QuerySlot(ResourceLink link_)
     : link(link_)
 {
     chassert(link);
-    link.queue->enqueueRequest(&request);
+    link.queue->enqueueRequest(this);
     CurrentMetrics::Increment scheduled(CurrentMetrics::ConcurrentQueryScheduled);
     auto timer = CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrentQueryWaitMicroseconds);
     std::unique_lock lock{mutex};
@@ -53,20 +43,20 @@ QuerySlot::QuerySlot(ResourceLink link_)
 QuerySlot::~QuerySlot()
 {
     if (granted)
-        request.finish();
+        finish();
+}
+
+void QuerySlot::execute()
+{
+    std::scoped_lock lock{mutex};
+    granted = true;
+    cv.notify_one();
 }
 
 void QuerySlot::failed(const std::exception_ptr & ptr)
 {
     std::scoped_lock lock{mutex};
     exception = ptr;
-    cv.notify_one();
-}
-
-void QuerySlot::grant()
-{
-    std::scoped_lock lock{mutex};
-    granted = true;
     cv.notify_one();
 }
 
