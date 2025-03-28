@@ -462,9 +462,9 @@ def _finish_workflow(workflow, job_name):
     if workflow.enable_merge_ready_status:
         pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
         app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        from praktika.gh_auth_deprecated import GHAuth
+        from .gh_auth import GHAuth
 
-        GHAuth.auth(app_key=pem, app_id=app_id)
+        GHAuth.auth(app_id=app_id, app_key=pem)
         if not GH.post_commit_status(
             name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
             or f"Ready For Merge [{workflow.name}]",
