@@ -1239,12 +1239,18 @@ void ActionsDAG::project(const NamesWithAliases & projection)
 
     for (const auto & item : projection)
     {
-        auto it = names_map.find(item.first);
-        if (it == names_map.end())
-            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                            "Unknown column: {}, there are only columns {}", item.first, dumpNames());
+        auto it = names_map.find(item.second);
+        if (it != names_map.end())
+            outputs.push_back(it->second);
+        else
+        {
+            it = names_map.find(item.first);
+            if (it == names_map.end())
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                                "Unknown column: {}, there are only columns {}", item.first, dumpNames());
 
-        outputs.push_back(it->second);
+            outputs.push_back(it->second);
+        }
     }
 
     for (size_t i = 0; i < projection_size; ++i)
@@ -1530,6 +1536,20 @@ const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node, bool mat
     const auto & name = node.result_name;
     const auto * func = &addFunction(func_builder_materialize, {&node}, {});
     return addAlias(*func, name);
+}
+
+const ActionsDAG::Node & ActionsDAG::materializeNodeWithAlias(const ActionsDAG::Node & node, const std::string & alias, bool materialize_sparse)
+{
+    FunctionPtr func_materialize;
+    if (materialize_sparse)
+        func_materialize = std::make_shared<FunctionMaterialize<true>>();
+    else
+        func_materialize = std::make_shared<FunctionMaterialize<false>>();
+
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(func_materialize));
+
+    const auto * func = &addFunction(func_builder_materialize, {&node}, {});
+    return addAlias(*func, alias);
 }
 
 ActionsDAG ActionsDAG::makeConvertingActions(
