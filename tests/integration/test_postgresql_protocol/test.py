@@ -138,6 +138,7 @@ def test_psql_client(started_cluster):
 
 def test_new_user(started_cluster):
     node = cluster.instances["node"]
+
     db_id = f"x_{random.randint(0, 1000000)}"
 
     ch = py_psql.connect(
