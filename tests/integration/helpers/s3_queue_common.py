@@ -178,6 +178,7 @@ def create_mv(
     else:
         node.query(
             f"""
+            SET allow_materialized_view_with_bad_select=1;
             CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {src_table_name};
             CREATE TABLE {dst_table_name} ({format}, _path String)
             ENGINE = MergeTree()
