@@ -1143,7 +1143,7 @@ def main() -> int:
                 additional_urls = []
                 s3_path_prefix = "/".join(
                     (
-                        get_release_or_pr(pr_info, get_version_from_repo())[0],
+                        str(pr_info.number),
                         pr_info.sha,
                         Utils.normalize_string(
                             job_report.check_name or _get_ext_check_name(args.job_name)

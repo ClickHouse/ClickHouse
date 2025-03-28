@@ -285,13 +285,17 @@ class Runner:
                             ResultInfo.TIMEOUT
                         )
                     elif result.is_running():
-                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]"
+                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]."
                         print(info)
-                        result.set_status(Result.Status.ERROR).set_info(info)
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
                         result.set_status(Result.Status.ERROR).set_info(info)
+                # add log snippet to report info
+                latest_log = process.get_latest_log(max_lies=20)
+                result.set_status(Result.Status.ERROR).set_info(info)
+                if latest_log:
+                    result.set_info("---").set_info(latest_log).set_info("---")
             result.dump()
 
         return exit_code
