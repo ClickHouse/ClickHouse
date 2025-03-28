@@ -1,4 +1,5 @@
 import json
+import os
 import urllib
 from pathlib import Path
 from typing import Optional
@@ -70,6 +71,10 @@ class Info:
     @property
     def repo_name(self):
         return self.env.REPOSITORY
+
+    @property
+    def repo_owner(self):
+        return os.getenv("GITHUB_REPOSITORY_OWNER", "")
 
     @property
     def fork_name(self):
@@ -160,23 +165,12 @@ class Info:
         assert (
             self.env.JOB_NAME == "Config Workflow"
         ), "Custom data can be stored only in Config Workflow Job"
-        custom_data = {key: value}
-        if Path(Settings.CUSTOM_DATA_FILE).is_file():
-            with open(Settings.CUSTOM_DATA_FILE, "r", encoding="utf8") as f:
-                custom_data = json.load(f)
-                custom_data[key] = value
-        with open(Settings.CUSTOM_DATA_FILE, "w", encoding="utf8") as f:
-            json.dump(custom_data, f, indent=4)
+        workflow_config = RunConfig.from_fs(self.env.WORKFLOW_NAME)
+        workflow_config.custom_data[key] = value
+        workflow_config.dump()
 
     def get_custom_data(self, key=None):
-        # todo: remove intermediary file CUSTOM_DATA_FILE and store/get directly to/from RunConfig
-        if Path(Settings.CUSTOM_DATA_FILE).is_file():
-            # first check CUSTOM_DATA_FILE in case data is not yet in RunConfig
-            #   might happen if data stored in one pre-hook and fetched in another
-            with open(Settings.CUSTOM_DATA_FILE, "r", encoding="utf8") as f:
-                custom_data = json.load(f)
-        else:
-            custom_data = RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
+        custom_data = RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
         if key:
             return custom_data.get(key, None)
         return custom_data
