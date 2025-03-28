@@ -26,6 +26,7 @@ public:
         TaskRunnig = 2,
         TaskFinished = 3,
         TaskCancelled = 4,
+        TaskFailed = 5,
     };
 
     struct TaskStatus
@@ -48,8 +49,8 @@ private:
 
     struct TaskState
     {
-        std::shared_future<void> completion_future;
-        std::atomic<bool> cancelled{false};
+        std::shared_future<String> completion_future;
+        std::shared_ptr<std::atomic<bool>> cancelled = std::make_shared<std::atomic<bool>>(false);
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;

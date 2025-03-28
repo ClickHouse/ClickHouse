@@ -27,6 +27,7 @@
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <base/getFQDNOrHostName.h>
@@ -376,20 +377,33 @@ public:
 
     void execute();
 
+    virtual void cleanup() = 0;
+
+private:
+    void startStageWithDependencies(const String & stage_name, std::unordered_set<String> & executed_stages);
+
 protected:
     DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
         : unique_query_id(unique_query_id_)
         , distributed_query_plan(distributed_query_plan_)
         , context(std::move(context_))
+        , query_status(context->getProcessListElement())
     {
     }
 
     virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
     virtual void waitForStage(const String & stage_name) = 0;
 
+    void checkCancelled() const
+    {
+        if (query_status)
+            query_status->checkTimeLimit();
+    }
+
     const UUID unique_query_id;
     const DistributedQueryPlan & distributed_query_plan;
     ContextPtr context;
+    QueryStatusPtr query_status;
     LoggerPtr logger = getLogger("DistributedQueryPlanExecutor");
 };
 
@@ -431,7 +445,8 @@ QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr 
     return QueryPlan::deserialize(in, context).plan;
 }
 
-void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage, const String & object_storage_path, ContextPtr context)
+void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage,
+    const String & object_storage_path, ContextPtr context, std::function<bool()> is_cancelled)
 {
     const auto & task = task_description.task;
 
@@ -472,6 +487,8 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not completed");
 
     CompletedPipelineExecutor executor(pipeline);
+    if (is_cancelled)
+        executor.setCancelCallback(is_cancelled, 100);
     executor.execute();
 }
 
@@ -501,6 +518,11 @@ public:
     DistributedQueryPlanExecutorLocal(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
         : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, makeContextForLocalExecution(context_))
     {
+    }
+
+    void cleanup() override
+    {
+        /// TODO: cancel all remaining tasks
     }
 
 protected:
@@ -578,8 +600,31 @@ public:
     DistributedQueryPlanExecutorRemote(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
         : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_))
     {
+        QueryStatusPtr query_status = context->getProcessListElement();
+
         fillHostnames();
         assignHostsForTasks();
+    }
+
+    void cleanup() override
+    {
+        for (auto & [stage_name, started_tasks] : stage_tasks)
+        {
+            while (!started_tasks.empty())
+            {
+                auto & task = started_tasks.front();
+                LOG_TRACE(logger, "Cancelling task {} on host {}", task.task_id, task.endpoint_uri);
+                try
+                {
+                    cancelTask(task.endpoint_uri, task.task_id, context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+                started_tasks.pop_front();
+            }
+        }
     }
 
 protected:
@@ -677,6 +722,8 @@ protected:
 
         for (const auto & task : stage.tasks)
         {
+            checkCancelled();
+
             task_description.task = task;
 
             /// Add exchange destinations for output streams
@@ -694,10 +741,11 @@ protected:
     {
         auto & started_tasks = stage_tasks[stage_name];
 
-        /// TODO: periodically check for cancellation
         String error_message;
         while (!started_tasks.empty())
         {
+            checkCancelled();
+
             auto & task = started_tasks.front();
             auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, 1000, context);
 
@@ -706,7 +754,7 @@ protected:
 
             started_tasks.pop_front();
             if (task_status != "Finished\n")
-                error_message += " Task " + task.task_id + " error: " + task_status;
+                error_message += " Task " + task.task_id + " error: " + task_status + "\n";
         }
 
         if (!error_message.empty())
@@ -719,46 +767,48 @@ protected:
     std::unordered_map<String, String> exchange_stream_destination_hosts;
 };
 
+void DistributedQueryPlanExecutor::startStageWithDependencies(const String & stage_name, std::unordered_set<String> & executed_stages)
+{
+    if (executed_stages.contains(stage_name))
+        return;
+
+    if (distributed_query_plan.stage_depends_on.contains(stage_name))
+    {
+        Strings dependencies_to_wait;
+
+        for (const auto & [dependency, exchange_id] : distributed_query_plan.stage_depends_on.at(stage_name))
+        {
+            startStageWithDependencies(dependency, executed_stages);
+
+            /// If exchange data is persistent then we will need to wait for stage to finish
+            if (distributed_query_plan.exchange_descriptions.at(exchange_id).kind == ExchangeDescription::Kind::Persisted)
+                dependencies_to_wait.push_back(dependency);
+        }
+
+        for (const auto & dependency : dependencies_to_wait)
+            waitForStage(dependency);
+    }
+
+    const auto & stage = distributed_query_plan.stages.at(stage_name);
+    LOG_DEBUG(logger,
+        "\n====================== Executing stage '{}' =========================\n"
+        "PLAN:\n{}\nTASKS: {}\n"
+        "==========================================================================",
+        stage_name, dumpQueryPlan(stage.query_plan_fragment), stage.tasks.size());
+    startStage(stage_name, stage);
+    executed_stages.insert(stage_name);
+}
+
 void DistributedQueryPlanExecutor::execute()
 {
     LOG_DEBUG(logger, "Executing distributed query, unique id: {}", toString(unique_query_id));
 
     /// Execute stages in topological order
-    std::unordered_set<String> executed_stages;
-    std::function<void(const String &)> start_stage = [&](const String & stage_name)
     {
-        if (executed_stages.contains(stage_name))
-            return;
-
-        if (distributed_query_plan.stage_depends_on.contains(stage_name))
-        {
-            Strings dependencies_to_wait;
-
-            for (const auto & [dependency, exchange_id] : distributed_query_plan.stage_depends_on.at(stage_name))
-            {
-                start_stage(dependency);
-
-                /// If exchange data is persistent then we will need to wait for stage to finish
-                if (distributed_query_plan.exchange_descriptions.at(exchange_id).kind == ExchangeDescription::Kind::Persisted)
-                    dependencies_to_wait.push_back(dependency);
-            }
-
-            for (const auto & dependency : dependencies_to_wait)
-                waitForStage(dependency);
-        }
-
-        const auto & stage = distributed_query_plan.stages.at(stage_name);
-        LOG_DEBUG(logger,
-            "\n====================== Executing stage '{}' =========================\n"
-            "PLAN:\n{}\nTASKS: {}\n"
-            "==========================================================================",
-            stage_name, dumpQueryPlan(stage.query_plan_fragment), stage.tasks.size());
-        startStage(stage_name, stage);
-        executed_stages.insert(stage_name);
-    };
-
-    for (const auto & [stage_name, _] : distributed_query_plan.stages)
-        start_stage(stage_name);
+        std::unordered_set<String> executed_stages;
+        for (const auto & [stage_name, _] : distributed_query_plan.stages)
+            startStageWithDependencies(stage_name, executed_stages);
+    }
 
     /// Wait for all stages to finish
     for (const auto & [stage_name, _] : distributed_query_plan.stages)
@@ -774,7 +824,16 @@ void executeDistributedQuery(const UUID & unique_query_id, const DistributedQuer
     else
         executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, context);
 
-    executor->execute();
+    try
+    {
+        executor->execute();
+        executor->cleanup();
+    }
+    catch (...)
+    {
+        executor->cleanup();
+        throw;
+    }
 }
 
 }

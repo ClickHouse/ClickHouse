@@ -171,6 +171,13 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBuffer &
                 writeString("Cancelled\n", out);
                 break;
             }
+            case StatelessTaskExecutor::TaskFailed:
+            {
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+                writeString("Failed\n", out);
+                writeString(status.message, out);
+                break;
+            }
             case StatelessTaskExecutor::UnknownTaskId:
             {
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
@@ -191,6 +198,7 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBuffer &
         auto result = task_runner->cancelTask(task_id);
         switch (result)
         {
+            case StatelessTaskExecutor::Ok:
             case StatelessTaskExecutor::TaskCancelled:
             {
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);

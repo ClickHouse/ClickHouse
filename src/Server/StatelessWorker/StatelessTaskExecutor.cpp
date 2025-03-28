@@ -27,17 +27,30 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         tasks[unique_task_id] = task_state;
     }
 
-    auto task_function = [task_description, object_storage, object_storage_path, context, task_promise]() mutable
+    /// Callback for periodic cancellation check
+    auto is_task_cancelled = [cancelled = task_state->cancelled]() -> bool
+    {
+        return *cancelled;
+    };
+
+    auto task_function = [task_description, object_storage, object_storage_path, context, task_promise, is_task_cancelled]() mutable
     {
         try
         {
-            doExecuteTask(task_description, object_storage, object_storage_path, context);
+            doExecuteTask(task_description, object_storage, object_storage_path, context, is_task_cancelled);
+            task_promise->set_value("");
+        }
+        catch (std::exception & e)
+        {
+            tryLogCurrentException(getLogger("StatelessTaskExecutor"),
+                fmt::format("Task {} failed", task_description.task.task_id));
+            task_promise->set_value(e.what());
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            task_promise->set_value("unknown exception");
         }
-        task_promise->set_value();
     };
 
     // TODO: use special pool
@@ -61,7 +74,11 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
     if (completion_future.valid() && completion_future.wait_for(std::chrono::milliseconds(wait_milliseconds)) == std::future_status::timeout)
         return TaskStatus{Result::TaskRunnig, ""};
 
-    return TaskStatus{Result::TaskFinished, ""};
+    auto error_message = completion_future.get();
+    if (error_message.empty())
+        return TaskStatus{Result::TaskFinished, ""};
+    else
+        return TaskStatus{Result::TaskFailed, error_message};
 }
 
 StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & task_id)
@@ -70,7 +87,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & t
     auto it = tasks.find(task_id);
     if (it == tasks.end())
         return Result::UnknownTaskId;
-    it->second->cancelled = true;
+    *it->second->cancelled = true;
 
     return Result::Ok;
 }
@@ -90,7 +107,7 @@ void StatelessTaskExecutor::shutdown()
 {
     std::lock_guard lock(tasks_mutex);
     for (auto & [task_id, task_state] : tasks)
-        task_state->cancelled = true;
+        *task_state->cancelled = true;
 
     for (auto & [task_id, task_state] : tasks)
         task_state->completion_future.wait();
