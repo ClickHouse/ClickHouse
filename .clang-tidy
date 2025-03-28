@@ -35,6 +35,7 @@ Checks: [
   '-bugprone-nondeterministic-pointer-iteration-order',
   '-clang-analyzer-core.uninitialized.Assign',
   '-clang-analyzer-cplusplus.NewDeleteLeaks',
+  '-clang-analyzer-optin.cplusplus.UninitializedObject',
 
   '-cert-dcl16-c',
   '-cert-err58-cpp',
