@@ -162,6 +162,7 @@ namespace DB::ErrorCodes
     extern const int UNKNOWN_PROTOCOL;
     extern const int UNSUPPORTED_METHOD;
     extern const int USER_EXPIRED;
+    extern const int INCORRECT_DATA;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -544,6 +545,17 @@ void TCPHandler::runImpl()
             if (!is_interserver_mode)
                 session->checkIfUserIsStillValid();
 
+            if (query_state->stage == QueryProcessingStage::QueryPlan)
+            {
+                query_state->query_context->setQueryPlanDeserializationCallback([&query_state]()
+                {
+                    if (!query_state->plan_and_sets)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Expected query plan packet for QueryPlan stage");
+
+                    return query_state->plan_and_sets;
+                });
+            }
+
             query_state->query_context->setExternalTablesInitializer([this, &query_state] (ContextPtr context)
             {
                 if (context != query_state->query_context)
@@ -663,7 +675,7 @@ void TCPHandler::runImpl()
             });
 
             /// Processing Query
-            std::tie(query_state->parsed_query, query_state->io) = executeQuery({query_state->query, query_state->plan_and_sets}, query_state->query_context, QueryFlags{}, query_state->stage);
+            std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
 
             after_check_cancelled.restart();
             after_send_progress.restart();

@@ -181,7 +181,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
 }
 
 namespace FailPoints
@@ -1623,8 +1622,7 @@ static BlockIO executeQueryImpl(
 static std::pair<ASTPtr, BlockIO> executeQueryImpl(
     ContextMutablePtr context,
     QueryFlags flags,
-    std::string_view query,
-    const std::shared_ptr<QueryPlanAndSets> & query_plan)
+    std::string_view query)
 {
     /// Used for logging query start time in system.query_log
     auto query_start_time = std::chrono::system_clock::now();
@@ -1748,8 +1746,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
 
         /// Load external tables if they were provided
         context->initializeExternalTablesIfSet();
-        if (!query_plan)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Expected query plan packet for QueryPlan stage");
+        auto query_plan = context->getDeserializedQueryPlan();
 
         /// reset Input callbacks if query is not INSERT SELECT
         context->resetInputCallbacks();
@@ -1937,7 +1934,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
 }
 
 std::pair<ASTPtr, BlockIO> executeQuery(
-    QueryAndPlan query_and_plan,
+    const String & query,
     ContextMutablePtr context,
     QueryFlags flags,
     QueryProcessingStage::Enum stage)
@@ -1947,11 +1944,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
     if (stage == QueryProcessingStage::QueryPlan)
     {
-        std::tie(ast, res) = executeQueryImpl(context, flags, query_and_plan.query, query_and_plan.query_plan);
+        std::tie(ast, res) = executeQueryImpl(context, flags, query);
     }
     else
     {
-        const auto & query = query_and_plan.query;
         res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr, ast);
     }
 
