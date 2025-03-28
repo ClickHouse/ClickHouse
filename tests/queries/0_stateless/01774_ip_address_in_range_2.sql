@@ -51,26 +51,26 @@ WITH arrayJoin([CAST(toIPv6('::192.168.100.1'), 'Nullable(IPv6)'), CAST(toIPv6('
 
 SELECT '# Check with dense table';
 
-DROP TABLE IF EXISTS test_data;
-CREATE TABLE test_data (cidr String) ENGINE = Memory;
-INSERT INTO test_data
+DROP TABLE IF EXISTS test_data_2;
+CREATE TABLE test_data_2 (cidr String) ENGINE = Memory;
+INSERT INTO test_data_2
 SELECT
     IPv4NumToString(IPv4CIDRToRange(IPv4StringToNum('255.255.255.255'), toUInt8(number)).1) || '/' || toString(number) AS cidr
 FROM system.numbers LIMIT 33;
 
-SELECT sum(isIPAddressInRange(CAST(NULL, 'Nullable(String)'), cidr)) == 0 FROM test_data;
+SELECT sum(isIPAddressInRange(CAST(NULL, 'Nullable(String)'), cidr)) == 0 FROM test_data_2;
 
-SELECT sum(isIPAddressInRange(toIPv4('0.0.0.0'), cidr)) == 1 FROM test_data;
-SELECT sum(isIPAddressInRange(toIPv4('127.0.0.0'), cidr)) == 1 FROM test_data;
-SELECT sum(isIPAddressInRange(toIPv4('128.0.0.0'), cidr)) == 2 FROM test_data;
-SELECT sum(isIPAddressInRange(toIPv4('255.0.0.0'), cidr)) == 9 FROM test_data;
-SELECT sum(isIPAddressInRange(toIPv4('255.0.0.1'), cidr)) == 9 FROM test_data;
-SELECT sum(isIPAddressInRange(toIPv4('255.0.0.255'), cidr)) == 9 FROM test_data;
-SELECT sum(isIPAddressInRange(toIPv4('255.255.255.255'), cidr)) == 33 FROM test_data;
-SELECT sum(isIPAddressInRange(toIPv4('255.255.255.254'), cidr)) == 32 FROM test_data;
-SELECT sum(isIPAddressInRange(CAST(NULL, 'Nullable(IPv4)'), cidr)) == 0 FROM test_data;
+SELECT sum(isIPAddressInRange(toIPv4('0.0.0.0'), cidr)) == 1 FROM test_data_2;
+SELECT sum(isIPAddressInRange(toIPv4('127.0.0.0'), cidr)) == 1 FROM test_data_2;
+SELECT sum(isIPAddressInRange(toIPv4('128.0.0.0'), cidr)) == 2 FROM test_data_2;
+SELECT sum(isIPAddressInRange(toIPv4('255.0.0.0'), cidr)) == 9 FROM test_data_2;
+SELECT sum(isIPAddressInRange(toIPv4('255.0.0.1'), cidr)) == 9 FROM test_data_2;
+SELECT sum(isIPAddressInRange(toIPv4('255.0.0.255'), cidr)) == 9 FROM test_data_2;
+SELECT sum(isIPAddressInRange(toIPv4('255.255.255.255'), cidr)) == 33 FROM test_data_2;
+SELECT sum(isIPAddressInRange(toIPv4('255.255.255.254'), cidr)) == 32 FROM test_data_2;
+SELECT sum(isIPAddressInRange(CAST(NULL, 'Nullable(IPv4)'), cidr)) == 0 FROM test_data_2;
 
-DROP TABLE IF EXISTS test_data;
+DROP TABLE IF EXISTS test_data_2;
 
 SELECT '# Mismatching IP versions is not an error.';
 
