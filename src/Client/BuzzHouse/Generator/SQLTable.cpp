@@ -1598,10 +1598,6 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         if (connections.hasMinIOConnection())
         {
             this->ids.emplace_back(S3);
-            /// this->ids.emplace_back(S3Queue);
-            this->ids.emplace_back(Hudi);
-            this->ids.emplace_back(DeltaLake);
-            /// this->ids.emplace_back(IcebergS3);
         }
     }
 
