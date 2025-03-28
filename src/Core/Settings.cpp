@@ -2615,7 +2615,7 @@ The maximum query execution time in seconds.
 
 The `max_execution_time` parameter can be a bit tricky to understand.
 It operates based on interpolation relative to the current query execution speed
-(this behaviour is controlled by [`timeout_before_checking_execution_speed`](#timeout-before-checking-execution-speed)).
+(this behaviour is controlled by [`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)).
 
 ClickHouse will interrupt a query if the projected execution time exceeds the
 specified `max_execution_time`. By default, the `timeout_before_checking_execution_speed`
@@ -2853,7 +2853,7 @@ operations and the [Join table engine](/engines/table-engines/special/join).
 If the query contains joins, ClickHouse checks this setting for every intermediate result.
 
 ClickHouse can proceed with different actions when the limit is reached. Use
-the [join_overflow_mode](#settings-join_overflow_mode) settings to choose the action.
+the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) settings to choose the action.
 
 Possible values:
 
@@ -3080,7 +3080,7 @@ The maximum amount of RAM to use for running a user's queries on a single server
 
 By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
 
-Also see the description of [`max_memory_usage`](#settings_max_memory_usage).
+Also see the description of [`max_memory_usage`](/operations/settings/settings#max_memory_usage).
 
 For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
 

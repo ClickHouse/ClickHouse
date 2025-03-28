@@ -287,7 +287,7 @@ Vector similarity indexes are ideally only used if the data is immutable or rare
 To speed up index creation, the following techniques can be used:
 
 First, index creation can be parallelized.
-The maximum number of index creation threads can be configured using server setting [max_build_vector_similarity_index_thread_pool_size](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size).
+The maximum number of index creation threads can be configured using server setting [max_build_vector_similarity_index_thread_pool_size](/operations/server-configuration-parameters/settings#max_build_vector_similarity_index_thread_pool_size).
 For optimal performance, the setting value should be configured to the number of CPU cores.
 
 Second, to speed up INSERT statements, users may disable the creation of skipping indexes on newly inserted parts using session setting [materialize_skip_indexes_on_insert](../../../operations/settings/settings.md).
