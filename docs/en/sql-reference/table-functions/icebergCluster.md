@@ -15,7 +15,7 @@ Allows processing files from Apache [Iceberg](https://iceberg.apache.org/) in pa
 
 **Syntax**
 
-``` sql
+```sql
 icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
 icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])
 

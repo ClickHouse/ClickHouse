@@ -21,7 +21,7 @@ EXPLAIN indexes = 1 SELECT * FROM t_03176 ORDER BY k LIMIT 5 SETTINGS log_commen
 
 SYSTEM DISABLE FAILPOINT slowdown_index_analysis;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 -- Check that q1 was fast, q2 was slow and q3 had timeout
 SELECT log_comment, type = 'QueryFinish', intDiv(query_duration_ms, 2000), length(exception) > 0

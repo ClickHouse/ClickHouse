@@ -10,7 +10,7 @@ title: 'Manipulating Constraints'
 
 Constraints could be added or deleted using following syntax:
 
-``` sql
+```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
 ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
 ```

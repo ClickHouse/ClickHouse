@@ -22,12 +22,12 @@ Columns:
 
 The following example shows how to get information about `dropped_tables`.
 
-``` sql
+```sql
 SELECT *
 FROM system.dropped_tables\G
 ```
 
-``` text
+```text
 Row 1:
 ──────
 index:                 0

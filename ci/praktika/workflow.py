@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from . import Artifact, Job
 from .docker import Docker
@@ -38,7 +38,7 @@ class Workflow:
         enable_merge_commit: bool = False
         cron_schedules: List[str] = field(default_factory=list)
         inputs: List["Workflow.Config.InputConfig"] = field(default_factory=list)
-        pre_hooks: List[str] = field(default_factory=list)
+        pre_hooks: List[Union[str, callable]] = field(default_factory=list)
         workflow_filter_hooks: List[callable] = field(default_factory=list)
         post_hooks: List[str] = field(default_factory=list)
         # If the Docker images specified in .dockers are intended to be built in a different workflow,
