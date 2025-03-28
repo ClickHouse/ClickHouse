@@ -12,6 +12,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeString.h>
@@ -26,10 +27,10 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnSet.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Common/logger_useful.h>
 #include <Processors/ISimpleTransform.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -53,54 +54,27 @@ namespace Setting
 namespace
 {
 
-//constexpr auto FIXED_COLUMNS = {"hostname", "event_date", "event_time"};
-//
-//ASTPtr getExpressionForProfileEvent(const std::string & prefix, const std::string & name)
-//{
-//    auto equals = makeASTFunction("equals", std::make_shared<ASTIdentifier>("metric"), std::make_shared<ASTLiteral>(name));
-//    auto sumif = makeASTFunction("sumIf", std::make_shared<ASTIdentifier>("value"), equals);
-//
-//    sumif->alias = prefix + "_" + name;
-//    return sumif;
-//}
+constexpr auto EVENT_TIME_NAME = "event_time";
+constexpr auto IS_EVENT_NAME = "is_event";
+constexpr auto VALUE_NAME = "value";
+constexpr auto EVENT_DATE_NAME = "event_date";
+constexpr auto METRIC_NAME = "metric";
+constexpr auto HOSTNAME_NAME = "hostname";
 
-//std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery()
-//{
-//    std::shared_ptr<ASTSelectWithUnionQuery> result = std::make_shared<ASTSelectWithUnionQuery>();
-//    std::shared_ptr<ASTSelectQuery> select_query = std::make_shared<ASTSelectQuery>();
-//    std::shared_ptr<ASTExpressionList> expression_list = std::make_shared<ASTExpressionList>();
-//
-//    for (const auto & name : FIXED_COLUMNS)
-//        expression_list->children.emplace_back(std::make_shared<ASTIdentifier>(name));
-//
-//    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-//        expression_list->children.push_back(getExpressionForProfileEvent("ProfileEvent", ProfileEvents::getName(ProfileEvents::Event(i))));
-//
-//    for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-//        expression_list->children.push_back(getExpressionForProfileEvent("CurrentMetric", CurrentMetrics::getName(CurrentMetrics::Metric(i))));
-//
-//    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(expression_list));
-//
-//    auto tables = std::make_shared<ASTTablesInSelectQuery>();
-//    auto table = std::make_shared<ASTTablesInSelectQueryElement>();
-//    auto table_expression = std::make_shared<ASTTableExpression>();
-//    auto database_and_table_name = std::make_shared<ASTTableIdentifier>("system", "transposed_metric_log");
-//    table_expression->database_and_table_name = database_and_table_name;
-//    table->table_expression = table_expression;
-//    tables->children.emplace_back(table);
-//    select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
-//
-//    std::shared_ptr<ASTExpressionList> group_by = std::make_shared<ASTExpressionList>();
-//    for (const auto & name : FIXED_COLUMNS)
-//        group_by->children.emplace_back(std::make_shared<ASTIdentifier>(name));
-//
-//    select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_by);
-//
-//    result->list_of_selects = std::make_shared<ASTExpressionList>();
-//    result->list_of_selects->children.emplace_back(select_query);
-//
-//    return result;
-//}
+constexpr auto VIEW_COLUMNS_ORDER = {
+    EVENT_TIME_NAME, IS_EVENT_NAME, VALUE_NAME, METRIC_NAME, HOSTNAME_NAME, EVENT_DATE_NAME
+};
+
+constexpr size_t EVENT_TIME_POSITION = 0;
+constexpr size_t IS_EVENT_POSITION = 1;
+constexpr size_t VALUE_POSITION = 2;
+constexpr size_t METRIC_POSITION = 3;
+constexpr size_t HOSTNAME_POSITION = 4;
+constexpr size_t EVENT_DATE_POSITION = 5;
+
+constexpr std::string_view PROFILE_EVENT_PREFIX = "ProfileEvent_";
+constexpr std::string_view CURRENT_METRIC_PREFIX = "CurrentMetric_";
+
 
 std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery()
 {
@@ -108,12 +82,8 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery()
     std::shared_ptr<ASTSelectQuery> select_query = std::make_shared<ASTSelectQuery>();
     std::shared_ptr<ASTExpressionList> expression_list = std::make_shared<ASTExpressionList>();
 
-    expression_list->children.emplace_back(std::make_shared<ASTIdentifier>("event_time"));
-    expression_list->children.emplace_back(std::make_shared<ASTIdentifier>("is_event"));
-    expression_list->children.emplace_back(std::make_shared<ASTIdentifier>("value"));
-    expression_list->children.emplace_back(std::make_shared<ASTIdentifier>("metric"));
-    expression_list->children.emplace_back(std::make_shared<ASTIdentifier>("hostname"));
-    expression_list->children.emplace_back(std::make_shared<ASTIdentifier>("event_date"));
+    for (const auto & column_name : VIEW_COLUMNS_ORDER)
+        expression_list->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(expression_list));
 
@@ -128,10 +98,10 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery()
 
     std::shared_ptr<ASTExpressionList> order_by = std::make_shared<ASTExpressionList>();
     std::shared_ptr<ASTOrderByElement> order_by_date = std::make_shared<ASTOrderByElement>();
-    order_by_date->children.emplace_back(std::make_shared<ASTIdentifier>("event_date"));
+    order_by_date->children.emplace_back(std::make_shared<ASTIdentifier>(EVENT_DATE_NAME));
     order_by_date->direction = 1;
     std::shared_ptr<ASTOrderByElement> order_by_time = std::make_shared<ASTOrderByElement>();
-    order_by_time->children.emplace_back(std::make_shared<ASTIdentifier>("event_time"));
+    order_by_time->children.emplace_back(std::make_shared<ASTIdentifier>(HOSTNAME_NAME));
     order_by_time->direction = 1;
     order_by->children.emplace_back(order_by_date);
     order_by->children.emplace_back(order_by_time);
@@ -158,20 +128,14 @@ ASTCreateQuery getCreateQuery()
 ColumnsDescription getColumnsDescription()
 {
     NamesAndTypesList result;
-    result.push_back(NameAndTypePair("hostname", std::make_shared<DataTypeString>()));
-    result.push_back(NameAndTypePair("event_date", std::make_shared<DataTypeDate>()));
-    result.push_back(NameAndTypePair("event_time", std::make_shared<DataTypeDateTime>()));
+    result.push_back(NameAndTypePair(HOSTNAME_NAME, std::make_shared<DataTypeString>()));
+    result.push_back(NameAndTypePair(EVENT_DATE_NAME, std::make_shared<DataTypeDate>()));
+    result.push_back(NameAndTypePair(EVENT_TIME_NAME, std::make_shared<DataTypeDateTime>()));
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-    {
-        static const std::string profile_event_prefix = "ProfileEvent_";
-        result.push_back(NameAndTypePair(profile_event_prefix + ProfileEvents::getName(ProfileEvents::Event(i)), std::make_shared<DataTypeInt64>()));
-    }
+        result.push_back(NameAndTypePair(std::string{PROFILE_EVENT_PREFIX} + ProfileEvents::getName(ProfileEvents::Event(i)), std::make_shared<DataTypeInt64>()));
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-    {
-        static const std::string current_metric_prefix = "CurrentMetric_";
-        result.push_back(NameAndTypePair(current_metric_prefix + CurrentMetrics::getName(CurrentMetrics::Metric(i)), std::make_shared<DataTypeInt64>()));
-    }
+        result.push_back(NameAndTypePair(std::string{CURRENT_METRIC_PREFIX} + CurrentMetrics::getName(CurrentMetrics::Metric(i)), std::make_shared<DataTypeInt64>()));
 
     return ColumnsDescription{result};
 }
@@ -179,14 +143,12 @@ ColumnsDescription getColumnsDescription()
 ColumnsDescription getColumnsDescriptionForView()
 {
     NamesAndTypesList result;
-    result.push_back(NameAndTypePair("event_time", std::make_shared<DataTypeDateTime>()));
-    result.push_back(NameAndTypePair("is_event", std::make_shared<DataTypeUInt8>()));
-    result.push_back(NameAndTypePair("value", std::make_shared<DataTypeInt64>()));
-    result.push_back(NameAndTypePair("metric", std::make_shared<DataTypeString>()));
-    result.push_back(NameAndTypePair("hostname", std::make_shared<DataTypeString>()));
-    result.push_back(NameAndTypePair("event_date", std::make_shared<DataTypeDate>()));
-
-
+    result.push_back(NameAndTypePair(EVENT_TIME_NAME, std::make_shared<DataTypeDateTime>()));
+    result.push_back(NameAndTypePair(IS_EVENT_NAME, std::make_shared<DataTypeUInt8>()));
+    result.push_back(NameAndTypePair(VALUE_NAME, std::make_shared<DataTypeInt64>()));
+    result.push_back(NameAndTypePair(METRIC_NAME, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
+    result.push_back(NameAndTypePair(HOSTNAME_NAME, std::make_shared<DataTypeString>()));
+    result.push_back(NameAndTypePair(EVENT_DATE_NAME, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
 
     return ColumnsDescription{result};
 }
@@ -200,17 +162,6 @@ StorageSystemMetricLogView::StorageSystemMetricLogView(const StorageID & table_i
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(getColumnsDescription());
     setInMemoryMetadata(storage_metadata);
-    events_count = ProfileEvents::end();
-    metrics_count = CurrentMetrics::end();
-
-    events_mapping.reserve(events_count);
-    metrics_mapping.reserve(metrics_count);
-
-    for (ProfileEvents::Event e = ProfileEvents::Event(0), end = ProfileEvents::end(); e < end; ++e)
-        events_mapping[ProfileEvents::getName(e)] = e;
-
-    for (size_t c = 0, end = CurrentMetrics::end(); c < end; ++c)
-        metrics_mapping[CurrentMetrics::getName(CurrentMetrics::Metric(c))] = c;
 }
 
 void StorageSystemMetricLogView::checkAlterIsPossible(const AlterCommands &, ContextPtr) const
@@ -223,46 +174,60 @@ namespace
 
 class CustomFilterTransform : public IInflatingTransform
 {
-    const HashMap<StringRef, size_t> & events_mapping;
-    const HashMap<StringRef, size_t> & metrics_mapping;
-    MetricOptions options;
+    HashMap<StringRef, size_t> events_mapping;
+    HashMap<StringRef, size_t> metrics_mapping;
+    Names column_names;
 public:
-    size_t event_time_position = 0;
-    size_t is_event_position = 1;
-    size_t value_position = 2;
-    size_t metric_position = 3;
-    size_t hostname_position = 4;
-    size_t date_position = 5;
-
     String getName() const override { return "MetricLogCustomTransform"; }
 
     PODArray<UInt32> times;
     PODArray<UInt16> dates;
     std::vector<std::string> hostnames;
 
-    std::map<size_t, PODArray<Int64>> buffer_events;
-    std::map<size_t, PODArray<Int64>> buffer_metrics;
-    std::vector<ColumnInt64 *> value_pointers;
+    std::unordered_map<size_t, PODArray<Int64>> buffer_events;
+    std::unordered_map<size_t, PODArray<Int64>> buffer_metrics;
 
-    CustomFilterTransform(Block input_header, Block output_header, const HashMap<StringRef, size_t> & events_,  const HashMap<StringRef, size_t> & metrics_, const Names & event_names, const Names & metrics_names, MetricOptions options_)
+    bool need_hostname = false;
+    bool need_date = false;
+
+    CustomFilterTransform(Block input_header, Block output_header)
         : IInflatingTransform(input_header, output_header)
-        , events_mapping(events_)
-        , metrics_mapping(metrics_)
-        , options(options_)
     {
-        for (const auto & event : event_names)
-        {
-            buffer_events[events_mapping.at(event)].reserve(8192);
-        }
 
-        for (const auto & event : metrics_names)
+        size_t events_counter = 0;
+        size_t metrics_counter = 0;
+        column_names.reserve(output_header.columns());
+
+        for (const auto & column : output_header)
         {
-            buffer_metrics[metrics_mapping.at(event)].reserve(8192);
+            column_names.push_back(column.name);
+            const auto & column_name = column_names.back();
+            if (column_name.starts_with(PROFILE_EVENT_PREFIX))
+            {
+                StringRef data{column_name.data() + PROFILE_EVENT_PREFIX.size(), column_name.size() - PROFILE_EVENT_PREFIX.size()};
+                events_mapping[data] = events_counter;
+                buffer_events[events_counter].reserve(8192);
+                events_counter++;
+            }
+            else if (column_name.starts_with(CURRENT_METRIC_PREFIX))
+            {
+                StringRef data{column_name.data() + CURRENT_METRIC_PREFIX.size(), column_name.size() - CURRENT_METRIC_PREFIX.size()};
+                metrics_mapping[data] = metrics_counter;
+                buffer_metrics[metrics_counter].reserve(8192);
+                metrics_counter++;
+            }
+            else if (column_name == HOSTNAME_NAME)
+                need_hostname = true;
+            else if (column_name == EVENT_DATE_NAME)
+                need_date = true;
         }
 
         times.reserve(8192);
-        dates.reserve(8192);
-        hostnames.reserve(8192);
+
+        if (need_date)
+            dates.reserve(8192);
+        if (need_hostname)
+            hostnames.reserve(8192);
     }
 
     bool canGenerate() override
@@ -273,48 +238,50 @@ public:
     Chunk generate() override
     {
         Chunk result;
+
         size_t dest_rows_count = times.size();
 
-        for (auto & [_, buf] : buffer_events)
-            if (buf.size() < times.size())
-                buf.push_back(0);
-
-        for (auto & [_, buf] : buffer_metrics)
-            if (buf.size() < times.size())
-                buf.push_back(0);
-
+        alignMissingRows();
 
         MutableColumns output_columns;
-        output_columns.reserve(buffer_events.size() + buffer_metrics.size() + 3);
+        output_columns.reserve(buffer_events.size() + buffer_metrics.size() + need_date + need_hostname + 1);
 
-        auto string_column = ColumnString::create();
-        for (const auto & hostname : hostnames)
-            string_column->insertData(hostname.data(), hostname.size());
-
-        if (options.need_hostname)
-            output_columns.push_back(std::move(string_column));
-
-        if (options.need_date)
-            output_columns.push_back(ColumnDate::create(dates.begin(), dates.end()));
-
-        if (options.need_time)
-            output_columns.push_back(ColumnDateTime::create(times.begin(), times.end()));
+        for (const auto & column_name : column_names)
+        {
+            if (column_name == EVENT_TIME_NAME)
+            {
+                output_columns.push_back(ColumnDateTime::create(times.begin(), times.end()));
+            }
+            else if (column_name == EVENT_DATE_NAME)
+            {
+                output_columns.push_back(ColumnDate::create(dates.begin(), dates.end()));
+            }
+            else if (column_name == HOSTNAME_NAME)
+            {
+                auto string_column = ColumnString::create();
+                for (const auto & hostname : hostnames)
+                    string_column->insertData(hostname.data(), hostname.size());
+                output_columns.push_back(std::move(string_column));
+            }
+            else if (column_name.starts_with(PROFILE_EVENT_PREFIX))
+            {
+                StringRef data{column_name.data() + PROFILE_EVENT_PREFIX.size(), column_name.size() - PROFILE_EVENT_PREFIX.size()};
+                auto & column = buffer_events[events_mapping.at(data)];
+                output_columns.push_back(ColumnInt64::create(column.begin(), column.end()));
+                column.clear();
+            }
+            else if (column_name.starts_with(CURRENT_METRIC_PREFIX))
+            {
+                StringRef data{column_name.data() + CURRENT_METRIC_PREFIX.size(), column_name.size() - CURRENT_METRIC_PREFIX.size()};
+                auto & column = buffer_metrics[metrics_mapping.at(data)];
+                output_columns.push_back(ColumnInt64::create(column.begin(), column.end()));
+                column.clear();
+            }
+        }
 
         hostnames.clear();
         dates.clear();
         times.clear();
-
-        for (auto & [_, buffer_event] : buffer_events)
-        {
-            output_columns.push_back(ColumnInt64::create(buffer_event.begin(), buffer_event.end()));
-            buffer_event.clear();
-        }
-
-        for (auto & [_, buffer_metric] : buffer_metrics)
-        {
-            output_columns.push_back(ColumnInt64::create(buffer_metric.begin(), buffer_metric.end()));
-            buffer_metric.clear();
-        }
 
         result.setColumns(std::move(output_columns), dest_rows_count);
         return result;
@@ -328,53 +295,66 @@ public:
         return generate();
     }
 
+    void alignMissingRows()
+    {
+        for (auto & [_, buf] : buffer_events)
+            if (buf.size() < times.size())
+                buf.push_back(0);
+
+        for (auto & [_, buf] : buffer_metrics)
+            if (buf.size() < times.size())
+                buf.push_back(0);
+    }
+
     void consume(Chunk chunk) override
     {
         size_t rows_count = chunk.getNumRows();
 
         const auto & columns = chunk.getColumns();
-        const auto & event_time_column = checkAndGetColumn<ColumnDateTime>(*columns[event_time_position]);
-        const auto & is_event_column = checkAndGetColumn<ColumnUInt8>(*columns[is_event_position]);
-        const auto & value_column = checkAndGetColumn<ColumnInt64>(*columns[value_position]);
-        const auto & metric_column = checkAndGetColumn<ColumnString>(*columns[metric_position]);
-        const auto & date_column = checkAndGetColumn<ColumnDate>(*columns[date_position]);
-        const auto & hostname_column = checkAndGetColumn<ColumnString>(*columns[hostname_position]);
+        const auto & event_time_column = checkAndGetColumn<ColumnDateTime>(*columns[EVENT_TIME_POSITION]);
+        const auto & is_event_column = checkAndGetColumn<ColumnUInt8>(*columns[IS_EVENT_POSITION]);
+        const auto & value_column = checkAndGetColumn<ColumnInt64>(*columns[VALUE_POSITION]);
+        const auto & metric_column = checkAndGetColumn<ColumnLowCardinality>(*columns[METRIC_POSITION]);
+        const auto & date_column = checkAndGetColumn<ColumnDate>(*columns[EVENT_DATE_POSITION]);
+        const auto & hostname_column = checkAndGetColumn<ColumnLowCardinality>(*columns[HOSTNAME_POSITION]);
 
         if (rows_count && times.empty())
         {
             times.push_back(event_time_column.getInt(0));
-            dates.push_back(date_column.getUInt(0));
-            hostnames.push_back(hostname_column.getDataAt(0).toString());
+            if (need_date)
+                dates.push_back(date_column.getUInt(0));
+            if (need_hostname)
+                hostnames.push_back(hostname_column.getDataAt(0).toString());
         }
 
         for (size_t i = 0; i < rows_count; ++i)
         {
             auto time = event_time_column.getInt(i);
             bool is_event = is_event_column.getBool(i);
-            Int64 value = value_column.getInt(i);
 
             if (time != times.back())
             {
-                for (auto & [_, buf] : buffer_events)
-                    if (buf.size() < times.size())
-                        buf.push_back(0);
-
-                for (auto & [_, buf] : buffer_metrics)
-                    if (buf.size() < times.size())
-                        buf.push_back(0);
+                alignMissingRows();
 
                 times.push_back(time);
-                dates.push_back(date_column.getUInt(i));
-                hostnames.push_back(hostname_column.getDataAt(i).toString());
+
+                if (need_date)
+                    dates.push_back(date_column.getUInt(i));
+
+                if (need_hostname)
+                    hostnames.push_back(hostname_column.getDataAt(i).toString());
             }
 
             StringRef metric_name = metric_column.getDataAt(i);
             if (is_event)
             {
-                size_t event_index = events_mapping.at(metric_name);
-                if (!buffer_events.contains(event_index))
+                auto * it = events_mapping.find(metric_name);
+                if (it == events_mapping.end())
                     continue;
 
+                size_t event_index = it->value.second;
+
+                Int64 value = value_column.getInt(i);
                 if (buffer_events[event_index].size() == times.size())
                     buffer_events[event_index].back() = value;
                 else
@@ -382,9 +362,13 @@ public:
             }
             else
             {
-                size_t metric_index = metrics_mapping.at(metric_name);
-                if (!buffer_metrics.contains(metric_index))
+                auto * it = metrics_mapping.find(metric_name);
+                if (it == metrics_mapping.end())
                     continue;
+
+                size_t metric_index = it->value.second;
+
+                Int64 value = value_column.getInt(i);
                 if (buffer_metrics[metric_index].size() == times.size())
                     buffer_metrics[metric_index].back() = value;
                 else
@@ -394,33 +378,62 @@ public:
     }
 };
 
-
 }
 
 CustomMetricLogStep::CustomMetricLogStep(
-    Block input_header_, Block output_header_,
-    const HashMap<StringRef, size_t> & events_,  const HashMap<StringRef, size_t> & metrics_,
-    const Names & actual_events_, const Names & actual_metrics_, MetricOptions options_)
+    Block input_header_, Block output_header_)
      : ITransformingStep(
          input_header_, output_header_,
          ITransformingStep::Traits{
             .data_stream_traits = ITransformingStep::DataStreamTraits{ .returns_single_stream = true, .preserves_number_of_streams = false, .preserves_sorting = true},
             .transform_traits = ITransformingStep::TransformTraits{.preserves_number_of_rows = false}
      })
-    , events_mapping(events_)
-    , metrics_mapping(metrics_)
-    , actual_events(actual_events_)
-    , actual_metrics(actual_metrics_)
-    , options(options_)
 {
 }
 
 void CustomMetricLogStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.resize(1);
-    pipeline.addTransform(std::make_shared<CustomFilterTransform>(input_headers[0], *output_header, events_mapping, metrics_mapping, actual_events, actual_metrics, options));
+    pipeline.addTransform(std::make_shared<CustomFilterTransform>(input_headers[0], *output_header));
 }
 
+
+void StorageSystemMetricLogView::addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context)
+{
+    MutableColumnPtr column_for_set = ColumnString::create();
+    for (const auto & column_name : column_names)
+    {
+        if (column_name.starts_with(PROFILE_EVENT_PREFIX))
+        {
+            StringRef data{column_name.data() + PROFILE_EVENT_PREFIX.size(), column_name.size() - PROFILE_EVENT_PREFIX.size()};
+            column_for_set->insertData(data.data, data.size);
+        }
+        else if (column_name.starts_with(CURRENT_METRIC_PREFIX))
+        {
+            StringRef data{column_name.data() + CURRENT_METRIC_PREFIX.size(), column_name.size() - CURRENT_METRIC_PREFIX.size()};
+            column_for_set->insertData(data.data, data.size);
+        }
+    }
+
+    ColumnWithTypeAndName set_column(std::move(column_for_set), std::make_shared<DataTypeString>(), "__set");
+    ColumnsWithTypeAndName set_columns;
+    set_columns.push_back(set_column);
+    const auto & settings = context->getSettingsRef();
+    SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
+
+    auto in_function = FunctionFactory::instance().get("in", context->getQueryContext());
+    auto future_set = std::make_shared<FutureSetFromTuple>(CityHash_v1_0_2::uint128{}, nullptr, set_columns, false, size_limits_for_set);
+    auto column_set = ColumnSet::create(1, std::move(future_set));
+    ColumnWithTypeAndName set_for_dag(std::move(column_set), std::make_shared<DataTypeSet>(), "_filter");
+
+    ActionsDAG dag(query_plan.getCurrentHeader().getColumnsWithTypeAndName());
+    const auto & metric_input = dag.findInOutputs(METRIC_NAME);
+    const auto & filter_dag_column = dag.addColumn(set_for_dag);
+    const auto & output = dag.addFunction(in_function, {&metric_input, &filter_dag_column}, "_special_filter_for_metric_log");
+    dag.getOutputs().push_back(&output);
+
+    query_plan.addStep(std::make_unique<FilterStep>(query_plan.getCurrentHeader(), std::move(dag), "_special_filter_for_metric_log", true));
+}
 
 void StorageSystemMetricLogView::read(
     QueryPlan & query_plan,
@@ -433,82 +446,20 @@ void StorageSystemMetricLogView::read(
     size_t num_streams)
 {
     std::shared_ptr<StorageSnapshot> snapshot_for_view = std::make_shared<StorageSnapshot>(internal_view, internal_view.getInMemoryMetadataPtr());
-    Block input_header;
-    input_header.insert({nullptr, std::make_shared<DataTypeDateTime>(), "event_time"});
-    input_header.insert({nullptr, std::make_shared<DataTypeUInt8>(), "is_event"});
-    input_header.insert({nullptr, std::make_shared<DataTypeInt64>(), "value"});
-    input_header.insert({nullptr, std::make_shared<DataTypeString>(), "metric"});
-    input_header.insert({nullptr, std::make_shared<DataTypeString>(), "hostname"});
-    input_header.insert({nullptr, std::make_shared<DataTypeDate>(), "event_date"});
+    Block input_header = snapshot_for_view->metadata->getSampleBlock();
 
     internal_view.read(query_plan, input_header.getNames(), snapshot_for_view, query_info, context, processed_stage, max_block_size, num_streams);
 
-    HashMap<StringRef, Int64> current_events_mapping;
-    HashMap<StringRef, Int64> current_metrics_mapping;
-    Names actual_events;
-    Names actual_metrics;
-    if (!column_names.empty())
-    {
-        MutableColumnPtr column_for_set = ColumnString::create();
-        static constexpr std::string_view PROFILE_EVENT_PREFIX = "ProfileEvent_";
-        static constexpr std::string_view METRICS_EVENT_PREFIX = "CurrentMetric_";
-        size_t e = 0;
-        size_t c = 0;
-        for (const auto & column_name : column_names)
-        {
-            if (column_name.starts_with(PROFILE_EVENT_PREFIX))
-            {
-                StringRef data{column_name.data() + PROFILE_EVENT_PREFIX.size(), column_name.size() - PROFILE_EVENT_PREFIX.size()};
-                actual_events.push_back(data.toString());
-                current_events_mapping[data] = e;
-                column_for_set->insertData(data.data, data.size);
-                e++;
-            }
-            else if (column_name.starts_with(METRICS_EVENT_PREFIX))
-            {
-                StringRef data{column_name.data() + METRICS_EVENT_PREFIX.size(), column_name.size() - METRICS_EVENT_PREFIX.size()};
-                actual_metrics.push_back(data.toString());
-                current_metrics_mapping[data] = c;
-                column_for_set->insertData(data.data, data.size);
-            }
-        }
+    addFilterByMetricNameStep(query_plan, column_names, context);
 
-        ColumnWithTypeAndName set_column(std::move(column_for_set), std::make_shared<DataTypeString>(), "aaa");
-        ColumnsWithTypeAndName set_columns;
-        set_columns.push_back(set_column);
-        const auto & settings = context->getSettingsRef();
-        SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
-
-        auto in_function = FunctionFactory::instance().get("in", context->getQueryContext());
-        auto future_set = std::make_shared<FutureSetFromTuple>(CityHash_v1_0_2::uint128{}, nullptr, set_columns, false, size_limits_for_set);
-        auto column_set = ColumnSet::create(1, std::move(future_set));
-        ColumnWithTypeAndName set_for_dag(std::move(column_set), std::make_shared<DataTypeSet>(), "_filter");
-
-        ActionsDAG dag(query_plan.getCurrentHeader().getColumnsWithTypeAndName());
-        const auto & metric_input = dag.findInOutputs("metric");
-        const auto & filter_dag_column = dag.addColumn(set_for_dag);
-        const auto & output = dag.addFunction(in_function, {&metric_input, &filter_dag_column}, "_special_filter_for_metric_log");
-        dag.getOutputs().push_back(&output);
-
-        query_plan.addStep(std::make_unique<FilterStep>(query_plan.getCurrentHeader(), std::move(dag), "_special_filter_for_metric_log", true));
-    }
     Block full_output_header = getInMemoryMetadataPtr()->getSampleBlock();
-    Block output_header;
-    MetricOptions options;
-    for (const auto & name : column_names)
-    {
-        if (name == "event_time")
-            options.need_time = true;
-        if (name == "event_date")
-            options.need_date = true;
-        if (name == "hostname")
-            options.need_hostname = true;
-        output_header.insert(full_output_header.getByName(name));
-    }
 
-    query_plan.addStep(std::make_unique<CustomMetricLogStep>(input_header, output_header, events_mapping, metrics_mapping, actual_events, actual_metrics, options));
+    Block output_header;
+    for (const auto & name : column_names)
+        output_header.insert(full_output_header.getByName(name));
+
+    query_plan.addStep(std::make_unique<CustomMetricLogStep>(input_header, output_header));
 
 }
-
 
 }
