@@ -1582,10 +1582,7 @@ void StatementGenerator::generateOrderBy(
             }
         }
         this->width -= nclauses;
-        if (has_fill && !this->levels[this->current_level].projections.empty()
-            && (this->levels[this->current_level].group_by_all
-                || (this->levels[this->current_level].gcols.empty() && !this->levels[this->current_level].global_aggregate))
-            && rg.nextSmallNumber() < 4)
+        if (has_fill && !this->levels[this->current_level].projections.empty() && rg.nextSmallNumber() < 4)
         {
             std::vector<uint32_t> nids;
             const uint32_t nprojs = std::min<uint32_t>(

@@ -984,8 +984,10 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     else if (!this->levels[this->current_level].allow_window_funcs || this->levels[this->current_level].inside_aggregate || noption < 951)
     {
         /// Func
-        const bool allow_aggr = !this->levels[this->current_level].inside_aggregate && this->levels[this->current_level].allow_aggregates
-            && (!this->levels[this->current_level].gcols.empty() || this->levels[this->current_level].global_aggregate);
+        const bool allow_aggr
+            = (!this->levels[this->current_level].inside_aggregate && this->levels[this->current_level].allow_aggregates
+               && (!this->levels[this->current_level].gcols.empty() || this->levels[this->current_level].global_aggregate))
+            || rg.nextSmallNumber() < 3;
 
         this->depth++;
         generateFuncCall(rg, true, allow_aggr, expr->mutable_comp_expr()->mutable_func_call());
