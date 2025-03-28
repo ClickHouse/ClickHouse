@@ -217,11 +217,13 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                impl.set(reinterpret_cast<Pos>(&src_data[current_src_offset]), reinterpret_cast<Pos>(&src_data[current_src_offset + src_offsets[i]]) - 1);
+                start = reinterpret_cast<Pos>(&src_data[current_src_offset]);
+                current_src_offset = src_offsets[i];
+                end = reinterpret_cast<Pos>(&src_data[current_src_offset]) - 1;
+                impl.set(start, end);
                 while (impl.get(start, end))
                     res_data.push_back(crc32_z(0UL, reinterpret_cast<const unsigned char *>(start), end - start));
 
-                current_src_offset += src_offsets[i];
                 res_offsets_data.push_back(res_data.size());
             }
 
