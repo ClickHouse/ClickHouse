@@ -33,7 +33,7 @@ namespace Net {
 
 X509Certificate::X509Certificate(std::istream& istr):
 	Poco::Crypto::X509Certificate(istr)
-{	
+{
 }
 
 
@@ -81,7 +81,7 @@ bool X509Certificate::verify(const std::string& hostName) const
 
 
 bool X509Certificate::verify(const Poco::Crypto::X509Certificate& certificate, const std::string& hostName)
-{		
+{
 #if OPENSSL_VERSION_NUMBER < 0x10002000L
 	std::string commonName;
 	std::set<std::string> dnsNames;

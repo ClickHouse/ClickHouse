@@ -117,9 +117,11 @@ namespace Crypto
         /// certificate.
 
         Poco::DateTime validFrom() const;
+        std::string validFromAsString() const;
         /// Returns the date and time the certificate is valid from.
 
         Poco::DateTime expiresOn() const;
+        std::string expiresOnAsString() const;
         /// Returns the date and time the certificate expires.
 
         void save(std::ostream & stream) const;
@@ -160,6 +162,9 @@ namespace Crypto
 
         std::string signatureAlgorithm() const;
         /// Returns the certificate signature algorithm long name.
+
+        std::string publicKeyAlgorithm() const;
+        /// Returns the certificate public key algorithm long name.
 
         void print(std::ostream & out) const;
         /// Prints the certificate information to ostream.

@@ -56,7 +56,7 @@ X509Certificate::X509Certificate(X509* pCert, bool shared):
 	_pCert(pCert)
 {
 	poco_check_ptr(_pCert);
-	
+
 	if (shared)
 	{
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
@@ -150,7 +150,7 @@ void X509Certificate::save(std::ostream& stream) const
 	if (!pBIO) throw Poco::IOException("Cannot create BIO for writing certificate");
 	try
 	{
-		if (!PEM_write_bio_X509(pBIO, _pCert)) 
+		if (!PEM_write_bio_X509(pBIO, _pCert))
 			throw Poco::IOException("Failed to write certificate to stream");
 
 		char *pData;
@@ -178,7 +178,7 @@ void X509Certificate::save(const std::string& path) const
 	}
 	try
 	{
-		if (!PEM_write_bio_X509(pBIO, _pCert)) 
+		if (!PEM_write_bio_X509(pBIO, _pCert))
 			throw Poco::WriteFileException("Failed to write certificate to file", path);
 	}
 	catch (...)
@@ -243,7 +243,7 @@ std::string X509Certificate::subjectName(NID nid) const
 
 void X509Certificate::extractNames(std::string& cmnName, std::set<std::string>& domainNames) const
 {
-	domainNames.clear(); 
+	domainNames.clear();
 	if (STACK_OF(GENERAL_NAME)* names = static_cast<STACK_OF(GENERAL_NAME)*>(X509_get_ext_d2i(_pCert, NID_subject_alt_name, 0, 0)))
 	{
 		for (int i = 0; i < sk_GENERAL_NAME_num(names); ++i)
@@ -258,7 +258,7 @@ void X509Certificate::extractNames(std::string& cmnName, std::set<std::string>& 
 		}
 		GENERAL_NAMES_free(names);
 	}
- 
+
 	cmnName = commonName();
 	if (!cmnName.empty() && domainNames.empty())
 	{
@@ -275,13 +275,27 @@ Poco::DateTime X509Certificate::validFrom() const
 	return DateTimeParser::parse("%y%m%d%H%M%S", dateTime, tzd);
 }
 
-	
+
+std::string X509Certificate::validFromAsString() const
+{
+	ASN1_TIME* certTime = X509_get_notBefore(_pCert);
+	return reinterpret_cast<char*>(certTime->data);
+}
+
+
 Poco::DateTime X509Certificate::expiresOn() const
 {
 	ASN1_TIME* certTime = X509_get_notAfter(_pCert);
 	std::string dateTime(reinterpret_cast<char*>(certTime->data));
 	int tzd;
 	return DateTimeParser::parse("%y%m%d%H%M%S", dateTime, tzd);
+}
+
+
+std::string X509Certificate::expiresOnAsString() const
+{
+	ASN1_TIME* certTime = X509_get_notAfter(_pCert);
+	return reinterpret_cast<char*>(certTime->data);
 }
 
 
@@ -346,6 +360,22 @@ X509Certificate::List X509Certificate::readPEM(const std::string& pemFileName)
 	return caCertList;
 }
 
+std::string X509Certificate::publicKeyAlgorithm() const
+{
+    EVP_PKEY * pkey = X509_get_pubkey(_pCert);
+    if (!pkey)
+        return {};
+
+    int nid = EVP_PKEY_id(pkey);
+    EVP_PKEY_free(pkey);
+
+    if (nid == NID_undef)
+        return {};
+
+    char buf[128] = {0};
+    OBJ_obj2txt(buf, sizeof(buf), OBJ_nid2obj(nid), 0);
+    return std::string(buf);
+}
 
 void X509Certificate::writePEM(const std::string& pemFileName, const List& list)
 {

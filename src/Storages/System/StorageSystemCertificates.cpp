@@ -9,7 +9,9 @@
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
 #include <base/scope_guard.h>
+#include <Poco/DateTimeFormatter.h>
 #include <Poco/File.h>
+#include <Poco/Net/X509Certificate.h>
 #if USE_SSL
     #include <openssl/x509v3.h>
     #include "Poco/Net/SSLManager.h"
@@ -45,108 +47,18 @@ static std::unordered_set<std::string> parse_dir(const std::string & dir)
     return ret;
 }
 
-static void populateTable(const X509 * cert, MutableColumns & res_columns, const std::string & path, bool def)
+static void populateTable(const Poco::Crypto::X509Certificate & certificate, MutableColumns & res_columns, const std::string & path, bool def)
 {
-    BIO * b = BIO_new(BIO_s_mem());
-    SCOPE_EXIT(
-    {
-        BIO_free(b);
-    });
     size_t col = 0;
 
-    res_columns[col++]->insert(X509_get_version(cert) + 1);
-
-    {
-        char buf[1024] = {0};
-        const ASN1_INTEGER * sn = X509_get0_serialNumber(cert);
-        BIGNUM * bnsn = ASN1_INTEGER_to_BN(sn, nullptr);
-        SCOPE_EXIT(
-        {
-            BN_free(bnsn);
-        });
-        if (BN_print(b, bnsn) > 0 && BIO_read(b, buf, sizeof(buf)) > 0)
-            res_columns[col]->insert(buf);
-        else
-            res_columns[col]->insertDefault();
-    }
-    ++col;
-
-    {
-        const ASN1_BIT_STRING *sig = nullptr;
-        const X509_ALGOR *al = nullptr;
-        char buf[1024] = {0};
-        X509_get0_signature(&sig, &al, cert);
-        if (al)
-        {
-            OBJ_obj2txt(buf, sizeof(buf), al->algorithm, 0);
-            res_columns[col]->insert(buf);
-        }
-        else
-            res_columns[col]->insertDefault();
-    }
-    ++col;
-
-    char * issuer = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
-    if (issuer)
-    {
-        SCOPE_EXIT(
-        {
-            OPENSSL_free(issuer);
-        });
-        res_columns[col]->insert(issuer);
-    }
-    else
-        res_columns[col]->insertDefault();
-    ++col;
-
-    {
-        char buf[1024] = {0};
-        if (ASN1_TIME_print(b, X509_get_notBefore(cert)) && BIO_read(b, buf, sizeof(buf)) > 0)
-            res_columns[col]->insert(buf);
-        else
-            res_columns[col]->insertDefault();
-    }
-    ++col;
-
-    {
-        char buf[1024] = {0};
-        if (ASN1_TIME_print(b, X509_get_notAfter(cert)) && BIO_read(b, buf, sizeof(buf)) > 0)
-            res_columns[col]->insert(buf);
-        else
-            res_columns[col]->insertDefault();
-    }
-    ++col;
-
-    char * subject = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
-    if (subject)
-    {
-        SCOPE_EXIT(
-        {
-            OPENSSL_free(subject);
-        });
-        res_columns[col]->insert(subject);
-    }
-    else
-        res_columns[col]->insertDefault();
-    ++col;
-
-    if (X509_PUBKEY * pkey = X509_get_X509_PUBKEY(cert))
-    {
-        char buf[1024] = {0};
-        ASN1_OBJECT *ppkalg = nullptr;
-        const unsigned char *pk = nullptr;
-        int ppklen = 0;
-        X509_ALGOR *pa = nullptr;
-        if (X509_PUBKEY_get0_param(&ppkalg, &pk, &ppklen, &pa, pkey) &&
-            i2a_ASN1_OBJECT(b, ppkalg) > 0 && BIO_read(b, buf, sizeof(buf)) > 0)
-                res_columns[col]->insert(buf);
-        else
-            res_columns[col]->insertDefault();
-    }
-    else
-        res_columns[col]->insertDefault();
-    ++col;
-
+    res_columns[col++]->insert(certificate.version());
+    res_columns[col++]->insert(certificate.serialNumber());
+    res_columns[col++]->insert(certificate.signatureAlgorithm());
+    res_columns[col++]->insert(certificate.issuerName());
+    res_columns[col++]->insert(certificate.validFromAsString());
+    res_columns[col++]->insert(certificate.expiresOnAsString());
+    res_columns[col++]->insert(certificate.subjectName());
+    res_columns[col++]->insert(certificate.publicKeyAlgorithm());
     res_columns[col++]->insert(path);
     res_columns[col++]->insert(def);
 }
@@ -164,7 +76,7 @@ static void enumCertificates(const std::string & dir, bool def, MutableColumns &
             continue;
 
         Poco::Crypto::X509Certificate cert(dir_entry.path());
-        populateTable(cert.certificate(), res_columns, dir_entry.path(), def);
+        populateTable(cert, res_columns, dir_entry.path(), def);
     }
 }
 
@@ -190,7 +102,7 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
             {
                 auto certs = Poco::Crypto::X509Certificate::readPEM(afile.path());
                 for (const auto & cert : certs)
-                    populateTable(cert.certificate(), res_columns, afile.path(), false);
+                    populateTable(cert, res_columns, afile.path(), false);
             }
         }
     }
@@ -209,7 +121,7 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
         {
             auto certs = Poco::Crypto::X509Certificate::readPEM(ca_paths.caDefaultFile);
             for (const auto & cert : certs)
-                populateTable(cert.certificate(), res_columns, ca_paths.caDefaultFile, true);
+                populateTable(cert, res_columns, ca_paths.caDefaultFile, true);
         }
     }
 #endif
