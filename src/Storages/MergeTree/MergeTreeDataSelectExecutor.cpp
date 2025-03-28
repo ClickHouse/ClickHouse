@@ -678,7 +678,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::atomic<size_t> sum_parts_pk = 0;
 
     RangesInDataParts parts_with_ranges(parts.size());
-    std::vector<bool> skip_index_used_in_part(parts.size());
+    std::vector<bool> skip_index_used_in_part(parts.size(), false);
 
     /// Let's find what range to read from each part.
     {
