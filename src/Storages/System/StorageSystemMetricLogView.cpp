@@ -346,10 +346,11 @@ CustomMetricLogStep::CustomMetricLogStep(
     Block input_header_, Block output_header_, size_t max_block_size_)
      : ITransformingStep(
          input_header_, output_header_,
-         ITransformingStep::Traits{
+         ITransformingStep::Traits
+         {
             .data_stream_traits = ITransformingStep::DataStreamTraits{.returns_single_stream = true, .preserves_number_of_streams = false, .preserves_sorting = true},
             .transform_traits = ITransformingStep::TransformTraits{.preserves_number_of_rows = false}
-     })
+         })
     , max_block_size(max_block_size_)
 {
 }
