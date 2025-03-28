@@ -31,8 +31,8 @@ function run_test_case
     done
 }
 
-run_query "create table t_left (id UInt64, x UInt64) order by id"
-run_query "create table t_right (id UInt64, y UInt64) order by id"
+run_query "create table t_left (id UInt64, x UInt64) order by id settings min_bytes_for_wide_part = 0"
+run_query "create table t_right (id UInt64, y UInt64) order by id settings min_bytes_for_wide_part = 0"
 run_query "insert into t_left select number, number * 10 from numbers(1e5)"
 run_query "insert into t_right select number, number % 5 from numbers(1e4)"
 
