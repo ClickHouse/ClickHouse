@@ -81,6 +81,7 @@ public:
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
+        const String & bind_host_,
         Priority config_priority_ = Priority{1})
         : IConnectionPool(host_, port_, config_priority_)
         , Base(max_connections_, getLogger("ConnectionPool (" + host_ + ":" + toString(port_) + ")"))
@@ -95,6 +96,7 @@ public:
         , client_name(client_name_)
         , compression(compression_)
         , secure(secure_)
+        , bind_host(bind_host_)
     {
     }
 
@@ -124,7 +126,7 @@ protected:
             proto_send_chunked, proto_recv_chunked,
             SSHKey(), /*jwt*/ "", quota_key,
             cluster, cluster_secret,
-            client_name, compression, secure);
+            client_name, compression, secure, bind_host);
     }
 
 private:
@@ -142,6 +144,7 @@ private:
     String client_name;
     Protocol::Compression compression; /// Whether to compress data when interacting with the server.
     Protocol::Secure secure;           /// Whether to encrypt data when interacting with the server.
+    String bind_host;
 };
 
 /**
@@ -166,6 +169,7 @@ public:
         String client_name;
         Protocol::Compression compression;
         Protocol::Secure secure;
+        String bind_host;
         Priority priority;
     };
 
@@ -191,6 +195,7 @@ public:
         String client_name,
         Protocol::Compression compression,
         Protocol::Secure secure,
+        String bind_host,
         Priority priority);
 private:
     mutable std::mutex mutex;
@@ -205,7 +210,7 @@ inline bool operator==(const ConnectionPoolFactory::Key & lhs, const ConnectionP
         && lhs.proto_send_chunked == rhs.proto_send_chunked && lhs.proto_recv_chunked == rhs.proto_recv_chunked
         && lhs.quota_key == rhs.quota_key
         && lhs.cluster == rhs.cluster && lhs.cluster_secret == rhs.cluster_secret && lhs.client_name == rhs.client_name
-        && lhs.compression == rhs.compression && lhs.secure == rhs.secure && lhs.priority == rhs.priority;
+        && lhs.compression == rhs.compression && lhs.secure == rhs.secure && lhs.bind_host == rhs.bind_host && lhs.priority == rhs.priority;
 }
 
 }

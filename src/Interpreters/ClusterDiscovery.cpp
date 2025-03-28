@@ -346,6 +346,7 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure,
+        /* bind_host= */ "",
         /* priority= */ Priority{1},
         /* cluster_name= */ cluster_info.name,
         /* cluster_secret= */ cluster_info.cluster_secret};
