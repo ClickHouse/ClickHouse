@@ -24,18 +24,13 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_DRIVER;
 }
 
-UserDefinedDriverFunctionFactory::UserDefinedDriverFunctionFactory()
-{
-    registerDrivers();
-}
-
 UserDefinedDriverFunctionFactory & UserDefinedDriverFunctionFactory::instance()
 {
     static UserDefinedDriverFunctionFactory result;
     return result;
 }
 
-void UserDefinedDriverFunctionFactory::checkCanBeRegistered(const ContextPtr & context, const String & function_name, const ASTPtr & query) const
+void UserDefinedDriverFunctionFactory::checkCanBeRegistered(const String & function_name, const ASTPtr & query) const
 {
     if (FunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", function_name);
@@ -46,13 +41,13 @@ void UserDefinedDriverFunctionFactory::checkCanBeRegistered(const ContextPtr & c
     if (UserDefinedSQLFunctionFactory::instance().has(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined SQL function '{}' already exists", function_name);
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
+    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, global_context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
 
     checkDriverExists(query);
 }
 
-void UserDefinedDriverFunctionFactory::checkCanBeUnregistered(const ContextPtr & context, const String & function_name)
+void UserDefinedDriverFunctionFactory::checkCanBeUnregistered(const String & function_name)
 {
     if (FunctionFactory::instance().hasNameOrAlias(function_name) ||
         AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
@@ -61,7 +56,7 @@ void UserDefinedDriverFunctionFactory::checkCanBeUnregistered(const ContextPtr &
     if (UserDefinedSQLFunctionFactory::instance().has(function_name))
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined SQL function '{}'", function_name);
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
+    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, global_context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined executable function '{}'", function_name);
 }
 
@@ -70,23 +65,13 @@ void UserDefinedDriverFunctionFactory::checkDriverExists(const ASTPtr & query) c
     auto create_driver_function = query->as<ASTCreateDriverFunctionQuery &>();
     auto engine_name = create_driver_function.getEngineName();
 
-    if (drivers.find(engine_name) == drivers.end())
+    if (!global_context->getUserDefinedDriversStorage().has(engine_name))
         throw Exception(ErrorCodes::UNSUPPORTED_DRIVER, "Cannot find a driver with engine name '{}'", engine_name);
-}
-
-void UserDefinedDriverFunctionFactory::registerDrivers()
-{
-    // TODO: code to cmd
-    DriverConfiguration docker_python3_tabsep = {"DockerPy3:TabSep", "TabSeparated",
-        "docker run -i --rm python:3 /bin/bash -c \"echo \"TODO\" >> tmp.py; python ./tmp.py\""};
-
-    drivers["DockerPy3"] = docker_python3_tabsep;
-    drivers["DockerPy3:TabSep"] = docker_python3_tabsep;
 }
 
 bool UserDefinedDriverFunctionFactory::registerFunction(const ContextMutablePtr & context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
 {
-    checkCanBeRegistered(context, function_name, create_function_query);
+    checkCanBeRegistered(function_name, create_function_query);
 
     try
     {
@@ -113,7 +98,7 @@ bool UserDefinedDriverFunctionFactory::registerFunction(const ContextMutablePtr 
 
 bool UserDefinedDriverFunctionFactory::unregisterFunction(const ContextMutablePtr & context, const String & function_name, bool throw_if_not_exists)
 {
-    checkCanBeUnregistered(context, function_name);
+    checkCanBeUnregistered(function_name);
 
     try
     {
@@ -138,12 +123,27 @@ bool UserDefinedDriverFunctionFactory::unregisterFunction(const ContextMutablePt
 FunctionOverloadResolverPtr UserDefinedDriverFunctionFactory::get(const String & function_name) const
 {
     auto ptr = global_context->getUserDefinedSQLObjectsStorage().get(function_name, UserDefinedSQLObjectType::DriverFunction);
+    auto driver_name = ptr->as<ASTCreateDriverFunctionQuery &>().getEngineName();
+    auto driver = global_context->getUserDefinedDriversStorage().get(driver_name);
+
+    // TODO
     return nullptr;
 }
 
 FunctionOverloadResolverPtr UserDefinedDriverFunctionFactory::tryGet(const String & function_name) const
 {
     auto ptr = global_context->getUserDefinedSQLObjectsStorage().tryGet(function_name, UserDefinedSQLObjectType::DriverFunction);
+    if (!ptr) {
+        return nullptr;
+    }
+
+    auto driver_name = ptr->as<ASTCreateDriverFunctionQuery &>().getEngineName();
+    auto driver = global_context->getUserDefinedDriversStorage().tryGet(driver_name);
+    if (!driver) {
+        return nullptr;
+    }
+
+    // TODO
     return nullptr;
 }
 

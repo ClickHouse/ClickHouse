@@ -57,7 +57,7 @@ public:
     /// Immediately reloads a specified object only.
     virtual void reloadObject(UserDefinedSQLObjectType object_type, const String & object_name) = 0;
 
-    /// Stores an object (must be called only by UserDefinedSQLFunctionFactory::registerFunction).
+    /// Stores an object (must be called only by UserDefinedSQLFunctionFactory or UserDefinedDriverFunctionFactory in the registerFunction method).
     virtual bool storeObject(
         const ContextPtr & current_context,
         UserDefinedSQLObjectType object_type,
@@ -67,7 +67,7 @@ public:
         bool replace_if_exists,
         const Settings & settings) = 0;
 
-    /// Removes an object (must be called only by UserDefinedSQLFunctionFactory::unregisterFunction).
+    /// Removes an object (must be called only by UserDefinedSQLFunctionFactory or UserDefinedDriverFunctionFactory in the unregisterFunction method).
     virtual bool removeObject(
         const ContextPtr & current_context,
         UserDefinedSQLObjectType object_type,

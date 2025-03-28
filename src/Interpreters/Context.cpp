@@ -81,6 +81,8 @@
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/IUserDefinedDriversStorage.h>
+#include <Functions/UserDefined/createUserDefinedDriversStorage.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
@@ -401,6 +403,9 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag user_defined_sql_objects_storage_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
+
+    mutable OnceFlag user_defined_drivers_storage_initialized;
+    mutable std::unique_ptr<IUserDefinedDriversStorage> user_defined_drivers_storage;
 
     mutable OnceFlag workload_entity_storage_initialized;
     mutable std::unique_ptr<IWorkloadEntityStorage> workload_entity_storage;
@@ -784,6 +789,7 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<ExternalDictionariesLoader> delete_external_dictionaries_loader;
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
         std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
+        std::unique_ptr<IUserDefinedDriversStorage> delete_user_defined_drivers_storage;
         std::unique_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
         std::unique_ptr<BackgroundSchedulePool> delete_buffer_flush_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_schedule_pool;
@@ -880,6 +886,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_external_dictionaries_loader = std::move(external_dictionaries_loader);
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
             delete_user_defined_sql_objects_storage = std::move(user_defined_sql_objects_storage);
+            delete_user_defined_drivers_storage = std::move(user_defined_drivers_storage);
             delete_workload_entity_storage = std::move(workload_entity_storage);
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
@@ -899,6 +906,7 @@ struct ContextSharedPart : boost::noncopyable
         delete_external_dictionaries_loader.reset();
         delete_external_user_defined_executable_functions_loader.reset();
         delete_user_defined_sql_objects_storage.reset();
+        delete_user_defined_drivers_storage.reset();
         delete_workload_entity_storage.reset();
         delete_ddl_worker.reset();
         delete_buffer_flush_schedule_pool.reset();
@@ -3202,6 +3210,22 @@ void Context::setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObj
 {
     std::lock_guard lock(shared->mutex);
     shared->user_defined_sql_objects_storage = std::move(storage);
+}
+
+const IUserDefinedDriversStorage & Context::getUserDefinedDriversStorage() const
+{
+    callOnce(shared->user_defined_drivers_storage_initialized, [&] {
+        shared->user_defined_drivers_storage = createUserDefinedDriversStorage();
+    });
+
+    SharedLockGuard lock(shared->mutex);
+    return *shared->user_defined_drivers_storage;
+}
+
+void Context::setUserDefinedDriversStorage(std::unique_ptr<IUserDefinedDriversStorage> storage)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->user_defined_drivers_storage = std::move(storage);
 }
 
 IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
