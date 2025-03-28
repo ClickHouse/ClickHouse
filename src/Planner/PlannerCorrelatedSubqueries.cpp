@@ -202,7 +202,7 @@ void buildExistsResultExpression(
     ActionsDAG dag(query_plan.getCurrentHeader().getNamesAndTypesList());
     auto result_type = std::make_shared<DataTypeUInt8>();
     auto column = result_type->createColumnConst(1, 1);
-    const auto * exists_result = &dag.addColumn(ColumnWithTypeAndName(column, result_type, correlated_subquery.action_node_name));
+    const auto * exists_result = &dag.materializeNode(dag.addColumn(ColumnWithTypeAndName(column, result_type, correlated_subquery.action_node_name)));
 
     if (project_only_correlated_columns)
     {
@@ -210,7 +210,9 @@ void buildExistsResultExpression(
         new_outputs.reserve(correlated_subquery.correlated_column_identifiers.size() + 1);
 
         for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
-            new_outputs.push_back(dag.tryFindInOutputs(column_name));
+        {
+            new_outputs.push_back(&dag.addAlias(dag.findInOutputs(column_name), fmt::format("{}.{}", correlated_subquery.action_node_name, column_name)));
+        }
         new_outputs.push_back(exists_result);
 
         dag.getOutputs() = std::move(new_outputs);
@@ -289,7 +291,7 @@ QueryPlan buildLogicalJoin(
     for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
     {
         const auto * left_node = &join_expression_actions.left_pre_join_actions->findInOutputs(column_name);
-        const auto * right_node = &join_expression_actions.right_pre_join_actions->findInOutputs(column_name);
+        const auto * right_node = &join_expression_actions.right_pre_join_actions->findInOutputs(fmt::format("{}.{}", correlated_subquery.action_node_name, column_name));
 
         JoinPredicate predicate{
             .left_node = JoinActionRef(left_node, join_expression_actions.left_pre_join_actions.get()),
