@@ -122,7 +122,8 @@ bool ParserDescribeSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
     else if (ASTPtr explain_node; explain.parse(pos, explain_node, expected))
     {
-
+        /// TODO: Add support for EXPLAIN
+        return false;
     }
     else
     {
