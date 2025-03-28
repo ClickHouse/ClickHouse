@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Common/logger_useful.h>
+#include <fmt/ranges.h>
 #include <Processors/ISimpleTransform.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -74,7 +75,7 @@ constexpr std::string_view PROFILE_EVENT_PREFIX = "ProfileEvent_";
 constexpr std::string_view CURRENT_METRIC_PREFIX = "CurrentMetric_";
 
 
-std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery()
+std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source_storage_id)
 {
     std::shared_ptr<ASTSelectWithUnionQuery> result = std::make_shared<ASTSelectWithUnionQuery>();
     std::shared_ptr<ASTSelectQuery> select_query = std::make_shared<ASTSelectQuery>();
@@ -88,7 +89,7 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery()
     auto tables = std::make_shared<ASTTablesInSelectQuery>();
     auto table = std::make_shared<ASTTablesInSelectQueryElement>();
     auto table_expression = std::make_shared<ASTTableExpression>();
-    auto database_and_table_name = std::make_shared<ASTTableIdentifier>("system", "transposed_metric_log");
+    auto database_and_table_name = std::make_shared<ASTTableIdentifier>(source_storage_id);
     table_expression->database_and_table_name = database_and_table_name;
     table->table_expression = table_expression;
     tables->children.emplace_back(table);
@@ -113,10 +114,10 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery()
 }
 
 
-ASTCreateQuery getCreateQuery()
+ASTCreateQuery getCreateQuery(const StorageID & source_storage_id)
 {
     ASTCreateQuery query;
-    query.children.emplace_back(getSelectQuery());
+    query.children.emplace_back(getSelectQuery(source_storage_id));
     query.select = query.children[0]->as<ASTSelectWithUnionQuery>();
     return query;
 }
@@ -135,7 +136,10 @@ ColumnsDescription getColumnsDescription()
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
         result.push_back(NameAndTypePair(std::string{CURRENT_METRIC_PREFIX} + CurrentMetrics::getName(CurrentMetrics::Metric(i)), std::make_shared<DataTypeInt64>()));
 
-    return ColumnsDescription{result};
+    NamesAndAliases aliases;
+    aliases.push_back(NameAndAliasPair("event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "toDateTime64(event_time, 6)"));
+
+    return ColumnsDescription{result, aliases};
 }
 
 ColumnsDescription getColumnsDescriptionForView()
@@ -152,9 +156,9 @@ ColumnsDescription getColumnsDescriptionForView()
 
 }
 
-StorageSystemMetricLogView::StorageSystemMetricLogView(const StorageID & table_id)
+StorageSystemMetricLogView::StorageSystemMetricLogView(const StorageID & table_id, const StorageID & source_storage_id)
     : IStorage(table_id)
-    , internal_view(table_id, getCreateQuery(), getColumnsDescriptionForView(), "")
+    , internal_view(table_id, getCreateQuery(source_storage_id), getColumnsDescriptionForView(), "")
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(getColumnsDescription());
@@ -360,6 +364,9 @@ void StorageSystemMetricLogView::addFilterByMetricNameStep(QueryPlan & query_pla
         if (column_name.starts_with(PROFILE_EVENT_PREFIX) || column_name.starts_with(CURRENT_METRIC_PREFIX))
             column_for_set->insertData(column_name.data(), column_name.size());
     }
+
+    if (column_for_set->size() == 0)
+        return;
 
     ColumnWithTypeAndName set_column(std::move(column_for_set), std::make_shared<DataTypeString>(), "__set");
     ColumnsWithTypeAndName set_columns;

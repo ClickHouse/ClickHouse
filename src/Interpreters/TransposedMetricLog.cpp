@@ -3,6 +3,11 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
+#include <Databases/IDatabase.h>
+#include <Interpreters/Context.h>
+#include <Storages/IStorage.h>
+#include <Storages/System/StorageSystemMetricLogView.h>
+#include <Storages/System/attachSystemTablesImpl.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 #include <DataTypes/DataTypeDate.h>
@@ -12,11 +17,22 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/parseQuery.h>
+#include <Common/logger_useful.h>
+
+#include <Interpreters/InterpreterRenameQuery.h>
+#include <Parsers/ASTRenameQuery.h>
 
 
 namespace DB
 {
+
+namespace ActionLocks
+{
+    extern const StorageActionBlockType PartsMerge;
+}
+
 void TransposedMetricLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_idx = 0;
@@ -24,6 +40,7 @@ void TransposedMetricLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(getFQDNOrHostName());
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[column_idx++]->insert(event_time);
+    columns[column_idx++]->insert(event_time_microseconds);
     columns[column_idx++]->insert(metric_name);
     columns[column_idx++]->insert(value);
 }
@@ -53,6 +70,12 @@ ColumnsDescription TransposedMetricLogElement::getColumnsDescription()
             "Event time."
         },
         {
+            "event_time_microseconds",
+            std::make_shared<DataTypeDateTime64>(6),
+            parseQuery(codec_parser, "(DoubleDelta, ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Event time with microseconds resolution."
+        },
+        {
             "metric",
             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
             parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
@@ -74,8 +97,9 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
     static std::vector<ProfileEvents::Count> prev_profile_events(ProfileEvents::end());
 
     TransposedMetricLogElement elem;
-    elem.event_time = std::chrono::system_clock::to_time_t(current_time);
     elem.event_date = DateLUT::instance().toDayNum(elem.event_time);
+    elem.event_time = std::chrono::system_clock::to_time_t(current_time);
+    elem.event_time_microseconds = timeInMicroseconds(current_time);
 
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
@@ -103,6 +127,66 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
         elem.metric_name += CurrentMetrics::getName(CurrentMetrics::Metric(i));
         elem.value = CurrentMetrics::values[i];
         this->add(std::move(elem));
+    }
+}
+
+
+void TransposedMetricLog::prepareTable()
+{
+    SystemLog<TransposedMetricLogElement>::prepareTable();
+
+    if (!view_name.empty())
+    {
+        auto storage_id = getTableID();
+        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
+        if (database)
+        {
+            auto table = database->tryGetTable(view_name, getContext());
+            if (table && table->getName() != "SystemMetricLogView")
+            {
+                /// Rename the existing table.
+                int suffix = 0;
+                while (DatabaseCatalog::instance().isTableExist(
+                    {database->getDatabaseName(), view_name + "_" + toString(suffix)}, getContext()))
+                    ++suffix;
+
+                ASTRenameQuery::Element elem
+                {
+                    ASTRenameQuery::Table
+                    {
+                        std::make_shared<ASTIdentifier>(database->getDatabaseName()),
+                        std::make_shared<ASTIdentifier>(view_name)
+                    },
+                    ASTRenameQuery::Table
+                    {
+                        std::make_shared<ASTIdentifier>(database->getDatabaseName()),
+                        std::make_shared<ASTIdentifier>(view_name + "_" + toString(suffix))
+                    }
+                };
+
+                auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
+
+                ActionLock merges_lock;
+                if (DatabaseCatalog::instance().getDatabase(database->getDatabaseName())->getUUID() == UUIDHelpers::Nil)
+                    merges_lock = table->getActionLock(ActionLocks::PartsMerge);
+
+                auto query_context = Context::createCopy(context);
+                query_context->makeQueryContext();
+                /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
+                query_context->setSetting("check_table_dependencies", Field{false});
+                query_context->setSetting("check_referential_table_dependencies", Field{false});
+
+                InterpreterRenameQuery(rename, query_context).execute();
+
+                attachNoDescription<StorageSystemMetricLogView>(getContext(), *database, "metric_log", "Metric log view", storage_id);
+            }
+            else if (!table)
+            {
+                attachNoDescription<StorageSystemMetricLogView>(getContext(), *database, "metric_log", "Metric log view", storage_id);
+            }
+        }
+
+
     }
 }
 

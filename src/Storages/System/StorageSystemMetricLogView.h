@@ -33,11 +33,13 @@ public:
 class StorageSystemMetricLogView final : public IStorage
 {
 public:
-    explicit StorageSystemMetricLogView(const StorageID & table_id_);
+    explicit StorageSystemMetricLogView(const StorageID & table_id_, const StorageID & source_storage_id);
 
     std::string getName() const override { return "SystemMetricLogView"; }
 
     bool isSystemStorage() const override { return true; }
+
+    bool isView() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
