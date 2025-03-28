@@ -1839,7 +1839,7 @@ def test_filesystem_cache(started_cluster, storage_type):
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
-        f"SELECT * FROM {TABLE_NAME}",
+        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
         query_id=query_id,
     )
 
@@ -1865,7 +1865,7 @@ def test_filesystem_cache(started_cluster, storage_type):
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
-        f"SELECT * FROM {TABLE_NAME}",
+        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
         query_id=query_id,
     )
 
@@ -1877,10 +1877,10 @@ def test_filesystem_cache(started_cluster, storage_type):
         )
     )
 
-    #assert (
-    #    read_from_cache_second_select
-    #    == read_from_cache_first_select + written_to_cache_first_select
-    #)
+    assert (
+        read_from_cache_second_select
+        == read_from_cache_first_select + written_to_cache_first_select
+    )
 
     assert 0 == int(
         instance.query(
