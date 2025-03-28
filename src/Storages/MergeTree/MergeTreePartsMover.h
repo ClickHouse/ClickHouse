@@ -90,6 +90,10 @@ protected:
     bool hasActivePartToSwap(TemporaryClonedPart & cloned_part, DataPartsLock & part_lock) const;
     void swapActivePart(TemporaryClonedPart & cloned_part, DataPartsLock & part_lock) const;
 
+    void buildClonedPart(
+        TemporaryClonedPart & cloned_part, MutableDataPartStoragePtr cloned_part_storage,
+        const MergeTreeMoveEntry & moving_part, bool preserve_blobs = false) const;
+
     MergeTreeData * data;
     LoggerPtr log;
 };

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include "Common/ActionBlocker.h"
 #include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -220,6 +221,28 @@ bool MergeTreePartsMover::selectPartsForMove(
     return false;
 }
 
+void MergeTreePartsMover::buildClonedPart(TemporaryClonedPart & cloned_part, MutableDataPartStoragePtr cloned_part_storage, const MergeTreeMoveEntry & moving_part, bool preserve_blobs) const
+{
+    MergeTreeDataPartBuilder builder(*data, moving_part.part->name, cloned_part_storage, getReadSettings());
+    cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
+    LOG_TRACE(log, "Part {} was cloned to {}", moving_part.part->name, cloned_part.part->getDataPartStorage().getFullPath());
+
+    cloned_part.part->is_temp = false;
+    if (data->allowRemoveStaleMovingParts())
+    {
+        cloned_part.part->is_temp = true;
+        /// Setting it in case connection to zookeeper is lost while moving
+        /// Otherwise part might be stuck in the moving directory due to the KEEPER_EXCEPTION in part's destructor
+        if (preserve_blobs)
+            cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::PRESERVE_BLOBS;
+        else
+            cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
+    }
+    cloned_part.part->loadColumnsChecksumsIndexes(true, true);
+    cloned_part.part->loadVersionMetadata();
+    cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
+}
+
 MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const
 {
     auto cancellation_hook = [&moves_blocker_ = moves_blocker]()
@@ -229,7 +252,6 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     };
     cancellation_hook();
 
-    auto settings = data->getSettings();
     auto part = moving_part.part;
     auto disk = moving_part.reserved_space->getDisk();
     LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, part->getDataPartStorage().getDiskName(), disk->getName());
@@ -239,21 +261,8 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     MutableDataPartStoragePtr cloned_part_storage;
     cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME, read_settings, write_settings, cancellation_hook);
 
-    MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage, getReadSettings());
-    cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
-    LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
+    buildClonedPart(cloned_part, cloned_part_storage, moving_part);
 
-    cloned_part.part->is_temp = false;
-    if (data->allowRemoveStaleMovingParts())
-    {
-        cloned_part.part->is_temp = true;
-        /// Setting it in case connection to zookeeper is lost while moving
-        /// Otherwise part might be stuck in the moving directory due to the KEEPER_EXCEPTION in part's destructor
-        cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
-    }
-    cloned_part.part->loadColumnsChecksumsIndexes(true, true);
-    cloned_part.part->loadVersionMetadata();
-    cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
     return cloned_part;
 }
 
@@ -317,51 +326,10 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreeZeroCopyPartsMover::clonePart(
         cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME, read_settings, write_settings, cancellation_hook);
     }
 
-    MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage, getReadSettings());
-    cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
-    LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
+    buildClonedPart(cloned_part, cloned_part_storage, moving_part, preserve_blobs);
 
-    cloned_part.part->is_temp = false;
-    if (data->allowRemoveStaleMovingParts())
-    {
-        cloned_part.part->is_temp = true;
-        /// Setting it in case connection to zookeeper is lost while moving
-        /// Otherwise part might be stuck in the moving directory due to the KEEPER_EXCEPTION in part's destructor
-        if (preserve_blobs)
-            cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::PRESERVE_BLOBS;
-        else
-            cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
-    }
-    cloned_part.part->loadColumnsChecksumsIndexes(true, true);
-    cloned_part.part->loadVersionMetadata();
-    cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
     return cloned_part;
-
-    //return buildClonedPart(cloned_part, preserve_blobs);
 }
-
-// TemporaryClonedPart MergeTreePartsMover::buildClonedPart(TemporaryClonedPart cloned_part, bool preserve_blobs)
-// {
-//     MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage, getReadSettings());
-//     cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
-//     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
-
-//     cloned_part.part->is_temp = false;
-//     if (data->allowRemoveStaleMovingParts())
-//     {
-//         cloned_part.part->is_temp = true;
-//         /// Setting it in case connection to zookeeper is lost while moving
-//         /// Otherwise part might be stuck in the moving directory due to the KEEPER_EXCEPTION in part's destructor
-//         if (preserve_blobs)
-//             cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::PRESERVE_BLOBS;
-//         else
-//             cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
-//     }
-//     cloned_part.part->loadColumnsChecksumsIndexes(true, true);
-//     cloned_part.part->loadVersionMetadata();
-//     cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
-//     return cloned_part;
-// }
 
 void MergeTreePartsMover::renameClonedPart(IMergeTreeDataPart & part) const
 try
