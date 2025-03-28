@@ -988,18 +988,14 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
     {
         LOG_INFO(log, "Loading {} mutation entries: {} - {}", toString(entries_to_load.size()), entries_to_load.front(), entries_to_load.back());
 
-        std::vector<String> entry_paths;
-        entry_paths.reserve(entries_to_load.size());
-
+        std::vector<std::future<Coordination::GetResponse>> futures;
         for (const String & entry : entries_to_load)
-            entry_paths.emplace_back(fs::path(zookeeper_path) / "mutations" / entry);
-
-        auto entries = zookeeper->tryGet(entry_paths);
+            futures.emplace_back(zookeeper->asyncTryGet(fs::path(zookeeper_path) / "mutations" / entry));
 
         std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
         for (size_t i = 0; i < entries_to_load.size(); ++i)
         {
-            const auto & maybe_response = entries[i];
+            auto maybe_response = futures[i].get();
             if (maybe_response.error != Coordination::Error::ZOK)
             {
                 assert(maybe_response.error == Coordination::Error::ZNONODE);

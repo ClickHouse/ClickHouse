@@ -17,6 +17,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 #include <Common/ErrorCodes.h>
 
@@ -86,15 +87,6 @@ public:
         if (!current_metadata || !current_metadata->supportsPartitionPruning())
             return;
         BaseStorageConfiguration::setPaths(current_metadata->makePartitionPruning(filter_dag));
-    }
-
-
-    std::optional<size_t> totalRows() override
-    {
-        if (!current_metadata)
-            return {};
-
-        return current_metadata->totalRows();
     }
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override

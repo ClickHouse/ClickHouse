@@ -13,7 +13,7 @@ Example for customizing setting `max_suspicious_broken_parts`:
 
 Configure the default for all `MergeTree` tables in the server configuration file:
 
-```text
+``` text
 <merge_tree>
     <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 </merge_tree>
@@ -21,7 +21,7 @@ Configure the default for all `MergeTree` tables in the server configuration fil
 
 Set for a particular table:
 
-```sql
+``` sql
 CREATE TABLE tab
 (
     `A` Int64
@@ -709,7 +709,7 @@ Possible values:
 
 Default value: -1 (unlimited).
 
-You can also specify a query complexity setting [max_partitions_to_read](/operations/settings/settings#max_partitions_to_read) at a query / session / profile level.
+You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max-partitions-to-read) at a query / session / profile level.
 
 ## min_age_to_force_merge_seconds {#min_age_to_force_merge_seconds}
 
@@ -852,7 +852,7 @@ Default value: `0` (no limit).
 
 **Example**
 
-```xml
+``` xml
 <max_concurrent_queries>50</max_concurrent_queries>
 ```
 
@@ -869,7 +869,7 @@ Default value: `0` (limit never applied).
 
 **Example**
 
-```xml
+``` xml
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 

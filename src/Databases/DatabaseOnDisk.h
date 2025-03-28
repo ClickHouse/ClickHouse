@@ -12,8 +12,6 @@ namespace DB
 {
 
 class Context;
-struct AlterCommand;
-
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
@@ -80,8 +78,6 @@ public:
     void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const TSA_REQUIRES(mutex);
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
-
-    void alterDatabaseComment(const AlterCommand & alter_command) override;
 
 protected:
     static constexpr const char * create_suffix = ".tmp";

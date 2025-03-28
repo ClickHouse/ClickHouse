@@ -57,8 +57,7 @@ public:
         const NamesAndTypesList & virtual_columns,
         ObjectInfos * read_keys,
         std::function<void(FileProgress)> file_progress_callback = {},
-        bool ignore_archive_globs = false,
-        bool skip_object_metadata = false);
+        bool ignore_archive_globs = false);
 
     static std::string getUniqueStoragePathIdentifier(
         const Configuration & configuration,
@@ -221,7 +220,6 @@ public:
         const NamesAndTypesList & virtual_columns_,
         ObjectInfos * read_keys_,
         bool ignore_non_existent_files_,
-        bool skip_object_metadata_,
         std::function<void(FileProgress)> file_progress_callback = {});
 
     ~KeysIterator() override = default;
@@ -238,7 +236,6 @@ private:
     const std::vector<String> keys;
     std::atomic<size_t> index = 0;
     bool ignore_non_existent_files;
-    bool skip_object_metadata;
 };
 
 /*

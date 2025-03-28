@@ -1126,7 +1126,7 @@ static const auto identifier_lambda = [](std::pair<std::string, ASTPtr> & p)
 {
     /// No query parameters identifiers at this moment
     const auto * id = typeid_cast<ASTIdentifier *>(p.second.get());
-    return id && !id->name_parts.empty() && !id->isParam();
+    return id && !id->name_parts.empty();
 };
 
 ASTPtr QueryFuzzer::generatePredicate()

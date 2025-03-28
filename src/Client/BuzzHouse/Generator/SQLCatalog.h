@@ -253,7 +253,7 @@ public:
     bool supportsFinal() const
     {
         return (teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
-            || isBufferEngine() || isDistributedEngine();
+            || this->isBufferEngine();
     }
 
     bool hasSignColumn() const
@@ -262,15 +262,6 @@ public:
     }
 
     bool hasVersionColumn() const { return teng == TableEngineValues::VersionedCollapsingMergeTree; }
-
-    void setName(ExprSchemaTable * est, const bool setdbname) const
-    {
-        if (db || setdbname)
-        {
-            est->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
-        }
-        est->mutable_table()->set_table("t" + std::to_string(tname));
-    }
 };
 
 struct SQLView : SQLBase
@@ -279,17 +270,6 @@ public:
     bool is_materialized = false, is_refreshable = false, has_with_cols = false;
     uint32_t staged_ncols = 0;
     std::unordered_set<uint32_t> cols;
-
-    void setName(ExprSchemaTable * est, const bool setdbname) const
-    {
-        if (db || setdbname)
-        {
-            est->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
-        }
-        est->mutable_table()->set_table("v" + std::to_string(tname));
-    }
-
-    bool supportsFinal() const { return !this->is_materialized; }
 };
 
 struct SQLFunction

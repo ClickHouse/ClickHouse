@@ -12,24 +12,17 @@ from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.s3_queue_common import (
-    run_query,
-    random_str,
-    generate_random_files,
-    put_s3_file_content,
-    put_azure_file_content,
-    create_table,
-    create_mv,
-    generate_random_string,
-)
+from helpers.s3_queue_common import run_query, random_str, generate_random_files, put_s3_file_content, put_azure_file_content, create_table, create_mv, generate_random_string, add_instances
 
 AVAILABLE_MODES = ["unordered", "ordered"]
-
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
     instance = started_cluster.instances["instance"]
+    instance_2 = started_cluster.instances["instance2"]
+
     instance.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
+    instance_2.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
 
     minio = started_cluster.minio_client
     objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
@@ -53,18 +46,7 @@ def s3_queue_setup_teardown(started_cluster):
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance(
-            "instance",
-            user_configs=["configs/users.xml"],
-            with_minio=True,
-            with_azurite=True,
-            with_zookeeper=True,
-            main_configs=[
-                "configs/zookeeper.xml",
-                "configs/s3queue_log.xml",
-            ],
-            stay_alive=True,
-        )
+        add_instances(cluster)
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -410,29 +392,27 @@ def test_streaming_to_view(started_cluster, mode):
 def test_streaming_to_many_views(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"streaming_to_many_views_{mode}"
+    dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
 
-    create_table(
-        started_cluster,
-        node,
-        table_name,
-        mode,
-        files_path,
-        additional_settings={
-            "keeper_path": keeper_path,
-            "polling_min_timeout_ms": 100,
-            "polling_max_timeout_ms": 100,
-            "polling_backoff_ms": 0,
-        },
-    )
-
     for i in range(10):
-        base_name = f"{table_name}_{i + 1}"
-        mv_table_name = f"{base_name}_mv"
-        dst_table_name = f"{base_name}_dst"
-        create_mv(node, table_name, dst_table_name, mv_name = mv_table_name)
+        table = f"{table_name}_{i + 1}"
+        create_table(
+            started_cluster,
+            node,
+            table,
+            mode,
+            files_path,
+            additional_settings={
+                "keeper_path": keeper_path,
+                "polling_min_timeout_ms": 100,
+                "polling_max_timeout_ms": 100,
+                "polling_backoff_ms": 0,
+            },
+        )
+        create_mv(node, table, dst_table_name)
 
     files_num = 20
     row_num = 100
@@ -442,24 +422,21 @@ def test_streaming_to_many_views(started_cluster, mode):
     )
     expected_values = sorted(set([tuple(i) for i in total_values]))
 
-    for i in range(10):
-        base_name = f"{table_name}_{i + 1}"
-        dst_table_name = f"{base_name}_dst"
-        def check():
-            return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
+    def check():
+        return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
 
-        for _ in range(20):
-            if check() == files_num:
-                break
-            time.sleep(1)
-        processed_files = node.query(f"SELECT distinct(_path) FROM {dst_table_name}")
-        missing_files = [
-            x[0] for x in files if x[0] not in processed_files.strip().split("\n")
-        ]
-        assert check() == files_num, f"Missing files for {dst_table_name}: {missing_files}"
-        count = int(node.query(f"SELECT count() FROM {dst_table_name}"))
-        expected = row_num * files_num
-        assert expected == count, f"Missing or extra data for {dst_table_name}: {count} (expected: {expected})"
+    for _ in range(20):
+        if check() == files_num:
+            break
+        time.sleep(1)
+    processed_files = node.query(f"SELECT distinct(_path) FROM {dst_table_name}")
+    missing_files = [
+        x[0] for x in files if x[0] not in processed_files.strip().split("\n")
+    ]
+    assert check() == files_num, f"Missing files: {missing_files}"
+    assert row_num * files_num == int(
+        node.query(f"SELECT count() FROM {dst_table_name}")
+    )
 
 
 def test_multiple_tables_meta_mismatch(started_cluster):
