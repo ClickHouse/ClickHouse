@@ -35,7 +35,7 @@ public:
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
     bool supportsDynamicSubcolumns() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
-    bool supportsReplication() const override { return getTargetTable()->supportsReplication(); }
+    // bool supportsReplication() const override { return getTargetTable()->supportsReplication(); }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 

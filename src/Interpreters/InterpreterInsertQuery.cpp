@@ -109,6 +109,10 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     checkStackSize();
     if (auto quota = getContext()->getQuota())
         quota->checkExceeded(QuotaType::WRITTEN_BYTES);
+
+    const Settings & settings = getContext()->getSettingsRef();
+    max_threads = std::max<UInt64>(1, settings[Setting::max_threads]);
+    max_insert_threads = std::min(std::max<UInt64>(1, settings[Setting::max_insert_threads]), max_threads);
 }
 
 
@@ -383,7 +387,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
         Settings new_settings = select_context->getSettingsCopy();
 
-        new_settings[Setting::max_threads] = std::max<UInt64>(1, settings[Setting::max_insert_threads]);
+        new_settings[Setting::max_threads] = max_insert_threads;
 
         if (table->prefersLargeBlocks())
         {
@@ -518,7 +522,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     ///  * If the table supports parallel inserts, use max_insert_threads for writing to IStorage.
     ///    Otherwise ResizeProcessor them down to 1 stream.
 
-    size_t sink_streams_size = table->supportsParallelInsert() ? std::max<size_t>(1, settings[Setting::max_insert_threads]) : 1;
+    size_t sink_streams_size = table->supportsParallelInsert() ? max_insert_threads : 1;
 
     size_t views_involved =  table->isView() || !DatabaseCatalog::instance().getDependentViews(table->getStorageID()).empty();
     if (!settings[Setting::parallel_view_processing] && views_involved)
@@ -571,10 +575,16 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     }
     pipeline.addChains(std::move(sink_chains));
 
-    if (!settings[Setting::parallel_view_processing] && views_involved)
-        pipeline.setMaxThreads(num_select_threads);
+    if (is_trivial_insert_select)
+    {
+        LOG_DEBUG(getLogger("InterpreterInsertQuery"), "set num thread at {}", max_insert_threads);
+        pipeline.setMaxThreads(max_insert_threads);
+    }
     else
-        pipeline.setMaxThreads(std::max<size_t>(num_select_threads, settings[Setting::max_insert_threads]));
+    {
+        LOG_DEBUG(getLogger("InterpreterInsertQuery"), "set num thread at {}", std::max(num_select_threads, max_insert_threads));
+        pipeline.setMaxThreads(std::max(num_select_threads, max_insert_threads));
+    }
 
     LOG_DEBUG(getLogger("InterpreterInsertQuery"), "EmptySink");
     pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
@@ -646,7 +656,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     QueryPipeline pipeline = QueryPipeline(std::move(chain));
 
-    auto max_insert_threads = std::max<size_t>({static_cast<size_t>(1) , settings[Setting::max_threads], settings[Setting::max_insert_threads]});
     LOG_DEBUG(getLogger("InterpreterInsertQuery"), "set num thread at {}", max_insert_threads);
     pipeline.setNumThreads(max_insert_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);

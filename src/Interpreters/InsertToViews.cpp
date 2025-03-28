@@ -710,7 +710,7 @@ bool ViewsManager::registerPath(VisitedPath path)
     {
         root_view = root_view_;
         LOG_DEBUG(logger, "set defaults for {}", root_view);
-        select_queries[root_view] = init_query->as<ASTInsertQuery>()->select;
+        select_queries[root_view] = init_query;
         select_contexts[root_view] = init_context;
         insert_contexts[root_view] = init_context;
         input_headers[root_view] = init_header;
@@ -1210,7 +1210,7 @@ Chain ViewsManager::createSink(StorageIDPrivate view_id) const
     {
         LOG_DEBUG(logger, "createSink: {}, for not a view", inner_table);
 
-        auto sink = storage->write(nullptr, metadata_snapshots.at(inner_table), insert_context, async_insert);
+        auto sink = storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table), insert_context, async_insert);
 
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setViewManager(shared_from_this());

@@ -81,6 +81,9 @@ private:
     bool no_destination = false;
     const bool async_insert;
 
+    UInt64 max_threads = 0;
+    UInt64 max_insert_threads = 0;
+
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
