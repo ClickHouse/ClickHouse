@@ -6,7 +6,7 @@ from jwt import JWT, jwk_from_pem
 from .utils import Shell
 
 
-# XXX: dead code with a bug in return installations[0]["id"] and using legacy jwt module
+# XXX: code using legacy jwt module
 class GHAuth:
     @staticmethod
     def _generate_jwt(client_id, pem):
@@ -34,7 +34,12 @@ class GHAuth:
         response.raise_for_status()
         installations = response.json()
         assert installations, "No installations found for the GitHub App"
-        return installations[0]["id"]
+        for installation in installations:
+            # TODO: make account login configurable
+            if installation["account"]["login"] == "ClickHouse":
+                installation_id = installation["id"]
+                return installation_id
+        raise RuntimeError("Installation was not found")
 
     @staticmethod
     def _get_access_token(jwt_token, installation_id):
@@ -60,3 +65,15 @@ class GHAuth:
         Shell.check(f"echo {access_token} | gh auth login --with-token", strict=True)
         Shell.check(f"gh auth status", strict=True)
         return access_token
+
+
+# if __name__ == "__main__":
+#     pem = Secret.Config(
+#         name="woolenwolf_gh_app.clickhouse-app-key",
+#         type=Secret.Type.AWS_SSM_SECRET,
+#     ).get_value()
+#     app_id = Secret.Config(
+#         name="woolenwolf_gh_app.clickhouse-app-id",
+#         type=Secret.Type.AWS_SSM_SECRET,
+#     ).get_value()
+#     GHAuth.auth(pem, app_id)
