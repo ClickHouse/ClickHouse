@@ -17,9 +17,10 @@
 #ifndef NetSSL_SSLManager_INCLUDED
 #define NetSSL_SSLManager_INCLUDED
 
-#include <unordered_map>
 
+#include <unordered_map>
 #include <openssl/ssl.h>
+
 #include "Poco/BasicEvent.h"
 #include "Poco/Mutex.h"
 #include "Poco/Net/CertificateHandlerFactoryMgr.h"
@@ -30,9 +31,6 @@
 #include "Poco/Net/VerificationErrorArgs.h"
 #include "Poco/SharedPtr.h"
 #include "Poco/Util/AbstractConfiguration.h"
-#if defined(OPENSSL_FIPS) && OPENSSL_VERSION_NUMBER < 0x010001000L
-#    include <openssl/fips.h>
-#endif
 
 
 namespace Poco

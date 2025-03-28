@@ -11,6 +11,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int OPENSSL_ERROR;
@@ -19,6 +20,7 @@ namespace ErrorCodes
 
 namespace OpenSSLDetails
 {
+
 void onError(std::string error_message)
 {
     throw Exception(ErrorCodes::OPENSSL_ERROR, "{}. OpenSSL error code: {}", error_message, ERR_get_error());
@@ -42,11 +44,14 @@ const EVP_CIPHER * getCipherByName(StringRef cipher_name)
     // NOTE: cipher obtained not via EVP_CIPHER_fetch() would cause extra work on each context reset
     // with EVP_CIPHER_CTX_reset() or EVP_EncryptInit_ex(), but using EVP_CIPHER_fetch()
     // causes data race, so we stick to the slower but safer alternative here.
-    return EVP_get_cipherbyname(cipher_name.data);
+    const auto * cipher = EVP_get_cipherbyname(cipher_name.data);
+    if (!cipher)
+        onError("Failed to get cipher by name");
+
+    return cipher;
 }
 
 }
-
 }
 
 #endif

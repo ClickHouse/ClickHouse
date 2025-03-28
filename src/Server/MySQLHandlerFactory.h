@@ -10,6 +10,7 @@
 
 #if USE_SSL
 #    include <openssl/rsa.h>
+#    include <Poco/Crypto/RSAKey.h>
 #endif
 
 namespace DB
@@ -23,14 +24,7 @@ private:
     LoggerPtr log;
 
 #if USE_SSL
-    struct RSADeleter
-    {
-        void operator()(RSA * ptr) { RSA_free(ptr); }
-    };
-    using RSAPtr = std::unique_ptr<RSA, RSADeleter>;
-
-    RSAPtr public_key;
-    RSAPtr private_key;
+    Poco::Crypto::RSAKey private_key;
 
     bool ssl_enabled = true;
 #else
@@ -43,11 +37,6 @@ private:
     ProfileEvents::Event write_event;
 public:
     explicit MySQLHandlerFactory(IServer & server_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
-
-    void readRSAKeys();
-
-    void generateRSAKeys();
-
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override;
 };
 
