@@ -1945,7 +1945,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     ASTPtr ast;
     BlockIO res;
 
-    if (query_and_plan.query_plan)
+    if (stage == QueryProcessingStage::QueryPlan)
     {
         std::tie(ast, res) = executeQueryImpl(context, flags, query_and_plan.query, query_and_plan.query_plan);
     }
