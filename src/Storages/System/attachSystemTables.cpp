@@ -28,7 +28,6 @@
 #include <Storages/System/StorageSystemMacros.h>
 #include <Storages/System/StorageSystemMerges.h>
 #include <Storages/System/StorageSystemMoves.h>
-#include <Storages/System/StorageSystemMetricLogView.h>
 #include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/System/StorageSystemMetrics.h>
 #include <Storages/System/StorageSystemHistogramMetrics.h>
