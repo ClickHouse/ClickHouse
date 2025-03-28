@@ -19,7 +19,11 @@ public:
 
     UHugeInt() = default;
     explicit UHugeInt(uint64_t value);
-    constexpr UHugeInt(uint64_t up, uint64_t lo) : lower(lo), upper(up) { }
+    constexpr UHugeInt(uint64_t up, uint64_t lo)
+        : lower(lo)
+        , upper(up)
+    {
+    }
     constexpr UHugeInt(const UHugeInt & rhs) = default;
     constexpr UHugeInt(UHugeInt && rhs) = default;
     UHugeInt & operator=(const UHugeInt & rhs) = default;

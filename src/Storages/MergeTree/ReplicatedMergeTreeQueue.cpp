@@ -10,22 +10,17 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/noexcept_scope.h>
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
 #include <Storages/MutationCommands.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
-#include <Parsers/formatAST.h>
 #include <base/sort.h>
 #include <cassert>
 #include <ranges>
 #include <Poco/Timestamp.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric ActiveDataMutations;
-    extern const Metric ActiveMetadataMutations;
-}
 
 namespace DB
 {
@@ -60,11 +55,6 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
     log = getLogger(logger_name);
 }
 
-ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
-{
-    clear();
-}
-
 void ReplicatedMergeTreeQueue::clear()
 {
     auto locks = lockQueue();
@@ -76,10 +66,6 @@ void ReplicatedMergeTreeQueue::clear()
     mutations_by_znode.clear();
     mutations_by_partition.clear();
     mutation_pointer.clear();
-
-    CurrentMetrics::sub(CurrentMetrics::ActiveDataMutations, num_data_mutations_to_apply);
-    CurrentMetrics::sub(CurrentMetrics::ActiveMetadataMutations, num_metadata_mutations_to_apply);
-
     num_data_mutations_to_apply = 0;
     num_metadata_mutations_to_apply = 0;
 }
@@ -1002,14 +988,18 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
     {
         LOG_INFO(log, "Loading {} mutation entries: {} - {}", toString(entries_to_load.size()), entries_to_load.front(), entries_to_load.back());
 
-        std::vector<std::future<Coordination::GetResponse>> futures;
+        std::vector<String> entry_paths;
+        entry_paths.reserve(entries_to_load.size());
+
         for (const String & entry : entries_to_load)
-            futures.emplace_back(zookeeper->asyncTryGet(fs::path(zookeeper_path) / "mutations" / entry));
+            entry_paths.emplace_back(fs::path(zookeeper_path) / "mutations" / entry);
+
+        auto entries = zookeeper->tryGet(entry_paths);
 
         std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
         for (size_t i = 0; i < entries_to_load.size(); ++i)
         {
-            auto maybe_response = futures[i].get();
+            const auto & maybe_response = entries[i];
             if (maybe_response.error != Coordination::Error::ZOK)
             {
                 assert(maybe_response.error == Coordination::Error::ZNONODE);
@@ -1562,7 +1552,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 {
                     constexpr auto fmt_string = "Not executing log entry {} for part {} because {} merges with TTL already executing, maximum {}.";
                     LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name, total_merges_with_ttl,
-                              (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool]);
+                              (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool].value);
                     return false;
                 }
             }
@@ -2088,6 +2078,18 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
     return res;
 }
 
+UInt64 ReplicatedMergeTreeQueue::getNumberOnFlyDataMutations() const
+{
+    std::lock_guard lock(state_mutex);
+    return num_data_mutations_to_apply;
+}
+
+UInt64 ReplicatedMergeTreeQueue::getNumberOnFlyMetadataMutations() const
+{
+    std::lock_guard lock(state_mutex);
+    return num_metadata_mutations_to_apply;
+}
+
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version, Strings & mutation_ids) const
 {
@@ -2376,7 +2378,8 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
         for (const MutationCommand & command : entry.commands)
         {
             WriteBufferFromOwnString buf;
-            formatAST(*command.ast, buf, false, true);
+            IAST::FormatSettings format_settings(/*one_line=*/true, /*hilite=*/false);
+            command.ast->format(buf, format_settings);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.znode_name,

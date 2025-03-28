@@ -5,9 +5,9 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryFlags.h>
 
 
 namespace DB
@@ -141,7 +141,14 @@ private:
     }
 
     UInt64 getMetadataHash(const String & table_name) const;
-    bool checkDigestValid(const ContextPtr & local_context, bool debug_check = true) const TSA_REQUIRES(metadata_mutex);
+    bool checkDigestValid(const ContextPtr & local_context) const TSA_REQUIRES(metadata_mutex);
+    void assertDigestWithProbability(const ContextPtr & local_context) const TSA_REQUIRES(metadata_mutex);
+
+    /// Assert digest either inline or in transaction if it is internal query (using finalizer)
+    /// (since in case of internal queries it is not submitted in place)
+    void assertDigest(const ContextPtr & local_context) TSA_REQUIRES(metadata_mutex);
+    /// If @txn is set check digest in transaction, otherwise - inline.
+    void assertDigestInTransactionOrInline(const ContextPtr & local_context, const ZooKeeperMetadataTransactionPtr & txn) TSA_REQUIRES(metadata_mutex);
 
     /// For debug purposes only, don't use in production code
     void dumpLocalTablesForDebugOnly(const ContextPtr & local_context) const;

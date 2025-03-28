@@ -2,11 +2,9 @@
 
 #include <Core/Field.h>
 
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ConstantValue.h>
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Analyzer/IQueryTreeNode.h>
+#include <Columns/IColumn_fwd.h>
 
 namespace DB
 {

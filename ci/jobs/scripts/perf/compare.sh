@@ -1318,7 +1318,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             insert into query_metrics_v2
             select
                 toDate(event_time) event_date,
-                toDateTime('$(cd right/ch && git show -s --format=%ci "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
+                toDateTime('$(git -C right/ch log -1 --format=%cd --date=iso "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
                 $PR_TO_TEST pr_number,
                 '$REF_SHA' old_sha,
                 '$SHA_TO_TEST' new_sha,

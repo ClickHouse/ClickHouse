@@ -20,14 +20,11 @@ class CacheRunnerHooks:
         ), f"Outdated yaml pipelines or BUG. Configuration must be run only for workflow with enabled cache, workflow [{workflow.name}]"
         artifact_digest_map = {}
         job_digest_map = {}
+
         for job in workflow.jobs:
             digest = cache.digest.calc_job_digest(
                 job_config=job, docker_digests=docker_digests
             )
-            if not job.digest_config:
-                print(
-                    f"NOTE: job [{job.name}] has no Config.digest_config - skip cache check, always run"
-                )
             job_digest_map[job.name] = digest
             if job.provides:
                 # assign the job digest also to the artifacts it provides
@@ -37,7 +34,7 @@ class CacheRunnerHooks:
                 artifact_digest_map[job.name] = digest
         for job in workflow.jobs:
             digests_combined_list = []
-            if job.requires:
+            if job.requires and job.digest_config:
                 # include digest of required artifact to the job digest, so that they affect job state
                 for artifact_name in job.requires:
                     if artifact_name in artifact_digest_map:
@@ -53,12 +50,15 @@ class CacheRunnerHooks:
         print("Check remote cache")
 
         def fetch_record(job_name, job_digest, cache_):
+            if job_digest == "f" * Settings.CACHE_DIGEST_LEN:
+                return None
             """Fetch a single record from the cache."""
             record = cache_.fetch_success(job_name=job_name, job_digest=job_digest)
             if record:
                 return job_name, record
             return None
 
+        # implement algorithm to skip dependee jobs if dependency is not in the cache
         # Step 1: Fetch records concurrently
         fetched_records = []
         if os.environ.get("DISABLE_CI_CACHE", "0") == "1":
@@ -68,6 +68,9 @@ class CacheRunnerHooks:
                 futures = {
                     executor.submit(fetch_record, job_name, job_digest, cache): job_name
                     for job_name, job_digest in workflow_config.digest_jobs.items()
+                    if job_digest != cache.digest.get_null_digest()  # not being cached
+                    and job_name
+                    not in workflow_config.filtered_jobs  # skipped by user's hook
                 }
 
                 for future in futures:
@@ -102,7 +105,10 @@ class CacheRunnerHooks:
 
         print("Check artifacts to reuse")
         for job in workflow.jobs:
-            if job.name in workflow_config.cache_success:
+            if (
+                job.name in workflow_config.cache_success
+                and job.name not in workflow_config.filtered_jobs
+            ):
                 if job.provides:
                     for artifact_name in job.provides:
                         workflow_config.cache_artifacts[artifact_name] = (

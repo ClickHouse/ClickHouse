@@ -78,6 +78,53 @@ class MetaClasses:
         def to_json(self, pretty=False):
             return json.dumps(dataclasses.asdict(self), indent=4 if pretty else None)
 
+    @dataclasses.dataclass
+    class SerializableSingleton(ABC):
+        @classmethod
+        def to_dict(cls, obj):
+            if dataclasses.is_dataclass(obj):
+                return {k: cls.to_dict(v) for k, v in dataclasses.asdict(obj).items()}
+            elif isinstance(obj, SimpleNamespace):
+                return {k: cls.to_dict(v) for k, v in vars(obj).items()}
+            elif isinstance(obj, list):
+                return [cls.to_dict(i) for i in obj]
+            elif isinstance(obj, dict):
+                return {k: cls.to_dict(v) for k, v in obj.items()}
+            else:
+                return obj
+
+        @classmethod
+        def from_dict(cls: Type[T], obj: Dict[str, Any]) -> T:
+            return cls(**obj)
+
+        @classmethod
+        @abstractmethod
+        def file_name_static(cls):
+            pass
+
+        @classmethod
+        def from_fs(cls: Type[T]) -> T:
+            with open(cls.file_name_static(), "r", encoding="utf8") as f:
+                try:
+                    return cls.from_dict(json.load(f))
+                except json.decoder.JSONDecodeError as ex:
+                    print(f"ERROR: failed to parse json, ex [{ex}]")
+                    print(f"JSON content [{cls.file_name_static()}]")
+                    Shell.check(f"cat {cls.file_name_static()}")
+                    raise ex
+
+        def dump(self):
+            with open(self.file_name_static(), "w", encoding="utf8") as f:
+                json.dump(self.to_dict(self), f, indent=4)
+            return self
+
+        @classmethod
+        def exist(cls):
+            return Path(cls.file_name_static()).is_file()
+
+        def to_json(self, pretty=False):
+            return json.dumps(dataclasses.asdict(self), indent=4 if pretty else None)
+
 
 class ContextManager:
     @staticmethod
@@ -483,6 +530,7 @@ class Utils:
             ("-", "_"),
             (":", "_"),
             ('"', "_"),
+            ("&", "_"),
         ):
             res = res.replace(*r)
             res = re.sub(r"_+", "_", res)
@@ -539,16 +587,12 @@ class Utils:
         for path in include_paths:
             included_files_.update(cls.traverse_path(path, file_suffixes=file_suffixes))
 
-        excluded_files = set()
-        for path in exclude_paths:
-            res = cls.traverse_path(path, not_exists_ok=not_exists_ok)
-            if not res:
-                print(
-                    f"WARNING: Utils.traverse_paths excluded 0 files by path [{path}] in exclude_paths"
-                )
-            else:
-                excluded_files.update(res)
-        res = [f for f in included_files_ if f not in excluded_files]
+        exclude_paths = ["./" + p.removeprefix("./") for p in exclude_paths]
+        res = [
+            f
+            for f in included_files_
+            if not any(f.startswith(exclude_path) for exclude_path in exclude_paths)
+        ]
         if sorted:
             res.sort(reverse=True)
         return res

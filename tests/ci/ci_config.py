@@ -174,7 +174,6 @@ class CI:
                 compiler="clang-19",
                 debug_build=True,
                 package_type="binary",
-                static_binary_name="debug-amd64",
                 tidy=True,
                 comment="clang-tidy is used for static analysis",
             ),
@@ -201,7 +200,7 @@ class CI:
                 compiler="clang-19-aarch64-v80compat",
                 package_type="binary",
                 static_binary_name="aarch64v80compat",
-                comment="For ARMv8.1 and older",
+                comment="ARMv8.1_and_older",
             ),
         ),
         BuildNames.BINARY_FREEBSD: CommonJobConfigs.BUILD.with_properties(
@@ -617,15 +616,12 @@ class CI:
     @classmethod
     def get_job_config(cls, check_name: str) -> JobConfig:
         # remove job batch if it exists in check name (hack for migration to praktika)
-        check_name = re.sub(r", \d+/\d+\)", ")", check_name)
+        check_name = re.sub(r",\s*\d+/\d+\)", ")", check_name)
         return cls.JOB_CONFIGS[check_name]
 
     @classmethod
     def get_required_build_name(cls, check_name: str) -> str:
-        # remove job batch if it exists in check name (hack for migration to praktika)
-        check_name = re.sub(r", \d+/\d+\)", ")", check_name)
-        assert check_name in cls.JOB_CONFIGS
-        required_builds = cls.JOB_CONFIGS[check_name].required_builds
+        required_builds = cls.get_job_config(check_name).required_builds
         assert required_builds and len(required_builds) == 1
         return required_builds[0]
 

@@ -6,6 +6,7 @@
 #    include <Formats/FormatSchemaInfo.h>
 #    include <Processors/Formats/IRowInputFormat.h>
 #    include <Processors/Formats/ISchemaReader.h>
+#    include <Formats/ProtobufSchemas.h>
 
 namespace DB
 {
@@ -44,6 +45,7 @@ private:
 
     std::unique_ptr<ProtobufReader> reader;
     std::vector<size_t> missing_column_indices;
+    ProtobufSchemas::DescriptorHolder descriptor_holder;
     std::unique_ptr<ProtobufSerializer> serializer;
 };
 

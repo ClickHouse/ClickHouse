@@ -18,10 +18,10 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 -   `name` — имя столбца;
 -   `type` — тип столбца;
--   `default_type` — вид [выражения для значения по умолчанию](../../sql-reference/statements/create/table.md#create-default-values): `DEFAULT`, `MATERIALIZED` или `ALIAS`. Если значение по умолчанию не задано, то возвращается пустая строка;
+-   `default_type` — вид [выражения для значения по умолчанию](/sql-reference/statements/create/table): `DEFAULT`, `MATERIALIZED` или `ALIAS`. Если значение по умолчанию не задано, то возвращается пустая строка;
 -   `default_expression` — значение, заданное в секции `DEFAULT`;
--   `comment` — [комментарий](../../sql-reference/statements/alter/column.md#alter_comment-column);
--   `codec_expression` — [кодек](../../sql-reference/statements/create/table.md#codecs), который применяется к столбцу;
+-   `comment` — [комментарий](/sql-reference/statements/alter/column#comment-column);
+-   `codec_expression` — [кодек](/sql-reference/statements/create/table#column_compression_codec), который применяется к столбцу;
 -   `ttl_expression` — выражение [TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl);
 -   `is_subcolumn` — флаг, который равен `1` для внутренних подстолбцов. Он появляется в результате, только если описание подстолбцов разрешено настройкой [describe_include_subcolumns](../../operations/settings/settings.md#describe_include_subcolumns).
 

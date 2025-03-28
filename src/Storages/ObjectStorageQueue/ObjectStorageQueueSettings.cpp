@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -98,18 +99,23 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
             settings_changes.begin(), settings_changes.end(),
             [&](const SettingChange & change){ return change.name == setting_name; });
     };
+    auto is_changeable = [&](const std::string & setting_name) -> bool
+    {
+        return StorageObjectStorageQueue::isSettingChangeable(setting_name, (*this)[ObjectStorageQueueSetting::mode]);
+    };
 
     for (const auto & change : impl->all())
     {
         size_t i = 0;
+        const auto & name = change.getName();
         res_columns[i++]->insert(database_name);
         res_columns[i++]->insert(table_name);
-        res_columns[i++]->insert(change.getName());
+        res_columns[i++]->insert(name);
         res_columns[i++]->insert(convertFieldToString(change.getValue()));
         res_columns[i++]->insert(change.getTypeName());
-        res_columns[i++]->insert(is_changed(change.getName()));
+        res_columns[i++]->insert(is_changed(name));
         res_columns[i++]->insert(change.getDescription());
-        res_columns[i++]->insert(false);
+        res_columns[i++]->insert(is_changeable(name));
     }
 }
 
