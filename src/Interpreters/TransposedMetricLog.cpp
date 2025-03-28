@@ -135,6 +135,8 @@ void TransposedMetricLog::prepareTable()
 {
     SystemLog<TransposedMetricLogElement>::prepareTable();
 
+    /// Now we need to create a view and potentially rotate old
+    /// system.metric_log if it existed
     if (!view_name.empty())
     {
         auto storage_id = getTableID();
