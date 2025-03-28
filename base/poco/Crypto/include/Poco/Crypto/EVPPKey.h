@@ -228,7 +228,10 @@ namespace Crypto
                 fclose(pFile);
             if (*ppKey)
             {
-                EVP_PKEY_free(*ppKey);
+                if constexpr (std::is_same_v<K, EVP_PKEY>)
+                    EVP_PKEY_free(*ppKey);
+                else
+                    EC_KEY_free(*ppKey);
             }
             throw OpenSSLException("EVPKey::loadKey(string)");
         }
@@ -293,7 +296,10 @@ namespace Crypto
                 BIO_free(pBIO);
             if (*ppKey)
             {
-                EVP_PKEY_free(*ppKey);
+                if constexpr (std::is_same_v<K, EVP_PKEY>)
+                    EVP_PKEY_free(*ppKey);
+                else
+                    EC_KEY_free(*ppKey);
             }
             throw OpenSSLException("EVPKey::loadKey(stream)");
         }
@@ -359,14 +365,14 @@ namespace Crypto
 
     inline void EVPPKey::setKey(EC_KEY * pKey)
     {
-        if (!EVP_PKEY_assign_EC_KEY(_pEVPPKey, pKey))
+        if (!EVP_PKEY_set1_EC_KEY(_pEVPPKey, pKey))
             throw OpenSSLException();
     }
 
 
     inline void EVPPKey::setKey(RSA * pKey)
     {
-        if (!EVP_PKEY_assign_RSA(_pEVPPKey, pKey))
+        if (!EVP_PKEY_set1_RSA(_pEVPPKey, pKey))
             throw OpenSSLException();
     }
 
