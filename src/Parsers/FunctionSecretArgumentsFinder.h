@@ -93,15 +93,15 @@ protected:
     {
         if (index >= function->arguments->size())
             return;
-        index = function->arguments->getRealIndex(index);
+        auto real_index = function->arguments->getRealIndex(index);
         if (!result.count)
         {
-            result.start = index;
+            result.start = real_index;
             result.are_named = argument_is_named;
         }
-        chassert(index >= result.start); /// We always check arguments consecutively
+        chassert(real_index >= result.start); /// We always check arguments consecutively
         chassert(result.replacement.empty()); /// We shouldn't use replacement with masking other arguments
-        result.count = index + 1 - result.start;
+        result.count = real_index + 1 - result.start;
         if (!argument_is_named)
             result.are_named = false;
     }

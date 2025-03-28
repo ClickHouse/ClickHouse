@@ -267,7 +267,8 @@ using StorageHDFSIcebergConfiguration = DataLakeConfiguration<StorageHDFSConfigu
 
 using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfiguration, IcebergMetadata>;
 
-
+/// Class detects storage type by `storage_type` parameter if exists
+/// and uses appropriate implementation - S3, Azure, HDFS or Local
 class StorageIcebergConfiguration : public StorageObjectStorage::Configuration, public std::enable_shared_from_this<StorageObjectStorage::Configuration>
 {
     friend class StorageObjectStorage::Configuration;
@@ -396,7 +397,7 @@ protected:
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "DataLake can have only one key-value argument: storage_type=().");
+                            "DataLake can have only one key-value argument: storage_type='type'.");
                     }
 
                     auto value = type_ast_function->arguments->children[1]->as<ASTLiteral>();
@@ -405,14 +406,14 @@ protected:
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "DataLake parameter 'storage_type' has wrong type.");
+                            "DataLake parameter 'storage_type' has wrong type, string literal expected.");
                     }
 
                     if (value->value.getType() != Field::Types::String)
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "DataLake parameter 'storage_type' has wrong value type.");
+                            "DataLake parameter 'storage_type' has wrong value type, string expected.");
                     }
 
                     type = objectStorageTypeFromString(value->value.safeGet<String>());
