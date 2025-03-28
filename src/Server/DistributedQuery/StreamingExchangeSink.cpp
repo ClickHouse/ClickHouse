@@ -29,7 +29,7 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
     if (chunk.getNumRows() == 0 && chunk.getNumColumns() != 0)
     {
-        LOG_WARNING(log, "Unexpected chunk with 0 rows to exchange stream {}", stream_name);
+        LOG_TEST(log, "Unexpected chunk with 0 rows to exchange stream {}", stream_name);
         return;
     }
 
