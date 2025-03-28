@@ -120,6 +120,12 @@ struct ModuloLegacyByConstantImpl : ModuloByConstantImpl<A, B>
     using Op = ModuloLegacyImpl<A, B>;
 };
 
+template<typename A, typename B>
+struct ModuloOrNullByConstantImpl : ModuloByConstantImpl<A, B>
+{
+    using Op = ModuloOrNullImpl<A, B>;
+};
+
 }
 
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
@@ -213,7 +219,7 @@ REGISTER_FUNCTION(PositiveModuloOrNull)
 Calculates the remainder when dividing `a` by `b`. Similar to function `positiveModulo` except that `positiveModuloOrNull` will return NULL
 if the right argument is 0.
         )",
-            .examples{{"positiveModuloOrNull", "SELECT positiveModuloOrNull(-1, 0);", ""}},
+            .examples{{"positiveModuloOrNull", "SELECT positiveModuloOrNull(1, 0);", ""}},
             .category{"Arithmetic"}},
         FunctionFactory::Case::Insensitive);
 

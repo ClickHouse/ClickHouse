@@ -34,19 +34,7 @@ struct DivideFloatingImpl
 };
 
 template <typename A, typename B>
-struct DivideFloatingOrNullImpl : DivideFloatingImpl<A, B>
-{
-    using ResultType = typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type;
-
-    template <typename Result = ResultType>
-    static Result apply(A a, B b)
-    {
-        if (unlikely(divisionLeadsToFPE(a, b)))
-            return 0;
-        else
-            return static_cast<Result>(a) / static_cast<Result>(b);
-    }
-};
+struct DivideFloatingOrNullImpl : DivideFloatingImpl<A, B>{};
 
 struct NameDivide { static constexpr auto name = "divide"; };
 using FunctionDivide = BinaryArithmeticOverloadResolver<DivideFloatingImpl, NameDivide>;
