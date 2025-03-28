@@ -111,7 +111,6 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source
     return result;
 }
 
-
 ASTCreateQuery getCreateQuery(const StorageID & source_storage_id)
 {
     ASTCreateQuery query;
@@ -119,8 +118,6 @@ ASTCreateQuery getCreateQuery(const StorageID & source_storage_id)
     query.select = query.children[0]->as<ASTSelectWithUnionQuery>();
     return query;
 }
-
-
 
 ColumnsDescription getColumnsDescription()
 {

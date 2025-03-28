@@ -36,7 +36,7 @@ class TransposedMetricLog : public PeriodicLog<TransposedMetricLogElement>
 public:
     static constexpr auto DESCRIPTION = R"(
         Contains history of metrics values from tables system.metrics and system.events.
-        Periodically flushed to disk. Transposed form of system.metrics_log.)";
+        Periodically flushed to disk. Transposed form of system.metric_log.)";
     static constexpr auto HOSTNAME_NAME = "hostname";
     static constexpr auto EVENT_DATE_NAME = "event_date";
     static constexpr auto EVENT_TIME_NAME = "event_time";
