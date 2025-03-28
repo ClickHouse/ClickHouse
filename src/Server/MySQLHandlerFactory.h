@@ -4,13 +4,13 @@
 #include <memory>
 #include <Server/IServer.h>
 #include <Server/TCPServerConnectionFactory.h>
-#include <Poco/Crypto/RSAKey.h>
 #include <Common/ProfileEvents.h>
 
 #include "config.h"
 
 #if USE_SSL
 #    include <openssl/rsa.h>
+#    include <Poco/Crypto/RSAKey.h>
 #endif
 
 namespace DB
