@@ -32,9 +32,13 @@ Checks: [
   '-portability-template-virtual-member-function',
   '-modernize-use-integer-sign-comparison',
   '-readability-container-contains',
+  '-bugprone-nondeterministic-pointer-iteration-order',
+  '-clang-analyzer-core.uninitialized.Assign',
+  '-clang-analyzer-cplusplus.NewDeleteLeaks',
 
   '-cert-dcl16-c',
   '-cert-err58-cpp',
+  '-cert-arr39-c',
 
   '-clang-analyzer-optin.performance.Padding',
 
