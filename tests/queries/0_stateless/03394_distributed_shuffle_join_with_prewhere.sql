@@ -10,6 +10,7 @@ SET
     make_distributed_plan = 1,
     enable_parallel_replicas = 0,
     default_shuffle_join_bucket_count=3,
+    default_reader_bucket_count=3,
     force_exchange_kind='Streaming';
 
 SELECT count() FROM test AS en, test AS de WHERE (en.path = de.path) AND (en.lang = 'en') AND (de.lang = 'de');
