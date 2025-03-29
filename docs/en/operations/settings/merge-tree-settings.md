@@ -169,7 +169,7 @@ To achieve maximum performance of `SELECT` queries, it is necessary to minimize 
 Prior to 23.6 this setting was set to 300. You can set a higher different value, it will reduce the probability of the `Too many parts` error, but at the same time `SELECT` performance might degrade. Also in case of a merge issue (for example, due to insufficient disk space) you will notice it later than it could be with the original 300.
 
 
-## parts_to_delay_insert {#parts-to-delay-insert}
+## parts_to_delay_insert {#parts_to_delay_insert}
 
 If the number of active parts in a single partition exceeds the `parts_to_delay_insert` value, an `INSERT` artificially slows down.
 
@@ -246,7 +246,7 @@ If there are a lot of outdated parts cleanup thread will try to delete up to `si
 
 Default value: 0.
 
-## replicated_deduplication_window {#replicated-deduplication-window}
+## replicated_deduplication_window {#replicated_deduplication_window}
 
 The number of most recently inserted blocks for which ClickHouse Keeper stores hash sums to check for duplicates.
 
@@ -261,7 +261,7 @@ The `Insert` command creates one or more blocks (parts). For [insert deduplicati
 A large number of `replicated_deduplication_window` slows down `Inserts` because it needs to compare more entries.
 The hash sum is calculated from the composition of the field names and types and the data of the inserted part (stream of bytes).
 
-## non_replicated_deduplication_window {#non-replicated-deduplication-window}
+## non_replicated_deduplication_window {#non_replicated_deduplication_window}
 
 The number of the most recently inserted blocks in the non-replicated [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table for which hash sums are stored to check for duplicates.
 
@@ -272,9 +272,9 @@ Possible values:
 
 Default value: 0.
 
-A deduplication mechanism is used, similar to replicated tables (see [replicated_deduplication_window](#replicated-deduplication-window) setting). The hash sums of the created parts are written to a local file on a disk.
+A deduplication mechanism is used, similar to replicated tables (see [replicated_deduplication_window](#replicated_deduplication_window) setting). The hash sums of the created parts are written to a local file on a disk.
 
-## replicated_deduplication_window_seconds {#replicated-deduplication-window-seconds}
+## replicated_deduplication_window_seconds {#replicated_deduplication_window_seconds}
 
 The number of seconds after which the hash sums of the inserted blocks are removed from ClickHouse Keeper.
 
@@ -284,11 +284,11 @@ Possible values:
 
 Default value: 604800 (1 week).
 
-Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from ClickHouse Keeper, even if they are less than ` replicated_deduplication_window`.
+Similar to [replicated_deduplication_window](#replicated_deduplication_window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from ClickHouse Keeper, even if they are less than ` replicated_deduplication_window`.
 
 The time is relative to the time of the most recent record, not to the wall time. If it's the only record it will be stored forever.
 
-## replicated_deduplication_window_for_async_inserts {#replicated-deduplication-window-for-async-inserts}
+## replicated_deduplication_window_for_async_inserts {#replicated_deduplication_window_for_async_inserts}
 
 The number of most recently async inserted blocks for which ClickHouse Keeper stores hash sums to check for duplicates.
 
@@ -303,7 +303,7 @@ The [Async Insert](/operations/settings/settings#async_insert) command will be c
 A large number of `replicated_deduplication_window_for_async_inserts` slows down `Async Inserts` because it needs to compare more entries.
 The hash sum is calculated from the composition of the field names and types and the data of the insert (stream of bytes).
 
-## replicated_deduplication_window_seconds_for_async_inserts {#replicated-deduplication-window-seconds-for-async_inserts}
+## replicated_deduplication_window_seconds_for_async_inserts {#replicated_deduplication_window_seconds_for_async_inserts}
 
 The number of seconds after which the hash sums of the async inserts are removed from ClickHouse Keeper.
 
@@ -313,7 +313,7 @@ Possible values:
 
 Default value: 604800 (1 week).
 
-Similar to [replicated_deduplication_window_for_async_inserts](#replicated-deduplication-window-for-async-inserts), `replicated_deduplication_window_seconds_for_async_inserts` specifies how long to store hash sums of blocks for async insert deduplication. Hash sums older than `replicated_deduplication_window_seconds_for_async_inserts` are removed from ClickHouse Keeper, even if they are less than ` replicated_deduplication_window_for_async_inserts`.
+Similar to [replicated_deduplication_window_for_async_inserts](#replicated_deduplication_window_for_async_inserts), `replicated_deduplication_window_seconds_for_async_inserts` specifies how long to store hash sums of blocks for async insert deduplication. Hash sums older than `replicated_deduplication_window_seconds_for_async_inserts` are removed from ClickHouse Keeper, even if they are less than ` replicated_deduplication_window_for_async_inserts`.
 
 The time is relative to the time of the most recent record, not to the wall time. If it's the only record it will be stored forever.
 
@@ -599,7 +599,7 @@ Default value: `0`.
 
 Could be used for throttling speed when replicating data to add or replace new nodes.
 
-## old_parts_lifetime {#old-parts-lifetime}
+## old_parts_lifetime {#old_parts_lifetime}
 
 The time (in seconds) of storing inactive parts to protect against data loss during spontaneous server reboots.
 
@@ -621,7 +621,7 @@ If the merged part is not damaged, then the original inactive parts are renamed 
 
 The default `dirty_expire_centisecs` value (a Linux kernel setting) is 30 seconds (the maximum time that written data is stored only in RAM), but under heavy loads on the disk system data can be written much later. Experimentally, a value of 480 seconds was chosen for `old_parts_lifetime`, during which a new part is guaranteed to be written to disk.
 
-## max_bytes_to_merge_at_max_space_in_pool {#max-bytes-to-merge-at-max-space-in-pool}
+## max_bytes_to_merge_at_max_space_in_pool {#max_bytes_to_merge_at_max_space_in_pool}
 
 The maximum total parts size (in bytes) to be merged into one part, if there are enough resources available.
 Corresponds roughly to the maximum possible part size created by an automatic background merge.
@@ -662,7 +662,7 @@ Default value: 8192
 
 Merge reads rows from parts in blocks of `merge_max_block_size` rows, then merges and writes the result into a new part. The read block is placed in RAM, so `merge_max_block_size` affects the size of the RAM required for the merge. Thus, merges can consume a large amount of RAM for tables with very wide rows (if the average row size is 100kb, then when merging 10 parts, (100kb * 10 * 8192) = ~ 8GB of RAM). By decreasing `merge_max_block_size`, you can reduce the amount of RAM required for a merge but slow down a merge.
 
-## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number-of-free-entries-in-pool-to-lower-max-size-of-merge}
+## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number_of_free_entries_in_pool_to_lower_max_size_of_merge}
 
 When there is less than specified number of free entries in pool (or replicated queue), start to lower maximum size of merge to process (or to put in queue).
 This is to allow small merges to process - not filling the pool with long running merges.
@@ -673,7 +673,7 @@ Possible values:
 
 Default value: 8
 
-## number_of_free_entries_in_pool_to_execute_mutation {#number-of-free-entries-in-pool-to-execute-mutation}
+## number_of_free_entries_in_pool_to_execute_mutation {#number_of_free_entries_in_pool_to_execute_mutation}
 
 When there is less than specified number of free entries in pool, do not execute part mutations.
 This is to leave free threads for regular merges and avoid "Too many parts".
@@ -700,7 +700,7 @@ Default value: auto (number of CPU cores).
 
 During startup ClickHouse reads all parts of all tables (reads files with metadata of parts) to build a list of all parts in memory. In some systems with a large number of parts this process can take a long time, and this time might be shortened by increasing `max_part_loading_threads` (if this process is not CPU and disk I/O bound).
 
-## max_partitions_to_read {#max-partitions-to-read}
+## max_partitions_to_read {#max_partitions_to_read}
 
 Limits the maximum number of partitions that can be accessed in one query.
 
@@ -794,7 +794,7 @@ Default value: `true`.
 
 By default, the ClickHouse server checks at table creation the data type of a column for sampling or sampling expression. If you already have tables with incorrect sampling expression and do not want the server to raise an exception during startup, set `check_sample_column_is_correct` to `false`.
 
-## min_bytes_to_rebalance_partition_over_jbod {#min-bytes-to-rebalance-partition-over-jbod}
+## min_bytes_to_rebalance_partition_over_jbod {#min_bytes_to_rebalance_partition_over_jbod}
 
 Sets minimal amount of bytes to enable balancing when distributing new big parts over volume disks [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures).
 
@@ -807,7 +807,7 @@ Default value: `0`.
 
 **Usage**
 
-The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should not be less than the value of the [max_bytes_to_merge_at_max_space_in_pool](../../operations/settings/merge-tree-settings.md#max-bytes-to-merge-at-max-space-in-pool) / 1024. Otherwise, ClickHouse throws an exception.
+The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should not be less than the value of the [max_bytes_to_merge_at_max_space_in_pool](../../operations/settings/merge-tree-settings.md#max_bytes_to_merge_at_max_space_in_pool) / 1024. Otherwise, ClickHouse throws an exception.
 
 ## detach_not_byte_identical_parts {#detach_not_byte_identical_parts}
 
@@ -842,7 +842,7 @@ Possible values:
 
 Default value: `1` second.
 
-## max_concurrent_queries {#max-concurrent-queries}
+## max_concurrent_queries {#max_concurrent_queries}
 
 Max number of concurrently executed queries related to the MergeTree table. Queries will still be limited by other `max_concurrent_queries` settings.
 
@@ -859,9 +859,9 @@ Default value: `0` (no limit).
 <max_concurrent_queries>50</max_concurrent_queries>
 ```
 
-## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
+## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
 
-The minimal number of marks read by the query for applying the [max_concurrent_queries](#max-concurrent-queries) setting. Note that queries will still be limited by other `max_concurrent_queries` settings.
+The minimal number of marks read by the query for applying the [max_concurrent_queries](#max_concurrent_queries) setting. Note that queries will still be limited by other `max_concurrent_queries` settings.
 
 Possible values:
 

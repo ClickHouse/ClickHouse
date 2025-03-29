@@ -428,7 +428,7 @@ namespace ErrorCodes
     - `0` (disable deduplication).
 
     A deduplication mechanism is used, similar to replicated tables (see
-    [replicated_deduplication_window](#replicated-deduplication-window) setting).
+    [replicated_deduplication_window](#replicated_deduplication_window) setting).
     The hash sums of the created parts are written to a local file on a disk.
     )", 0) \
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, R"(
@@ -662,7 +662,7 @@ namespace ErrorCodes
     DECLARE(UInt64, max_delay_to_insert, 1, R"(
     The value in seconds, which is used to calculate the `INSERT` delay, if the
     number of active parts in a single partition exceeds the
-    [parts_to_delay_insert](#parts-to-delay-insert) value.
+    [parts_to_delay_insert](#parts_to_delay_insert) value.
 
     Possible values:
     - Any positive integer.
@@ -874,7 +874,7 @@ namespace ErrorCodes
     Possible values:
     - Any positive integer.
 
-    Similar to [replicated_deduplication_window](#replicated-deduplication-window),
+    Similar to [replicated_deduplication_window](#replicated_deduplication_window),
     `replicated_deduplication_window_seconds` specifies how long to store hash
     sums of blocks for insert deduplication. Hash sums older than
     `replicated_deduplication_window_seconds` are removed from ClickHouse Keeper,
@@ -909,7 +909,7 @@ namespace ErrorCodes
     Possible values:
     - Any positive integer.
 
-    Similar to [replicated_deduplication_window_for_async_inserts](#replicated-deduplication-window-for-async-inserts),
+    Similar to [replicated_deduplication_window_for_async_inserts](#replicated_deduplication_window_for_async_inserts),
     `replicated_deduplication_window_seconds_for_async_inserts` specifies how
     long to store hash sums of blocks for async insert deduplication. Hash sums
     older than `replicated_deduplication_window_seconds_for_async_inserts` are
@@ -1444,7 +1444,7 @@ namespace ErrorCodes
     Possible values:
     - Any positive integer.
 
-    You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max-partitions-to-read)
+    You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max_partitions_to_read)
     at a query / session / profile level.
     )", 0) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
@@ -1464,7 +1464,7 @@ namespace ErrorCodes
     ```
     )", 0) \
     DECLARE(UInt64, min_marks_to_honor_max_concurrent_queries, 0, R"(
-    The minimal number of marks read by the query for applying the [max_concurrent_queries](#max-concurrent-queries)
+    The minimal number of marks read by the query for applying the [max_concurrent_queries](#max_concurrent_queries)
     setting.
 
     :::note
@@ -1494,7 +1494,7 @@ namespace ErrorCodes
 
     The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should
     not be less than the value of the
-    [max_bytes_to_merge_at_max_space_in_pool](/operations/settings/merge-tree-settings#max-bytes-to-merge-at-max-space-in-pool)
+    [max_bytes_to_merge_at_max_space_in_pool](/operations/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)
     / 1024. Otherwise, ClickHouse throws an exception.
     )", 0) \
     DECLARE(Bool, check_sample_column_is_correct, true, R"(
