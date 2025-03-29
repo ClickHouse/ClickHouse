@@ -1792,7 +1792,12 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
             if (!txn->isCreateOrReplaceQuery())
                 txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, zk_statement_to, zkutil::CreateMode::Persistent));
         }
-        txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, zk_statement, zkutil::CreateMode::Persistent));
+
+        /// In case of CREATE OR REPLACE there is no statement for the temporary table in ZK, so we use the local definition
+        if (txn->isCreateOrReplaceQuery())
+            txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, statement, zkutil::CreateMode::Persistent));
+        else
+            txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, zk_statement, zkutil::CreateMode::Persistent));
     }
 
     std::lock_guard lock{metadata_mutex};
