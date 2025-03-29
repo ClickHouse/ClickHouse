@@ -90,6 +90,8 @@ public:
 
     bool supportsPartitionPruning() override { return true; }
 
+    std::vector<Iceberg::IcebergHistory> getHistory() const;
+
     std::optional<size_t> totalRows() const override;
     std::optional<size_t> totalBytes() const override;
 
