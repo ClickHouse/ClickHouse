@@ -571,6 +571,9 @@ void StorageKafka::threadFunc(size_t idx)
                 }
             }
         }
+        else
+            LOG_DEBUG(log, "No attached views");
+
     }
     catch (...)
     {

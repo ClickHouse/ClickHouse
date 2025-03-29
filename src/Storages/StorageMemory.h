@@ -6,6 +6,7 @@
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 
 #include <Common/MultiVersion.h>
