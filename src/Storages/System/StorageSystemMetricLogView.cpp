@@ -62,8 +62,10 @@ constexpr auto VIEW_COLUMNS_ORDER =
     TransposedMetricLog::VALUE_NAME,
     TransposedMetricLog::METRIC_NAME,
     TransposedMetricLog::HOSTNAME_NAME,
-    TransposedMetricLog::EVENT_DATE_NAME
+    TransposedMetricLog::EVENT_DATE_NAME,
 };
+
+constexpr auto HOUR_ALIAS_NAME = "hour";
 
 /// Order for elements in view
 constexpr size_t EVENT_TIME_POSITION = 0;
@@ -71,6 +73,7 @@ constexpr size_t VALUE_POSITION = 1;
 constexpr size_t METRIC_POSITION = 2;
 constexpr size_t HOSTNAME_POSITION = 3;
 constexpr size_t EVENT_DATE_POSITION = 4;
+constexpr size_t EVENT_TIME_HOUR_POSITION = 5;
 
 /// SELECT event_time, value ..., metric FROM system.transposed_metric_log ORDER BY event_time;
 std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source_storage_id)
@@ -81,6 +84,13 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source
 
     for (const auto & column_name : VIEW_COLUMNS_ORDER)
         expression_list->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+
+    auto last_element = makeASTFunction("toStartOfHour", std::make_shared<ASTIdentifier>(TransposedMetricLog::EVENT_TIME_NAME));
+
+    auto select_list_last_element = last_element->clone();
+    select_list_last_element->setAlias(HOUR_ALIAS_NAME);
+    expression_list->children.push_back(select_list_last_element);
+
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(expression_list));
 
@@ -98,10 +108,14 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source
     order_by_date->children.emplace_back(std::make_shared<ASTIdentifier>(TransposedMetricLog::EVENT_DATE_NAME));
     order_by_date->direction = 1;
     std::shared_ptr<ASTOrderByElement> order_by_time = std::make_shared<ASTOrderByElement>();
-    order_by_time->children.emplace_back(std::make_shared<ASTIdentifier>(TransposedMetricLog::HOSTNAME_NAME));
+    order_by_time->children.emplace_back(last_element);
     order_by_time->direction = 1;
+    std::shared_ptr<ASTOrderByElement> order_by_metric = std::make_shared<ASTOrderByElement>();
+    order_by_metric->children.emplace_back(std::make_shared<ASTIdentifier>(TransposedMetricLog::METRIC_NAME));
+    order_by_metric->direction = 1;
     order_by->children.emplace_back(order_by_date);
     order_by->children.emplace_back(order_by_time);
+    order_by->children.emplace_back(order_by_metric);
 
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_by);
 
@@ -143,9 +157,10 @@ ColumnsDescription getColumnsDescriptionForView()
     NamesAndTypesList result;
     result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_TIME_NAME, std::make_shared<DataTypeDateTime>()));
     result.push_back(NameAndTypePair(TransposedMetricLog::VALUE_NAME, std::make_shared<DataTypeInt64>()));
-    result.push_back(NameAndTypePair(TransposedMetricLog::METRIC_NAME, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
+    result.push_back(NameAndTypePair(TransposedMetricLog::METRIC_NAME, std::make_shared<DataTypeString>()));
     result.push_back(NameAndTypePair(TransposedMetricLog::HOSTNAME_NAME, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
     result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_DATE_NAME, std::make_shared<DataTypeDate>()));
+    result.push_back(NameAndTypePair(HOUR_ALIAS_NAME, std::make_shared<DataTypeDateTime>()));
 
     return ColumnsDescription{result};
 }
@@ -176,13 +191,18 @@ class CustomFilterTransform : public IInflatingTransform
     HashMap<StringRef, size_t> mapping;
     Names column_names;
 public:
+    static constexpr auto SECONDS_IN_HOUR = 3600;
     String getName() const override { return "MetricLogCustomTransform"; }
 
     PODArray<UInt32> times;
     PODArray<UInt16> dates;
     std::vector<std::string> hostnames;
+    size_t current_hour = 0;
+    Int64 max_second_in_hour = -1;
 
     std::unordered_map<size_t, PODArray<Int64>> buffer;
+
+    std::vector<Chunk> ready_hours;
 
     bool need_hostname = false;
     bool need_date = false;
@@ -204,35 +224,56 @@ public:
             if (column_name.starts_with(TransposedMetricLog::PROFILE_EVENT_PREFIX) || column_name.starts_with(TransposedMetricLog::CURRENT_METRIC_PREFIX))
             {
                 mapping[column_name] = counter;
-                buffer[counter].reserve(max_block_size);
+                buffer[counter].resize_fill(SECONDS_IN_HOUR, 0L);
                 counter++;
             }
             else if (column_name == TransposedMetricLog::HOSTNAME_NAME)
+            {
                 need_hostname = true;
+            }
             else if (column_name == TransposedMetricLog::EVENT_DATE_NAME)
+            {
                 need_date = true;
+            }
         }
 
-        times.reserve(max_block_size);
+        times.resize_fill(SECONDS_IN_HOUR, static_cast<UInt32>(0));
 
         if (need_date)
-            dates.reserve(max_block_size);
+            dates.resize_fill(SECONDS_IN_HOUR, static_cast<UInt16>(0));
         if (need_hostname)
-            hostnames.reserve(max_block_size);
+            hostnames.resize(SECONDS_IN_HOUR, "");
     }
 
     bool canGenerate() override
     {
-        return times.size() >= max_block_size;
+        return !ready_hours.empty();
     }
 
     Chunk generate() override
     {
+        auto result = std::move(ready_hours.back());
+        ready_hours.pop_back();
+        return result;
+    }
+
+    Chunk getRemaining() override
+    {
+        flushToChunk();
+
+        if (ready_hours.empty())
+            return Chunk();
+
+        return generate();
+    }
+
+    void flushToChunk()
+    {
         Chunk result;
 
-        size_t dest_rows_count = times.size();
-
-        alignMissingRows();
+        size_t rows_count = max_second_in_hour + 1;
+        if (rows_count == 0)
+            return;
 
         MutableColumns output_columns;
         output_columns.reserve(buffer.size() + need_date + need_hostname + 1);
@@ -241,48 +282,32 @@ public:
         {
             if (column_name == TransposedMetricLog::EVENT_TIME_NAME)
             {
-                output_columns.push_back(ColumnDateTime::create(times.begin(), times.end()));
+                output_columns.push_back(ColumnDateTime::create(times.begin(), times.begin() + rows_count));
+                times.assign(rows_count, static_cast<UInt32>(0));
             }
             else if (column_name == TransposedMetricLog::EVENT_DATE_NAME)
             {
-                output_columns.push_back(ColumnDate::create(dates.begin(), dates.end()));
+                output_columns.push_back(ColumnDate::create(dates.begin(), dates.begin() + rows_count));
+                dates.assign(rows_count, static_cast<UInt16>(0));
             }
             else if (column_name == TransposedMetricLog::HOSTNAME_NAME)
             {
                 auto string_column = ColumnString::create();
-                for (const auto & hostname : hostnames)
-                    string_column->insertData(hostname.data(), hostname.size());
+                for (size_t i = 0; i < rows_count; ++i)
+                    string_column->insertData(hostnames[i].data(), hostnames[i].size());
                 output_columns.push_back(std::move(string_column));
+                hostnames.assign(rows_count, "");
             }
             else if (column_name.starts_with(TransposedMetricLog::PROFILE_EVENT_PREFIX) || column_name.starts_with(TransposedMetricLog::CURRENT_METRIC_PREFIX))
             {
                 auto & column = buffer[mapping.at(column_name)];
-                output_columns.push_back(ColumnInt64::create(column.begin(), column.end()));
-                column.clear();
+                output_columns.push_back(ColumnInt64::create(column.begin(), column.begin() + rows_count));
+                column.assign(rows_count, 0L);
             }
         }
 
-        hostnames.clear();
-        dates.clear();
-        times.clear();
-
-        result.setColumns(std::move(output_columns), dest_rows_count);
-        return result;
-    }
-
-    Chunk getRemaining() override
-    {
-        if (times.empty())
-            return Chunk();
-
-        return generate();
-    }
-
-    void alignMissingRows()
-    {
-        for (auto & [_, buf] : buffer)
-            if (buf.size() < times.size())
-                buf.push_back(0);
+        result.setColumns(std::move(output_columns), rows_count);
+        ready_hours.emplace_back(std::move(result));
     }
 
     void consume(Chunk chunk) override
@@ -292,37 +317,38 @@ public:
         const auto & columns = chunk.getColumns();
         const auto & event_time_column = checkAndGetColumn<ColumnDateTime>(*columns[EVENT_TIME_POSITION]);
         const auto & value_column = checkAndGetColumn<ColumnInt64>(*columns[VALUE_POSITION]);
-        const auto & metric_column = checkAndGetColumn<ColumnLowCardinality>(*columns[METRIC_POSITION]);
+        const auto & metric_column = checkAndGetColumn<ColumnString>(*columns[METRIC_POSITION]);
         const auto & date_column = checkAndGetColumn<ColumnDate>(*columns[EVENT_DATE_POSITION]);
         const auto & hostname_column = checkAndGetColumn<ColumnLowCardinality>(*columns[HOSTNAME_POSITION]);
+        const auto & hour_column = checkAndGetColumn<ColumnDateTime>(*columns[EVENT_TIME_HOUR_POSITION]);
 
-        if (rows_count && times.empty())
+        if (rows_count && current_hour == 0)
         {
-            times.push_back(event_time_column.getInt(0));
-            if (need_date)
-                dates.push_back(date_column.getUInt(0));
-            if (need_hostname)
-                hostnames.push_back(hostname_column.getDataAt(0).toString());
+            current_hour = hour_column.getInt(0);
         }
 
         for (size_t i = 0; i < rows_count; ++i)
         {
+            size_t hour = hour_column.getInt(i);
+            if (hour != current_hour)
+            {
+                flushToChunk();
+
+                current_hour = hour;
+                max_second_in_hour = -1;
+            }
+
             auto time = event_time_column.getInt(i);
 
-            /// We cannot have more than 1 hostname or 1 event_date per one
-            /// second
-            if (time != times.back())
-            {
-                alignMissingRows();
+            auto second_in_hour = time - hour;
+            max_second_in_hour = std::max<Int64>(second_in_hour, max_second_in_hour);
+            times[second_in_hour] = time;
 
-                times.push_back(time);
+            if (need_date)
+                dates[second_in_hour] = date_column.getUInt(i);
 
-                if (need_date)
-                    dates.push_back(date_column.getUInt(i));
-
-                if (need_hostname)
-                    hostnames.push_back(hostname_column.getDataAt(i).toString());
-            }
+            if (need_hostname)
+                hostnames[second_in_hour] = hostname_column.getDataAt(i).toString();
 
             StringRef metric_name = metric_column.getDataAt(i);
             auto * it = mapping.find(metric_name);
@@ -332,10 +358,7 @@ public:
             size_t event_index = it->value.second;
 
             Int64 value = value_column.getInt(i);
-            if (buffer[event_index].size() == times.size())
-                buffer[event_index].back() = value;
-            else
-                buffer[event_index].push_back(value);
+            buffer[event_index][second_in_hour] = value;
         }
     }
 };
@@ -371,7 +394,7 @@ void StorageSystemMetricLogView::addFilterByMetricNameStep(QueryPlan & query_pla
             column_for_set->insertData(column_name.data(), column_name.size());
     }
 
-    if (column_for_set->size() == 0)
+    if (column_for_set->empty())
         return;
 
     ColumnWithTypeAndName set_column(std::move(column_for_set), std::make_shared<DataTypeString>(), "__set");

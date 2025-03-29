@@ -43,12 +43,13 @@ public:
     static constexpr auto EVENT_TIME_MICROSECONDS_NAME = "event_time_microseconds";
     static constexpr auto METRIC_NAME = "metric";
     static constexpr auto VALUE_NAME = "value";
+    static constexpr auto EVENT_TIME_HOUR_NAME = "toStartOfHour(event_time)";
 
     static constexpr std::string_view PROFILE_EVENT_PREFIX = "ProfileEvent_";
     static constexpr std::string_view CURRENT_METRIC_PREFIX = "CurrentMetric_";
 
     /// This table is usually queried by time range + some fixed metric name.
-    static const char * getDefaultOrderBy() { return "event_date, event_time, metric"; }
+    static const char * getDefaultOrderBy() { return "event_date, toStartOfHour(event_time), metric"; }
 
     void prepareTable() override;
 
