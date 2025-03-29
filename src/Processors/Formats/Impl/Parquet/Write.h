@@ -34,7 +34,7 @@ struct WriteOptions
     size_t dictionary_size_limit = 1024 * 1024;
     /// If using dictionary, this encoding is used as a fallback when dictionary gets too big.
     /// Otherwise, this is used for everything.
-    parquet::format::Encoding::type encoding = parquet::format::Encoding::PLAIN;
+    parq::Encoding::type encoding = parq::Encoding::PLAIN;
 
     bool write_column_chunk_statistics = true;
     bool write_page_statistics = true;
@@ -65,9 +65,9 @@ struct WriteOptions
 
 struct ColumnChunkIndexes
 {
-    parquet::format::ColumnIndex column_index; // if write_page_index
-    parquet::format::OffsetIndex offset_index; // if write_page_index
-    parquet::format::BloomFilterHeader bloom_filter_header;
+    parq::ColumnIndex column_index; // if write_page_index
+    parq::OffsetIndex offset_index; // if write_page_index
+    parq::BloomFilterHeader bloom_filter_header;
     PODArray<UInt32> bloom_filter_data; // if write_bloom_filter, and not flushed yet
 };
 
@@ -76,7 +76,7 @@ struct ColumnChunkWriteState
 {
     /// After writeColumnChunkBody(), offsets in this struct are relative to the start of column chunk.
     /// Then finalizeColumnChunkAndWriteFooter fixes them up before writing to file.
-    parquet::format::ColumnChunk column_chunk;
+    parq::ColumnChunk column_chunk;
 
     ColumnPtr primitive_column;
     CompressionMethod compression; // must match what's inside column_chunk
@@ -107,7 +107,7 @@ struct ColumnChunkWriteState
 
 struct RowGroupWithIndexes
 {
-    parquet::format::RowGroup row_group;
+    parq::RowGroup row_group;
     std::vector<ColumnChunkIndexes> column_indexes;
 };
 
@@ -120,7 +120,7 @@ struct FileWriteState
     size_t offset = 0;
 };
 
-using SchemaElements = std::vector<parquet::format::SchemaElement>;
+using SchemaElements = std::vector<parq::SchemaElement>;
 using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
 
 /// Parquet file consists of row groups, which consist of column chunks.

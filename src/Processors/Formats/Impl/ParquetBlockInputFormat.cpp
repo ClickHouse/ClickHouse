@@ -29,6 +29,7 @@
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Processors/Formats/Impl/ParquetMk4BlockInputFormat.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -1204,12 +1205,21 @@ void registerInputFormatParquet(FormatFactory & factory)
                size_t max_parsing_threads)
             {
                 size_t min_bytes_for_seek = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
-                return std::make_shared<ParquetBlockInputFormat>(
+                //TODO: setting to select implementation
+                //TODO: actually share the shared pool, fill out its fields using settings
+                auto pool = std::make_shared<Parquet::SharedParsingThreadPool>();
+                pool->io_pool.emplace(
+                    CurrentMetrics::ParquetDecoderIOThreads, CurrentMetrics::ParquetDecoderIOThreadsActive,
+                    CurrentMetrics::ParquetDecoderIOThreadsScheduled, max_download_threads);
+                pool->parsing_pool.emplace(
+                    CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive,
+                    CurrentMetrics::ParquetDecoderThreadsScheduled, max_parsing_threads);
+                pool->total_memory_target = 4 << 30;
+                return std::make_shared<ParquetMk4BlockInputFormat>(
                     buf,
                     sample,
                     settings,
-                    max_parsing_threads,
-                    max_download_threads,
+                    pool,
                     min_bytes_for_seek);
             });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
@@ -1221,6 +1231,7 @@ void registerParquetSchemaReader(FormatFactory & factory)
         "Parquet",
         [](ReadBuffer & buf, const FormatSettings & settings)
         {
+            //TODO: maybe make a custom one reusing the parser dispatch code
             return std::make_shared<ParquetSchemaReader>(buf, settings);
         }
         );
