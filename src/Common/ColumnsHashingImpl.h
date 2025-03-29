@@ -351,9 +351,11 @@ protected:
     template <typename T, typename ArgType>
     struct HasErase<T, ArgType, std::void_t<decltype(std::declval<T>().erase(std::declval<ArgType>()))>> : std::true_type {};
 
-    template <typename KeyHolder>
-    bool compareKeyHolders(KeyHolder & lhs, KeyHolder & rhs) {
-        return lhs < rhs; // TODO implement
+    template <typename KeyHolder1, typename KeyHolder2>
+    bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs) {
+        (void)lhs;
+        (void)rhs;
+        return false; // TODO implement
     }
 
     // 72610: key_holder -- указатель на ключ
@@ -404,7 +406,9 @@ protected:
         // }
         // (void)hhh;
 
-        std::cout << "^^^^^^^^ Type of data: " << typeid(data).name() << std::endl;
+        std::cout << "^^^^^^^^ Type of data:       " << typeid(data).name() << std::endl;
+        std::cout << "^^^^^^^^ Type of key_holder: " << typeid(key_holder).name() << std::endl;
+        std::cout << "^^^^^^^^ Type of keyHolderGetKey(key_holder): " << typeid(keyHolderGetKey(key_holder)).name() << std::endl;
 
         if (data.size() >= limit_length + 1) { // TODO do == and assert <=
             std::cout << "data.size() >= limit_length + 1" << std::endl;
@@ -413,31 +417,23 @@ protected:
                 for (const auto& data_el : data) {
                     if constexpr (HasKey<KeyHolder>::value) {
                         const auto& key = data_el.getKey();
-                        (void)key;
-                        if (compareKeyHolders(key, min_key_holder.key)) { // TODO compare according to order by
+                        if (compareKeyHolders(key, min_key_holder.key)) {
                             min_key_holder.key = key;
                         }
                     } else {
-                        if (compareKeyHolders(data_el.getKey(), min_key_holder)) { // TODO compare according to order by
-                            min_key_holder = data_el.getKey();
+                        if (compareKeyHolders(data_el.getKey(), min_key_holder)) {
+                            if constexpr (!std::is_same_v<decltype(data_el.getKey()), const VoidKey>) {
+                                min_key_holder = data_el.getKey();
+                            }
                         }
                     }
                 }
-                if constexpr (HasKey<KeyHolder>::value) {
-                    if constexpr (HasErase<Data, decltype(min_key_holder.key)>::value) {
-                        data.erase(min_key_holder.key);
-                        if (min_key_holder.key == key_holder.key) {
-                            if constexpr (!has_mapped)
-                                return EmplaceResult(inserted);
-                        }
-                    }
-                } else {
-                    if constexpr (HasErase<Data, KeyHolder>::value) {
-                        data.erase(min_key_holder);
-                        if (min_key_holder == key_holder) {
-                            if constexpr (!has_mapped)
-                                return EmplaceResult(inserted);
-                        }
+                const auto& min_key = keyHolderGetKey(min_key_holder);
+                if constexpr (HasErase<Data, decltype(keyHolderGetKey(min_key_holder))>::value) {
+                    data.erase(min_key);
+                    if (min_key == keyHolderGetKey(key_holder)) {
+                        if constexpr (!has_mapped)
+                            return EmplaceResult(inserted);
                     }
                 }
             } else if constexpr(HasForEachMapped<Data>::value) {
