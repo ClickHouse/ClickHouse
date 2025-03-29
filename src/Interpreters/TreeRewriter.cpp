@@ -36,6 +36,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -375,6 +376,8 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 
             name = name + "_" + toString(i);
             expr = expr->clone();   /// Cancels fuse of the same expressions in the tree.
+            if (typeid_cast<ASTAsterisk *>(expr.get()))
+                continue;
             expr->setAlias(name);
 
             all_column_names.insert(name);
