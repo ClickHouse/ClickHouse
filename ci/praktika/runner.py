@@ -6,8 +6,6 @@ import sys
 import traceback
 from pathlib import Path
 
-from praktika.info import Info
-
 from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
@@ -15,6 +13,7 @@ from .digest import Digest
 from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
+from .info import Info
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3, StorageUsage
@@ -544,7 +543,12 @@ class Runner:
 
         if not local_run:
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
-            self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
+            try:
+                self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
+            except Exception as e:
+                print(f"ERROR: Post-Run script failed with exception [{e}]")
+                traceback.print_exc()
+                sys.exit(1)
             print(f"=== Post run script finished ===")
 
         if not res:

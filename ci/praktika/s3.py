@@ -125,9 +125,9 @@ class S3:
         cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
         if text:
             cmd += " --content-type text/plain"
-        res = cls.run_command_with_retries(cmd)
-        if not res:
-            raise RuntimeError()
+        error = cls.run_command_with_retries(cmd)
+        if error:
+            raise RuntimeError(error)
         StorageUsage.add_uploaded(local_path)
         bucket = s3_path.split("/")[0]
         endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
@@ -159,40 +159,43 @@ class S3:
 
         if text:
             command += " --content-type text/plain"
-        res = cls.run_command_with_retries(command)
-        if res:
+        error = cls.run_command_with_retries(command)
+        if not error:
             StorageUsage.add_uploaded(local_path)
-        return res
+        return not error
 
     @classmethod
     def run_command_with_retries(cls, command, retries=Settings.MAX_RETRIES_S3):
         i = 0
         res = False
+        error = ""
         while not res and i < retries:
             i += 1
             ret_code, stdout, stderr = Shell.get_res_stdout_stderr(
                 command, verbose=True
             )
             if "aws sso login" in stderr:
-                print("ERROR: aws login expired")
+                error = "aws login expired"
                 break
             elif "does not exist" in stderr:
-                print("ERROR: requested file does not exist")
+                error = "requested file does not exist"
                 break
             elif "Unknown options" in stderr:
-                print("ERROR: Invalid AWS CLI command or CLI client version:")
-                print(f"  | awc error: {stderr}")
+                error = f"Invalid AWS CLI command or CLI client version:\n  | awc error: {stderr}"
                 break
             elif "PreconditionFailed" in stderr:
-                print("ERROR: AWS API Call Precondition Failed")
-                print(f"  | awc error: {stderr}")
+                error = f"AWS API Call Precondition Failed\n  | awc error: {stderr}"
                 break
-            if ret_code != 0:
-                print(
-                    f"ERROR: aws s3 cp failed, stdout/stderr err: [{stderr}], out [{stdout}]"
+            elif "Unable to locate credentials" in stderr:
+                error = f"AWS CLI cannot find credentials, (might be a network issue)\n  | awc error: {stderr}"
+                break
+            if not error and ret_code != 0:
+                error = (
+                    f"aws s3 cp failed, stdout/stderr err: [{stderr}], out [{stdout}]"
                 )
-            res = ret_code == 0
-        return res
+            if error:
+                print(f"ERROR: {error}")
+        return error
 
     @classmethod
     def copy_file_from_s3(
@@ -210,13 +213,13 @@ class S3:
             cmd += " --recursive"
         if include_pattern:
             cmd += f' --exclude "*" --include "{include_pattern}"'
-        res = cls.run_command_with_retries(cmd)
-        if res:
+        error = cls.run_command_with_retries(cmd)
+        if not error:
             if not Path(local_path).parent.is_dir():
                 StorageUsage.add_downloaded(local_path)
             else:
                 print("TODO: implement for multiple files")
-        return res
+        return not error
 
     @classmethod
     def copy_file_from_s3_matching_pattern(
@@ -228,13 +231,13 @@ class S3:
         ).is_dir(), f"Path [{local_path}] does not exist or not a directory"
         assert s3_path.endswith("/"), f"s3 path is invalid [{s3_path}]"
         cmd = f'aws s3 cp s3://{s3_path}  {local_path} --exclude "{exclude}" --include "{include}" --recursive'
-        res = cls.run_command_with_retries(cmd)
-        if res:
+        error = cls.run_command_with_retries(cmd)
+        if not error:
             if not Path(local_path).parent.is_dir():
                 StorageUsage.add_downloaded(local_path)
             else:
                 print("TODO: implement for multiple files")
-        return res
+        return not error
 
     @classmethod
     def head_object(cls, s3_path):
