@@ -1,13 +1,28 @@
 CREATE TABLE default.table1\n(\n    `x` Int32\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS index_granularity = 8192
 CREATE TABLE default.table2\n(\n    `y` Int32\n)\nENGINE = MergeTree\nORDER BY y\nSETTINGS index_granularity = 8192
+CREATE TABLE default.table3\n(\n    `y` Int32\n)\nENGINE = MergeTree\nORDER BY y\nSETTINGS index_granularity = 8192
 table1:
 0
 1
 2
+5
 10
 11
 table2:
 20
+table3:
+30	unknown
+31	unknown
+32	unknown
+33	unknown
+34	unknown
+35	unknown
+mv_table3:
+33	330
+34	340
+35	350
 tables exist:
+0
+0
 0
 0
