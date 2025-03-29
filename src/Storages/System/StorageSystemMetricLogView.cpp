@@ -371,7 +371,7 @@ void StorageSystemMetricLogView::addFilterByMetricNameStep(QueryPlan & query_pla
             column_for_set->insertData(column_name.data(), column_name.size());
     }
 
-    if (column_for_set->size() == 0)
+    if (column_for_set->empty())
         return;
 
     ColumnWithTypeAndName set_column(std::move(column_for_set), std::make_shared<DataTypeString>(), "__set");
