@@ -34,7 +34,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    void addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context);
+    std::optional<String> addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context);
 private:
     StorageView internal_view;
 };
@@ -48,10 +48,8 @@ private:
 /// filter push down through it and it's possible only with custom code in filterPushDown.cpp
 class CustomMetricLogStep : public ITransformingStep
 {
-private:
-    size_t max_block_size;
 public:
-    CustomMetricLogStep(Block input_header_, Block output_header_, size_t max_block_size_);
+    CustomMetricLogStep(Block input_header_, Block output_header_);
 
     String getName() const override
     {

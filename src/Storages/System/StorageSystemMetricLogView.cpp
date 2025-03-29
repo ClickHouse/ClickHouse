@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnsCommon.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/IInflatingTransform.h>
@@ -191,14 +192,17 @@ class CustomFilterTransform : public IInflatingTransform
     HashMap<StringRef, size_t> mapping;
     Names column_names;
 public:
-    static constexpr auto SECONDS_IN_HOUR = 3600;
+    static constexpr size_t SECONDS_IN_HOUR = 3600;
     String getName() const override { return "MetricLogCustomTransform"; }
+
+    IColumnFilter filter;
 
     PODArray<UInt32> times;
     PODArray<UInt16> dates;
     std::vector<std::string> hostnames;
     size_t current_hour = 0;
     Int64 max_second_in_hour = -1;
+    Int64 min_second_in_hour = 3600;
 
     std::unordered_map<size_t, PODArray<Int64>> buffer;
 
@@ -207,11 +211,8 @@ public:
     bool need_hostname = false;
     bool need_date = false;
 
-    size_t max_block_size;
-
-    CustomFilterTransform(Block input_header, Block output_header, size_t max_block_size_)
+    CustomFilterTransform(Block input_header, Block output_header)
         : IInflatingTransform(input_header, output_header)
-        , max_block_size(max_block_size_)
     {
         size_t counter = 0;
         column_names.reserve(output_header.columns());
@@ -224,7 +225,7 @@ public:
             if (column_name.starts_with(TransposedMetricLog::PROFILE_EVENT_PREFIX) || column_name.starts_with(TransposedMetricLog::CURRENT_METRIC_PREFIX))
             {
                 mapping[column_name] = counter;
-                buffer[counter].resize_fill(SECONDS_IN_HOUR, 0L);
+                buffer[counter].resize(SECONDS_IN_HOUR);
                 counter++;
             }
             else if (column_name == TransposedMetricLog::HOSTNAME_NAME)
@@ -237,12 +238,13 @@ public:
             }
         }
 
-        times.resize_fill(SECONDS_IN_HOUR, static_cast<UInt32>(0));
+        filter.resize_fill(SECONDS_IN_HOUR, static_cast<UInt8>(0));
+        times.resize(SECONDS_IN_HOUR);
 
         if (need_date)
-            dates.resize_fill(SECONDS_IN_HOUR, static_cast<UInt16>(0));
+            dates.resize(SECONDS_IN_HOUR);
         if (need_hostname)
-            hostnames.resize(SECONDS_IN_HOUR, "");
+            hostnames.resize(SECONDS_IN_HOUR);
     }
 
     bool canGenerate() override
@@ -271,40 +273,94 @@ public:
     {
         Chunk result;
 
-        size_t rows_count = max_second_in_hour + 1;
-        if (rows_count == 0)
+        if (max_second_in_hour == -1)
             return;
+
+        size_t rows_count = max_second_in_hour + 1 - min_second_in_hour;
 
         MutableColumns output_columns;
         output_columns.reserve(buffer.size() + need_date + need_hostname + 1);
+
+        bool need_to_apply_filter = !memoryIsByte(filter.raw_data(), min_second_in_hour, max_second_in_hour + 1, 1);
 
         for (const auto & column_name : column_names)
         {
             if (column_name == TransposedMetricLog::EVENT_TIME_NAME)
             {
-                output_columns.push_back(ColumnDateTime::create(times.begin(), times.begin() + rows_count));
-                times.assign(rows_count, static_cast<UInt32>(0));
+                if (need_to_apply_filter)
+                {
+                    auto column = ColumnDateTime::create();
+                    column->reserve(rows_count);
+                    for (size_t i = min_second_in_hour; i < static_cast<size_t>(max_second_in_hour + 1); ++i)
+                        if (filter[i])
+                            column->insertValue(times[i]);
+                    rows_count = column->size();
+                    output_columns.push_back(std::move(column));
+                }
+                else
+                {
+                    auto * start = times.begin() + min_second_in_hour;
+                    auto * end = start + rows_count;
+                    output_columns.push_back(ColumnDateTime::create(start, end));
+                }
             }
             else if (column_name == TransposedMetricLog::EVENT_DATE_NAME)
             {
-                output_columns.push_back(ColumnDate::create(dates.begin(), dates.begin() + rows_count));
-                dates.assign(rows_count, static_cast<UInt16>(0));
+                if (need_to_apply_filter)
+                {
+                    auto column = ColumnDate::create();
+                    column->reserve(rows_count);
+                    for (size_t i = min_second_in_hour; i < static_cast<size_t>(max_second_in_hour + 1); ++i)
+                        if (filter[i])
+                            column->insertValue(dates[i]);
+                    rows_count = column->size();
+                    output_columns.push_back(std::move(column));
+                }
+                else
+                {
+                    auto * start = dates.begin() + min_second_in_hour;
+                    auto * end = start + rows_count;
+                    output_columns.push_back(ColumnDate::create(start, end));
+                }
             }
             else if (column_name == TransposedMetricLog::HOSTNAME_NAME)
             {
                 auto string_column = ColumnString::create();
-                for (size_t i = 0; i < rows_count; ++i)
-                    string_column->insertData(hostnames[i].data(), hostnames[i].size());
+                string_column->reserve(rows_count);
+
+                for (size_t i = min_second_in_hour; i < static_cast<size_t>(max_second_in_hour + 1); ++i)
+                {
+                    if (filter[i])
+                        string_column->insertData(hostnames[i].data(), hostnames[i].size());
+                }
+                rows_count = string_column->size();
                 output_columns.push_back(std::move(string_column));
-                hostnames.assign(rows_count, "");
             }
             else if (column_name.starts_with(TransposedMetricLog::PROFILE_EVENT_PREFIX) || column_name.starts_with(TransposedMetricLog::CURRENT_METRIC_PREFIX))
             {
                 auto & column = buffer[mapping.at(column_name)];
-                output_columns.push_back(ColumnInt64::create(column.begin(), column.begin() + rows_count));
-                column.assign(rows_count, 0L);
+                if (need_to_apply_filter)
+                {
+                    auto column_result = ColumnInt64::create();
+                    column_result->reserve(rows_count);
+                    for (size_t i = min_second_in_hour; i < static_cast<size_t>(max_second_in_hour + 1); ++i)
+                        if (filter[i])
+                            column_result->insertValue(column[i]);
+                    rows_count = column_result->size();
+                    output_columns.push_back(std::move(column_result));
+                }
+                else
+                {
+                    auto * start = column.begin() + min_second_in_hour;
+                    auto * end = start + rows_count;
+
+                    output_columns.push_back(ColumnInt64::create(start, end));
+                }
+                column.assign(SECONDS_IN_HOUR, 0L);
             }
         }
+
+        filter.assign(SECONDS_IN_HOUR, static_cast<UInt8>(0));
 
         result.setColumns(std::move(output_columns), rows_count);
         ready_hours.emplace_back(std::move(result));
@@ -336,13 +392,16 @@ public:
 
                 current_hour = hour;
                 max_second_in_hour = -1;
+                min_second_in_hour = 3600;
             }
 
             auto time = event_time_column.getInt(i);
 
             auto second_in_hour = time - hour;
             max_second_in_hour = std::max<Int64>(second_in_hour, max_second_in_hour);
+            min_second_in_hour = std::min<Int64>(second_in_hour, min_second_in_hour);
             times[second_in_hour] = time;
+            filter[second_in_hour] = 1;
 
             if (need_date)
                 dates[second_in_hour] = date_column.getUInt(i);
@@ -366,7 +425,7 @@ public:
 }
 
 CustomMetricLogStep::CustomMetricLogStep(
-    Block input_header_, Block output_header_, size_t max_block_size_)
+    Block input_header_, Block output_header_)
      : ITransformingStep(
          input_header_, output_header_,
          ITransformingStep::Traits
@@ -374,19 +433,19 @@ CustomMetricLogStep::CustomMetricLogStep(
             .data_stream_traits = ITransformingStep::DataStreamTraits{.returns_single_stream = true, .preserves_number_of_streams = false, .preserves_sorting = true},
             .transform_traits = ITransformingStep::TransformTraits{.preserves_number_of_rows = false}
          })
-    , max_block_size(max_block_size_)
 {
 }
 
 void CustomMetricLogStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.resize(1);
-    pipeline.addTransform(std::make_shared<CustomFilterTransform>(input_headers[0], *output_header, max_block_size));
+    pipeline.addTransform(std::make_shared<CustomFilterTransform>(input_headers[0], *output_header));
 }
 
 /// Adds filter to view similar to WHERE metric_name IN ('Metric1', 'Event1', ...)
-void StorageSystemMetricLogView::addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context)
+std::optional<String> StorageSystemMetricLogView::addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context)
 {
+    std::optional<String> additional_name;
     MutableColumnPtr column_for_set = ColumnString::create();
     for (const auto & column_name : column_names)
     {
@@ -395,7 +454,11 @@ void StorageSystemMetricLogView::addFilterByMetricNameStep(QueryPlan & query_pla
     }
 
     if (column_for_set->empty())
-        return;
+    {
+        additional_name.emplace(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + ProfileEvents::getName(ProfileEvents::Event(0)));
+        column_for_set->insertData(additional_name->data(), additional_name->size());
+    }
+
 
     ColumnWithTypeAndName set_column(std::move(column_for_set), std::make_shared<DataTypeString>(), "__set");
     ColumnsWithTypeAndName set_columns;
@@ -415,6 +478,7 @@ void StorageSystemMetricLogView::addFilterByMetricNameStep(QueryPlan & query_pla
     dag.getOutputs().push_back(&output);
 
     query_plan.addStep(std::make_unique<FilterStep>(query_plan.getCurrentHeader(), std::move(dag), "_special_filter_for_metric_log", true));
+    return additional_name;
 }
 
 void StorageSystemMetricLogView::read(
@@ -436,18 +500,18 @@ void StorageSystemMetricLogView::read(
 
     /// Doesn't make sense to filter by metric, we will not filter out anything
     bool read_all_columns = full_output_header.columns() == column_names.size();
+    std::optional<String> additional_name;
     if (!read_all_columns)
-        addFilterByMetricNameStep(query_plan, column_names, context);
+        additional_name = addFilterByMetricNameStep(query_plan, column_names, context);
 
     Block output_header;
     for (const auto & name : column_names)
         output_header.insert(full_output_header.getByName(name));
 
-    /// Otherwise we can allocate too much memory
-    if (column_names.size() > 100)
-        max_block_size = std::min(8192UL, max_block_size);
+    if (additional_name.has_value())
+        output_header.insert(full_output_header.getByName(*additional_name));
 
-    query_plan.addStep(std::make_unique<CustomMetricLogStep>(input_header, output_header, max_block_size));
+    query_plan.addStep(std::make_unique<CustomMetricLogStep>(input_header, output_header));
 }
 
 }
