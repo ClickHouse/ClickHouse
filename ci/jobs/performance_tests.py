@@ -546,6 +546,7 @@ def main():
         res = results[-1].is_ok()
 
     # TODO: code to fetch status was taken from old script as is - status is to be correctly set in Test stage and this stage is to be removed!
+    message = ""
     if res and JobStages.CHECK_RESULTS in stages:
 
         def too_many_slow(msg):
@@ -558,7 +559,6 @@ def main():
         # Try to fetch status from the report.
         sw = Utils.Stopwatch()
         status = ""
-        message = ""
         try:
             with open(f"{perf_wd}/report.html", "r", encoding="utf-8") as report_fd:
                 report_text = report_fd.read()
@@ -631,7 +631,7 @@ def main():
         files_to_attach.append(f"{perf_wd}/logs.tar.zst")
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=files_to_attach
+        results=results, stopwatch=stop_watch, files=files_to_attach, info=message
     ).add_job_summary_to_info(with_local_run_command=True).complete_job()
 
 

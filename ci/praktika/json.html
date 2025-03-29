@@ -42,6 +42,7 @@
             --header-background-color: #f4f4f4;
             --link-color: blue;
             --link-hover-color: darkblue;
+            --job-name-color: #654cf0;
             --file-link-color: blue;
             --file-link-hover-color: darkblue;
             --table-border-color: #ccc;
@@ -55,6 +56,7 @@
             --pending-bar-color: #595801;
             --skipped-bar-color: #575757;
             --table-border-color: #444;
+            --job-name-color: #ffea00;
             --link-color: #ffea00;
             --link-hover-color: #ffaa00;
             --file-link-color: #007efc;
@@ -268,18 +270,18 @@
         }
 
         .name-column a {
-            color: var(--link-color);
+            color: var(--job-name-color);
             text-decoration: underline;
             display: inline-block;
         }
 
-        .name-column a:hover {
-            color: var(--link-hover-color);
-        }
+        /*.name-column a:hover {*/
+        /*    color: var(--link-hover-color);*/
+        /*}*/
 
         /* Non-clickable text should look similar but without underline */
         .name-column .disabled {
-            color: var(--link-color); /* Same color as links */
+            color: var(--job-name-color); /* Same color as links */
             cursor: default; /* No pointer cursor */
             text-decoration: none; /* No underline */
         }
