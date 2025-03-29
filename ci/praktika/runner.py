@@ -6,7 +6,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from praktika.info import Info
+from .info import Info
 
 from ._environment import _Environment
 from .artifact import Artifact
@@ -422,7 +422,7 @@ class Runner:
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
             if Settings.USE_CUSTOM_GH_AUTH:
-                from praktika.gh_auth_deprecated import GHAuth
+                from .gh_auth import GHAuth
 
                 pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
                 app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()

@@ -1,4 +1,5 @@
 import json
+import os
 import urllib
 from pathlib import Path
 from typing import Optional
@@ -62,6 +63,10 @@ class Info:
     @property
     def repo_name(self):
         return self.env.REPOSITORY
+
+    @property
+    def repo_owner(self):
+        return os.getenv("GITHUB_REPOSITORY_OWNER", "")
 
     @property
     def fork_name(self):
