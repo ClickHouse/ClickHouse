@@ -24,15 +24,23 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [after_processing = 'keep',]
     [keeper_path = '',]
     [loading_retries = 0,]
-    [processing_threads_num = 1,]
-    [enable_logging_to_s3queue_log = 0,]
+    [processing_threads_num = 16,]
+    [enable_logging_to_queue_log = true,]
+    [last_processed_path = "",]
+    [tracked_files_limit = 1000,]
+    [tracked_file_ttl_sec = 0,]
     [polling_min_timeout_ms = 1000,]
     [polling_max_timeout_ms = 10000,]
     [polling_backoff_ms = 0,]
-    [tracked_file_ttl_sec = 0,]
-    [tracked_files_limit = 1000,]
     [cleanup_interval_min_ms = 10000,]
     [cleanup_interval_max_ms = 30000,]
+    [buckets = 0,]
+    [list_objects_batch_size = 1000,]
+    [enable_hash_ring_filtering = 0,]
+    [max_processed_files_before_commit = 100,]
+    [max_processed_rows_before_commit = 0,]
+    [max_processed_bytes_before_commit = 0,]
+    [max_processing_time_sec_before_commit = 0,]
 ```
 
 :::warning
@@ -118,7 +126,7 @@ Default value: `0`.
 
 Number of threads to perform processing. Applies only for `Unordered` mode.
 
-Default value: `1`.
+Default value: Number of CPUs or 16.
 
 ### s3queue_enable_logging_to_s3queue_log {#enable_logging_to_s3queue_log}
 
