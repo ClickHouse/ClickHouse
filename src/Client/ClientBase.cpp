@@ -3264,6 +3264,7 @@ void ClientBase::runInteractive()
         .in_fd = stdin_fd,
         .out_fd = stdout_fd,
         .err_fd = stderr_fd,
+        .on_complete_modify_callback = ReplxxLineReader::OnCompleteModifyCallback(),
     };
 
     lr = std::make_unique<ReplxxLineReader>(std::move(options));
