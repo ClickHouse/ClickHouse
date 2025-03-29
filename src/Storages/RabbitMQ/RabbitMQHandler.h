@@ -16,6 +16,7 @@ namespace Loop
 {
     static const UInt8 RUN = 1;
     static const UInt8 STOP = 2;
+    static const UInt8 SHUTDOWN = 3;
 }
 
 using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
@@ -45,7 +46,7 @@ public:
     bool connectionRunning() const { return connection_running.load(); }
     bool loopRunning() const { return loop_running.load(); }
 
-    void updateLoopState(UInt8 state) { loop_state.store(state); }
+    void updateLoopState(UInt8 state);
     UInt8 getLoopState() { return loop_state.load(); }
 
 private:
@@ -55,6 +56,7 @@ private:
     std::atomic<bool> connection_running, loop_running;
     std::atomic<UInt8> loop_state;
     std::mutex startup_mutex;
+    std::mutex loop_state_mutex;
 };
 
 using RabbitMQHandlerPtr = std::shared_ptr<RabbitMQHandler>;
