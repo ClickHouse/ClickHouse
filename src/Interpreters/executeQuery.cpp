@@ -1395,7 +1395,7 @@ static BlockIO executeQueryImpl(
             if (!get_result_from_query_result_cache())
             {
                 /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
-                if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !out_ast->as<ASTTransactionControl>())
+                if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
                 {
                     try
                     {
