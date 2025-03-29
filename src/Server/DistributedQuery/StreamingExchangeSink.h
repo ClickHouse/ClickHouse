@@ -22,6 +22,8 @@ public:
     {
     }
 
+    ~StreamingExchangeSink() override;
+
     String getName() const override { return "StreamingExchangeSink(" + stream_name + ")"; }
 
 private:

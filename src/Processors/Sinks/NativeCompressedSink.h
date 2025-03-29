@@ -18,6 +18,8 @@ public:
     {
     }
 
+    ~NativeCompressedSink() override;
+
     String getName() const override { return "NativeCompressedSink"; }
 
 private:

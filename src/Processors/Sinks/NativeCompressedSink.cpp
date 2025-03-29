@@ -5,6 +5,17 @@
 namespace DB
 {
 
+NativeCompressedSink::~NativeCompressedSink()
+{
+    writer.reset();
+
+    if (compressed_buf && !compressed_buf->isFinalized())
+        compressed_buf->cancel();
+
+    if (!out.isFinalized())
+        out.cancel();
+}
+
 void NativeCompressedSink::onStart()
 {
     if (!input.getHeader()) /// No input columns? (case of `SELECT count()`)

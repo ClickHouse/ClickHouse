@@ -16,6 +16,12 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
 
+StreamingExchangeSink::~StreamingExchangeSink()
+{
+    if (out && !out->isFinalized())
+        out->cancel();
+}
+
 void StreamingExchangeSink::onStart()
 {
     connect();
