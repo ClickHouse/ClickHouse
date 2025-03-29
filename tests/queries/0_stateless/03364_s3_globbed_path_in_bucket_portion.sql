@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 -- virtual hosted style
 create table s3_03364 (id UInt32) engine=S3('http://{_partition_id}.s3.region.amazonaws.com/key'); -- {serverError BAD_ARGUMENTS}
 create table s3_03364 (id UInt32) engine=S3('http://{_partition_id}something.s3.region.amazonaws.com/key'); -- {serverError BAD_ARGUMENTS}
