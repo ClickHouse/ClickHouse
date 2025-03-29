@@ -138,10 +138,10 @@ public:
         return current_metadata->supportsFileIterator();
     }
 
-    ObjectIterator iterate() override
+    ObjectIterator iterate(IDataLakeMetadata::FileProgressCallback callback, size_t list_batch_size) override
     {
         chassert(current_metadata);
-        return current_metadata->iterate();
+        return current_metadata->iterate(callback, list_batch_size);
     }
 
     /// This is an awful temporary crutch,

@@ -463,6 +463,13 @@ getReadSchemaAndPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot, ffi
     return {data.getSchemaResult(), data.getPartitionColumns()};
 }
 
+DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine)
+{
+    SchemaVisitorData data;
+    SchemaVisitor::visitPartitionColumns(snapshot, engine, data);
+    return data.getPartitionColumns();
+}
+
 }
 
 #endif
