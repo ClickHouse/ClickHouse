@@ -752,9 +752,10 @@ protected:
             if (task_status == "Running\n")
                 continue;
 
-            started_tasks.pop_front();
             if (task_status != "Finished\n")
                 error_message += " Task " + task.task_id + " error: " + task_status + "\n";
+
+            started_tasks.pop_front();
         }
 
         if (!error_message.empty())
