@@ -111,6 +111,7 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -2163,6 +2164,12 @@ bool Context::hasScalar(const String & name) const
     return scalars.contains(name);
 }
 
+void Context::addQueryAccessInfo(
+    const StorageID & table_id,
+    const Names & column_names)
+{
+    addQueryAccessInfo(backQuoteIfNeed(table_id.getDatabaseName()), table_id.getFullTableName(), column_names);
+}
 
 void Context::addQueryAccessInfo(
     const String & quoted_database_name,

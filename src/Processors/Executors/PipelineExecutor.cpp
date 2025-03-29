@@ -1,5 +1,6 @@
 #include <IO/WriteBufferFromString.h>
 #include "Common/ISlotControl.h"
+#include "Common/StackTrace.h"
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
@@ -188,6 +189,7 @@ bool PipelineExecutor::checkTimeLimitSoft()
     if (process_list_element)
     {
         bool continuing = process_list_element->checkTimeLimitSoft();
+
         // We call cancel here so that all processors are notified and tasks waken up
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
@@ -202,6 +204,7 @@ bool PipelineExecutor::checkTimeLimitSoft()
 bool PipelineExecutor::checkTimeLimit()
 {
     bool continuing = checkTimeLimitSoft();
+
     if (!continuing)
         process_list_element->checkTimeLimit(); // Will throw if needed
 
@@ -255,6 +258,8 @@ void PipelineExecutor::finalizeExecution()
 
     if (!all_processors_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}", dumpPipeline());
+
+    LOG_DEBUG(log, "finalizeExecution end");
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num)
@@ -429,32 +434,27 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 {
     initializeExecution(num_threads, concurrency_control);
 
-    bool finished_flag = false;
-
-    SCOPE_EXIT_SAFE(
-        if (!finished_flag)
+    try
+    {
+        if (num_threads > 1)
         {
-            /// If finished_flag is not set, there was an exception.
-            /// Cancel execution in this case.
-            cancel(ExecutionStatus::Exception);
-            if (pool)
-                pool->wait();
+            spawnThreads(); // start at least one thread
+            tasks.processAsyncTasks();
+            pool->wait();
         }
-    );
-
-    if (num_threads > 1)
-    {
-        spawnThreads(); // start at least one thread
-        tasks.processAsyncTasks();
-        pool->wait();
+        else
+        {
+            auto slot = cpu_slots->tryAcquire();
+            executeSingleThread(0);
+        }
     }
-    else
+    catch (...)
     {
-        auto slot = cpu_slots->tryAcquire();
-        executeSingleThread(0);
+        cancel(ExecutionStatus::Exception);
+        if (pool)
+            pool->wait();
+        throw;
     }
-
-    finished_flag = true;
 }
 
 String PipelineExecutor::dumpPipeline() const

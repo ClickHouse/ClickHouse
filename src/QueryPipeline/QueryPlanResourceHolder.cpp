@@ -12,6 +12,7 @@ QueryPlanResourceHolder & QueryPlanResourceHolder::append(QueryPlanResourceHolde
     interpreter_context.insert(interpreter_context.end(),
                                rhs.interpreter_context.begin(), rhs.interpreter_context.end());
     query_id_holders.insert(query_id_holders.end(), rhs.query_id_holders.begin(), rhs.query_id_holders.end());
+    views_holder.insert(views_holder.end(), rhs.views_holder.begin(), rhs.views_holder.end());
 
     return *this;
 }

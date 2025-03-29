@@ -1,11 +1,15 @@
 #pragma once
 
+#include <memory>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 
 namespace DB
 {
+
+class ViewsManager;
+using ViewsManagerConstPtr = std::shared_ptr<const ViewsManager>;
 
 /// Has one unconnected input port and one unconnected output port.
 /// There may be other ports on the processors, but they must all be connected.
@@ -34,7 +38,9 @@ public:
 
     void addSource(ProcessorPtr processor);
     void addSink(ProcessorPtr processor);
-    void appendChain(Chain chain);
+    Chain & appendChain(Chain chain);
+    Chain & appendChainNotStrict(Chain chain);
+
 
     IProcessor & getSource();
     IProcessor & getSink();
@@ -51,6 +57,8 @@ public:
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
     void addInterpreterContext(ContextPtr context) { holder.interpreter_context.emplace_back(std::move(context)); }
+    void addViewsManager(ViewsManagerConstPtr view_manager) { holder.views_holder.emplace_back(std::move(view_manager)); }
+
 
     void attachResources(QueryPlanResourceHolder holder_)
     {

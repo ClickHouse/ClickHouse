@@ -831,7 +831,7 @@ void TCPHandler::runImpl()
                 if (!query_state->read_all_data)
                     skipData(query_state.value());
 
-                LOG_TEST(log, "Logs and exception has been sent. The connection is preserved.");
+                LOG_DEBUG(log, "Logs and exception has been sent. The connection is preserved.");
             }
             catch (...)
             {
@@ -948,7 +948,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
     while (!server.isCancelled() && tcp_server.isOpen())
     {
-        if (!in->poll(timeout_us))
+        while (!in->poll(timeout_us))
         {
             size_t elapsed = size_t(watch.elapsedSeconds());
             if (elapsed > size_t(receive_timeout.totalSeconds()))
@@ -1032,7 +1032,7 @@ void TCPHandler::skipData(QueryState & state)
     size_t blocks = 0;
     while (receivePacketsExpectData(state))
         ++blocks;
-    LOG_TRACE(log, "Discarded {} blocks", blocks);
+    LOG_DEBUG(log, "Discarded {} blocks", blocks);
 }
 
 
@@ -1120,7 +1120,9 @@ void TCPHandler::processInsertQuery(QueryState & state)
 
             while (receivePacketsExpectDataConcurrentWithExecutor(state))
             {
+                LOG_DEBUG(log, "processInsertQuery");
                 executor.push(std::move(state.block_for_insert));
+                LOG_DEBUG(log, "processInsertQuery pushed");
 
                 sendLogs(state);
                 sendInsertProfileEvents(state);
@@ -1195,11 +1197,13 @@ void TCPHandler::processInsertQuery(QueryState & state)
 
     if (num_threads > 1)
     {
+            LOG_DEBUG(log, "PushingAsyncPipelineExecutor");
         PushingAsyncPipelineExecutor executor(state.io.pipeline);
         run_executor(executor, std::move(processed_block));
     }
     else
     {
+        LOG_DEBUG(log, "PushingPipelineExecutor");
         PushingPipelineExecutor executor(state.io.pipeline);
         run_executor(executor, std::move(processed_block));
     }

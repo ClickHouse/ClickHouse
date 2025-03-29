@@ -4,6 +4,7 @@
 
 #include <Columns/IColumn.h>
 
+#include "Common/Logger.h"
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
@@ -22,6 +23,8 @@ namespace ErrorCodes
 
 void RestoreChunkInfosTransform::transform(Chunk & chunk)
 {
+    LOG_DEBUG(getLogger("RestoreChunkInfosTransform"), "chunk rows {}, columns {}, strtuct {}, infos {}",
+        chunk.getNumRows(), chunk.getNumColumns(), chunk.dumpStructure(), chunk.getChunkInfos().debug());
     chunk.getChunkInfos().appendIfUniq(chunk_infos.clone());
 }
 
@@ -155,6 +158,9 @@ void CheckTokenTransform::transform(Chunk & chunk)
     }
 
     LOG_TEST(log, "debug: {}, token: {}, columns {} rows {}", debug, token_info->debugToken(), chunk.getNumColumns(), chunk.getNumRows());
+
+    LOG_DEBUG(log, "chunk rows {}, columns {}, strtuct {}, infos {}",
+    chunk.getNumRows(), chunk.getNumColumns(), chunk.dumpStructure(), chunk.getChunkInfos().debug());
 }
 #endif
 

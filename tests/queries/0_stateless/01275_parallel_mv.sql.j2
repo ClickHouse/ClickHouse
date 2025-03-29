@@ -3,7 +3,9 @@
 -- no-parallel: it checks the number of threads, which can be lowered in presence of other queries
 
 -- avoid settings randomization by clickhouse-test
-set max_threads = 10;
+{% set max_threads = namespace(value=10) %}
+
+set max_threads = {{ max_threads.value }};
 
 -- more blocks to process
 set max_block_size = 10;
@@ -32,7 +34,7 @@ create materialized view testXC engine=MergeTree order by tuple() as select slee
 
 {% set count.value = count.value + 1 %}
 
-select 'optimize_trivial_insert_select={{ optimize_trivial_insert_select }}', 'max_insert_threads={{ max_insert_threads }}', 'iteration_num={{ iteration_num }}';
+select 'max_threads={{ max_threads.value }}', 'parallel_view_processing={{ parallel_view_processing }}', 'optimize_trivial_insert_select={{ optimize_trivial_insert_select }}', 'max_insert_threads={{ max_insert_threads }}', 'iteration_num={{ count.value }}';
 
 insert into testX select number from numbers(200) settings
     send_logs_level='fatal',

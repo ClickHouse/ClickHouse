@@ -3,10 +3,12 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include "Common/Logger.h"
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
 #include <Poco/Event.h>
 
 namespace DB
@@ -172,6 +174,8 @@ void PushingAsyncPipelineExecutor::start()
 
 [[noreturn]] static void throwOnExecutionStatus(PipelineExecutor::ExecutionStatus status)
 {
+    LOG_DEBUG(getLogger("PushingAsyncPipelineExecutor"), "throwOnExecutionStatus status {}", status);
+
     if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
         || status == PipelineExecutor::ExecutionStatus::CancelledByUser)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
@@ -184,6 +188,12 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
 {
     if (!started)
         start();
+
+    if (data->is_finished)
+    {
+        data->rethrowExceptionIfHas();
+        throwOnExecutionStatus(data->executor->getExecutionStatus());
+    }
 
     bool is_pushed = pushing_source->setData(std::move(chunk));
     data->rethrowExceptionIfHas();

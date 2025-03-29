@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <Storages/TableLockHolder.h>
 
 namespace DB
@@ -11,8 +12,9 @@ using StoragePtr = std::shared_ptr<IStorage>;
 
 class QueryPlan;
 class Context;
-
 struct QueryIdHolder;
+class ViewsManager;
+using ViewsManagerConstPtr = std::shared_ptr<const ViewsManager>;
 
 struct QueryPlanResourceHolder
 {
@@ -33,6 +35,7 @@ struct QueryPlanResourceHolder
     std::vector<StoragePtr> storage_holders;
     std::vector<TableLockHolder> table_locks;
     std::vector<std::shared_ptr<QueryIdHolder>> query_id_holders;
+    std::vector<ViewsManagerConstPtr> views_holder;
 };
 
 }

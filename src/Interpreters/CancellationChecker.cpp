@@ -122,10 +122,11 @@ void CancellationChecker::workerFunction()
 
             if ((end_time_ms <= now_ms && duration_milliseconds.count() != 0))
             {
-                LOG_TRACE(log, "Cancelling the task because of the timeout: {} ms, query: {}", duration, next_task.query->getInfo().query);
+                LOG_DEBUG(log, "Cancelling the task because of the timeout: {} ms, query_id: {}",
+                    duration, next_task.query->getClientInfo().current_query_id);
+
                 cancelTask(next_task);
                 querySet.erase(next_task);
-
                 continue;
             }
         }

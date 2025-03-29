@@ -3702,7 +3702,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = '{exchange}',
                      rabbitmq_format = 'JSONEachRow',
-                    rabbitmq_queue_settings_list='x-dead-letter-exchange=deadl';
+                     rabbitmq_queue_settings_list='x-dead-letter-exchange=deadl';
 
         DROP TABLE IF EXISTS test.view;
         CREATE TABLE test.view (key UInt64, value UInt64)

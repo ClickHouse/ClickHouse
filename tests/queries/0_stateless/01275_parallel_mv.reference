@@ -5,8 +5,8 @@
 
 
 
-select 'optimize_trivial_insert_select=0', 'max_insert_threads=0', 'iteration_num=';
-optimize_trivial_insert_select=0	max_insert_threads=0	iteration_num=
+select 'max_threads=10', 'parallel_view_processing=0', 'optimize_trivial_insert_select=0', 'max_insert_threads=0', 'iteration_num=1';
+max_threads=10	parallel_view_processing=0	optimize_trivial_insert_select=0	max_insert_threads=0	iteration_num=1
 insert into testX select number from numbers(200) settings
     send_logs_level='fatal',
     insert_deduplication_token='UT_1',
@@ -29,8 +29,8 @@ select count() from testXA;
 200
 select count() from testXC;
 200
-select 'optimize_trivial_insert_select=0', 'max_insert_threads=5', 'iteration_num=';
-optimize_trivial_insert_select=0	max_insert_threads=5	iteration_num=
+select 'max_threads=10', 'parallel_view_processing=0', 'optimize_trivial_insert_select=0', 'max_insert_threads=5', 'iteration_num=2';
+max_threads=10	parallel_view_processing=0	optimize_trivial_insert_select=0	max_insert_threads=5	iteration_num=2
 insert into testX select number from numbers(200) settings
     send_logs_level='fatal',
     insert_deduplication_token='UT_2',
@@ -46,15 +46,15 @@ select peak_threads_usage from system.query_log where
     Settings['parallel_view_processing'] = '0' and
     Settings['optimize_trivial_insert_select'] = '0' and
     Settings['max_insert_threads'] = '5';
-2
+7
 select count() from testX;
 400
 select count() from testXA;
 400
 select count() from testXC;
 400
-select 'optimize_trivial_insert_select=1', 'max_insert_threads=0', 'iteration_num=';
-optimize_trivial_insert_select=1	max_insert_threads=0	iteration_num=
+select 'max_threads=10', 'parallel_view_processing=0', 'optimize_trivial_insert_select=1', 'max_insert_threads=0', 'iteration_num=3';
+max_threads=10	parallel_view_processing=0	optimize_trivial_insert_select=1	max_insert_threads=0	iteration_num=3
 insert into testX select number from numbers(200) settings
     send_logs_level='fatal',
     insert_deduplication_token='UT_3',
@@ -77,8 +77,8 @@ select count() from testXA;
 600
 select count() from testXC;
 600
-select 'optimize_trivial_insert_select=1', 'max_insert_threads=5', 'iteration_num=';
-optimize_trivial_insert_select=1	max_insert_threads=5	iteration_num=
+select 'max_threads=10', 'parallel_view_processing=0', 'optimize_trivial_insert_select=1', 'max_insert_threads=5', 'iteration_num=4';
+max_threads=10	parallel_view_processing=0	optimize_trivial_insert_select=1	max_insert_threads=5	iteration_num=4
 insert into testX select number from numbers(200) settings
     send_logs_level='fatal',
     insert_deduplication_token='UT_4',
@@ -94,15 +94,15 @@ select peak_threads_usage from system.query_log where
     Settings['parallel_view_processing'] = '0' and
     Settings['optimize_trivial_insert_select'] = '1' and
     Settings['max_insert_threads'] = '5';
-2
+7
 select count() from testX;
 800
 select count() from testXA;
 800
 select count() from testXC;
 800
-select 'optimize_trivial_insert_select=0', 'max_insert_threads=0', 'iteration_num=';
-optimize_trivial_insert_select=0	max_insert_threads=0	iteration_num=
+select 'max_threads=10', 'parallel_view_processing=1', 'optimize_trivial_insert_select=0', 'max_insert_threads=0', 'iteration_num=5';
+max_threads=10	parallel_view_processing=1	optimize_trivial_insert_select=0	max_insert_threads=0	iteration_num=5
 insert into testX select number from numbers(200) settings
     send_logs_level='fatal',
     insert_deduplication_token='UT_5',
@@ -118,15 +118,15 @@ select peak_threads_usage from system.query_log where
     Settings['parallel_view_processing'] = '1' and
     Settings['optimize_trivial_insert_select'] = '0' and
     Settings['max_insert_threads'] = '0';
-5
+2
 select count() from testX;
 1000
 select count() from testXA;
 1000
 select count() from testXC;
 1000
-select 'optimize_trivial_insert_select=0', 'max_insert_threads=5', 'iteration_num=';
-optimize_trivial_insert_select=0	max_insert_threads=5	iteration_num=
+select 'max_threads=10', 'parallel_view_processing=1', 'optimize_trivial_insert_select=0', 'max_insert_threads=5', 'iteration_num=6';
+max_threads=10	parallel_view_processing=1	optimize_trivial_insert_select=0	max_insert_threads=5	iteration_num=6
 insert into testX select number from numbers(200) settings
     send_logs_level='fatal',
     insert_deduplication_token='UT_6',
@@ -142,15 +142,15 @@ select peak_threads_usage from system.query_log where
     Settings['parallel_view_processing'] = '1' and
     Settings['optimize_trivial_insert_select'] = '0' and
     Settings['max_insert_threads'] = '5';
-12
+7
 select count() from testX;
 1200
 select count() from testXA;
 1200
 select count() from testXC;
 1200
-select 'optimize_trivial_insert_select=1', 'max_insert_threads=0', 'iteration_num=';
-optimize_trivial_insert_select=1	max_insert_threads=0	iteration_num=
+select 'max_threads=10', 'parallel_view_processing=1', 'optimize_trivial_insert_select=1', 'max_insert_threads=0', 'iteration_num=7';
+max_threads=10	parallel_view_processing=1	optimize_trivial_insert_select=1	max_insert_threads=0	iteration_num=7
 insert into testX select number from numbers(200) settings
     send_logs_level='fatal',
     insert_deduplication_token='UT_7',
@@ -173,8 +173,8 @@ select count() from testXA;
 1400
 select count() from testXC;
 1400
-select 'optimize_trivial_insert_select=1', 'max_insert_threads=5', 'iteration_num=';
-optimize_trivial_insert_select=1	max_insert_threads=5	iteration_num=
+select 'max_threads=10', 'parallel_view_processing=1', 'optimize_trivial_insert_select=1', 'max_insert_threads=5', 'iteration_num=8';
+max_threads=10	parallel_view_processing=1	optimize_trivial_insert_select=1	max_insert_threads=5	iteration_num=8
 insert into testX select number from numbers(200) settings
     send_logs_level='fatal',
     insert_deduplication_token='UT_8',

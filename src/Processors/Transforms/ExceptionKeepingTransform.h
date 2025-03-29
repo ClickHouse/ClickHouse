@@ -1,6 +1,8 @@
 #pragma once
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include "Common/ThreadStatus.h"
+#include "base/types.h"
 
 namespace DB
 {
@@ -64,11 +66,10 @@ public:
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }
 
-    void setRuntimeData(ThreadStatus * thread_status_, std::atomic_uint64_t * elapsed_counter_ms_);
+    void setRuntimeData(ThreadGroupPtr thread_group_);
 
 private:
-    ThreadStatus * thread_status = nullptr;
-    std::atomic_uint64_t * elapsed_counter_ms = nullptr;
+    ThreadGroupPtr thread_group = nullptr;
 };
 
 }

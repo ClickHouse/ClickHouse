@@ -9,5 +9,6 @@ set throw_on_unsupported_query_inside_transaction=0;
 
 INSERT INTO null_table VALUES ('test'); --{serverError NOT_IMPLEMENTED}
 
+SET implicit_transaction=0;
 DROP TABLE IF EXISTS mv_table;
 DROP TABLE IF EXISTS null_table;
