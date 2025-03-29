@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/Compaction/MergeSelectors/IMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/DisjointPartsRangesSet.h>
 #include <Storages/TTLDescription.h>
 
 namespace DB
@@ -15,13 +16,16 @@ using PartitionIdToTTLs = std::map<String, time_t>;
   */
 class ITTLMergeSelector : public IMergeSelector
 {
+    class MergeRangesConstructor;
+    friend class MergeRangesConstructor;
+
 public:
     ITTLMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
 
-    PartsRange select(
+    PartsRanges select(
         const PartsRanges & parts_ranges,
-        size_t max_total_size_to_merge,
-        RangeFilter range_filter) const override;
+        const MergeSizes & max_merge_sizes,
+        const RangeFilter & range_filter) const override;
 
 protected:
     /// Get TTL value for part, may depend on child type and some settings in constructor.
@@ -31,18 +35,18 @@ protected:
     virtual bool canConsiderPart(const PartProperties & part) const = 0;
 
 private:
-    using RangesIterator = PartsRanges::const_iterator;
-    using PartsIterator = PartsRange::const_iterator;
     struct CenterPosition
     {
         RangesIterator range;
         PartsIterator center;
+        time_t ttl;
     };
 
     bool needToPostponePartition(const std::string & partition_id) const;
-    std::optional<CenterPosition> findCenter(const PartsRanges & parts_ranges) const;
-    PartsIterator findLeftRangeBorder(PartsIterator left, PartsIterator begin, size_t & usable_memory) const;
-    PartsIterator findRightRangeBorder(PartsIterator right, PartsIterator end, size_t & usable_memory) const;
+
+    std::vector<CenterPosition> findCenters(const PartsRanges & parts_ranges) const;
+    PartsIterator findLeftRangeBorder(const CenterPosition & center_position, size_t & usable_memory, DisjointPartsRangesSet & disjoint_set) const;
+    PartsIterator findRightRangeBorder(const CenterPosition & center_position, size_t & usable_memory, DisjointPartsRangesSet & disjoint_set) const;
 
     const time_t current_time;
     const PartitionIdToTTLs & merge_due_times;
