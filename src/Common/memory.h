@@ -24,6 +24,15 @@ namespace ProfileEvents
     extern const Event GWPAsanFree;
 }
 
+/// Guard pages interface.
+///
+/// Uses MADV_GUARD_INSTALL/MADV_GUARD_REMOVE which does not splits VMA, unlike mprotect()
+///
+/// Uses MADV_GUARD_INSTALL if available, or mprotect() if not
+void memoryGuardInstall(void *addr, size_t len);
+/// Uses MADV_GUARD_REMOVE if available, or mprotect() if not
+void memoryGuardRemove(void *addr, size_t len);
+
 namespace Memory
 {
 

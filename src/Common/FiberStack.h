@@ -4,6 +4,7 @@
 #include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
+#include <Common/memory.h>
 #include <base/getPageSize.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -55,10 +56,14 @@ public:
 
         /// TODO: make reports on illegal guard page access more clear.
         /// Currently we will see segfault and almost random stacktrace.
-        if (-1 == ::mprotect(vp, page_size, PROT_NONE))
+        try
+        {
+            memoryGuardInstall(vp, page_size);
+        }
+        catch (...)
         {
             ::munmap(vp, num_bytes);
-            throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "FiberStack: cannot protect guard page");
+            throw;
         }
 
         /// Do not count guard page in memory usage.
