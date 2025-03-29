@@ -5934,6 +5934,9 @@ Possible values:
 - true — Allow.
 - false — Disallow.
 )", 0) \
+    DECLARE(UInt64, function_json_tuple_max_query_number, 10, R"(
+Control the maximum number of json query in the json_tuple function
+)", 0) \
     DECLARE(Bool, use_with_fill_by_sorting_prefix, true, R"(
 Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows with different values in sorting prefix are filled independently
 )", 0) \

@@ -1063,6 +1063,44 @@ world
 String
 ```
 
+### JSON_TUPLE {#json_tuple}
+
+Parses a JSON and extract multiple values, the values are returned by a tuple. If the value does not exist, NULL will be returned.
+
+This function is controlled by the following setting:
+
+- `function_json_tuple_max_query_number`, Control the maximum number of json query in the json_tuple function.
+
+**Syntax**
+
+```sql
+JSON_TUPLE(json, path1, path2, ....)
+```
+
+**Parameters**
+
+- `json` — A string with valid JSON. [String](../data-types/string.md).
+- `path1` — A string representing the first path. [String](../data-types/string.md).
+- `path2` — A string representing the second path. [String](../data-types/string.md).
+
+**Returned value**
+
+- the Extracted values are returned by a tuple, every tuple element represents an extraction result.
+
+**Example**
+
+Query:
+
+```sql
+SELECT JSON_TUPLE('{"hello":"world", "hello1":"world1"}', '$.hello', '$.hello1', '$.hello2');
+```
+
+Result:
+
+```text
+('world','world1', NULL)
+```
+
 ### toJSONString {#tojsonstring}
 
 Serializes a value to its JSON representation. Various data types and nested structures are supported.

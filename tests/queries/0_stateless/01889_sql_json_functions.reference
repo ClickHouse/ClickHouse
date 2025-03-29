@@ -141,6 +141,49 @@ SELECT JSON_EXISTS('{"a":[{"b":1},{"c":2}]}', '$.a[*].f');
 0
 SELECT JSON_EXISTS('{"a":[[{"b":1}, {"g":1}],[{"h":1},{"y":1}]]}', '$.a[*][0].h');
 1
+SELECT '--JSON_TUPLE--';
+--JSON_TUPLE--
+SELECT JSON_TUPLE('{"hello":null}', '$.hello');
+('null')
+SELECT JSON_TUPLE('{"hello":1}', '$', '$.hello', '$.hello1');
+('{"hello":1}','1',NULL)
+SELECT JSON_TUPLE('{"hello":1.2}', '$', '$.hello');
+('{"hello":1.2}','1.2')
+SELECT JSON_TUPLE('{"hello":true}', '$', '$.hello');
+('{"hello":true}','true')
+SELECT JSON_TUPLE('{"hello":"world"}', '$', '$.hello');
+('{"hello":"world"}','world')
+SELECT JSON_TUPLE('{"hello":["world","world2"], "hello1": {"a": "b"}}', '$', '$.hello', '$.hello[1]', '$.hello1', '$.hello1.a');
+('{"hello":["world","world2"],"hello1":{"a":"b"}}','["world","world2"]','world2','{"a":"b"}','b')
+SELECT JSON_TUPLE('{"hello":[{"a":"b"}, {"a":"b1"}, {"b":"c1"}]}', '$.hello[0]', '$.hello[*]', '$.hello[*].a', '$.hello[*].b');
+('{"a":"b"}','[{"a":"b"},{"a":"b1"},{"b":"c1"}]','["b","b1"]','"c1"')
+SELECT JSON_TUPLE('{"hello":{"world":"!"}}', '$.hello');
+('{"world":"!"}')
+SELECT JSON_TUPLE('{hello:world}', '$.hello'); -- invalid json => default value (empty string)
+(NULL)
+SELECT JSON_TUPLE('', '$.hello');
+(NULL)
+SELECT JSON_TUPLE('{"foo foo":"bar"}', '$."foo foo"');
+('bar')
+SELECT JSON_TUPLE('{"hello":"\\uD83C\\uDF3A \\uD83C\\uDF38 \\uD83C\\uDF37 Hello, World \\uD83C\\uDF37 \\uD83C\\uDF38 \\uD83C\\uDF3A"}', '$.hello');
+('🌺 🌸 🌷 Hello, World 🌷 🌸 🌺')
+SELECT JSON_TUPLE('{"a":"Hello \\"World\\" \\\\"}', '$.a');
+('Hello "World" \\')
+select JSON_TUPLE('{"a":"\\n\\u0000"}', '$.a');
+('\n\0')
+select JSON_TUPLE('{"a":"\\u263a"}', '$.a');
+('☺')
+SELECT JSON_TUPLE('{"1key":1}', '$.1key');
+('1')
+SELECT JSON_TUPLE('{"hello":1}', '$[hello]', '$["hello"]', '$[\'hello\']');
+('1','1','1')
+SELECT JSON_TUPLE('{"hello 1":1}', '$["hello 1"]');
+('1')
+SELECT JSON_TUPLE('{"1key":1}', '$..1key'); -- { serverError BAD_ARGUMENTS }
+SELECT JSON_TUPLE('{"1key":1}', '$1key'); -- { serverError BAD_ARGUMENTS }
+SELECT JSON_TUPLE('{"1key":1}', '$key'); -- { serverError BAD_ARGUMENTS }
+SELECT JSON_TUPLE('{"1key":1}', '$.[key]'); -- { serverError BAD_ARGUMENTS }
+SELECT JSON_TUPLE('{"1key":1}', '$.key', '$.1key') settings function_json_tuple_max_query_number=1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT '--MANY ROWS--';
 --MANY ROWS--
 DROP TABLE IF EXISTS 01889_sql_json;

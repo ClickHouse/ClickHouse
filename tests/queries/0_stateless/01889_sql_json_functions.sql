@@ -79,6 +79,31 @@ SELECT JSON_EXISTS('{"a":[{"b":1},{"c":2}]}', '$.a[*].b');
 SELECT JSON_EXISTS('{"a":[{"b":1},{"c":2}]}', '$.a[*].f');
 SELECT JSON_EXISTS('{"a":[[{"b":1}, {"g":1}],[{"h":1},{"y":1}]]}', '$.a[*][0].h');
 
+SELECT '--JSON_TUPLE--';
+SELECT JSON_TUPLE('{"hello":null}', '$.hello');
+SELECT JSON_TUPLE('{"hello":1}', '$', '$.hello', '$.hello1');
+SELECT JSON_TUPLE('{"hello":1.2}', '$', '$.hello');
+SELECT JSON_TUPLE('{"hello":true}', '$', '$.hello');
+SELECT JSON_TUPLE('{"hello":"world"}', '$', '$.hello');
+SELECT JSON_TUPLE('{"hello":["world","world2"], "hello1": {"a": "b"}}', '$', '$.hello', '$.hello[1]', '$.hello1', '$.hello1.a');
+SELECT JSON_TUPLE('{"hello":[{"a":"b"}, {"a":"b1"}, {"b":"c1"}]}', '$.hello[0]', '$.hello[*]', '$.hello[*].a', '$.hello[*].b');
+SELECT JSON_TUPLE('{"hello":{"world":"!"}}', '$.hello');
+SELECT JSON_TUPLE('{hello:world}', '$.hello'); -- invalid json => default value (empty string)
+SELECT JSON_TUPLE('', '$.hello');
+SELECT JSON_TUPLE('{"foo foo":"bar"}', '$."foo foo"');
+SELECT JSON_TUPLE('{"hello":"\\uD83C\\uDF3A \\uD83C\\uDF38 \\uD83C\\uDF37 Hello, World \\uD83C\\uDF37 \\uD83C\\uDF38 \\uD83C\\uDF3A"}', '$.hello');
+SELECT JSON_TUPLE('{"a":"Hello \\"World\\" \\\\"}', '$.a');
+select JSON_TUPLE('{"a":"\\n\\u0000"}', '$.a');
+select JSON_TUPLE('{"a":"\\u263a"}', '$.a');
+SELECT JSON_TUPLE('{"1key":1}', '$.1key');
+SELECT JSON_TUPLE('{"hello":1}', '$[hello]', '$["hello"]', '$[\'hello\']');
+SELECT JSON_TUPLE('{"hello 1":1}', '$["hello 1"]');
+SELECT JSON_TUPLE('{"1key":1}', '$..1key'); -- { serverError BAD_ARGUMENTS }
+SELECT JSON_TUPLE('{"1key":1}', '$1key'); -- { serverError BAD_ARGUMENTS }
+SELECT JSON_TUPLE('{"1key":1}', '$key'); -- { serverError BAD_ARGUMENTS }
+SELECT JSON_TUPLE('{"1key":1}', '$.[key]'); -- { serverError BAD_ARGUMENTS }
+SELECT JSON_TUPLE('{"1key":1}', '$.key', '$.1key') settings function_json_tuple_max_query_number=1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
 SELECT '--MANY ROWS--';
 DROP TABLE IF EXISTS 01889_sql_json;
 CREATE TABLE 01889_sql_json (id UInt8, json String) ENGINE = MergeTree ORDER BY id;

@@ -10,6 +10,7 @@ REGISTER_FUNCTION(SQLJSON)
     factory.registerFunction<FunctionSQLJSON<NameJSONExists, JSONExistsImpl>>();
     factory.registerFunction<FunctionSQLJSON<NameJSONQuery, JSONQueryImpl>>();
     factory.registerFunction<FunctionSQLJSON<NameJSONValue, JSONValueImpl>>();
+    factory.registerFunction<FunctionSQLJSON<NameJSONTuple, JSONTupleImpl>>();
 }
 
 }
