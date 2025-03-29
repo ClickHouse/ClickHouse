@@ -141,7 +141,7 @@ ColumnsDescription getColumnsDescription()
     result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_DATE_NAME, std::make_shared<DataTypeDate>()));
     result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_TIME_NAME, std::make_shared<DataTypeDateTime>()));
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + ProfileEvents::getName(ProfileEvents::Event(i)), std::make_shared<DataTypeInt64>()));
+        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + ProfileEvents::getName(ProfileEvents::Event(i)), std::make_shared<DataTypeUInt64>()));
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
         result.push_back(NameAndTypePair(std::string{TransposedMetricLog::CURRENT_METRIC_PREFIX} + CurrentMetrics::getName(CurrentMetrics::Metric(i)), std::make_shared<DataTypeInt64>()));
@@ -338,14 +338,27 @@ public:
             }
             else if (column_name.starts_with(TransposedMetricLog::PROFILE_EVENT_PREFIX) || column_name.starts_with(TransposedMetricLog::CURRENT_METRIC_PREFIX))
             {
+                bool is_event = column_name.starts_with(TransposedMetricLog::PROFILE_EVENT_PREFIX);
                 auto & column = buffer[mapping.at(column_name)];
                 if (need_to_apply_filter)
                 {
-                    auto column_result = ColumnInt64::create();
+                    MutableColumnPtr column_result;
+                    if (is_event)
+                        column_result = ColumnUInt64::create();
+                    else
+                        column_result = ColumnInt64::create();
+
                     column_result->reserve(rows_count);
                     for (size_t i = min_second_in_hour; i < static_cast<size_t>(max_second_in_hour + 1); ++i)
+                    {
                         if (filter[i])
-                            column_result->insertValue(column[i]);
+                        {
+                            if (is_event)
+                                static_cast<ColumnUInt64 *>(column_result.get())->insertValue(column[i]);
+                            else
+                                static_cast<ColumnInt64 *>(column_result.get())->insertValue(column[i]);
+                        }
+                    }
                     rows_count = column_result->size();
                     output_columns.push_back(std::move(column_result));
                 }
@@ -354,7 +367,10 @@ public:
                     auto * start = column.begin() + min_second_in_hour;
                     auto * end = start + rows_count;
 
-                    output_columns.push_back(ColumnInt64::create(start, end));
+                    if (is_event)
+                        output_columns.push_back(ColumnUInt64::create(reinterpret_cast<uint64_t *>(start), reinterpret_cast<uint64_t *>(end)));
+                    else
+                        output_columns.push_back(ColumnInt64::create(start, end));
                 }
                 column.assign(SECONDS_IN_HOUR, 0L);
             }
