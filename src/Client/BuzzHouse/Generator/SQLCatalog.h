@@ -124,6 +124,8 @@ public:
 
     bool isAttached() const { return attached == DetachStatus::ATTACHED; }
 
+    bool isDettached() const { return attached != DetachStatus::ATTACHED; }
+
     void finishDatabaseSpecification(DatabaseEngine * dspec)
     {
         if (isReplicatedDatabase())
@@ -206,11 +208,15 @@ public:
 
     bool isDistributedEngine() const { return teng == TableEngineValues::Distributed; }
 
+    bool isDictionaryEngine() const { return teng == TableEngineValues::Dictionary; }
+
+    bool isGenerateRandomEngine() const { return teng == TableEngineValues::GenerateRandom; }
+
     bool isNotTruncableEngine() const
     {
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
             || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine() || isMergeEngine()
-            || isDistributedEngine();
+            || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine();
     }
 
     bool isAnotherRelationalDatabaseEngine() const { return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine(); }
@@ -228,6 +234,8 @@ public:
     std::optional<String> getCluster() const { return cluster; }
 
     bool isAttached() const { return (!db || db->isAttached()) && attached == DetachStatus::ATTACHED; }
+
+    bool isDettached() const { return (db && db->attached != DetachStatus::ATTACHED) || attached != DetachStatus::ATTACHED; }
 };
 
 struct SQLTable : SQLBase
@@ -290,6 +298,23 @@ public:
     }
 
     bool supportsFinal() const { return !this->is_materialized; }
+};
+
+struct SQLDictionary : SQLBase
+{
+public:
+    std::unordered_map<uint32_t, SQLColumn> cols;
+
+    void setName(ExprSchemaTable * est, const bool setdbname) const
+    {
+        if (db || setdbname)
+        {
+            est->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
+        }
+        est->mutable_table()->set_table("d" + std::to_string(tname));
+    }
+
+    bool supportsFinal() const { return false; }
 };
 
 struct SQLFunction

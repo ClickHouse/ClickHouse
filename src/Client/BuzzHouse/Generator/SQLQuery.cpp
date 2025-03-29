@@ -248,7 +248,7 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
         sfunc->set_user(sc.user);
         sfunc->set_password(sc.password);
         sfunc->set_format(t.file_format);
-        flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
+        flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
         for (const auto & entry : this->remote_entries)
         {
             SQLType * tp = entry.getBottomType();
@@ -301,13 +301,18 @@ bool StatementGenerator::joinedTableOrFunction(
 {
     const SQLTable * t = nullptr;
     const SQLView * v = nullptr;
+
     const auto has_table_lambda = getQueryTableLambda<false>();
     const auto has_mergetree_table_lambda = getQueryTableLambda<true>();
     const auto has_view_lambda
         = [&](const SQLView & vv) { return vv.isAttached() && (vv.is_deterministic || this->allow_not_deterministic); };
+    const auto has_dictionary_lambda
+        = [&](const SQLDictionary & d) { return d.isAttached() && (d.is_deterministic || this->allow_not_deterministic); };
+
     const bool has_table = collectionHas<SQLTable>(has_table_lambda);
     const bool has_mergetree_table = collectionHas<SQLTable>(has_mergetree_table_lambda);
     const bool has_view = collectionHas<SQLView>(has_view_lambda);
+    const bool has_dictionary = collectionHas<SQLDictionary>(has_dictionary_lambda);
     const bool can_recurse = this->depth < this->fc.max_depth && this->width < this->fc.max_width;
 
     const uint32_t derived_table = 30 * static_cast<uint32_t>(can_recurse);
@@ -324,8 +329,9 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t loop_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf && can_recurse);
     const uint32_t values_udf = 3 * static_cast<uint32_t>(can_recurse);
     const uint32_t random_data_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf);
+    const uint32_t dictionary = 15 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary);
     const uint32_t prob_space = derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf
-        + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf;
+        + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -378,8 +384,9 @@ bool StatementGenerator::joinedTableOrFunction(
         TableFunction * tf = tof->mutable_tfunc();
         const uint32_t remote_table = 10 * static_cast<uint32_t>(has_table);
         const uint32_t remote_view = 5 * static_cast<uint32_t>(has_view);
+        const uint32_t remote_dictionary = 5 * static_cast<uint32_t>(has_dictionary);
         const uint32_t recurse = 10 * static_cast<uint32_t>(can_recurse);
-        const uint32_t pspace = remote_table + remote_view + recurse;
+        const uint32_t pspace = remote_table + remote_view + remote_dictionary + recurse;
         std::uniform_int_distribution<uint32_t> ndist(1, pspace);
         const uint32_t nopt2 = ndist(rg.generator);
 
@@ -399,7 +406,16 @@ bool StatementGenerator::joinedTableOrFunction(
             v->setName(rfunc->mutable_tof()->mutable_est(), true);
             addViewRelation(rel_name, *v);
         }
-        else if (recurse && nopt2 < (remote_table + remote_view + recurse + 1))
+        else if (remote_dictionary && nopt2 < (remote_table + remote_view + remote_dictionary + 1))
+        {
+            RemoteFunc * rfunc = tf->mutable_remote();
+            const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
+
+            rfunc->set_address(fc.getConnectionHostAndPort());
+            d.setName(rfunc->mutable_tof()->mutable_est(), true);
+            addDictionaryRelation(rel_name, d);
+        }
+        else if (recurse && nopt2 < (remote_table + remote_view + remote_dictionary + recurse + 1))
         {
             /// This is the tricky part
             RemoteFunc * rfunc = tf->mutable_remote();
@@ -526,15 +542,29 @@ bool StatementGenerator::joinedTableOrFunction(
     }
     else if (merge_udf && nopt < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + 1))
     {
+        String mergeDesc;
         SQLRelation rel(rel_name);
         TableFunction * tf = tof->mutable_tfunc();
         MergeFunc * mdf = tf->mutable_merge();
+        const uint32_t nopt2 = rg.nextSmallNumber();
 
         if (rg.nextBool())
         {
             mdf->set_mdatabase(setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, "d"));
         }
-        mdf->set_mtable(rg.nextBool() ? setMergeTableParameter<SQLTable>(rg, "t") : setMergeTableParameter<SQLView>(rg, "v"));
+        if (nopt2 < 3)
+        {
+            mergeDesc = setMergeTableParameter<SQLTable>(rg, "t");
+        }
+        else if (nopt2 < 5)
+        {
+            mergeDesc = setMergeTableParameter<SQLView>(rg, "v");
+        }
+        else
+        {
+            mergeDesc = setMergeTableParameter<SQLDictionary>(rg, "d");
+        }
+        mdf->set_mtable(std::move(mergeDesc));
         for (uint32_t i = 0; i < 6; i++)
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i)}));
@@ -549,8 +579,9 @@ bool StatementGenerator::joinedTableOrFunction(
         ClusterFunc * cdf = tf->mutable_cluster();
         const uint32_t remote_table = 10 * static_cast<uint32_t>(has_table);
         const uint32_t remote_view = 5 * static_cast<uint32_t>(has_view);
+        const uint32_t remote_dictionary = 5 * static_cast<uint32_t>(has_dictionary);
         const uint32_t recurse = 10 * static_cast<uint32_t>(can_recurse);
-        const uint32_t pspace = remote_table + remote_view + recurse;
+        const uint32_t pspace = remote_table + remote_view + remote_dictionary + recurse;
         std::uniform_int_distribution<uint32_t> ndist(1, pspace);
         const uint32_t nopt2 = ndist(rg.generator);
 
@@ -564,7 +595,7 @@ bool StatementGenerator::joinedTableOrFunction(
             if (rg.nextBool())
             {
                 /// Optional sharding key
-                flatTableColumnPath(to_remote_entries, *t, [](const SQLColumn &) { return true; });
+                flatTableColumnPath(to_remote_entries, t->cols, [](const SQLColumn &) { return true; });
                 cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
                 this->remote_entries.clear();
             }
@@ -581,7 +612,21 @@ bool StatementGenerator::joinedTableOrFunction(
             }
             addViewRelation(rel_name, *v);
         }
-        else if (recurse && nopt2 < (remote_table + remote_view + recurse + 1))
+        else if (remote_dictionary && nopt2 < (remote_table + remote_view + remote_dictionary + 1))
+        {
+            const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
+
+            d.setName(cdf->mutable_tof()->mutable_est(), false);
+            if (rg.nextBool())
+            {
+                /// Optional sharding key
+                flatTableColumnPath(to_remote_entries, d.cols, [](const SQLColumn &) { return true; });
+                cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
+                this->remote_entries.clear();
+            }
+            addDictionaryRelation(rel_name, d);
+        }
+        else if (recurse && nopt2 < (remote_table + remote_view + remote_dictionary + recurse + 1))
         {
             /// Here don't care about the returned result
             this->depth++;
@@ -740,6 +785,17 @@ bool StatementGenerator::joinedTableOrFunction(
         grf->set_max_string_length(string_length_dist(rg.generator));
         grf->set_max_array_length(nested_rows_dist(rg.generator));
         this->levels[this->current_level].rels.emplace_back(rel);
+    }
+    else if (
+        dictionary
+        && nopt
+            < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
+               + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + 1))
+    {
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
+
+        d.setName(rg.nextSmallNumber() < 8 ? tof->mutable_est() : tof->mutable_tfunc()->mutable_dictionary(), false);
+        addDictionaryRelation(rel_name, d);
     }
     else
     {
@@ -956,7 +1012,7 @@ void StatementGenerator::addWhereSide(RandomGenerator & rg, const std::vector<Gr
     }
     else
     {
-        generateLiteralValue(rg, expr);
+        generateLiteralValue(rg, true, expr);
     }
 }
 
@@ -1526,10 +1582,7 @@ void StatementGenerator::generateOrderBy(
             }
         }
         this->width -= nclauses;
-        if (has_fill && !this->levels[this->current_level].projections.empty()
-            && (this->levels[this->current_level].group_by_all
-                || (this->levels[this->current_level].gcols.empty() && !this->levels[this->current_level].global_aggregate))
-            && rg.nextSmallNumber() < 4)
+        if (has_fill && !this->levels[this->current_level].projections.empty() && rg.nextSmallNumber() < 4)
         {
             std::vector<uint32_t> nids;
             const uint32_t nprojs = std::min<uint32_t>(
@@ -1769,7 +1822,7 @@ void StatementGenerator::generateSelect(
             {
                 generateLimit(rg, ssc->has_orderby(), ncols, ssc->mutable_limit());
             }
-            else
+            else if (ssc->has_orderby() || this->allow_not_deterministic)
             {
                 generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
             }

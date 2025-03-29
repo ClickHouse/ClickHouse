@@ -1346,7 +1346,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     {
         std::optional<uint32_t> swidth;
 
-        if (rg.nextBool())
+        if (!(allowed_types & allow_fixed_strings) || rg.nextBool())
         {
             if (tp)
             {

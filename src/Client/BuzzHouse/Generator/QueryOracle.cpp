@@ -15,38 +15,30 @@ namespace BuzzHouse
 {
 
 static const std::unordered_map<OutFormat, InFormat> outIn{
+    {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
+    {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream}, //It's giving different results
+    {OutFormat::OUT_Avro, InFormat::IN_Avro},
+    {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
     {OutFormat::OUT_CSV, InFormat::IN_CSV},
     {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
     {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
-    {OutFormat::OUT_Values, InFormat::IN_Values},
     {OutFormat::OUT_JSON, InFormat::IN_JSON},
     {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
     {OutFormat::OUT_JSONColumnsWithMetadata, InFormat::IN_JSONColumnsWithMetadata},
-    {OutFormat::OUT_JSONCompact, InFormat::IN_JSONCompact},
-    {OutFormat::OUT_JSONCompactColumns, InFormat::IN_JSONCompactColumns},
     {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
-    {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
-    {OutFormat::OUT_JSONCompactEachRow, InFormat::IN_JSONCompactEachRow},
-    {OutFormat::OUT_JSONCompactEachRowWithNames, InFormat::IN_JSONCompactEachRowWithNames},
-    {OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes, InFormat::IN_JSONCompactEachRowWithNamesAndTypes},
-    {OutFormat::OUT_JSONCompactStringsEachRow, InFormat::IN_JSONCompactStringsEachRow},
-    {OutFormat::OUT_JSONCompactStringsEachRowWithNames, InFormat::IN_JSONCompactStringsEachRowWithNames},
-    {OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes, InFormat::IN_JSONCompactStringsEachRowWithNamesAndTypes},
     {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
-    {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
-    {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
+    {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
+    {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack},
+    {OutFormat::OUT_Native, InFormat::IN_Native},
+    {OutFormat::OUT_ORC, InFormat::IN_ORC},
+    {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
     {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
     {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
-    {OutFormat::OUT_Avro, InFormat::IN_Avro},
-    {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
-    {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
-    {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream},
-    {OutFormat::OUT_ORC, InFormat::IN_ORC},
     {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
     {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
     {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
-    {OutFormat::OUT_Native, InFormat::IN_Native},
-    {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack}};
+    {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
+    {OutFormat::OUT_Values, InFormat::IN_Values}};
 
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
@@ -170,7 +162,7 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
     t.setName(jtf->mutable_tof()->mutable_est(), false);
     jtf->set_final(t.supportsFinal());
 
-    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    gen.flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     const uint32_t ncols = static_cast<uint32_t>(gen.entries.size());
     for (const auto & entry : gen.entries)
     {
@@ -198,7 +190,8 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
-void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2)
+void QueryOracle::generateExportQuery(
+    RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, SQLQuery & sq2)
 {
     String buf;
     bool first = true;
@@ -209,6 +202,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
     OutFormat outf = rg.pickRandomly(outIn);
 
+    can_test_query_success &= test_content;
     /// Remove the file if exists
     if (!std::filesystem::remove(nfile, ec) && ec)
     {
@@ -216,7 +210,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     }
     ff->set_path(nfile.generic_string());
 
-    gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         SQLType * tp = entry.getBottomType();
@@ -244,7 +238,20 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     {
         ff->set_fcomp(static_cast<FileCompression>((rg.nextRandomUInt32() % static_cast<uint32_t>(FileCompression_MAX)) + 1));
     }
+    if (rg.nextSmallNumber() < 10)
+    {
+        const auto & settings = can_test_query_success ? serverSettings : formatSettings;
+        gen.generateSettingValues(rg, settings, ins->mutable_setting_values());
+        const SettingValues & svs = ins->setting_values();
 
+        for (int i = 0; i < (svs.other_values_size() + 1) && can_test_query_success; i++)
+        {
+            const SetValue & osv = i == 0 ? svs.set_value() : svs.other_values(i - 1);
+            const CHSetting & ochs = settings.at(osv.property());
+
+            can_test_query_success &= !ochs.changes_behavior;
+        }
+    }
     /// Set the table on select
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
@@ -258,54 +265,57 @@ void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
 }
 
 void QueryOracle::generateImportQuery(
-    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
+    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const
 {
-    Insert * ins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
-    InsertFromFile * iff = ins->mutable_insert_file();
-    const FileFunc & ff = sq2.explain().inner_query().insert().tfunc().file();
-    const OutFormat & outf = ff.outformat();
+    SettingValues * svs = nullptr;
+    Insert * nins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
+    InsertFromFile * iff = nins->mutable_insert_file();
+    const Insert & oins = sq2.explain().inner_query().insert();
+    const FileFunc & ff = oins.tfunc().file();
+    const InFormat & inf
+        = (!can_test_query_success && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(outIn) : outIn.at(ff.outformat());
 
-    t.setName(ins->mutable_est(), false);
-    gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    t.setName(nins->mutable_est(), false);
+    gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
-        gen.columnPathRef(entry, ins->add_cols());
+        gen.columnPathRef(entry, nins->add_cols());
     }
     gen.entries.clear();
     iff->set_path(ff.path());
-    iff->set_format(outIn.at(outf));
+    iff->set_format(inf);
     if (ff.has_fcomp())
     {
         iff->set_fcomp(ff.fcomp());
     }
-    if (outf == OutFormat::OUT_CSV || outf == OutFormat::OUT_Parquet)
-    {
-        SetValue * sv = ins->mutable_setting_values()->mutable_set_value();
 
-        if (outf == OutFormat::OUT_CSV)
-        {
-            /// The oracle expects to read all the lines from the file
-            sv->set_property("input_format_csv_detect_header");
-            sv->set_value("0");
-        }
-        else
+    if (!can_test_query_success && rg.nextSmallNumber() < 10)
+    {
+        /// If can't test success, swap settings sometimes
+        svs = nins->mutable_setting_values();
+        gen.generateSettingValues(rg, formatSettings, svs);
+    }
+    else if (oins.has_setting_values())
+    {
+        svs = nins->mutable_setting_values();
+        svs->CopyFrom(oins.setting_values());
+    }
+    if ((can_test_query_success && inf == InFormat::IN_CSV) || inf == InFormat::IN_Parquet)
+    {
+        svs = svs ? svs : nins->mutable_setting_values();
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+        if (inf == InFormat::IN_Parquet)
         {
             /// Use available Parquet readers
             sv->set_property("input_format_parquet_use_native_reader");
             sv->set_value(rg.nextBool() ? "1" : "0");
         }
-    }
-}
-
-static std::unordered_map<String, CHSetting> queryOracleSettings;
-
-void loadFuzzerOracleSettings(const FuzzConfig &)
-{
-    for (auto & [key, value] : serverSettings)
-    {
-        if (!value.oracle_values.empty())
+        else
         {
-            queryOracleSettings.insert({{key, value}});
+            /// The oracle expects to read all the lines from the file
+            sv->set_property("input_format_csv_detect_header");
+            sv->set_value("0");
         }
     }
 }
@@ -665,7 +675,7 @@ void QueryOracle::replaceQueryWithTablePeers(
 
         t.setName(jtf->mutable_tof()->mutable_est(), false);
         jtf->set_final(t.supportsFinal());
-        gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+        gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)
         {
             gen.columnPathRef(colRef, ins->add_cols());

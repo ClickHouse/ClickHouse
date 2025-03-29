@@ -155,7 +155,7 @@ void StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, 
     }
 }
 
-void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
+void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool complex, Expr * expr)
 {
     const uint32_t noption = rg.nextLargeNumber();
     LiteralValue * lv = expr->mutable_lit_val();
@@ -172,7 +172,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
 
             huge->set_upper(rg.nextRandomInt64());
             huge->set_lower(rg.nextRandomUInt64());
-            if (rg.nextSmallNumber() < 9)
+            if (complex && rg.nextSmallNumber() < 9)
             {
                 il->set_integers(rg.nextBool() ? Integers::Int128 : Integers::Int256);
             }
@@ -184,7 +184,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
 
             uhuge->set_upper(rg.nextRandomUInt64());
             uhuge->set_lower(rg.nextRandomUInt64());
-            if (rg.nextSmallNumber() < 9)
+            if (complex && rg.nextSmallNumber() < 9)
             {
                 il->set_integers(rg.nextBool() ? Integers::UInt128 : Integers::UInt256);
             }
@@ -192,7 +192,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         else if (noption < 121)
         {
             il->set_int_lit(rg.nextRandomInt64());
-            if (rg.nextSmallNumber() < 9)
+            if (complex && rg.nextSmallNumber() < 9)
             {
                 il->set_integers(static_cast<Integers>(
                     (rg.nextRandomUInt32() % static_cast<uint32_t>(Integers::Int - Integers::UInt256))
@@ -202,7 +202,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         else
         {
             il->set_uint_lit(rg.nextRandomUInt64());
-            if (rg.nextSmallNumber() < 9)
+            if (complex && rg.nextSmallNumber() < 9)
             {
                 il->set_integers(static_cast<Integers>((rg.nextRandomUInt32() % static_cast<uint32_t>(Integers_MAX)) + 1));
             }
@@ -214,19 +214,19 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
 
         if (noption < 251)
         {
-            ret = fmt::format("'{}'::Date", rg.nextDate());
+            ret = fmt::format("'{}'{}", rg.nextDate(), complex ? "::Date" : "");
         }
         else if (noption < 301)
         {
-            ret = fmt::format("'{}'::Date32", rg.nextDate32());
+            ret = fmt::format("'{}'{}", rg.nextDate32(), complex ? "::Date32" : "");
         }
         else if (noption < 351)
         {
-            ret = fmt::format("'{}'::DateTime", rg.nextDateTime());
+            ret = fmt::format("'{}'{}", rg.nextDateTime(), complex ? "::DateTime" : "");
         }
         else
         {
-            ret = fmt::format("'{}'::DateTime64", rg.nextDateTime64());
+            ret = fmt::format("'{}'{}", rg.nextDateTime64(), complex ? "::DateTime64" : "");
         }
         lv->set_no_quote_str(ret);
     }
@@ -238,7 +238,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
 
         lv->set_no_quote_str("(" + appendDecimal(rg, left, right) + ")");
     }
-    else if (this->allow_not_deterministic && noption < 551)
+    else if (complex && this->allow_not_deterministic && noption < 551)
     {
         String ret;
         const uint32_t nlen = rg.nextLargeNumber();
@@ -269,21 +269,21 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
 
         if (nopt < 31)
         {
-            ret = "'" + rg.nextUUID() + "'::UUID";
+            ret = fmt::format("'{}'{}", rg.nextUUID(), complex ? "::UUID" : "");
         }
         else if (nopt < 51)
         {
-            ret = "'" + rg.nextIPv4() + "'::IPv4";
+            ret = fmt::format("'{}'{}", rg.nextIPv4(), complex ? "::IPv4" : "");
         }
         else if (nopt < 71)
         {
-            ret = "'" + rg.nextIPv6() + "'::IPv6";
+            ret = fmt::format("'{}'{}", rg.nextIPv6(), complex ? "::IPv6" : "");
         }
         else if (nopt < 101)
         {
             const GeoTypes gt = static_cast<GeoTypes>((rg.nextRandomUInt32() % static_cast<uint32_t>(GeoTypes_MAX)) + 1);
 
-            ret = "'" + strAppendGeoValue(rg, gt) + "'::" + GeoTypes_Name(gt);
+            ret = fmt::format("'{}'{}{}", strAppendGeoValue(rg, gt), complex ? "::" : "", complex ? GeoTypes_Name(gt) : "");
         }
         else
         {
@@ -305,7 +305,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         std::uniform_int_distribution<int> dopt(1, 3);
         std::uniform_int_distribution<int> wopt(1, 3);
 
-        lv->set_no_quote_str("'" + strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator)) + "'::JSON");
+        lv->set_no_quote_str(fmt::format("'{}'{}", strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator)), complex ? "::JSON" : ""));
     }
     else
     {
@@ -339,7 +339,7 @@ void StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
 
     if (available_cols.empty())
     {
-        this->generateLiteralValue(rg, expr);
+        this->generateLiteralValue(rg, true, expr);
     }
     else
     {
@@ -526,7 +526,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
     }
     else
     {
-        this->generateLiteralValue(rg, expr);
+        this->generateLiteralValue(rg, true, expr);
     }
 }
 
@@ -548,7 +548,7 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
 
     for (uint32_t i = 0; i < nparams; i++)
     {
-        const String buf = String(1, 'x' + i);
+        const String buf = String(1, 'a' + i);
         lexpr->add_args()->set_column(buf);
         rel.cols.emplace_back(SQLRelationCol("", {buf}));
     }
@@ -611,7 +611,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         {
             for (uint32_t i = 0; i < agg.min_params; i++)
             {
-                generateLiteralValue(rg, func_call->add_params());
+                generateLiteralValue(rg, true, func_call->add_params());
             }
         }
 
@@ -631,7 +631,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         {
             for (uint32_t i = 0; i < agg.min_args; i++)
             {
-                generateLiteralValue(rg, func_call->add_args()->mutable_expr());
+                generateLiteralValue(rg, true, func_call->add_args()->mutable_expr());
             }
         }
 
@@ -732,7 +732,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         {
             for (uint32_t i = 0; i < min_args; i++)
             {
-                generateLiteralValue(rg, func_call->add_args()->mutable_expr());
+                generateLiteralValue(rg, true, func_call->add_args()->mutable_expr());
             }
         }
     }
@@ -775,7 +775,7 @@ void StatementGenerator::generateTableFuncCall(RandomGenerator & rg, SQLTableFun
     {
         for (uint32_t i = 0; i < min_args; i++)
         {
-            generateLiteralValue(rg, tfunc_call->add_args()->mutable_expr());
+            generateLiteralValue(rg, true, tfunc_call->add_args()->mutable_expr());
         }
     }
     this->width -= generated_params;
@@ -819,7 +819,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 
     if (noption < (this->inside_projection ? 76 : 101))
     {
-        generateLiteralValue(rg, expr);
+        generateLiteralValue(rg, true, expr);
     }
     else if (this->depth >= this->fc.max_depth || noption < 401)
     {
@@ -984,8 +984,10 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     else if (!this->levels[this->current_level].allow_window_funcs || this->levels[this->current_level].inside_aggregate || noption < 951)
     {
         /// Func
-        const bool allow_aggr = !this->levels[this->current_level].inside_aggregate && this->levels[this->current_level].allow_aggregates
-            && (!this->levels[this->current_level].gcols.empty() || this->levels[this->current_level].global_aggregate);
+        const bool allow_aggr
+            = (!this->levels[this->current_level].inside_aggregate && this->levels[this->current_level].allow_aggregates
+               && (!this->levels[this->current_level].gcols.empty() || this->levels[this->current_level].global_aggregate))
+            || rg.nextSmallNumber() < 3;
 
         this->depth++;
         generateFuncCall(rg, true, allow_aggr, expr->mutable_comp_expr()->mutable_func_call());

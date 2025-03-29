@@ -1795,7 +1795,7 @@ CONV_FN(GenerateSeriesFunc, gsf)
     ret += ")";
 }
 
-static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & est)
+static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & est, const String & separator)
 {
     ret += "'";
     if (est.has_database())
@@ -1806,7 +1806,7 @@ static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & es
     {
         ret += "default";
     }
-    ret += "', '";
+    ret += separator;
     TableToString(ret, est.table());
     ret += "'";
 }
@@ -1821,7 +1821,7 @@ static void TableOrFunctionToString(String & ret, const bool tudf, const TableOr
         case TableOrFunctionType::kEst:
             if (tudf)
             {
-                FlatExprSchemaTableToString(ret, tof.est());
+                FlatExprSchemaTableToString(ret, tof.est(), "', '");
             }
             else
             {
@@ -1999,7 +1999,7 @@ CONV_FN(ClusterFunc, cluster)
 CONV_FN(MergeTreeIndexFunc, mfunc)
 {
     ret += "mergeTreeIndex(";
-    FlatExprSchemaTableToString(ret, mfunc.est());
+    FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
     if (mfunc.has_with_marks())
     {
         ret += ", with_marks = ";
@@ -2097,6 +2097,11 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kValues:
             ValuesStatementToString(ret, true, tf.values());
+            break;
+        case TableFunctionType::kDictionary:
+            ret += "dictionary(";
+            FlatExprSchemaTableToString(ret, tf.dictionary(), ".");
+            ret += ")";
             break;
         default:
             ret += "numbers(10)";
@@ -2614,10 +2619,10 @@ CONV_FN(ColumnDef, cdf)
     {
         ret += " PRIMARY KEY";
     }
-    if (cdf.has_settings())
+    if (cdf.has_setting_values())
     {
         ret += " SETTINGS(";
-        SettingValuesToString(ret, cdf.settings());
+        SettingValuesToString(ret, cdf.setting_values());
         ret += ")";
     }
 }
@@ -2802,6 +2807,9 @@ CONV_FN(TableEngineParam, tep)
             ret += tep.regexp();
             ret += "')";
             break;
+        case TableEngineParamType::kEst:
+            FlatExprSchemaTableToString(ret, tep.est(), ".");
+            break;
         default:
             ret += "c0";
     }
@@ -2931,10 +2939,10 @@ CONV_FN(TableEngine, te)
         ret += " ";
         TTLExprToString(ret, te.ttl_expr());
     }
-    if (te.has_settings())
+    if (te.has_setting_values())
     {
         ret += " SETTINGS ";
-        SettingValuesToString(ret, te.settings());
+        SettingValuesToString(ret, te.setting_values());
     }
 }
 
@@ -2948,22 +2956,27 @@ CONV_FN(CreateTableAs, create_table)
     ExprSchemaTableToString(ret, create_table.est());
 }
 
-CONV_FN(CreateTable, create_table)
+static void CreateOrReplaceToString(String & ret, const CreateReplaceOption & cro)
 {
-    switch (create_table.create_opt())
+    switch (cro)
     {
-        case CreateTable_CreateTableOption::CreateTable_CreateTableOption_Create:
+        case CreateReplaceOption::Create:
             ret += "CREATE";
             break;
-        case CreateTable_CreateTableOption::CreateTable_CreateTableOption_Replace:
+        case CreateReplaceOption::Replace:
             ret += "REPLACE";
             break;
-        case CreateTable_CreateTableOption::CreateTable_CreateTableOption_CreateOrReplace:
+        case CreateReplaceOption::CreateOrReplace:
             ret += "CREATE OR REPLACE";
             break;
     }
+}
+
+CONV_FN(CreateTable, create_table)
+{
+    CreateOrReplaceToString(ret, create_table.create_opt());
     ret += " ";
-    if (create_table.create_opt() == CreateTable_CreateTableOption::CreateTable_CreateTableOption_Create && create_table.is_temp())
+    if (create_table.create_opt() == CreateReplaceOption::Create && create_table.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -3409,17 +3422,18 @@ CONV_FN(RefreshableView, rv)
 
 CONV_FN(CreateView, create_view)
 {
-    const bool replace = create_view.replace();
+    const bool replace = create_view.create_opt() != CreateReplaceOption::Create;
     const bool materialized = create_view.materialized();
     const bool refreshable = create_view.has_refresh();
 
-    if (create_view.replace())
+    CreateOrReplaceToString(ret, create_view.create_opt());
+    ret += " ";
+    if (replace)
     {
-        ret += "REPLACE TABLE";
+        ret += "TABLE";
     }
     else
     {
-        ret += "CREATE ";
         if (materialized)
         {
             ret += "MATERIALIZED ";
@@ -3427,6 +3441,10 @@ CONV_FN(CreateView, create_view)
         ret += "VIEW";
     }
     ret += " ";
+    if (create_view.if_not_exists())
+    {
+        ret += "IF NOT EXISTS ";
+    }
     ExprSchemaTableToString(ret, create_view.est());
     if (materialized)
     {
@@ -3478,6 +3496,144 @@ CONV_FN(CreateView, create_view)
     }
 }
 
+CONV_FN(DictionaryColumn, dc)
+{
+    ret += "`";
+    ColumnToString(ret, 1, dc.col());
+    ret += "` ";
+    TypeNameToString(ret, 0, dc.type());
+    ret += " DEFAULT ";
+    ExprToString(ret, dc.default_val());
+    if (dc.has_expression())
+    {
+        ret += " EXPRESSION ";
+        ExprToString(ret, dc.expression());
+    }
+    if (dc.has_hierarchical())
+    {
+        ret += " ";
+        ret += dc.hierarchical() ? "HIERARCHICAL" : "INJECTIVE";
+    }
+    if (dc.is_object_id())
+    {
+        ret += " IS_OBJECT_ID";
+    }
+}
+
+CONV_FN(DictionarySource, ds)
+{
+    ret += " SOURCE(";
+    using DictionarySourceType = DictionarySource::DictionarySourceOneofCase;
+    switch (ds.dictionary_source_oneof_case())
+    {
+        case DictionarySourceType::kEst:
+            ret += "CLICKHOUSE(DB ";
+            FlatExprSchemaTableToString(ret, ds.est(), "' TABLE '");
+            ret += ")";
+            break;
+        default:
+            ret += "NULL()";
+    }
+    ret += ")";
+}
+
+CONV_FN(DictionaryLayout, dl)
+{
+    ret += " LAYOUT(";
+    ret += DictionaryLayouts_Name(dl.layout());
+    ret += "(";
+    if (dl.has_setting_values())
+    {
+        const SettingValues & sv = dl.setting_values();
+        const SetValue & first = sv.set_value();
+
+        ret += first.property();
+        ret += " ";
+        ret += first.value();
+        for (int i = 0; i < sv.other_values_size(); i++)
+        {
+            const SetValue & next = sv.other_values(i);
+
+            ret += " ";
+            ret += next.property();
+            ret += " ";
+            ret += next.value();
+        }
+    }
+    ret += "))";
+}
+
+CONV_FN(DictionaryRange, dr)
+{
+    ret += " RANGE(MIN ";
+    ExprToString(ret, dr.min());
+    ret += "MAX ";
+    ExprToString(ret, dr.max());
+    ret += ")";
+}
+
+CONV_FN(DictionaryLifetime, dl)
+{
+    ret += " LIFETIME(";
+    if (dl.has_max())
+    {
+        ret += "MIN ";
+        ret += std::to_string(dl.min());
+        ret += " MAX ";
+        ret += std::to_string(dl.max());
+    }
+    else
+    {
+        ret += std::to_string(dl.min());
+    }
+    ret += ")";
+}
+
+CONV_FN(CreateDictionary, create_dictionary)
+{
+    CreateOrReplaceToString(ret, create_dictionary.create_opt());
+    ret += " DICTIONARY ";
+    if (create_dictionary.if_not_exists())
+    {
+        ret += "IF NOT EXISTS ";
+    }
+    ExprSchemaTableToString(ret, create_dictionary.est());
+    if (create_dictionary.has_cluster())
+    {
+        ClusterToString(ret, create_dictionary.cluster());
+    }
+    ret += " (";
+    DictionaryColumnToString(ret, create_dictionary.col());
+    for (int i = 0; i < create_dictionary.other_cols_size(); i++)
+    {
+        ret += ", ";
+        DictionaryColumnToString(ret, create_dictionary.other_cols(i));
+    }
+    ret += ") PRIMARY KEY ";
+    TableKeyToString(ret, create_dictionary.primary_key());
+    DictionarySourceToString(ret, create_dictionary.source());
+    DictionaryLayoutToString(ret, create_dictionary.layout());
+    if (create_dictionary.has_range())
+    {
+        DictionaryRangeToString(ret, create_dictionary.range());
+    }
+    if (create_dictionary.has_lifetime())
+    {
+        DictionaryLifetimeToString(ret, create_dictionary.lifetime());
+    }
+    if (create_dictionary.has_setting_values())
+    {
+        ret += " SETTINGS(";
+        SettingValuesToString(ret, create_dictionary.setting_values());
+        ret += ")";
+    }
+    if (create_dictionary.has_comment())
+    {
+        ret += " COMMENT ";
+        ret += create_dictionary.comment();
+    }
+}
+
 CONV_FN(AddWhere, add)
 {
     if (add.has_col())
@@ -3526,7 +3682,7 @@ CONV_FN(ModifyColumnSetting, mcp)
 {
     ColumnPathToString(ret, 0, mcp.col());
     ret += " MODIFY SETTING ";
-    SettingValuesToString(ret, mcp.settings());
+    SettingValuesToString(ret, mcp.setting_values());
 }
 
 CONV_FN(SettingList, pl)
@@ -3543,7 +3699,7 @@ CONV_FN(RemoveColumnSetting, rcp)
 {
     ColumnPathToString(ret, 0, rcp.col());
     ret += " RESET SETTING ";
-    SettingListToString(ret, rcp.settings());
+    SettingListToString(ret, rcp.setting_values());
 }
 
 CONV_FN(HeavyDelete, hdel)
@@ -4357,6 +4513,9 @@ CONV_FN(SQLQueryInner, query)
         case QueryType::kBackupRestore:
             BackupRestoreToString(ret, query.backup_restore());
             break;
+        case QueryType::kCreateDictionary:
+            CreateDictionaryToString(ret, query.create_dictionary());
+            break;
         default:
             ret += "SELECT 1";
     }
@@ -4417,5 +4576,4 @@ CONV_FN(SQLQuery, query)
     }
     ret += ";";
 }
-
 }
