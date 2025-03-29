@@ -25,21 +25,24 @@ def check():
     if not info.pr_number and info.repo_name == "ClickHouse/ClickHouse":
         for build_type, prefix in BUILD_TYPE_TO_STATIC_LOCATION.items():
             if build_type in info.job_name:
+                print("Upload builds to static location")
                 try:
                     S3.copy_file_to_s3(
                         local_path=f"./ci/tmp/build/programs/clickhouse",
                         s3_path=f"{S3_BUCKET_NAME}/{info.git_branch}/{BUILD_TYPE_TO_STATIC_LOCATION[build_type]}/clickhouse-full",
+                        with_rename=True,
                     )
                     S3.copy_file_to_s3(
                         local_path=f"./ci/tmp/build/programs/clickhouse-stripped",
                         s3_path=f"{S3_BUCKET_NAME}/{info.git_branch}/{BUILD_TYPE_TO_STATIC_LOCATION[build_type]}/clickhouse",
+                        with_rename=True,
                     )
                 except Exception as e:
                     traceback.print_exc()
-        else:
-            print(f"skip for [{info.job_name}]")
+                return
+        print(f"Not applicable for [{info.job_name}]")
     else:
-        print(f"skip for PRs")
+        print(f"Not applicable")
     return True
 
 
