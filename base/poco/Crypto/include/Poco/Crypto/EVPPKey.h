@@ -320,7 +320,7 @@ namespace Crypto
     {
         poco_check_ptr(other._pEVPPKey);
         poco_check_ptr(_pEVPPKey);
-        return (1 == EVP_PKEY_cmp(_pEVPPKey, other._pEVPPKey));
+        return (1 == EVP_PKEY_eq(_pEVPPKey, other._pEVPPKey));
     }
 
 

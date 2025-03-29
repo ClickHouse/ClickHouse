@@ -4,10 +4,15 @@
 #include "OpenSSLHelpers.h"
 #include <base/scope_guard.h>
 #include <openssl/err.h>
-#include <openssl/sha.h>
+#include <openssl/evp.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int OPENSSL_ERROR;
+}
 
 std::string encodeSHA256(std::string_view text)
 {
@@ -26,10 +31,15 @@ void encodeSHA256(std::string_view text, unsigned char * out)
 }
 void encodeSHA256(const void * text, size_t size, unsigned char * out)
 {
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, reinterpret_cast<const UInt8 *>(text), size);
-    SHA256_Final(out, &ctx);
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    SCOPE_EXIT(EVP_MD_CTX_free(ctx));  // Or use RAII
+
+    if (!EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) ||
+        !EVP_DigestUpdate(ctx, text, size) ||
+        !EVP_DigestFinal_ex(ctx, out, nullptr))
+    {
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "SHA256 EVP hashing failed: {}", getOpenSSLErrors());
+    }
 }
 
 String getOpenSSLErrors()

@@ -1,27 +1,23 @@
 #include <Access/Authentication.h>
 #include <Access/AuthenticationData.h>
+#include <Access/Common/SSLCertificateSubjects.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
-#include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
-#include <Poco/SHA1Engine.h>
+#include <Access/LDAPClient.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <Common/OpenSSLHelpers.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
-#include <Access/Common/SSLCertificateSubjects.h>
+#include <Poco/SHA1Engine.h>
 
 #include <base/types.h>
 #include "config.h"
 
 #if USE_SSL
 #   include <openssl/evp.h>
-#   include <openssl/hmac.h>
 #   include <openssl/sha.h>
-#   include <openssl/buffer.h>
-#   include <openssl/rand.h>
-#   include <openssl/bio.h>
-#   include <openssl/err.h>
 #endif
 
 namespace DB
@@ -120,26 +116,30 @@ namespace
 #if USE_SSL
     std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t>& key, const std::string& data)
     {
-        unsigned int len = SHA256_DIGEST_LENGTH;
-        std::vector<uint8_t> result(len);
-        HMAC(
-            EVP_sha256(),
-            key.data(),
-            static_cast<Int32>(key.size()),
-            reinterpret_cast<const uint8_t*>(data.data()),
-            data.size(),
-            result.data(),
-            &len);
+        std::vector<uint8_t> result(EVP_MAX_MD_SIZE);
+        size_t out_len = 0;
+
+        EVP_MAC* mac = EVP_MAC_fetch(nullptr, "HMAC", nullptr);
+        EVP_MAC_CTX* ctx = EVP_MAC_CTX_new(mac);
+        OSSL_PARAM params[] = {
+            OSSL_PARAM_utf8_string("digest", const_cast<char*>("SHA256"), 0),
+            OSSL_PARAM_END
+        };
+
+        EVP_MAC_init(ctx, key.data(), key.size(), params);
+        EVP_MAC_update(ctx, reinterpret_cast<const unsigned char*>(data.data()), data.size());
+        EVP_MAC_final(ctx, result.data(), &out_len, result.size());
+
+        EVP_MAC_CTX_free(ctx);
+        EVP_MAC_free(mac);
+        result.resize(out_len);
         return result;
     }
 
     std::vector<uint8_t> sha256(const std::vector<uint8_t>& data)
     {
         std::vector<uint8_t> hash(SHA256_DIGEST_LENGTH);
-        SHA256_CTX sha256;
-        SHA256_Init(&sha256);
-        SHA256_Update(&sha256, data.data(), data.size());
-        SHA256_Final(hash.data(), &sha256);
+        encodeSHA256(data.data(), data.size(), hash.data());
         return hash;
     }
 
