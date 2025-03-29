@@ -25,6 +25,7 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [keeper_path = '',]
     [loading_retries = 0,]
     [processing_threads_num = 16,]
+    [parallel_inserts = false,]
     [enable_logging_to_queue_log = true,]
     [last_processed_path = "",]
     [tracked_files_limit = 1000,]
@@ -127,6 +128,17 @@ Default value: `0`.
 Number of threads to perform processing. Applies only for `Unordered` mode.
 
 Default value: Number of CPUs or 16.
+
+### s3queue_parallel_inserts {#parallel_inserts}
+
+By default `processing_threads_num` will produce one `INSERT`, so it will only download files and parse in multiple threads.
+But this limits the parallelism, so for better throughput use `parallel_inserts=true`, this will allow to insert data in parallel (but keep in mind that it will result in higher number of generated data parts for MergeTree family).
+
+:::note
+`INSERT`s will be spawned with respect to `max_process*_before_commit` settings.
+:::
+
+Default value: `false`.
 
 ### s3queue_enable_logging_to_s3queue_log {#enable_logging_to_s3queue_log}
 
