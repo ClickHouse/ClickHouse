@@ -114,7 +114,7 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
         if (new_value < old_value)
             continue;
 
-        elem.metric_name += PROFILE_EVENT_PREFIX;
+        elem.metric_name = PROFILE_EVENT_PREFIX;
         elem.metric_name += ProfileEvents::getName(ProfileEvents::Event(i));
         elem.value = new_value - old_value;
         old_value = new_value;
