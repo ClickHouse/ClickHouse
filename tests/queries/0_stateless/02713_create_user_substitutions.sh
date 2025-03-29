@@ -31,7 +31,7 @@ $CLICKHOUSE_CLIENT --param_server=basic_server -q "CREATE USER user13_02713 IDEN
 
 $CLICKHOUSE_CLIENT --param_password=qwerty14 -q "CREATE USER user14_02713 IDENTIFIED WITH SCRAM_SHA256_PASSWORD BY {password:String}";
 
-# Generated online
+# The `param_hash` is the SCRAM SHA256 digest to create new user `user15_02713` with password `qwerty15` used later below.
 $CLICKHOUSE_CLIENT --param_hash=730f506ba74834a27799ded2cc4d94fdfeb43d27244059662ce45a59279976ae \
     -q "CREATE USER user15_02713 IDENTIFIED WITH SCRAM_SHA256_HASH BY {hash:String}";
 
