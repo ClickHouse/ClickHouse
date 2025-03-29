@@ -216,21 +216,8 @@ def parse_args():
 
 
 def find_prev_build(info, build_type):
-    # Get the latest 30 SHAs from master branch
-    raw = Shell.get_output(
-        f"gh api repos/{info.repo_name}/commits -F sha=master -q '.[].sha' | head -n 30"
-    )
-    commits = raw.strip().splitlines()
+    commits = info.get_custom_data("previous_commits_sha") or []
 
-    # Skip until we find the current SHA
-    while commits and commits[0] != info.sha:
-        commits.pop(0)
-
-    # Remove current SHA
-    if commits:
-        commits.pop(0)
-
-    # Check previous SHAs for available builds
     for sha in commits:
         link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
         if Shell.check(f"curl -sfI {link} > /dev/null"):
