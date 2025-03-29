@@ -18,6 +18,3 @@ if __name__ == "__main__":
     if changed_files_str:
         changed_files = changed_files_str.split("\n")
         info.store_custom_data("changed_files", changed_files)
-
-    version = CHVersion.get_current_version_as_dict()
-    info.store_custom_data("version", version)

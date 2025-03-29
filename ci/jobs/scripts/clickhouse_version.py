@@ -95,5 +95,5 @@ SET(VERSION_STRING {string})
     @classmethod
     def store_version_data_in_ci_pipeline(cls):
         Info().store_custom_data(
-            "clickhouse_version", cls.get_current_version_as_dict()
+            "version", cls.get_current_version_as_dict()
         )
