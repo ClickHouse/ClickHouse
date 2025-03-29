@@ -117,6 +117,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsUInt64 min_joined_block_size_bytes;
+    extern const SettingsBool query_plan_join_swap_table_use_statistics;
 }
 
 namespace ErrorCodes
@@ -1541,6 +1542,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
 
         auto setting_swap = settings[Setting::query_plan_join_swap_table];
         join_step->swap_join_tables = setting_swap.is_auto ? std::nullopt : std::make_optional(setting_swap.base);
+        join_step->swap_join_tables_use_statistics = settings[Setting::query_plan_join_swap_table_use_statistics];
 
         join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
 

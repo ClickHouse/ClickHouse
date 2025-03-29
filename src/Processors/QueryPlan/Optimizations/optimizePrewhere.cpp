@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 namespace DB
 {
@@ -17,6 +18,7 @@ namespace Setting
 {
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
+    extern const SettingsBool allow_statistics_optimize;
 }
 
 namespace QueryPlanOptimizations
@@ -92,10 +94,11 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     Names queried_columns = source_step_with_filter->requiredSourceColumns();
 
     const auto & source_filter_actions_dag = source_step_with_filter->getFilterActionsDAG();
+    bool use_statistics = settings[Setting::allow_statistics_optimize];
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
         storage_metadata,
-        storage.getConditionSelectivityEstimatorByPredicate(storage_snapshot, source_filter_actions_dag ? &*source_filter_actions_dag : nullptr, context),
+        use_statistics ? storage.getConditionSelectivityEstimatorByPredicate(storage_snapshot, source_filter_actions_dag ? &*source_filter_actions_dag : nullptr, context) : ConditionSelectivityEstimator(),
         queried_columns,
         storage.supportedPrewhereColumns(),
         getLogger("QueryPlanOptimizePrewhere")};
