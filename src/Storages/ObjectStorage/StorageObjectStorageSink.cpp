@@ -26,7 +26,8 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     const std::optional<FormatSettings> & format_settings_,
     const Block & sample_block_,
     ContextPtr context,
-    const std::string & blob_path)
+    const std::string & blob_path,
+    std::shared_ptr<ThreadPool> pool)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
 {
@@ -44,7 +45,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
         static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
 
     writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        configuration->format, *write_buf, sample_block, context, format_settings_);
+        configuration->format, *write_buf, sample_block, context, format_settings_, pool);
 }
 
 void StorageObjectStorageSink::consume(Chunk & chunk)
@@ -119,7 +120,7 @@ StorageObjectStorageSink::~StorageObjectStorageSink()
         cancelBuffers();
 }
 
-SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String & partition_id)
+SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String & partition_id, std::shared_ptr<ThreadPool> pool)
 {
     auto partition_bucket = replaceWildcards(configuration->getNamespace(), partition_id);
     validateNamespace(partition_bucket);
@@ -139,7 +140,8 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         format_settings,
         sample_block,
         context,
-        partition_key
+        partition_key,
+        pool
     );
 }
 
