@@ -16,10 +16,12 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 
 #include <Storages/SelectQueryInfo.h>
 
 #include <Interpreters/WindowDescription.h>
+#include "Analyzer/HashUtils.h"
 
 namespace DB
 {
@@ -49,9 +51,11 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
   * Inputs are not used for actions dag outputs.
   * Only root query tree expression node is used as actions dag output.
   */
-ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
+    const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
-    const PlannerContextPtr & planner_context);
+    const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set);
 
 /// Returns true if prefix sort description is prefix of full sort descriptor, false otherwise
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full);

@@ -16,6 +16,7 @@
 #include <base/types.h>
 #include <Common/NamePrompter.h>
 #include <Common/typeid_cast.h>
+#include "Core/SettingsTierType.h"
 
 #include <boost/program_options.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -5048,6 +5049,10 @@ Connect timeout in seconds. Now supported only for MySQL
     DECLARE(UInt64, external_storage_rw_timeout_sec, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, R"(
 Read/write timeout in seconds. Now supported only for MySQL
 )", 0)  \
+    \
+    DECLARE(Bool, allow_experimental_correlated_subqueries, false, R"(
+Allow to execute correlated subqueries.
+)", EXPERIMENTAL) \
     \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
