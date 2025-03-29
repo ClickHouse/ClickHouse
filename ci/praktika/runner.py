@@ -35,7 +35,7 @@ class Runner:
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
             REPOSITORY="",
-            BRANCH=branch or Settings.MAIN_BRANCH if not pr else "",
+            BRANCH="branch_name",
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
             PR_NUMBER=pr or -1,
             EVENT_TYPE="",
@@ -285,13 +285,17 @@ class Runner:
                             ResultInfo.TIMEOUT
                         )
                     elif result.is_running():
-                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]"
+                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]."
                         print(info)
-                        result.set_status(Result.Status.ERROR).set_info(info)
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
                         result.set_status(Result.Status.ERROR).set_info(info)
+                # add log snippet to report info
+                latest_log = process.get_latest_log(max_lies=20)
+                result.set_status(Result.Status.ERROR).set_info(info)
+                if latest_log:
+                    result.set_info("---").set_info(latest_log).set_info("---")
             result.dump()
 
         return exit_code
@@ -355,6 +359,21 @@ class Runner:
         result.update_duration()
         # if result.is_error():
         result.set_files([Settings.RUN_LOG])
+
+        if job.post_hooks:
+            sw_ = Utils.Stopwatch()
+            results_ = []
+            for check in job.post_hooks:
+                if callable(check):
+                    name = check.__name__
+                else:
+                    name = str(check)
+                results_.append(
+                    Result.from_commands_run(name=name, command=check, with_info=True)
+                )
+            result.results.append(
+                Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+            )
 
         if run_exit_code == 0:
             providing_artifacts = []
@@ -523,8 +542,8 @@ class Runner:
             print(f"=== Pre run finished ===\n\n")
 
         if res:
-            res = False
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
+            run_code = None
             try:
                 run_code = self._run(
                     workflow,
@@ -540,11 +559,23 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Run script failed with exception [{e}]")
                 traceback.print_exc()
+                res = False
+
+            result = Result.from_fs(job.name)
+            if not res and result.is_ok():
+                # TODO: It happens due to invalid timeout handling (forceful termination by timeout does not work) - fix
+                result.set_status(Result.Status.ERROR).set_info(
+                    f"Job got terminated with an error, exit code [{run_code}]"
+                ).dump()
+
             print(f"=== Run script finished ===\n\n")
 
         if not local_run:
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
-            self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
+            post_res = self._post_run(
+                workflow, job, setup_env_code, prerun_code, run_code
+            )
+            res = res and post_res
             print(f"=== Post run script finished ===")
 
         if not res:

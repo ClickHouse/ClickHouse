@@ -62,7 +62,7 @@ def should_skip_job(job_name):
     if (
         Labels.PR_PERFORMANCE not in _info_cache.pr_labels
         and JobNames.PERFORMANCE in job_name
-        and "aarch64" in job_name
+        and "arm" in job_name
     ):
         return True, "Skipped, not labeled with 'pr-performance'"
 

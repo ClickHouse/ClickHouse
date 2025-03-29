@@ -112,7 +112,7 @@ class S3:
         return
 
     @classmethod
-    def copy_file_to_s3(cls, s3_path, local_path, text=False):
+    def copy_file_to_s3(cls, s3_path, local_path, text=False, with_rename=False):
         assert Path(local_path).exists(), f"Path [{local_path}] does not exist"
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         assert Path(
@@ -120,7 +120,7 @@ class S3:
         ).is_file(), f"Path [{local_path}] is not file. Only files are supported"
         file_name = Path(local_path).name
         s3_full_path = s3_path
-        if not s3_full_path.endswith(file_name):
+        if not s3_full_path.endswith(file_name) and not with_rename:
             s3_full_path = f"{s3_path}/{Path(local_path).name}"
         cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
         if text:

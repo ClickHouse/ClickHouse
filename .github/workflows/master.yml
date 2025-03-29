@@ -927,44 +927,6 @@ jobs:
             python3 -m praktika run 'Build (fuzzers)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  unit_tests_binary:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_binary]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VW5pdCB0ZXN0cyAoYmluYXJ5KQ==') }}
-    name: "Unit tests (binary)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Unit tests (binary)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Unit tests (binary)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
   unit_tests_asan:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, build_amd_asan]
@@ -3929,11 +3891,11 @@ jobs:
             python3 -m praktika run 'BuzzHouse (ubsan)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  performance_comparison_release_1_3:
+  performance_comparison_amd_release_master_head_1_3:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAocmVsZWFzZSwgMS8zKQ==') }}
-    name: "Performance Comparison (release, 1/3)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsbWFzdGVyX2hlYWQsMS8zKQ==') }}
+    name: "Performance Comparison (amd_release,master_head,1/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -3962,16 +3924,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (release, 1/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release,master_head,1/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (release, 1/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release,master_head,1/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  performance_comparison_release_2_3:
+  performance_comparison_amd_release_master_head_2_3:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAocmVsZWFzZSwgMi8zKQ==') }}
-    name: "Performance Comparison (release, 2/3)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsbWFzdGVyX2hlYWQsMi8zKQ==') }}
+    name: "Performance Comparison (amd_release,master_head,2/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4000,16 +3962,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (release, 2/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release,master_head,2/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (release, 2/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release,master_head,2/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  performance_comparison_release_3_3:
+  performance_comparison_amd_release_master_head_3_3:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAocmVsZWFzZSwgMy8zKQ==') }}
-    name: "Performance Comparison (release, 3/3)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsbWFzdGVyX2hlYWQsMy8zKQ==') }}
+    name: "Performance Comparison (amd_release,master_head,3/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4038,9 +4000,123 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (release, 3/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release,master_head,3/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (release, 3/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release,master_head,3/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  performance_comparison_arm_release_master_head_1_3:
+    runs-on: [self-hosted, func-tester-aarch64]
+    needs: [config_workflow, build_arm_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsbWFzdGVyX2hlYWQsMS8zKQ==') }}
+    name: "Performance Comparison (arm_release,master_head,1/3)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Performance Comparison (arm_release,master_head,1/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Performance Comparison (arm_release,master_head,1/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  performance_comparison_arm_release_master_head_2_3:
+    runs-on: [self-hosted, func-tester-aarch64]
+    needs: [config_workflow, build_arm_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsbWFzdGVyX2hlYWQsMi8zKQ==') }}
+    name: "Performance Comparison (arm_release,master_head,2/3)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Performance Comparison (arm_release,master_head,2/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Performance Comparison (arm_release,master_head,2/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  performance_comparison_arm_release_master_head_3_3:
+    runs-on: [self-hosted, func-tester-aarch64]
+    needs: [config_workflow, build_arm_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsbWFzdGVyX2hlYWQsMy8zKQ==') }}
+    name: "Performance Comparison (arm_release,master_head,3/3)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Performance Comparison (arm_release,master_head,3/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Performance Comparison (arm_release,master_head,3/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   sqlancer_amd_debug:
