@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
@@ -618,7 +619,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     size_t num_streams,
     ReadFromMergeTree::IndexStats & index_stats,
     bool use_skip_indexes,
-    bool find_exact_ranges)
+    bool find_exact_ranges,
+    bool is_final_query)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -676,6 +678,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::atomic<size_t> sum_parts_pk = 0;
 
     RangesInDataParts parts_with_ranges(parts.size());
+    std::vector<size_t> skip_index_used_in_part(parts.size(), 0);
 
     /// Let's find what range to read from each part.
     {
@@ -745,6 +748,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                 if (ranges.ranges.empty())
                     stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+                skip_index_used_in_part[part_index] = 1; /// thread-safe
             }
 
             for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
@@ -770,8 +774,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
             }
 
-            if (!ranges.ranges.empty())
-                parts_with_ranges[part_index] = std::move(ranges);
+            parts_with_ranges[part_index] = std::move(ranges);
         };
 
         size_t num_threads = std::min<size_t>(num_streams, parts.size());
@@ -824,7 +827,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         for (size_t part_index = 0; part_index < parts.size(); ++part_index)
         {
             auto & part = parts_with_ranges[part_index];
-            if (!part.data_part)
+            if (is_final_query && settings[Setting::use_skip_indexes_if_final_exact_mode] && skip_index_used_in_part[part_index])
+            {
+                ++next_part; /// retain this part even if empty due to FINAL
+                continue;
+            }
+            if (!part.data_part || part.ranges.empty())
                 continue;
 
             if (next_part != part_index)
