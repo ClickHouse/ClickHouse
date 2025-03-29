@@ -14,9 +14,9 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
 
-ExchangeServer::ExchangeServer(UInt16 port, ExchangeConnectionsPtr connections_)
+ExchangeServer::ExchangeServer(const String & listen_host, UInt16 port, ExchangeConnectionsPtr connections_)
     : connections(std::move(connections_))
-    , server_socket(Poco::Net::ServerSocket(port))
+    , server_socket(Poco::Net::ServerSocket(Poco::Net::SocketAddress(listen_host, port)))
     , accept_thread("ExchangeServer")
     , stopped(true)
     , log(getLogger("ExchangeServer"))
@@ -38,7 +38,7 @@ ExchangeServer::~ExchangeServer()
 
 void ExchangeServer::start()
 {
-    LOG_DEBUG(log, "Starting ExchangeServer on port {}", server_socket.address().port());
+    LOG_DEBUG(log, "Starting ExchangeServer on {}", server_socket.address().toString());
     stopped = false;
     accept_thread.start(*this);
 }

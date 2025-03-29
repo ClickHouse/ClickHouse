@@ -14,7 +14,7 @@ namespace DB
 class ExchangeServer : public Poco::Runnable
 {
 public:
-    ExchangeServer(UInt16 port, ExchangeConnectionsPtr connections_);
+    ExchangeServer(const String & listen_host, UInt16 port, ExchangeConnectionsPtr connections_);
     ~ExchangeServer() override;
 
     void start();
