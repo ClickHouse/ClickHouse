@@ -135,7 +135,8 @@ bool isNameOfInFunction(const std::string & function_name)
         function_name == "nullInIgnoreSet" ||
         function_name == "globalNullInIgnoreSet" ||
         function_name == "notNullInIgnoreSet" ||
-        function_name == "globalNotNullInIgnoreSet";
+        function_name == "globalNotNullInIgnoreSet" ||
+        function_name == "inBloomFilter";
 
     return is_special_function_in;
 }
