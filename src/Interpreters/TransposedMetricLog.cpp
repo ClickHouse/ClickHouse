@@ -123,7 +123,7 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
     {
-        elem.metric_name += CURRENT_METRIC_PREFIX;
+        elem.metric_name = CURRENT_METRIC_PREFIX;
         elem.metric_name += CurrentMetrics::getName(CurrentMetrics::Metric(i));
         elem.value = CurrentMetrics::values[i];
         this->add(elem);
