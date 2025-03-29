@@ -63,6 +63,8 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     set (RLIMIT_AS 10000000000)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
+    # set stack size to 256M
+    set (RLIMIT_STACK 256000000)
 
     # Sanitizers are too heavy. Some architectures too.
     if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE OR ARCH_RISCV64 OR ARCH_LOONGARCH64)
@@ -70,6 +72,7 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
         set (RLIMIT_DATA 10000000000)
         set (RLIMIT_AS 20000000000)
         set (RLIMIT_CPU 2000)
+        set (RLIMIT_STACK 512000000)
     endif()
 
     # For some files currently building RISCV64/LOONGARCH64 might be too slow.
@@ -78,7 +81,7 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
         set (RLIMIT_CPU 1800)
     endif()
 
-    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
+    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --stack=${RLIMIT_STACK} --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
