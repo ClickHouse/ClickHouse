@@ -45,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
+    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
 class TaskParameters : public IParameterLookup
@@ -759,7 +760,7 @@ protected:
         }
 
         if (!error_message.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failures: {}", error_message);
+            throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER, "Failures: {}", error_message);
     }
 
     std::unordered_map<String, std::deque<RunningTaskInfo>> stage_tasks;
