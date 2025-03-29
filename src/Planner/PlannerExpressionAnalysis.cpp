@@ -432,6 +432,8 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
     bool has_with_fill = false;
     std::unordered_set<std::string_view> before_sort_actions_dag_output_node_names;
 
+    std::unordered_map<const ActionsDAG::Node *, std::unordered_set<std::string>> alias_map;
+
     /** We add only sort node sort expression in before ORDER BY actions DAG.
       * WITH fill expressions must be constant nodes.
       */
@@ -440,22 +442,45 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
     {
         auto & sort_node_typed = sort_node->as<SortNode &>();
         auto expression_dag_nodes = actions_visitor.visit(before_sort_actions->dag, sort_node_typed.getExpression());
+
+        chassert(expression_dag_nodes.size() == 1);
+
         has_with_fill |= sort_node_typed.withFill();
+        auto & action_dag_node = expression_dag_nodes[0];
+        std::string name = sort_node_typed.getColumnName();
+        if (name.empty())
+            name = action_dag_node->result_name;
 
-        for (auto & action_dag_node : expression_dag_nodes)
-        {
-            if (before_sort_actions_dag_output_node_names.contains(action_dag_node->result_name))
-                continue;
+        if (before_sort_actions_dag_output_node_names.contains(name))
+            continue;
 
-            before_sort_actions_outputs.push_back(action_dag_node);
-            before_sort_actions_dag_output_node_names.insert(action_dag_node->result_name);
-        }
+        before_sort_actions_outputs.push_back(action_dag_node);
+        before_sort_actions_dag_output_node_names.insert(name);
+
+        alias_map[action_dag_node].insert(name);
     }
 
+    /// Apply aliases
     if (has_with_fill)
     {
         for (auto & output_node : before_sort_actions_outputs)
-            output_node = &before_sort_actions->dag.materializeNode(*output_node);
+        {
+            if (auto it = alias_map.find(output_node); it != alias_map.end())
+            {
+                for (const auto & name : it->second)
+                    output_node = &before_sort_actions->dag.materializeNodeWithAlias(*output_node, name);
+            }
+            else
+                output_node = &before_sort_actions->dag.materializeNode(*output_node);
+        }
+    }
+    else
+    {
+        for (auto & output_node : before_sort_actions_outputs)
+            if (auto it = alias_map.find(output_node); it != alias_map.end())
+                for (const auto & name : it->second)
+                    if (name != output_node->result_name)
+                        output_node = &before_sort_actions->dag.addAlias(*output_node, name);
     }
 
     /// We add only INPUT columns necessary for INTERPOLATE expression in before ORDER BY actions DAG

@@ -146,6 +146,8 @@ public:
         return QueryTreeNodeType::SORT;
     }
 
+    const std::string & getColumnName() const { return column_name; }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -156,6 +158,9 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+
+    /// Initial name from column identifier.
+    std::string column_name;
 
 private:
     static constexpr size_t sort_expression_child_index = 0;
