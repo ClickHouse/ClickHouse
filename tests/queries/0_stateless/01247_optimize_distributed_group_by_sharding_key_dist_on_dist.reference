@@ -1,5 +1,7 @@
 Distributed(number)-over-Distributed(number)
 1	0
+-
+2	0
 Distributed(rand)-over-Distributed(number)
 4	0
 Distributed(rand)-over-Distributed(rand)

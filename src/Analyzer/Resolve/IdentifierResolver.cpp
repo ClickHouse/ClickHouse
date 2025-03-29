@@ -136,7 +136,7 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
-IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
+std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
 {
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1 || parts_size > 2)
@@ -198,7 +198,15 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
     if (is_temporary_table)
         result->setTemporaryTableName(table_name);
 
-    return { .resolved_identifier = result, .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
+    return result;
+}
+
+IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
+{
+    if (auto result = tryResolveTableIdentifier(table_identifier, context))
+        return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
+
+    return {};
 }
 
 /// Resolve identifier from compound expression
