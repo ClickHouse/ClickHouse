@@ -81,6 +81,12 @@ if [ "$lost_parts_count" -ne 0 ]; then
     exit 1
 fi
 
+echo "Testing sync from non-existent replica..."
+NON_EXISTENT_REPLICA="non_existent_replica_$RANDOM"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA test_table_1 LIGHTWEIGHT FROM '$NON_EXISTENT_REPLICA'" 2>&1 | grep -q "failed: replica does not exist" && echo "Error correctly detected for non-existent replica" || echo "FAILED: Error was not detected properly for non-existent replica"
+
+
 echo "Data consistency check passed"
 
 for i in $(seq $TOTAL_REPLICAS); do
