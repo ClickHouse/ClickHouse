@@ -86,7 +86,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , queue_base(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_base))
         , queue_settings_list(parseSettings(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_settings_list)))
         , max_rows_per_message(rabbitmq_settings->rabbitmq_max_rows_per_message)
-        , log(getLogger("StorageRabbitMQ (" + table_id_.table_name + ")"))
+        , log(getLogger("StorageRabbitMQ (" + table_id_.getFullTableName() + ")"))
         , persistent(rabbitmq_settings->rabbitmq_persistent.value)
         , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
