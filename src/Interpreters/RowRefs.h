@@ -120,6 +120,14 @@ struct RowRefList : RowRef
 
     ForwardIterator begin() const { return ForwardIterator(this); }
 
+    /// Check that RowRefList represent a range of consecutive rows
+    /// In this case there must be no next element
+    void assertIsRange() const
+    {
+        chassert(rows >= 1, "RowRefList should have at least one row");
+        chassert(next == nullptr, "When RowRefList represent range, it should not have next element");
+    }
+
     /// insert element after current one
     void insert(RowRef && row_ref, Arena & pool)
     {

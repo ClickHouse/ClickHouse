@@ -4681,7 +4681,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             table_name = table_identifier[1];
         }
 
-        /// Collect parametrized view arguments
+        /// Collect parameterized view arguments
         NameToNameMap view_params;
         for (const auto & argument : table_function_node_typed.getArguments())
         {
@@ -4714,18 +4714,18 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
 
         auto context = scope_context->getQueryContext();
-        auto parametrized_view_storage = context->buildParametrizedViewStorage(
+        auto parameterized_view_storage = context->buildParameterizedViewStorage(
             database_name,
             table_name,
             view_params);
 
-        if (parametrized_view_storage)
+        if (parameterized_view_storage)
         {
             /// Remove initial TableFunctionNode from the set. Otherwise it may lead to segfault
             /// when IdentifierResolveScope::dump() is used.
             scope.table_expressions_in_resolve_process.erase(table_function_node.get());
 
-            auto fake_table_node = std::make_shared<TableNode>(parametrized_view_storage, scope_context);
+            auto fake_table_node = std::make_shared<TableNode>(parameterized_view_storage, scope_context);
             fake_table_node->setAlias(table_function_node->getAlias());
             table_function_node = fake_table_node;
             return;

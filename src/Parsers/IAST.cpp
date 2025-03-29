@@ -119,7 +119,7 @@ size_t IAST::checkSize(size_t max_size) const
 }
 
 
-IAST::Hash IAST::getTreeHash(bool ignore_aliases) const
+IASTHash IAST::getTreeHash(bool ignore_aliases) const
 {
     SipHash hash_state;
     updateTreeHash(hash_state, ignore_aliases);

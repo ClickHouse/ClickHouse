@@ -86,8 +86,8 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
-    std::optional<UInt64> totalRows(const Settings &) const override;
-    std::optional<UInt64> totalBytes(const Settings &) const override;
+    std::optional<UInt64> totalRows(ContextPtr) const override;
+    std::optional<UInt64> totalBytes(ContextPtr) const override;
 
     /** Delays initialization of StorageMemory::read() until the first read is actually happen.
       * Usually, fore code like this:

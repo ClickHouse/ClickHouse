@@ -6,6 +6,7 @@
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>

@@ -57,7 +57,6 @@ INSERT INTO tp SELECT number%3, 1 FROM numbers(3);
 OPTIMIZE TABLE tp FINAL;
 
 -- expecting no projection
-SYSTEM FLUSH LOGS;
 SELECT
     name
 FROM system.projection_parts
@@ -96,7 +95,6 @@ ALTER TABLE tp ADD PROJECTION p (SELECT sum(eventcnt), type GROUP BY type);
 
 INSERT INTO tp SELECT number%3, 1 FROM numbers(3);
 
-SYSTEM FLUSH LOGS;
 -- expecting projection p
 SELECT
     name

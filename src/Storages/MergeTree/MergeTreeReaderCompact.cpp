@@ -156,6 +156,7 @@ void MergeTreeReaderCompact::readData(
     size_t column_idx,
     ColumnPtr & column,
     size_t rows_to_read,
+    size_t rows_offset,
     MergeTreeReaderStream & stream,
     ISerialization::SubstreamsCache & cache,
     std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns)
@@ -197,7 +198,7 @@ void MergeTreeReaderCompact::readData(
             if (!temp_full_column)
             {
                 temp_full_column = type_in_storage->createColumn(*serialization);
-                serialization->deserializeBinaryBulkWithMultipleStreams(temp_full_column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage], nullptr);
+                serialization->deserializeBinaryBulkWithMultipleStreams(temp_full_column, rows_offset, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage], nullptr);
 
                 if (columns_cache_for_subcolumns)
                     columns_cache_for_subcolumns->emplace(name_in_storage, temp_full_column);
@@ -214,7 +215,7 @@ void MergeTreeReaderCompact::readData(
         else
         {
             const auto & serialization = serializations[column_idx];
-            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], nullptr);
+            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], nullptr);
         }
 
         cache[name] = column;

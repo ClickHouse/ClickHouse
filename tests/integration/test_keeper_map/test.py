@@ -13,6 +13,7 @@ node = cluster.add_instance(
     user_configs=["configs/keeper_retries.xml"],
     with_zookeeper=True,
     stay_alive=True,
+    with_remote_database_disk=False,  # `test_keeper_map_without_zk` stops the Keeper connection, which might not work with the remote DB disk
 )
 
 

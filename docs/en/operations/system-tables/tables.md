@@ -44,7 +44,7 @@ Columns:
 
 - `as_select` ([String](../../sql-reference/data-types/string.md)) - `SELECT` query for view.
 
-- `parametrized_view_paramters` ([Array](../../sql-reference/data-types/array.md) of [Tuple](../../sql-reference/data-types/tuple.md)) — Parameters of Parametrized view.
+- `parameterized_view_parameters` ([Array](../../sql-reference/data-types/array.md) of [Tuple](../../sql-reference/data-types/tuple.md)) — Parameters of parameterized view.
 
 - `partition_key` ([String](../../sql-reference/data-types/string.md)) - The partition key expression specified in the table.
 

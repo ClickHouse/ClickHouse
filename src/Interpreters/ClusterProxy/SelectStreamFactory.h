@@ -5,7 +5,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
 

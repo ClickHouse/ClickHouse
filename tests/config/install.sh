@@ -95,6 +95,7 @@ fi
 
 ln -sf $SRC_PATH/users.d/log_queries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/readonly.xml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/users.d/ci_logs_sender.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/access_management.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/database_atomic_drop_detach_sync.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/opentelemetry.xml $DEST_SERVER_PATH/users.d/
@@ -224,6 +225,7 @@ fi
 if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
     rm /etc/clickhouse-server/config.d/zookeeper.xml
     rm /etc/clickhouse-server/config.d/keeper_port.xml
 

@@ -1,13 +1,12 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/IAST_fwd.h>
-
 
 namespace DB
 {
 
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 struct Array;
 
 Array getAggregateFunctionParametersArray(

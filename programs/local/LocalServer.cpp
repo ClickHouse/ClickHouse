@@ -944,7 +944,7 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
         output_stream << options_description.main_description.value() << "\n";
     output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n\n";
     output_stream << getHelpFooter() << "\n";
-    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parameterized queries.\n";
     output_stream << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
 }
 

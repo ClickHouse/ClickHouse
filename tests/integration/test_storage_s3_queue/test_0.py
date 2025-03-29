@@ -410,27 +410,29 @@ def test_streaming_to_view(started_cluster, mode):
 def test_streaming_to_many_views(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"streaming_to_many_views_{mode}"
-    dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
 
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
+            "polling_backoff_ms": 0,
+        },
+    )
+
     for i in range(10):
-        table = f"{table_name}_{i + 1}"
-        create_table(
-            started_cluster,
-            node,
-            table,
-            mode,
-            files_path,
-            additional_settings={
-                "keeper_path": keeper_path,
-                "polling_min_timeout_ms": 100,
-                "polling_max_timeout_ms": 100,
-                "polling_backoff_ms": 0,
-            },
-        )
-        create_mv(node, table, dst_table_name)
+        base_name = f"{table_name}_{i + 1}"
+        mv_table_name = f"{base_name}_mv"
+        dst_table_name = f"{base_name}_dst"
+        create_mv(node, table_name, dst_table_name, mv_name = mv_table_name)
 
     files_num = 20
     row_num = 100
@@ -440,21 +442,24 @@ def test_streaming_to_many_views(started_cluster, mode):
     )
     expected_values = sorted(set([tuple(i) for i in total_values]))
 
-    def check():
-        return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
+    for i in range(10):
+        base_name = f"{table_name}_{i + 1}"
+        dst_table_name = f"{base_name}_dst"
+        def check():
+            return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
 
-    for _ in range(20):
-        if check() == files_num:
-            break
-        time.sleep(1)
-    processed_files = node.query(f"SELECT distinct(_path) FROM {dst_table_name}")
-    missing_files = [
-        x[0] for x in files if x[0] not in processed_files.strip().split("\n")
-    ]
-    assert check() == files_num, f"Missing files: {missing_files}"
-    assert row_num * files_num == int(
-        node.query(f"SELECT count() FROM {dst_table_name}")
-    )
+        for _ in range(20):
+            if check() == files_num:
+                break
+            time.sleep(1)
+        processed_files = node.query(f"SELECT distinct(_path) FROM {dst_table_name}")
+        missing_files = [
+            x[0] for x in files if x[0] not in processed_files.strip().split("\n")
+        ]
+        assert check() == files_num, f"Missing files for {dst_table_name}: {missing_files}"
+        count = int(node.query(f"SELECT count() FROM {dst_table_name}"))
+        expected = row_num * files_num
+        assert expected == count, f"Missing or extra data for {dst_table_name}: {count} (expected: {expected})"
 
 
 def test_multiple_tables_meta_mismatch(started_cluster):

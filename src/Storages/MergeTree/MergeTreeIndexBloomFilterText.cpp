@@ -190,6 +190,7 @@ bool MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue() const
              || element.function == RPNElement::FUNCTION_MULTI_SEARCH
              || element.function == RPNElement::FUNCTION_MATCH
              || element.function == RPNElement::FUNCTION_HAS_ANY
+             || element.function == RPNElement::FUNCTION_HAS_ALL
              || element.function == RPNElement::ALWAYS_FALSE)
         {
             rpn_stack.push_back(false);
@@ -264,7 +265,8 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
                 rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_MULTI_SEARCH
-            || element.function == RPNElement::FUNCTION_HAS_ANY)
+            || element.function == RPNElement::FUNCTION_HAS_ANY
+            || element.function == RPNElement::FUNCTION_HAS_ALL)
         {
             std::vector<bool> result(element.set_bloom_filters.back().size(), true);
 
@@ -273,7 +275,10 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
             for (size_t row = 0; row < bloom_filters.size(); ++row)
                 result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
 
-            rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+            if (element.function == RPNElement::FUNCTION_HAS_ALL)
+                rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), false) == std::end(result), true);
+            else
+                rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
         }
         else if (element.function == RPNElement::FUNCTION_MATCH)
         {
@@ -406,7 +411,8 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                  function_name == "startsWith" ||
                  function_name == "endsWith" ||
                  function_name == "multiSearchAny" ||
-                 function_name == "hasAny")
+                 function_name == "hasAny" ||
+                 function_name == "hasAll")
         {
             Field const_value;
             DataTypePtr const_type;
@@ -591,10 +597,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         token_extractor->substringToBloomFilter(value.data(), value.size(), *out.bloom_filter, false, true);
         return true;
     }
-    if (function_name == "multiSearchAny" || function_name == "hasAny")
+    if (function_name == "multiSearchAny" || function_name == "hasAny" || function_name == "hasAll")
     {
         out.key_column = *key_index;
-        out.function = function_name == "multiSearchAny" ? RPNElement::FUNCTION_MULTI_SEARCH : RPNElement::FUNCTION_HAS_ANY;
+        out.function = function_name == "multiSearchAny" ? RPNElement::FUNCTION_MULTI_SEARCH
+                     : function_name == "hasAny"         ? RPNElement::FUNCTION_HAS_ANY
+                                                         : RPNElement::FUNCTION_HAS_ALL;
 
         /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
         std::vector<std::vector<BloomFilter>> bloom_filters;

@@ -11,6 +11,7 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
@@ -310,7 +311,7 @@ void StorageMergeTree::read(
         query_plan = std::move(*plan);
 }
 
-std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
+std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
 {
     return getTotalActiveSizeInRows();
 }
@@ -321,7 +322,7 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
     return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, parts);
 }
 
-std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
+std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
 {
     return getTotalActiveSizeInBytes();
 }

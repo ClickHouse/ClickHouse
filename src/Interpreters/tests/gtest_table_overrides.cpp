@@ -1,4 +1,6 @@
 #include <Interpreters/applyTableOverride.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 

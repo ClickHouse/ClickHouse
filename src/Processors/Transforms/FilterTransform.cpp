@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 
 namespace ProfileEvents

@@ -78,6 +78,53 @@ class MetaClasses:
         def to_json(self, pretty=False):
             return json.dumps(dataclasses.asdict(self), indent=4 if pretty else None)
 
+    @dataclasses.dataclass
+    class SerializableSingleton(ABC):
+        @classmethod
+        def to_dict(cls, obj):
+            if dataclasses.is_dataclass(obj):
+                return {k: cls.to_dict(v) for k, v in dataclasses.asdict(obj).items()}
+            elif isinstance(obj, SimpleNamespace):
+                return {k: cls.to_dict(v) for k, v in vars(obj).items()}
+            elif isinstance(obj, list):
+                return [cls.to_dict(i) for i in obj]
+            elif isinstance(obj, dict):
+                return {k: cls.to_dict(v) for k, v in obj.items()}
+            else:
+                return obj
+
+        @classmethod
+        def from_dict(cls: Type[T], obj: Dict[str, Any]) -> T:
+            return cls(**obj)
+
+        @classmethod
+        @abstractmethod
+        def file_name_static(cls):
+            pass
+
+        @classmethod
+        def from_fs(cls: Type[T]) -> T:
+            with open(cls.file_name_static(), "r", encoding="utf8") as f:
+                try:
+                    return cls.from_dict(json.load(f))
+                except json.decoder.JSONDecodeError as ex:
+                    print(f"ERROR: failed to parse json, ex [{ex}]")
+                    print(f"JSON content [{cls.file_name_static()}]")
+                    Shell.check(f"cat {cls.file_name_static()}")
+                    raise ex
+
+        def dump(self):
+            with open(self.file_name_static(), "w", encoding="utf8") as f:
+                json.dump(self.to_dict(self), f, indent=4)
+            return self
+
+        @classmethod
+        def exist(cls):
+            return Path(cls.file_name_static()).is_file()
+
+        def to_json(self, pretty=False):
+            return json.dumps(dataclasses.asdict(self), indent=4 if pretty else None)
+
 
 class ContextManager:
     @staticmethod

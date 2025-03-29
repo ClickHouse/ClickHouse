@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
-from .s3 import S3
+from .s3 import S3, StorageUsage
 from .settings import Settings
 from .utils import ContextManager, MetaClasses, Shell, Utils
 
@@ -228,15 +228,18 @@ class Result(MetaClasses.Serializable):
 
         if with_local_run_command and not self.is_ok():
             command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
-            first_failed_test = next((r for r in self.results if not r.is_ok()), None)
+            first_failed_test = None
+            first_failed_task_result = next(
+                (r for r in self.results if not r.is_ok()), None
+            )
             if (
-                first_failed_test
-                and first_failed_test.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
+                first_failed_task_result.name
+                in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
             ):
                 first_failed_test = next(
                     (
                         r
-                        for r in first_failed_test.results
+                        for r in first_failed_task_result.results
                         if "fail" in r.status.lower()
                     ),
                     None,
@@ -625,7 +628,9 @@ class _ResultS3:
         return result
 
     @classmethod
-    def update_workflow_results(cls, workflow_name, new_info="", new_sub_results=None):
+    def update_workflow_results(
+        cls, workflow_name, new_info="", new_sub_results=None, storage_usage=None
+    ):
         assert new_info or new_sub_results
 
         attempt = 1
@@ -647,6 +652,12 @@ class _ResultS3:
                     workflow_result.update_sub_result(
                         result_, drop_nested_results=True
                     ).dump()
+            if storage_usage:
+                workflow_storage_usage = StorageUsage.from_dict(
+                    workflow_result.ext.get("storage_usage", {})
+                ).merge_with(storage_usage)
+                workflow_result.ext["storage_usage"] = workflow_storage_usage
+
             new_status = workflow_result.status
             if cls.copy_result_to_s3_with_version(workflow_result, version=version + 1):
                 done = True

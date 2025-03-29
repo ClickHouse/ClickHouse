@@ -25,7 +25,7 @@ OPTIMIZE TABLE t_ind_merge_1 FINAL;
 SELECT count() FROM t_ind_merge_1 WHERE b < 100 SETTINGS force_data_skipping_indices = 'idx_b';
 EXPLAIN indexes = 1 SELECT count() FROM t_ind_merge_1 WHERE b < 100;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS text_log;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 WITH
     (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND table = 't_ind_merge_1') AS uuid,

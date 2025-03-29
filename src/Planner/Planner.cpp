@@ -133,6 +133,9 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ServerSetting
@@ -147,7 +150,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -1173,11 +1175,16 @@ void addBuildSubqueriesForSetsStepIfNeeded(
 
     if (!subqueries.empty())
     {
+        const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+        SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+        auto prepared_sets_cache = planner_context->getQueryContext()->getPreparedSetsCache();
+
         auto step = std::make_unique<DelayedCreatingSetsStep>(
             query_plan.getCurrentHeader(),
             std::move(subqueries),
-            planner_context->getQueryContext());
-
+            network_transfer_limits,
+            prepared_sets_cache);
+        step->setStepDescription("DelayedCreatingSetsStep");
         query_plan.addStep(std::move(step));
     }
 }
@@ -1303,20 +1310,10 @@ void Planner::buildQueryPlanIfNeeded()
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
 
-    try
-    {
-        if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
-            buildPlanForUnionNode();
-        else
-            buildPlanForQueryNode();
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK && query_plan.isInitialized())
-            e.addMessage("while building query plan:\n{}", dumpQueryPlan(query_plan));
-        throw;
-    }
-
+    if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
+        buildPlanForUnionNode();
+    else
+        buildPlanForQueryNode();
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 

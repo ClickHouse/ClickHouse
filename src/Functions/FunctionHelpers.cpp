@@ -277,34 +277,32 @@ wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const
     return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
 }
 
-ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnPtr & null_map)
+ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
 {
     if (src->onlyNull())
         return src;
 
-    ColumnPtr result_null_map_column;
     ColumnPtr src_not_nullable = src;
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(src.get()))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
-        result_null_map_column = nullable->getNullMapColumnPtr();
+        const auto & src_null_map = nullable->getNullMapColumn().getData();
 
-        MutableColumnPtr mutable_result_null_map_column = IColumn::mutate(std::move(result_null_map_column));
-        NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
-        const NullMap & null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
+        /// Reuse null_map as result_null_map if possible, thus avoiding unnecessary memory allocation.
+        auto result_null_map_column = IColumn::mutate(std::move(null_map));
+        auto & result_null_map = assert_cast<ColumnUInt8 &>(*result_null_map_column).getData();
         for (size_t i = 0; i < result_null_map.size(); ++i)
-            result_null_map[i] |= null_map_data[i];
+            result_null_map[i] |= src_null_map[i];
 
-        result_null_map_column = std::move(mutable_result_null_map_column);
-        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
+        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), std::move(result_null_map_column));
     }
     else if (const auto * const_src = checkAndGetColumn<ColumnConst>(src.get()))
     {
         const NullMap & null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
-        ColumnPtr result_null_map = ColumnUInt8::create(1, null_map_data[0] || const_src->isNullAt(0));
+        ColumnPtr result_null_map_column = ColumnUInt8::create(1, null_map_data[0] || const_src->isNullAt(0));
         const auto * nullable_data = checkAndGetColumn<ColumnNullable>(&const_src->getDataColumn());
         auto data_not_nullable = nullable_data ? nullable_data->getNestedColumnPtr() : const_src->getDataColumnPtr();
-        return ColumnConst::create(ColumnNullable::create(data_not_nullable, result_null_map), const_src->size());
+        return ColumnConst::create(ColumnNullable::create(data_not_nullable, result_null_map_column), const_src->size());
     }
     else
         return ColumnNullable::create(src->convertToFullColumnIfConst(), null_map);

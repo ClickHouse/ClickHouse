@@ -4,6 +4,8 @@ from praktika.utils import MetaClasses, Utils
 # i.e. "ClickHouse/ci/tmp"
 TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == _Settings.TEMP_DIR != env_helper.TEMP_PATH
 
+SYNC = "CH Inc sync"
+
 
 class RunnerLabels:
     CI_SERVICES = "ci_services"

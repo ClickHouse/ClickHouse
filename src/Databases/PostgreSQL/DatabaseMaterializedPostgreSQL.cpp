@@ -15,6 +15,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Databases/DatabaseOrdinary.h>
