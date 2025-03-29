@@ -51,13 +51,14 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
     std::optional<std::string> extractNamedArgument(ASTs & arguments, const std::string & argument_name, ASTs::iterator & argument_position)
     {
-        for (auto arg_it = arguments.begin(); arg_it != arguments.end(); ++arg_it)
+        for (auto * arg_it = arguments.begin(); arg_it != arguments.end(); ++arg_it)
         {
             auto argument = *arg_it;
             const auto * type_ast_function = argument->as<ASTFunction>();
@@ -67,11 +68,11 @@ namespace
                 continue;
             }
 
-            auto name = type_ast_function->arguments->children[0]->as<ASTIdentifier>();
+            auto * name = type_ast_function->arguments->children[0]->as<ASTIdentifier>();
 
             if (name && name->name() == argument_name)
             {
-                auto value = type_ast_function->arguments->children[1]->as<ASTLiteral>();
+                auto * value = type_ast_function->arguments->children[1]->as<ASTLiteral>();
 
                 if (!value)
                 {
