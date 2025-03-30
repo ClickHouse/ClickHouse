@@ -577,10 +577,14 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
 
-    if (!streaming_file_iterator || streaming_file_iterator->isFinished())
+    std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator;
     {
         std::lock_guard streaming_lock(streaming_mutex);
-        streaming_file_iterator = createFileIterator(queue_context, nullptr);
+        if (!streaming_file_iterator || streaming_file_iterator->isFinished())
+        {
+            streaming_file_iterator = createFileIterator(queue_context, nullptr);
+        }
+        file_iterator = streaming_file_iterator;
     }
     size_t total_rows = 0;
 
@@ -591,7 +595,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {})",
         threads, processing_threads_num, parallel_inserts);
 
-    while (!shutdown_called && !streaming_file_iterator->isFinished())
+    while (!shutdown_called && !file_iterator->isFinished())
     {
         /// FIXME:
         /// it is possible that MV is dropped just before we start the insert,
@@ -624,7 +628,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                 /*processor_id=*/ i * streaming_tasks_index,
                 read_from_format_info,
                 processing_progress,
-                streaming_file_iterator,
+                file_iterator,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 queue_context,
                 /*commit_once_processed=*/ false);
@@ -651,12 +655,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         catch (...)
         {
             commit(/*insert_succeeded=*/ false, rows, sources, getCurrentExceptionMessage(true), getCurrentExceptionCode());
-            streaming_file_iterator->releaseFinishedBuckets();
+            file_iterator->releaseFinishedBuckets();
             throw;
         }
 
         commit(/*insert_succeeded=*/ true, rows, sources);
-        streaming_file_iterator->releaseFinishedBuckets();
+        file_iterator->releaseFinishedBuckets();
         total_rows += rows;
     }
 
