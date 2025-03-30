@@ -465,7 +465,7 @@ class JobConfigs:
         name=JobNames.UNITTEST,
         runs_on=["..params.."],
         command=f"python3 ./ci/jobs/unit_tests_job.py",
-        run_in_docker="clickhouse/binary-builder",
+        run_in_docker="clickhouse/fasttest",
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/unit_tests_job.py"],
         ),
