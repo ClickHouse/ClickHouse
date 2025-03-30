@@ -22,6 +22,7 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/buildQueryTreeForShard.h>
+#include "Processors/QueryPlan/QueryPlan.h"
 
 namespace DB
 {

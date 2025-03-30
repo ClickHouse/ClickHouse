@@ -55,8 +55,6 @@ private:
     RowsBeforeStepCounterPtr rows_before_limit;
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
-    UInt64 chunk_sequence_number = 0;
-
     const bool async_read;
     const bool async_query_sending;
     bool is_async_state = false;

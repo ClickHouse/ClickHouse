@@ -7,8 +7,6 @@
 #include <vector>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/VersionNumber.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -46,14 +44,18 @@
 #include "Common/OpenTelemetryTraceContext.h"
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/Stopwatch.h>
+#include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
+#include "IO/WriteBufferFromString.h"
+#include "QueryPipeline/printPipeline.h"
 
 #include <Columns/ColumnBlob.h>
 #include <Columns/ColumnSparse.h>
@@ -261,6 +263,33 @@ struct TurnOffBoolSettingTemporary
     }
 };
 
+Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
+{
+    if (!block || !codec || client_revision < DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
+        return block;
+
+    Block res;
+    res.info = block.info;
+    for (const auto & elem : block)
+    {
+        ColumnWithTypeAndName column = elem;
+
+        // TODO(nickitat): support Tuple
+        if (!elem.column->isConst()
+            && (!elem.type->haveSubtypes() || elem.type->lowCardinality() || elem.type->isNullable() || isArray(elem.type->getTypeId())))
+        {
+            auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
+            { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };
+            auto col = ColumnBlob::create(std::move(task), column.column);
+            col->convertTo();
+
+            column.column = std::move(col);
+        }
+
+        res.insert(std::move(column));
+    }
+    return res;
+}
 }
 
 namespace DB
@@ -666,6 +695,17 @@ void TCPHandler::runImpl()
                 ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
                 return res;
             });
+
+            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+            query_state->query_context->setBlockMarshallingCallback(
+                [this, &query_state](const Block & block)
+                {
+                    return prepare(
+                        block,
+                        getCompressionCodec(query_state->query_context->getSettingsRef(), query_state->compression),
+                        client_tcp_protocol_version,
+                        getFormatSettings(query_state->query_context));
+                });
 
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
@@ -1271,54 +1311,8 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                 // Block might be empty in case of timeout, i.e. there is no data to process
                 if (block && !state.io.null_format)
                 {
-                    initBlockQueue(state);
-
-                    {
-                        std::lock_guard lock(callback_mutex);
-                        Block processed;
-                        // Make only one iteration with `wait=true`, all other on the best-effort basis
-                        while ((processed = state.block_queue->dequeueNextProcessed(/*wait=*/false)))
-                        {
-                            OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
-                            sendData(state, processed);
-                        }
-                    }
-
-                    while (block && state.block_queue->enqueueForProcessing(block, /*wait=*/false))
-                    {
-                        if (!executor.pull(block, /*milliseconds=*/1))
-                        {
-                            // Both negative outcomes - timeout and end of data - should cause exit from the loop
-                            block = {};
-                        }
-                    }
-
-                    {
-                        std::lock_guard lock(callback_mutex);
-                        Block processed;
-                        // Make only one iteration with `wait=true`, all other on the best-effort basis
-                        while ((processed = state.block_queue->dequeueNextProcessed(/*wait=*/!processed)))
-                        {
-                            OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
-                            sendData(state, processed);
-                        }
-                    }
-
-                    if (block)
-                    {
-                        // Everything that was possible to push without waiting is pushed. Now we have to push the last block regardless of the queue state
-                        state.block_queue->enqueueForProcessing(block, /*wait=*/true);
-                    }
-                }
-            }
-
-            if (state.block_queue)
-            {
-                std::lock_guard lock(callback_mutex);
-                while (Block processed = state.block_queue->dequeueNextProcessed(/*wait=*/false))
-                {
                     OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
-                    sendData(state, processed);
+                    sendData(state, block);
                 }
             }
         }
@@ -2191,6 +2185,16 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
     state->query_context->setFileProgressCallback(
         [this, &state](const FileProgress & value) { this->updateProgress(state.value(), Progress(value)); });
 
+    state->query_context->setBlockMarshallingCallback(
+        [this, &state](const Block & block)
+        {
+            return prepare(
+                block,
+                getCompressionCodec(state->query_context->getSettingsRef(), state->compression),
+                client_tcp_protocol_version,
+                getFormatSettings(state->query_context));
+        });
+
     ///
     /// Settings
     ///
@@ -2501,35 +2505,6 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
                 throw NetException(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet from client {}", toString(packet_type));
         }
     }
-}
-
-
-static Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
-{
-    if (!block || !codec || client_revision < DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
-        return block;
-
-    Block res;
-    res.info = block.info;
-    for (const auto & elem : block)
-    {
-        ColumnWithTypeAndName column = elem;
-
-        // TODO(nickitat): support Tuple
-        if (!elem.column->isConst()
-            && (!elem.type->haveSubtypes() || elem.type->lowCardinality() || elem.type->isNullable() || isArray(elem.type->getTypeId())))
-        {
-            auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
-            { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };
-            auto col = ColumnBlob::create(std::move(task), column.column);
-            col->convertTo();
-
-            column.column = std::move(col);
-        }
-
-        res.insert(std::move(column));
-    }
-    return res;
 }
 
 void TCPHandler::initBlockQueue(QueryState & state)
