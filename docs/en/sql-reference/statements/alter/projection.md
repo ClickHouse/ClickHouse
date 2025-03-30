@@ -165,7 +165,7 @@ Inserting some sample data:
 INSERT INTO events SELECT * FROM generateRandom() LIMIT 100000;
 ```
 
-### Using `_part_offset` as a secondary index
+### Using `_part_offset` as a secondary index {#normal-projection-secondary-index}
 
 The `_part_offset` field preserves its value through merges and mutations, making it valuable for secondary indexing. We can leverage this in queries:
 
