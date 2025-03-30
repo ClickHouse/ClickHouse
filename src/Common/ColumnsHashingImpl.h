@@ -193,7 +193,7 @@ public:
 
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool) {
-        return emplaceKey(data, row, pool, 9223372036854775807ll);
+        return emplaceKey(data, row, pool, std::nullopt, 9223372036854775807ll);
     }
 
     // 72610: data -- мап (или сет)
@@ -201,7 +201,7 @@ public:
     // 72610: вызывается emplaceImpl, которая возвращает результат попытки вставки ключа в мап
     // 72610: если ключ не нужен благодаря оптимизации, корректно ли вернуть EmplaceResult(false)?
     template <typename Data>
-    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool, size_t limit_length)
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool, const std::optional<std::vector<UInt64>> & optimization_indexes, size_t limit_length)
     {
         std::cout << "@@@@@@@@@@@@@@@@@ emplaceKey2 called" << std::endl;
         if constexpr (nullable)
@@ -228,7 +228,7 @@ public:
         }
 
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        return emplaceImpl(key_holder, data, limit_length);
+        return emplaceImpl(key_holder, data, limit_length, optimization_indexes);
     }
 
     template <typename Data>
@@ -352,9 +352,10 @@ protected:
     struct HasErase<T, ArgType, std::void_t<decltype(std::declval<T>().erase(std::declval<ArgType>()))>> : std::true_type {};
 
     template <typename KeyHolder1, typename KeyHolder2>
-    bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs) {
+    bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::optional<std::vector<UInt64>> & optimization_indexes) {
         (void)lhs;
         (void)rhs;
+        (void)optimization_indexes;
         return false; // TODO implement
     }
 
@@ -363,7 +364,11 @@ protected:
     // 72610: emplaceImpl пытается вставить в мап и возвращает получилось ли и итератор, если да
     // 72610: если ключ не нужен благодаря оптимизации, корректно ли вернуть EmplaceResult(false)?
     template <typename Data, typename KeyHolder>
-    ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data, size_t limit_length)
+    ALWAYS_INLINE EmplaceResult emplaceImpl(
+        KeyHolder & key_holder,
+        Data & data,
+        size_t limit_length,
+        const std::optional<std::vector<UInt64>> & optimization_indexes)
     {
         std::cout << "\t@@@@@@ emplaceImpl called" << std::endl;
         std::cout << "\t@@@@@@ has_mapped: " << has_mapped << std::endl;
@@ -417,11 +422,11 @@ protected:
                 for (const auto& data_el : data) {
                     if constexpr (HasKey<KeyHolder>::value) {
                         const auto& key = data_el.getKey();
-                        if (compareKeyHolders(key, min_key_holder.key)) {
+                        if (compareKeyHolders(key, min_key_holder.key, optimization_indexes)) {
                             min_key_holder.key = key;
                         }
                     } else {
-                        if (compareKeyHolders(data_el.getKey(), min_key_holder)) {
+                        if (compareKeyHolders(data_el.getKey(), min_key_holder, optimization_indexes)) {
                             if constexpr (!std::is_same_v<decltype(data_el.getKey()), const VoidKey>) {
                                 min_key_holder = data_el.getKey();
                             }
