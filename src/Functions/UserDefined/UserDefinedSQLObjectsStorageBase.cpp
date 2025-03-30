@@ -88,8 +88,10 @@ std::vector<std::string> UserDefinedSQLObjectsStorageBase::getAllObjectNames(Use
     std::lock_guard lock(mutex);
     object_names.reserve(object_name_to_create_object_map.size());
 
-    for (const auto & [name, typed_query] : object_name_to_create_object_map) {
-        if (typed_query.object_type == object_type) {
+    for (const auto & [name, typed_query] : object_name_to_create_object_map)
+    {
+        if (typed_query.object_type == object_type)
+        {
             object_names.emplace_back(name);
         }
     }
@@ -100,8 +102,10 @@ std::vector<std::string> UserDefinedSQLObjectsStorageBase::getAllObjectNames(Use
 bool UserDefinedSQLObjectsStorageBase::empty(UserDefinedSQLObjectType object_type) const
 {
     std::lock_guard lock(mutex);
-    for (const auto & [_, typed_object] : object_name_to_create_object_map) {
-        if (typed_object.object_type == object_type) {
+    for (const auto & [_, typed_object] : object_name_to_create_object_map)
+    {
+        if (typed_object.object_type == object_type)
+        {
             return false;
         }
     }

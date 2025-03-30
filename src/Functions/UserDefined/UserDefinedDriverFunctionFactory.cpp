@@ -58,7 +58,8 @@ String formatCodeBlock(const String & code)
     }
 
     String result;
-    for (size_t i = 0; i < lines.size(); ++i) {
+    for (size_t i = 0; i < lines.size(); ++i)
+    {
         result += lines[i];
         if (i + 1 < lines.size())
             result += '\n';
@@ -144,7 +145,8 @@ UserDefinedExecutableFunctionPtr UserDefinedDriverFunctionFactory::createUserDef
         command += " \'" + code + "\'";
     }
 
-    if (!driver->container_command.empty()) {
+    if (!driver->container_command.empty())
+    {
         boost::algorithm::replace_all(command, "\"", "\\\"");
         command = driver->container_command + " \"" + command + "\"";
     }
@@ -263,17 +265,15 @@ FunctionOverloadResolverPtr UserDefinedDriverFunctionFactory::get(const String &
 FunctionOverloadResolverPtr UserDefinedDriverFunctionFactory::tryGet(const String & function_name) const
 {
     auto ptr = global_context->getUserDefinedSQLObjectsStorage().tryGet(function_name, UserDefinedSQLObjectType::DriverFunction);
-    if (!ptr) {
+    if (!ptr)
         return nullptr;
-    }
 
     auto create_query = ptr->as<ASTCreateDriverFunctionQuery &>();
 
     auto driver_name = create_query.getEngineName();
     auto driver = global_context->getUserDefinedDriversStorage().tryGet(driver_name);
-    if (!driver) {
+    if (!driver)
         return nullptr;
-    }
 
     auto executable_function = createUserDefinedFunction(create_query, driver);
     Array parameters;

@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INCORRECT_QUERY;
-}
-
 BlockIO InterpreterCreateDriverFunctionQuery::execute()
 {
     ASTCreateDriverFunctionQuery & create_driver_function = query_ptr->as<ASTCreateDriverFunctionQuery &>();

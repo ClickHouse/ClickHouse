@@ -81,7 +81,8 @@ std::vector<String> UserDefinedDriversStorage::getAllDriverNames() const
     std::lock_guard lock(mutex);
     driver_names.reserve(driver_name_to_configuration_map.size());
 
-    for (const auto & [name, _] : driver_name_to_configuration_map) {
+    for (const auto & [name, _] : driver_name_to_configuration_map)
+    {
         driver_names.emplace_back(name);
     }
 
