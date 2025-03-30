@@ -703,8 +703,16 @@ class TeePopen:
     def send_signal(self, signal_num):
         os.killpg(self.process.pid, signal_num)
 
-    def get_latest_log(self, max_lies=20):
-        return "\n".join(self.log_rolling_buffer[-max_lies:])
+    def get_latest_log(self, max_lines=20):
+        buffer = list(self.log_rolling_buffer)
+
+        # Search backwards for "Traceback"
+        for i in range(len(buffer) - 1, -1, -1):
+            if "Traceback" in buffer[i]:
+                return "\n".join(buffer[i:])
+
+        # Fallback: return last max_lines
+        return "\n".join(buffer[-max_lines:])
 
 
 if __name__ == "__main__":
