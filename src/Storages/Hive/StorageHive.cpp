@@ -17,6 +17,7 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -104,6 +105,7 @@ public:
 
         bool need_path_column = false;
         bool need_file_column = false;
+        bool need_tags_column = false;
     };
 
     using SourcesInfoPtr = std::shared_ptr<SourcesInfo>;
@@ -120,9 +122,9 @@ public:
                 {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
                  std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                  "_file"});
-        if (source_info->need_file_column)
+        if (source_info->need_tags_column)
             header.insert(
-                {DataTypeLowCardinality{std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
+                {DataTypeLowCardinality{std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())}.createColumn(),
                  std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())),
                  "_tags"});
         return header;
@@ -135,8 +137,8 @@ public:
             columns_description.add({"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())});
         if (source_info->need_file_column)
             columns_description.add({"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())});
-        if (source_info->need_file_column)
-            columns_description.add({"_tags", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()))});
+        if (source_info->need_tags_column)
+            columns_description.add({"_tags", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())});
         return columns_description;
     }
 
@@ -913,7 +915,7 @@ void StorageHive::read(
         if (column == "_file")
             sources_info->need_file_column = true;
         if (column == "_tags")
-            sources_info->need_file_column = true;
+            sources_info->need_tags_column = true;
     }
 
     auto this_ptr = std::static_pointer_cast<StorageHive>(shared_from_this());
