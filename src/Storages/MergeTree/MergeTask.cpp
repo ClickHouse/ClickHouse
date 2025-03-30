@@ -891,7 +891,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         {
             chassert(global_ctx->merged_part_offsets);
             auto column = block.getByName("_part_offset").column->convertToFullColumnIfSparse();
-            const auto & offset_data = typeid_cast<const ColumnUInt64 &>(*column).getData();
+            const auto & offset_data = assert_cast<const ColumnUInt64 &>(*column).getData();
             global_ctx->merged_part_offsets->insert(offset_data.begin(), offset_data.end());
             block.erase("_part_offset");
         }
@@ -1292,7 +1292,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             ReadableSize(global_ctx->merge_list_element_ptr->bytes_read_uncompressed / elapsed_seconds));
     }
 
-    if (global_ctx->merged_part_offsets)
+    if (global_ctx->merged_part_offsets && !global_ctx->projections_to_merge.empty())
         global_ctx->merged_part_offsets->flush();
 
     for (const auto & projection : global_ctx->projections_to_merge)

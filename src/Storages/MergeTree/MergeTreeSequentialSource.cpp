@@ -219,13 +219,14 @@ try
         const auto & name = result_header.safeGetByPosition(i).name;
         auto pos = reader_header.getPositionByName(name);
         auto & result_column = result_columns.emplace_back(std::move(read_result.columns[pos]));
-        auto & column = result_column->assumeMutableRef();
         if (name == "_part_offset" && read_task_info->merged_part_offsets)
         {
             if (read_task_info->merged_part_offsets->isFinalized())
             {
                 /// Projection part
 
+                result_column = result_column->convertToFullColumnIfSparse();
+                auto & column = result_column->assumeMutableRef();
                 auto & offset_data = assert_cast<ColumnUInt64 &>(column).getData();
                 for (auto & offset : offset_data)
                     offset = (*read_task_info->merged_part_offsets)[offset + read_task_info->starting_offset];
@@ -234,12 +235,14 @@ try
             {
                 /// Parent part
 
+                result_column = result_column->convertToFullColumnIfSparse();
+                auto & column = result_column->assumeMutableRef();
                 auto & offset_data = assert_cast<ColumnUInt64 &>(column).getData();
                 for (auto & offset : offset_data)
                     offset += read_task_info->starting_offset;
             }
         }
-        column.shrinkToFit();
+        result_column->assumeMutableRef().shrinkToFit();
     }
 
     auto result = Chunk(std::move(result_columns), read_result.num_rows);
