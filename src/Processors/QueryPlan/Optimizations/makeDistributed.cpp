@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -126,6 +127,56 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 
     /// Replace join node with gather node
     node = std::move(gather_node);
+}
+
+
+/// Moves exchanges where possible to parallelize more work.
+/// Removes unnecessary exchanges.
+void optimizeExchanges(QueryPlan::Node & root)
+{
+    Stack stack;
+
+    stack.push_back({.node = &root});
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+        else /// After all children were processed
+        {
+            /// Try to push up GatherExchange child step
+            if (frame.node->children.size() == 1 && typeid_cast<ExpressionStep *>(frame.node->step.get()))
+            {
+                auto & child_node = *frame.node->children[0];
+                auto * gather_step = typeid_cast<GatherExchangeStep *>(child_node.step.get());
+                if (gather_step)
+                {
+                    Header expression_header = frame.node->step->getOutputHeader();
+                    std::swap(frame.node->step, child_node.step);
+                    frame.node->step->updateInputHeader(expression_header);
+                }
+            }
+
+            /// If there is a Exchange step on top of another Exchange step then child Exchange step can be removed
+            auto is_exchange_step = [](const IQueryPlanStep * step)
+            {
+                return dynamic_cast<const LogicalExchangeStep *>(step) != nullptr;
+            };
+            if (frame.node->children.size() == 1 && is_exchange_step(frame.node->step.get()) && is_exchange_step(frame.node->children[0]->step.get()))
+            {
+                frame.node->children = std::move(frame.node->children[0]->children);
+            }
+        }
+
+        stack.pop_back();
+    }
 }
 
 
