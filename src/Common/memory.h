@@ -17,6 +17,12 @@
 #    include <cstdlib>
 #endif
 
+#if defined(OS_LINUX)
+#    include <malloc.h>
+#elif defined(OS_DARWIN)
+#    include <malloc/malloc.h>
+#endif
+
 namespace ProfileEvents
 {
     extern const Event GWPAsanAllocateSuccess;
@@ -172,12 +178,6 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unuse
     free(ptr);
 }
 
-#endif
-
-#if defined(OS_LINUX)
-#    include <malloc.h>
-#elif defined(OS_DARWIN)
-#    include <malloc/malloc.h>
 #endif
 
 template <std::same_as<std::align_val_t>... TAlign>
