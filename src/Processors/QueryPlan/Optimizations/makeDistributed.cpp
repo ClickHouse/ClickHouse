@@ -181,6 +181,36 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
     node = std::move(gather_node);
 }
 
+/// Replaces ReadFromMergeTree step with a subtree like this:
+///
+///   GatherExchange
+///     (Distributed)ReadFromMergeTree
+void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & /*optimization_settings*/)
+{
+    /// Is this a read from MergeTree step?
+    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(node.step.get());
+    if (!read_from_merge_tree_step)
+        return;
+
+    /// Should not have children
+    if (node.children.size() != 0)
+        return;
+
+    /// Move read step to a new node and set it to distributed read
+    read_from_merge_tree_step->setDistributedRead();
+    auto & new_read_node = nodes.emplace_back();
+    new_read_node.step = std::move(node.step);
+
+    /// Add gather exchange step above read
+    QueryPlan::Node gather_node;
+    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_read_node.step->getOutputHeader());
+    gather_node.step = std::move(exchange_gather_step);
+    gather_node.children = {&new_read_node};
+
+    /// Replace aggregation node with gather node
+    node = std::move(gather_node);
+}
+
 
 /// Moves exchanges where possible to parallelize more work.
 /// Removes unnecessary exchanges.
@@ -235,25 +265,11 @@ void optimizeExchanges(QueryPlan::Node & root)
 /// Tries to build list of possible shards for the read steps that can be processed in parallel.
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    Strings default_shard_list = {"0"};
     const auto * read_from_mt = dynamic_cast<const ReadFromMergeTree *>(read_step);
-    if (!read_from_mt)
-        return default_shard_list;
+    if (read_from_mt)
+        return read_from_mt->getShardsForDistributedRead(optimization_settings);
 
-    auto analysis_result = read_from_mt->selectRangesToRead();
-    if (!analysis_result)
-        return default_shard_list;
-
-    /// TODO: take into account selected ranges?
-
-    if (optimization_settings.default_reader_bucket_count == 0)
-        return default_shard_list;
-
-    Strings list_of_shards;
-    for (size_t i = 0; i < optimization_settings.default_reader_bucket_count; ++i)
-        list_of_shards.push_back(std::to_string(i));
-
-    return list_of_shards;
+    return {"0"};   /// One shard by default if read step is not distributed
 }
 
 /// Builds distributed plan by splitting the query plan into multiple stages connected by exchanges.
