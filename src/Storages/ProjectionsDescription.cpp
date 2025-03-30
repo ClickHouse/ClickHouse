@@ -12,6 +12,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Columns/ColumnConst.h>
+#include <Common/iota.h>
 #include <Core/Defines.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -109,7 +110,10 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
     result.query_ast = query.cloneToASTSelect();
 
-    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
+    auto columns_with_part_offset = columns;
+    columns_with_part_offset.add(ColumnDescription("_part_offset", std::make_shared<DataTypeUInt64>()));
+    auto external_storage_holder
+        = std::make_shared<TemporaryTableHolder>(query_context, columns_with_part_offset, ConstraintsDescription{});
     StoragePtr storage = external_storage_holder->getTable();
     InterpreterSelectQuery select(
         result.query_ast,
@@ -134,6 +138,9 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     {
         if (query.orderBy())
             throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
+
+        if (std::find(result.required_columns.begin(), result.required_columns.end(), "_part_offset") != result.required_columns.end())
+            throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, _part_offset cannot be specified");
 
         result.type = ProjectionDescription::Type::Aggregate;
         if (const auto & group_expression_list = query_select.groupBy())
@@ -171,8 +178,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns, query_context);
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns_with_part_offset, query_context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns_with_part_offset, query_context);
         metadata.primary_key.definition_ast = nullptr;
     }
 
@@ -289,7 +296,7 @@ void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription &
     *this = getProjectionFromAST(definition_ast, new_columns, query_context);
 }
 
-Block ProjectionDescription::calculate(const Block & block, ContextPtr context) const
+Block ProjectionDescription::calculate(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr) const
 {
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
@@ -311,10 +318,30 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
             makeASTFunction("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
     }
 
+    Block source_block = block;
+    if (sample_block.has("_part_offset"))
+    {
+        auto uint64 = std::make_shared<DataTypeUInt64>();
+        auto column = uint64->createColumn();
+        auto & offset = assert_cast<ColumnUInt64 &>(*column).getData();
+        offset.resize_exact(block.rows());
+        if (perm_ptr)
+        {
+            for (size_t i = 0; i < block.rows(); ++i)
+                offset[(*perm_ptr)[i]] = i;
+        }
+        else
+        {
+            iota(offset.data(), offset.size(), UInt64(0));
+        }
+
+        source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
+    }
+
     auto builder = InterpreterSelectQuery(
                        query_ast_copy ? query_ast_copy : query_ast,
                        mut_context,
-                       Pipe(std::make_shared<SourceFromSingleChunk>(block)),
+                       Pipe(std::make_shared<SourceFromSingleChunk>(std::move(source_block))),
                        SelectQueryOptions{
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState}

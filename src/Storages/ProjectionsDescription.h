@@ -1,12 +1,13 @@
 #pragma once
 
 #include <Core/Types.h>
-
-#include <memory>
-#include <vector>
 #include <Interpreters/AggregateDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/PODArray_fwd.h>
+
+#include <memory>
+#include <vector>
 
 namespace DB
 {
@@ -16,6 +17,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
+using IColumnPermutation = PaddedPODArray<size_t>;
 
 /// Description of projections for Storage
 struct ProjectionDescription
@@ -94,7 +97,7 @@ struct ProjectionDescription
 
     bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
 
-    Block calculate(const Block & block, ContextPtr context) const;
+    Block calculate(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
 
     String getDirectoryName() const { return name + ".proj"; }
 };
