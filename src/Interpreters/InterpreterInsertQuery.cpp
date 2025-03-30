@@ -21,6 +21,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -748,9 +749,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
 QueryPipeline InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "into {}", query.getTable());
+
     auto context_ptr = getContext();
     const Settings & settings = context_ptr->getSettingsRef();
-    if (settings[Setting::allow_experimental_analyzer])
+    if (!settings[Setting::allow_experimental_analyzer])
         return {};
 
     if (!context_ptr->canUseParallelReplicasOnInitiator())
@@ -798,164 +801,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(
         select_context = context_for_trivial_select;
     }
 
-    QueryPipelineBuilder pipeline;
-    const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1); // TODO: what does subquery_depth affect actuall?
-    InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
-    pipeline = interpreter_select_analyzer.buildQueryPipeline();
-
-    pipeline.dropTotalsAndExtremes();
-
-    /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
-    if (getContext()->getSettingsRef()[Setting::insert_null_as_default])
-    {
-        const auto & input_columns = pipeline.getHeader().getColumnsWithTypeAndName();
-        const auto & query_columns = query_sample_block.getColumnsWithTypeAndName();
-        const auto & output_columns = metadata_snapshot->getColumns();
-
-        if (input_columns.size() == query_columns.size())
-        {
-            for (size_t col_idx = 0; col_idx < query_columns.size(); ++col_idx)
-            {
-                /// Change query sample block columns to Nullable to allow inserting nullable columns, where NULL values will be substituted with
-                /// default column values (in AddingDefaultsTransform), so all values will be cast correctly.
-                if (isNullableOrLowCardinalityNullable(input_columns[col_idx].type)
-                    && !isNullableOrLowCardinalityNullable(query_columns[col_idx].type)
-                    && !isVariant(query_columns[col_idx].type)
-                    && !isDynamic(query_columns[col_idx].type)
-                    && output_columns.has(query_columns[col_idx].name))
-                {
-                    query_sample_block.setColumn(
-                        col_idx,
-                        ColumnWithTypeAndName(
-                            makeNullableOrLowCardinalityNullable(query_columns[col_idx].column),
-                            makeNullableOrLowCardinalityNullable(query_columns[col_idx].type),
-                            query_columns[col_idx].name));
-                }
-            }
-        }
-    }
-
-    auto actions_dag = ActionsDAG::makeConvertingActions(
-            pipeline.getHeader().getColumnsWithTypeAndName(),
-            query_sample_block.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
-    auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes));
-
-    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-    {
-        return std::make_shared<ExpressionTransform>(in_header, actions);
-    });
-
-    /// We need to convert Sparse columns to full if the destination storage doesn't support them.
-    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-    {
-        return std::make_shared<MaterializingTransform>(in_header, !table->supportsSparseSerialization());
-    });
-
-    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-    {
-        auto counting = std::make_shared<CountingTransform>(in_header, nullptr, context_ptr->getQuota());
-        counting->setProcessListElement(context_ptr->getProcessListElement());
-        counting->setProgressCallback(context_ptr->getProgressCallback());
-
-        return counting;
-    });
-
-    size_t num_select_threads = pipeline.getNumThreads();
-
-    pipeline.resize(1);
-
-    if (shouldAddSquashingForStorage(table))
-    {
-        pipeline.addSimpleTransform(
-            [&](const Block & in_header) -> ProcessorPtr
-            {
-                return std::make_shared<PlanSquashingTransform>(
-                    in_header,
-                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
-            });
-    }
-
-    pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr
-    {
-        return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(in_header);
-    });
-
-    if (!settings[Setting::insert_deduplication_token].value.empty())
-    {
-        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-        {
-            return std::make_shared<DeduplicationToken::SetUserTokenTransform>(settings[Setting::insert_deduplication_token].value, in_header);
-        });
-
-        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-        {
-            return std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(in_header);
-        });
-    }
-
-    /// Number of streams works like this:
-    ///  * For the SELECT, use `max_threads`, or `max_insert_threads`, or whatever
-    ///    InterpreterSelectQuery ends up with.
-    ///  * Use `max_insert_threads` streams for various insert-preparation steps, e.g.
-    ///    materializing and squashing (too slow to do in one thread). That's `presink_chains`.
-    ///  * If the table supports parallel inserts, use max_insert_threads for writing to IStorage.
-    ///    Otherwise ResizeProcessor them down to 1 stream.
-
-    size_t presink_streams_size = std::max<size_t>(settings[Setting::max_insert_threads], pipeline.getNumStreams());
-    if (settings[Setting::max_insert_threads].changed)
-        presink_streams_size = std::max<size_t>(1, settings[Setting::max_insert_threads]);
-
-    size_t sink_streams_size = table->supportsParallelInsert() ? std::max<size_t>(1, settings[Setting::max_insert_threads]) : 1;
-
-    size_t views_involved =  table->isView() || !DatabaseCatalog::instance().getDependentViews(table->getStorageID()).empty();
-    if (!settings[Setting::parallel_view_processing] && views_involved)
-    {
-        sink_streams_size = 1;
-    }
-
-    auto [presink_chains, sink_chains] = buildPreAndSinkChains(
-        presink_streams_size, sink_streams_size,
-        table, /* view_level */ 0, metadata_snapshot, query_sample_block);
-
-    pipeline.resize(presink_chains.size());
-
-    if (shouldAddSquashingForStorage(table))
-    {
-        pipeline.addSimpleTransform(
-            [&](const Block & in_header) -> ProcessorPtr
-            {
-                return std::make_shared<ApplySquashingTransform>(
-                    in_header,
-                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
-            });
-    }
-
-    for (auto & chain : presink_chains)
-        pipeline.addResources(chain.detachResources());
-    pipeline.addChains(std::move(presink_chains));
-
-    pipeline.resize(sink_streams_size);
-
-    for (auto & chain : sink_chains)
-        pipeline.addResources(chain.detachResources());
-    pipeline.addChains(std::move(sink_chains));
-
-    if (!settings[Setting::parallel_view_processing] && views_involved)
-    {
-        /// Don't use more threads for INSERT than for SELECT to reduce memory consumption.
-        if (pipeline.getNumThreads() > num_select_threads)
-            pipeline.setMaxThreads(num_select_threads);
-    }
-
-    pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
-    {
-        return std::make_shared<EmptySink>(cur_header);
-    });
-
-    return QueryPipelineBuilder::getPipeline(std::move(pipeline));
+    return ClusterProxy::executeInsertSelectWithParallelReplicas(query, select_context);
 }
 
 
@@ -1081,7 +927,6 @@ BlockIO InterpreterInsertQuery::execute()
             {
                 res.pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
             }
-
         }
         if (!res.pipeline.initialized())
             res.pipeline = buildInsertSelectPipeline(query, table);

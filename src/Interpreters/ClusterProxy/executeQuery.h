@@ -3,6 +3,9 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include <QueryPipeline/QueryPipeline.h>
+
+#include <list>
 
 namespace DB
 {
@@ -37,6 +40,10 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+
+class QueryPipeline;
+
+class ASTInsertQuery;
 
 namespace ClusterProxy
 {
@@ -78,6 +85,8 @@ void executeQuery(
     const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator,
     bool is_remote_function);
+
+QueryPipeline executeInsertSelectWithParallelReplicas(const ASTInsertQuery & query_ast, ContextPtr context);
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,

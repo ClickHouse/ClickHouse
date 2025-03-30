@@ -9,81 +9,88 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IInterpreter.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Parsers/ASTFunction.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
+#include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/ResizeProcessor.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/buildQueryTreeForShard.h>
-#include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Parsers/ASTInsertQuery.h>
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsMap additional_table_filters;
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsUInt64 force_optimize_skip_unused_shards;
-    extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
-    extern const SettingsUInt64 limit;
-    extern const SettingsLoadBalancing load_balancing;
-    extern const SettingsUInt64 max_concurrent_queries_for_user;
-    extern const SettingsUInt64 max_distributed_depth;
-    extern const SettingsSeconds max_execution_time;
-    extern const SettingsSeconds max_execution_time_leaf;
-    extern const SettingsUInt64 max_memory_usage_for_user;
-    extern const SettingsUInt64 max_network_bandwidth;
-    extern const SettingsUInt64 max_network_bytes;
-    extern const SettingsNonZeroUInt64 max_parallel_replicas;
-    extern const SettingsUInt64 offset;
-    extern const SettingsBool optimize_skip_unused_shards;
-    extern const SettingsUInt64 optimize_skip_unused_shards_nesting;
-    extern const SettingsBool optimize_skip_unused_shards_rewrite_in;
-    extern const SettingsString parallel_replicas_custom_key;
-    extern const SettingsParallelReplicasMode parallel_replicas_mode;
-    extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
-    extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
-    extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsMilliseconds queue_max_wait_ms;
-    extern const SettingsBool skip_unavailable_shards;
-    extern const SettingsOverflowMode timeout_overflow_mode;
-    extern const SettingsOverflowMode timeout_overflow_mode_leaf;
-    extern const SettingsBool use_hedged_requests;
+extern const SettingsMap additional_table_filters;
+extern const SettingsBool allow_experimental_analyzer;
+extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+extern const SettingsUInt64 force_optimize_skip_unused_shards;
+extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
+extern const SettingsUInt64 limit;
+extern const SettingsLoadBalancing load_balancing;
+extern const SettingsUInt64 max_concurrent_queries_for_user;
+extern const SettingsUInt64 max_distributed_depth;
+extern const SettingsSeconds max_execution_time;
+extern const SettingsSeconds max_execution_time_leaf;
+extern const SettingsUInt64 max_memory_usage_for_user;
+extern const SettingsUInt64 max_network_bandwidth;
+extern const SettingsUInt64 max_network_bytes;
+extern const SettingsNonZeroUInt64 max_parallel_replicas;
+extern const SettingsUInt64 offset;
+extern const SettingsBool optimize_skip_unused_shards;
+extern const SettingsUInt64 optimize_skip_unused_shards_nesting;
+extern const SettingsBool optimize_skip_unused_shards_rewrite_in;
+extern const SettingsString parallel_replicas_custom_key;
+extern const SettingsParallelReplicasMode parallel_replicas_mode;
+extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
+extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
+extern const SettingsBool parallel_replicas_local_plan;
+extern const SettingsMilliseconds queue_max_wait_ms;
+extern const SettingsBool skip_unavailable_shards;
+extern const SettingsOverflowMode timeout_overflow_mode;
+extern const SettingsOverflowMode timeout_overflow_mode_leaf;
+extern const SettingsBool use_hedged_requests;
+extern const SettingsBool async_socket_for_remote;
+extern const SettingsBool async_query_sending_for_remote;
 }
 
 namespace DistributedSetting
 {
-    extern const DistributedSettingsBool skip_unavailable_shards;
+extern const DistributedSettingsBool skip_unavailable_shards;
 }
 
 namespace ErrorCodes
 {
-    extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
-    extern const int LOGICAL_ERROR;
-    extern const int UNEXPECTED_CLUSTER;
-    extern const int INCONSISTENT_CLUSTER_DEFINITION;
+extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+extern const int LOGICAL_ERROR;
+extern const int UNEXPECTED_CLUSTER;
+extern const int INCONSISTENT_CLUSTER_DEFINITION;
 }
 
 namespace ClusterProxy
 {
 
-ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
+ContextMutablePtr updateSettingsAndClientInfoForCluster(
+    const Cluster & cluster,
     bool is_remote_function,
     ContextPtr context,
     const Settings & settings,
@@ -93,8 +100,9 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     const DistributedSettings * distributed_settings)
 {
     ClientInfo new_client_info = context->getClientInfo();
-    Settings new_settings {settings};
-    new_settings[Setting::queue_max_wait_ms] = Cluster::saturate(new_settings[Setting::queue_max_wait_ms], settings[Setting::max_execution_time]);
+    Settings new_settings{settings};
+    new_settings[Setting::queue_max_wait_ms]
+        = Cluster::saturate(new_settings[Setting::queue_max_wait_ms], settings[Setting::max_execution_time]);
 
     /// In case of interserver mode we should reset initial_user for remote() function to use passed user from the query.
     if (is_remote_function)
@@ -126,7 +134,9 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
             new_settings[Setting::force_optimize_skip_unused_shards].changed = false;
 
             if (log)
-                LOG_TRACE(log, "Disabling force_optimize_skip_unused_shards for nested queries (force_optimize_skip_unused_shards_nesting exceeded)");
+                LOG_TRACE(
+                    log,
+                    "Disabling force_optimize_skip_unused_shards for nested queries (force_optimize_skip_unused_shards_nesting exceeded)");
         }
         else
         {
@@ -135,7 +145,9 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
 
             if (log)
                 LOG_TRACE(
-                    log, "force_optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::force_optimize_skip_unused_shards_nesting].value);
+                    log,
+                    "force_optimize_skip_unused_shards_nesting is now {}",
+                    new_settings[Setting::force_optimize_skip_unused_shards_nesting].value);
         }
     }
 
@@ -155,7 +167,8 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
             new_settings[Setting::optimize_skip_unused_shards_nesting].changed = true;
 
             if (log)
-                LOG_TRACE(log, "optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::optimize_skip_unused_shards_nesting].value);
+                LOG_TRACE(
+                    log, "optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::optimize_skip_unused_shards_nesting].value);
         }
     }
 
@@ -231,9 +244,11 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     return new_context;
 }
 
-ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table)
+ContextMutablePtr
+updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table)
 {
-    return updateSettingsAndClientInfoForCluster(cluster,
+    return updateSettingsAndClientInfoForCluster(
+        cluster,
         /* is_remote_function= */ false,
         context,
         settings,
@@ -325,11 +340,11 @@ void executeQuery(
     SelectStreamFactory::Shards remote_shards;
 
     auto cluster = query_info.getCluster();
-    auto new_context = updateSettingsAndClientInfoForCluster(*cluster, is_remote_function, context,
-        settings, main_table, query_info.additional_filter_ast, log, &distributed_settings);
+    auto new_context = updateSettingsAndClientInfoForCluster(
+        *cluster, is_remote_function, context, settings, main_table, query_info.additional_filter_ast, log, &distributed_settings);
     if (context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value
         && context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value
-           != new_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value)
+            != new_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value)
     {
         LOG_TRACE(
             log,
@@ -348,7 +363,8 @@ void executeQuery(
             const auto & shard_info = cluster->getShardsInfo()[i];
 
             auto query_for_shard = query_info.query_tree->clone();
-            if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
+            if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1
+                &&
                 /// TODO: support composite sharding key
                 sharding_key_expr->getRequiredColumns().size() == 1)
             {
@@ -386,7 +402,8 @@ void executeQuery(
             const auto & shard_info = cluster->getShardsInfo()[i];
 
             ASTPtr query_ast_for_shard = query_info.query->clone();
-            if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
+            if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1
+                &&
                 /// TODO: support composite sharding key
                 sharding_key_expr->getRequiredColumns().size() == 1)
             {
@@ -467,6 +484,192 @@ void executeQuery(
 }
 
 
+QueryPipeline executeInsertSelectWithParallelReplicas(const ASTInsertQuery & query_ast, ContextPtr context)
+{
+    auto logger = getLogger("executeInsertSelectWithParallelReplicas");
+    LOG_DEBUG(logger, "Executing query {} with parallel replicas", query_ast.formatForLogging());
+
+    const auto & settings = context->getSettingsRef();
+
+    /// check cluster for parallel replicas
+    auto not_optimized_cluster = context->getClusterForParallelReplicas();
+
+    auto new_context = Context::createCopy(context);
+
+    /// check hedged connections setting
+    if (settings[Setting::use_hedged_requests].value)
+    {
+        if (settings[Setting::use_hedged_requests].changed)
+        {
+            LOG_WARNING(
+                logger,
+                "Setting 'use_hedged_requests' explicitly with enabled 'enable_parallel_replicas' has no effect. "
+                "Hedged connections are not used for parallel reading from replicas");
+        }
+        else
+        {
+            LOG_INFO(
+                logger,
+                "Disabling 'use_hedged_requests' in favor of 'enable_parallel_replicas'. Hedged connections are "
+                "not used for parallel reading from replicas");
+        }
+
+        /// disable hedged connections -> parallel replicas uses own logic to choose replicas
+        new_context->setSetting("use_hedged_requests", Field{false});
+    }
+
+    auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
+
+    UInt64 shard_num = 0; /// shard_num is 1-based, so 0 - no shard specified
+    const auto it = scalars.find("_shard_num");
+    if (it != scalars.end())
+    {
+        const Block & block = it->second;
+        const auto & column = block.safeGetByPosition(0).column;
+        shard_num = column->getUInt(0);
+    }
+
+    ClusterPtr new_cluster = not_optimized_cluster;
+    /// if got valid shard_num from query initiator, then parallel replicas scope is the specified shard
+    /// shards are numbered in order of appearance in the cluster config
+    if (shard_num > 0)
+    {
+        const auto shard_count = not_optimized_cluster->getShardCount();
+        if (shard_num > shard_count)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Shard number is greater than shard count: shard_num={} shard_count={} cluster={}",
+                shard_num,
+                shard_count,
+                not_optimized_cluster->getName());
+
+        chassert(shard_count == not_optimized_cluster->getShardsAddresses().size());
+
+        LOG_DEBUG(
+            logger,
+            "Parallel replicas query in shard scope: shard_num={} cluster={}",
+            shard_num,
+            not_optimized_cluster->getName());
+
+        // get cluster for shard specified by shard_num
+        // shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
+        new_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
+    }
+    else
+    {
+        if (not_optimized_cluster->getShardCount() > 1)
+            throw DB::Exception(
+                ErrorCodes::UNEXPECTED_CLUSTER,
+                "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
+    }
+
+    const auto & shard = new_cluster->getShardsInfo().at(0);
+    size_t max_replicas_to_use = settings[Setting::max_parallel_replicas];
+    if (max_replicas_to_use > shard.getAllNodeCount())
+    {
+        LOG_INFO(
+            logger,
+            "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
+            "Will use the latter number to execute the query.",
+            settings[Setting::max_parallel_replicas].value,
+            shard.getAllNodeCount());
+        max_replicas_to_use = shard.getAllNodeCount();
+    }
+
+    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
+
+    auto external_tables = new_context->getExternalTables();
+
+    std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
+    if (max_replicas_to_use < shard.getAllNodeCount())
+    {
+        // will be shuffled according to `load_balancing` setting
+        shuffled_pool = shard.pool->getShuffledPools(settings);
+    }
+    else
+    {
+        /// If all replicas in cluster are used for query execution,
+        /// try to preserve replicas order as in cluster definition.
+        /// It's important for data locality during query execution
+        /// independently of the query initiator
+        auto priority_func = [](size_t i) { return Priority{static_cast<Int64>(i)}; };
+        shuffled_pool = shard.pool->getShuffledPools(settings, priority_func);
+    }
+
+    std::vector<ConnectionPoolPtr> pools_to_use;
+    pools_to_use.reserve(shuffled_pool.size());
+    for (auto & pool : shuffled_pool)
+        pools_to_use.emplace_back(std::move(pool.pool));
+
+    /// find local replica index in pool
+    std::optional<size_t> local_replica_index;
+    for (size_t i = 0, s = pools_to_use.size(); i < s; ++i)
+    {
+        const auto & hostname = pools_to_use[i]->getHost();
+        const auto found = std::find_if(
+            begin(shard.local_addresses),
+            end(shard.local_addresses),
+            [&hostname](const Cluster::Address & local_addr) { return hostname == local_addr.host_name; });
+        if (found != shard.local_addresses.end())
+        {
+            local_replica_index = i;
+            break;
+        }
+    }
+    if (!local_replica_index)
+        throw Exception(
+            ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
+            "Local replica is not found in '{}' cluster definition, see 'cluster_for_parallel_replicas' setting",
+            new_cluster->getName());
+
+    // resize the pool but keep local replicas in it (and update its index)
+    chassert(max_replicas_to_use <= pools_to_use.size());
+    if (local_replica_index >= max_replicas_to_use)
+    {
+        std::swap(pools_to_use[max_replicas_to_use - 1], pools_to_use[local_replica_index.value()]);
+        local_replica_index = max_replicas_to_use - 1;
+    }
+    pools_to_use.resize(max_replicas_to_use);
+
+    String new_query_str;
+    {
+        WriteBufferFromOwnString buf;
+        IAST::FormatSettings ast_format_settings(
+            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+        query_ast.IAST::format(buf, ast_format_settings);
+        new_query_str = buf.str();
+    }
+
+    QueryPipeline pipeline;
+    for (size_t i = 0; i < pools_to_use.size(); ++i)
+    {
+        const auto & pool = pools_to_use[i];
+
+        IConnections::ReplicaInfo replica_info{
+            /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
+            .number_of_current_replica = i,
+        };
+        auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+            pool,
+            new_query_str,
+            Block{},
+            new_context,
+            /*throttler=*/nullptr,
+            Scalars{},
+            Tables{},
+            QueryProcessingStage::Complete,
+            RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = replica_info});
+
+        QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
+            remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
+        remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
+
+        pipeline.addCompletedPipeline(std::move(remote_pipeline));
+    }
+
+    return pipeline;
+}
+
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
@@ -478,8 +681,13 @@ void executeQueryWithParallelReplicas(
     QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     auto logger = getLogger("executeQueryWithParallelReplicas");
-    LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
-        storage_id.getNameForLogs(), header.dumpStructure(), query_ast->formatForLogging(), processed_stage);
+    LOG_DEBUG(
+        logger,
+        "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
+        storage_id.getNameForLogs(),
+        header.dumpStructure(),
+        query_ast->formatForLogging(),
+        processed_stage);
 
     const auto & settings = context->getSettingsRef();
 
@@ -537,8 +745,11 @@ void executeQueryWithParallelReplicas(
 
         chassert(shard_count == not_optimized_cluster->getShardsAddresses().size());
 
-        LOG_DEBUG(getLogger("executeQueryWithParallelReplicas"), "Parallel replicas query in shard scope: shard_num={} cluster={}",
-                  shard_num, not_optimized_cluster->getName());
+        LOG_DEBUG(
+            getLogger("executeQueryWithParallelReplicas"),
+            "Parallel replicas query in shard scope: shard_num={} cluster={}",
+            shard_num,
+            not_optimized_cluster->getName());
 
         // get cluster for shard specified by shard_num
         // shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
@@ -557,7 +768,7 @@ void executeQueryWithParallelReplicas(
     if (max_replicas_to_use > shard.getAllNodeCount())
     {
         LOG_INFO(
-            getLogger("ReadFromParallelRemoteReplicasStep"),
+            getLogger("executeQueryWithParallelReplicas"),
             "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
             "Will use the latter number to execute the query.",
             settings[Setting::max_parallel_replicas].value,
@@ -718,7 +929,14 @@ void executeQueryWithParallelReplicas(
     auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
     executeQueryWithParallelReplicas(
-        query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, std::move(analyzed_read_from_merge_tree));
+        query_plan,
+        storage_id,
+        header,
+        processed_stage,
+        modified_query_ast,
+        context,
+        storage_limits,
+        std::move(analyzed_read_from_merge_tree));
 }
 
 void executeQueryWithParallelReplicas(
