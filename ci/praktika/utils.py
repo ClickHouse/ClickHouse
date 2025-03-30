@@ -12,6 +12,7 @@ import sys
 import time
 import traceback
 from abc import ABC, abstractmethod
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import datetime
@@ -427,10 +428,15 @@ class Utils:
 
     @staticmethod
     def terminate_process_group(pid, force=False):
-        if not force:
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
-        else:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
+        try:
+            if not force:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            else:
+                os.killpg(os.getpgid(pid), signal.SIGKILL)
+        except Exception as e:
+            print(
+                f"ERROR: Exception while terminating process [{pid}]: [{e}], (force={force})"
+            )
 
     @staticmethod
     def set_env(key, val):
@@ -630,6 +636,7 @@ class TeePopen:
         self.timeout_exceeded = False
         self.terminated_by_sigterm = False
         self.terminated_by_sigkill = False
+        self.log_rolling_buffer = deque(maxlen=100)
 
     def _check_timeout(self) -> None:
         if self.timeout is None:
@@ -684,9 +691,10 @@ class TeePopen:
         if self.process.stdout is not None:
             for line in self.process.stdout:
                 sys.stdout.write(line)
+
                 if self.log_file:
                     self.log_file.write(line)
-
+                self.log_rolling_buffer.append(line)
         return self.process.wait()
 
     def poll(self):
@@ -694,6 +702,9 @@ class TeePopen:
 
     def send_signal(self, signal_num):
         os.killpg(self.process.pid, signal_num)
+
+    def get_latest_log(self, max_lies=20):
+        return "\n".join(self.log_rolling_buffer[-max_lies:])
 
 
 if __name__ == "__main__":

@@ -22,6 +22,8 @@ main_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 1},
+    # Disable `with_remote_database_disk` as in `test_startup_without_zk`, Keeper rejects `main_node` connections before restarting
+    with_remote_database_disk=False,
 )
 dummy_node = cluster.add_instance(
     "dummy_node",
