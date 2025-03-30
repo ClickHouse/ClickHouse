@@ -75,6 +75,7 @@ namespace ErrorCodes
     extern const int FUNCTION_ALREADY_EXISTS;
     extern const int CANNOT_DROP_FUNCTION;
     extern const int UNSUPPORTED_DRIVER;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 UserDefinedDriverFunctionFactory & UserDefinedDriverFunctionFactory::instance()

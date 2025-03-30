@@ -9,12 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_METHOD;
-    extern const int BAD_ARGUMENTS;
-}
-
 class UserDefinedFunction final : public IFunction
 {
 public:

@@ -14,6 +14,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
+    extern const int BAD_ARGUMENTS;
+}
+
 UserDefinedFunction::UserDefinedFunction(
     UserDefinedExecutableFunctionPtr executable_function_,
     ContextPtr context_,
