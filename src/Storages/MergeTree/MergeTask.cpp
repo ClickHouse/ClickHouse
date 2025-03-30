@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
+#include <Storages/MergeTree/MergedPartOffsets.h>
 
 #include <memory>
 #include <fmt/format.h>
@@ -872,7 +873,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() cons
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 {
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
-    UInt64 step_time_ms = (*global_ctx->data->getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
+    UInt64 step_time_ms
+        = (*global_ctx->data->getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
 
     do
     {
@@ -882,6 +884,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         {
             finalize();
             return false;
+        }
+
+        /// Record _part_offset mapping and remove unneeded column
+        if (global_ctx->parent_part == nullptr && block.has("_part_offset"))
+        {
+            chassert(global_ctx->merged_part_offsets);
+            auto column = block.getByName("_part_offset").column->convertToFullColumnIfSparse();
+            const auto & offset_data = typeid_cast<const ColumnUInt64 &>(*column).getData();
+            global_ctx->merged_part_offsets->insert(offset_data.begin(), offset_data.end());
+            block.erase("_part_offset");
         }
 
         global_ctx->rows_written += block.rows();
@@ -1037,10 +1049,12 @@ private:
     const bool is_result_sparse;
 };
 
-MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & column_name) const
+MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
+MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & column_name) const
 {
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
+    size_t starting_offset = 0;
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
         auto plan_for_part = std::make_unique<QueryPlan>();
@@ -1051,6 +1065,8 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
             global_ctx->storage_snapshot,
             global_ctx->future_part->parts[part_num],
             global_ctx->alter_conversions[part_num],
+            global_ctx->merged_part_offsets,
+            starting_offset,
             Names{column_name},
             global_ctx->input_rows_filtered,
             /*apply_deleted_mask=*/ true,
@@ -1061,6 +1077,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
             getLogger("VerticalMergeStage"));
 
         plans.emplace_back(std::move(plan_for_part));
+        starting_offset += global_ctx->future_part->parts[part_num]->rows_count;
     }
 
     QueryPlan merge_column_query_plan;
@@ -1275,6 +1292,9 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             ReadableSize(global_ctx->merge_list_element_ptr->bytes_read_uncompressed / elapsed_seconds));
     }
 
+    if (global_ctx->merged_part_offsets)
+        global_ctx->merged_part_offsets->flush();
+
     for (const auto & projection : global_ctx->projections_to_merge)
     {
         MergeTreeData::DataPartsVector projection_parts = global_ctx->projections_to_merge_parts[projection->name];
@@ -1313,6 +1333,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             projection_merging_params,
             global_ctx->need_prefix,
             global_ctx->new_data_part.get(),
+            global_ctx->merged_part_offsets,
             ".proj",
             NO_TRANSACTION_PTR,
             global_ctx->data,
@@ -1320,6 +1341,16 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->merges_blocker,
             global_ctx->ttl_merges_blocker));
     }
+
+    /// merge projections with _part_offset first so that we can release offset mapping earlier.
+    std::sort(
+        ctx->tasks_for_projections.begin(),
+        ctx->tasks_for_projections.end(),
+        [](const auto & l, const auto & r)
+        {
+            return l->global_ctx->metadata_snapshot->columns.has("_part_offset")
+                && !r->global_ctx->metadata_snapshot->columns.has("_part_offset");
+        });
 
     /// We will iterate through projections and execute them
     ctx->projections_iterator = ctx->tasks_for_projections.begin();
@@ -1332,6 +1363,10 @@ bool MergeTask::MergeProjectionsStage::executeProjections() const
 {
     if (ctx->projections_iterator == ctx->tasks_for_projections.end())
         return false;
+
+    /// Release offset mapping when all projections with _part_offset has been merged.
+    if (global_ctx->merged_part_offsets && !(*ctx->projections_iterator)->global_ctx->metadata_snapshot->columns.has("_part_offset"))
+        *global_ctx->merged_part_offsets = {};
 
     if ((*ctx->projections_iterator)->execute())
         return true;
@@ -1744,6 +1779,29 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     global_ctx->horizontal_stage_progress = std::make_unique<MergeStageProgress>(
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
+    /// Check if there is a projection that needs _part_offset mapping
+    Names merging_column_names = global_ctx->merging_columns.getNames();
+    const auto & projections = global_ctx->metadata_snapshot->getProjections();
+    for (const auto & projection : projections)
+    {
+        if (projection.metadata->columns.has("_part_offset"))
+        {
+            chassert(global_ctx->merged_part_offsets == nullptr);
+            std::vector<UInt64> starting_offsets;
+            UInt64 starting_offset = 0;
+            for (const auto & part : global_ctx->future_part->parts)
+            {
+                starting_offsets.push_back(starting_offset);
+                starting_offset += part->rows_count;
+            }
+            global_ctx->merged_part_offsets = std::make_shared<MergedPartOffsets>(std::move(starting_offsets), starting_offset);
+            merging_column_names.push_back("_part_offset");
+            break;
+        }
+    }
+
+    size_t starting_offset = 0;
+
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
     for (size_t i = 0; i < global_ctx->future_part->parts.size(); ++i)
@@ -1759,7 +1817,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->storage_snapshot,
             global_ctx->future_part->parts[i],
             global_ctx->alter_conversions[i],
-            global_ctx->merging_columns.getNames(),
+            global_ctx->merged_part_offsets,
+            starting_offset,
+            merging_column_names,
             global_ctx->input_rows_filtered,
             /*apply_deleted_mask=*/ true,
             /*filter=*/ std::nullopt,
@@ -1769,6 +1829,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             ctx->log);
 
         plans.emplace_back(std::move(plan_for_part));
+        starting_offset += global_ctx->future_part->parts[i]->rows_count;
     }
 
     QueryPlan merge_parts_query_plan;

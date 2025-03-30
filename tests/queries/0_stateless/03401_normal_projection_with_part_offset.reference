@@ -1,0 +1,86 @@
+-- { echo ON }
+
+DROP TABLE IF EXISTS test;
+CREATE TABLE test
+(
+    `a` Int32,
+    `b` Int32,
+    PROJECTION p
+    (
+        SELECT
+            a,
+            b,
+            _part_offset
+        ORDER BY b
+    )
+)
+ENGINE = MergeTree
+ORDER BY a
+SETTINGS index_granularity = 1;
+INSERT INTO test SELECT number * 3, rand() FROM numbers(10);
+INSERT INTO test SELECT number * 3 + 1, rand() FROM numbers(10);
+INSERT INTO test SELECT number * 3 + 2, rand() FROM numbers(10);
+SELECT a, l._part_offset = r._part_offset FROM test l JOIN mergeTreeProjection(currentDatabase(), test, p) r USING (a) SETTINGS max_threads = 1;
+0	1
+3	1
+6	1
+9	1
+12	1
+15	1
+18	1
+21	1
+24	1
+27	1
+1	1
+4	1
+7	1
+10	1
+13	1
+16	1
+19	1
+22	1
+25	1
+28	1
+2	1
+5	1
+8	1
+11	1
+14	1
+17	1
+20	1
+23	1
+26	1
+29	1
+OPTIMIZE TABLE test FINAL;
+SELECT a, l._part_offset = r._part_offset FROM test l JOIN mergeTreeProjection(currentDatabase(), test, p) r USING (a) SETTINGS max_threads = 1;
+0	1
+1	1
+2	1
+3	1
+4	1
+5	1
+6	1
+7	1
+8	1
+9	1
+10	1
+11	1
+12	1
+13	1
+14	1
+15	1
+16	1
+17	1
+18	1
+19	1
+20	1
+21	1
+22	1
+23	1
+24	1
+25	1
+26	1
+27	1
+28	1
+29	1
+DROP TABLE test;
