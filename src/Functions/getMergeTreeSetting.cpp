@@ -5,7 +5,6 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
-// #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 
