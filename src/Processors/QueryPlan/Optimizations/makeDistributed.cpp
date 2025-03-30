@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -126,6 +127,57 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     gather_node.children = {&new_join_node};
 
     /// Replace join node with gather node
+    node = std::move(gather_node);
+}
+
+
+/// One way to parallelize aggregation is to split data into buckets by hash of aggregation keys.
+/// Then results of aggregation of all buckets can just be united.
+/// The other approach is to do partial aggregation on data into aggregation states regardless of how it is split and
+/// then gather partial results and merge them finalizing aggregation states.
+///
+/// This function only implements the first approach. It replaces AggregatingStep step with a subtree like this:
+///
+///   GatherExchange
+///     AggregatingStep
+///       ShuffleExchange by hash(aggregation_keys)
+void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    /// Is this a aggregating step?
+    auto * aggregating_step = typeid_cast<AggregatingStep *>(node.step.get());
+    if (!aggregating_step)
+        return;
+
+    /// Only one source is expected for aggregation step
+    if (node.children.size() != 1)
+        return;
+    QueryPlan::Node * source = node.children[0];
+
+    Names aggregation_keys = aggregating_step->getParams().keys;
+    /// Cannot partition if this is full aggregation
+    if (aggregation_keys.empty())
+        return;
+
+    const size_t bucket_count = optimization_settings.default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
+
+    /// Add shuffle exchange step above source
+    auto & exchange_shuffle_node = nodes.emplace_back();
+    exchange_shuffle_node.step = std::make_unique<ShuffleExchangeStep>(source->step->getOutputHeader(), aggregation_keys, bucket_count);
+    exchange_shuffle_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(aggregation_keys, ", ")));
+    exchange_shuffle_node.children = {source};
+
+    /// Move aggregation step to a new node
+    auto & new_aggregation_node = nodes.emplace_back();
+    new_aggregation_node.step = std::move(node.step);
+    new_aggregation_node.children = {&exchange_shuffle_node};
+
+    /// Add gather exchange step above aggregation
+    QueryPlan::Node gather_node;
+    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_aggregation_node.step->getOutputHeader());
+    gather_node.step = std::move(exchange_gather_step);
+    gather_node.children = {&new_aggregation_node};
+
+    /// Replace aggregation node with gather node
     node = std::move(gather_node);
 }
 
