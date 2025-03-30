@@ -1120,8 +1120,8 @@ jobs:
           fi
 
   unit_tests_asan:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
+    runs-on: [self-hosted, builder-aarch64]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbik=') }}
     name: "Unit tests (asan)"
     outputs:
@@ -1158,7 +1158,7 @@ jobs:
           fi
 
   unit_tests_tsan:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, builder]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbik=') }}
     name: "Unit tests (tsan)"
@@ -1196,7 +1196,7 @@ jobs:
           fi
 
   unit_tests_msan:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, builder]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_msan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VW5pdCB0ZXN0cyAobXNhbik=') }}
     name: "Unit tests (msan)"
@@ -1234,7 +1234,7 @@ jobs:
           fi
 
   unit_tests_ubsan:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, builder]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_ubsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VW5pdCB0ZXN0cyAodWJzYW4p') }}
     name: "Unit tests (ubsan)"

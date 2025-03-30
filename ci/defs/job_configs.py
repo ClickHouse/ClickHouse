@@ -134,7 +134,6 @@ class JobConfigs:
             [
                 ArtifactNames.CH_AMD_ASAN,
                 ArtifactNames.DEB_AMD_ASAN,
-                ArtifactNames.UNITTEST_AMD_ASAN,
             ],
             [
                 ArtifactNames.CH_AMD_TSAN,
@@ -163,6 +162,7 @@ class JobConfigs:
             [
                 ArtifactNames.CH_ARM_ASAN,
                 ArtifactNames.DEB_ARM_ASAN,
+                ArtifactNames.UNITTEST_ARM_ASAN,
             ],
         ],
         runs_on=[
@@ -464,9 +464,10 @@ class JobConfigs:
     unittest_jobs = Job.Config(
         name=JobNames.UNITTEST,
         runs_on=["..params.."],
-        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command=f"python3 ./ci/jobs/unit_tests_job.py",
+        run_in_docker="clickhouse/fasttest",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./tests/ci/unit_tests_check.py", "./docker"],
+            include_paths=["./ci/jobs/unit_tests_job.py"],
         ),
     ).parametrize(
         parameter=[
@@ -476,16 +477,16 @@ class JobConfigs:
             "ubsan",
         ],
         runs_on=[
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.BUILDER_ARM,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
         ],
         requires=[
-            ["Build (amd_asan)"],
-            ["Build (amd_tsan)"],
-            ["Build (amd_msan)"],
-            ["Build (amd_ubsan)"],
+            [ArtifactNames.UNITTEST_ARM_ASAN],
+            [ArtifactNames.UNITTEST_AMD_TSAN],
+            [ArtifactNames.UNITTEST_AMD_MSAN],
+            [ArtifactNames.UNITTEST_AMD_UBSAN],
         ],
     )
     stress_test_jobs = Job.Config(
