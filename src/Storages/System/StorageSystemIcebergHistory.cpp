@@ -85,7 +85,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
         auto databases = DatabaseCatalog::instance().getDatabases();
         for (const auto &db: databases)
         {
-            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 StoragePtr storage = iterator->table();
 

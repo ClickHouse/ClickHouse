@@ -1102,8 +1102,9 @@ def test_evolved_schema_simple(
             ["\\N", "4", "7.12", "\\N"],
         ],
     )
-    print (instance.query("SELECT * FROM system.iceberg_history"))
-    assert int(instance.query(f"SELECT count() FROM system.iceberg_history WHERE table_name = '{TABLE_NAME}'")) == 5
+    if not is_table_function :
+        print (instance.query("SELECT * FROM system.iceberg_history"))
+        assert int(instance.query(f"SELECT count() FROM system.iceberg_history WHERE table_name = '{TABLE_NAME}'")) == 5
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -1814,6 +1815,7 @@ def test_restart_broken_s3(started_cluster):
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
