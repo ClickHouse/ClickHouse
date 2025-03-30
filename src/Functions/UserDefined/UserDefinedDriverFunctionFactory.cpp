@@ -9,13 +9,61 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Parsers/ASTCreateDriverFunctionQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 
+#include <boost/algorithm/string.hpp>
+
 
 namespace DB
 {
+
+namespace
+{
+
+String formatCodeBlock(const String & code)
+{
+    std::vector<String> lines;
+    boost::split(lines, code, boost::is_any_of("\n"));
+
+    size_t min_tabs_count = String::npos;
+    for (const auto & line : lines)
+    {
+        size_t spaces = line.find_first_not_of(" \t");
+        if (spaces != String::npos)
+        {
+            min_tabs_count = std::min(min_tabs_count, spaces);
+        }
+    }
+
+    if (min_tabs_count != String::npos)
+    {
+        for (auto & line : lines)
+        {
+            if (line.empty())
+                continue;
+
+            line.erase(0, min_tabs_count);
+        }
+    }
+
+    if (!lines.empty())
+    {
+        boost::trim(lines.front());
+        boost::trim(lines.back());
+    }
+
+    String result;
+    for (const auto & line : lines) {
+        result += line + '\n';
+    }
+
+    return result;
+}
+
+}
 
 namespace ErrorCodes
 {
@@ -72,6 +120,11 @@ void UserDefinedDriverFunctionFactory::checkDriverExists(const ASTPtr & query) c
 bool UserDefinedDriverFunctionFactory::registerFunction(const ContextMutablePtr & context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
 {
     checkCanBeRegistered(function_name, create_function_query);
+
+    auto function_body = create_function_query->as<ASTCreateDriverFunctionQuery>()->function_body;
+    auto literal_function_body = function_body->as<ASTLiteral>();
+    auto str_function_body = literal_function_body->value.safeGet<String>();
+    literal_function_body->value = formatCodeBlock(str_function_body);
 
     try
     {

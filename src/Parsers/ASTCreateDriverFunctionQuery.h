@@ -26,6 +26,8 @@ public:
 
     String getEngineName() const;
 
+    String getFunctionBody() const;
+
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:

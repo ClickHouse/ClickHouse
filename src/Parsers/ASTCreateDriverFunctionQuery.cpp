@@ -1,6 +1,7 @@
 #include <Parsers/ASTCreateDriverFunctionQuery.h>
 
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -75,4 +76,10 @@ String ASTCreateDriverFunctionQuery::getEngineName() const
     tryGetIdentifierNameInto(engine_name, name);
     return name;
 }
+
+String ASTCreateDriverFunctionQuery::getFunctionBody() const
+{
+    return function_body->as<ASTLiteral>()->value.safeGet<String>();
+}
+
 }
