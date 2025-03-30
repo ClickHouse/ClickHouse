@@ -25,6 +25,9 @@ using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 class DeserializationPrefixesCache;
 using DeserializationPrefixesCachePtr = std::shared_ptr<DeserializationPrefixesCache>;
 
+class MergedPartOffsets;
+using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
+
 enum class MergeTreeReadType : uint8_t
 {
     /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
@@ -67,6 +70,10 @@ struct MergeTreeReadTaskInfo
     size_t part_index_in_query;
     /// Alter converversionss that should be applied on-fly for part.
     AlterConversionsPtr alter_conversions;
+    /// `_part_offset` mapping used to merge projections with `_part_offset`.
+    MergedPartOffsetsPtr merged_part_offsets;
+    /// Accumulated `_part_offset` from previous parts in the current reading part vector.
+    size_t starting_offset;
     /// Prewhere steps that should be applied to execute on-fly mutations for part.
     PrewhereExprSteps mutation_steps;
     /// Column names to read during PREWHERE and WHERE
