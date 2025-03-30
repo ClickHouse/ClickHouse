@@ -5,8 +5,8 @@
 #include <Functions/FunctionTokens.h>
 #include <Common/Exception.h>
 
-#include <Poco/UTF8Encoding.h>
 #include <zlib.h>
+#include <Poco/UTF8Encoding.h>
 
 namespace DB
 {
@@ -40,6 +40,7 @@ private:
     size_t left;
     size_t right;
     UInt64 min_ngram_length = 3;
+    UInt64 max_ngram_length = 100;
 
     void buildNgramHashes()
     {
@@ -60,11 +61,18 @@ private:
 
             utf8_offsets.push_back(byte_offset);
 
+            if (utf8_offsets.size() >= min_ngram_length)
+                ngram_hashes.reserve(utf8_offsets.size() - min_ngram_length + 1);
             for (size_t i = 0; i + min_ngram_length - 1 < utf8_offsets.size(); ++i)
-                ngram_hashes.push_back(crc32_z(0UL, reinterpret_cast<const unsigned char *>(pos + utf8_offsets[i]), utf8_offsets[i + min_ngram_length - 1] - utf8_offsets[i]));
+                ngram_hashes.push_back(crc32_z(
+                    0UL,
+                    reinterpret_cast<const unsigned char *>(pos + utf8_offsets[i]),
+                    utf8_offsets[i + min_ngram_length - 1] - utf8_offsets[i]));
         }
         else
         {
+            if (pos + min_ngram_length <= end)
+                ngram_hashes.reserve(end - pos - min_ngram_length + 1);
             for (size_t i = 0; pos + i + min_ngram_length - 2 < end; ++i)
                 ngram_hashes.push_back(crc32_z(0L, reinterpret_cast<const unsigned char *>(pos + i), min_ngram_length - 1));
         }
@@ -72,11 +80,12 @@ private:
 
     std::optional<std::pair<size_t, size_t>> getNextIndices()
     {
+        chassert(right > left);
         while (left < ngram_hashes.size())
         {
-            while (right < ngram_hashes.size())
+            while (right < ngram_hashes.size() && right <= left + max_ngram_length - min_ngram_length + 1)
             {
-                if (right - left > 1)
+                if (right > left + 1)
                 {
                     if (ngram_hashes[left] < ngram_hashes[right - 1])
                         break;
@@ -112,6 +121,7 @@ public:
 
         FunctionArgumentDescriptors optional_args{
             {"min_ngram_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), isColumnConst, "const Number"},
+            {"max_ngram_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), isColumnConst, "const Number"},
         };
 
         validateFunctionArguments(func, arguments, mandatory_args, optional_args);
@@ -119,18 +129,24 @@ public:
 
     void init(const ColumnsWithTypeAndName & arguments, bool /*max_substrings_includes_remaining_string*/)
     {
-        if (arguments.size() > 2)
+        if (arguments.size() > 3)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}",
+                "Number of arguments for function {} doesn't match: passed {}, must be from 1 to 3",
                 name,
                 arguments.size());
 
-        if (arguments.size() == 2)
+        if (arguments.size() >= 2)
             min_ngram_length = arguments[1].column->getUInt(0);
 
         if (min_ngram_length < 3)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'min_ngram_length' must be greater or equal to 3");
+
+        if (arguments.size() == 3)
+            max_ngram_length = arguments[2].column->getUInt(0);
+
+        if (max_ngram_length < min_ngram_length)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'max_ngram_length' must be greater or equal to 'min_ngram_length'");
     }
 
     /// Called for each next string.
@@ -248,18 +264,18 @@ are strictly greater than those of any (n-1)-gram inside the substring.)",
         .arguments={
             {"s", "An input string"},
             {"min_ngram_length", "The minimum length of extracted ngram. The default and minimal value is 3"},
+            {"max_ngram_length", "The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'"},
         },
-        .returned_value="An array of selected substrings",
+        .returned_value{"An array of selected substrings"},
         .category{"String"}
     };
-    const FunctionDocumentation hashes_description {
+    const FunctionDocumentation hashes_description{
         .description = R"(Finds hashes of all substrings of a given string that have a length of at least `n`,
 where the hashes of the (n-1)-grams at the borders of the substring
 are strictly greater than those of any (n-1)-gram inside the substring.)",
         .arguments = description.arguments,
-        .returned_value="An array of selected substrings hashes",
-        .category = description.category
-    };
+        .returned_value = "An array of selected substrings hashes",
+        .category = description.category};
 
     factory.registerFunction<FunctionSparseGrams>(description);
     factory.registerFunction<FunctionSparseGramsUTF8>(description);

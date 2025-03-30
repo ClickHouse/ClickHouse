@@ -2514,6 +2514,7 @@ sparseGrams(s[, min_ngram_length]);
 
 - `s` — An input string. [String](../data-types/string.md)
 - `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
 
 **Returned value**
 
@@ -2549,6 +2550,7 @@ sparseGramsUTF8(s[, min_ngram_length]);
 
 - `s` — An input string. [String](../data-types/string.md)
 - `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
 
 **Returned value**
 
@@ -2582,6 +2584,7 @@ sparseGramsHashes(s[, min_ngram_length]);
 
 - `s` — An input string. [String](../data-types/string.md)
 - `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
 
 **Returned value**
 
@@ -2617,6 +2620,7 @@ sparseGramsUTF8(s[, min_ngram_length]);
 
 - `s` — An input string. [String](../data-types/string.md)
 - `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
 
 **Returned value**
 

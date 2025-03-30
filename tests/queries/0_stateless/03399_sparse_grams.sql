@@ -43,3 +43,9 @@ WITH 'hello world hello world hello' as source
     SELECT sparseGramsHashes(source, 4) = arrayMap(v -> CRC32(v), sparseGrams(source, 4));
 WITH 'AΩЖ中😊𝄞✨🌍🎵🦄💡❄️' as source
     SELECT sparseGramsHashesUTF8(source, 4) = arrayMap(v -> CRC32(v), sparseGramsUTF8(source, 4));
+
+SELECT '--- Maximal ngram length';
+SELECT sparseGrams('hello world hello world', 3, 4);
+SELECT sparseGramsHashes('hello world hello world', 3, 4);
+SELECT sparseGramsUTF8('a😊Ω𐍈界𝄞bЦ⛄', 3, 4);
+SELECT sparseGramsHashesUTF8('a😊Ω𐍈界𝄞bЦ⛄', 3, 4);
