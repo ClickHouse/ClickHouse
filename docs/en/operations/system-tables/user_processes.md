@@ -17,7 +17,7 @@ This system table can be used to get overview of memory usage and ProfileEvents 
 Columns:
 
 - `user` ([String](../../sql-reference/data-types/string.md)) — User name.
-- `memory_usage` ([Int64](/sql-reference/data-types/int-uint#integer-ranges)) – Sum of RAM used by all processes of the user. It might not include some types of dedicated memory. See the [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage) setting.
+- `memory_usage` ([Int64](/sql-reference/data-types/int-uint#integer-ranges)) – Sum of RAM used by all processes of the user. It might not include some types of dedicated memory. See the [max_memory_usage](/operations/settings/settings#max_memory_usage) setting.
 - `peak_memory_usage` ([Int64](/sql-reference/data-types/int-uint#integer-ranges)) — The peak of memory usage of the user. It can be reset when no queries are run for the user.
 - `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/map)) – Summary of ProfileEvents that measure different metrics for the user. The description of them could be found in the table [system.events](/operations/system-tables/events)
 

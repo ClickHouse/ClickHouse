@@ -53,8 +53,7 @@ workflow = Workflow.Config(
         *JobConfigs.upgrade_test_jobs,
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
-        *JobConfigs.performance_comparison_amd_jobs,
-        *JobConfigs.performance_comparison_arm_jobs,
+        *JobConfigs.performance_comparison_with_master_head_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -64,7 +63,6 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
-        *ArtifactConfigs.performance_packages,
         *ArtifactConfigs.performance_reports,
     ],
     dockers=DOCKERS,

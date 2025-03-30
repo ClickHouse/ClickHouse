@@ -176,6 +176,7 @@ private:
     LoggerPtr log;
 
     std::atomic_bool shutdown_called = false;
+    std::atomic_bool startup_called = false;
     BackgroundSchedulePoolTaskHolder task;
 
     class LocalFileStatuses;

@@ -97,7 +97,6 @@ def get_run_command(
     tests_to_run: List[str],
 ) -> str:
     additional_options = ["--hung-check"]
-    additional_options.append("--print-time")
 
     if tests_to_run:
         additional_options += tests_to_run
