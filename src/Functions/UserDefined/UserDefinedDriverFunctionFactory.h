@@ -5,29 +5,14 @@
 
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
-#include <Functions/IFunction.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunction.h>
 #include <Functions/UserDefined/UserDefinedDriversStorage.h>
 #include <Interpreters/Context.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTCreateDriverFunctionQuery.h>
 
 
 namespace DB
 {
-
-struct UserDefinedDriverFunctionArgument
-{
-    DataTypePtr type;
-    String name;
-};
-
-struct UserDefinedDriverFunctionConfiguration
-{
-    String name;
-    std::vector<UserDefinedDriverFunctionArgument> arguments;
-    DataTypePtr result_type;
-    String driver_name;
-    String body;
-};
 
 class UserDefinedDriverFunctionFactory
 {
@@ -52,6 +37,7 @@ private:
     void checkCanBeRegistered(const String & function_name, const ASTPtr & query) const;
     void checkCanBeUnregistered(const String & function_name);
     void checkDriverExists(const ASTPtr & query) const;
+    UserDefinedExecutableFunctionPtr createUserDefinedFunction(const ASTCreateDriverFunctionQuery & query, const DriverConfigurationPtr & driver) const;
 
     ContextPtr global_context = Context::getGlobalContextInstance();
 };

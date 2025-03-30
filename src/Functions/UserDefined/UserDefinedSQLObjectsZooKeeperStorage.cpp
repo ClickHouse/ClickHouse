@@ -411,18 +411,18 @@ void UserDefinedSQLObjectsZooKeeperStorage::refreshObjects(const zkutil::ZooKeep
     Strings object_names = getObjectNamesAndSetWatch(zookeeper, object_type);
 
     /// Read & parse all SQL objects from ZooKeeper
-    std::vector<std::pair<String, UserDefinedTypedObject>> function_names_and_asts;
+    std::vector<std::pair<String, UserDefinedSQLTypedObject>> function_names_and_asts;
     for (const auto & function_name : object_names)
     {
         if (auto ast = tryLoadObject(zookeeper, UserDefinedSQLObjectType::SQLFunction, function_name))
         {
-            UserDefinedTypedObject typed_object{ast, UserDefinedSQLObjectType::SQLFunction};
+            UserDefinedSQLTypedObject typed_object{ast, UserDefinedSQLObjectType::SQLFunction};
             function_names_and_asts.emplace_back(function_name, std::move(typed_object));
         }
 
         if (auto ast = tryLoadObject(zookeeper, UserDefinedSQLObjectType::DriverFunction, function_name))
         {
-            UserDefinedTypedObject typed_object{ast, UserDefinedSQLObjectType::DriverFunction};
+            UserDefinedSQLTypedObject typed_object{ast, UserDefinedSQLObjectType::DriverFunction};
             function_names_and_asts.emplace_back(function_name, std::move(typed_object));
         }
     }

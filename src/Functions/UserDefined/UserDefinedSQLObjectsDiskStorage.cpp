@@ -171,7 +171,7 @@ void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl(UserDefinedSQLObjectType 
         }
     }
 
-    std::vector<std::pair<String, UserDefinedTypedObject>> function_names_and_queries;
+    std::vector<std::pair<String, UserDefinedSQLTypedObject>> function_names_and_queries;
 
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)
@@ -193,7 +193,7 @@ void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl(UserDefinedSQLObjectType 
         ASTPtr ast = tryLoadObject(object_type, function_name, dir_path + it.name(), /* check_file_exists= */ false);
         if (ast)
         {
-            UserDefinedTypedObject typed_object{ast, object_type};
+            UserDefinedSQLTypedObject typed_object{ast, object_type};
             function_names_and_queries.emplace_back(function_name, std::move(typed_object));
         }
     }

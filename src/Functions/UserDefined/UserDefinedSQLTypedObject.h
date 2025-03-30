@@ -6,7 +6,7 @@
 namespace DB
 {
 
-struct UserDefinedTypedObject
+struct UserDefinedSQLTypedObject
 {
     ASTPtr object;
     UserDefinedSQLObjectType object_type;

@@ -1,20 +1,22 @@
 #include "UserDefinedDriverFunctionFactory.h"
 
+#include <boost/algorithm/string.hpp>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedFunction.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
-#include <Parsers/ASTCreateDriverFunctionQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
-
-#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -56,8 +58,10 @@ String formatCodeBlock(const String & code)
     }
 
     String result;
-    for (const auto & line : lines) {
-        result += line + '\n';
+    for (size_t i = 0; i < lines.size(); ++i) {
+        result += lines[i];
+        if (i + 1 < lines.size())
+            result += '\n';
     }
 
     return result;
@@ -115,6 +119,74 @@ void UserDefinedDriverFunctionFactory::checkDriverExists(const ASTPtr & query) c
 
     if (!global_context->getUserDefinedDriversStorage().has(engine_name))
         throw Exception(ErrorCodes::UNSUPPORTED_DRIVER, "Cannot find a driver with engine name '{}'", engine_name);
+}
+
+UserDefinedExecutableFunctionPtr UserDefinedDriverFunctionFactory::createUserDefinedFunction(const ASTCreateDriverFunctionQuery & query, const DriverConfigurationPtr & driver) const
+{
+    String command = driver->command;
+
+    if (driver->is_file)
+    {
+        auto user_scripts_path = global_context->getUserScriptsPath();
+        auto path_to_file = user_scripts_path + "/" + driver->file_name;
+        if (!FS::exists(path_to_file))
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Executable file {} does not exist inside user scripts folder {}",
+                command,
+                user_scripts_path);
+
+        command += " " + path_to_file;
+    }
+    else
+    {
+        auto code = query.getFunctionBody();
+        boost::algorithm::replace_all(command, "\'", "\\\'");
+        command += " \'" + code + "\'";
+    }
+
+    if (!driver->container_command.empty()) {
+        boost::algorithm::replace_all(command, "\"", "\\\"");
+        command = driver->container_command + " \"" + command + "\"";
+    }
+
+    std::vector<UserDefinedExecutableFunctionArgument> arguments;
+    for (auto & child : query.function_params->children)
+    {
+        auto * column = child->as<ASTNameTypePair>();
+        arguments.emplace_back(DataTypeFactory::instance().get(column->type), column->name);
+    }
+
+    auto result_type = DataTypeFactory::instance().get(query.function_return_type->as<ASTDataType>()->name);
+
+    UserDefinedExecutableFunctionConfiguration configuration
+    {
+        .name = query.getFunctionName(),
+        .command = std::move(command),
+        .command_arguments = {},
+        .arguments = std::move(arguments),
+        .parameters = {},
+        .result_type = result_type,
+        .result_name = "result",
+        .is_deterministic = false
+    };
+
+    ShellCommandSourceCoordinator::Configuration shell_command_coordinator_configration
+    {
+        .format = driver->format,
+        .command_termination_timeout_seconds = 10,
+        .command_read_timeout_milliseconds = 10000,
+        .command_write_timeout_milliseconds = 10000,
+        .stderr_reaction = parseExternalCommandStderrReaction("none"),
+        .check_exit_code = true,
+        .pool_size = 0,
+        .max_command_execution_time_seconds = 0,
+        .is_executable_pool = false,
+        .send_chunk_header = false,
+        .execute_direct = false
+    };
+
+    auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);
+    return std::make_shared<UserDefinedExecutableFunction>(std::move(configuration), std::move(coordinator));
 }
 
 bool UserDefinedDriverFunctionFactory::registerFunction(const ContextMutablePtr & context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
@@ -176,11 +248,16 @@ bool UserDefinedDriverFunctionFactory::unregisterFunction(const ContextMutablePt
 FunctionOverloadResolverPtr UserDefinedDriverFunctionFactory::get(const String & function_name) const
 {
     auto ptr = global_context->getUserDefinedSQLObjectsStorage().get(function_name, UserDefinedSQLObjectType::DriverFunction);
-    auto driver_name = ptr->as<ASTCreateDriverFunctionQuery &>().getEngineName();
+    auto create_query = ptr->as<ASTCreateDriverFunctionQuery &>();
+
+    auto driver_name = create_query.getEngineName();
     auto driver = global_context->getUserDefinedDriversStorage().get(driver_name);
 
-    // TODO
-    return nullptr;
+    auto executable_function = createUserDefinedFunction(create_query, driver);
+    Array parameters;
+
+    auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), global_context, parameters);
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
 }
 
 FunctionOverloadResolverPtr UserDefinedDriverFunctionFactory::tryGet(const String & function_name) const
@@ -190,14 +267,19 @@ FunctionOverloadResolverPtr UserDefinedDriverFunctionFactory::tryGet(const Strin
         return nullptr;
     }
 
-    auto driver_name = ptr->as<ASTCreateDriverFunctionQuery &>().getEngineName();
+    auto create_query = ptr->as<ASTCreateDriverFunctionQuery &>();
+
+    auto driver_name = create_query.getEngineName();
     auto driver = global_context->getUserDefinedDriversStorage().tryGet(driver_name);
     if (!driver) {
         return nullptr;
     }
 
-    // TODO
-    return nullptr;
+    auto executable_function = createUserDefinedFunction(create_query, driver);
+    Array parameters;
+
+    auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), global_context, parameters);
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
 }
 
 bool UserDefinedDriverFunctionFactory::has(const String & function_name) const

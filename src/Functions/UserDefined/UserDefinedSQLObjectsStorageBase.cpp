@@ -175,13 +175,13 @@ std::unique_lock<std::recursive_mutex> UserDefinedSQLObjectsStorageBase::getLock
     return std::unique_lock{mutex};
 }
 
-void UserDefinedSQLObjectsStorageBase::setAllObjects(const std::vector<std::pair<String, UserDefinedTypedObject>> & new_objects)
+void UserDefinedSQLObjectsStorageBase::setAllObjects(const std::vector<std::pair<String, UserDefinedSQLTypedObject>> & new_objects)
 {
     std::lock_guard lock(mutex);
 
     for (const auto & [function_name, object] : new_objects)
     {
-        UserDefinedTypedObject typed_object;
+        UserDefinedSQLTypedObject typed_object;
         const auto & [create_query, type] = object;
 
         switch (type)

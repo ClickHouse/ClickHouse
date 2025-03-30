@@ -8,46 +8,29 @@ DriverConfiguration::DriverConfiguration(const String & name)
     : driver_name(name)
 {}
 
-DriverConfiguration& DriverConfiguration::setScript(const String & new_script)
+DriverConfiguration& DriverConfiguration::setCommand(const String & cmd)
 {
-    script = new_script;
+    command = cmd;
     return *this;
 }
 
-DriverConfiguration& DriverConfiguration::setExecution(DriverExecutionType exec_type, const String & extension)
+DriverConfiguration& DriverConfiguration::setFile(const String & name)
 {
-    execution.type = exec_type;
-    execution.file_extension = extension;
+    is_file = true;
+    file_name = name;
     return *this;
 }
 
-DriverConfiguration& DriverConfiguration::setContainer(DriverContainerType container_type, const String & container_script)
+DriverConfiguration& DriverConfiguration::setContainer(const String & cmd)
 {
-    container.type = container_type;
-    container.script = container_script;
+    container_command = cmd;
     return *this;
 }
 
-DriverConfiguration& DriverConfiguration::setFormat(const String & format)
+DriverConfiguration& DriverConfiguration::setFormat(const String & fmt)
 {
-    input_format = format;
+    format = fmt;
     return *this;
-}
-
-DriverConfiguration& DriverConfiguration::setPython(DriverExecutionType exec_type)
-{
-    switch (exec_type)
-    {
-        case DriverExecutionType::Inline:
-            return setScript("python -c").setExecution(exec_type, "");
-        case DriverExecutionType::File:
-            return setScript("python").setExecution(exec_type, "py");
-    }
-}
-
-DriverConfiguration& DriverConfiguration::setDocker(const String & image)
-{
-    return setContainer(DriverContainerType::Docker, "docker run --rm -i " + image + " /bin/bash -c");
 }
 
 }

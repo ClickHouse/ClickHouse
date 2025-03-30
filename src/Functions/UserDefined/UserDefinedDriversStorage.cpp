@@ -14,21 +14,30 @@ void UserDefinedDriversStorage::loadDrivers()
 {
     std::lock_guard lock(mutex);
 
-    // TODO: more formats + loop
-    driver_name_to_configuration_map["Python___TabSeparated"] = std::make_shared<DriverConfiguration>(
-        DriverConfiguration("Python___TabSeparated").setPython(DriverExecutionType::Inline)
+    driver_name_to_configuration_map["Python3"] = std::make_shared<DriverConfiguration>(
+        DriverConfiguration("Python3")
+            .setCommand("python3 -c")
+            .setFormat("TabSeparated")
     );
 
-    driver_name_to_configuration_map["Python_File__TabSeparated"] = std::make_shared<DriverConfiguration>(
-        DriverConfiguration("Python_File__TabSeparated").setPython(DriverExecutionType::File)
+    driver_name_to_configuration_map["DockerPython3"] = std::make_shared<DriverConfiguration>(
+        DriverConfiguration("DockerPython3")
+            .setCommand("python3 -c")
+            .setContainer("docker run --rm -i python:3 /bin/bash -c")
+            .setFormat("TabSeparated")
     );
 
-    driver_name_to_configuration_map["Python__Docker_TabSeparated"] = std::make_shared<DriverConfiguration>(
-        DriverConfiguration("Python__Docker_TabSeparated").setPython(DriverExecutionType::Inline).setDocker("python:3")
+    driver_name_to_configuration_map["Python3_JSON"] = std::make_shared<DriverConfiguration>(
+        DriverConfiguration("Python3_JSON")
+            .setCommand("python3 -c")
+            .setFormat("JSONEachRow")
     );
 
-    driver_name_to_configuration_map["Python_File_Docker_TabSeparated"] = std::make_shared<DriverConfiguration>(
-        DriverConfiguration("Python_File_Docker_TabSeparated").setPython(DriverExecutionType::File).setDocker("python:3")
+    driver_name_to_configuration_map["DockerPython3_JSON"] = std::make_shared<DriverConfiguration>(
+        DriverConfiguration("DockerPython3_JSON")
+            .setCommand("python3 -c")
+            .setContainer("docker run --rm -i python:3 /bin/bash -c")
+            .setFormat("JSONEachRow")
     );
 }
 
