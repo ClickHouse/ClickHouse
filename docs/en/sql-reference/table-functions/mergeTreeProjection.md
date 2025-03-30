@@ -1,7 +1,7 @@
 ---
 description: 'Represents the contents of some projection in MergeTree tables.
   It can be used for introspection.'
-sidebar_label: 'mergeTreeProjection
+sidebar_label: 'mergeTreeProjection'
 sidebar_position: 77
 slug: /sql-reference/table-functions/mergeTreeProjection
 title: 'mergeTreeProjection'
