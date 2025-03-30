@@ -196,7 +196,12 @@ class S3:
 
     @classmethod
     def copy_file_from_s3(
-        cls, s3_path, local_path, recursive=False, include_pattern=""
+        cls,
+        s3_path,
+        local_path,
+        recursive=False,
+        include_pattern="",
+        _skip_download_counter=False,
     ):
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         if Path(local_path).is_dir():
@@ -211,11 +216,17 @@ class S3:
         if include_pattern:
             cmd += f' --exclude "*" --include "{include_pattern}"'
         res = cls.run_command_with_retries(cmd)
-        if res:
-            if not Path(local_path).parent.is_dir():
-                StorageUsage.add_downloaded(local_path)
+        if res and not _skip_download_counter:
+            if not recursive:
+                if Path(local_path).is_dir():
+                    path = Path(local_path) / Path(s3_path).name
+                else:
+                    path = local_path
+                StorageUsage.add_downloaded(path)
             else:
-                print("TODO: implement for multiple files")
+                print(
+                    "TODO: support StorageUsage.add_downloaded with recursive download"
+                )
         return res
 
     @classmethod
@@ -230,10 +241,9 @@ class S3:
         cmd = f'aws s3 cp s3://{s3_path}  {local_path} --exclude "{exclude}" --include "{include}" --recursive'
         res = cls.run_command_with_retries(cmd)
         if res:
-            if not Path(local_path).parent.is_dir():
-                StorageUsage.add_downloaded(local_path)
-            else:
-                print("TODO: implement for multiple files")
+            print(
+                "TODO: support StorageUsage.add_downloaded with matching pattern download"
+            )
         return res
 
     @classmethod

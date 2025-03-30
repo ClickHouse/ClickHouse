@@ -123,12 +123,6 @@ DOCKERS = [
         depends_on=["clickhouse/test-util"],
     ),
     Docker.Config(
-        name="clickhouse/unit-test",
-        path="./docker/test/unit",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
-    ),
-    Docker.Config(
         name="clickhouse/stateless-test",
         path="./docker/test/stateless",
         platforms=Docker.Platforms.arm_amd,
@@ -389,11 +383,10 @@ class ArtifactNames:
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
 
     FAST_TEST = "FAST_TEST"
-    UNITTEST_AMD_ASAN = "UNITTEST_AMD_ASAN"
+    UNITTEST_ARM_ASAN = "UNITTEST_ARM_ASAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
     UNITTEST_AMD_UBSAN = "UNITTEST_AMD_UBSAN"
-    UNITTEST_AMD_BINARY = "UNITTEST_AMD_BINARY"
 
     DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
@@ -501,11 +494,10 @@ class ArtifactConfigs:
         path=f"{TEMP_DIR}/build/src/unit_tests_dbms",
     ).parametrize(
         names=[
-            ArtifactNames.UNITTEST_AMD_ASAN,
+            ArtifactNames.UNITTEST_ARM_ASAN,
             ArtifactNames.UNITTEST_AMD_TSAN,
             ArtifactNames.UNITTEST_AMD_MSAN,
             ArtifactNames.UNITTEST_AMD_UBSAN,
-            ArtifactNames.UNITTEST_AMD_BINARY,
         ]
     )
     fuzzers = Artifact.Config(
@@ -626,7 +618,6 @@ class Jobs:
             [
                 ArtifactNames.CH_AMD_ASAN,
                 ArtifactNames.DEB_AMD_ASAN,
-                ArtifactNames.UNITTEST_AMD_ASAN,
             ],
             [
                 ArtifactNames.CH_AMD_TSAN,
@@ -645,7 +636,6 @@ class Jobs:
             ],
             [
                 ArtifactNames.CH_AMD_BINARY,
-                ArtifactNames.UNITTEST_AMD_BINARY,
             ],
             [
                 ArtifactNames.CH_ARM_RELEASE,
@@ -656,6 +646,7 @@ class Jobs:
             [
                 ArtifactNames.CH_ARM_ASAN,
                 ArtifactNames.DEB_ARM_ASAN,
+                ArtifactNames.UNITTEST_ARM_ASAN,
             ],
             # special builds
             [ArtifactNames.CH_COV_BIN],
