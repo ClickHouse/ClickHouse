@@ -21,12 +21,12 @@ ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), 03400_users);
 SET max_threads=1;
 
 SELECT *
-FROM dist_users AS l
+FROM 03400_dist_users AS l
 FINAL
 LEFT JOIN
 (
     SELECT *
-    FROM dist_users AS d
+    FROM 03400_dist_users AS d
     FINAL
 ) AS r ON l.uid = r.uid
 ORDER BY l.version
