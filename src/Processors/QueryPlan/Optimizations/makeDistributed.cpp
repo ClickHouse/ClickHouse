@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -11,6 +12,11 @@
 
 namespace DB
 {
+
+namespace DB
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace QueryPlanOptimizations
 {
@@ -120,6 +126,261 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 
     /// Replace join node with gather node
     node = std::move(gather_node);
+}
+
+
+/// Tries to build list of possible shards for the read steps that can be processed in parallel.
+Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    Strings default_shard_list = {"0"};
+    const auto * read_from_mt = dynamic_cast<const ReadFromMergeTree *>(read_step);
+    if (!read_from_mt)
+        return default_shard_list;
+
+    auto analysis_result = read_from_mt->selectRangesToRead();
+    if (!analysis_result)
+        return default_shard_list;
+
+    /// TODO: take into account selected ranges?
+
+    if (optimization_settings.default_reader_bucket_count == 0)
+        return default_shard_list;
+
+    Strings list_of_shards;
+    for (size_t i = 0; i < optimization_settings.default_reader_bucket_count; ++i)
+        list_of_shards.push_back(std::to_string(i));
+
+    return list_of_shards;
+}
+
+/// Builds distributed plan by splitting the query plan into multiple stages connected by exchanges.
+/// Exchange step are split into ExchangeSink and ExchangeSource.
+/// This allows to build a separate plan fragment (a part of the original full plan) for each stage.
+DistributedQueryPlan makeDistributedPlan(QueryPlan::Node * root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    (void)nodes;
+
+    size_t exchange_id = 0;
+
+    DistributedQueryPlan distributed_plan;
+    DistributedQueryTask main_task;
+
+    QueryPlan plan_fragment;
+    std::unordered_map<String, String> main_stage_depends_on;
+
+    {
+        struct Frame
+        {
+            QueryPlan::Node * node = nullptr;
+            size_t next_child = 0;
+            std::vector<std::unique_ptr<QueryPlan>> child_plans{};
+            std::unordered_map<String, DistributedQueryTask> list_of_shards{};
+            std::unordered_map<String, String> depends_on_stages{};
+        };
+
+        std::vector<Frame> stack;
+        stack.push_back({.node = root});
+
+        std::unique_ptr<QueryPlan> current_plan = std::make_unique<QueryPlan>();
+        std::unordered_map<String, DistributedQueryTask> current_list_of_shards;     /// Tasks for shards that can be processed in parallel by the current_plan
+        std::unordered_map<String, String> current_stage_depends_on;
+
+        while (!stack.empty())
+        {
+            /// NOTE: frame cannot be safely used after stack was modified.
+            auto & frame = stack.back();
+
+            /// On entering the node.
+            if (frame.next_child == 0)
+            {
+                /// Nothing to do
+            }
+
+            /// Returned from child
+            if (frame.next_child > 0)
+            {
+                if (frame.next_child == 1)
+                {
+                    /// First child, take its list of shards
+                    frame.list_of_shards = std::move(current_list_of_shards);
+                    current_list_of_shards = {};
+                }
+                else
+                {
+                    /// Check that child plan has the same list of shards
+                    if (frame.list_of_shards.size() != current_list_of_shards.size())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Different list of shards in child plans {} and {}",
+                            frame.list_of_shards.size(), current_list_of_shards.size());
+
+                    /// Add parameters and temporary files from the child plan
+                    for (auto & [shard, task] : current_list_of_shards)
+                    {
+                        auto it = frame.list_of_shards.find(shard);
+                        if (it == current_list_of_shards.end())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Shard {} is missing in the list of shards", shard);
+
+                        it->second.parameters.parameters.insert(task.parameters.parameters.begin(), task.parameters.parameters.end());
+                        it->second.input_exchange_streams.insert(it->second.input_exchange_streams.end(),
+                            task.input_exchange_streams.begin(), task.input_exchange_streams.end());
+                    }
+                }
+
+                frame.child_plans.emplace_back(std::move(current_plan));
+                frame.depends_on_stages.insert(current_stage_depends_on.begin(), current_stage_depends_on.end());
+                current_stage_depends_on.clear();
+            }
+
+            /// Traverse next child
+            if (frame.next_child < frame.node->children.size())
+            {
+                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+                ++frame.next_child;
+                stack.push_back(std::move(next_frame));
+                continue;
+            }
+
+            /// All children were traversed;
+            assert(frame.next_child == frame.node->children.size());
+
+            if (frame.child_plans.size() > 1)
+            {
+                /// Step has multiple inputs
+                current_plan = std::make_unique<QueryPlan>();
+                current_plan->unitePlans(std::move(frame.node->step), std::move(frame.child_plans));
+            }
+            else if (frame.child_plans.size() == 1)
+            {
+                /// Step has only one input
+                current_plan = std::move(frame.child_plans.front());
+
+                const auto * exchange_step = dynamic_cast<const LogicalExchangeStep *>(frame.node->step.get());
+
+                if (exchange_step && !optimization_settings.distributed_plan_singe_stage)
+                {
+                    /// Make unique name for the exchange
+                    const String stage_name = "stage_" + std::to_string(exchange_id);
+                    ExchangeDescription exchange_description;
+                    exchange_description.name = "exchange_" + std::to_string(exchange_id);
+                    ++exchange_id;
+                    exchange_description.kind = optimization_settings.force_exchange_kind == "Streaming" ?
+                         ExchangeDescription::Kind::Streaming : ExchangeDescription::Kind::Persisted;
+                    exchange_description.source_bucket_count = frame.list_of_shards.size();
+                    exchange_description.destination_bucket_count = exchange_step->getResultBucketCount();
+
+                    distributed_plan.exchange_descriptions[exchange_description.name] = exchange_description;
+
+                    Strings source_shards;
+                    for (auto & [source_shard, _] : frame.list_of_shards)
+                        source_shards.push_back(source_shard);
+
+                    auto send_and_receive_steps = exchange_step->createSinkAndSourcePair(exchange_description.name, source_shards);
+
+                    Strings list_of_exchange_shards = shardsForShuffleBuckets(exchange_step->getResultBucketCount());
+
+                    /// Finish current plan fragment with exchange sink
+                    current_plan->addStep(std::move(send_and_receive_steps.first));
+                    /// Create stage with the current plan fragment
+                    {
+                        DistributedQueryStage stage;
+
+                        /// Create a task for each of the current shards
+                        for (auto & [source_shard, source_task] : frame.list_of_shards)
+                        {
+                            source_task.task_id = stage_name + "_" + source_shard;
+
+                            /// List of output streams for the exchange sink
+                            for (const auto & destination_shard : list_of_exchange_shards)
+                                source_task.output_exchange_streams.emplace_back(streamNameForExchange(exchange_description.name, source_shard, destination_shard));
+
+                            /// Move source tasks to the source stage
+                            stage.tasks.emplace_back(std::move(source_task));
+                        }
+                        stage.query_plan_fragment = std::move(*current_plan);
+                        distributed_plan.stages[stage_name] = std::move(stage);
+                        /// Add dependency from previous stages if any
+                        distributed_plan.stage_depends_on[stage_name] = std::move(frame.depends_on_stages);
+                        frame.depends_on_stages = {};
+                    }
+
+                    /// Prepare tasks for the next stage
+                    std::unordered_map<String, DistributedQueryTask> destination_stage_tasks;
+                    for (const auto & destination_shard : list_of_exchange_shards)
+                    {
+                        DistributedQueryTask destination_task;
+                        destination_task.parameters.parameters["bucket_id"] = Field(destination_shard);
+                        destination_task.parameters.parameters["total_buckets"] = Field(list_of_exchange_shards.size());
+
+                        /// List of input streams for the exchange source
+                        for (auto & [source_shard, source_task] : frame.list_of_shards)
+                            destination_task.input_exchange_streams.emplace_back(streamNameForExchange(exchange_description.name, source_shard, destination_shard));
+
+                        destination_stage_tasks[destination_shard] = std::move(destination_task);
+                    }
+
+                    /// Add previous stage to the current list of dependencies
+                    frame.depends_on_stages.insert({stage_name, exchange_description.name});
+
+                    /// And start a new plan fragment with exchange source
+                    current_plan = std::make_unique<QueryPlan>();
+                    current_plan->addStep(std::move(send_and_receive_steps.second));
+                    frame.list_of_shards = std::move(destination_stage_tasks);
+                }
+                else
+                {
+                    /// Add current step on top of the current plan
+                    current_plan->addStep(std::move(frame.node->step));
+                }
+            }
+            else
+            {
+                /// No children, this means that this is a leaf step
+                auto shards_for_read = makeListOfShardsForReadStep(frame.node->step.get(), optimization_settings);
+
+                current_plan = std::make_unique<QueryPlan>();
+                current_plan->addStep(std::move(frame.node->step));
+
+                for (size_t bucket = 0; bucket < shards_for_read.size(); ++bucket)
+                {
+                    String shard_id = toString(bucket);
+                    DistributedQueryTask task;
+                    task.parameters.parameters["bucket_id"] = Field(shard_id);
+                    task.parameters.parameters["bucket_description"] = Field(shards_for_read[bucket]);
+                    task.parameters.parameters["total_buckets"] = Field(shards_for_read.size());
+                    frame.list_of_shards[shard_id] = std::move(task);
+                }
+            }
+
+            current_stage_depends_on = std::move(frame.depends_on_stages);
+            current_list_of_shards = std::move(frame.list_of_shards);
+
+            /// On leaving the last node.
+            if (stack.size() == 1)
+            {
+                plan_fragment = std::move(*current_plan);
+                main_stage_depends_on = std::move(current_stage_depends_on);
+                current_stage_depends_on = {};
+            }
+
+            stack.pop_back();
+        }
+
+        assert(current_list_of_shards.size() == 1);
+        main_task = std::move(current_list_of_shards.begin()->second);
+    }
+
+    /// Add last plan fragment as the main stage
+    {
+        DistributedQueryStage stage;
+        stage.query_plan_fragment = std::move(plan_fragment);
+
+        main_task.task_id = "main";
+        stage.tasks.emplace_back(std::move(main_task));
+
+        distributed_plan.stages["main"] = std::move(stage);
+        distributed_plan.stage_depends_on["main"] = main_stage_depends_on;
+    }
+
+    return distributed_plan;
 }
 
 }
