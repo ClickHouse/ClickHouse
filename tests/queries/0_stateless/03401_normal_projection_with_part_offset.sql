@@ -16,15 +16,19 @@ CREATE TABLE test
     )
 )
 ENGINE = MergeTree
-ORDER BY a
-SETTINGS index_granularity = 1;
+ORDER BY a;
 
-INSERT INTO test SELECT number * 3, rand() FROM numbers(10);
-INSERT INTO test SELECT number * 3 + 1, rand() FROM numbers(10);
-INSERT INTO test SELECT number * 3 + 2, rand() FROM numbers(10);
-SELECT a, l._part_offset = r._part_offset FROM test l JOIN mergeTreeProjection(currentDatabase(), test, p) r USING (a) SETTINGS max_threads = 1;
+-- Insert enough rows so that future projection materialization test will trigger level 1 merge
+INSERT INTO test SELECT number * 3, rand() FROM numbers(360000);
+INSERT INTO test SELECT number * 3 + 1, rand() FROM numbers(360000);
+INSERT INTO test SELECT number * 3 + 2, rand() FROM numbers(360000);
+SELECT sum(l._part_offset = r._part_offset) FROM test l JOIN mergeTreeProjection(currentDatabase(), test, p) r USING (a);
 
 OPTIMIZE TABLE test FINAL;
-SELECT a, l._part_offset = r._part_offset FROM test l JOIN mergeTreeProjection(currentDatabase(), test, p) r USING (a) SETTINGS max_threads = 1;
+SELECT sum(l._part_offset = r._part_offset) FROM test l JOIN mergeTreeProjection(currentDatabase(), test, p) r USING (a);
+
+ALTER TABLE test ADD PROJECTION p2 (SELECT a, b, _part_offset ORDER BY b);
+ALTER TABLE test MATERIALIZE PROJECTION p2 SETTINGS mutations_sync = 2;
+SELECT sum(l._part_offset = r._part_offset) FROM test l JOIN mergeTreeProjection(currentDatabase(), test, p2) r USING (a);
 
 DROP TABLE test;
