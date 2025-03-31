@@ -1,9 +1,12 @@
 #pragma once
 
+#include <unordered_set>
 #include <base/types.h>
 
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/GinFilter.h>
+
+#include <frequent_items_sketch.hpp>
 
 namespace DB
 {
@@ -31,6 +34,9 @@ struct ITokenExtractor
     /// Updates Bloom filter from exact-match string filter value
     virtual void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
 
+    /// Updates Frequent data scketch from exact-match string filter value
+    virtual void stringToSketch(const char * data, size_t length, datasketches::frequent_items_sketch<std::string> & sketch) const = 0;
+
     /// Updates Bloom filter from substring-match string filter value.
     /// An `ITokenExtractor` implementation may decide to skip certain
     /// tokens depending on whether the substring is a prefix or a suffix.
@@ -48,6 +54,8 @@ struct ITokenExtractor
     {
         stringToBloomFilter(data, length, bloom_filter);
     }
+
+    virtual void limitedPaddedStringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, BloomFilter & forbidden_items) const = 0;
 
     virtual void stringLikeToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
 
@@ -99,6 +107,20 @@ class ITokenExtractorHelper : public ITokenExtractor
 
         while (cur < length && static_cast<const Derived *>(this)->nextInStringPadded(data, length, &cur, &token_start, &token_len))
             bloom_filter.add(data + token_start, token_len);
+    }
+
+    void limitedPaddedStringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, BloomFilter & forbidden_items) const override
+    {
+        size_t cur = 0;
+        size_t token_start = 0;
+        size_t token_len = 0;
+
+        while (cur < length && static_cast<const Derived *>(this)->nextInStringPadded(data, length, &cur, &token_start, &token_len))
+        {
+            if (forbidden_items.find(data + token_start, token_len))
+                continue;
+            bloom_filter.add(data + token_start, token_len);
+        }
     }
 
     void stringLikeToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const override
@@ -160,6 +182,7 @@ struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtrac
 
     size_t getN() const { return n; }
 
+    void stringToSketch(const char * data, size_t length, datasketches::frequent_items_sketch<std::string> & sketch) const override;
 private:
 
     size_t n;
@@ -180,6 +203,7 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
 
     void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
 
+    void stringToSketch(const char * data, size_t length, datasketches::frequent_items_sketch<std::string> & sketch) const override;
 
 };
 

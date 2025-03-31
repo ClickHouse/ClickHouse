@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/quoteString.h>
+#include "Interpreters/BloomFilter.h"
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -34,9 +35,11 @@ namespace ErrorCodes
 MergeTreeIndexGranuleBloomFilterText::MergeTreeIndexGranuleBloomFilterText(
     const String & index_name_,
     size_t columns_number,
-    const BloomFilterParameters & params_)
+    const BloomFilterParameters & params_,
+    const std::vector<std::shared_ptr<BloomFilter>> & common_filters_)
     : index_name(index_name_)
     , params(params_)
+    , common_filters(common_filters_)
     , bloom_filters(
         columns_number, BloomFilter(params))
     , has_elems(false)
@@ -49,7 +52,9 @@ void MergeTreeIndexGranuleBloomFilterText::serializeBinary(WriteBuffer & ostr) c
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty fulltext index {}.", backQuote(index_name));
 
     for (const auto & bloom_filter : bloom_filters)
+    {
         ostr.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), params.filter_size);
+    }
 }
 
 void MergeTreeIndexGranuleBloomFilterText::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
@@ -77,27 +82,37 @@ size_t MergeTreeIndexGranuleBloomFilterText::memoryUsageBytes() const
 MergeTreeIndexAggregatorBloomFilterText::MergeTreeIndexAggregatorBloomFilterText(
     const Names & index_columns_,
     const String & index_name_,
-    const BloomFilterParameters & params_,
+    const BloomFilterIndexParameters & params_,
     TokenExtractorPtr token_extractor_)
     : index_columns(index_columns_)
     , index_name (index_name_)
     , params(params_)
     , token_extractor(token_extractor_)
-    , granule(
-        std::make_shared<MergeTreeIndexGranuleBloomFilterText>(
-            index_name, index_columns.size(), params))
 {
+    if (params_.mode == BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL)
+    {
+        for (size_t i = 0; i < index_columns.size(); ++i)
+            common_filters.push_back(std::make_shared<BloomFilter>(params_.common_params));
+    }
+    granule = std::make_shared<MergeTreeIndexGranuleBloomFilterText>(
+                index_name, index_columns.size(), params.params, common_filters);
+
+    if (params_.mode == BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL)
+    {
+        for (size_t i = 0; i < index_columns.size(); ++i)
+            hot_elements_sketch.emplace_back(params_.num_hot_tokens);
+    }
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilterText::getGranuleAndReset()
 {
     auto new_granule = std::make_shared<MergeTreeIndexGranuleBloomFilterText>(
-        index_name, index_columns.size(), params);
+        index_name, index_columns.size(), params.params, common_filters);
     new_granule.swap(granule);
     return new_granule;
 }
 
-void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorBloomFilterText::updateBase(const Block & block, size_t * pos, size_t limit, const std::function<void(const char*, size_t, size_t)> & callback)
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
@@ -125,7 +140,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
                 {
                     auto ref = column_key.getDataAt(element_start_row + row_num);
-                    token_extractor->stringPaddedToBloomFilter(ref.data, ref.size, granule->bloom_filters[col]);
+                    callback(ref.data, ref.size, col);
                 }
 
                 current_position += 1;
@@ -136,13 +151,73 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
             for (size_t i = 0; i < rows_read; ++i)
             {
                 auto ref = column->getDataAt(current_position + i);
-                token_extractor->stringPaddedToBloomFilter(ref.data, ref.size, granule->bloom_filters[col]);
+                callback(ref.data, ref.size, col);
             }
         }
     }
 
-    granule->has_elems = true;
     *pos += rows_read;
+}
+
+void MergeTreeIndexAggregatorBloomFilterText::preupdate(const Block & block, size_t * pos, size_t limit)
+{
+    if (params.mode != BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL)
+        return;
+
+    auto update_func = [&] (const char* data, size_t length, size_t column_index) {
+        token_extractor->stringToSketch(data, length, hot_elements_sketch[column_index]);
+    };
+
+    updateBase(block, pos, limit, update_func);
+}
+
+void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t * pos, size_t limit)
+{
+    auto update_func = [&] (const char* data, size_t length, size_t column_index) {
+        std::string key(data, length);
+        if (params.mode == BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL)
+        {
+            token_extractor->limitedPaddedStringToBloomFilter(data, length, granule->bloom_filters[column_index], *common_filters[column_index]);
+        }
+        else
+        {
+            token_extractor->stringPaddedToBloomFilter(data, length, granule->bloom_filters[column_index]);
+        }
+    };
+
+    updateBase(block, pos, limit, update_func);
+
+    granule->has_elems = true;
+}
+
+void MergeTreeIndexAggregatorBloomFilterText::serializeCommonState(WriteBuffer & ostr) const
+{
+    if (params.mode == BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL)
+    {
+        for (size_t column_index = 0; column_index < common_filters.size(); ++column_index)
+        {
+            if (common_filters[column_index]->isEmpty())
+            {
+                for (const auto & sketch_key : hot_elements_sketch[column_index].get_frequent_items(datasketches::frequent_items_error_type::NO_FALSE_NEGATIVES))
+                {
+                    common_filters[column_index]->add(sketch_key.get_item().data(), sketch_key.get_item().size());
+                }
+            }
+        }
+    }
+
+    for (const auto & bloom_filter : common_filters)
+    {
+        ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), params.common_params.filter_size);
+    }
+}
+
+void MergeTreeIndexAggregatorBloomFilterText::deserializeCommonState(ReadBuffer & istr)
+{
+    for (auto & bloom_filter : common_filters)
+    {
+        istr.readStrict(reinterpret_cast<char *>(bloom_filter->getFilter().data()), params.common_params.filter_size);
+    }
 }
 
 MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
@@ -220,6 +295,17 @@ bool MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue() const
     return rpn_stack[0];
 }
 
+bool MergeTreeIndexGranuleBloomFilterText::containsInBloomFilters(const BloomFilter & another_filter, size_t column_index)
+{
+    if (!common_filters.empty())
+    {
+        const auto& common_filter = common_filters[column_index];
+        return common_filter->containsWithAnotherFilter(bloom_filters[column_index], another_filter);
+    }
+
+    return bloom_filters[column_index].contains(another_filter);
+}
+
 /// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnTranuleInPart
 bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
@@ -240,7 +326,7 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
              || element.function == RPNElement::FUNCTION_NOT_EQUALS
              || element.function == RPNElement::FUNCTION_HAS)
         {
-            rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
+            rpn_stack.emplace_back(granule->containsInBloomFilters(*element.bloom_filter, element.key_column), true);
 
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
@@ -256,7 +342,7 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
 
                 const auto & bloom_filters = element.set_bloom_filters[column];
                 for (size_t row = 0; row < bloom_filters.size(); ++row)
-                    result[row] = result[row] && granule->bloom_filters[key_idx].contains(bloom_filters[row]);
+                    result[row] = result[row] && granule->containsInBloomFilters(bloom_filters[row], key_idx);
             }
 
             rpn_stack.emplace_back(
@@ -273,7 +359,7 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
             const auto & bloom_filters = element.set_bloom_filters[0];
 
             for (size_t row = 0; row < bloom_filters.size(); ++row)
-                result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
+                result[row] = result[row] && granule->containsInBloomFilters(bloom_filters[row], element.key_column);
 
             if (element.function == RPNElement::FUNCTION_HAS_ALL)
                 rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), false) == std::end(result), true);
@@ -290,7 +376,7 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
                 const auto & bloom_filters = element.set_bloom_filters[0];
 
                 for (size_t row = 0; row < bloom_filters.size(); ++row)
-                    result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
+                    result[row] = result[row] && granule->containsInBloomFilters(bloom_filters[row], element.key_column);
 
                 rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
             }
@@ -743,7 +829,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
 
 MergeTreeIndexGranulePtr MergeTreeIndexBloomFilterText::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleBloomFilterText>(index.name, index.column_names.size(), params);
+    return std::make_shared<MergeTreeIndexGranuleBloomFilterText>(index.name, index.column_names.size(), params.params, std::vector<std::shared_ptr<BloomFilter>>{});
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
@@ -754,35 +840,84 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG * filter_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionBloomFilterText>(filter_dag, context, index.sample_block, params, token_extractor.get());
+    return std::make_shared<MergeTreeConditionBloomFilterText>(filter_dag, context, index.sample_block, params.params, token_extractor.get());
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(
     const IndexDescription & index)
 {
+    std::unique_ptr<ITokenExtractor> tokenizer;
+    size_t n = index.arguments[0].safeGet<size_t>();
+
     if (index.type == NgramTokenExtractor::getName())
     {
-        size_t n = index.arguments[0].safeGet<size_t>();
-        BloomFilterParameters params(
+        tokenizer = std::make_unique<NgramTokenExtractor>(n);
+    }
+    else if (index.type == SplitTokenExtractor::getName())
+    {
+        tokenizer = std::make_unique<SplitTokenExtractor>();
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index type: {}", backQuote(index.name));
+    }
+
+    /// One level index
+    if (index.arguments.size() == 4)
+    {
+        BloomFilterParameters bloom_filter_params(
             index.arguments[1].safeGet<size_t>(),
             index.arguments[2].safeGet<size_t>(),
             index.arguments[3].safeGet<size_t>());
 
-        auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
-
+        BloomFilterIndexParameters params{
+            .mode = BloomFilterIndexParameters::BloomFilterIndexMode::ONE_LEVEL,
+            .num_hot_tokens = 0,
+            .common_params = bloom_filter_params,
+            .params = bloom_filter_params,
+        };
         return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
-    if (index.type == SplitTokenExtractor::getName())
+    /// Two level index with common bloom-filter parameters
+    else if (index.arguments.size() == 5)
     {
-        BloomFilterParameters params(
-            index.arguments[0].safeGet<size_t>(), index.arguments[1].safeGet<size_t>(), index.arguments[2].safeGet<size_t>());
+        BloomFilterParameters bloom_filter_params(
+            index.arguments[1].safeGet<size_t>(),
+            index.arguments[2].safeGet<size_t>(),
+            index.arguments[3].safeGet<size_t>());
 
-        auto tokenizer = std::make_unique<SplitTokenExtractor>();
-
+        BloomFilterIndexParameters params{
+            .mode = BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL,
+            .num_hot_tokens = index.arguments[4].safeGet<size_t>(),
+            .common_params = bloom_filter_params,
+            .params = bloom_filter_params,
+        };
         return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
+    else if (index.arguments.size() == 8)
+    {
+        BloomFilterParameters first_level_bloom_filter_params(
+            index.arguments[1].safeGet<size_t>(),
+            index.arguments[2].safeGet<size_t>(),
+            index.arguments[3].safeGet<size_t>());
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index type: {}", backQuote(index.name));
+        BloomFilterParameters second_level_bloom_filter_params(
+            index.arguments[5].safeGet<size_t>(),
+            index.arguments[6].safeGet<size_t>(),
+            index.arguments[7].safeGet<size_t>());
+
+        BloomFilterIndexParameters params{
+            .mode = BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL,
+            .num_hot_tokens = index.arguments[4].safeGet<size_t>(),
+            .common_params = first_level_bloom_filter_params,
+            .params = second_level_bloom_filter_params,
+        };
+        return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of paramets index type: {}. Seen {}, expected 4, 5 or 8", backQuote(index.name), index.arguments.size());
+    }
 }
 
 void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach*/)
@@ -807,17 +942,7 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
                 "Ngram and token bloom filter indexes can only be used with column types `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }
 
-    if (index.type == NgramTokenExtractor::getName())
-    {
-        if (index.arguments.size() != 4)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "`ngrambf` index must have exactly 4 arguments.");
-    }
-    else if (index.type == SplitTokenExtractor::getName())
-    {
-        if (index.arguments.size() != 3)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "`tokenbf` index must have exactly 3 arguments.");
-    }
-    else
+    if (index.type != NgramTokenExtractor::getName() && index.type != SplitTokenExtractor::getName())
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index type: {}", backQuote(index.name));
     }

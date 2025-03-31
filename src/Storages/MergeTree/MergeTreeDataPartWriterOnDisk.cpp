@@ -389,6 +389,14 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
         for (const auto & granule : granules_to_write)
         {
+            size_t pos = granule.start_row;
+            skip_indices_aggregators[i]->preupdate(skip_indexes_block, &pos, granule.rows_to_write);
+        }
+
+        skip_indices_aggregators[i]->serializeCommonState(stream.compressed_hashing);
+
+        for (const auto & granule : granules_to_write)
+        {
             if (skip_index_accumulated_marks[i] == index_helper->index.granularity)
             {
                 skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing);
@@ -397,8 +405,6 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
-                skip_indices_aggregators[i] = index_helper->createIndexAggregatorForPart(store, settings);
-
                 if (stream.compressed_hashing.offset() >= settings.min_compress_block_size)
                     stream.compressed_hashing.next();
 

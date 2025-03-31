@@ -59,6 +59,8 @@ struct MergeTreeIndexAggregatorSet final : IMergeTreeIndexAggregator
 
     void update(const Block & block, size_t * pos, size_t limit) override;
 
+    void preupdate(const Block &, size_t *, size_t) override {}
+
 private:
     /// return true if has new data
     template <typename Method>
