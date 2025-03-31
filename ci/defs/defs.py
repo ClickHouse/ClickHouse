@@ -286,7 +286,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_RELEASE = "arm_release"
     ARM_ASAN = "arm_asan"
 
-    AMD_COVERAGE = "amd_coverage"
+    ARM_COVERAGE = "arm_coverage"
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
     AMD_DARWIN = "amd_darwin"

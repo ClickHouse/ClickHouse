@@ -201,7 +201,7 @@ class JobConfigs:
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/build_post_hook.py"],
     ).parametrize(
         parameter=[
-            BuildTypes.AMD_COVERAGE,
+            BuildTypes.ARM_COVERAGE,
             BuildTypes.ARM_BINARY,
             BuildTypes.AMD_DARWIN,
             BuildTypes.ARM_DARWIN,
@@ -231,7 +231,7 @@ class JobConfigs:
             [],  # no need for fuzzers artifacts in normal pr run [ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         ],
         runs_on=[
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_COVERAGE
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_COVERAGE
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_BINARY
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_DARWIN,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_DARWIN,
@@ -353,8 +353,8 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[f"coverage, {i}/6" for i in range(1, 7)],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(6)],
-        requires=[["Build (amd_coverage)"] for _ in range(6)],
+        runs_on=[RunnerLabels.FUNC_TESTER_ARM for _ in range(6)],
+        requires=[["Build (arm_coverage)"] for _ in range(6)],
     )
     functional_tests_jobs_non_required = Job.Config(
         name=JobNames.STATELESS,
