@@ -259,11 +259,9 @@ private:
     const size_t list_batch_size;
     const LoggerPtr log;
 
-    /// A thread for async data scanning.
-    ThreadFromGlobalPool thread;
     /// Whether scanDataFunc should stop scanning.
     /// Set in destructor.
-    std::atomic_bool shutdown = false;
+    std::atomic<bool> shutdown = false;
     /// A CV to notify that new data_files are available.
     std::condition_variable data_files_cv;
     /// A flag meaning that all data files were scanned
@@ -276,6 +274,9 @@ private:
 
     std::deque<DB::ObjectInfoPtr> data_files;
     std::mutex next_mutex;
+
+    /// A thread for async data scanning.
+    ThreadFromGlobalPool thread;
 };
 
 
