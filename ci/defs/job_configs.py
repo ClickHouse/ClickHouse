@@ -424,7 +424,7 @@ class JobConfigs:
     )
     functional_tests_jobs_azure_master_only = Job.Config(
         name=JobNames.STATELESS,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -444,15 +444,10 @@ class JobConfigs:
             "azure, asan, 2/3",
             "azure, asan, 3/3",
         ],
-        runs_on=[
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-        ],
         requires=[
-            ["Build (amd_asan)"],  # azure asan 1
-            ["Build (amd_asan)"],  # azure asan 2
-            ["Build (amd_asan)"],  # azure asan 3
+            ["Build (arm_asan)"],  # azure asan 1
+            ["Build (arm_asan)"],  # azure asan 2
+            ["Build (arm_asan)"],  # azure asan 3
         ],
     )
     bugfix_validation_job = Job.Config(
