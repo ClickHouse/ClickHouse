@@ -80,12 +80,7 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
 
     const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
     if (!std::ranges::all_of(hash_joins, [&](const auto & hash_join) { return hash_join->data->getTotalRowCount() == ht_size; }))
-    {
-        std::stringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        for (const auto & hash_join : hash_joins)
-            ss << hash_join->data->getTotalRowCount() << ", ";
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes: {}", ss.str());
-    }
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes");
 
     const auto source_rows = std::accumulate(
         hash_joins.begin(),
@@ -214,7 +209,8 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
         if (!hash_joins[0]->data->twoLevelMapIsUsed())
             return;
 
-        updateStatistics(hash_joins, stats_collecting_params);
+        if (build_phase_finished)
+            updateStatistics(hash_joins, stats_collecting_params);
 
         for (size_t i = 0; i < slots; ++i)
         {
@@ -652,6 +648,8 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
         }
     }
+
+    build_phase_finished = true;
 }
 }
 
