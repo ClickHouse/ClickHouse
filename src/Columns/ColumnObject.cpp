@@ -1826,7 +1826,7 @@ private:
         /// We have 3 sorted lists of paths - typed paths, dynamic paths and paths in shared data.
         /// We store iterators for each of these lists. Here we try to find the iterator with the lexicographically smallest path.
 
-        /// Null in dynamic path is considered as absense of this path.
+        /// Null in dynamic path is considered as absence of this path.
         while (dynamic_paths_it != dynamic_paths_end && column_object.dynamic_paths.find(*dynamic_paths_it)->second->isNullAt(row))
             ++dynamic_paths_it;
 
@@ -1903,8 +1903,6 @@ private:
     PathType current_path_type;
     size_t row;
 };
-
-
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnObject::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
