@@ -3,6 +3,7 @@
 #if USE_LIBPQXX
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -43,7 +44,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     {
         std::string query = fmt::format(
             "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
-            postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema));
+            postgres_schema.empty() ? quoteStringPostgreSQL("public") : quoteStringPostgreSQL(postgres_schema));
 
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(std::get<0>(table_name));
@@ -58,7 +59,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     {
         std::string query = fmt::format(
             "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
-            quoteString(schema));
+            quoteStringPostgreSQL(schema));
 
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(schema + '.' + std::get<0>(table_name));
@@ -110,7 +111,7 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
         /// there will be Numeric(x, y), otherwise just Numeric
         UInt32 precision;
         UInt32 scale;
-        if (type.ends_with(")"))
+        if (type.ends_with(')'))
         {
             res = DataTypeFactory::instance().get(type);
             precision = getDecimalPrecision(*res);
@@ -134,9 +135,26 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
         }
     }
+    else if (type.starts_with("character("))
+    {
+        if (type.ends_with(')'))
+        {
+            const auto open_parenthesis = type.rfind('(');
+            if (open_parenthesis != String::npos)
+            {
+                const auto close_parenthesis = type.size() - 1;
+                if (open_parenthesis + 1 != close_parenthesis)
+                {
+                    const auto size = parseFromString<size_t>(type.substr(open_parenthesis + 1, close_parenthesis - open_parenthesis - 1));
+                    res = std::make_shared<DataTypeFixedString>(size);
+                }
+            }
+        }
+    }
 
     if (!res)
         res = std::make_shared<DataTypeString>();
+
     if (is_nullable)
         res = std::make_shared<DataTypeNullable>(res);
 
@@ -298,11 +316,11 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 {
     PostgreSQLTableStructure table;
 
-    auto where = fmt::format("relname = {}", quoteString(postgres_table));
+    auto where = fmt::format("relname = {}", quoteStringPostgreSQL(postgres_table));
 
     where += postgres_schema.empty()
         ? " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')"
-        : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteString(postgres_schema));
+        : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteStringPostgreSQL(postgres_schema));
 
     std::string columns_part;
     if (!columns.empty())
@@ -414,8 +432,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and t.relnamespace = (select oid from pg_namespace where nspname = {}) "
             "and ix.indisreplident = 't' " /// index is is replica identity index
             "ORDER BY a.attname", /// column name
-            quoteString(postgres_table),
-            (postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema))
+            quoteStringPostgreSQL(postgres_table),
+            (postgres_schema.empty() ? quoteStringPostgreSQL("public") : quoteStringPostgreSQL(postgres_schema))
         );
 
         table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);

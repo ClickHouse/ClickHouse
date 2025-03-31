@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <memory>
 #include <unordered_map>
@@ -24,6 +24,9 @@ struct SetKeyColumns;
 
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
+
+class PreparedSetsCache;
+using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 struct Settings;
 
@@ -56,6 +59,8 @@ public:
 
     using Hash = CityHash_v1_0_2::uint128;
     virtual Hash getHash() const = 0;
+
+    virtual ASTPtr getSourceAST() const = 0;
 };
 
 using FutureSetPtr = std::shared_ptr<FutureSet>;
@@ -65,16 +70,18 @@ using FutureSetPtr = std::shared_ptr<FutureSet>;
 class FutureSetFromStorage final : public FutureSet
 {
 public:
-    explicit FutureSetFromStorage(Hash hash_, SetPtr set_, std::optional<StorageID> storage_id);
+    explicit FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id);
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
     Hash getHash() const override;
+    ASTPtr getSourceAST() const override { return ast; }
 
     const std::optional<StorageID> & getStorageID() const { return storage_id; }
 private:
     Hash hash;
+    ASTPtr ast;
     std::optional<StorageID> storage_id;
     SetPtr set;
 };
@@ -86,16 +93,18 @@ using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
 class FutureSetFromTuple final : public FutureSet
 {
 public:
-    FutureSetFromTuple(Hash hash_, ColumnsWithTypeAndName block, bool transform_null_in, SizeLimits size_limits);
+    FutureSetFromTuple(Hash hash_, ASTPtr ast_, ColumnsWithTypeAndName block, bool transform_null_in, SizeLimits size_limits);
 
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     DataTypes getTypes() const override;
     Hash getHash() const override;
+    ASTPtr getSourceAST() const override { return ast; }
     Columns getKeyColumns();
 private:
     Hash hash;
+    ASTPtr ast;
     SetPtr set;
     SetKeyColumns set_key_columns;
 };
@@ -119,6 +128,7 @@ class FutureSetFromSubquery final : public FutureSet
 public:
     FutureSetFromSubquery(
         Hash hash_,
+        ASTPtr ast_,
         std::unique_ptr<QueryPlan> source_,
         StoragePtr external_table_,
         std::shared_ptr<FutureSetFromSubquery> external_table_set_,
@@ -128,6 +138,7 @@ public:
 
     FutureSetFromSubquery(
         Hash hash_,
+        ASTPtr ast_,
         QueryTreeNodePtr query_tree_,
         bool transform_null_in,
         SizeLimits size_limits,
@@ -138,19 +149,25 @@ public:
     SetPtr get() const override;
     DataTypes getTypes() const override;
     Hash getHash() const override;
+    ASTPtr getSourceAST() const override { return ast; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
-    std::unique_ptr<QueryPlan> build(const ContextPtr & context);
+    std::unique_ptr<QueryPlan> build(
+        const SizeLimits & network_transfer_limits,
+        const PreparedSetsCachePtr & prepared_sets_cache);
+
     void buildSetInplace(const ContextPtr & context);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
+    void setExternalTable(StoragePtr external_table_);
 
     const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
 
 private:
     Hash hash;
+    ASTPtr ast;
     SetAndKeyPtr set_and_key;
     StoragePtr external_table;
     std::shared_ptr<FutureSetFromSubquery> external_table_set;
@@ -176,11 +193,12 @@ public:
     using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;
     using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
-    FutureSetFromStoragePtr addFromStorage(const Hash & key, SetPtr set_, StorageID storage_id);
-    FutureSetFromTuplePtr addFromTuple(const Hash & key, ColumnsWithTypeAndName block, const Settings & settings);
+    FutureSetFromStoragePtr addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id);
+    FutureSetFromTuplePtr addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings);
 
     FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,
+        ASTPtr ast,
         std::unique_ptr<QueryPlan> source,
         StoragePtr external_table,
         FutureSetFromSubqueryPtr external_table_set,
@@ -188,6 +206,7 @@ public:
 
     FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,
+        ASTPtr ast,
         QueryTreeNodePtr query_tree,
         const Settings & settings);
 

@@ -20,7 +20,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinUtils.h>
-#include <Interpreters/NullableUtils.h>
+#include <DataTypes/NullableUtils.h>
 #include <Interpreters/RowRefs.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/joinDispatch.h>
@@ -86,21 +86,28 @@ ScatteredBlock filterColumnsPresentInSampleBlock(const ScatteredBlock & block, c
 
 Block materializeColumnsFromRightBlock(Block block, const Block & sample_block, const Names &)
 {
+    std::unordered_map<std::string_view, std::vector<ColumnWithTypeAndName *>> block_index;
+    for (auto & column : block)
+        block_index[column.name].push_back(&column);
+
     for (const auto & sample_column : sample_block.getColumnsWithTypeAndName())
     {
-        auto & column = block.getByName(sample_column.name);
-
-        /// There's no optimization for right side const columns. Remove constness if any.
-        column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
-
-        if (column.column->lowCardinality() && !sample_column.column->lowCardinality())
+        for (auto * column_ptr : block_index[sample_column.name])
         {
-            column.column = column.column->convertToFullColumnIfLowCardinality();
-            column.type = removeLowCardinality(column.type);
-        }
+            auto & column = *column_ptr;
 
-        if (sample_column.column->isNullable())
-            JoinCommon::convertColumnToNullable(column);
+            /// There's no optimization for right side const columns. Remove constness if any.
+            column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
+
+            if (column.column->lowCardinality() && !sample_column.column->lowCardinality())
+            {
+                column.column = column.column->convertToFullColumnIfLowCardinality();
+                column.type = removeLowCardinality(column.type);
+            }
+
+            if (sample_column.column->isNullable())
+                JoinCommon::convertColumnToNullable(column);
+        }
     }
 
     return block;
@@ -147,6 +154,12 @@ HashJoin::HashJoin(
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
+    for (auto & column : right_sample_block)
+    {
+        if (!column.column)
+            column.column = column.type->createColumn();
+    }
+
     LOG_TRACE(
         log,
         "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
@@ -405,7 +418,7 @@ size_t HashJoin::getTotalRowCount() const
 
 void HashJoin::doDebugAsserts() const
 {
-#ifndef NDEBUG
+#ifdef DEBUG_OR_SANITIZER_BUILD
     size_t debug_blocks_allocated_size = 0;
     for (const auto & block : data->blocks)
         debug_blocks_allocated_size += block.allocatedBytes();
@@ -484,6 +497,7 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
                             isRightOrFull(kind) ||
                             multiple_disjuncts ||
                             table_join->getMixedJoinExpression();
+
     if (save_key_columns)
     {
         saved_block_sample = right_table_keys.cloneEmpty();
@@ -1031,7 +1045,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
             block, onexpr.key_names_left, cond_column_name.first, right_sample_block, onexpr.key_names_right, cond_column_name.second);
     }
 
-    if (kind == JoinKind::Cross)
+    if (kind == JoinKind::Cross || kind == JoinKind::Comma)
     {
         joinBlockImplCross(block, not_processed);
         return;
@@ -1405,9 +1419,19 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
         size_t expected_columns_count = left_columns_count + required_right_keys.columns() + sample_block_with_columns_to_add.columns();
         if (expected_columns_count != result_sample_block.columns())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of columns in result sample block: {} expected {} ([{}] + [{}] + [{}])",
+            Names left_block_names;
+            if (canRemoveColumnsFromLeftBlock())
+                std::ranges::copy(
+                    table_join->getOutputColumns(JoinTableSide::Left) | std::views::transform([](const auto & column) { return column.name; }),
+                    std::back_inserter(left_block_names));
+            else
+                left_block_names = left_sample_block.getNames();
+
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Unexpected number of columns in result sample block: {} expected {} ([{}] = [{}] + [{}] + [{}])",
                             result_sample_block.columns(), expected_columns_count,
-                            left_sample_block.dumpNames(), required_right_keys.dumpNames(), sample_block_with_columns_to_add.dumpNames());
+                            result_sample_block.dumpNames(), fmt::join(left_block_names, ", "),
+                            required_right_keys.dumpNames(), sample_block_with_columns_to_add.dumpNames());
         }
     }
 
@@ -1511,10 +1535,10 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
 
     if (expression_sample_block.columns() != 1)
     {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Unexpected expression in JOIN ON section. Expected single column, got '{}'",
-            expression_sample_block.dumpStructure());
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Unexpected expression in JOIN ON section. Expected single column, got '{}', expression:\n{}",
+            expression_sample_block.dumpStructure(),
+            additional_filter_expression->dumpActions());
     }
 
     auto type = removeNullable(expression_sample_block.getByPosition(0).type);

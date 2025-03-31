@@ -9,7 +9,6 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Core/UUID.h>
-#include <Interpreters/ClientInfo.h>
 #include <base/scope_guard.h>
 #include <Common/SettingsChanges.h>
 
@@ -35,7 +34,6 @@ struct IAccessEntity;
 using ASTPtr = std::shared_ptr<IAST>;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
-
 
 class ContextAccess : public std::enable_shared_from_this<ContextAccess>
 {

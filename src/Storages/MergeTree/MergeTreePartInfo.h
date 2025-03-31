@@ -197,7 +197,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
     static DetachedPartInfo parseDetachedPartName(const DiskPtr & disk, std::string_view dir_name, MergeTreeDataFormatVersion format_version);
 
 private:
-    void addParsedPartInfo(const MergeTreePartInfo& part);
+    void addParsedPartInfo(const MergeTreePartInfo & part);
 };
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;

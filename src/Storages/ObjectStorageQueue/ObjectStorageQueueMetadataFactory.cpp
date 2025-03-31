@@ -24,6 +24,7 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
     if (it == metadata_by_path.end())
     {
         it = metadata_by_path.emplace(zookeeper_path, std::move(metadata)).first;
+        it->second.metadata->setMetadataRefCount(*it->second.ref_count);
     }
     else
     {
@@ -34,7 +35,7 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
     }
 
     it->second.metadata->registerIfNot(storage_id, false);
-    it->second.ref_count += 1;
+    *it->second.ref_count += 1;
     return it->second.metadata;
 }
 
@@ -46,7 +47,7 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
     if (it == metadata_by_path.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Metadata with zookeeper path {} does not exist", zookeeper_path);
 
-    it->second.ref_count -= 1;
+    *it->second.ref_count -= 1;
 
     size_t registry_size;
     try
@@ -72,14 +73,12 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
 
     if (registry_size == 0)
     {
-        try
+        auto zk_client = Context::getGlobalContextInstance()->getZooKeeper();
+        auto code = zk_client->tryRemoveRecursive(it->first);
+        if (code != Coordination::Error::ZOK
+            && !Coordination::isHardwareError(code))
         {
-            auto zk_client = Context::getGlobalContextInstance()->getZooKeeper();
-            zk_client->removeRecursive(it->first);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
+            LOG_ERROR(log, "Unexpected error while removing metadata: {}, path: {}", code, it->first);
         }
     }
 

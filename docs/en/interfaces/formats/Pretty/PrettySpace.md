@@ -1,13 +1,26 @@
 ---
-title : PrettySpace
-slug : /en/interfaces/formats/PrettySpace
-keywords : [PrettySpace]
+alias: []
+description: 'Documentation for the PrettySpace format'
+input_format: false
+keywords: ['PrettySpace']
+output_format: true
+slug: /interfaces/formats/PrettySpace
+title: 'PrettySpace'
 ---
 
-## Description
+import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 
-Differs from [PrettyCompact](/docs/en/interfaces/formats/PrettyCompact) in that whitespace (space characters) is used instead of the grid.
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
 
-## Example Usage
+## Description {#description}
 
-## Format Settings
+Differs from the [`PrettyCompact`](./PrettyCompact.md) format in that whitespace 
+(space characters) is used for displaying the table instead of a grid.
+
+## Example Usage {#example-usage}
+
+## Format Settings {#format-settings}
+
+<PrettyFormatSettings/>

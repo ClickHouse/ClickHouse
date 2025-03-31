@@ -1,14 +1,33 @@
 ---
-title : XML
-slug : /en/interfaces/formats/XML
-keywords : [XML]
+alias: []
+description: 'Documentation for the XML format'
+input_format: false
+keywords: ['XML']
+output_format: true
+slug: /interfaces/formats/XML
+title: 'XML'
 ---
 
-## Description
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
 
-XML format is suitable only for output, not for parsing. Example:
+## Description {#description}
 
-``` xml
+The `XML` format is suitable only for output, and not for parsing. 
+
+If the column name does not have an acceptable format, just 'field' is used as the element name. In general, the XML structure follows the JSON structure.
+Just as for JSON, invalid UTF-8 sequences are changed to the replacement character `�` so the output text will consist of valid UTF-8 sequences.
+
+In string values, the characters `<` and `&` are escaped as `<` and `&`.
+
+Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,and tuples as `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
+
+## Example Usage {#example-usage}
+
+Example:
+
+```xml
 <?xml version='1.0' encoding='UTF-8' ?>
 <result>
         <meta>
@@ -70,15 +89,6 @@ XML format is suitable only for output, not for parsing. Example:
 </result>
 ```
 
-If the column name does not have an acceptable format, just ‘field’ is used as the element name. In general, the XML structure follows the JSON structure.
-Just as for JSON, invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences.
-
-In string values, the characters `<` and `&` are escaped as `<` and `&`.
-
-Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,and tuples as `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
-
-## Example Usage
-
-## Format Settings
+## Format Settings {#format-settings}
 
 ## XML {#xml}

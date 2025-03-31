@@ -2,11 +2,13 @@
 
 #include <cstring>
 
+#include <DataTypes/DataTypeString.h>
+#include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
 #include <Common/memcpySmall.h>
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
 
@@ -110,6 +112,13 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1};
     }
 
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    {
+        WriteBufferFromOwnString wb;
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1}, wb);
+        return {wb.str(), std::make_shared<DataTypeString>()};
+    }
+
     StringRef getDataAt(size_t n) const override
     {
         chassert(n < size());
@@ -124,7 +133,7 @@ public:
 
     void insert(const Field & x) override
     {
-        const String & s = x.safeGet<const String &>();
+        const String & s = x.safeGet<String>();
         const size_t old_size = chars.size();
         const size_t size_to_append = s.size() + 1;
         const size_t new_size = old_size + size_to_append;

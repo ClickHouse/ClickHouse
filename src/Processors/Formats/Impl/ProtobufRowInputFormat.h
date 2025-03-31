@@ -55,9 +55,9 @@ private:
 
     std::unique_ptr<ProtobufReader> reader;
     std::vector<size_t> missing_column_indices;
+    const ProtobufSchemas::DescriptorHolder descriptor;
     std::unique_ptr<ProtobufSerializer> serializer;
 
-    const ProtobufSchemas::DescriptorHolder descriptor;
     bool with_length_delimiter;
     bool flatten_google_wrappers;
 };

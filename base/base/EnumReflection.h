@@ -1,5 +1,8 @@
 #pragma once
 
+/// To cover ZooKeeperConstants -> See contrib/magic_enum/doc/limitations.md#enum-range
+#define MAGIC_ENUM_RANGE_MIN (-100)
+#define MAGIC_ENUM_RANGE_MAX 1000
 #include <magic_enum.hpp>
 #include <fmt/format.h>
 

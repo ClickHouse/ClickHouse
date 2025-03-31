@@ -19,7 +19,6 @@
 #include <Core/Types.h>
 #include <base/IPv4andIPv6.h>
 
-#include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 
 #include <IO/WriteBuffer.h>
@@ -27,12 +26,13 @@
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
 
 #include <Formats/FormatSettings.h>
 
 namespace DB
 {
+
+class Exception;
 
 /// Helper functions for formatted and binary output.
 
@@ -960,32 +960,6 @@ inline void writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64 
     writeDateTimeText<'-', ':', ' ', '.', true>(datetime64, scale, buf, time_zone);
 }
 
-/// In the RFC 1123 format: "Tue, 03 Dec 2019 00:11:50 GMT". You must provide GMT DateLUT.
-/// This is needed for HTTP requests.
-inline void writeDateTimeTextRFC1123(time_t datetime, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
-{
-    const auto & values = time_zone.getValues(datetime);
-
-    static const char week_days[3 * 8 + 1] = "XXX" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun";
-    static const char months[3 * 13 + 1] = "XXX" "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec";
-
-    buf.write(&week_days[values.day_of_week * 3], 3);
-    buf.write(", ", 2);
-    buf.write(&digits100[values.day_of_month * 2], 2);
-    buf.write(' ');
-    buf.write(&months[values.month * 3], 3);
-    buf.write(' ');
-    buf.write(&digits100[values.year / 100 * 2], 2);
-    buf.write(&digits100[values.year % 100 * 2], 2);
-    buf.write(' ');
-    buf.write(&digits100[time_zone.toHour(datetime) * 2], 2);
-    buf.write(':');
-    buf.write(&digits100[time_zone.toMinute(datetime) * 2], 2);
-    buf.write(':');
-    buf.write(&digits100[time_zone.toSecond(datetime) * 2], 2);
-    buf.write(" GMT", 4);
-}
-
 inline void writeDateTimeTextISO(time_t datetime, WriteBuffer & buf, const DateLUTImpl & utc_time_zone)
 {
     writeDateTimeText<'-', ':', 'T'>(datetime, buf, utc_time_zone);
@@ -1143,7 +1117,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
 }
 
 template <typename T>
-void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
+void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros = false,
                bool fixed_fractional_length = false, UInt32 fractional_length = 0)
 {
     T part = DecimalUtils::getWholePart(x, scale);
@@ -1327,6 +1301,14 @@ inline String toString(const T & x)
     return buf.str();
 }
 
+template <is_decimal T>
+inline String toString(const T & x, UInt32 scale)
+{
+    WriteBufferFromOwnString buf;
+    writeText(x, scale, buf);
+    return buf.str();
+}
+
 inline String toString(const CityHash_v1_0_2::uint128 & hash)
 {
     WriteBufferFromOwnString buf;
@@ -1383,12 +1365,6 @@ inline void writeBinaryBigEndian(T x, WriteBuffer & buf)
 void writePointerHex(const void * ptr, WriteBuffer & buf);
 
 String fourSpaceIndent(size_t indent);
-
-bool inline isWritingToTerminal(const WriteBuffer & buf)
-{
-    const auto * write_buffer_to_descriptor = dynamic_cast<const WriteBufferFromFileDescriptor *>(&buf);
-    return write_buffer_to_descriptor && write_buffer_to_descriptor->getFD() == STDOUT_FILENO && isatty(STDOUT_FILENO);
-}
 
 }
 

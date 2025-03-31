@@ -6,10 +6,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Analyzer/Identifier.h>
 #include <Analyzer/TableNode.h>
-#include <Core/Settings.h>
 #include <Columns/ColumnSet.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 #include <Storages/StorageSet.h>
 
@@ -29,6 +31,9 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 enum class SetSerializationKind : UInt8
@@ -175,7 +180,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
                 auto type = decodeDataType(in);
                 auto serialization = type->getSerialization(ISerialization::Kind::DEFAULT);
                 auto column = type->createColumn();
-                serialization->deserializeBinaryBulk(*column, in, num_rows, 0);
+                serialization->deserializeBinaryBulk(*column, in, 0, num_rows, 0);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }
@@ -203,12 +208,12 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
     for (auto & set : sets)
     {
         Identifier identifier = parseTableIdentifier(set.storage_name, context);
-        auto table_node = resolveTable(identifier, context);
+        auto * table_node = resolveTable(identifier, context);
         const auto * storage_set = typeid_cast<const StorageSet *>(table_node->getStorage().get());
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);
 
-        auto future_set = std::make_shared<FutureSetFromStorage>(set.hash, storage_set->getSet(), table_node->getStorageID());
+        auto future_set = std::make_shared<FutureSetFromStorage>(set.hash, nullptr, storage_set->getSet(), table_node->getStorageID());
         for (auto * column : set.columns)
             column->setData(future_set);
     }
@@ -222,7 +227,7 @@ static void makeSetsFromTuple(std::list<QueryPlanAndSets::SetFromTuple> sets, co
         SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
         bool transform_null_in = settings[Setting::transform_null_in];
 
-        auto future_set = std::make_shared<FutureSetFromTuple>(set.hash, std::move(set.set_columns), transform_null_in, size_limits);
+        auto future_set = std::make_shared<FutureSetFromTuple>(set.hash, nullptr, std::move(set.set_columns), transform_null_in, size_limits);
         for (auto * column : set.columns)
             column->setData(future_set);
     }
@@ -246,7 +251,7 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
         size_t max_size_for_index = settings[Setting::use_index_for_in_with_subqueries_max_values];
 
         auto future_set = std::make_shared<FutureSetFromSubquery>(
-            set.hash, std::make_unique<QueryPlan>(std::move(subquery_plan)),
+            set.hash, nullptr, std::make_unique<QueryPlan>(std::move(subquery_plan)),
             nullptr, nullptr,
             transform_null_in, size_limits, max_size_for_index);
 
@@ -256,10 +261,14 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
         subqueries.push_back(std::move(future_set));
     }
 
+    SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+    auto prepared_sets_cache = context->getPreparedSetsCache();
+
     auto step = std::make_unique<DelayedCreatingSetsStep>(
         plan.getCurrentHeader(),
         std::move(subqueries),
-        context);
+        network_transfer_limits,
+        prepared_sets_cache);
 
     plan.addStep(std::move(step));
 }

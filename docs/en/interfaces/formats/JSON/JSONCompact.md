@@ -1,16 +1,22 @@
 ---
-title : JSONCompact
-slug : /en/interfaces/formats/JSONCompact
-keywords : [JSONCompact]
+alias: []
+description: 'Documentation for the JSONCompact format'
+input_format: true
+keywords: ['JSONCompact']
+output_format: true
+slug: /interfaces/formats/JSONCompact
+title: 'JSONCompact'
 ---
 
-## Description
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
 
-Differs from JSON only in that data rows are output in arrays, not in objects.
+## Description {#description}
 
-## Example Usage
+Differs from [JSON](./JSON.md) only in that data rows are output as arrays, not as objects.
 
-Example:
+## Example Usage {#example-usage}
 
 ```json
 {
@@ -50,5 +56,5 @@ Example:
 }
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 

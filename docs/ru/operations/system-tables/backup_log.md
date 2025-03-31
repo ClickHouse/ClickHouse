@@ -21,13 +21,13 @@ slug: /ru/operations/system-tables/backup_log
 - `error` ([String](../../sql-reference/data-types/string.md)) — Сообщение об ошибке, при наличии (записи для успешных операций содержат пустую строку).
 - `start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Время начала операции.
 - `end_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Время завершения операции.
-- `num_files` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Количество файлов, хранимых в бэкапе.
-- `total_size` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Общий размер файлов, хранимых в бэкапе.
-- `num_entries` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Количество позиций в бэкапе, т.е. либо количество файлов в папке (если бэкап хранится в папке), либо количество файлов в архиве (если бэкап хранится в архиве). Это значение не равно `num_files` в случае если это инкрементальный бэкап либо он содержит пустые файлы или дубликаты. Следующее утверждение верно всегда: `num_entries <= num_files`.
-- `uncompressed_size` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Размер бэкапа до сжатия.
-- `compressed_size` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Размер бэкапа после сжатия. Если бэкап не хранится в виде архива, это значение равно `uncompressed_size`.
-- `files_read` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Количество файлов, прочитанных во время операции восстановления.
-- `bytes_read` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Общий размер файлов, прочитанных во время операции восстановления.
+- `num_files` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Количество файлов, хранимых в бэкапе.
+- `total_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Общий размер файлов, хранимых в бэкапе.
+- `num_entries` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Количество позиций в бэкапе, т.е. либо количество файлов в папке (если бэкап хранится в папке), либо количество файлов в архиве (если бэкап хранится в архиве). Это значение не равно `num_files` в случае если это инкрементальный бэкап либо он содержит пустые файлы или дубликаты. Следующее утверждение верно всегда: `num_entries <= num_files`.
+- `uncompressed_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Размер бэкапа до сжатия.
+- `compressed_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Размер бэкапа после сжатия. Если бэкап не хранится в виде архива, это значение равно `uncompressed_size`.
+- `files_read` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Количество файлов, прочитанных во время операции восстановления.
+- `bytes_read` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Общий размер файлов, прочитанных во время операции восстановления.
 
 **Пример**
 

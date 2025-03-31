@@ -1,18 +1,22 @@
 ---
-title : PrettyJSONEachRow
-slug : /en/interfaces/formats/PrettyJSONEachRow
-keywords : [PrettyJSONEachRow]
+alias: ['PrettyJSONLines', 'PrettyNDJSON']
+description: 'Documentation for the PrettyJSONLines format'
+input_format: false
+keywords: ['PrettyJSONEachRow', 'PrettyJSONLines', 'PrettyNDJSON']
+output_format: true
+slug: /interfaces/formats/PrettyJSONEachRow
+title: 'PrettyJSONEachRow'
 ---
 
-## Description
+| Input | Output | Alias                             |
+|-------|--------|-----------------------------------|
+| ✗     | ✔      | `PrettyJSONLines`, `PrettyNDJSON` |
 
-Differs from JSONEachRow only in that JSON is pretty formatted with new line delimiters and 4 space indents. Suitable only for output.
+## Description {#description}
 
-Alias: `PrettyJSONLines`, `PrettyNDJSON`
+Differs from [JSONEachRow](./JSONEachRow.md) only in that JSON is pretty formatted with new line delimiters and 4 space indents.
 
-## Example Usage
-
-Example
+## Example Usage {#example-usage}
 
 ```json
 {
@@ -42,6 +46,6 @@ Example
 }
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 
 

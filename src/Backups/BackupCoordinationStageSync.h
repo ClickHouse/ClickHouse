@@ -2,6 +2,7 @@
 
 #include <Backups/BackupConcurrencyCheck.h>
 #include <Backups/WithRetries.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 
 namespace DB

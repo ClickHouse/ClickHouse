@@ -19,7 +19,7 @@ s3Cluster(cluster_name, source, [,access_key_id, secret_access_key [,session_tok
 -   `cluster_name` — имя кластера, используемое для создания набора адресов и параметров подключения к удаленным и локальным серверам.
 -   `source` — URL файла или нескольких файлов. Поддерживает следующие символы подстановки: `*`, `?`, `{'abc','def'}` и `{N..M}`, где `N`, `M` — числа, `abc`, `def` — строки. Подробнее смотрите в разделе [Символы подстановки](../../engines/table-engines/integrations/s3.md#wildcards-in-path).
 -   `access_key_id`, `secret_access_key` и `session_token` — ключи, указывающие на учетные данные для использования с точкой приема запроса. Необязательные параметры.
--   `format` — [формат](../../interfaces/formats.md#formats) файла.
+-   `format` — [формат](/sql-reference/formats) файла.
 -   `structure` — структура таблицы. Формат `'column1_name column1_type, column2_name column2_type, ...'`.
 
 **Возвращаемое значение**
@@ -31,13 +31,13 @@ s3Cluster(cluster_name, source, [,access_key_id, secret_access_key [,session_tok
 Вывод данных из всех файлов кластера `cluster_simple`:
 
 ``` sql
-SELECT * FROM s3Cluster('cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon);
+SELECT * FROM s3Cluster('cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'ClickHouse_Minio_P@ssw0rd', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon);
 ```
 
 Подсчет общего количества строк во всех файлах кластера `cluster_simple`:
 
 ``` sql
-SELECT count(*) FROM s3Cluster('cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))');
+SELECT count(*) FROM s3Cluster('cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'ClickHouse_Minio_P@ssw0rd', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))');
 ```
 
 :::danger Внимание

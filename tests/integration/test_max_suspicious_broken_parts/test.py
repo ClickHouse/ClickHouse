@@ -8,7 +8,10 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", stay_alive=True)
+node = cluster.add_instance(
+    "node",
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -20,20 +23,19 @@ def start_cluster():
         cluster.shutdown()
 
 
-def break_part(table, part_name):
+def break_part(data_path, part_name):
+
     node.exec_in_container(
         [
             "bash",
             "-c",
-            f"rm /var/lib/clickhouse/data/default/{table}/{part_name}/primary.cidx",
+            f"rm {data_path}/{part_name}/primary.cidx",
         ]
     )
 
 
-def remove_part(table, part_name):
-    node.exec_in_container(
-        ["bash", "-c", f"rm -r /var/lib/clickhouse/data/default/{table}/{part_name}"]
-    )
+def remove_part(data_path, part_name):
+    node.exec_in_container(["bash", "-c", f"rm -r {data_path}/{part_name}"])
 
 
 def get_count(table):
@@ -56,23 +58,27 @@ def check_table(table):
 
     assert get_count(table) == rows
 
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table}'"
+    ).strip()
+
     # break one part, and check that clickhouse will be alive
-    break_part(table, "0_1_1_0")
+    break_part(data_path, "0_1_1_0")
     rows -= per_part_rows
     detach_table(table)
     attach_table(table)
     assert get_count(table) == rows
 
     # break two parts, and check that clickhouse will not start
-    break_part(table, "1_2_2_0")
-    break_part(table, "2_3_3_0")
+    break_part(data_path, "1_2_2_0")
+    break_part(data_path, "2_3_3_0")
     rows -= per_part_rows * 2
     detach_table(table)
     with pytest.raises(QueryRuntimeException):
         attach_table(table)
 
     # now remove one part, and check
-    remove_part(table, "1_2_2_0")
+    remove_part(data_path, "1_2_2_0")
     attach_table(table)
     assert get_count(table) == rows
 

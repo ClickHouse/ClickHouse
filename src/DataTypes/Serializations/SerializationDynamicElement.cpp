@@ -26,6 +26,15 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
     bool read_from_shared_variant;
     ColumnPtr shared_variant;
+
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<DeserializeBinaryBulkStateDynamicElement>(*this);
+        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
+        new_state->variant_element_state = variant_element_state ? variant_element_state->clone() : nullptr;
+        return new_state;
+    }
 };
 
 void SerializationDynamicElement::enumerateStreams(
@@ -118,6 +127,7 @@ void SerializationDynamicElement::serializeBinaryBulkWithMultipleStreams(const I
 
 void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & result_column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -143,7 +153,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::DynamicData);
         dynamic_element_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(
-            result_column, limit, settings, dynamic_element_state->variant_element_state, cache);
+            result_column, rows_offset, limit, settings, dynamic_element_state->variant_element_state, cache);
         settings.path.pop_back();
     }
     /// Otherwise, read the shared variant column and extract requested type from it.
@@ -155,7 +165,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
             dynamic_element_state->shared_variant = makeNullable(ColumnDynamic::getSharedVariantDataType()->createColumn());
         size_t prev_size = result_column->size();
         dynamic_element_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(
-            dynamic_element_state->shared_variant, limit, settings, dynamic_element_state->variant_element_state, cache);
+            dynamic_element_state->shared_variant, rows_offset, limit, settings, dynamic_element_state->variant_element_state, cache);
         settings.path.pop_back();
 
         /// If we need to read a subcolumn from variant column, create an empty variant column, fill it and extract subcolumn.

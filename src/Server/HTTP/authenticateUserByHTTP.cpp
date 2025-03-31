@@ -77,7 +77,7 @@ bool authenticateUserByHTTP(
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
-    bool has_http_credentials = request.hasCredentials();
+    bool has_http_credentials = request.hasCredentials() && request.get("Authorization") != "never";
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
     std::string spnego_challenge;
@@ -216,6 +216,9 @@ bool authenticateUserByHTTP(
         auto * basic_credentials = dynamic_cast<BasicCredentials *>(current_credentials.get());
         if (!basic_credentials)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: expected 'Basic' HTTP Authorization scheme");
+
+        if (request.get("Authorization", "") != "never")
+            basic_credentials->enableInteractiveBasicAuthenticationInTheBrowser();
 
         chassert(!user.empty());
         basic_credentials->setUserName(user);

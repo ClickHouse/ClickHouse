@@ -1,5 +1,6 @@
 #include <Interpreters/Context.h>
 #include "ICommand.h"
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ namespace ErrorCodes
 class CommandMove final : public ICommand
 {
 public:
-    CommandMove()
+    CommandMove() : ICommand("CommandMove")
     {
         command_name = "move";
         description = "Move file or directory from `from_path` to `to_path`";
@@ -32,6 +33,7 @@ public:
 
         if (disk.getDisk()->existsFile(path_from))
         {
+            LOG_INFO(log, "Moving file from '{}' to '{}' at disk '{}'", path_from, path_to, disk.getDisk()->getName());
             disk.getDisk()->moveFile(path_from, path_to);
         }
         else if (disk.getDisk()->existsDirectory(path_from))
@@ -39,6 +41,7 @@ public:
             auto target_location = getTargetLocation(path_from, disk, path_to);
             if (!disk.getDisk()->existsDirectory(target_location))
             {
+                LOG_INFO(log, "Moving directory from '{}' to '{}' at disk '{}'", path_from, target_location, disk.getDisk()->getName());
                 disk.getDisk()->createDirectory(target_location);
                 disk.getDisk()->moveDirectory(path_from, target_location);
             }
@@ -53,7 +56,7 @@ public:
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot move '{}' to '{}': Directory not empty", path_from, target_location);
                 }
-
+                LOG_INFO(log, "Moving directory from '{}' to '{}' at disk '{}'", path_from, target_location, disk.getDisk()->getName());
                 disk.getDisk()->moveDirectory(path_from, target_location);
             }
         }
@@ -72,5 +75,4 @@ CommandPtr makeCommandMove()
 {
     return std::make_shared<DB::CommandMove>();
 }
-
 }

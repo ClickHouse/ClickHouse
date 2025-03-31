@@ -40,11 +40,6 @@ struct ServerSideEncryptionKMSConfig
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/client/RetryStrategy.h>
 
-namespace MockS3
-{
-    struct Client;
-}
-
 namespace DB::S3
 {
 
@@ -229,9 +224,10 @@ public:
     ThrottlerPtr getPutRequestThrottler() const { return client_configuration.put_request_throttler; }
     ThrottlerPtr getGetRequestThrottler() const { return client_configuration.get_request_throttler; }
 
-private:
-    friend struct ::MockS3::Client;
+    std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
 
+protected:
+    // visible for testing
     Client(size_t max_redirects_,
            ServerSideEncryptionKMSConfig sse_kms_config_,
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
@@ -239,6 +235,7 @@ private:
            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
            const ClientSettings & client_settings_);
 
+private:
     Client(
         const Client & other, const PocoHTTPClientConfiguration & client_configuration);
 
@@ -274,7 +271,6 @@ private:
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
     std::optional<Aws::S3::S3Error> updateURIForBucketForHead(const std::string & bucket) const;
 
-    std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;

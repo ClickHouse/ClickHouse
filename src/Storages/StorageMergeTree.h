@@ -64,10 +64,13 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    std::optional<UInt64> totalRows(const Settings &) const override;
+    std::optional<UInt64> totalRows(ContextPtr) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr) const override;
-    std::optional<UInt64> totalBytes(const Settings &) const override;
+    std::optional<UInt64> totalBytes(ContextPtr) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
+
+    UInt64 getNumberOnFlyDataMutations() const override;
+    UInt64 getNumberOnFlyMetadataMutations() const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -232,6 +235,10 @@ private:
     UInt32 getMaxLevelInBetween(const PartProperties & left, const PartProperties & right) const;
 
     size_t clearOldMutations(bool truncate = false);
+
+    /// Delete irrelevant parts from memory and disk.
+    /// If 'force' - don't wait for old_parts_lifetime.
+    size_t clearOldPartsFromFilesystem(bool force = false, bool with_pause_fail_point = false);
 
     // Partition helpers
     void dropPartNoWaitNoThrow(const String & part_name) override;

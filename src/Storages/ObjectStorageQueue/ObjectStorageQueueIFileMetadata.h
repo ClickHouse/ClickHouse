@@ -56,6 +56,7 @@ public:
         const std::string & failed_node_path_,
         FileStatusPtr file_status_,
         size_t max_loading_retries_,
+        std::atomic<size_t> & metadata_ref_count_,
         LoggerPtr log_);
 
     virtual ~ObjectStorageQueueIFileMetadata();
@@ -94,7 +95,7 @@ public:
         size_t create_processing_node_idx = 0;
         size_t set_processing_id_node_idx = 0;
     };
-    SetProcessingResponseIndexes prepareSetProcessingRequests(Coordination::Requests & requests);
+    std::optional<SetProcessingResponseIndexes> prepareSetProcessingRequests(Coordination::Requests & requests);
     void prepareResetProcessingRequests(Coordination::Requests & requests);
 
     /// Do some work after prepared requests to set file as Processed succeeded.
@@ -139,6 +140,7 @@ protected:
     const std::string node_name;
     const FileStatusPtr file_status;
     const size_t max_loading_retries;
+    const std::atomic<size_t> & metadata_ref_count;
 
     const std::string processing_node_path;
     const std::string processed_node_path;
