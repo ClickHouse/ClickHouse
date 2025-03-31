@@ -2,6 +2,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
+#include <Analyzer/IdentifierNode.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -33,12 +34,18 @@ SortNode::SortNode(QueryTreeNodePtr expression_,
     , collator(std::move(collator_))
     , with_fill(with_fill_)
 {
+    if (auto * identifier = expression_->as<IdentifierNode>())
+        column_name = identifier->getIdentifier().getFullName();
+
     children[sort_expression_child_index] = std::move(expression_);
 }
 
 void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "SORT id: " << format_state.getNodeId(this);
+
+    if (!column_name.empty())
+        buffer << ", column: " << column_name;
 
     buffer << ", sort_direction: " << toString(sort_direction);
     if (nulls_sort_direction)

@@ -293,6 +293,9 @@ public:
     /// Apply materialize() function to node. Result node has the same name.
     const Node & materializeNode(const Node & node, bool materialize_sparse = true);
 
+    /// Apply materialize() function to node and add alias.
+    const Node & materializeNodeWithAlias(const Node & node, const std::string & alias, bool materialize_sparse = true);
+
     enum class MatchColumnsMode : uint8_t
     {
         Position,
