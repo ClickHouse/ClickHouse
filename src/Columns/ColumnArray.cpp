@@ -494,7 +494,7 @@ size_t ColumnArray::capacity() const
     return getOffsets().capacity();
 }
 
-void ColumnArray::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnArray::prepareForSquashing(const Columns & source_columns)
 {
     size_t new_size = size();
     Columns source_data_columns;
@@ -506,8 +506,8 @@ void ColumnArray::prepareForSquashing(const Columns & source_columns, size_t fac
         source_data_columns.push_back(source_array_column.getDataPtr());
     }
 
-    getOffsets().reserve_exact(new_size * factor);
-    data->prepareForSquashing(source_data_columns, factor);
+    getOffsets().reserve_exact(new_size);
+    data->prepareForSquashing(source_data_columns);
 }
 
 void ColumnArray::shrinkToFit()

@@ -72,6 +72,7 @@ namespace Setting
     extern const SettingsUInt64 async_insert_max_query_number;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool async_insert_use_adaptive_busy_timeout;
+    extern const SettingsDouble async_insert_min_preallocate_factor;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsString insert_deduplication_token;
@@ -1073,7 +1074,8 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         format,
         std::move(on_error),
         data->size_in_bytes,
-        std::move(adding_defaults_transform));
+        std::move(adding_defaults_transform),
+        insert_context->getSettingsRef()[Setting::async_insert_min_preallocate_factor]);
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
 
     for (const auto & entry : data->entries)

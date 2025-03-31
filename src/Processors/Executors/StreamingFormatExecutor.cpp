@@ -1,3 +1,4 @@
+#include <Columns/ColumnNothing.h>
 #include <Columns/IColumn.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -19,7 +20,8 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     InputFormatPtr format_,
     ErrorCallback on_error_,
     size_t total_bytes_,
-    SimpleTransformPtr adding_defaults_transform_)
+    SimpleTransformPtr adding_defaults_transform_,
+    double min_preallocate_factor_)
     : header(header_)
     , format(std::move(format_))
     , on_error(std::move(on_error_))
@@ -28,6 +30,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     , result_columns(header.cloneEmptyColumns())
     , checkpoints(result_columns.size())
     , total_bytes(total_bytes_)
+    , min_preallocate_factor(min_preallocate_factor_)
 {
     connect(format->getPort(), port);
 
@@ -58,22 +61,23 @@ void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const C
 
     if (total_bytes && num_bytes)
     {
-        size_t factor = total_bytes / num_bytes;
-
-        const size_t min_factor_to_preallocate = 5; /// we expect many chunks - preallocation makes sense
-        if (factor >= min_factor_to_preallocate)
+        double factor = static_cast<double>(total_bytes) / num_bytes;
+        if (factor >= min_preallocate_factor)
         {
-            const auto & reference_columns = chunk.getColumns();
-
-            ++factor; /// a bit more space just in case
+            /// Generate some dummy columns whose size is the original columns size * factor. It's
+            /// ok to do this because prepareForSquashing only uses the size of reference_columns
+            /// and nothing else.
+            Columns reference_columns;
+            for (const auto & column : chunk.getColumns())
+                reference_columns.emplace_back(ColumnNothing::create(static_cast<size_t>(std::ceil(column->size() * factor))));
 
             /// assuming that all chunks have same nature, specifically
             /// similar raw data size/number of rows ratio
-            ///  use first one to predict
+            /// use first one to predict
             for (size_t i = 0; i < result_columns.size(); ++i)
             {
                 /// prepareForSquashing is used to reserve space, we don actually do squashing
-                result_columns[i]->prepareForSquashing({reference_columns[i]}, factor);
+                result_columns[i]->prepareForSquashing({reference_columns[i]});
             }
         }
     }
