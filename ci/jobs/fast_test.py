@@ -233,8 +233,8 @@ def main():
             Result.create_from(name=step_name, status=res, stopwatch=stop_watch_)
         )
         if not results[-1].is_ok():
-            attach_files.append(f"{temp_dir}/build/programs/clickhouse")
             attach_files += [
+                f"{temp_dir}/build/programs/clickhouse-stripped",
                 f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
                 f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
             ]
@@ -257,8 +257,8 @@ def main():
                 )
             )
         if not results[-1].is_ok():
-            attach_files.append(f"{temp_dir}/build/programs/clickhouse")
             attach_files += [
+                f"{temp_dir}/build/programs/clickhouse-stripped",
                 f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
                 f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
             ]
