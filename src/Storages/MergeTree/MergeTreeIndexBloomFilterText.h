@@ -9,8 +9,9 @@
 #include "Common/CacheBase.h"
 #include "Common/LRUResourceCache.h"
 
+#if USE_DATASKETCHES
 #include <frequent_items_sketch.hpp>
-
+#endif
 
 namespace DB
 {
@@ -90,7 +91,9 @@ public:
 
     /// This filters used only for two-level bloom filter.
     std::vector<std::shared_ptr<BloomFilter>> common_filters;
+#if USE_DATASKETCHES
     std::vector<datasketches::frequent_items_sketch<std::string>> hot_elements_sketch;
+#endif
     std::vector<std::unordered_set<std::string>> hot_elements;
 
     void serializeCommonState(WriteBuffer & ostr) const override;

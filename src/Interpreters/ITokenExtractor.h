@@ -6,7 +6,9 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/GinFilter.h>
 
+#if USE_DATASKETCHES
 #include <frequent_items_sketch.hpp>
+#endif
 
 namespace DB
 {
@@ -34,8 +36,10 @@ struct ITokenExtractor
     /// Updates Bloom filter from exact-match string filter value
     virtual void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
 
+#if USE_DATASKETCHES
     /// Updates Frequent data scketch from exact-match string filter value
     virtual void stringToSketch(const char * data, size_t length, datasketches::frequent_items_sketch<std::string> & sketch) const = 0;
+#endif
 
     /// Updates Bloom filter from substring-match string filter value.
     /// An `ITokenExtractor` implementation may decide to skip certain
@@ -182,7 +186,10 @@ struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtrac
 
     size_t getN() const { return n; }
 
+#if USE_DATASKETCHES
     void stringToSketch(const char * data, size_t length, datasketches::frequent_items_sketch<std::string> & sketch) const override;
+#endif
+
 private:
 
     size_t n;
@@ -203,8 +210,9 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
 
     void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
 
+#if USE_DATASKETCHES
     void stringToSketch(const char * data, size_t length, datasketches::frequent_items_sketch<std::string> & sketch) const override;
-
+#endif
 };
 
 }

@@ -99,8 +99,12 @@ MergeTreeIndexAggregatorBloomFilterText::MergeTreeIndexAggregatorBloomFilterText
 
     if (params_.mode == BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL)
     {
+#if USE_DATASKETCHES
         for (size_t i = 0; i < index_columns.size(); ++i)
             hot_elements_sketch.emplace_back(params_.num_hot_tokens);
+#else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Two level bloom filter should be compiled with datasketches-cpp");
+#endif
     }
 }
 
@@ -165,7 +169,11 @@ void MergeTreeIndexAggregatorBloomFilterText::preupdate(const Block & block, siz
         return;
 
     auto update_func = [&] (const char* data, size_t length, size_t column_index) {
+#if USE_DATASKETCHES
         token_extractor->stringToSketch(data, length, hot_elements_sketch[column_index]);
+#else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Two level bloom filter should be compiled with datasketches-cpp");
+#endif
     };
 
     updateBase(block, pos, limit, update_func);
@@ -198,10 +206,14 @@ void MergeTreeIndexAggregatorBloomFilterText::serializeCommonState(WriteBuffer &
         {
             if (common_filters[column_index]->isEmpty())
             {
+#if USE_DATASKETCHES
                 for (const auto & sketch_key : hot_elements_sketch[column_index].get_frequent_items(datasketches::frequent_items_error_type::NO_FALSE_NEGATIVES))
                 {
                     common_filters[column_index]->add(sketch_key.get_item().data(), sketch_key.get_item().size());
                 }
+#else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Two level bloom filter should be compiled with datasketches-cpp");
+#endif
             }
         }
     }
