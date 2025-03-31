@@ -10,8 +10,8 @@ SET parallel_replicas_local_plan=1; -- this setting is randomized, set it explic
 DROP TABLE IF EXISTS tab_compact;
 DROP TABLE IF EXISTS tab_wide;
 
-CREATE TABLE tab_compact(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1e9, min_rows_for_wide_part = 1e9, index_granularity = 1000;
-CREATE TABLE tab_wide   (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0,   min_rows_for_wide_part = 0, index_granularity = 1000;
+CREATE TABLE tab_compact(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 3)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1e9, min_rows_for_wide_part = 1e9, index_granularity = 1000;
+CREATE TABLE tab_wide   (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 3)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0,   min_rows_for_wide_part = 0, index_granularity = 1000;
 
 SELECT 'Check part formats';
 
