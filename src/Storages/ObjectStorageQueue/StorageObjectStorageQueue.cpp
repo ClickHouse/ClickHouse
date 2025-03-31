@@ -624,8 +624,9 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < threads; ++i)
         {
+            size_t processor_id = i * (streaming_tasks_index + 1);
             auto source = createSource(
-                /*processor_id=*/ i * streaming_tasks_index,
+                processor_id,
                 read_from_format_info,
                 processing_progress,
                 file_iterator,
