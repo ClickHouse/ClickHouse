@@ -190,7 +190,7 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
 }
 
 MergeTreeConditionFullText::MergeTreeConditionFullText(
-    const ActionsDAG * filter_actions_dag,
+    const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & index_sample_block,
     const GinFilterParameters & params_,
@@ -199,7 +199,7 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
     , params(params_)
     , token_extractor(token_extactor_)
 {
-    if (!filter_actions_dag)
+    if (!predicate)
     {
         rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
         return;
@@ -207,7 +207,7 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
 
     rpn = std::move(
             RPNBuilder<RPNElement>(
-                    filter_actions_dag->getOutputs().at(0), context_,
+                    predicate, context_,
                     [&](const RPNBuilderTreeNode & node, RPNElement & out)
                     {
                         return this->traverseAtomAST(node, out);
@@ -772,9 +772,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregatorForPart
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
-        const ActionsDAG * filter_actions_dag, ContextPtr context) const
+    const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionFullText>(filter_actions_dag, context, index.sample_block, params, token_extractor.get());
+    return std::make_shared<MergeTreeConditionFullText>(predicate, context, index.sample_block, params, token_extractor.get());
 };
 
 MergeTreeIndexPtr fullTextIndexCreator(

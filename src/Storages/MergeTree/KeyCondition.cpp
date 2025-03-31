@@ -727,6 +727,19 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     return *res;
 }
 
+static ActionsDAG cloneASTWithInversionPushDown(const ActionsDAG::Node * predicate, const ContextPtr & context)
+{
+    ActionsDAG res;
+
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
+
+    predicate = &DB::cloneASTWithInversionPushDown(*predicate, res, to_inverted, context, false);
+
+    res.getOutputs() = {predicate};
+
+    return res;
+}
+
 const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyCondition::space_filling_curve_name_to_type {
         {"mortonEncode", SpaceFillingCurveType::Morton},
         {"hilbertEncode", SpaceFillingCurveType::Hilbert}
@@ -756,26 +769,6 @@ static bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & conditio
     }
 
     return true;
-}
-
-ActionsDAG KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
-{
-    ActionsDAG res;
-
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
-
-    for (auto & node : nodes)
-        node = &DB::cloneASTWithInversionPushDown(*node, res, to_inverted, context, false);
-
-    if (nodes.size() > 1)
-    {
-        auto function_builder = FunctionFactory::instance().get("and", context);
-        nodes = {&res.addFunction(function_builder, std::move(nodes), "")};
-    }
-
-    res.getOutputs().swap(nodes);
-
-    return res;
 }
 
 /** Calculate expressions, that depend only on constants.
@@ -846,8 +839,27 @@ void KeyCondition::getAllSpaceFillingCurves()
     }
 }
 
+ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context)
+{
+    if (!predicate_)
+        return;
+
+    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
+    * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
+    * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
+    * when parsing the AST into internal RPN representation.
+    * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
+    * are pushed down and applied (when possible) to leaf nodes.
+    */
+    dag = cloneASTWithInversionPushDown(predicate_, context);
+    assert(inverted_dag.getOutputs().size() == 1);
+
+    predicate = dag->getOutputs()[0];
+}
+
+
 KeyCondition::KeyCondition(
-    const ActionsDAG * filter_dag,
+    const ActionsDAGWithInversionPushDown & filter_dag,
     ContextPtr context,
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
@@ -872,7 +884,7 @@ KeyCondition::KeyCondition(
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves();
 
-    if (!filter_dag)
+    if (!filter_dag.predicate)
     {
         has_filter = false;
         relaxed = true;
@@ -882,19 +894,7 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
-    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
-      * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
-      * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
-      * when parsing the AST into internal RPN representation.
-      * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
-      * are pushed down and applied (when possible) to leaf nodes.
-      */
-    auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
-    assert(inverted_dag.getOutputs().size() == 1);
-
-    const auto * inverted_dag_filter_node = inverted_dag.getOutputs()[0];
-
-    RPNBuilder<RPNElement> builder(inverted_dag_filter_node, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
+    RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
         return extractAtomFromTree(node, out);
     });

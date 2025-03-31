@@ -146,7 +146,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
 }
 
 MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
-    const ActionsDAG * filter_actions_dag,
+    const ActionsDAG::Node * predicate,
     ContextPtr context,
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
@@ -156,14 +156,14 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     , params(params_)
     , token_extractor(token_extactor_)
 {
-    if (!filter_actions_dag)
+    if (!predicate)
     {
         rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
 
     RPNBuilder<RPNElement> builder(
-        filter_actions_dag->getOutputs().at(0),
+        predicate,
         context,
         [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
     rpn = std::move(builder).extractRPN();
@@ -752,9 +752,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
-        const ActionsDAG * filter_dag, ContextPtr context) const
+        const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionBloomFilterText>(filter_dag, context, index.sample_block, params, token_extractor.get());
+    return std::make_shared<MergeTreeConditionBloomFilterText>(predicate, context, index.sample_block, params, token_extractor.get());
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(
