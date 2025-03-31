@@ -201,13 +201,13 @@ public:
     PODArray<UInt32> times;
     PODArray<UInt16> dates;
     std::vector<std::string> hostnames;
-    size_t current_hour = 0;
+    Int32 current_hour = -1;
     Int64 max_second_in_hour = -1;
     Int64 min_second_in_hour = 3600;
 
     std::unordered_map<size_t, PODArray<Int64>> buffer;
 
-    std::vector<Chunk> ready_hours;
+    std::deque<Chunk> ready_hours;
 
     bool need_hostname = false;
     bool need_date = false;
@@ -255,8 +255,8 @@ public:
 
     Chunk generate() override
     {
-        auto result = std::move(ready_hours.back());
-        ready_hours.pop_back();
+        auto result = std::move(ready_hours.front());
+        ready_hours.pop_front();
         return result;
     }
 
@@ -293,8 +293,11 @@ public:
                     auto column = ColumnDateTime::create();
                     column->reserve(rows_count);
                     for (size_t i = min_second_in_hour; i < static_cast<size_t>(max_second_in_hour + 1); ++i)
+                    {
                         if (filter[i])
                             column->insertValue(times[i]);
+                    }
+
                     rows_count = column->size();
                     output_columns.push_back(std::move(column));
                 }
@@ -395,14 +398,14 @@ public:
         const auto & hostname_column = checkAndGetColumn<ColumnLowCardinality>(*columns[HOSTNAME_POSITION]);
         const auto & hour_column = checkAndGetColumn<ColumnDateTime>(*columns[EVENT_TIME_HOUR_POSITION]);
 
-        if (rows_count && current_hour == 0)
+        if (rows_count && current_hour == -1)
         {
             current_hour = hour_column.getInt(0);
         }
 
         for (size_t i = 0; i < rows_count; ++i)
         {
-            size_t hour = hour_column.getInt(i);
+            Int32 hour = hour_column.getInt(i);
             if (hour != current_hour)
             {
                 flushToChunk();
