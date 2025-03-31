@@ -356,7 +356,7 @@ void MergeTreeReaderWide::deserializePrefix(
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
             /// This stream could be prefetched in prefetchBeginOfRange, but here we
             /// have to seek the stream to the start of file to deserialize the prefix.
-            /// If we read not from the first mark, we should remove this stream from
+            /// If we do not read from the first mark, we should remove this stream from
             /// prefetched_streams to prefetch it again starting from the current mark
             /// after prefix is deserialized.
             if (stream_name && from_mark != 0)
