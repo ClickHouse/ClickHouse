@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: Depends on AWS
+
 SELECT * FROM icebergS3(s3_conn, filename='merged_several_tables_test', SETTINGS iceberg_metadata_table_uuid = 'ea8d1178-7756-4b89-b21f-00e9f31fe03e') ORDER BY id;
 SELECT * FROM icebergS3(s3_conn, filename='merged_several_tables_test', SETTINGS iceberg_metadata_table_uuid = 'A90EED4CF74B4E5BB630096FB9D09021') ORDER BY id;
 SELECT * FROM icebergS3(s3_conn, filename='merged_several_tables_test', SETTINGS iceberg_metadata_table_uuid = '6f6f6407_c6A5465f_A808ea8900_e35a38') ORDER BY id;
