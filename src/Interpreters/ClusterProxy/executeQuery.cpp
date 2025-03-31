@@ -483,9 +483,60 @@ void executeQuery(
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
+bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & context)
+{
+    auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+
+    InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
+    auto & plan = interpreter.getQueryPlan();
+
+    auto is_reading_with_parallel_replicas = [](const QueryPlan::Node * node) -> bool
+    {
+        struct Frame
+        {
+            const QueryPlan::Node * node = nullptr;
+            size_t next_child = 0;
+        };
+
+        using Stack = std::vector<Frame>;
+
+        Stack stack;
+        stack.push_back(Frame{.node = node});
+
+        while (!stack.empty())
+        {
+            auto & frame = stack.back();
+
+            if (frame.node->children.empty())
+            {
+                const auto * step = frame.node->step.get();
+                if (typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
+                    return true;
+            }
+
+            /// Traverse all children first.
+            if (frame.next_child < frame.node->children.size())
+            {
+                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+                ++frame.next_child;
+                stack.push_back(next_frame);
+                continue;
+            }
+
+            stack.pop_back();
+        }
+
+        return false;
+    };
+
+    return is_reading_with_parallel_replicas(plan.getRootNode());
+}
 
 QueryPipeline executeInsertSelectWithParallelReplicas(const ASTInsertQuery & query_ast, ContextPtr context)
 {
+    if (!isSuitableForParallelReplicas(query_ast.select, context))
+        return {};
+
     auto logger = getLogger("executeInsertSelectWithParallelReplicas");
     LOG_DEBUG(logger, "Executing query {} with parallel replicas", query_ast.formatForLogging());
 
