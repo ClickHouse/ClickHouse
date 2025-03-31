@@ -2879,6 +2879,21 @@ void ClientBase::applySettingsFromServerIfNeeded()
     SettingsChanges changes_to_apply;
     for (const SettingChange & change : settings_from_server)
     {
+        /// ClientBase looks at this setting both before and after connecting to server
+        /// (first in analyzeMultiQueryText, then in processParsedSingleQuery), and the two values
+        /// have to match. So we can't just apply it here.
+        /// So we get slightly different behavior:
+        ///  * If async_insert=1 is specified in the query, client sends the full INSERT query together
+        ///    with VALUES to the server all at once.
+        ///  * If async_insert=1 is specified in the user profile but not in the query, client sends
+        ///    the VALUES in a separate Data packet, with an extra roundtrip to get table schema in
+        ///    TableColumns server packet.
+        /// (The server does asynchronous insert in both cases.)
+        /// It's possible to refactor ClientBase to check this setting only after connecting to
+        /// server, making behavior the same in these two cases.
+        if (change.name == "async_insert")
+            continue;
+
         /// Apply settings received from server with lower priority than settings changed from
         /// command line or query.
         if (!settings.isChanged(change.name))
