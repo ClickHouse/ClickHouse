@@ -223,15 +223,10 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     SipHash hash;
     ast->updateTreeHash(hash, /*ignore_aliases=*/ false);
 
-    auto h1 = getSipHash128AsPair(hash);
-    LOG_TRACE(getLogger("QueryCache"), "only ast hash: {} {}", h1.high64, h1.low64);
     /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different
     /// tables (issue #64136)
     hash.update(current_database);
 
-    auto h2 = getSipHash128AsPair(hash);
-    LOG_TRACE(getLogger("QueryCache"), "ast db hash: {} {}", h2.high64, h2.low64);
-    
     /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
     /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.
     ///       Therefore, collect and sort the settings first, then hash them.
@@ -246,14 +241,11 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
     for (const auto & setting : changed_settings_sorted)
     {
-        LOG_TRACE(getLogger("QueryCache"), "changed setting: {} {}", setting.first, setting.second);
         hash.update(setting.first);
         hash.update(setting.second);
     }
 
-    auto h = getSipHash128AsPair(hash);
-    LOG_TRACE(getLogger("QueryCache"), "hash: {} {}", h.high64, h.low64);
-    return h;
+    return getSipHash128AsPair(hash);
 }
 
 String queryStringFromAST(ASTPtr ast)
@@ -401,8 +393,6 @@ void QueryCache::Writer::buffer(Chunk && chunk, ChunkType chunk_type)
 
 void QueryCache::Writer::finalizeWrite()
 {
-    LOG_TRACE(logger, "Finalize write for query {}", doubleQuoteString(key.query_string));
-
     if (skip_insert)
         return;
 
