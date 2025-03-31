@@ -37,6 +37,10 @@ class Info:
         return self.env.WORKFLOW_NAME
 
     @property
+    def job_name(self):
+        return self.env.JOB_NAME
+
+    @property
     def pr_body(self):
         return self.env.PR_BODY
 
@@ -95,6 +99,14 @@ class Info:
     @property
     def instance_type(self):
         return self.env.INSTANCE_TYPE
+
+    @property
+    def is_merge_queue_event(self):
+        return self.env.EVENT_TYPE == "merge_group"
+
+    @property
+    def is_push_event(self):
+        return self.env.EVENT_TYPE == "push"
 
     @property
     def instance_lifecycle(self):
