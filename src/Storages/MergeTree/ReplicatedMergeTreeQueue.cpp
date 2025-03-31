@@ -2437,7 +2437,7 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "SYSTEM SYNC REPLICA FROM '{}' failed: replica does not exist."
+                        "SYSTEM SYNC REPLICA FROM '{}' failed: replica does not exist. "
                         "Available replicas at '{}/replicas': {}",
                         requested_replica,
                         zookeeper_path,
