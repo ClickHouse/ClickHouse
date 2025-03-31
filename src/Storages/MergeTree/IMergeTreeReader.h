@@ -138,4 +138,21 @@ private:
     VirtualFields virtual_fields;
 };
 
+using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+using VirtualFields = std::unordered_map<String, Field>;
+using ValueSizeMap = std::map<std::string, double>;
+
+MergeTreeReaderPtr createMergeTreeReader(
+    const MergeTreeDataPartInfoForReaderPtr & read_info,
+    const NamesAndTypesList & columns,
+    const StorageSnapshotPtr & storage_snapshot,
+    const MarkRanges & mark_ranges,
+    const VirtualFields & virtual_fields,
+    UncompressedCache * uncompressed_cache,
+    MarkCache * mark_cache,
+    DeserializationPrefixesCache * deserialization_prefixes_cache,
+    const MergeTreeReaderSettings & reader_settings,
+    const ValueSizeMap & avg_value_size_hints,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback);
+
 }
