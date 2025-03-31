@@ -381,7 +381,7 @@ TEST_F(FileCacheTest, LRUPolicy)
     const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
 
 
-    const auto user = FileCache::getCommonUser();
+    const auto & user = FileCache::getCommonUser();
     {
         std::cerr << "Step 1\n";
         auto cache = DB::FileCache("1", settings);
@@ -839,7 +839,7 @@ TEST_F(FileCacheTest, writeBuffer)
 
     FileCache cache("6", settings);
     cache.initialize();
-    const auto user = FileCache::getCommonUser();
+    const auto & user = FileCache::getCommonUser();
 
     auto write_to_cache = [&, this](const String & key, const Strings & data, bool flush, ReadBufferPtr * out_read_buffer = nullptr)
     {
@@ -973,7 +973,7 @@ try
     DB::FileCache file_cache("7", settings);
     file_cache.initialize();
 
-    const auto user = FileCache::getCommonUser();
+    const auto & user = FileCache::getCommonUser();
     auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(&file_cache, TemporaryDataOnDiskSettings{});
 
     auto some_data_holder = file_cache.getOrSet(FileCacheKey::fromPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{}, 0, user);
@@ -1129,7 +1129,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     cache->initialize();
 
     auto key = DB::FileCacheKey::fromPath(file_path);
-    const auto user = FileCache::getCommonUser();
+    const auto & user = FileCache::getCommonUser();
 
     {
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
@@ -1241,7 +1241,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
 
     const size_t file_size = -1; // the value doesn't really matter because boundary_alignment == 1.
     size_t file_cache_name = 0;
-    const auto user = FileCache::getCommonUser();
+    const auto & user = FileCache::getCommonUser();
 
     {
         auto cache = DB::FileCache(std::to_string(++file_cache_name), settings);

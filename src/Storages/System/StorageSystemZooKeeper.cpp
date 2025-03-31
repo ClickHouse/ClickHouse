@@ -620,7 +620,7 @@ Chunk SystemZooKeeperSource::generate()
                 // Remove nodes that do not match specified prefix
                 std::erase_if(nodes, [&task] (const String & node)
                 {
-                    return (task.path_part + '/' + node).substr(0, task.prefix.size()) != task.prefix;
+                    return (task.path_part + '/' + node).substr(0, task.prefix.size()) != task.prefix;  // NOLINT(modernize-use-starts-ends-with)
                 });
             }
 
