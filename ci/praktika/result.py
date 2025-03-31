@@ -536,7 +536,9 @@ class _ResultS3:
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
         if clean:
             S3.delete(s3_path)
-        url = S3.copy_file_to_s3(s3_path=s3_path, local_path=result.file_name())
+        url = S3.copy_file_to_s3(
+            s3_path=s3_path, local_path=result.file_name(), text=True
+        )
         return url
 
     @classmethod

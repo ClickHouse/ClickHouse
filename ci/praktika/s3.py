@@ -112,27 +112,91 @@ class S3:
         return
 
     @classmethod
-    def copy_file_to_s3(cls, s3_path, local_path, text=False, with_rename=False):
-        assert Path(local_path).exists(), f"Path [{local_path}] does not exist"
-        assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
-        assert Path(
-            local_path
-        ).is_file(), f"Path [{local_path}] is not file. Only files are supported"
-        file_name = Path(local_path).name
-        s3_full_path = s3_path
-        if not s3_full_path.endswith(file_name) and not with_rename:
-            s3_full_path = f"{s3_path}/{Path(local_path).name}"
-        cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
+    def copy_file_to_s3(
+        cls, s3_path, local_path, text=False, with_rename=False, no_compression=False
+    ):
+        """
+        Upload a file to S3.
+
+        :param s3_path: Target S3 path (including filename if with_rename=True)
+        :param local_path: Local file path to upload
+        :param text: If True, sets content-type to text/plain (and possibly compresses)
+        :param with_rename: If True, S3 file name is taken from s3_path, not local_path
+        :param no_compression: If True, disables auto-compression for text files
+        :return: Public URL to the uploaded file
+        """
+        local_path = Path(local_path)
+        assert local_path.exists(), f"Local path [{local_path}] does not exist"
+        assert local_path.is_file(), f"Local path [{local_path}] is not a file"
+
+        if not s3_path or not isinstance(s3_path, str):
+            raise ValueError(f"Invalid S3 path: {s3_path}")
+
+        destination_file_name = Path(s3_path).name if with_rename else local_path.name
+        if with_rename:
+            s3_base_path = str(Path(s3_path).parent)
+        else:
+            s3_base_path = s3_path.rstrip("/")
+
+        # Handle text compression
+        final_path = local_path
+        if text and not no_compression:
+            file_size_mb = local_path.stat().st_size / (1024 * 1024)
+            if file_size_mb > 1:
+                print(f"Note: compressing [{local_path}]")
+
+                # Compress file -> returns new path (e.g. file_1.txt.zst)
+                compressed_path = cls.compress_file(local_path)
+
+                # Rename compressed file to desired name
+                compressed_ext = Path(compressed_path).suffix  # .zst or .gz
+                compressed_target_path = local_path.with_name(
+                    destination_file_name + compressed_ext
+                )
+                if compressed_path != compressed_target_path:
+                    compressed_path.rename(compressed_target_path)
+                    compressed_path.unlink()
+
+                final_path = compressed_target_path
+                if (
+                    Settings.COMPRESS_THRESHOLD_MB
+                    and final_path.stat().st_size / (1024 * 1024)
+                    > Settings.COMPRESS_THRESHOLD_MB
+                ):
+                    print(
+                        f"NOTE: File exceeds compression threshold. Uploading as binary"
+                    )
+                    destination_file_name = final_path.name
+                    text = False
+
+        # Final S3 path includes file name
+        s3_full_path = f"{s3_base_path.rstrip('/')}/{destination_file_name}"
+
+        # Build AWS CLI command
+        cmd = f"aws s3 cp {final_path} s3://{s3_full_path}"
         if text:
             cmd += " --content-type text/plain"
+            if final_path.suffix == ".zst":
+                cmd += " --content-encoding zstd"
+            elif final_path.suffix == ".gz":
+                cmd += " --content-encoding gzip"
+
+        # Execute upload
         res = cls.run_command_with_retries(cmd)
         if not res:
-            raise RuntimeError()
-        StorageUsage.add_uploaded(local_path)
-        bucket = s3_path.split("/")[0]
-        endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
-        assert endpoint
-        return quote(f"https://{s3_full_path}".replace(bucket, endpoint), safe=":/?&=")
+            raise RuntimeError(
+                f"Failed to upload file {final_path} to s3://{s3_full_path}"
+            )
+
+        StorageUsage.add_uploaded(str(final_path))
+
+        # Convert S3 path to public URL
+        bucket = s3_full_path.split("/")[0]
+        endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT.get(bucket)
+        assert endpoint, f"No HTTP endpoint configured for bucket: {bucket}"
+
+        url = f"https://{s3_full_path}".replace(bucket, endpoint)
+        return quote(url, safe=":/?&=")
 
     @classmethod
     def put(cls, s3_path, local_path, text=False, metadata=None, if_none_matched=False):
@@ -289,25 +353,26 @@ class S3:
     def _upload_file_to_s3(
         cls, local_file_path, upload_to_s3: bool, text: bool = False, s3_subprefix=""
     ) -> str:
-        if upload_to_s3:
-            env = _Environment.get()
-            s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
-            if s3_subprefix:
-                s3_subprefix.removeprefix("/").removesuffix("/")
-                s3_path += f"/{s3_subprefix}"
-            if text and Settings.COMPRESS_THRESHOLD_MB > 0:
-                file_size_mb = os.path.getsize(local_file_path) / (1024 * 1024)
-                if file_size_mb > Settings.COMPRESS_THRESHOLD_MB:
-                    print(
-                        f"NOTE: File [{local_file_path}] exceeds threshold [Settings.COMPRESS_THRESHOLD_MB:{Settings.COMPRESS_THRESHOLD_MB}] - compress"
-                    )
-                    text = False
-                    local_file_path = cls.compress_file(local_file_path)
-            html_link = S3.copy_file_to_s3(
-                s3_path=s3_path, local_path=local_file_path, text=text
-            )
-            return html_link
-        return f"file://{Path(local_file_path).absolute()}"
+        local_file_path = Path(local_file_path)
+
+        if not upload_to_s3:
+            return f"file://{local_file_path.absolute()}"
+
+        env = _Environment.get()
+        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
+
+        # Sanitize subprefix
+        if s3_subprefix:
+            s3_subprefix = s3_subprefix.lstrip("/").rstrip("/")
+            s3_path += f"/{s3_subprefix}"
+
+        html_link = S3.copy_file_to_s3(
+            s3_path=s3_path,
+            local_path=local_file_path,
+            text=text,
+            with_rename=True,
+        )
+        return html_link
 
     @classmethod
     def _dump_urls(cls, s3_path):
