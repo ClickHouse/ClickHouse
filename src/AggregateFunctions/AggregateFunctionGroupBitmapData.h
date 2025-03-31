@@ -605,7 +605,7 @@ public:
         {
             if (small.empty())
             {
-                if (sizeof(T) >= 8)
+                if constexpr (sizeof(T) >= 8)
                     return std::numeric_limits<UInt64>::max();
                 return std::numeric_limits<UInt32>::max();
             }
