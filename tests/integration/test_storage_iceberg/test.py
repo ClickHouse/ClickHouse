@@ -2446,7 +2446,7 @@ def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
     )
 
 
-@pytest.mark.parametrize("storage_type", ["s3"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure"])
 def test_metadata_cache(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -2477,9 +2477,15 @@ def test_metadata_cache(started_cluster, storage_type):
 
     instance.query("SYSTEM FLUSH LOGS")
 
-    assert 10 < int(
+    assert 0 < int(
         instance.query(
-            f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            f"SELECT ProfileEvents['IcebergMetadataFilesCacheMisses'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
+    assert 0 <= int(
+        instance.query(
+            f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
 
@@ -2491,9 +2497,15 @@ def test_metadata_cache(started_cluster, storage_type):
 
     instance.query("SYSTEM FLUSH LOGS")
 
-    assert 10 == int(
+    assert 0 == int(
         instance.query(
-            f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            f"SELECT ProfileEvents['IcebergMetadataFilesCacheMisses'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
+    assert 0 < int(
+        instance.query(
+            f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
 
@@ -2505,8 +2517,6 @@ def test_metadata_cache(started_cluster, storage_type):
     )
 
     instance.query("SYSTEM FLUSH LOGS")
-    assert 10 < int(
-        instance.query(
-            f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'",
+    assert "0\t0\n" == instance.query(
+            f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'], ProfileEvents['IcebergMetadataFilesCacheMisses'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'",
         )
-    )
