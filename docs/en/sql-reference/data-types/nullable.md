@@ -32,7 +32,7 @@ It is possible to find `NULL` values in a column by using `null` subcolumn witho
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
@@ -42,7 +42,7 @@ SELECT n.null FROM nullable;
 
 Result:
 
-``` text
+```text
 ┌─n.null─┐
 │      0 │
 │      1 │
@@ -53,19 +53,19 @@ Result:
 
 ## Usage Example {#usage-example}
 
-``` sql
+```sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog
 ```
 
-``` sql
+```sql
 INSERT INTO t_null VALUES (1, NULL), (2, 3)
 ```
 
-``` sql
+```sql
 SELECT x + y FROM t_null
 ```
 
-``` text
+```text
 ┌─plus(x, y)─┐
 │       ᴺᵁᴸᴸ │
 │          5 │

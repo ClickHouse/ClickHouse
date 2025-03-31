@@ -138,7 +138,7 @@ Additional endpoints can be defined by referencing any module and omitting the
 `<type>` tag. For example, we can define `another_http` endpoint for the 
 `plain_http` module as follows:
 
-``` xml
+```xml
 <protocols>
 
   <plain_http>

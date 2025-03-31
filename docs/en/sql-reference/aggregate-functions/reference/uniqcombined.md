@@ -9,7 +9,7 @@ title: 'uniqCombined'
 
 Calculates the approximate number of different argument values.
 
-``` sql
+```sql
 uniqCombined(HLL_precision)(x[, ...])
 ```
 

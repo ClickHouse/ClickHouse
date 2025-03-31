@@ -16,7 +16,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 We strongly recommend using `quantileExactWeightedInterpolated` instead of `quantileInterpolatedWeighted` because `quantileExactWeightedInterpolated` is more accurate than `quantileInterpolatedWeighted`. Here is an example:
 
-``` sql
+```sql
 SELECT
     quantileExactWeightedInterpolated(0.99)(number, 1),
     quantile(0.99)(number),
@@ -31,7 +31,7 @@ FROM numbers(9)
 
 **Syntax**
 
-``` sql
+```sql
 quantileExactWeightedInterpolated(level)(expr, weight)
 ```
 
@@ -57,7 +57,7 @@ Type:
 
 Input table:
 
-``` text
+```text
 ┌─n─┬─val─┐
 │ 0 │   3 │
 │ 1 │   2 │
@@ -68,7 +68,7 @@ Input table:
 
 Result:
 
-``` text
+```text
 ┌─quantileExactWeightedInterpolated(n, val)─┐
 │                                       1.5 │
 └───────────────────────────────────────────┘

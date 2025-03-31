@@ -18,7 +18,7 @@ The date value is stored without the time zone.
 
 Creating a table with a `Date`-type column and inserting data into it:
 
-``` sql
+```sql
 CREATE TABLE dt
 (
     `timestamp` Date,
@@ -27,7 +27,7 @@ CREATE TABLE dt
 ENGINE = TinyLog;
 ```
 
-``` sql
+```sql
 -- Parse Date
 -- - from string,
 -- - from 'small' integer interpreted as number of days since 1970-01-01, and
@@ -37,7 +37,7 @@ INSERT INTO dt VALUES ('2019-01-01', 1), (17897, 2), (1546300800, 3);
 SELECT * FROM dt;
 ```
 
-``` text
+```text
 ┌──timestamp─┬─event_id─┐
 │ 2019-01-01 │        1 │
 │ 2019-01-01 │        2 │
