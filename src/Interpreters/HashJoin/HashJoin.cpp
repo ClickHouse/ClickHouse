@@ -30,6 +30,7 @@
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
+#include <Core/Joins.h>
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
@@ -1105,7 +1106,7 @@ void HashJoin::joinBlock(ScatteredBlock & block, ScatteredBlock & remaining_bloc
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
-    chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
+    chassert(kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full);
 
     for (const auto & onexpr : table_join->getClauses())
     {

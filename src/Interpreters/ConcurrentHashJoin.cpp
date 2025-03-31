@@ -409,10 +409,31 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
 }
 
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
-        const Block & /*left_sample_block*/, const Block & /*result_sample_block*/, UInt64 /*max_block_size*/) const
+    const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
+
+    if (table_join->kind() == JoinKind::Right || table_join->kind() == JoinKind::Full)
+    {
+        // We'll read unmatched rows only from slot 0
+        // ignoring the other concurrency slots entirely
+        bool flag_per_row = needUsedFlagsForPerLeftTableRow(table_join);
+
+        // Create our single-slot filler
+        auto filler = std::make_unique<NotJoinedSingleSlot>(0, *this, max_block_size, flag_per_row);
+
+        // figure out how many "build side" columns
+        size_t left_columns_count = left_sample_block.columns();
+        if (canRemoveColumnsFromLeftBlock())
+            left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
+
+        return std::make_unique<NotJoinedBlocks>(
+            std::move(filler),
+            result_sample_block,
+            left_columns_count,
+            *table_join);
+    }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}",
                     table_join->kind(), table_join->strictness());
