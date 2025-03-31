@@ -33,15 +33,15 @@ YTsaurusClient::YTsaurusClient(ContextPtr context_, const ConnectionInfo & conne
 }
 
 
-DB::ReadBufferPtr YTsaurusClient::readTable(const String & path)
+DB::ReadBufferPtr YTsaurusClient::readTable(const String & cypress_path)
 {
-    YTsaurusQueryPtr read_table_query(new YTsaurusReadTableQuery(path));
+    YTsaurusQueryPtr read_table_query(new YTsaurusReadTableQuery(cypress_path));
     return execQuery(read_table_query);
 }
 
-YTsaurusNodeType YTsaurusClient::getNodeType(const String & path)
+YTsaurusNodeType YTsaurusClient::getNodeType(const String & cypress_path)
 {
-    String attributes_path = path + "/@";
+    String attributes_path = cypress_path + "/@";
     YTsaurusQueryPtr get_query(new YTsaurusGetQuery(attributes_path));
     auto buf = execQuery(get_query);
 
@@ -73,16 +73,16 @@ YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
     }
 }
 
-DB::ReadBufferPtr YTsaurusClient::selectRows(const String & path)
+DB::ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path)
 {
-    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(path));
+    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path));
     return execQuery(select_rows_query);
 }
 
 
 DB::ReadBufferPtr YTsaurusClient::execQuery(const YTsaurusQueryPtr query)
 {
-    Poco::URI uri(connection_info.base_uri.c_str());
+    Poco::URI uri(connection_info.http_proxy_url.c_str());
     uri.setPath(fmt::format("/api/{}/{}", connection_info.api_version, query->getQueryName()));
 
     for (const auto & query_param : query->getQueryParameters())
@@ -92,7 +92,7 @@ DB::ReadBufferPtr YTsaurusClient::execQuery(const YTsaurusQueryPtr query)
 
     DB::HTTPHeaderEntries http_headers{
         {"Accept", "application/json"},
-        {"Authorization", fmt::format("OAuth {}", connection_info.auth_token)},
+        {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
     };
 
     LOG_TRACE(log, "URI {} , query type {}", uri.toString(), query->getQueryName());
