@@ -1,6 +1,6 @@
 ---
 description: 'Documentation for Exact and Approximate Nearest Neighbor Search'
-keywords: ['vector similarity search', 'ann', 'indices', 'index', 'nearest neighbor']
+keywords: ['vector similarity search', 'ann', 'knn', 'hnsw', 'indices', 'index', 'nearest neighbor']
 sidebar_label: 'Exact and Approximate Nearest Neighbor Search'
 slug: /engines/table-engines/mergetree-family/annindexes
 title: 'Exact and Approximate Nearest Neighbor Search'
@@ -227,7 +227,7 @@ To enforce index usage, you can run the SELECT query with setting [force_data_sk
 Users may optionally specify a `WHERE` clause with additional filter conditions in SELECT queries.
 Depending on these filter conditions, ClickHouse will utilize post-filtering or pre-filtering.
 These two strategies determine the order in which the filters are evaluated:
-- With post-filtering, the vector similarity index is evaluated first, afterwards ClickHouse evaluates the additional filter specified of the `WHERE` clause.
+- With post-filtering, the vector similarity index is evaluated first, afterwards ClickHouse evaluates the additional filter(s) specified of the `WHERE` clause.
 - With pre-filtering, the filter evaluation order is the other way round.
 
 Both strategies have different trade-offs:
@@ -287,7 +287,7 @@ Vector similarity indexes are ideally only used if the data is immutable or rare
 To speed up index creation, the following techniques can be used:
 
 First, index creation can be parallelized.
-The maximum number of index creation threads can be configured using server setting [max_build_vector_similarity_index_thread_pool_size](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size).
+The maximum number of index creation threads can be configured using server setting [max_build_vector_similarity_index_thread_pool_size](/operations/server-configuration-parameters/settings#max_build_vector_similarity_index_thread_pool_size).
 For optimal performance, the setting value should be configured to the number of CPU cores.
 
 Second, to speed up INSERT statements, users may disable the creation of skipping indexes on newly inserted parts using session setting [materialize_skip_indexes_on_insert](../../../operations/settings/settings.md).
@@ -324,6 +324,8 @@ FROM system.query_log
 WHERE type = 'QueryFinish' AND query_id = '<...>'
 ORDER BY event_time_microseconds;
 ```
+
+For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.
 
 ## Differences to Regular Skipping Indexes {#differences-to-regular-skipping-indexes}
 
