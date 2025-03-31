@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
-#include <iostream>
 
 namespace DB
 {
