@@ -5058,7 +5058,7 @@ bool StorageReplicatedMergeTree::fetchPart(
     bool to_detached,
     size_t quorum,
     zkutil::ZooKeeper::Ptr zookeeper_,
-    bool  /*try_fetch_shared*/)
+    bool try_fetch_shared)
 {
     if (isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
@@ -5219,7 +5219,9 @@ bool StorageReplicatedMergeTree::fetchPart(
                 throw Exception(ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH, "Interserver schemes are different: "
                     "'{}' != '{}', can't fetch part from {}", interserver_scheme, address.scheme, address.host);
 
-            auto [fetched_part, lock] =  fetcher->fetchSelectedPart(
+            /// TODO zero-copy: Maybe remove fetcher from class and use like this everywhere
+            auto fetcher_ptr = DataPartsExchange::DataPartsExchangeFactory::getFetcher(*this, try_fetch_shared);
+            auto [fetched_part, lock] =  fetcher_ptr->fetchSelectedPart(
                 metadata_snapshot,
                 getContext(),
                 part_name,

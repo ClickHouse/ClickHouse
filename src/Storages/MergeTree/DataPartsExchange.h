@@ -144,6 +144,42 @@ protected:
         ThrottlerPtr throttler,
         bool sync);
 
+    MergeTreeData::MutableDataPartPtr downloadPartToDiskImpl(
+        const String & part_name,
+        const String & replica_path,
+        bool to_detached,
+        const String & tmp_prefix,
+        DiskPtr disk,
+        ReadWriteBufferFromHTTP & in,
+        OutputBufferGetter output_buffer_getter,
+        size_t projections,
+        ThrottlerPtr throttler,
+        bool sync,
+        bool preserve_blobs = false);
+
+    Poco::URI getURI(
+        const String & part_name,
+        const String & zookeeper_name,
+        const String & replica_path,
+        const String & host,
+        const String & interserver_scheme,
+        int port,
+        DiskPtr disk) const;
+
+    void readPartInfo(
+        ReadWriteBufferFromHTTP & in,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreePartInfo & part_info,
+        const String & part_name,
+        std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
+        String & remote_fs_metadata,
+        MergeTreeDataPartType & part_type,
+        UUID & part_uuid,
+        int & server_protocol_version,
+        size_t & projections,
+        size_t & sum_files_size,
+        DiskPtr & disk) const;
+
     StorageReplicatedMergeTree & data;
     LoggerPtr log;
 
@@ -173,7 +209,7 @@ public:
         DiskPtr dest_disk) override;
 
 protected:
-    MergeTreeData::MutableDataPartPtr downloadPartToDisk(
+    MergeTreeData::MutableDataPartPtr downloadPartToRemoteDisk(
         const String & part_name,
         const String & replica_path,
         bool to_detached,
@@ -195,6 +231,7 @@ class DataPartsExchangeFactory
 public:
     static ServicePtr getService(StorageReplicatedMergeTree & data);
     static FetcherPtr getFetcher(StorageReplicatedMergeTree & data);
+    static FetcherPtr getFetcher(StorageReplicatedMergeTree & data, bool try_zero_copy);
 };
 
 }
