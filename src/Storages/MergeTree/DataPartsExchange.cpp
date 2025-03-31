@@ -462,6 +462,11 @@ MergeTreeData::DataPartPtr ServiceZeroCopy::findPart(const String & name)
 }
 
 
+/// It should be "tmp-fetch_" and not "tmp_fetch_", because we can fetch part to detached/,
+/// but detached part name prefix should not contain underscore.
+static const String TMP_PREFIX = "tmp-fetch_";
+
+
 Fetcher::Fetcher(StorageReplicatedMergeTree & data_)
     : data(data_)
     , log(getLogger(data.getStorageID().getNameForLogs() + " (Fetcher)"))
@@ -637,9 +642,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     if (blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Fetching of part was cancelled");
 
-    /// It should be "tmp-fetch_" and not "tmp_fetch_", because we can fetch part to detached/,
-    /// but detached part name prefix should not contain underscore.
-    static const String TMP_PREFIX = "tmp-fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
     String part_dir = tmp_prefix + part_name;
     auto temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
@@ -728,9 +730,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> FetcherZeroCopy::fetch
     if (blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Fetching of part was cancelled");
 
-    /// It should be "tmp-fetch_" and not "tmp_fetch_", because we can fetch part to detached/,
-    /// but detached part name prefix should not contain underscore.
-    static const String TMP_PREFIX = "tmp-fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
     String part_dir = tmp_prefix + part_name;
     auto temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
@@ -759,6 +758,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> FetcherZeroCopy::fetch
     if (capability.empty())
     {
         LOG_DEBUG(log, "Cannot select any zero-copy disk for {}, will try without zero-copy", part_name);
+        temporary_directory_lock = {};
         return Fetcher::fetchSelectedPart(
             metadata_snapshot, context, part_name, zookeeper_name,
             replica_path, host, port, timeouts, user, password,
@@ -808,6 +808,17 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> FetcherZeroCopy::fetch
         projections, sum_files_size, disk
     );
 
+    if (remote_fs_metadata.empty())
+    {
+        LOG_DEBUG(log, "Got no 'remote_fs_metadata' cookie, will try without zero-copy");
+        temporary_directory_lock = {};
+        return Fetcher::fetchSelectedPart(
+            metadata_snapshot, context, part_name, zookeeper_name,
+            replica_path, host, port, timeouts, user, password,
+            interserver_scheme, throttler, to_detached, tmp_prefix_,
+            tagger_ptr, disk);
+    }
+
     if (std::find(capability.begin(), capability.end(), remote_fs_metadata) == capability.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got 'remote_fs_metadata' cookie {}, expect one from {}",
                         remote_fs_metadata, fmt::join(capability, ", "));
@@ -824,10 +835,43 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> FetcherZeroCopy::fetch
     bool sync = ((*data_settings)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_fetch]
                     && sum_files_size >= (*data_settings)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_fetch]);
 
-    return std::make_pair(downloadPartToRemoteDisk(
-        part_name, replica_path, to_detached, tmp_prefix,
-        disk, *in, output_buffer_getter, projections, throttler, sync),
-        std::move(temporary_directory_lock));
+    try
+    {
+        return std::make_pair(downloadPartToRemoteDisk(
+            part_name, replica_path, to_detached, tmp_prefix,
+            disk, *in, output_buffer_getter, projections, throttler, sync),
+            std::move(temporary_directory_lock));
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::S3_ERROR && e.code() != ErrorCodes::ZERO_COPY_REPLICATION_ERROR)
+            throw;
+
+#if USE_AWS_S3
+        if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
+        {
+            /// It doesn't make sense to retry Access Denied or No Such Key
+            if (!s3_exception->isRetryableError())
+            {
+                tryLogCurrentException(log, fmt::format("while fetching part: {}", part_name));
+                throw;
+            }
+        }
+#endif
+
+        LOG_WARNING(log, "Will retry fetching part without zero-copy: {}", e.message());
+        temporary_directory_lock = {};
+        return Fetcher::fetchSelectedPart(
+            metadata_snapshot,
+            context,
+            part_name,
+            zookeeper_name,
+            replica_path,
+            host,
+            port,
+            timeouts,
+            user, password, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr, disk);
+    }
 }
 
 
@@ -910,6 +954,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskImpl(
     const String & replica_path,
     bool to_detached,
     const String & tmp_prefix,
+    MergeTreeData::DataPart::Checksums & data_checksums,
     DiskPtr disk,
     ReadWriteBufferFromHTTP & in,
     OutputBufferGetter output_buffer_getter,
@@ -952,7 +997,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskImpl(
 
     try
     {
-        MergeTreeData::DataPart::Checksums data_checksums;
         for (size_t i = 0; i < projections; ++i)
         {
             String projection_name;
@@ -1032,11 +1076,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     ThrottlerPtr throttler,
     bool sync)
 {
-    MergeTreeData::DataPart::Checksums data_checksums;
-
     LOG_DEBUG(log, "Downloading part {} onto disk {}.", part_name, disk->getName());
 
-    auto new_data_part = downloadPartToDiskImpl(part_name, replica_path, to_detached, tmp_prefix, disk, in, output_buffer_getter, projections, throttler, sync);
+    MergeTreeData::DataPart::Checksums data_checksums;
+    auto new_data_part = downloadPartToDiskImpl(part_name, replica_path, to_detached, tmp_prefix, data_checksums, disk, in, output_buffer_getter, projections, throttler, sync);
 
     if (isFullPartStorage(new_data_part->getDataPartStorage()))
         new_data_part->checksums.checkEqual(data_checksums, false, new_data_part->name);
@@ -1071,7 +1114,8 @@ MergeTreeData::MutableDataPartPtr FetcherZeroCopy::downloadPartToRemoteDisk(
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
     /// The blobs have to stay intact, this temporary part does not own them and does not share them yet.
     bool preserve_blobs = true;
-    auto new_data_part = downloadPartToDiskImpl(part_name, replica_path, to_detached, tmp_prefix, disk, in, output_buffer_getter, projections, throttler, sync, preserve_blobs);
+    MergeTreeData::DataPart::Checksums data_checksums;
+    auto new_data_part = downloadPartToDiskImpl(part_name, replica_path, to_detached, tmp_prefix, data_checksums, disk, in, output_buffer_getter, projections, throttler, sync, preserve_blobs);
 
     LOG_DEBUG(log, "Download of part {} unique id {} metadata onto disk {} finished.", part_name, part_id, disk->getName());
 

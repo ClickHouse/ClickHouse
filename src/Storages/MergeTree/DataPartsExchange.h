@@ -28,13 +28,10 @@ namespace DataPartsExchange
 
 /** Service for sending parts from the table *ReplicatedMergeTree.
   */
-class Service : public InterserverIOEndpoint
+class Service : private boost::noncopyable, public InterserverIOEndpoint
 {
 public:
     explicit Service(StorageReplicatedMergeTree & data_);
-
-    Service(const Service &) = delete;
-    Service & operator=(const Service &) = delete;
 
     std::string getId(const std::string & node_id) const override;
     void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
@@ -73,9 +70,6 @@ class ServiceZeroCopy : public Service
 {
 public:
     explicit ServiceZeroCopy(StorageReplicatedMergeTree & data_);
-
-    ServiceZeroCopy(const Service &) = delete;
-    ServiceZeroCopy & operator=(const Service &) = delete;
 
     void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
 
@@ -149,6 +143,7 @@ protected:
         const String & replica_path,
         bool to_detached,
         const String & tmp_prefix,
+        MergeTreeData::DataPart::Checksums & data_checksums,
         DiskPtr disk,
         ReadWriteBufferFromHTTP & in,
         OutputBufferGetter output_buffer_getter,

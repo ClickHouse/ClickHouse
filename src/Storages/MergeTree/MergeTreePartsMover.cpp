@@ -355,8 +355,6 @@ catch (...)
 
 bool MergeTreePartsMover::hasActivePartToSwap(TemporaryClonedPart & cloned_part, DataPartsLock & part_lock) const
 {
-    /// Used to get some stuck parts in the moving directory by stopping moves while pause is active
-    FailPointInjection::pauseFailPoint(FailPoints::stop_moving_part_before_swap_with_active);
     if (moves_blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
 
@@ -394,6 +392,8 @@ void MergeTreePartsMover::swapActivePart(TemporaryClonedPart & cloned_part, Data
 
 void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) const
 {
+    /// Used to get some stuck parts in the moving directory by stopping moves while pause is active
+    FailPointInjection::pauseFailPoint(FailPoints::stop_moving_part_before_swap_with_active);
     /// `hasActivePartToSwap` and `swapActivePart` are called under the same lock
     /// to prevent part becoming inactive between calls
     auto part_lock = data->lockParts();
@@ -406,6 +406,8 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
 
 void MergeTreeZeroCopyPartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) const
 {
+    /// Used to get some stuck parts in the moving directory by stopping moves while pause is active
+    FailPointInjection::pauseFailPoint(FailPoints::stop_moving_part_before_swap_with_active);
     /// `hasActivePartToSwap` and `swapActivePart` are called under the same lock
     /// to prevent part becoming inactive between calls
     auto part_lock = data->lockParts();
