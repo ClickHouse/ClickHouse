@@ -28,6 +28,10 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/executeQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <base/getFQDNOrHostName.h>
@@ -447,14 +451,18 @@ QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr 
 }
 
 void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage,
-    const String & object_storage_path, ContextPtr context, std::function<bool()> is_cancelled)
+    const String & object_storage_path, ContextMutablePtr context, std::function<bool()> is_cancelled)
 {
+    Stopwatch execute_task_watch;
     const auto & task = task_description.task;
+
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>(task.task_id);
+
+    auto logger = Poco::Logger::getShared("executeDistributedQuery");
 
     QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
 
-    auto logger = Poco::Logger::getShared("executeDistributedQuery");
-    LOG_TRACE(logger, "Task '{}' exchange streams:\ninput: {}\noutput: {}",
+    LOG_TRACE(logger, "Task '{}' input exchange streams: [{}], output exchange streams: [{}]",
         task.task_id, fmt::join(task.input_exchange_streams, ", "), fmt::join(task.output_exchange_streams, ", "));
 
     auto temporary_files = createTemporaryFilesLookup(
@@ -478,10 +486,49 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
+    ASTPtr ast_stub = std::make_shared<ASTSelectQuery>(); /// FIXME: this is only used to populate query_kind
+    UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
+
+    auto query_log_elem = logQueryStart(
+        std::chrono::system_clock::now(),
+        context,
+        /*query_for_logging*/ task.task_id,
+        query_plan_hash,
+        ast_stub, pipeline,
+        /*interpreter*/ nullptr,
+        /*internal*/ false,
+        /*database*/ "",
+        /*table*/ "",
+        /*async_insert*/ false);
+
+    try
     {
-        WriteBufferFromOwnString out;
-        printPipeline(pipeline.getProcessors(), out);
-        LOG_DEBUG(logger, "Executing task '{}', pipeline:\n{}", task.task_id, out.str());
+        LOG_TEST(logger, "Executing task '{}', pipeline:\n{}",
+            task.task_id,
+            [&pipeline]() -> String
+            {
+                WriteBufferFromOwnString out;
+                printPipeline(pipeline.getProcessors(), out);
+                return out.str();
+            }());
+
+        if (!pipeline.completed())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Task pipeline must be completed");
+
+        pipeline.setProcessListElement(context->getProcessListElement());
+
+        CompletedPipelineExecutor executor(pipeline);
+        if (is_cancelled)
+            executor.setCancelCallback(is_cancelled, 100);
+        executor.execute();
+
+        logQueryFinish(query_log_elem, context, ast_stub, pipeline, false,
+            query_span, QueryResultCacheUsage::None, false);
+    }
+    catch (...)
+    {
+        logQueryException(query_log_elem, context, execute_task_watch, ast_stub, query_span, false, true);
+        throw;
     }
 
     if (!pipeline.completed())
@@ -511,7 +558,7 @@ void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescrip
 {
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(toString(unique_query_id), context);
 
-    doExecuteTask(task, object_storage, object_storage_path, context);
+    doExecuteTask(task, object_storage, object_storage_path, Context::createCopy(context));
 }
 
 /// Runs tasks in local threads. Useful for testing and debugging.
