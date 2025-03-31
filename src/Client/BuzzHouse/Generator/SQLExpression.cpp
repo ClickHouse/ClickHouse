@@ -808,6 +808,51 @@ void StatementGenerator::generateFrameBound(RandomGenerator & rg, Expr * expr)
     }
 }
 
+void StatementGenerator::generateWindowDefinition(RandomGenerator & rg, WindowDefn * wdef)
+{
+    if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
+    {
+        const uint32_t nclauses = std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 4) + 1);
+
+        for (uint32_t i = 0; i < nclauses; i++)
+        {
+            this->generateExpression(rg, wdef->add_partition_exprs());
+            this->width++;
+        }
+        this->width -= nclauses;
+    }
+    if (!this->allow_not_deterministic || (this->width < this->fc.max_width && rg.nextSmallNumber() < 4))
+    {
+        generateOrderBy(rg, 0, true, false, wdef->mutable_order_by());
+    }
+    if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
+    {
+        ExprFrameSpec * efs = wdef->mutable_frame_spec();
+        FrameSpecSubLeftExpr * fssle = efs->mutable_left_expr();
+        const FrameSpecSubLeftExpr_Which fspec = static_cast<FrameSpecSubLeftExpr_Which>(
+            (rg.nextRandomUInt32() % static_cast<uint32_t>(FrameSpecSubLeftExpr_Which_Which_MAX)) + 1);
+
+        efs->set_range_rows(rg.nextBool() ? ExprFrameSpec_RangeRows_RANGE : ExprFrameSpec_RangeRows_ROWS);
+        fssle->set_which(fspec);
+        if (fspec > FrameSpecSubLeftExpr_Which_UNBOUNDED_PRECEDING)
+        {
+            this->generateFrameBound(rg, fssle->mutable_expr());
+        }
+        if (rg.nextBool())
+        {
+            FrameSpecSubRightExpr * fsslr = efs->mutable_right_expr();
+            const FrameSpecSubRightExpr_Which fspec2 = static_cast<FrameSpecSubRightExpr_Which>(
+                (rg.nextRandomUInt32() % static_cast<uint32_t>(FrameSpecSubRightExpr_Which_Which_MAX)) + 1);
+
+            fsslr->set_which(fspec2);
+            if (fspec2 > FrameSpecSubRightExpr_Which_UNBOUNDED_FOLLOWING)
+            {
+                this->generateFrameBound(rg, fsslr->mutable_expr());
+            }
+        }
+    }
+}
+
 void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 {
     const uint32_t noption = rg.nextLargeNumber();
@@ -1000,8 +1045,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     else
     {
         /// Window func
-        WindowFuncCall * sfc = expr->mutable_comp_expr()->mutable_window_call();
-        WindowDefn * wdf = sfc->mutable_win_defn();
+        WindowFuncCall * wfc = expr->mutable_comp_expr()->mutable_window_call();
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
         this->depth++;
@@ -1009,12 +1053,12 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
         if (rg.nextSmallNumber() < 7)
         {
-            generateFuncCall(rg, false, true, sfc->mutable_agg_func());
+            generateFuncCall(rg, false, true, wfc->mutable_agg_func());
         }
         else
         {
             uint32_t nargs = 0;
-            SQLWindowCall * wc = sfc->mutable_win_func();
+            SQLWindowCall * wc = wfc->mutable_win_func();
 
             chassert(this->ids.empty());
             if (this->fc.max_width - this->width > 1)
@@ -1068,46 +1112,14 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             }
             this->width -= nargs;
         }
-        if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
+        if (this->levels[this->current_level].window_counter > 0 && rg.nextBool())
         {
-            const uint32_t nclauses = std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 4) + 1);
-
-            for (uint32_t i = 0; i < nclauses; i++)
-            {
-                this->generateExpression(rg, wdf->add_partition_exprs());
-                this->width++;
-            }
-            this->width -= nclauses;
+            wfc->mutable_window()->set_window(
+                "w" + std::to_string(rg.nextRandomUInt32() % this->levels[this->current_level].window_counter));
         }
-        if (!this->allow_not_deterministic || (this->width < this->fc.max_width && rg.nextSmallNumber() < 4))
+        else
         {
-            generateOrderBy(rg, 0, true, false, wdf->mutable_order_by());
-        }
-        if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
-        {
-            ExprFrameSpec * efs = wdf->mutable_frame_spec();
-            FrameSpecSubLeftExpr * fssle = efs->mutable_left_expr();
-            const FrameSpecSubLeftExpr_Which fspec = static_cast<FrameSpecSubLeftExpr_Which>(
-                (rg.nextRandomUInt32() % static_cast<uint32_t>(FrameSpecSubLeftExpr_Which_Which_MAX)) + 1);
-
-            efs->set_range_rows(rg.nextBool() ? ExprFrameSpec_RangeRows_RANGE : ExprFrameSpec_RangeRows_ROWS);
-            fssle->set_which(fspec);
-            if (fspec > FrameSpecSubLeftExpr_Which_UNBOUNDED_PRECEDING)
-            {
-                this->generateFrameBound(rg, fssle->mutable_expr());
-            }
-            if (rg.nextBool())
-            {
-                FrameSpecSubRightExpr * fsslr = efs->mutable_right_expr();
-                const FrameSpecSubRightExpr_Which fspec2 = static_cast<FrameSpecSubRightExpr_Which>(
-                    (rg.nextRandomUInt32() % static_cast<uint32_t>(FrameSpecSubRightExpr_Which_Which_MAX)) + 1);
-
-                fsslr->set_which(fspec2);
-                if (fspec2 > FrameSpecSubRightExpr_Which_UNBOUNDED_FOLLOWING)
-                {
-                    this->generateFrameBound(rg, fsslr->mutable_expr());
-                }
-            }
+            generateWindowDefinition(rg, wfc->mutable_win_defn());
         }
         this->depth--;
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;

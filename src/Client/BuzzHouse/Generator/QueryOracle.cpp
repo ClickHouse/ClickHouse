@@ -109,9 +109,9 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     ssc2->set_allocated_from(ssc1.release_from());
     if (ssc1.has_groupby())
     {
-        GroupByStatement & gbs = const_cast<GroupByStatement &>(ssc1.groupby());
+        ExprComparisonHighProbability & expr = const_cast<ExprComparisonHighProbability &>(ssc1.groupby().having_expr().expr());
 
-        sfc2->add_args()->set_allocated_expr(gbs.release_having_expr());
+        sfc2->add_args()->set_allocated_expr(expr.release_expr());
         ssc2->set_allocated_groupby(ssc1.release_groupby());
         ssc2->set_allocated_where(ssc1.release_where());
     }

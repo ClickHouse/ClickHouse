@@ -1216,6 +1216,12 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
             available_cols.push_back(entry);
         }
     }
+    /// For Qualify clause, use projections
+    for (const auto & entry : this->levels[this->current_level].projections)
+    {
+        const String cname = "c" + std::to_string(entry);
+        available_cols.emplace_back(GroupCol(SQLRelationCol("", {cname}), nullptr));
+    }
 
     this->depth++;
     if (!available_cols.empty() && noption < 8)
@@ -1462,7 +1468,7 @@ bool StatementGenerator::generateGroupBy(
             const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
 
             this->levels[this->current_level].allow_aggregates = true;
-            generateWherePredicate(rg, gbs->mutable_having_expr());
+            generateWherePredicate(rg, gbs->mutable_having_expr()->mutable_expr()->mutable_expr());
             this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
         }
     }
@@ -1687,6 +1693,25 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
     this->depth--;
 }
 
+void StatementGenerator::addWindowDefs(RandomGenerator & rg, SelectStatementCore * ssc)
+{
+    /// Set windows for the query
+    const uint32_t nclauses = std::min<uint32_t>(this->fc.max_width - this->width, (rg.nextRandomUInt32() % 3) + 1);
+
+    this->depth++;
+    for (uint32_t i = 0; i < nclauses; i++)
+    {
+        WindowDef * wdef = ssc->add_window_defs();
+        const uint32_t nwindow = this->levels[this->current_level].window_counter++;
+
+        wdef->mutable_window()->set_window("w" + std::to_string(nwindow));
+        generateWindowDefinition(rg, wdef->mutable_win_defn());
+        this->width++;
+    }
+    this->width -= nclauses;
+    this->depth--;
+}
+
 void StatementGenerator::generateSelect(
     RandomGenerator & rg, const bool top, bool force_global_agg, const uint32_t ncols, uint32_t allowed_clauses, Select * sel)
 {
@@ -1744,6 +1769,11 @@ void StatementGenerator::generateSelect(
         {
             const uint32_t njoined = generateFromStatement(rg, allowed_clauses, ssc->mutable_from());
             ssc->set_from_first(njoined == 1 && rg.nextSmallNumber() < 4);
+        }
+        if ((allowed_clauses & allow_window_clause) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
+            && rg.nextSmallNumber() < 3)
+        {
+            addWindowDefs(rg, ssc);
         }
         const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
@@ -1811,7 +1841,11 @@ void StatementGenerator::generateSelect(
         }
         this->depth--;
         this->width -= ncols;
-
+        if ((allowed_clauses & allow_qualify) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
+            && rg.nextSmallNumber() < 3)
+        {
+            generateWherePredicate(rg, ssc->mutable_qualify_expr()->mutable_expr()->mutable_expr());
+        }
         if ((allowed_clauses & allow_orderby) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
             && (force_order_by || rg.nextSmallNumber() < 4))
         {

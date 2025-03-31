@@ -69,7 +69,7 @@ class QueryLevel
 {
 public:
     bool global_aggregate = false, inside_aggregate = false, allow_aggregates = true, allow_window_funcs = true, group_by_all = false;
-    uint32_t level, aliases_counter = 0;
+    uint32_t level, aliases_counter = 0, window_counter = 0;
     std::vector<GroupCol> gcols;
     std::vector<SQLRelation> rels;
     std::vector<uint32_t> projections;
@@ -85,7 +85,7 @@ public:
 const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_distinct = (1 << 2), allow_from = (1 << 3),
                          allow_prewhere = (1 << 4), allow_where = (1 << 5), allow_groupby = (1 << 6), allow_global_aggregate = (1 << 7),
                          allow_groupby_settings = (1 << 8), allow_orderby = (1 << 9), allow_orderby_settings = (1 << 10),
-                         allow_limit = (1 << 11);
+                         allow_limit = (1 << 11), allow_window_clause = (1 << 12), allow_qualify = (1 << 13);
 
 const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), flat_nested = (1 << 2), flat_json = (1 << 3),
                          skip_tuple_node = (1 << 4), skip_nested_node = (1 << 5), to_table_entries = (1 << 6), to_remote_entries = (1 << 7);
@@ -348,6 +348,7 @@ private:
     void generateLiteralValue(RandomGenerator & rg, bool complex, Expr * expr);
     void generatePredicate(RandomGenerator & rg, Expr * expr);
     void generateFrameBound(RandomGenerator & rg, Expr * expr);
+    void generateWindowDefinition(RandomGenerator & rg, WindowDefn * wdef);
     void generateExpression(RandomGenerator & rg, Expr * expr);
     void generateLambdaCall(RandomGenerator & rg, uint32_t nparams, LambdaExpr * lexpr);
     void generateFuncCall(RandomGenerator & rg, bool allow_funcs, bool allow_aggr, SQLFuncCall * func_call);
@@ -382,6 +383,7 @@ private:
     /* Returns the number of from elements generated */
     uint32_t generateFromStatement(RandomGenerator & rg, uint32_t allowed_clauses, FromStatement * ft);
     void addCTEs(RandomGenerator & rg, uint32_t allowed_clauses, CTEs * qctes);
+    void addWindowDefs(RandomGenerator & rg, SelectStatementCore * ssc);
     void generateSelect(RandomGenerator & rg, bool top, bool force_global_agg, uint32_t ncols, uint32_t allowed_clauses, Select * sel);
 
     void generateTopSelect(RandomGenerator & rg, bool force_global_agg, uint32_t allowed_clauses, TopSelect * ts);

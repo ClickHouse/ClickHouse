@@ -96,8 +96,7 @@ CONV_FN(Cluster, clust)
 
 CONV_FN(Window, win)
 {
-    ret += "w";
-    ret += std::to_string(win.window());
+    ret += win.window();
 }
 
 CONV_FN(Storage, store)
@@ -1479,10 +1478,18 @@ CONV_FN(WindowFuncCall, wc)
     {
         WindowDefnToString(ret, wc.win_defn());
     }
-    else if (wc.has_win_name())
+    else if (wc.has_window())
     {
-        WindowToString(ret, wc.win_name());
+        WindowToString(ret, wc.window());
     }
+    ret += ")";
+}
+
+CONV_FN(WindowDef, wdef)
+{
+    WindowToString(ret, wdef.window());
+    ret += " AS (";
+    WindowDefnToString(ret, wdef.win_defn());
     ret += ")";
 }
 
@@ -2266,7 +2273,7 @@ CONV_FN(GroupByStatement, gbs)
     if (gbs.has_having_expr())
     {
         ret += " HAVING ";
-        ExprToString(ret, gbs.having_expr());
+        WhereStatementToString(ret, gbs.having_expr());
     }
 }
 
@@ -2365,6 +2372,23 @@ CONV_FN(SelectStatementCore, ssc)
     {
         ret += " ";
         GroupByStatementToString(ret, ssc.groupby());
+    }
+    if (ssc.window_defs_size() > 0)
+    {
+        ret += " WINDOW ";
+        for (int i = 0; i < ssc.window_defs_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            WindowDefToString(ret, ssc.window_defs(i));
+        }
+    }
+    if (ssc.has_qualify_expr())
+    {
+        ret += " QUALIFY ";
+        WhereStatementToString(ret, ssc.qualify_expr());
     }
     if (ssc.has_orderby())
     {

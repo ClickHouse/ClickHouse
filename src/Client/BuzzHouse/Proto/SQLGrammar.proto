@@ -1643,6 +1643,10 @@ message Storage {
     required string storage_name = 2;
 }
 
+message Window {
+    required string window = 1;
+}
+
 enum SpecialVal {
     VAL_NULL = 1;
     VAL_TRUE = 2;
@@ -1985,10 +1989,6 @@ message SQLFuncCall {
     optional FuncNulls fnulls = 6;
 }
 
-message Window {
-    required uint32 window = 1;
-}
-
 message FrameSpecSubLeftExpr {
     enum Which {
         CURRENT_ROW = 1;
@@ -2092,8 +2092,13 @@ message WindowFuncCall {
     }
     oneof window_over_oneof {
         WindowDefn win_defn = 3;
-        Window win_name = 4;
+        Window window = 4;
     }
+}
+
+message WindowDef {
+    required Window window = 1;
+    required WindowDefn win_defn = 2;
 }
 
 message IntervalExpr {
@@ -2615,7 +2620,7 @@ message GroupByStatement {
         GroupByList glist = 1;
         bool gall = 2;
     }
-    optional Expr having_expr = 3;
+    optional WhereStatement having_expr = 3;
 }
 
 message LimitStatement {
@@ -2652,9 +2657,11 @@ message SelectStatementCore {
     optional WhereStatement where = 6;
     optional GroupByStatement groupby = 7;
     optional OrderByStatement orderby = 8;
+    repeated WindowDef window_defs = 9;
+    optional WhereStatement qualify_expr = 10;
     oneof limit_oneof {
-        LimitStatement limit = 9;
-        OffsetStatement offset = 10;
+        LimitStatement limit = 11;
+        OffsetStatement offset = 12;
     }
 }
 
