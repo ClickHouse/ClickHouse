@@ -121,7 +121,7 @@ def main():
         )
         res = results[-1].is_ok()
 
-    if info.pr_number == 0:
+    if info.pr_number == 0 and info.is_push_event:
         version_dict = info.get_custom_data("version")
     else:
         version_dict = CHVersion.get_current_version_as_dict()
