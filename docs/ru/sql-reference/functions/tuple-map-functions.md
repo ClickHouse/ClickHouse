@@ -230,49 +230,6 @@ SELECT mapPopulateSeries(map(1, 10, 5, 20), 6);
 └─────────────────────────────────────────┘
 ```
 
-## mapContains {#mapcontains}
-
-Определяет, содержит ли контейнер `map` ключ `key`.
-
-**Синтаксис**
-
-``` sql
-mapContains(map, key)
-```
-
-**Аргументы**
-
--   `map` — контейнер Map. [Map](../../sql-reference/data-types/map.md).
--   `key` — ключ. Тип соответстует типу ключей параметра  `map`.
-
-**Возвращаемое значение**
-
--   `1` если `map` включает `key`, иначе `0`.
-
-Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
-
-**Пример**
-
-Запрос:
-
-```sql
-CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
-
-INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
-
-SELECT mapContains(a, 'name') FROM test;
-
-```
-
-Результат:
-
-```text
-┌─mapContains(a, 'name')─┐
-│                      1 │
-│                      0 │
-└────────────────────────┘
-```
-
 ## mapKeys {#mapkeys}
 
 Возвращает все ключи контейнера `map`.
@@ -314,6 +271,50 @@ SELECT mapKeys(a) FROM test;
 │ ['name','age']        │
 │ ['number','position'] │
 └───────────────────────┘
+```
+
+
+## mapContains {#mapcontains}
+
+Определяет, содержит ли контейнер `map` ключ `key`.
+
+**Синтаксис**
+
+``` sql
+mapContains(map, key)
+```
+
+**Аргументы**
+
+-   `map` — контейнер Map. [Map](../../sql-reference/data-types/map.md).
+-   `key` — ключ. Тип соответстует типу ключей параметра  `map`.
+
+**Возвращаемое значение**
+
+-   `1` если `map` включает `key`, иначе `0`.
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapContains(a, 'name') FROM test;
+
+```
+
+Результат:
+
+```text
+┌─mapContains(a, 'name')─┐
+│                      1 │
+│                      0 │
+└────────────────────────┘
 ```
 
 ## mapValues {#mapvalues}

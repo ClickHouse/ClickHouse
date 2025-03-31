@@ -185,10 +185,10 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
-        {TypeIndex::Map, "mapContains"},
+        {TypeIndex::Map, "mapContainsKey"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
-            /// Replace `mapContains(map_argument, argument)` with `has(map_argument.keys, argument)`
+            /// Replace `mapContainsKey(map_argument, argument)` with `has(map_argument.keys, argument)`
             const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
             NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
