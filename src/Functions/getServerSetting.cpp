@@ -76,9 +76,9 @@ REGISTER_FUNCTION(GetServerSetting)
         .description = R"(
 Returns the current value of server setting.
 )",
-        .syntax = "getServerSetting('custom_setting')",
+        .syntax = "getServerSetting('server_setting')",
         .arguments = {
-            {"custom_setting", "The setting name. Type: String."}
+            {"server_setting", "The setting name. Type: String."}
         },
         .returned_value = "The setting's current value.",
         .examples = {

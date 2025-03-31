@@ -76,9 +76,9 @@ REGISTER_FUNCTION(GetMergeTreeSetting)
         .description = R"(
 Returns the current value of merge tree setting.
 )",
-        .syntax = "getMergeTreeSetting('custom_setting')",
+        .syntax = "getMergeTreeSetting('merge_tree_setting')",
         .arguments = {
-            {"custom_setting", "The setting name. Type: String."}
+            {"merge_tree_setting", "The setting name. Type: String."}
         },
         .returned_value = "The setting's current value.",
         .examples = {
