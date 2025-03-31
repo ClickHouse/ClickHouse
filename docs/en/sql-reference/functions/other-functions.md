@@ -4679,7 +4679,7 @@ Returns the current value of one of the server settings
 **Syntax**
 
 ```sql
-getSetting('server_setting');
+getServerSetting('server_setting');
 ```
 
 **Parameter**
@@ -4688,18 +4688,20 @@ getSetting('server_setting');
 
 **Returned value**
 
-- The setting's current value.
+- The server setting's current value.
 
 **Example**
 
 ```sql
-SELECT getSetting('allow_use_jemalloc_memory');
+SELECT getServerSetting('allow_use_jemalloc_memory');
 ```
 
 Result:
 
 ```text
-true
+┌─getServerSetting('allow_use_jemalloc_memory')─┐
+│ true                                          │
+└───────────────────────────────────────────────┘
 ```
 
 ## getMergeTreeSetting {#getmergetreesetting}
@@ -4718,16 +4720,18 @@ getMergeTreeSetting('merge_tree_setting');
 
 **Returned value**
 
-- The setting's current value.
+- The merge tree setting's current value.
 
 **Example**
 
 ```sql
-SELECT getSetting('index_granularity');
+SELECT getMergeTreeSetting('index_granularity');
 ```
 
 Result:
 
 ```text
-8192
+┌─getMergeTree(index_granularity')─┐
+│                     8192         │
+└──────────────────────────────────┘
 ```
