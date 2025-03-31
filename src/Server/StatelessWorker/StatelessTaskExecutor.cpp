@@ -53,7 +53,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     {
         auto query_scope = std::make_unique<CurrentThread::QueryScope>(query_context);
 
-        Stopwatch start_watch;
+        Stopwatch start_watch(CLOCK_MONOTONIC);
         ASTSelectQuery ast_stub; /// FIXME: this is only used to populate query_kind
         auto query_plan_hash = sipHash64(task_description.serialized_query_plan);
         auto process_list_entry = query_context->getProcessList().insert(task_description.task.task_id, query_plan_hash, &ast_stub, query_context, start_watch.getStart());
