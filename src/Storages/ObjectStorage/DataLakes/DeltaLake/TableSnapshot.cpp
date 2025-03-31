@@ -14,7 +14,15 @@
 #include <Common/ThreadStatus.h>
 #include <IO/ReadBufferFromString.h>
 #include "getSchemaFromSnapshot.h"
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context_fwd.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/KeyDescription.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <DataTypes/DataTypeNullable.h>
 #include "KernelUtils.h"
+
 
 #include <fmt/ranges.h>
 
@@ -24,6 +32,11 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace ProfileEvents
+{
+    extern const Event DeltaLakePartitionPrunedFiles;
 }
 
 namespace DB
@@ -53,6 +66,70 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
 namespace DeltaLake
 {
 
+class PartitionPruner
+{
+public:
+    PartitionPruner(
+        const DB::ActionsDAG * filter_dag,
+        const DB::NamesAndTypesList & table_schema_,
+        const DB::Names & partition_columns_,
+        DB::ContextPtr context)
+    {
+        if (!partition_columns_.empty())
+        {
+            DB::NamesAndTypesList partition_columns_description;
+
+            std::shared_ptr<DB::ASTFunction> partition_key_ast = std::make_shared<DB::ASTFunction>();
+            partition_key_ast->name = "tuple";
+            partition_key_ast->arguments = std::make_shared<DB::ASTExpressionList>();
+            partition_key_ast->children.push_back(partition_key_ast->arguments);
+
+            for (const auto & column_name : partition_columns_)
+            {
+                auto partition_ast = std::make_shared<DB::ASTIdentifier>(column_name);
+                partition_key_ast->arguments->children.emplace_back(std::move(partition_ast));
+                auto column = table_schema_.tryGetByName(column_name);
+                if (!column.has_value())
+                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Not found partition column in schema: {}", column_name);
+                partition_columns_description.emplace_back(column_name, removeNullable(column->type));
+            }
+
+            partition_key = DB::KeyDescription::getKeyFromAST(
+                std::move(partition_key_ast), DB::ColumnsDescription(partition_columns_description), context);
+
+            if (filter_dag)
+                key_condition.emplace(filter_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */);
+        }
+    }
+
+    bool canBePruned(const DB::ObjectInfoWithPartitionColumns & object_info) const
+    {
+        if (!key_condition.has_value())
+            return false;
+
+        DB::Row partition_key_values;
+        partition_key_values.reserve(object_info.partitions_info.size());
+        for (const auto & [name_and_type, value] : object_info.partitions_info)
+        {
+            if (value.isNull())
+                partition_key_values.push_back(DB::POSITIVE_INFINITY); // NULL_LAST
+            else
+                partition_key_values.push_back(value);
+        }
+
+        std::vector<DB::FieldRef> partition_values_ref(partition_key_values.begin(), partition_key_values.end());
+        bool can_be_true = key_condition->mayBeTrueInRange(
+            partition_key_values.size(), partition_values_ref.data(), partition_values_ref.data(), partition_key.data_types);
+
+        return !can_be_true;
+    }
+
+private:
+    std::optional<DB::KeyCondition> key_condition;
+    DB::KeyDescription partition_key;
+};
+
+
 class TableSnapshot::Iterator final : public DB::IObjectIterator
 {
 public:
@@ -63,6 +140,7 @@ public:
         const DB::NamesAndTypesList & schema_,
         const DB::Names & partition_columns_,
         DB::ObjectStoragePtr object_storage_,
+        const DB::ActionsDAG * filter_dag_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
         LoggerPtr log_)
@@ -82,6 +160,8 @@ public:
             scanDataFunc();
         })
     {
+        if (filter_dag_)
+            pruner.emplace(filter_dag_, schema_, partition_columns_, DB::Context::getGlobalContextInstance());
     }
 
     ~Iterator() override
@@ -138,36 +218,51 @@ public:
 
     DB::ObjectInfoPtr next(size_t) override
     {
-        DB::ObjectInfoPtr object;
+        while (true)
         {
-            std::unique_lock lock(next_mutex);
-            if (!iterator_finished && data_files.empty())
+            DB::ObjectInfoPtr object;
             {
-                LOG_TEST(log, "Waiting for next data file");
-                schedule_next_batch_cv.notify_one();
-                data_files_cv.wait(lock, [&]() { return !data_files.empty() || iterator_finished; });
+                std::unique_lock lock(next_mutex);
+                if (!iterator_finished && data_files.empty())
+                {
+                    LOG_TEST(log, "Waiting for next data file");
+                    schedule_next_batch_cv.notify_one();
+                    data_files_cv.wait(lock, [&]() { return !data_files.empty() || iterator_finished; });
+                }
+
+                if (data_files.empty())
+                    return nullptr;
+
+                LOG_TEST(log, "Current data files: {}", data_files.size());
+
+                object = data_files.front();
+                data_files.pop_front();
+                if (data_files.empty())
+                    schedule_next_batch_cv.notify_one();
             }
 
-            if (data_files.empty())
-                return nullptr;
+            chassert(object);
+            if (pruner.has_value())
+            {
+                const auto * object_with_partition_info = dynamic_cast<const DB::ObjectInfoWithPartitionColumns *>(object.get());
+                if (object_with_partition_info && pruner->canBePruned(*object_with_partition_info))
+                {
+                    ProfileEvents::increment(ProfileEvents::DeltaLakePartitionPrunedFiles);
 
-            LOG_TEST(log, "Current data files: {}", data_files.size());
+                    LOG_TEST(log, "Skipping file {} according to partition pruning", object->getPath());
+                    continue;
+                }
+            }
 
-            object = data_files.front();
-            data_files.pop_front();
-            if (data_files.empty())
-                schedule_next_batch_cv.notify_one();
+            object->metadata = object_storage->getObjectMetadata(object->getPath());
+
+            if (callback)
+            {
+                chassert(object->metadata);
+                callback(DB::FileProgress(0, object->metadata->size_bytes));
+            }
+            return object;
         }
-
-        chassert(object);
-        object->metadata = object_storage->getObjectMetadata(object->getPath());
-
-        if (callback)
-        {
-            chassert(object->metadata);
-            callback(DB::FileProgress(0, object->metadata->size_bytes));
-        }
-        return object;
     }
 
     static void visitData(
@@ -250,6 +345,7 @@ private:
     const KernelSnapshot & snapshot;
     KernelScan scan;
     KernelScanDataIterator scan_data_iterator;
+    std::optional<PartitionPruner> pruner;
 
     const std::string data_prefix;
     const DB::NamesAndTypesList & schema;
@@ -330,14 +426,17 @@ void TableSnapshot::initSnapshotImpl() const
     LOG_TRACE(log, "Snapshot version: {}", snapshot_version);
 }
 
-ffi::SharedSnapshot * TableSnapshot::getSnapshot()
+ffi::SharedSnapshot * TableSnapshot::getSnapshot() const
 {
     if (!snapshot.get())
         initSnapshot();
     return snapshot.get();
 }
 
-DB::ObjectIterator TableSnapshot::iterate(DB::IDataLakeMetadata::FileProgressCallback callback, size_t list_batch_size)
+DB::ObjectIterator TableSnapshot::iterate(
+    const DB::ActionsDAG * filter_dag,
+    DB::IDataLakeMetadata::FileProgressCallback callback,
+    size_t list_batch_size)
 {
     initSnapshot();
     return std::make_shared<TableSnapshot::Iterator>(
@@ -347,12 +446,13 @@ DB::ObjectIterator TableSnapshot::iterate(DB::IDataLakeMetadata::FileProgressCal
         getTableSchema(),
         getPartitionColumns(),
         object_storage,
+        filter_dag,
         callback,
         list_batch_size,
         log);
 }
 
-const DB::NamesAndTypesList & TableSnapshot::getTableSchema()
+const DB::NamesAndTypesList & TableSnapshot::getTableSchema() const
 {
     if (!table_schema.has_value())
     {
@@ -363,7 +463,7 @@ const DB::NamesAndTypesList & TableSnapshot::getTableSchema()
     return table_schema.value();
 }
 
-const DB::NamesAndTypesList & TableSnapshot::getReadSchema()
+const DB::NamesAndTypesList & TableSnapshot::getReadSchema() const
 {
     if (read_schema_same_as_table_schema)
         return getTableSchema();
@@ -372,14 +472,14 @@ const DB::NamesAndTypesList & TableSnapshot::getReadSchema()
     return read_schema.value();
 }
 
-const DB::Names & TableSnapshot::getPartitionColumns()
+const DB::Names & TableSnapshot::getPartitionColumns() const
 {
     if (!partition_columns.has_value())
         loadReadSchemaAndPartitionColumns();
     return partition_columns.value();
 }
 
-void TableSnapshot::loadReadSchemaAndPartitionColumns()
+void TableSnapshot::loadReadSchemaAndPartitionColumns() const
 {
     auto * current_snapshot = getSnapshot();
     chassert(engine.get());

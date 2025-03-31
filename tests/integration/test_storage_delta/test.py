@@ -661,15 +661,24 @@ def test_partition_columns(started_cluster, use_delta_kernel):
         )
     )
     assert result == num_rows
+
+    query_id = f"query_with_filter_{TABLE_NAME}"
     result = int(
         instance.query(
             f"""SELECT count()
             FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})
             WHERE c == toDateTime('2000/01/05')
-            """
+            """, query_id=query_id
         )
     )
     assert result == 1
+
+    if use_delta_kernel == 1:
+        instance.query("SYSTEM FLUSH LOGS")
+        assert num_rows - 1 == int(instance.query(f"""
+            SELECT ProfileEvents['DeltaLakePartitionPrunedFiles']
+            FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+        """))
 
     instance.query(
         f"""
