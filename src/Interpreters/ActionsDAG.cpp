@@ -1557,6 +1557,7 @@ void ActionsDAG::decorrelate() noexcept
         if (node.type == ActionType::PLACEHOLDER)
         {
             node.type = ActionType::INPUT;
+            node.column = nullptr;
             inputs.emplace_back(&node);
         }
     }
