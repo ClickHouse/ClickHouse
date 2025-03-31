@@ -9,7 +9,7 @@ title: 'TRUNCATE Statements'
 # TRUNCATE Statements
 
 ## TRUNCATE TABLE {#truncate-table}
-``` sql
+```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -26,14 +26,14 @@ If the `alter_sync` is set to `2` and some replicas are not active for more than
 :::
 
 ## TRUNCATE ALL TABLES {#truncate-all-tables}
-``` sql
+```sql
 TRUNCATE ALL TABLES FROM [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
 Removes all data from all tables in a database.
 
 ## TRUNCATE DATABASE {#truncate-database}
-``` sql
+```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
 

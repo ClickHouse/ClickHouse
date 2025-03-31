@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
@@ -26,9 +27,19 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-
 namespace
 {
+    template<typename T>
+    void validateFloatingPointSettingValue(T value)
+    {
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            if (!std::isfinite(value))
+                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
+                    "Float setting value must be finite, got {}", value);
+        }
+    }
+
     template <typename T>
     T stringToNumber(const String & str)
     {
@@ -136,6 +147,22 @@ namespace
         return f.safeGet<Map>();
     }
 
+}
+
+template <typename T>
+SettingFieldNumber<T>::SettingFieldNumber(Type x)
+{
+    validateFloatingPointSettingValue(x);
+    value = x;
+};
+
+template <typename T>
+SettingFieldNumber<T> & SettingFieldNumber<T>::operator=(Type x)
+{
+    validateFloatingPointSettingValue(x);
+    value = x;
+    changed = true;
+    return *this;
 }
 
 template <typename T>

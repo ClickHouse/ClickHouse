@@ -271,7 +271,7 @@ Look for logs at `/etc/clickhouse-server/clickhouse-server.log`.
 
 When ClickHouse is already installed on your system, you can build a new `clickhouse` binary and replace the existing binary:
 
-``` bash
+```bash
 $ sudo clickhouse stop
 $ sudo cp ./clickhouse /usr/bin/
 $ sudo clickhouse start
@@ -279,14 +279,14 @@ $ sudo clickhouse start
 
 Also you can stop system clickhouse-server and run your own with the same configuration but with logging to terminal:
 
-``` bash
+```bash
 $ sudo clickhouse stop
 $ sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
 Example with gdb:
 
-``` bash
+```bash
 $ sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 

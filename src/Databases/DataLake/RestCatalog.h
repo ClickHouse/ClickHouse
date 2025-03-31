@@ -54,7 +54,6 @@ public:
     {
         return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
     }
-
 private:
     struct Config
     {
