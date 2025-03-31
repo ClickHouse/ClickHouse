@@ -173,7 +173,7 @@ bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 /// 3rd-party uncontrolled dangerous libraries into the process address space,
 /// because it is insane.
 
-#if !defined(USE_MUSL)
+#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS)
 extern "C"
 {
     void * dlopen(const char *, int)

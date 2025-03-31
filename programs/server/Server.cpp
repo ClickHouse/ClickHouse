@@ -401,6 +401,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int OPENSSL_ERROR;
 }
 
 
@@ -988,6 +989,7 @@ try
     }
 #endif
 
+#if USE_SSL
     /// When building openssl into clickhouse, clickhouse owns the configuration
     /// Therefore, the clickhouse openssl configuration should be kept separate from
     /// the OS. Default to the one in the standard config directory, unless overridden
@@ -1004,6 +1006,14 @@ try
         const auto config_dir = std::filesystem::path{config_path}.replace_filename("openssl.conf");
         setenv("OPENSSL_CONF", config_dir.c_str(), true); /// NOLINT
     }
+
+#if USE_OPENSSL_FIPS
+	Poco::Crypto::OpenSSLInitializer::enableFIPSMode(true);
+
+	if (!Poco::Crypto::OpenSSLInitializer::isFIPSEnabled())
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to enable FIPS mode.");
+#endif
+#endif
 
     if (auto total_numa_memory = getNumaNodesTotalMemory(); total_numa_memory.has_value())
     {

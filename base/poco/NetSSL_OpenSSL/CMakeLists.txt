@@ -1,10 +1,6 @@
 if (ENABLE_SSL)
     file (GLOB SRCS src/*.cpp)
 
-    if (ENABLE_OPENSSL_FIPS)
-        add_definitions (-DOPENSSL_FIPS)
-    endif ()
-
     add_library (_poco_net_ssl ${SRCS})
     add_library (Poco::Net::SSL ALIAS _poco_net_ssl)
 

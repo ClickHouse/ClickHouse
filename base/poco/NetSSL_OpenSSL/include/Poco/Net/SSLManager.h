@@ -294,11 +294,8 @@ namespace Net
         static const std::string CFG_DISABLE_PROTOCOLS;
         static const std::string CFG_DH_PARAMS_FILE;
         static const std::string CFG_ECDH_CURVE;
-
-#ifdef OPENSSL_FIPS
         static const std::string CFG_FIPS_MODE;
         static const bool VAL_FIPS_MODE;
-#endif
 
     protected:
         static int verifyClientCallback(int ok, X509_STORE_CTX * pStore);

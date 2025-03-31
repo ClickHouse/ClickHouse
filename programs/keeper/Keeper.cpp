@@ -95,6 +95,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int NETWORK_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int OPENSSL_ERROR;
 }
 
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
@@ -313,6 +314,12 @@ try
     Poco::Logger * log = &logger();
 
     UseSSL use_ssl;
+#if USE_OPENSSL_FIPS
+	Poco::Crypto::OpenSSLInitializer::enableFIPSMode(true);
+
+	if (!Poco::Crypto::OpenSSLInitializer::isFIPSEnabled())
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to enable FIPS mode.");
+#endif
 
     MainThreadStatus::getInstance();
 

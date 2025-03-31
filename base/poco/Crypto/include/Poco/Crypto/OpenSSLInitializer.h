@@ -24,15 +24,6 @@
 
 #include "Poco/AtomicCounter.h"
 #include "Poco/Crypto/Crypto.h"
-#include "Poco/Mutex.h"
-
-
-extern "C" {
-struct CRYPTO_dynlock_value
-{
-    Poco::FastMutex _mutex;
-};
-}
 
 
 namespace Poco
@@ -63,25 +54,26 @@ namespace Crypto
         static bool isFIPSEnabled();
         // Returns true if FIPS mode is enabled, false otherwise.
 
-        static void enableFIPSMode(bool enabled);
-        // Enable or disable FIPS mode. If FIPS is not available, this method doesn't do anything.
-
-    protected:
-        enum
+        static void enableFIPSMode(bool enabled)
         {
-            SEEDSIZE = 256
-        };
+            if (!enabled)
+            {
+                EVP_default_properties_enable_fips(nullptr, 0);
+                return;
+            }
 
-        // OpenSSL multithreading support
-        static void lock(int mode, int n, const char * file, int line);
-        static unsigned long id();
-        static struct CRYPTO_dynlock_value * dynlockCreate(const char * file, int line);
-        static void dynlock(int mode, struct CRYPTO_dynlock_value * lock, const char * file, int line);
-        static void dynlockDestroy(struct CRYPTO_dynlock_value * lock, const char * file, int line);
+            _fipsProvider = OSSL_PROVIDER_load(nullptr, "fips");
+            if (!_fipsProvider)
+                throw Exception("Failed to load FIPS provider");
+
+            if (EVP_default_properties_enable_fips(nullptr, 1) != 1)
+                throw Exception("Failed to enable FIPS mode");
+        }
+        // Enable or disable FIPS mode.
 
     private:
-        static Poco::FastMutex * _mutexes;
         static Poco::AtomicCounter _rc;
+        static OSSL_PROVIDER* _fipsProvider;
     };
 
 
@@ -92,23 +84,6 @@ namespace Crypto
     {
         return EVP_default_properties_is_fips_enabled(nullptr);
     }
-
-    inline void OpenSSLInitializer::enableFIPSMode(bool enabled)
-    {
-        if (!enabled)
-        {
-            EVP_default_properties_enable_fips(nullptr, 0);
-            return;
-        }
-
-        OSSL_PROVIDER * fips = OSSL_PROVIDER_load(nullptr, "fips");
-        if (!fips)
-            throw Exception("Failed to load FIPS provider");
-
-        if (EVP_default_properties_enable_fips(nullptr, 1) != 1)
-            throw Exception("Failed to enable FIPS mode");
-    }
-
 
 }
 } // namespace Poco::Crypto
