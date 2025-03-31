@@ -22,6 +22,7 @@ struct ExchangeStreamDestinations
 /// Contains all info to send a task to remote worker
 struct DistributedQueryTaskDescription
 {
+    String initial_query_id;
     DistributedQueryTask task;
     String serialized_query_plan;
     ExchangeDescriptions exchanges;

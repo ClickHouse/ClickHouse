@@ -2,8 +2,14 @@
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Interpreters/ClientInfo.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
 #include <Core/Block.h>
+#include <Common/SipHash.h>
+#include <Common/Stopwatch.h>
+#include <exception>
 #include <mutex>
 
 namespace DB
@@ -15,8 +21,18 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
 
 StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path)
 {
-    ContextPtr context = Context::getGlobalContextInstance();
-    auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(unique_temp_file_path, context);
+    ContextPtr global_context = Context::getGlobalContextInstance();
+    ContextMutablePtr query_context = Context::createCopy(global_context);
+    query_context->makeQueryContext();
+    {
+        ClientInfo client_info;
+        client_info.current_query_id = unique_task_id;
+        client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        client_info.initial_query_id = task_description.initial_query_id;
+        query_context->setClientInfo(client_info);
+    }
+
+    auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(unique_temp_file_path, query_context);
 
     std::shared_ptr<std::promise<void>> task_promise = std::make_shared<std::promise<void>>();
     auto task_state = std::make_shared<TaskState>();
@@ -33,11 +49,19 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         return *cancelled;
     };
 
-    auto task_function = [task_description, object_storage, object_storage_path, context, task_promise, is_task_cancelled]() mutable
+    auto task_function = [task_description, object_storage, object_storage_path, query_context, task_promise, is_task_cancelled]() mutable
     {
+        auto query_scope = std::make_unique<CurrentThread::QueryScope>(query_context);
+
+        Stopwatch start_watch;
+        ASTSelectQuery ast_stub; /// FIXME: this is only used to populate query_kind
+        auto query_plan_hash = sipHash64(task_description.serialized_query_plan);
+        auto process_list_entry = query_context->getProcessList().insert(task_description.task.task_id, query_plan_hash, &ast_stub, query_context, start_watch.getStart());
+        query_context->setProcessListElement(process_list_entry->getQueryStatus());
+
         try
         {
-            doExecuteTask(task_description, object_storage, object_storage_path, context, is_task_cancelled);
+            doExecuteTask(task_description, object_storage, object_storage_path, query_context, is_task_cancelled);
             task_promise->set_value("");
         }
         catch (std::exception & e)

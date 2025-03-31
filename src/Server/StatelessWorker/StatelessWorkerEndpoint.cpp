@@ -31,6 +31,8 @@ std::string StatelessWorkerEndpoint::getId(const std::string & path) const
 
 void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out)
 {
+    writeStringBinary(task_description.initial_query_id, out);
+
     const auto & task = task_description.task;
 
     writeStringBinary(task.task_id, out);
@@ -71,6 +73,8 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
 
 void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuffer & in)
 {
+    readStringBinary(task_description.initial_query_id, in);
+
     auto & task = task_description.task;
 
     readStringBinary(task.task_id, in);

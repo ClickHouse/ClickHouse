@@ -487,6 +487,8 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     if (!pipeline.completed())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not completed");
 
+    pipeline.setProcessListElement(context->getProcessListElement());
+
     CompletedPipelineExecutor executor(pipeline);
     if (is_cancelled)
         executor.setCancelCallback(is_cancelled, 100);
@@ -714,10 +716,11 @@ protected:
         return {stateless_worker_endpoint_uri, unique_task_id};
     }
 
-    void startStage(const String & start_name, const DistributedQueryStage & stage) override
+    void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
         std::deque<RunningTaskInfo> started_tasks;
         DistributedQueryTaskDescription task_description;
+        task_description.initial_query_id = context->getCurrentQueryId();
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
 
@@ -735,7 +738,7 @@ protected:
             started_tasks.emplace_back(startTask(task_description));
         }
 
-        stage_tasks[start_name] = std::move(started_tasks);
+        stage_tasks[stage_name] = std::move(started_tasks);
     }
 
     void waitForStage(const String & stage_name) override
