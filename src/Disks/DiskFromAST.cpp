@@ -32,7 +32,9 @@ std::string getOrCreateCustomDisk(
     bool attach)
 {
     const auto & server_config = context->getConfigRef();
-    const auto & include_from_path = server_config.getString("include_from");
+    std::string include_from_path;
+    if (server_config.has("include_from"))
+        include_from_path = server_config.getString("include_from");
 
     std::vector<std::pair<std::string, std::string>> substitutions;
     zkutil::ZooKeeperNodeCache zk_node_cache([&]() { return context->getZooKeeper(); });
