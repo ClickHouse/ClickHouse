@@ -69,8 +69,11 @@ class Cache:
         )
         Path(record_file_local_dir).mkdir(parents=True, exist_ok=True)
 
+        # _skip_download_counter=True to avoid races for multithreaded downloads
         res = S3.copy_file_from_s3(
-            s3_path=record_path, local_path=record_file_local_dir
+            s3_path=record_path,
+            local_path=record_file_local_dir,
+            _skip_download_counter=True,
         )
 
         if res:

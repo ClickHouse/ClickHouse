@@ -458,7 +458,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [notEmpty](/sql-reference/functions/array-functions/#notempty)                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [has](/sql-reference/functions/array-functions#hasarr-elem)                                               | ✗           | ✗      | ✔          | ✔          | ✔            | ✔         |
 | [hasAny](/sql-reference/functions/array-functions#hasany)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗         |
-| [hasAll](/sql-reference/functions/array-functions#hasall)                                         | ✗           | ✗      | ✗          | ✗          | ✔            | ✗         |
+| [hasAll](/sql-reference/functions/array-functions#hasall)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗         |
 | hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
 | hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
 | hasTokenCaseInsensitive (*)                                                                                | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         |
@@ -908,7 +908,7 @@ Moving data does not interfere with data replication. Therefore, different stora
 After the completion of background merges and mutations, old parts are removed only after a certain amount of time (`old_parts_lifetime`).
 During this time, they are not moved to other volumes or disks. Therefore, until the parts are finally removed, they are still taken into account for evaluation of the occupied disk space.
 
-User can assign new big parts to different disks of a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) volume in a balanced way using the [min_bytes_to_rebalance_partition_over_jbod](/operations/settings/merge-tree-settings.md/#min-bytes-to-rebalance-partition-over-jbod) setting.
+User can assign new big parts to different disks of a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) volume in a balanced way using the [min_bytes_to_rebalance_partition_over_jbod](/operations/settings/merge-tree-settings.md/#min_bytes_to_rebalance_partition_over_jbod) setting.
 
 ## Using External Storage for Data Storage {#table_engine-mergetree-s3}
 
