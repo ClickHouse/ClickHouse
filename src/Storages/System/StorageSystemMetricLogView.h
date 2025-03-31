@@ -48,6 +48,7 @@ private:
 /// filter push down through it and it's possible only with custom code in filterPushDown.cpp
 class CustomMetricLogStep : public ITransformingStep
 {
+    SortDescription sort_description;
 public:
     CustomMetricLogStep(Block input_header_, Block output_header_);
 
@@ -59,6 +60,8 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void updateOutputHeader() override {}
+
+    const SortDescription & getSortDescription() const override;
 };
 
 }

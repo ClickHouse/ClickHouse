@@ -13,6 +13,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Processors/Transforms/CheckSortedTransform.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeString.h>
@@ -109,7 +110,7 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source
     order_by_date->children.emplace_back(std::make_shared<ASTIdentifier>(TransposedMetricLog::EVENT_DATE_NAME));
     order_by_date->direction = 1;
     std::shared_ptr<ASTOrderByElement> order_by_time = std::make_shared<ASTOrderByElement>();
-    order_by_time->children.emplace_back(last_element);
+    order_by_time->children.emplace_back(std::make_shared<ASTIdentifier>("hour"));
     order_by_time->direction = 1;
     std::shared_ptr<ASTOrderByElement> order_by_metric = std::make_shared<ASTOrderByElement>();
     order_by_metric->children.emplace_back(std::make_shared<ASTIdentifier>(TransposedMetricLog::METRIC_NAME));
@@ -122,6 +123,7 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source
 
     result->list_of_selects = std::make_shared<ASTExpressionList>();
     result->list_of_selects->children.emplace_back(select_query);
+    LOG_DEBUG(getLogger("DEBUG"), "VIEW QUERY {}", result->formatForLogging());
 
     return result;
 }
@@ -158,7 +160,7 @@ ColumnsDescription getColumnsDescriptionForView()
     NamesAndTypesList result;
     result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_TIME_NAME, std::make_shared<DataTypeDateTime>()));
     result.push_back(NameAndTypePair(TransposedMetricLog::VALUE_NAME, std::make_shared<DataTypeInt64>()));
-    result.push_back(NameAndTypePair(TransposedMetricLog::METRIC_NAME, std::make_shared<DataTypeString>()));
+    result.push_back(NameAndTypePair(TransposedMetricLog::METRIC_NAME, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
     result.push_back(NameAndTypePair(TransposedMetricLog::HOSTNAME_NAME, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
     result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_DATE_NAME, std::make_shared<DataTypeDate>()));
     result.push_back(NameAndTypePair(HOUR_ALIAS_NAME, std::make_shared<DataTypeDateTime>()));
@@ -283,6 +285,7 @@ public:
 
         bool need_to_apply_filter = !memoryIsByte(filter.raw_data(), min_second_in_hour, max_second_in_hour + 1, 1);
 
+        LOG_DEBUG(getLogger("DEBUG"), "ZERO TIME {}", times[min_second_in_hour]);
         for (const auto & column_name : column_names)
         {
             if (column_name == TransposedMetricLog::EVENT_TIME_NAME)
@@ -389,11 +392,12 @@ public:
         const auto & columns = chunk.getColumns();
         const auto & event_time_column = checkAndGetColumn<ColumnDateTime>(*columns[EVENT_TIME_POSITION]);
         const auto & value_column = checkAndGetColumn<ColumnInt64>(*columns[VALUE_POSITION]);
-        const auto & metric_column = checkAndGetColumn<ColumnString>(*columns[METRIC_POSITION]);
+        const auto & metric_column = checkAndGetColumn<ColumnLowCardinality>(*columns[METRIC_POSITION]);
         const auto & date_column = checkAndGetColumn<ColumnDate>(*columns[EVENT_DATE_POSITION]);
         const auto & hostname_column = checkAndGetColumn<ColumnLowCardinality>(*columns[HOSTNAME_POSITION]);
         const auto & hour_column = checkAndGetColumn<ColumnDateTime>(*columns[EVENT_TIME_HOUR_POSITION]);
 
+        LOG_DEBUG(getLogger("DEBUG"), "HOUR {}", hour_column.getInt(0));
         if (rows_count && current_hour == 0)
         {
             current_hour = hour_column.getInt(0);
@@ -446,16 +450,22 @@ CustomMetricLogStep::CustomMetricLogStep(
          input_header_, output_header_,
          ITransformingStep::Traits
          {
-            .data_stream_traits = ITransformingStep::DataStreamTraits{.returns_single_stream = true, .preserves_number_of_streams = false, .preserves_sorting = true},
+            .data_stream_traits = ITransformingStep::DataStreamTraits{.returns_single_stream = true, .preserves_number_of_streams = false, .preserves_sorting = false},
             .transform_traits = ITransformingStep::TransformTraits{.preserves_number_of_rows = false}
          })
 {
+    sort_description.emplace_back(SortColumnDescription("event_time"));
 }
 
 void CustomMetricLogStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.resize(1);
     pipeline.addTransform(std::make_shared<CustomFilterTransform>(input_headers[0], *output_header));
+}
+
+const SortDescription & CustomMetricLogStep::getSortDescription() const
+{
+    return sort_description;
 }
 
 /// Adds filter to view similar to WHERE metric_name IN ('Metric1', 'Event1', ...)
