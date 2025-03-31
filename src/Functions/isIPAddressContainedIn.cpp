@@ -41,7 +41,7 @@ struct IPTrait<IPKind::IPv4>
 {
     using ColumnType = DB::ColumnIPv4;
     using ElementType = UInt32;
-    static inline ElementType getElement(const ColumnType * col, size_t n)
+    static ElementType getElement(const ColumnType * col, size_t n)
     {
         return col->getElement(n);
     }
@@ -52,7 +52,7 @@ struct IPTrait<IPKind::IPv6>
 {
     using ColumnType = DB::ColumnIPv6;
     using ElementType = DB::UInt128;
-    static inline ElementType getElement(const ColumnType * col, size_t n)
+    static ElementType getElement(const ColumnType * col, size_t n)
     {
         return col->getElement(n);
     }
@@ -63,7 +63,7 @@ struct IPTrait<IPKind::String>
 {
     using ColumnType = DB::ColumnString;
     using ElementType = std::string_view;
-    static inline ElementType getElement(const ColumnType * col, size_t n)
+    static ElementType getElement(const ColumnType * col, size_t n)
     {
         return col->getDataAt(n).toView();
     }
@@ -84,7 +84,7 @@ public:
             ip.addr = IPv6AddrType();
             auto * dst = std::get<IPv6AddrType>(ip.addr).data();
             const char * src = reinterpret_cast<const char *>(&address.items);
-            std::memcpy(dst, src, IPV6_BINARY_LENGTH);
+            memcpy(dst, src, IPV6_BINARY_LENGTH);
         }
         else
         {
