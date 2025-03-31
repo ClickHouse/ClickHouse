@@ -11,6 +11,7 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include "Interpreters/AggregatedData.h"
 #include <Interpreters/AggregationCommon.h>
+#include <type_traits>
 #include <typeinfo>
 
 namespace DB
@@ -351,12 +352,40 @@ protected:
     template <typename T, typename ArgType>
     struct HasErase<T, ArgType, std::void_t<decltype(std::declval<T>().erase(std::declval<ArgType>()))>> : std::true_type {};
 
+    template <typename T, typename = void>
+    struct HasOstreamOperator : std::false_type {};
+
+    template <typename T>
+    struct HasOstreamOperator<T, std::void_t<decltype(std::declval<std::ostream&>() << std::declval<T>())>> : std::true_type {};
+
     template <typename KeyHolder1, typename KeyHolder2>
-    bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::optional<std::vector<UInt64>> & optimization_indexes) {
-        (void)lhs;
-        (void)rhs;
+    bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::vector<UInt64> & optimization_indexes) {
         (void)optimization_indexes;
-        return false; // TODO implement
+        const auto & lhs_key = keyHolderGetKey(lhs);
+        const auto & rhs_key = keyHolderGetKey(rhs);
+
+        // if constexpr (HasBegin<decltype(lhs_key)>::value) {
+        if constexpr (std::is_same_v<decltype(lhs_key), StringRef>) {
+            // std::cout << "compareKeyHolders: case if (has .begin())" << std::endl;
+            // std::cout << "\tcompareKeyHolders: lhs_key.size(): " << lhs_key.size() << std::endl;
+            // std::cout << "\tcompareKeyHolders: rhs_key.size(): " << rhs_key.size() << std::endl;
+            // std::cout << "\tcompareKeyHolders: lhs_key: " << lhs_key << std::endl;
+            // std::cout << "\tcompareKeyHolders: rhs_key: " << rhs_key << std::endl;
+            // assert(lhs_key.size() == rhs_key.size());
+            // for (const auto & idx : optimization_indexes) {
+            //     if (lhs_key[idx] < rhs_key[idx])
+            //         return true;
+            //     if (rhs_key[idx] < lhs_key[idx])
+            //         return false;
+            // }
+        }
+        else {
+            // std::cout << "compareKeyHolders: case else (no .begin())" << std::endl;
+            // std::cout << "\tcompareKeyHolders: lhs_key: " << lhs_key << std::endl;
+            // std::cout << "\tcompareKeyHolders: rhs_key: " << rhs_key << std::endl;
+            return lhs_key < rhs_key;
+        }
+        return false;
     }
 
     // 72610: key_holder -- указатель на ключ
@@ -375,6 +404,13 @@ protected:
         std::cout << "\t@@@@@@ sizeof(has_mapped): " << sizeof(has_mapped) << std::endl;
         std::cout << "\t@@@@@@ consecutive_keys_optimization: " << consecutive_keys_optimization << std::endl;
         std::cout << "\t@@@@@@ sizeof(consecutive_keys_optimization): " << sizeof(consecutive_keys_optimization) << std::endl;
+        std::cout << "\t@@@@@@ optimization_indexes: " << (optimization_indexes ? "not null" : "null") << std::endl;
+        if (optimization_indexes) {
+            std::cout << "\t@@@@@@ optimization_indexes->size(): " << optimization_indexes->size() << std::endl;
+            for (const auto & idx : *optimization_indexes) {
+                std::cout << "\t@@@@@@ idx: " << idx << std::endl;
+            }
+        }
         if constexpr (consecutive_keys_optimization)
         {
             if (cache.found && cache.check(keyHolderGetKey(key_holder)))
@@ -415,36 +451,42 @@ protected:
         std::cout << "^^^^^^^^ Type of key_holder: " << typeid(key_holder).name() << std::endl;
         std::cout << "^^^^^^^^ Type of keyHolderGetKey(key_holder): " << typeid(keyHolderGetKey(key_holder)).name() << std::endl;
 
-        if (data.size() >= limit_length + 1) { // TODO do == and assert <=
-            std::cout << "data.size() >= limit_length + 1" << std::endl;
-            if constexpr (HasBegin<Data>::value) {
-                auto min_key_holder = key_holder;
-                for (const auto& data_el : data) {
-                    if constexpr (HasKey<KeyHolder>::value) {
-                        const auto& key = data_el.getKey();
-                        if (compareKeyHolders(key, min_key_holder.key, optimization_indexes)) {
-                            min_key_holder.key = key;
+        if constexpr (!std::is_same_v<decltype(key_holder), const VoidKey>) {
+            if constexpr (HasOstreamOperator<decltype(keyHolderGetKey(key_holder))>::value) {
+                std::cout << "^^^^^^^^ keyHolderGetKey(key_holder): " << keyHolderGetKey(key_holder) << std::endl;
+            }
+            // std::cout << "^^^^^^^^ cout << keyHolderGetKey(key_holder) does not work" << std::endl;
+            if (optimization_indexes && data.size() >= limit_length + 1) { // TODO do == and assert <=
+                std::cout << "data.size() >= limit_length + 1" << std::endl;
+                if constexpr (HasBegin<Data>::value) {
+                    if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>) {
+                        auto min_key_holder = key_holder;
+                        for (const auto& data_el : data) {
+                            if constexpr (HasKey<KeyHolder>::value) {
+                                const auto& key = data_el.getKey();
+                                if (compareKeyHolders(key, min_key_holder.key, *optimization_indexes)) {
+                                    min_key_holder.key = key;
+                                }
+                            } else {
+                                if (compareKeyHolders(data_el.getKey(), min_key_holder, *optimization_indexes)) {
+                                    min_key_holder = data_el.getKey();
+                                }
+                            }
                         }
-                    } else {
-                        if (compareKeyHolders(data_el.getKey(), min_key_holder, optimization_indexes)) {
-                            if constexpr (!std::is_same_v<decltype(data_el.getKey()), const VoidKey>) {
-                                min_key_holder = data_el.getKey();
+                        const auto& min_key = keyHolderGetKey(min_key_holder);
+                        if constexpr (HasErase<Data, decltype(keyHolderGetKey(min_key_holder))>::value) {
+                            data.erase(min_key);
+                            if (min_key == keyHolderGetKey(key_holder)) {
+                                if constexpr (!has_mapped)
+                                    return EmplaceResult(inserted);
                             }
                         }
                     }
+                } else if constexpr(HasForEachMapped<Data>::value) {
+                    // data.forEachMapped([](auto el) {
+                    //     std::cout << "forEachMapped el: " << el << std::endl;
+                    // });
                 }
-                const auto& min_key = keyHolderGetKey(min_key_holder);
-                if constexpr (HasErase<Data, decltype(keyHolderGetKey(min_key_holder))>::value) {
-                    data.erase(min_key);
-                    if (min_key == keyHolderGetKey(key_holder)) {
-                        if constexpr (!has_mapped)
-                            return EmplaceResult(inserted);
-                    }
-                }
-            } else if constexpr(HasForEachMapped<Data>::value) {
-                // data.forEachMapped([](auto el) {
-                //     std::cout << "forEachMapped el: " << el << std::endl;
-                // });
             }
         }
 
