@@ -218,9 +218,19 @@ std::shared_ptr<TSystemLog> createSystemLog(
         if (!ttl.empty())
             log_settings.engine += " TTL " + ttl;
 
-        /// ORDER BY expr is necessary.
-        String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
-        log_settings.engine += " ORDER BY (" + order_by + ")";
+        if (std::is_same_v<TSystemLog, TransposedMetricLog>)
+        {
+            auto schema = config.getString(config_prefix + ".schema_type", "wide");
+            /// NOTE, fixed schema, it's not allowed to change order by for efficiency reasons
+            if (schema == "transposed_with_wide_view")
+                log_settings.engine += std::string{" ORDER BY ("} + TSystemLog::getDefaultOrderBy() + ")";
+        }
+        else
+        {
+            /// ORDER BY expr is necessary.
+            String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
+            log_settings.engine += " ORDER BY (" + order_by + ")";
+        }
 
         /// SETTINGS expr is not necessary.
         ///   https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#settings
