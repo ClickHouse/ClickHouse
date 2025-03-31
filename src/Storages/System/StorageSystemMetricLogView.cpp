@@ -123,7 +123,6 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source
 
     result->list_of_selects = std::make_shared<ASTExpressionList>();
     result->list_of_selects->children.emplace_back(select_query);
-    LOG_DEBUG(getLogger("DEBUG"), "VIEW QUERY {}", result->formatForLogging());
 
     return result;
 }
@@ -285,7 +284,6 @@ public:
 
         bool need_to_apply_filter = !memoryIsByte(filter.raw_data(), min_second_in_hour, max_second_in_hour + 1, 1);
 
-        LOG_DEBUG(getLogger("DEBUG"), "ZERO TIME {}", times[min_second_in_hour]);
         for (const auto & column_name : column_names)
         {
             if (column_name == TransposedMetricLog::EVENT_TIME_NAME)
@@ -397,7 +395,6 @@ public:
         const auto & hostname_column = checkAndGetColumn<ColumnLowCardinality>(*columns[HOSTNAME_POSITION]);
         const auto & hour_column = checkAndGetColumn<ColumnDateTime>(*columns[EVENT_TIME_HOUR_POSITION]);
 
-        LOG_DEBUG(getLogger("DEBUG"), "HOUR {}", hour_column.getInt(0));
         if (rows_count && current_hour == 0)
         {
             current_hour = hour_column.getInt(0);
