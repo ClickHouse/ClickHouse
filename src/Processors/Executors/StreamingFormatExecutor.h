@@ -27,6 +27,7 @@ public:
         ErrorCallback on_error_ = [](const MutableColumns &, const ColumnCheckpoints, Exception & e) -> size_t { throw std::move(e); },
         size_t total_bytes_ = 0,
         SimpleTransformPtr adding_defaults_transform_ = nullptr,
+        double preallocate_factor = -1.0f,
         double min_preallocate_factor_ = 5.0f);
 
     /// Returns numbers of new read rows.
@@ -57,6 +58,7 @@ private:
     ColumnCheckpoints checkpoints;
 
     size_t total_bytes;
+    double preallocate_factor;
     double min_preallocate_factor;
     bool try_preallocate = true;
 };

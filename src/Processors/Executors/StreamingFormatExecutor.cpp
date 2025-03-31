@@ -21,6 +21,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     ErrorCallback on_error_,
     size_t total_bytes_,
     SimpleTransformPtr adding_defaults_transform_,
+    double preallocate_factor_,
     double min_preallocate_factor_)
     : header(header_)
     , format(std::move(format_))
@@ -30,6 +31,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     , result_columns(header.cloneEmptyColumns())
     , checkpoints(result_columns.size())
     , total_bytes(total_bytes_)
+    , preallocate_factor(preallocate_factor_)
     , min_preallocate_factor(min_preallocate_factor_)
 {
     connect(format->getPort(), port);
@@ -54,15 +56,15 @@ void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameter
 
 void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const Chunk & chunk)
 {
-    if (!try_preallocate)
+    if (!try_preallocate || preallocate_factor == 0.0f)
         return;
 
     try_preallocate = false; /// do it once
 
     if (total_bytes && num_bytes)
     {
-        double factor = static_cast<double>(total_bytes) / num_bytes;
-        if (factor >= min_preallocate_factor)
+        double factor = preallocate_factor > 0 ? preallocate_factor : static_cast<double>(total_bytes) / num_bytes;
+        if (preallocate_factor > 0 || factor >= min_preallocate_factor)
         {
             /// Generate some dummy columns whose size is the original columns size * factor. It's
             /// ok to do this because prepareForSquashing only uses the size of reference_columns
