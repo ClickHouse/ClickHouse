@@ -1,7 +1,5 @@
-import os
-
 import pytest
-
+import os
 from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))

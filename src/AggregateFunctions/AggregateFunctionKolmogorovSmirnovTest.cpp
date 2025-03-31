@@ -12,16 +12,17 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
 
-namespace DB
-{
 
 namespace ErrorCodes
 {
-extern const int NOT_IMPLEMENTED;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
+
+namespace DB
+{
 
 struct Settings;
 
@@ -168,11 +169,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                  * J.DURBIN
                  * Distribution theory for tests based on the sample distribution function
                  */
-                Float64 new_val;
-                Float64 old_val;
-                Float64 s;
-                Float64 w;
-                Float64 z;
+                Float64 new_val, old_val, s, w, z;
                 UInt64 k_max = static_cast<UInt64>(sqrt(2 - log(tol)));
 
                 if (p < 1)

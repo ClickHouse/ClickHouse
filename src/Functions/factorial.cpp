@@ -21,7 +21,7 @@ struct FactorialImpl
 
     static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
-        if constexpr (is_floating_point<A> || is_over_big_int<A>)
+        if constexpr (std::is_floating_point_v<A> || is_over_big_int<A>)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type of argument of function factorial, should not be floating point or big int");
@@ -74,7 +74,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameFactorial>
 {
     static bool has() { return true; }
 
-    static IFunction::Monotonicity get(const IDataType &, const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const Field & left, const Field & right)
     {
         bool is_strict = false;
         if (!left.isNull() && !right.isNull())
@@ -105,7 +105,7 @@ Computes the factorial of an integer value. It works with any native integer typ
 The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any negative value. The maximum positive value for the input argument is 20, a value of 21 or greater will cause exception throw.
 )",
             .examples{{"factorial", "SELECT factorial(10)", ""}},
-            .category{"Mathematical"}},
+            .categories{"Mathematical"}},
         FunctionFactory::Case::Insensitive);
 }
 

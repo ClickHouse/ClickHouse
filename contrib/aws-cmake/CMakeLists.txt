@@ -57,8 +57,6 @@ endif()
 SET(AWS_SDK_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws")
 SET(AWS_SDK_CORE_DIR "${AWS_SDK_DIR}/src/aws-cpp-sdk-core")
 SET(AWS_SDK_S3_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-s3")
-SET(AWS_SDK_KMS_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-kms")
-SET(AWS_SDK_GLUE_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-glue")
 
 SET(AWS_AUTH_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-auth")
 SET(AWS_CAL_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-cal")
@@ -136,6 +134,7 @@ list(APPEND AWS_PUBLIC_INCLUDES
     "${CMAKE_CURRENT_BINARY_DIR}/include"
 )
 
+
 # aws-cpp-sdk-s3
 file(GLOB AWS_SDK_S3_SRC
     "${AWS_SDK_S3_DIR}/source/*.cpp"
@@ -145,17 +144,6 @@ file(GLOB AWS_SDK_S3_SRC
 list(APPEND AWS_SOURCES ${AWS_SDK_S3_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_S3_DIR}/include/")
 
-
-if(CLICKHOUSE_CLOUD)
-    # aws-cpp-sdk-kms
-    file(GLOB AWS_SDK_KMS_SRC
-        "${AWS_SDK_KMS_DIR}/source/*.cpp"
-        "${AWS_SDK_KMS_DIR}/source/model/*.cpp"
-    )
-
-    list(APPEND AWS_SOURCES ${AWS_SDK_KMS_SRC})
-    list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_KMS_DIR}/include/")
-endif()
 
 # aws-c-auth
 file(GLOB AWS_AUTH_SRC
@@ -376,14 +364,6 @@ file(GLOB AWS_SDKUTILS_SRC
 list(APPEND AWS_SOURCES ${AWS_SDKUTILS_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDKUTILS_DIR}/include/")
 
-# aws glue
-file(GLOB AWS_SDK_GLUE_SRC
-    "${AWS_SDK_GLUE_DIR}/source/*.cpp"
-    "${AWS_SDK_GLUE_DIR}/source/model/*.cpp"
-)
-
-list(APPEND AWS_SOURCES ${AWS_SDK_GLUE_SRC})
-list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_GLUE_DIR}/include/")
 
 # Add library.
 add_library(_aws ${AWS_SOURCES})

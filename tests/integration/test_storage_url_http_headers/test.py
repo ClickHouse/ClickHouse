@@ -1,10 +1,9 @@
-import os
-
 import pytest
+import os
+from . import http_headers_echo_server
+from . import redirect_server
 
 from helpers.cluster import ClickHouseCluster
-
-from . import http_headers_echo_server, redirect_server
 
 cluster = ClickHouseCluster(__file__)
 server = cluster.add_instance("node")
@@ -114,30 +113,3 @@ def test_storage_url_redirected_headers(started_cluster):
 
     assert "Host: 127.0.0.1" not in result
     assert "Host: localhost" in result
-
-
-def test_with_override_content_type_url_http_headers(started_cluster):
-    query = "INSERT INTO TABLE FUNCTION url('http://localhost:8000/', JSONEachRow, 'x UInt8') SELECT 1"
-
-    server.query(query)
-
-    result = server.exec_in_container(
-        ["cat", http_headers_echo_server.RESULT_PATH], user="root"
-    )
-
-    print(result)
-
-    assert "Content-Type: application/x-ndjson; charset=UTF-8" in result
-
-    query = "INSERT INTO TABLE FUNCTION url('http://localhost:8000/', JSONEachRow, 'x UInt8', headers('Content-Type' = 'upyachka')) SELECT 1"
-
-    server.query(query)
-
-    result = server.exec_in_container(
-        ["cat", http_headers_echo_server.RESULT_PATH], user="root"
-    )
-
-    print(result)
-
-    assert "Content-Type: application/x-ndjson; charset=UTF-8" not in result
-    assert "Content-Type: upyachka" in result

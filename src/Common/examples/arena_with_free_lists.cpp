@@ -8,7 +8,11 @@
     #include <Common/ArenaWithFreeLists.h>
 #endif
 
+#include <variant>
+#include <memory>
+#include <array>
 #include <sys/resource.h>
+#include <base/bit_cast.h>
 #include <Common/randomSeed.h>
 #include <pcg_random.hpp>
 
@@ -20,14 +24,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadHelpers.h>
-
-#ifdef USE_BAD_ARENA
-#include <array>
-#endif
-
-#include <iomanip>
-#include <memory>
-#include <variant>
 
 using namespace DB;
 

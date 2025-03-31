@@ -1,12 +1,9 @@
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-
-# `randomize_settings` is set tot `False` to maake result of `SHOW CREATE SETTINGS PROFILE` consistent
-instance = cluster.add_instance("instance", randomize_settings=False)
+instance = cluster.add_instance("instance")
 
 
 def system_settings_profile(profile_name):
@@ -131,7 +128,7 @@ def test_smoke():
     instance.query("ALTER USER robin SETTINGS PROFILE xyz")
     assert (
         instance.query("SHOW CREATE USER robin")
-        == "CREATE USER robin IDENTIFIED WITH no_password SETTINGS PROFILE `xyz`\n"
+        == "CREATE USER robin SETTINGS PROFILE `xyz`\n"
     )
     assert (
         instance.query(
@@ -155,10 +152,7 @@ def test_smoke():
     ]
 
     instance.query("ALTER USER robin SETTINGS NONE")
-    assert (
-        instance.query("SHOW CREATE USER robin")
-        == "CREATE USER robin IDENTIFIED WITH no_password\n"
-    )
+    assert instance.query("SHOW CREATE USER robin") == "CREATE USER robin\n"
     assert (
         instance.query(
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",

@@ -28,7 +28,6 @@
 #include <cstring>
 #include <filesystem>
 #include <base/FnTraits.h>
-#include <base/range.h>
 
 
 namespace DB
@@ -128,7 +127,6 @@ namespace
         bool has_no_password = config.has(user_config + ".no_password");
         bool has_password_plaintext = config.has(user_config + ".password");
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
-        bool has_scram_password_sha256_hex = config.has(user_config + ".password_scram_sha256_hex");
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
         bool has_ldap = config.has(user_config + ".ldap");
         bool has_kerberos = config.has(user_config + ".kerberos");
@@ -143,7 +141,7 @@ namespace
         bool has_http_auth = config.has(http_auth_config);
 
         size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
-            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
+            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth;
 
         if (num_password_fields > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
@@ -158,23 +156,18 @@ namespace
 
         if (has_password_plaintext)
         {
-            user->authentication_methods.emplace_back(AuthenticationType::PLAINTEXT_PASSWORD);
-            user->authentication_methods.back().setPassword(config.getString(user_config + ".password"), validate);
+            user->auth_data = AuthenticationData{AuthenticationType::PLAINTEXT_PASSWORD};
+            user->auth_data.setPassword(config.getString(user_config + ".password"), validate);
         }
         else if (has_password_sha256_hex)
         {
-            user->authentication_methods.emplace_back(AuthenticationType::SHA256_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"), validate);
-        }
-        else if (has_scram_password_sha256_hex)
-        {
-            user->authentication_methods.emplace_back(AuthenticationType::SCRAM_SHA256_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_scram_sha256_hex"), validate);
+            user->auth_data = AuthenticationData{AuthenticationType::SHA256_PASSWORD};
+            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"), validate);
         }
         else if (has_password_double_sha1_hex)
         {
-            user->authentication_methods.emplace_back(AuthenticationType::DOUBLE_SHA1_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"), validate);
+            user->auth_data = AuthenticationData{AuthenticationType::DOUBLE_SHA1_PASSWORD};
+            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"), validate);
         }
         else if (has_ldap)
         {
@@ -186,19 +179,19 @@ namespace
             if (ldap_server_name.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty for user {}.", user_name);
 
-            user->authentication_methods.emplace_back(AuthenticationType::LDAP);
-            user->authentication_methods.back().setLDAPServerName(ldap_server_name);
+            user->auth_data = AuthenticationData{AuthenticationType::LDAP};
+            user->auth_data.setLDAPServerName(ldap_server_name);
         }
         else if (has_kerberos)
         {
             const auto realm = config.getString(user_config + ".kerberos.realm", "");
 
-            user->authentication_methods.emplace_back(AuthenticationType::KERBEROS);
-            user->authentication_methods.back().setKerberosRealm(realm);
+            user->auth_data = AuthenticationData{AuthenticationType::KERBEROS};
+            user->auth_data.setKerberosRealm(realm);
         }
         else if (has_certificates)
         {
-            user->authentication_methods.emplace_back(AuthenticationType::SSL_CERTIFICATE);
+            user->auth_data = AuthenticationData{AuthenticationType::SSL_CERTIFICATE};
 
             /// Fill list of allowed certificates.
             Poco::Util::AbstractConfiguration::Keys keys;
@@ -208,14 +201,14 @@ namespace
                 if (key.starts_with("common_name"))
                 {
                     String value = config.getString(certificates_config + "." + key);
-                    user->authentication_methods.back().addSSLCertificateSubject(SSLCertificateSubjects::Type::CN, std::move(value));
+                    user->auth_data.addSSLCertificateSubject(SSLCertificateSubjects::Type::CN, std::move(value));
                 }
                 else if (key.starts_with("subject_alt_name"))
                 {
                     String value = config.getString(certificates_config + "." + key);
                     if (value.empty())
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ssl_certificates.subject_alt_name to not be empty");
-                    user->authentication_methods.back().addSSLCertificateSubject(SSLCertificateSubjects::Type::SAN, std::move(value));
+                    user->auth_data.addSSLCertificateSubject(SSLCertificateSubjects::Type::SAN, std::move(value));
                 }
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown certificate pattern type: {}", key);
@@ -224,7 +217,7 @@ namespace
         else if (has_ssh_keys)
         {
 #if USE_SSH
-            user->authentication_methods.emplace_back(AuthenticationType::SSH_KEY);
+            user->auth_data = AuthenticationData{AuthenticationType::SSH_KEY};
 
             Poco::Util::AbstractConfiguration::Keys entries;
             config.keys(ssh_keys_config, entries);
@@ -234,8 +227,7 @@ namespace
                 const auto conf_pref = ssh_keys_config + "." + entry + ".";
                 if (entry.starts_with("ssh_key"))
                 {
-                    String type;
-                    String base64_key;
+                    String type, base64_key;
                     if (config.has(conf_pref + "type"))
                     {
                         type = config.getString(conf_pref + "type");
@@ -262,33 +254,26 @@ namespace
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ssh_key entry pattern type: {}", entry);
             }
-            user->authentication_methods.back().setSSHKeys(std::move(keys));
+            user->auth_data.setSSHKeys(std::move(keys));
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif
         }
         else if (has_http_auth)
         {
-            user->authentication_methods.emplace_back(AuthenticationType::HTTP);
-            user->authentication_methods.back().setHTTPAuthenticationServerName(config.getString(http_auth_config + ".server"));
+            user->auth_data = AuthenticationData{AuthenticationType::HTTP};
+            user->auth_data.setHTTPAuthenticationServerName(config.getString(http_auth_config + ".server"));
             auto scheme = config.getString(http_auth_config + ".scheme");
-            user->authentication_methods.back().setHTTPAuthenticationScheme(parseHTTPAuthenticationScheme(scheme));
-        }
-        else
-        {
-            user->authentication_methods.emplace_back();
+            user->auth_data.setHTTPAuthenticationScheme(parseHTTPAuthenticationScheme(scheme));
         }
 
-        for (const auto & authentication_method : user->authentication_methods)
+        auto auth_type = user->auth_data.getType();
+        if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+            ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
         {
-            auto auth_type = authentication_method.getType();
-            if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-                ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
-                                toString(auth_type), AuthenticationTypeInfo::get(auth_type).name);
-            }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
+                            toString(auth_type), AuthenticationTypeInfo::get(auth_type).name);
         }
 
         const auto profile_name_config = user_config + ".profile";
@@ -657,7 +642,8 @@ namespace
                 {
                     if (users_without_row_policies_can_read_rows)
                         continue;
-                    filter = "1";
+                    else
+                        filter = "1";
                 }
 
                 auto policy = std::make_shared<RowPolicy>();

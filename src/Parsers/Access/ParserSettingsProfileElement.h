@@ -39,18 +39,4 @@ private:
     bool use_inherit_keyword = false;
 };
 
-
-class ParserAlterSettingsProfileElements : public IParserBase
-{
-public:
-    ParserAlterSettingsProfileElements & useInheritKeyword(bool use_inherit_keyword_ = true) { use_inherit_keyword = use_inherit_keyword_; return *this; }
-
-protected:
-    const char * getName() const override { return "AlterSettingsProfileElements"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-private:
-    bool use_inherit_keyword = false;
-};
-
 }

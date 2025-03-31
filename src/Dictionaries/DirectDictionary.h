@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <variant>
 #include <vector>
 
 #include <Dictionaries/DictionaryStructure.h>
@@ -11,8 +12,6 @@
 
 namespace DB
 {
-
-struct Settings;
 
 template <DictionaryKeyType dictionary_key_type>
 class DirectDictionary final : public IDictionary

@@ -3,7 +3,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionTokens.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/Regexps.h>
 #include <Common/StringUtils.h>
 #include <base/map.h>
@@ -171,8 +170,9 @@ public:
     {
         if (patternIsTrivialChar(arguments))
             return FunctionFactory::instance().getImpl("splitByChar", context)->build(arguments);
-        return std::make_unique<FunctionToFunctionBaseAdaptor>(
-            split_by_regexp, collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
+        else
+            return std::make_unique<FunctionToFunctionBaseAdaptor>(
+                split_by_regexp, collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

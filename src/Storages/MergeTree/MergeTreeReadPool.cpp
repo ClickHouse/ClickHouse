@@ -19,25 +19,15 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 read_backoff_max_throughput;
-    extern const SettingsUInt64 read_backoff_min_concurrency;
-    extern const SettingsMilliseconds read_backoff_min_interval_between_events_ms;
-    extern const SettingsUInt64 read_backoff_min_events;
-    extern const SettingsMilliseconds read_backoff_min_latency_ms;
-}
 
 namespace ErrorCodes
 {
 extern const int CANNOT_SCHEDULE_TASK;
 extern const int LOGICAL_ERROR;
-extern const int BAD_ARGUMENTS;
 }
 
 MergeTreeReadPool::MergeTreeReadPool(
     RangesInDataParts && parts_,
-    MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
@@ -45,11 +35,9 @@ MergeTreeReadPool::MergeTreeReadPool(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const PoolSettings & settings_,
-    const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
-        std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
         storage_snapshot_,
         prewhere_info_,
@@ -57,7 +45,6 @@ MergeTreeReadPool::MergeTreeReadPool(
         reader_settings_,
         column_names_,
         settings_,
-        params_,
         context_)
     , backoff_settings{context_->getSettingsRef()}
     , backoff_state{pool_settings.threads}
@@ -67,95 +54,91 @@ MergeTreeReadPool::MergeTreeReadPool(
 
 MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
-    size_t part_idx;
-    MarkRanges ranges_to_get_from_part;
+    const std::lock_guard lock{mutex};
 
+    /// If number of threads was lowered due to backoff, then will assign work only for maximum 'backoff_state.current_threads' threads.
+    if (task_idx >= backoff_state.current_threads)
+        return nullptr;
+
+    if (remaining_thread_tasks.empty())
+        return nullptr;
+
+    const auto tasks_remaining_for_this_thread = !threads_tasks[task_idx].sum_marks_in_parts.empty();
+    if (!tasks_remaining_for_this_thread && pool_settings.do_not_steal_tasks)
+        return nullptr;
+
+    /// Steal task if nothing to do and it's not prohibited
+    auto thread_idx = task_idx;
+    if (!tasks_remaining_for_this_thread)
     {
-        const std::lock_guard lock{mutex};
-
-        /// If number of threads was lowered due to backoff, then will assign work only for maximum 'backoff_state.current_threads' threads.
-        if (task_idx >= backoff_state.current_threads)
-            return nullptr;
-
-        if (remaining_thread_tasks.empty())
-            return nullptr;
-
-        const auto tasks_remaining_for_this_thread = !threads_tasks[task_idx].sum_marks_in_parts.empty();
-        if (!tasks_remaining_for_this_thread && pool_settings.do_not_steal_tasks)
-            return nullptr;
-
-        /// Steal task if nothing to do and it's not prohibited
-        auto thread_idx = task_idx;
-        if (!tasks_remaining_for_this_thread)
+        auto it = remaining_thread_tasks.lower_bound(backoff_state.current_threads);
+        // Grab the entire tasks of a thread which is killed by backoff
+        if (it != remaining_thread_tasks.end())
         {
-            auto it = remaining_thread_tasks.lower_bound(backoff_state.current_threads);
-            // Grab the entire tasks of a thread which is killed by backoff
-            if (it != remaining_thread_tasks.end())
-            {
-                threads_tasks[task_idx] = std::move(threads_tasks[*it]);
-                remaining_thread_tasks.erase(it);
-                remaining_thread_tasks.insert(task_idx);
-            }
-            else // Try steal tasks from the next thread
-            {
-                it = remaining_thread_tasks.upper_bound(task_idx);
-                if (it == remaining_thread_tasks.end())
-                    it = remaining_thread_tasks.begin();
-                thread_idx = *it;
-            }
+            threads_tasks[task_idx] = std::move(threads_tasks[*it]);
+            remaining_thread_tasks.erase(it);
+            remaining_thread_tasks.insert(task_idx);
         }
-
-        auto & thread_tasks = threads_tasks[thread_idx];
-        auto & thread_task = thread_tasks.parts_and_ranges.back();
-
-        part_idx = thread_task.part_idx;
-        auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
-        const auto min_marks_per_task = per_part_infos[part_idx]->min_marks_per_task;
-
-        size_t need_marks;
-        if (is_part_on_remote_disk[part_idx] && !pool_settings.use_const_size_tasks_for_remote_reading)
-            need_marks = marks_in_part;
-        else /// Get whole part to read if it is small enough.
-            need_marks = std::min(marks_in_part, min_marks_per_task);
-
-        /// Do not leave too little rows in part for next time.
-        if (marks_in_part > need_marks && marks_in_part - need_marks < min_marks_per_task / 2)
-            need_marks = marks_in_part;
-
-        /// Get whole part to read if it is small enough.
-        if (marks_in_part <= need_marks)
+        else // Try steal tasks from the next thread
         {
-            ranges_to_get_from_part = thread_task.ranges;
-            marks_in_part = 0;
-
-            thread_tasks.parts_and_ranges.pop_back();
-            thread_tasks.sum_marks_in_parts.pop_back();
-
-            if (thread_tasks.sum_marks_in_parts.empty())
-                remaining_thread_tasks.erase(thread_idx);
-        }
-        else
-        {
-            /// Loop through part ranges.
-            while (need_marks > 0 && !thread_task.ranges.empty())
-            {
-                auto & range = thread_task.ranges.front();
-
-                const size_t marks_in_range = range.end - range.begin;
-                const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
-
-                ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
-                range.begin += marks_to_get_from_range;
-                if (range.begin == range.end)
-                    thread_task.ranges.pop_front();
-
-                marks_in_part -= marks_to_get_from_range;
-                need_marks -= marks_to_get_from_range;
-            }
+            it = remaining_thread_tasks.upper_bound(task_idx);
+            if (it == remaining_thread_tasks.end())
+                it = remaining_thread_tasks.begin();
+            thread_idx = *it;
         }
     }
 
-    /// createTask() is costly and not needed guarded by mutex.
+    auto & thread_tasks = threads_tasks[thread_idx];
+    auto & thread_task = thread_tasks.parts_and_ranges.back();
+
+    const auto part_idx = thread_task.part_idx;
+    auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
+    const auto min_marks_per_task = per_part_infos[part_idx]->min_marks_per_task;
+
+    size_t need_marks;
+    if (is_part_on_remote_disk[part_idx] && !pool_settings.use_const_size_tasks_for_remote_reading)
+        need_marks = marks_in_part;
+    else /// Get whole part to read if it is small enough.
+        need_marks = std::min(marks_in_part, min_marks_per_task);
+
+    /// Do not leave too little rows in part for next time.
+    if (marks_in_part > need_marks && marks_in_part - need_marks < min_marks_per_task / 2)
+        need_marks = marks_in_part;
+
+    MarkRanges ranges_to_get_from_part;
+
+    /// Get whole part to read if it is small enough.
+    if (marks_in_part <= need_marks)
+    {
+        ranges_to_get_from_part = thread_task.ranges;
+        marks_in_part = 0;
+
+        thread_tasks.parts_and_ranges.pop_back();
+        thread_tasks.sum_marks_in_parts.pop_back();
+
+        if (thread_tasks.sum_marks_in_parts.empty())
+            remaining_thread_tasks.erase(thread_idx);
+    }
+    else
+    {
+        /// Loop through part ranges.
+        while (need_marks > 0 && !thread_task.ranges.empty())
+        {
+            auto & range = thread_task.ranges.front();
+
+            const size_t marks_in_range = range.end - range.begin;
+            const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+
+            ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
+            range.begin += marks_to_get_from_range;
+            if (range.begin == range.end)
+                thread_task.ranges.pop_front();
+
+            marks_in_part -= marks_to_get_from_range;
+            need_marks -= marks_to_get_from_range;
+        }
+    }
+
     return createTask(per_part_infos[part_idx], std::move(ranges_to_get_from_part), previous_task);
 }
 
@@ -203,8 +186,6 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
     if (threads > 1000000ull)
         throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Too many threads ({}) requested", threads);
 
-    std::lock_guard lock(mutex);
-
     threads_tasks.resize(threads);
     if (parts_ranges.empty())
         return;
@@ -230,7 +211,10 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
         for (size_t i = 0; i < parts_ranges.size(); ++i)
         {
             PartInfo part_info{parts_ranges[i], per_part_sum_marks[i], i};
-            parts_per_disk[parts_ranges[i].data_part->getDataPartStorage().getDiskName()].push_back(std::move(part_info));
+            if (parts_ranges[i].data_part->isStoredOnDisk())
+                parts_per_disk[parts_ranges[i].data_part->getDataPartStorage().getDiskName()].push_back(std::move(part_info));
+            else
+                parts_per_disk[""].push_back(std::move(part_info));
         }
 
         for (auto & info : parts_per_disk)
@@ -250,10 +234,6 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
             size_t & marks_in_part = current_parts.back().sum_marks;
             const auto part_idx = current_parts.back().part_idx;
             const auto min_marks_per_task = per_part_infos[part_idx]->min_marks_per_task;
-
-            if (min_marks_per_task == 0)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
             /// Do not get too few rows from part.
             if (marks_in_part >= min_marks_per_task && need_marks < min_marks_per_task)
@@ -318,12 +298,12 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
     }
 }
 
-MergeTreeReadPool::BackoffSettings::BackoffSettings(const DB::Settings & settings)
-    : min_read_latency_ms(settings[Setting::read_backoff_min_latency_ms].totalMilliseconds())
-    , max_throughput(settings[Setting::read_backoff_max_throughput])
-    , min_interval_between_events_ms(settings[Setting::read_backoff_min_interval_between_events_ms].totalMilliseconds())
-    , min_events(settings[Setting::read_backoff_min_events])
-    , min_concurrency(settings[Setting::read_backoff_min_concurrency])
+MergeTreeReadPool::BackoffSettings::BackoffSettings(const DB::Settings& settings)
+    : min_read_latency_ms(settings.read_backoff_min_latency_ms.totalMilliseconds()),
+    max_throughput(settings.read_backoff_max_throughput),
+    min_interval_between_events_ms(settings.read_backoff_min_interval_between_events_ms.totalMilliseconds()),
+    min_events(settings.read_backoff_min_events),
+    min_concurrency(settings.read_backoff_min_concurrency)
 {}
 
 }

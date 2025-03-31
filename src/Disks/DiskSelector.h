@@ -3,12 +3,11 @@
 #include <Disks/DiskFactory.h>
 #include <Disks/IDisk.h>
 
-#include <map>
+#include <Poco/Util/AbstractConfiguration.h>
 
-namespace Poco::Util
-{
-    class AbstractConfiguration;
-};
+#include <map>
+#include <sstream>
+#include <string_view>
 
 namespace DB
 {
@@ -45,9 +44,6 @@ public:
     void addToDiskMap(const String & name, DiskPtr disk);
 
     void shutdown();
-
-    inline static const String DEFAULT_DISK_NAME = "default";
-    inline static const String LOCAL_DISK_NAME = "local";
 
 private:
     DisksMap disks;

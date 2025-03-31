@@ -1,15 +1,10 @@
----
-description: 'Dataset containing 400 million images with English image captions'
-sidebar_label: 'Laion-400M dataset'
-slug: /getting-started/example-datasets/laion-400m-dataset
-title: 'Laion-400M dataset'
----
+# Laion-400M dataset
 
 The [Laion-400M dataset](https://laion.ai/blog/laion-400-open-dataset/) contains 400 million images with English image captions. Laion nowadays provides [an even larger dataset](https://laion.ai/blog/laion-5b/) but working with it will be similar.
 
 The dataset contains the image URL, embeddings for both the image and the image caption, a similarity score between the image and the image caption, as well as metadata, e.g. the image width/height, the licence and a NSFW flag. We can use the dataset to demonstrate [approximate nearest neighbor search](../../engines/table-engines/mergetree-family/annindexes.md) in ClickHouse.
 
-## Data preparation {#data-preparation}
+## Data preparation
 
 The embeddings and the metadata are stored in separate files in the raw data. A data preparation step downloads the data, merges the files,
 converts them to CSV and imports them into ClickHouse. You can use the following `download.sh` script for that:
@@ -72,7 +67,7 @@ The dataset is split into 410 files, each file contains ca. 1 million rows. If y
 
 (The python script above is very slow (~2-10 minutes per file), takes a lot of memory (41 GB per file), and the resulting csv files are big (10 GB each), so be careful. If you have enough RAM, increase the `-P1` number for more parallelism. If this is still too slow, consider coming up with a better ingestion procedure - maybe converting the .npy files to parquet, then doing all the other processing with clickhouse.)
 
-## Create table {#create-table}
+## Create table
 
 To create a table without indexes, run:
 
@@ -98,7 +93,7 @@ To import the CSV files into ClickHouse:
 INSERT INTO laion FROM INFILE '{path_to_csv_files}/*.csv'
 ```
 
-## Run a brute-force ANN search (without ANN index) {#run-a-brute-force-ann-search-without-ann-index}
+## Run a brute-force ANN search (without ANN index)
 
 To run a brute-force approximate nearest neighbor search, run:
 
@@ -110,7 +105,7 @@ SELECT url, caption FROM laion ORDER BY L2Distance(image_embedding, {target:Arra
 
 **Result**
 
-```markdown
+```
 ┌─url───────────────────────────────────────────────────────────────────────────────────────────────────────────┬─caption────────────────────────────────────────────────────────────────┐
 │ https://s3.amazonaws.com/filestore.rescuegroups.org/6685/pictures/animals/13884/13884995/63318230_463x463.jpg │ Adoptable Female Domestic Short Hair                                   │
 │ https://s3.amazonaws.com/pet-uploads.adoptapet.com/8/b/6/239905226.jpg                                        │ Adopt A Pet :: Marzipan - New York, NY                                 │
@@ -125,7 +120,7 @@ SELECT url, caption FROM laion ORDER BY L2Distance(image_embedding, {target:Arra
 8 rows in set. Elapsed: 6.432 sec. Processed 19.65 million rows, 43.96 GB (3.06 million rows/s., 6.84 GB/s.)
 ```
 
-## Run a ANN with an ANN index {#run-a-ann-with-an-ann-index}
+## Run a ANN with an ANN index
 
 Create a new table with an ANN index and insert the data from the existing table:
 
@@ -157,7 +152,7 @@ SELECT url, caption FROM laion_annoy ORDER BY l2Distance(image_embedding, {targe
 
 **Result**
 
-```response
+```
 ┌─url──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─caption──────────────────────────────────────────────────────────────┐
 │ http://tse1.mm.bing.net/th?id=OIP.R1CUoYp_4hbeFSHBaaB5-gHaFj                                                                                                                         │ bed bugs and pets can cats carry bed bugs pets adviser               │
 │ http://pet-uploads.adoptapet.com/1/9/c/1963194.jpg?336w                                                                                                                              │ Domestic Longhair Cat for adoption in Quincy, Massachusetts - Ashley │
@@ -174,11 +169,11 @@ SELECT url, caption FROM laion_annoy ORDER BY l2Distance(image_embedding, {targe
 
 The speed increased significantly at the cost of less accurate results. This is because the ANN index only provide approximate search results. Note the example searched for similar image embeddings, yet it is also possible to search for positive image caption embeddings.
 
-## Creating embeddings with UDFs {#creating-embeddings-with-udfs}
+## Creating embeddings with UDFs
 
-One usually wants to create embeddings for new images or new image captions and search for similar image / image caption pairs in the data. We can use [UDF](/sql-reference/functions/udf) to create the `target` vector without leaving the client. It is important to use the same model to create the data and new embeddings for searches. The following scripts utilize the `ViT-B/32` model which also underlies the dataset.
+One usually wants to create embeddings for new images or new image captions and search for similar image / image caption pairs in the data. We can use [UDF](../../sql-reference/functions/index.md#sql-user-defined-functions) to create the `target` vector without leaving the client. It is important to use the same model to create the data and new embeddings for searches. The following scripts utilize the `ViT-B/32` model which also underlies the dataset.
 
-### Text embeddings {#text-embeddings}
+### Text embeddings
 
 First, store the following Python script in the `user_scripts/` directory of your ClickHouse data path and make it executable (`chmod +x encode_text.py`).
 
@@ -228,7 +223,7 @@ SELECT encode_text('cat');
 ```
 The first run will be slow because it loads the model, but repeated runs will be fast. We can then copy the output to `SET param_target=...` and can easily write queries.
 
-### Image embeddings {#image-embeddings}
+### Image embeddings
 
 Image embeddings can be created similarly but we will provide the Python script the path to a local image instead of the image caption text.
 

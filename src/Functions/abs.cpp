@@ -22,7 +22,7 @@ struct AbsImpl
             return a < 0 ? static_cast<ResultType>(~a) + 1 : static_cast<ResultType>(a);
         else if constexpr (is_integer<A> && is_unsigned_v<A>)
             return static_cast<ResultType>(a);
-        else if constexpr (is_floating_point<A>)
+        else if constexpr (std::is_floating_point_v<A>)
             return static_cast<ResultType>(std::abs(a));
     }
 
@@ -37,7 +37,7 @@ using FunctionAbs = FunctionUnaryArithmetic<AbsImpl, NameAbs, false>;
 template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const IDataType &, const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const Field & left, const Field & right)
     {
         Float64 left_float = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
         Float64 right_float = right.isNull() ? std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);

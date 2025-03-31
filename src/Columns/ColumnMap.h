@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Columns/IColumn.h>
+#include <Core/Block.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnTuple.h>
 
 namespace DB
 {
-
-class ColumnArray;
-class ColumnTuple;
 
 /** Column, that stores a nested Array(Tuple(key, value)) column.
  */
@@ -27,7 +27,11 @@ public:
       */
     using Base = COWHelper<IColumnHelper<ColumnMap>, ColumnMap>;
 
-    static Ptr create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets);
+    static Ptr create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets)
+    {
+        auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{keys, values}), offsets);
+        return ColumnMap::create(nested_column);
+    }
 
     static Ptr create(const ColumnPtr & column) { return ColumnMap::create(column->assumeMutable()); }
     static Ptr create(ColumnPtr && arg) { return create(arg); }
@@ -47,7 +51,6 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override;
     StringRef getDataAt(size_t n) const override;
@@ -99,30 +102,24 @@ public:
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
     void protect() override;
-    ColumnCheckpointPtr getCheckpoint() const override;
-    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
-    void rollback(const ColumnCheckpoint & checkpoint) override;
-    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
-    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
-    void forEachSubcolumn(ColumnCallback callback) const override;
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
+    void forEachSubcolumn(MutableColumnCallback callback) override;
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
     void finalize() override { nested->finalize(); }
     bool isFinalized() const override { return nested->isFinalized(); }
 
-    const ColumnArray & getNestedColumn() const;
-    ColumnArray & getNestedColumn();
+    const ColumnArray & getNestedColumn() const { return assert_cast<const ColumnArray &>(*nested); }
+    ColumnArray & getNestedColumn() { return assert_cast<ColumnArray &>(*nested); }
 
     const ColumnPtr & getNestedColumnPtr() const { return nested; }
     ColumnPtr & getNestedColumnPtr() { return nested; }
 
-    const ColumnTuple & getNestedData() const;
-    ColumnTuple & getNestedData();
+    const ColumnTuple & getNestedData() const { return assert_cast<const ColumnTuple &>(getNestedColumn().getData()); }
+    ColumnTuple & getNestedData() { return assert_cast<ColumnTuple &>(getNestedColumn().getData()); }
 
-    ColumnPtr compress(bool force_compression) const override;
+    ColumnPtr compress() const override;
 
     bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
-    bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 };
 

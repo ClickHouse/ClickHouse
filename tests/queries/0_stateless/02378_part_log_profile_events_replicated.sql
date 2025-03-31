@@ -1,5 +1,5 @@
--- Tags: long, replica, no-replicated-database, no-parallel, no-shared-merge-tree
--- no-shared-merge-tree: depend on events for replicatied merge tree
+
+-- Tags: long, replica, no-replicated-database, no-parallel
 
 DROP TABLE IF EXISTS part_log_profile_events_r1 SYNC;
 DROP TABLE IF EXISTS part_log_profile_events_r2 SYNC;
@@ -25,7 +25,7 @@ INSERT INTO part_log_profile_events_r1 SELECT number FROM numbers(1000);
 
 SYSTEM SYNC REPLICA part_log_profile_events_r2;
 
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     count() > 1

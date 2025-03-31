@@ -2,7 +2,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
-#include <base/memcmpSmall.h>
+#include <Common/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
@@ -29,11 +29,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool dictionary_use_async_executor;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -412,7 +407,6 @@ void IPAddressDictionary::loadData()
     bool has_ipv6 = false;
 
     DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-    pipeline.setConcurrencyControl(false);
     Block block;
     while (executor.pull(block))
     {
@@ -1193,8 +1187,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
         const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-        bool use_async_executor
-            = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef()[Setting::dictionary_use_async_executor];
+        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
 
         IPAddressDictionary::Configuration configuration{
             .dict_lifetime = dict_lifetime,

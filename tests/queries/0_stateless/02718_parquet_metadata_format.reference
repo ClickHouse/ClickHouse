@@ -61,7 +61,6 @@
     ],
     "row_groups": [
         {
-            "file_offset": "4",
             "num_columns": "3",
             "num_rows": "65409",
             "total_uncompressed_size": "200527",
@@ -79,8 +78,7 @@
                         "distinct_count": null,
                         "min": "0",
                         "max": "999"
-                    },
-                    "bloom_filter_bytes": "0"
+                    }
                 },
                 {
                     "name": "str",
@@ -94,8 +92,7 @@
                         "distinct_count": null,
                         "min": "Hello0",
                         "max": "Hello999"
-                    },
-                    "bloom_filter_bytes": "0"
+                    }
                 },
                 {
                     "name": "mod",
@@ -109,13 +106,11 @@
                         "distinct_count": null,
                         "min": "0",
                         "max": "8"
-                    },
-                    "bloom_filter_bytes": "0"
+                    }
                 }
             ]
         },
         {
-            "file_offset": "14635",
             "num_columns": "3",
             "num_rows": "34591",
             "total_uncompressed_size": "113620",
@@ -133,8 +128,7 @@
                         "distinct_count": null,
                         "min": "0",
                         "max": "999"
-                    },
-                    "bloom_filter_bytes": "0"
+                    }
                 },
                 {
                     "name": "str",
@@ -148,8 +142,7 @@
                         "distinct_count": null,
                         "min": "Hello0",
                         "max": "Hello999"
-                    },
-                    "bloom_filter_bytes": "0"
+                    }
                 },
                 {
                     "name": "mod",
@@ -163,8 +156,7 @@
                         "distinct_count": null,
                         "min": "0",
                         "max": "8"
-                    },
-                    "bloom_filter_bytes": "0"
+                    }
                 }
             ]
         }
@@ -231,56 +223,3 @@
 }
 1
 1
-{
-    "num_columns": "1",
-    "num_rows": "5",
-    "num_row_groups": "1",
-    "format_version": "1.0",
-    "metadata_size": "267",
-    "total_uncompressed_size": "105",
-    "total_compressed_size": "128",
-    "columns": [
-        {
-            "name": "ipv6",
-            "path": "ipv6",
-            "max_definition_level": "0",
-            "max_repetition_level": "0",
-            "physical_type": "FIXED_LEN_BYTE_ARRAY",
-            "logical_type": "None",
-            "compression": "GZIP",
-            "total_uncompressed_size": "105",
-            "total_compressed_size": "128",
-            "space_saved": "-21.9%",
-            "encodings": [
-                "PLAIN",
-                "BIT_PACKED"
-            ]
-        }
-    ],
-    "row_groups": [
-        {
-            "file_offset": "4",
-            "num_columns": "1",
-            "num_rows": "5",
-            "total_uncompressed_size": "105",
-            "total_compressed_size": "128",
-            "columns": [
-                {
-                    "name": "ipv6",
-                    "path": "ipv6",
-                    "total_compressed_size": "128",
-                    "total_uncompressed_size": "105",
-                    "have_statistics": true,
-                    "statistics": {
-                        "num_values": "5",
-                        "null_count": "0",
-                        "distinct_count": null,
-                        "min": "27 32 150 125 17 250 66 31 157 44 75 218 51 50 19 144 ",
-                        "max": "154 31 90 141 15 7 68 47 190 29 121 145 188 162 234 154 "
-                    },
-                    "bloom_filter_bytes": "1048594"
-                }
-            ]
-        }
-    ]
-}

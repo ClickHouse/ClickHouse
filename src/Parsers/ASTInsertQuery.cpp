@@ -1,6 +1,4 @@
 #include <iomanip>
-
-#include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -48,54 +46,54 @@ void ASTInsertQuery::setTable(const String & name)
         table = std::make_shared<ASTIdentifier>(name);
 }
 
-void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
 
-    ostr << (settings.hilite ? hilite_keyword : "") << "INSERT INTO ";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "INSERT INTO ";
     if (table_function)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "FUNCTION ";
-        table_function->format(ostr, settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "FUNCTION ";
+        table_function->formatImpl(settings, state, frame);
         if (partition_by)
         {
-            ostr << " PARTITION BY ";
-            partition_by->format(ostr, settings, state, frame);
+            settings.ostr << " PARTITION BY ";
+            partition_by->formatImpl(settings, state, frame);
         }
     }
     else if (table_id)
     {
-        ostr << (settings.hilite ? hilite_none : "")
+        settings.ostr << (settings.hilite ? hilite_none : "")
                       << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
     }
     else
     {
         if (database)
         {
-            database->format(ostr, settings, state, frame);
-            ostr << '.';
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
         }
 
         chassert(table);
-        table->format(ostr, settings, state, frame);
+        table->formatImpl(settings, state, frame);
     }
 
     if (columns)
     {
-        ostr << " (";
-        columns->format(ostr, settings, state, frame);
-        ostr << ")";
+        settings.ostr << " (";
+        columns->formatImpl(settings, state, frame);
+        settings.ostr << ")";
     }
 
     if (infile)
     {
-        ostr
+        settings.ostr
             << (settings.hilite ? hilite_keyword : "")
             << " FROM INFILE "
             << (settings.hilite ? hilite_none : "")
             << quoteString(infile->as<ASTLiteral &>().value.safeGet<std::string>());
         if (compression)
-            ostr
+            settings.ostr
                 << (settings.hilite ? hilite_keyword : "")
                 << " COMPRESSION "
                 << (settings.hilite ? hilite_none : "")
@@ -104,8 +102,8 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     if (settings_ast)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
-        settings_ast->format(ostr, settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+        settings_ast->formatImpl(settings, state, frame);
     }
 
     /// Compatibility for INSERT without SETTINGS to format in oneline, i.e.:
@@ -122,20 +120,20 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     if (select)
     {
-        ostr << delim;
-        select->format(ostr, settings, state, frame);
+        settings.ostr << delim;
+        select->formatImpl(settings, state, frame);
     }
 
     if (!select)
     {
         if (!format.empty())
         {
-            ostr << delim
+            settings.ostr << delim
                           << (settings.hilite ? hilite_keyword : "") << "FORMAT " << (settings.hilite ? hilite_none : "") << format;
         }
         else if (!infile)
         {
-            ostr << delim
+            settings.ostr << delim
                           << (settings.hilite ? hilite_keyword : "") << "VALUES" << (settings.hilite ? hilite_none : "");
         }
     }

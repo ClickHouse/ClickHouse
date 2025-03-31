@@ -1,22 +1,20 @@
 ---
-description: 'Documentation for Bitmap Functions'
-sidebar_label: 'Bitmap'
+slug: /en/sql-reference/functions/bitmap-functions
 sidebar_position: 25
-slug: /sql-reference/functions/bitmap-functions
-title: 'Bitmap Functions'
+sidebar_label: Bitmap
 ---
 
 # Bitmap Functions
 
 Bitmaps can be constructed in two ways. The first way is constructed by aggregation function groupBitmap with `-State`, the other way is to constructed a bitmap from an Array object.
 
-## bitmapBuild {#bitmapbuild}
+## bitmapBuild
 
 Builds a bitmap from an unsigned integer array.
 
 **Syntax**
 
-```sql
+``` sql
 bitmapBuild(array)
 ```
 
@@ -26,23 +24,23 @@ bitmapBuild(array)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);
 ```
 
-```text
+``` text
 ┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
 │     │ AggregateFunction(groupBitmap, UInt8)        │
 └─────┴──────────────────────────────────────────────┘
 ```
 
-## bitmapToArray {#bitmaptoarray}
+## bitmapToArray
 
 Converts bitmap to an integer array.
 
 **Syntax**
 
-```sql
+``` sql
 bitmapToArray(bitmap)
 ```
 
@@ -52,25 +50,25 @@ bitmapToArray(bitmap)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res─────────┐
 │ [1,2,3,4,5] │
 └─────────────┘
 ```
 
-## bitmapSubsetInRange {#bitmapsubsetinrange}
+## bitmapSubsetInRange
 
 Returns the subset of a bitmap with bits within a value interval.
 
 **Syntax**
 
-```sql
+``` sql
 bitmapSubsetInRange(bitmap, range_start, range_end)
 ```
 
@@ -82,25 +80,25 @@ bitmapSubsetInRange(bitmap, range_start, range_end)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res───────────────┐
 │ [30,31,32,33,100] │
 └───────────────────┘
 ```
 
-## bitmapSubsetLimit {#bitmapsubsetlimit}
+## bitmapSubsetLimit
 
 Returns a subset of a bitmap with smallest bit value `range_start` and at most `cardinality_limit` elements.
 
 **Syntax**
 
-```sql
+``` sql
 bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 ```
 
@@ -112,25 +110,25 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res───────────────────────┐
 │ [30,31,32,33,100,200,500] │
 └───────────────────────────┘
 ```
 
-## subBitmap {#subbitmap}
+## subBitmap
 
 Returns a subset of the bitmap, starting from position `offset`. The maximum cardinality of the returned bitmap is `cardinality_limit`.
 
 **Syntax**
 
-```sql
+``` sql
 subBitmap(bitmap, offset, cardinality_limit)
 ```
 
@@ -142,23 +140,23 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapToArray(subBitmap(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(10), toUInt32(10))) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res─────────────────────────────┐
 │ [10,11,12,13,14,15,16,17,18,19] │
 └─────────────────────────────────┘
 ```
 
-## bitmapContains {#bitmapcontains}
+## bitmapContains
 
 Checks whether the bitmap contains an element.
 
-```sql
+``` sql
 bitmapContains(bitmap, needle)
 ```
 
@@ -174,19 +172,19 @@ bitmapContains(bitmap, needle)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res─┐
 │  1  │
 └─────┘
 ```
 
-## bitmapHasAny {#bitmaphasany}
+## bitmapHasAny
 
 Checks whether two bitmaps intersect.
 
@@ -194,7 +192,7 @@ If `bitmap2` contains exactly one element, consider using [bitmapContains](#bitm
 
 **Syntax**
 
-```sql
+``` sql
 bitmapHasAny(bitmap1, bitmap2)
 ```
 
@@ -210,19 +208,19 @@ bitmapHasAny(bitmap1, bitmap2)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res─┐
 │  1  │
 └─────┘
 ```
 
-## bitmapHasAll {#bitmaphasall}
+## bitmapHasAll
 
 Returns 1 if the first bitmap contains all elements of the second bitmap, otherwise 0.
 If the second bitmap is empty, returns 1.
@@ -231,7 +229,7 @@ Also see `hasAll(array, array)`.
 
 **Syntax**
 
-```sql
+``` sql
 bitmapHasAll(bitmap1, bitmap2)
 ```
 
@@ -242,25 +240,25 @@ bitmapHasAll(bitmap1, bitmap2)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res─┐
 │  0  │
 └─────┘
 ```
 
-## bitmapCardinality {#bitmapcardinality}
+## bitmapCardinality
 
 Returns the cardinality of a bitmap.
 
 **Syntax**
 
-```sql
+``` sql
 bitmapCardinality(bitmap)
 ```
 
@@ -270,19 +268,19 @@ bitmapCardinality(bitmap)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res─┐
 │   5 │
 └─────┘
 ```
 
-## bitmapMin {#bitmapmin}
+## bitmapMin
 
 Computes the smallest bit set in a bitmap, or UINT32_MAX if the bitmap is empty.
 
@@ -298,19 +296,19 @@ bitmapMin(bitmap)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 ```
 
 Result:
 
-```text
+``` text
  ┌─res─┐
  │   1 │
  └─────┘
 ```
 
-## bitmapMax {#bitmapmax}
+## bitmapMax
 
 Computes the greatest bit set in a bitmap, or 0 if the bitmap is empty.
 
@@ -326,19 +324,19 @@ bitmapMax(bitmap)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 ```
 
 Result:
 
-```text
+``` text
  ┌─res─┐
  │   5 │
  └─────┘
 ```
 
-## bitmapTransform {#bitmaptransform}
+## bitmapTransform
 
 Replaces at most N bits in a bitmap. The old and new value of the i-th replaced bit is given by `from_array[i]` and `to_array[i]`.
 
@@ -346,7 +344,7 @@ The result depends on the array ordering if `from_array` and `to_array`.
 
 **Syntax**
 
-```sql
+``` sql
 bitmapTransform(bitmap, from_array, to_array)
 ```
 
@@ -358,25 +356,25 @@ bitmapTransform(bitmap, from_array, to_array)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), cast([5,999,2] as Array(UInt32)), cast([2,888,20] as Array(UInt32)))) AS res;
 ```
 
 Result:
 
-```text
+``` text
  ┌─res───────────────────┐
  │ [1,3,4,6,7,8,9,10,20] │
  └───────────────────────┘
 ```
 
-## bitmapAnd {#bitmapand}
+## bitmapAnd
 
 Computes the logical conjunction of two bitmaps.
 
 **Syntax**
 
-```sql
+``` sql
 bitmapAnd(bitmap,bitmap)
 ```
 
@@ -386,25 +384,25 @@ bitmapAnd(bitmap,bitmap)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res─┐
 │ [3] │
 └─────┘
 ```
 
-## bitmapOr {#bitmapor}
+## bitmapOr
 
 Computes the logical disjunction of two bitmaps.
 
 **Syntax**
 
-```sql
+``` sql
 bitmapOr(bitmap,bitmap)
 ```
 
@@ -414,25 +412,25 @@ bitmapOr(bitmap,bitmap)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res─────────┐
 │ [1,2,3,4,5] │
 └─────────────┘
 ```
 
-## bitmapXor {#bitmapxor}
+## bitmapXor
 
 Xor-s two bitmaps.
 
 **Syntax**
 
-```sql
+``` sql
 bitmapXor(bitmap,bitmap)
 ```
 
@@ -442,25 +440,25 @@ bitmapXor(bitmap,bitmap)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapToArray(bitmapXor(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res───────┐
 │ [1,2,4,5] │
 └───────────┘
 ```
 
-## bitmapAndnot {#bitmapandnot}
+## bitmapAndnot
 
 Computes the logical conjunction of two bitmaps and negates the result.
 
 **Syntax**
 
-```sql
+``` sql
 bitmapAndnot(bitmap,bitmap)
 ```
 
@@ -470,25 +468,25 @@ bitmapAndnot(bitmap,bitmap)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res───┐
 │ [1,2] │
 └───────┘
 ```
 
-## bitmapAndCardinality {#bitmapandcardinality}
+## bitmapAndCardinality
 
 Returns the cardinality of the logical conjunction of two bitmaps.
 
 **Syntax**
 
-```sql
+``` sql
 bitmapAndCardinality(bitmap,bitmap)
 ```
 
@@ -498,23 +496,23 @@ bitmapAndCardinality(bitmap,bitmap)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapAndCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res─┐
 │   1 │
 └─────┘
 ```
 
-## bitmapOrCardinality {#bitmaporcardinality}
+## bitmapOrCardinality
 
 Returns the cardinality of the logical disjunction of two bitmaps.
 
-```sql
+``` sql
 bitmapOrCardinality(bitmap,bitmap)
 ```
 
@@ -524,23 +522,23 @@ bitmapOrCardinality(bitmap,bitmap)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapOrCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res─┐
 │   5 │
 └─────┘
 ```
 
-## bitmapXorCardinality {#bitmapxorcardinality}
+## bitmapXorCardinality
 
 Returns the cardinality of the XOR of two bitmaps.
 
-```sql
+``` sql
 bitmapXorCardinality(bitmap,bitmap)
 ```
 
@@ -550,23 +548,23 @@ bitmapXorCardinality(bitmap,bitmap)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapXorCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res─┐
 │   4 │
 └─────┘
 ```
 
-## bitmapAndnotCardinality {#bitmapandnotcardinality}
+## bitmapAndnotCardinality
 
 Returns the cardinality of the AND-NOT operation of two bitmaps.
 
-```sql
+``` sql
 bitmapAndnotCardinality(bitmap,bitmap)
 ```
 
@@ -576,13 +574,13 @@ bitmapAndnotCardinality(bitmap,bitmap)
 
 **Example**
 
-```sql
+``` sql
 SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
 Result:
 
-```text
+``` text
 ┌─res─┐
 │   2 │
 └─────┘

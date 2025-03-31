@@ -4,9 +4,9 @@
 
 #include <Storages/FileLog/Buffer_fwd.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
+#include <Storages/FileLog/FileLogSettings.h>
 
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Core/StreamingHandleErrorMode.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Common/SettingsChanges.h>
 
@@ -25,7 +25,6 @@ namespace ErrorCodes
 }
 
 class FileLogDirectoryWatcher;
-struct FileLogSettings;
 
 class StorageFileLog final : public IStorage, WithContext
 {
@@ -121,7 +120,8 @@ public:
     {
         if (auto it = map.find(key); it != map.end())
             return it->second;
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} doesn't exist.", key);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} doesn't exist.", key);
     }
 
     void increaseStreams();
@@ -134,7 +134,6 @@ public:
 private:
     friend class ReadFromStorageFileLog;
 
-    ContextMutablePtr filelog_context;
     std::unique_ptr<FileLogSettings> filelog_settings;
 
     const String path;
@@ -170,9 +169,9 @@ private:
 
     struct TaskContext
     {
-        BackgroundSchedulePoolTaskHolder holder;
+        BackgroundSchedulePool::TaskHolder holder;
         std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePoolTaskHolder&& task_) : holder(std::move(task_))
+        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
         {
         }
     };

@@ -1,26 +1,17 @@
 ---
-description: 'System table containing formation about global settings for the server,
-  which are specified in `config.xml`.'
-keywords: ['system table', 'server_settings']
-slug: /operations/system-tables/server_settings
-title: 'system.server_settings'
+slug: /en/operations/system-tables/server_settings
 ---
+# server_settings
 
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-# system.server_settings
-
-<SystemTableCloud/>
-
-Contains information about global settings for the server, which are specified in `config.xml`.
-Currently, the table shows only settings from the first layer of `config.xml` and doesn't support nested configs (e.g. [logger](../../operations/server-configuration-parameters/settings.md#logger)).
+Contains information about global settings for the server, which were specified in `config.xml`.
+Currently, the table shows only settings from the first layer of `config.xml` and doesn't support nested configs (e.g. [logger](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-logger)).
 
 Columns:
 
 - `name` ([String](../../sql-reference/data-types/string.md)) — Server setting name.
 - `value` ([String](../../sql-reference/data-types/string.md)) — Server setting value.
 - `default` ([String](../../sql-reference/data-types/string.md)) — Server setting default value.
-- `changed` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Shows whether a setting was specified in `config.xml`
+- `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether a setting was specified in `config.xml`
 - `description` ([String](../../sql-reference/data-types/string.md)) — Short server setting description.
 - `type` ([String](../../sql-reference/data-types/string.md)) — Server setting value type.
 - `changeable_without_restart` ([Enum8](../../sql-reference/data-types/enum.md)) — Whether the setting can be changed at server runtime. Values:
@@ -28,19 +19,19 @@ Columns:
     - `'IncreaseOnly'`
     - `'DecreaseOnly'`
     - `'Yes'`
-- `is_obsolete` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) - Shows whether a setting is obsolete.
+- `is_obsolete` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) - Shows whether a setting is obsolete.
 
 **Example**
 
 The following example shows how to get information about server settings which name contains `thread_pool`.
 
-```sql
+``` sql
 SELECT *
 FROM system.server_settings
 WHERE name LIKE '%thread_pool%'
 ```
 
-```text
+``` text
 ┌─name──────────────────────────────────────────┬─value─┬─default─┬─changed─┬─description─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─type───┬─changeable_without_restart─┬─is_obsolete─┐
 │ max_thread_pool_size                          │ 10000 │ 10000   │       0 │ The maximum number of threads that could be allocated from the OS and used for query execution and background operations.                           │ UInt64 │                         No │           0 │
 │ max_thread_pool_free_size                     │ 1000  │ 1000    │       0 │ The maximum number of threads that will always stay in a global thread pool once allocated and remain idle in case of insufficient number of tasks. │ UInt64 │                         No │           0 │
@@ -59,12 +50,12 @@ WHERE name LIKE '%thread_pool%'
 
 ```
 
-Using of `WHERE changed` can be useful, for example, when you want to check
+Using of `WHERE changed` can be useful, for example, when you want to check 
 whether settings in configuration files are loaded correctly and are in use.
 
 <!-- -->
 
-```sql
+``` sql
 SELECT * FROM system.server_settings WHERE changed AND name='max_thread_pool_size'
 ```
 

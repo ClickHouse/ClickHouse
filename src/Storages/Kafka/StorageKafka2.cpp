@@ -1,15 +1,11 @@
 #include <Storages/Kafka/StorageKafka2.h>
 
-#include <Columns/IColumn.h>
 #include <Core/ServerUUID.h>
-#include <Core/Settings.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -43,6 +39,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
@@ -74,36 +71,6 @@ extern const Event KafkaWrites;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_block_size;
-    extern const SettingsUInt64 max_insert_block_size;
-    extern const SettingsUInt64 output_format_avro_rows_in_file;
-    extern const SettingsMilliseconds stream_flush_interval_ms;
-    extern const SettingsMilliseconds stream_poll_timeout_ms;
-}
-
-namespace KafkaSetting
-{
-    extern const KafkaSettingsUInt64 input_format_allow_errors_num;
-    extern const KafkaSettingsFloat input_format_allow_errors_ratio;
-    extern const KafkaSettingsString kafka_broker_list;
-    extern const KafkaSettingsString kafka_client_id;
-    extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
-    extern const KafkaSettingsString kafka_format;
-    extern const KafkaSettingsString kafka_group_name;
-    extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
-    extern const KafkaSettingsString kafka_keeper_path;
-    extern const KafkaSettingsUInt64 kafka_max_block_size;
-    extern const KafkaSettingsUInt64 kafka_max_rows_per_message;
-    extern const KafkaSettingsUInt64 kafka_num_consumers;
-    extern const KafkaSettingsUInt64 kafka_poll_max_batch_size;
-    extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
-    extern const KafkaSettingsString kafka_replica_name;
-    extern const KafkaSettingsString kafka_schema;
-    extern const KafkaSettingsBool kafka_thread_per_consumer;
-    extern const KafkaSettingsString kafka_topic_list;
-}
 
 namespace fs = std::filesystem;
 
@@ -133,42 +100,41 @@ StorageKafka2::StorageKafka2(
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , keeper(getContext()->getZooKeeper())
-    , keeper_path((*kafka_settings_)[KafkaSetting::kafka_keeper_path].value)
-    , fs_keeper_path(keeper_path)
-    , replica_path(keeper_path + "/replicas/" + (*kafka_settings_)[KafkaSetting::kafka_replica_name].value)
+    , keeper_path(kafka_settings_->kafka_keeper_path.value)
+    , replica_path(keeper_path + "/replicas/" + kafka_settings_->kafka_replica_name.value)
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
-    , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
-    , brokers(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info))
-    , group(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_group_name].value, macros_info))
+    , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand(kafka_settings->kafka_topic_list.value, macros_info)))
+    , brokers(getContext()->getMacros()->expand(kafka_settings->kafka_broker_list.value, macros_info))
+    , group(getContext()->getMacros()->expand(kafka_settings->kafka_group_name.value, macros_info))
     , client_id(
-          (*kafka_settings)[KafkaSetting::kafka_client_id].value.empty()
+          kafka_settings->kafka_client_id.value.empty()
               ? StorageKafkaUtils::getDefaultClientId(table_id_)
-              : getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_client_id].value, macros_info))
-    , format_name(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_format].value))
-    , max_rows_per_message((*kafka_settings)[KafkaSetting::kafka_max_rows_per_message].value)
-    , schema_name(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_schema].value, macros_info))
-    , num_consumers((*kafka_settings)[KafkaSetting::kafka_num_consumers].value)
+              : getContext()->getMacros()->expand(kafka_settings->kafka_client_id.value, macros_info))
+    , format_name(getContext()->getMacros()->expand(kafka_settings->kafka_format.value))
+    , max_rows_per_message(kafka_settings->kafka_max_rows_per_message.value)
+    , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value, macros_info))
+    , num_consumers(kafka_settings->kafka_num_consumers.value)
     , log(getLogger("StorageKafka2 (" + table_id_.getNameForLogs() + ")"))
     , semaphore(0, static_cast<int>(num_consumers))
     , settings_adjustments(StorageKafkaUtils::createSettingsAdjustments(*kafka_settings, schema_name))
-    , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
+    , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
     , collection_name(collection_name_)
     , active_node_identifier(toString(ServerUUID::get()))
 {
-    if ((*kafka_settings)[KafkaSetting::kafka_num_consumers] > 1 && !thread_per_consumer)
+    if (kafka_settings->kafka_num_consumers > 1 && !thread_per_consumer)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
-    if ((*kafka_settings)[KafkaSetting::kafka_handle_error_mode] == StreamingHandleErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
-        (*kafka_settings)[KafkaSetting::input_format_allow_errors_num] = 0;
-        (*kafka_settings)[KafkaSetting::input_format_allow_errors_ratio] = 0;
+        kafka_settings->input_format_allow_errors_num = 0;
+        kafka_settings->input_format_allow_errors_ratio = 0;
     }
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(StorageKafkaUtils::createVirtuals((*kafka_settings)[KafkaSetting::kafka_handle_error_mode]));
+    setVirtuals(StorageKafkaUtils::createVirtuals(kafka_settings->kafka_handle_error_mode));
 
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -186,8 +152,6 @@ StorageKafka2::StorageKafka2(
     activating_task = getContext()->getSchedulePool().createTask(log->name() + "(activating task)", [this]() { activateAndReschedule(); });
     activating_task->deactivate();
 }
-
-StorageKafka2::~StorageKafka2() = default;
 
 void StorageKafka2::partialShutdown()
 {
@@ -369,11 +333,6 @@ Pipe StorageKafka2::read(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Direct read from the new Kafka storage is not implemented");
 }
 
-StreamingHandleErrorMode StorageKafka2::getHandleKafkaErrorMode() const
-{
-    return (*kafka_settings)[KafkaSetting::kafka_handle_error_mode];
-}
-
 
 SinkToStoragePtr
 StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
@@ -390,7 +349,7 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
     cppkafka::Configuration conf = getProducerConfiguration();
 
     const Settings & settings = getContext()->getSettingsRef();
-    size_t poll_timeout = settings[Setting::stream_poll_timeout_ms].totalMilliseconds();
+    size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
     const auto & header = metadata_snapshot->getSampleBlockNonMaterialized();
 
     auto producer = std::make_unique<KafkaProducer>(
@@ -400,8 +359,8 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
 
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
-    if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
-        max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
+    if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
+        max_rows = local_context->getSettingsRef().output_format_avro_rows_in_file.value;
     return std::make_shared<MessageQueueSink>(header, getFormatName(), max_rows, std::move(producer), getName(), modified_context);
 }
 
@@ -483,22 +442,22 @@ cppkafka::Configuration StorageKafka2::getProducerConfiguration()
 
 size_t StorageKafka2::getMaxBlockSize() const
 {
-    return (*kafka_settings)[KafkaSetting::kafka_max_block_size].changed ? (*kafka_settings)[KafkaSetting::kafka_max_block_size].value
-                                                        : (getContext()->getSettingsRef()[Setting::max_insert_block_size].value / num_consumers);
+    return kafka_settings->kafka_max_block_size.changed ? kafka_settings->kafka_max_block_size.value
+                                                        : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
 }
 
 size_t StorageKafka2::getPollMaxBatchSize() const
 {
-    size_t batch_size = (*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].changed ? (*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].value
-                                                                          : getContext()->getSettingsRef()[Setting::max_block_size].value;
+    size_t batch_size = kafka_settings->kafka_poll_max_batch_size.changed ? kafka_settings->kafka_poll_max_batch_size.value
+                                                                          : getContext()->getSettingsRef().max_block_size.value;
 
     return std::min(batch_size, getMaxBlockSize());
 }
 
 size_t StorageKafka2::getPollTimeoutMillisecond() const
 {
-    return (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].changed ? (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].totalMilliseconds()
-                                                         : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
+    return kafka_settings->kafka_poll_timeout_ms.changed ? kafka_settings->kafka_poll_timeout_ms.totalMilliseconds()
+                                                         : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
 }
 
 namespace
@@ -520,7 +479,8 @@ std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & pa
 bool StorageKafka2::createTableIfNotExists()
 {
     // Heavily based on StorageReplicatedMergeTree::createTableIfNotExists
-    const auto replicas_path = fs_keeper_path / "replicas";
+    const auto my_keeper_path = fs::path(keeper_path);
+    const auto replicas_path = my_keeper_path / "replicas";
 
     for (auto i = 0; i < 1000; ++i)
     {
@@ -531,14 +491,14 @@ bool StorageKafka2::createTableIfNotExists()
         }
 
         /// There are leftovers from incompletely dropped table.
-        if (keeper->exists(fs_keeper_path / "dropped"))
+        if (keeper->exists(my_keeper_path / "dropped"))
         {
             /// This condition may happen when the previous drop attempt was not completed
             ///  or when table is dropped by another replica right now.
             /// This is Ok because another replica is definitely going to drop the table.
 
             LOG_WARNING(log, "Removing leftovers from table {}", keeper_path);
-            String drop_lock_path = fs_keeper_path / "dropped" / "lock";
+            String drop_lock_path = my_keeper_path / "dropped" / "lock";
             Coordination::Error code = keeper->tryCreate(drop_lock_path, "", zkutil::CreateMode::Ephemeral);
 
             if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
@@ -565,7 +525,7 @@ bool StorageKafka2::createTableIfNotExists()
 
         ops.emplace_back(zkutil::makeCreateRequest(keeper_path, "", zkutil::CreateMode::Persistent));
 
-        const auto topics_path = fs_keeper_path / "topics";
+        const auto topics_path = my_keeper_path / "topics";
         ops.emplace_back(zkutil::makeCreateRequest(topics_path, "", zkutil::CreateMode::Persistent));
 
         for (const auto & topic : topics)
@@ -591,7 +551,7 @@ bool StorageKafka2::createTableIfNotExists()
             LOG_INFO(log, "It looks like the table {} was created by another replica at the same moment, will retry", keeper_path);
             continue;
         }
-        if (code != Coordination::Error::ZOK)
+        else if (code != Coordination::Error::ZOK)
         {
             zkutil::KeeperMultiException::check(code, ops, responses);
         }
@@ -616,15 +576,16 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
     if (const auto code = keeper_to_use->tryGetChildren(keeper_path, children); code == Coordination::Error::ZNONODE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal. It's a bug");
 
+    const auto my_keeper_path = fs::path(keeper_path);
     for (const auto & child : children)
         if (child != "dropped")
-            keeper_to_use->tryRemoveRecursive(fs_keeper_path / child);
+            keeper_to_use->tryRemoveRecursive(my_keeper_path / child);
 
     Coordination::Requests ops;
     Coordination::Responses responses;
     ops.emplace_back(zkutil::makeRemoveRequest(drop_lock->getPath(), -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(fs_keeper_path / "dropped", -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(fs_keeper_path, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(my_keeper_path / "dropped", -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(my_keeper_path, -1));
     const auto code = keeper_to_use->tryMulti(ops, responses, /* check_session_valid */ true);
 
     if (code == Coordination::Error::ZNONODE)
@@ -632,7 +593,7 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
     }
-    if (code == Coordination::Error::ZNOTEMPTY)
+    else if (code == Coordination::Error::ZNOTEMPTY)
     {
         LOG_ERROR(
             log,
@@ -719,9 +680,10 @@ void StorageKafka2::dropReplica()
     /// (The existence of child node does not allow to remove parent node).
     Coordination::Requests ops;
     Coordination::Responses responses;
-    String drop_lock_path = fs_keeper_path / "dropped" / "lock";
-    ops.emplace_back(zkutil::makeRemoveRequest(fs_keeper_path / "replicas", -1));
-    ops.emplace_back(zkutil::makeCreateRequest(fs_keeper_path / "dropped", "", zkutil::CreateMode::Persistent));
+    fs::path my_keeper_path = keeper_path;
+    String drop_lock_path = my_keeper_path / "dropped" / "lock";
+    ops.emplace_back(zkutil::makeRemoveRequest(my_keeper_path / "replicas", -1));
+    ops.emplace_back(zkutil::makeCreateRequest(my_keeper_path / "dropped", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
     Coordination::Error code = my_keeper->tryMulti(ops, responses);
 
@@ -755,17 +717,15 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
 
     Coordination::Requests ops;
 
+    static constexpr auto ignore_if_exists = true;
+
     for (const auto & topic_partition_path : topic_partition_paths)
     {
         const auto lock_file_path = String(topic_partition_path / lock_file_name);
-
-        // It is okay that these paths are created in a different transaction. The important thing is the lock file.
-        keeper_to_use.createAncestors(lock_file_path);
-
-        ops.push_back(zkutil::makeCreateRequest(lock_file_path, (*kafka_settings)[KafkaSetting::kafka_replica_name].value, zkutil::CreateMode::Ephemeral));
         LOG_TRACE(log, "Creating locking ops for: {}", lock_file_path);
+        ops.push_back(zkutil::makeCreateRequest(topic_partition_path, "", zkutil::CreateMode::Persistent, ignore_if_exists));
+        ops.push_back(zkutil::makeCreateRequest(lock_file_path, kafka_settings->kafka_replica_name.value, zkutil::CreateMode::Ephemeral));
     }
-
     Coordination::Responses responses;
 
     if (const auto code = keeper_to_use.tryMulti(ops, responses); code != Coordination::Error::ZOK)
@@ -773,7 +733,6 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
         if (code != Coordination::Error::ZNODEEXISTS)
             zkutil::KeeperMultiException::check(code, ops, responses);
 
-        LOG_TRACE(log, "Couldn't create topic partitions locks because some of them already exists");
         // Possible optimization: check the content of lock files, if we locked them, then we can clean them up and retry to lock them.
         return std::nullopt;
     }
@@ -848,7 +807,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     // otherwise external iteration will reuse that and logic will became even more fuzzy
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-    auto put_error_to_stream = (*kafka_settings)[KafkaSetting::kafka_handle_error_mode] == StreamingHandleErrorMode::STREAM;
+    auto put_error_to_stream = kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM;
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
@@ -858,39 +817,44 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     size_t total_rows = 0;
     size_t failed_poll_attempts = 0;
 
-    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
+    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
     {
         ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
 
         if (put_error_to_stream)
         {
             exception_message = e.message();
-            for (size_t i = 0; i < result_columns.size(); ++i)
+            for (const auto & column : result_columns)
             {
-                // We could already push some rows to result_columns before exception, we need to fix it.
-                result_columns[i]->rollback(*checkpoints[i]);
+                // read_kafka_message could already push some rows to result_columns
+                // before exception, we need to fix it.
+                auto cur_rows = column->size();
+                if (cur_rows > total_rows)
+                    column->popBack(cur_rows - total_rows);
 
                 // all data columns will get default value in case of error
-                result_columns[i]->insertDefault();
+                column->insertDefault();
             }
 
             return 1;
         }
-
-        e.addMessage(
-            "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
-            consumer.currentTopic(),
-            consumer.currentPartition(),
-            consumer.currentOffset());
-        throw std::move(e);
+        else
+        {
+            e.addMessage(
+                "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+                consumer.currentTopic(),
+                consumer.currentPartition(),
+                consumer.currentOffset());
+            throw std::move(e);
+        }
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
 
 
-    Poco::Timespan max_execution_time = (*kafka_settings)[KafkaSetting::kafka_flush_interval_ms].changed
-        ? (*kafka_settings)[KafkaSetting::kafka_flush_interval_ms]
-        : getContext()->getSettingsRef()[Setting::stream_flush_interval_ms];
+    Poco::Timespan max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
+        ? kafka_settings->kafka_flush_interval_ms
+        : getContext()->getSettingsRef().stream_flush_interval_ms;
 
     const auto check_time_limit = [&max_execution_time, &total_stopwatch]()
     {
@@ -1319,7 +1283,7 @@ zkutil::ZooKeeperPtr StorageKafka2::getZooKeeperIfTableShutDown() const
 
 fs::path StorageKafka2::getTopicPartitionPath(const TopicPartition & topic_partition)
 {
-    return fs_keeper_path / "topics" / topic_partition.topic / "partitions" / std::to_string(topic_partition.partition_id);
+    return fs::path(keeper_path) / "topics" / topic_partition.topic / "partitions" / std::to_string(topic_partition.partition_id);
 }
 
 }

@@ -1,0 +1,12 @@
+Using queries from 'queries' directory
+Connecting to ClickHouse server...... OK
+Connected to server 24.7.1.1 @ 246f421f2402799fd11b22a608b4d0d497cb8438 chesema-processor-onCancel
+
+Running 1 stateless tests (MainProcess).
+
+00993_system_parts_race_condition_drop_zookeeper:                       [ OK ]
+
+1 tests passed. 0 tests skipped. 124.59 s elapsed (MainProcess).
+
+0 tests passed. 0 tests skipped. 0.00 s elapsed (MainProcess).
+All tests have finished.

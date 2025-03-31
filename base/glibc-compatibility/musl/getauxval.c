@@ -25,10 +25,9 @@
 // We don't have libc struct available here.
 // Compute aux vector manually (from /proc/self/auxv).
 //
-// Right now there are 51 AT_* constants. Custom kernels have been encountered
-// making use of up to 71. 128 should be enough until this implementation is
-// replaced with musl.
-static unsigned long __auxv_procfs[128];
+// Right now there is only 51 AT_* constants,
+// so 64 should be enough until this implementation will be replaced with musl.
+static unsigned long __auxv_procfs[64];
 static unsigned long __auxv_secure = 0;
 // Common
 static unsigned long * __auxv_environ = NULL;

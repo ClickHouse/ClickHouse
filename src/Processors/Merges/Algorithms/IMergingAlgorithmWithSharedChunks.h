@@ -2,8 +2,6 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
-#include <Core/Block.h>
-#include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 
 namespace DB
@@ -19,8 +17,6 @@ public:
     void consume(Input & input, size_t source_num) override;
 
     MergedStats getMergedStats() const override { return merged_data->getMergedStats(); }
-
-    size_t prev_unequal_column = 0;
 
 private:
     Block header;
@@ -60,16 +56,7 @@ protected:
         /// initialized in either `initialize` or `consume`
         if (lhs.source_stream_index == rhs.source_stream_index && sources_origin_merge_tree_part_level[lhs.source_stream_index] > 0)
             return true;
-
-        auto first_non_equal = lhs.firstNonEqualSortColumnsWith(prev_unequal_column, rhs);
-
-        if (first_non_equal < lhs.sort_columns->size())
-        {
-            prev_unequal_column = first_non_equal;
-            return true;
-        }
-
-        return false;
+        return !lhs.hasEqualSortColumnsWith(rhs);
     }
 };
 

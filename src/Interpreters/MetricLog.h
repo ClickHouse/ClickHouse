@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/SystemLog.h>
 #include <Interpreters/PeriodicLog.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>

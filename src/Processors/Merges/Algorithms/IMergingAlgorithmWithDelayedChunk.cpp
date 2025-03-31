@@ -1,5 +1,5 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
-#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
 
 
 namespace DB

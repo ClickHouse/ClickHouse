@@ -1,35 +1,16 @@
 #pragma once
 
-#include <Core/BaseSettingsFwdMacros.h>
-#include <Core/SettingsFields.h>
+#include <Core/BaseSettings.h>
 
 namespace DB
 {
-struct RefreshSettingsImpl;
-class SettingsChanges;
 
-/// List of available types supported in RabbitMQSettings object
-#define REFRESH_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
-    M(CLASS_NAME, Bool) \
-    M(CLASS_NAME, Int64) \
-    M(CLASS_NAME, UInt64)
+#define LIST_OF_REFRESH_SETTINGS(M, ALIAS) \
+    /// TODO: Add settings
+    ///       M(UInt64, name, 42, "...", 0)
 
-REFRESH_SETTINGS_SUPPORTED_TYPES(RefreshSettings, DECLARE_SETTING_TRAIT)
+DECLARE_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS)
 
-struct RefreshSettings
-{
-    RefreshSettings();
-    RefreshSettings(const RefreshSettings & settings);
-    RefreshSettings(RefreshSettings && settings) noexcept;
-    ~RefreshSettings();
+struct RefreshSettings : public BaseSettings<RefreshSettingsTraits> {};
 
-    RefreshSettings & operator=(const RefreshSettings & other);
-
-    REFRESH_SETTINGS_SUPPORTED_TYPES(RefreshSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
-
-    void applyChanges(const SettingsChanges & changes);
-
-private:
-    std::unique_ptr<RefreshSettingsImpl> impl;
-};
 }

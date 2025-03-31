@@ -28,7 +28,7 @@ struct LeastBaseImpl
     {
         if (!left->getType()->isIntegerTy())
         {
-            /// Follows the IEEE-754 semantics for minNum, except for handling of signaling NaNs. This match's the behavior of libc fmin.
+            /// Follows the IEEE-754 semantics for minNum, except for handling of signaling NaNs. This match’s the behavior of libc fmin.
             return b.CreateMinNum(left, right);
         }
 

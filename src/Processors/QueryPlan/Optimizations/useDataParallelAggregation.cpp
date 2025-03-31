@@ -6,8 +6,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Interpreters/ExpressionActions.h>
 
+#include <stack>
 #include <unordered_map>
 
 using namespace DB;
@@ -155,7 +155,7 @@ bool isPartitionKeySuitsGroupByKey(
         return false;
 
     /// We are interested only in calculations required to obtain group by keys (and not aggregate function arguments for example).
-    auto key_nodes = group_by_actions.findInOutputs(aggregating.getParams().keys);
+    auto key_nodes = group_by_actions.findInOutpus(aggregating.getParams().keys);
     auto group_by_key_actions = ActionsDAG::cloneSubDAG(key_nodes, /*remove_aliases=*/ true);
 
     const auto & gb_key_required_columns = group_by_key_actions.getRequiredColumnsNames();
@@ -178,7 +178,7 @@ bool isPartitionKeySuitsGroupByKey(
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings & /*settings*/)
+size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &)
 {
     if (!node || node->children.size() != 1)
         return 0;
@@ -194,7 +194,7 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
 
     auto * maybe_reading_step = expression_node->children.front()->step.get();
 
-    if (const auto * /*filter*/ _ = typeid_cast<const FilterStep *>(maybe_reading_step))
+    if (const auto * filter = typeid_cast<const FilterStep *>(maybe_reading_step))
     {
         const auto * filter_node = expression_node->children.front();
         if (filter_node->children.size() != 1 || !filter_node->children.front()->step)

@@ -1,11 +1,9 @@
 """Test HTTP responses given by the TCP Handler."""
 
 from pathlib import Path
-
 import pytest
-import requests
-
 from helpers.cluster import ClickHouseCluster
+import requests
 
 cluster = ClickHouseCluster(__file__)
 

@@ -1,8 +1,6 @@
-#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
-#include <Storages/FileLog/FileLogSettings.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <base/defines.h>
 
@@ -20,13 +18,6 @@ namespace ErrorCodes
     extern const int IO_SETUP_ERROR;
 }
 
-namespace FileLogSetting
-{
-    extern const FileLogSettingsUInt64 poll_directory_watch_events_backoff_factor;
-    extern const FileLogSettingsMilliseconds poll_directory_watch_events_backoff_init;
-    extern const FileLogSettingsMilliseconds poll_directory_watch_events_backoff_max;
-}
-
 static constexpr int buffer_size = 4096;
 
 DirectoryWatcherBase::DirectoryWatcherBase(
@@ -35,7 +26,7 @@ DirectoryWatcherBase::DirectoryWatcherBase(
     , owner(owner_)
     , path(path_)
     , event_mask(event_mask_)
-    , milliseconds_to_wait((*owner.storage.getFileLogSettings())[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds())
+    , milliseconds_to_wait(owner.storage.getFileLogSettings()->poll_directory_watch_events_backoff_init.totalMilliseconds())
 {
     if (!std::filesystem::exists(path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Path {} does not exist", path);
@@ -86,7 +77,7 @@ void DirectoryWatcherBase::watchFunc()
         const auto & settings = owner.storage.getFileLogSettings();
         if (poll(pfds, 2, static_cast<int>(milliseconds_to_wait)) > 0 && pfds[0].revents & POLLIN)
         {
-            milliseconds_to_wait = (*settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds();
+            milliseconds_to_wait = settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
             ssize_t n = read(inotify_fd, buffer.data(), buffer.size());
             int i = 0;
             if (n > 0)
@@ -134,8 +125,8 @@ void DirectoryWatcherBase::watchFunc()
         }
         else
         {
-            if (milliseconds_to_wait < static_cast<uint64_t>((*settings)[FileLogSetting::poll_directory_watch_events_backoff_max].totalMilliseconds()))
-                milliseconds_to_wait *= (*settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value;
+            if (milliseconds_to_wait < static_cast<uint64_t>(settings->poll_directory_watch_events_backoff_max.totalMilliseconds()))
+                milliseconds_to_wait *= settings->poll_directory_watch_events_backoff_factor.value;
         }
     }
 }
@@ -143,7 +134,7 @@ void DirectoryWatcherBase::watchFunc()
 DirectoryWatcherBase::~DirectoryWatcherBase()
 {
     stop();
-    [[maybe_unused]] int err = ::close(inotify_fd);
+    int err = ::close(inotify_fd);
     chassert(!err || errno == EINTR);
 }
 

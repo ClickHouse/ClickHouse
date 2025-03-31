@@ -18,7 +18,7 @@ struct DivideFloatingImpl
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
-        return static_cast<Result>(a) / static_cast<Result>(b);
+        return static_cast<Result>(a) / b;
     }
 
 #if USE_EMBEDDED_COMPILER

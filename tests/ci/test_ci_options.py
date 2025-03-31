@@ -3,14 +3,13 @@
 # type: ignore
 
 import unittest
-
-from ci_config import CI
 from ci_settings import CiSettings
+from ci_config import CI
 
 _TEST_BODY_1 = """
 #### Run only:
 - [ ] <!---ci_set_required--> Some Set
-- [x] <!---ci_set_aarch64--> Integration tests (aarch64)
+- [x] <!---ci_set_arm--> Integration tests (arm64)
 - [x] <!---ci_include_foo--> Integration tests
 - [x] <!---ci_include_foo_Bar--> Integration tests
 - [ ] <!---ci_include_bar--> Integration tests
@@ -77,11 +76,24 @@ _TEST_JOB_LIST = [
     "Stateless tests (msan)",
     "Stateless tests (ubsan)",
     "Stateless tests (release, old analyzer, s3, DatabaseReplicated)",
-    "Stateless tests (release, ParallelReplicas, s3 storage)"
     "Stateless tests (debug, s3 storage)",
     "Stateless tests (tsan, s3 storage)",
-    "Stateless tests (asan, flaky check)",
+    "Stateless tests flaky check (asan)",
     "Stateless tests (azure, asan)",
+    "Stateful tests (debug)",
+    "Stateful tests (release)",
+    "Stateful tests (coverage)",
+    "Stateful tests (aarch64)",
+    "Stateful tests (asan)",
+    "Stateful tests (tsan)",
+    "Stateful tests (msan)",
+    "Stateful tests (ubsan)",
+    "Stateful tests (release, ParallelReplicas)",
+    "Stateful tests (debug, ParallelReplicas)",
+    "Stateful tests (asan, ParallelReplicas)",
+    "Stateful tests (msan, ParallelReplicas)",
+    "Stateful tests (ubsan, ParallelReplicas)",
+    "Stateful tests (tsan, ParallelReplicas)",
     "Stress test (asan)",
     "Stress test (tsan)",
     "Stress test (ubsan)",
@@ -92,12 +104,12 @@ _TEST_JOB_LIST = [
     "Integration tests (asan, old analyzer)",
     "Integration tests (tsan)",
     "Integration tests (aarch64)",
-    "Integration tests (asan, flaky check)",
+    "Integration tests flaky check (asan)",
     "Upgrade check (debug)",
     "Upgrade check (asan)",
     "Upgrade check (tsan)",
     "Upgrade check (msan)",
-    "Unit tests (binary)",
+    "Unit tests (release)",
     "Unit tests (asan)",
     "Unit tests (msan)",
     "Unit tests (tsan)",
@@ -107,11 +119,6 @@ _TEST_JOB_LIST = [
     "AST fuzzer (msan)",
     "AST fuzzer (tsan)",
     "AST fuzzer (ubsan)",
-    "BuzzHouse (debug)",
-    "BuzzHouse (asan)",
-    "BuzzHouse (msan)",
-    "BuzzHouse (tsan)",
-    "BuzzHouse (ubsan)",
     "ClickHouse Keeper Jepsen",
     "ClickHouse Server Jepsen",
     "Performance Comparison (release)",
@@ -142,7 +149,7 @@ class TestCIOptions(unittest.TestCase):
         self.assertFalse(ci_options.no_ci_cache)
         self.assertTrue(ci_options.no_merge_commit)
         self.assertTrue(ci_options.woolen_wolfdog)
-        self.assertEqual(ci_options.ci_sets, ["ci_set_aarch64"])
+        self.assertEqual(ci_options.ci_sets, ["ci_set_arm"])
         self.assertCountEqual(ci_options.include_keywords, ["foo", "foo_bar"])
         self.assertCountEqual(ci_options.exclude_keywords, ["foo", "foo_bar"])
 
@@ -165,8 +172,9 @@ class TestCIOptions(unittest.TestCase):
             job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
             for job in _TEST_JOB_LIST
         }
-        # check "fuzzers" appears in the result due to the label
-        jobs_configs["fuzzers"].run_by_labels = ["TEST_LABEL"]
+        jobs_configs["fuzzers"].run_by_label = (
+            "TEST_LABEL"  # check "fuzzers" appears in the result due to the label
+        )
         jobs_configs["Integration tests (asan)"].release_only = (
             True  # still must be included as it's set with include keywords
         )
@@ -195,15 +203,14 @@ class TestCIOptions(unittest.TestCase):
                 "binary_release",
                 "Stateless tests (asan)",
                 "Stateless tests (azure, asan)",
-                "Stateless tests (asan, flaky check)",
+                "Stateless tests flaky check (asan)",
                 "Stateless tests (msan)",
                 "Stateless tests (ubsan)",
                 "Stateless tests (debug)",
                 "Stateless tests (release)",
                 "Integration tests (release)",
                 "Integration tests (asan)",
-                "Integration tests (asan, flaky check)",
-                "Builds",
+                "Integration tests flaky check (asan)",
             ],
         )
 
@@ -214,7 +221,7 @@ class TestCIOptions(unittest.TestCase):
         }
         jobs_configs["Style check"].release_only = True
         jobs_configs["Fast test"].pr_only = True
-        jobs_configs["fuzzers"].run_by_labels = ["TEST_LABEL"]
+        jobs_configs["fuzzers"].run_by_label = "TEST_LABEL"
         # no settings are set
         filtered_jobs = list(
             CiSettings().apply(
@@ -303,8 +310,9 @@ class TestCIOptions(unittest.TestCase):
             job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
             for job in _TEST_JOB_LIST
         }
-        # check "fuzzers" does not appears in the result
-        jobs_configs["fuzzers"].run_by_labels = ["TEST_LABEL"]
+        jobs_configs["fuzzers"].run_by_label = (
+            "TEST_LABEL"  # check "fuzzers" does not appears in the result
+        )
         jobs_configs["Integration tests (asan)"].release_only = True
         filtered_jobs = list(
             ci_options.apply(
@@ -331,6 +339,5 @@ class TestCIOptions(unittest.TestCase):
                 "package_msan",
                 "package_ubsan",
                 "binary_release",
-                "Builds",
             ],
         )

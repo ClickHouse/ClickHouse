@@ -1,6 +1,7 @@
 #include <Backups/BackupIO_AzureBlobStorage.h>
 
 #if USE_AZURE_BLOB_STORAGE
+#include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
@@ -23,6 +24,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -67,7 +69,7 @@ UInt64 BackupReaderAzureBlobStorage::getFileSize(const String & file_name)
     return object_metadata.size_bytes;
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupReaderAzureBlobStorage::readFile(const String & file_name)
+std::unique_ptr<SeekableReadBuffer> BackupReaderAzureBlobStorage::readFile(const String & file_name)
 {
     String key = fs::path(blob_path) / file_name;
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
@@ -232,8 +234,11 @@ bool BackupWriterAzureBlobStorage::fileExists(const String & file_name)
 UInt64 BackupWriterAzureBlobStorage::getFileSize(const String & file_name)
 {
     String key = fs::path(blob_path) / file_name;
-    ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
-    return object_metadata.size_bytes;
+    RelativePathsWithMetadata children;
+    object_storage->listObjects(key,children,/*max_keys*/0);
+    if (children.empty())
+        throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Object must exist");
+    return children[0]->metadata->size_bytes;
 }
 
 std::unique_ptr<ReadBuffer> BackupWriterAzureBlobStorage::readFile(const String & file_name, size_t /*expected_file_size*/)

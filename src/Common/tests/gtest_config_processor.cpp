@@ -28,7 +28,6 @@ TEST(Common, ConfigProcessorManyElements)
         for (size_t i = 0; i < element_count; ++i)
             writeString("<x><name>" + std::to_string(i) + "</name></x>\n", out);
         writeString("</clickhouse>\n", out);
-        out.finalize();
     }
 
     Poco::Timestamp load_start;

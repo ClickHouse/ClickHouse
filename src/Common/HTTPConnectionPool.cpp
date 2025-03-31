@@ -2,7 +2,6 @@
 #include <Common/HostResolvePool.h>
 
 #include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -10,9 +9,7 @@
 #include <Common/ProxyConfiguration.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SipHash.h>
-#include <Common/Scheduler/ResourceGuard.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
-#include <base/scope_guard.h>
 
 #include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -95,7 +92,7 @@ namespace ErrorCodes
 }
 
 
-static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForStorageConnectionPool()
+IHTTPConnectionPoolForEndpoint::Metrics getMetricsForStorageConnectionPool()
 {
     return IHTTPConnectionPoolForEndpoint::Metrics{
         .created = ProfileEvents::StorageConnectionsCreated,
@@ -111,7 +108,7 @@ static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForStorageConnectionPoo
 }
 
 
-static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForDiskConnectionPool()
+IHTTPConnectionPoolForEndpoint::Metrics getMetricsForDiskConnectionPool()
 {
     return IHTTPConnectionPoolForEndpoint::Metrics{
         .created = ProfileEvents::DiskConnectionsCreated,
@@ -127,7 +124,7 @@ static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForDiskConnectionPool()
 }
 
 
-static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForHTTPConnectionPool()
+IHTTPConnectionPoolForEndpoint::Metrics getMetricsForHTTPConnectionPool()
 {
     return IHTTPConnectionPoolForEndpoint::Metrics{
         .created = ProfileEvents::HTTPConnectionsCreated,
@@ -143,7 +140,7 @@ static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForHTTPConnectionPool()
 }
 
 
-static IHTTPConnectionPoolForEndpoint::Metrics getConnectionPoolMetrics(HTTPConnectionGroupType type)
+IHTTPConnectionPoolForEndpoint::Metrics getConnectionPoolMetrics(HTTPConnectionGroupType type)
 {
     switch (type)
     {
@@ -239,59 +236,6 @@ public:
 };
 
 
-// Session data hooks implementation for integration with resource scheduler.
-// Hooks are created per every request-response pair and are registered/unregistered in HTTP session.
-// * `atStart()` send resource request to the scheduler every time HTTP session is going to send or receive
-//   data to/from socket. `start()` waits for the scheduler confirmation. This way scheduler might
-//   throttle and/or schedule socket data streams.
-// * `atFinish()` hook is called on successful socket read/write operation.
-//   It informs the scheduler that operation is complete, which allows the scheduler to control the total
-//   amount of in-flight bytes and/or operations.
-// * `atFail()` hook is called on failure of socket operation. The purpose is to correct the amount of bytes
-//   passed through the scheduler queue to ensure fair bandwidth allocation even in presence of errors.
-struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
-{
-    ResourceGuardSessionDataHooks(ResourceLink link_, const ResourceGuard::Metrics * metrics, LoggerPtr log_, const String & method, const String & uri)
-        : link(link_)
-        , log(log_)
-        , http_request(method + " " + uri)
-    {
-        request.metrics = metrics;
-        chassert(link);
-    }
-
-    ~ResourceGuardSessionDataHooks() override
-    {
-        request.assertFinished(); // Never destruct with an active request
-    }
-
-    void atStart(int bytes) override
-    {
-        Stopwatch timer;
-        request.enqueue(bytes, link);
-        request.wait();
-        timer.stop();
-        if (timer.elapsedMilliseconds() >= 5000)
-            LOG_INFO(log, "Resource request took too long to finish: {} ms for {}", timer.elapsedMilliseconds(), http_request);
-    }
-
-    void atFinish(int bytes) override
-    {
-        request.finish(bytes, link);
-    }
-
-    void atFail() override
-    {
-        request.finish(0, link);
-    }
-
-    ResourceLink link;
-    ResourceGuard::Request request;
-    LoggerPtr log;
-    String http_request;
-};
-
-
 // EndpointConnectionPool manage connections to the endpoint
 // Features:
 // - it uses HostResolver for address selecting. See Common/HostResolver.h for more info.
@@ -302,6 +246,8 @@ struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
 // - `Session::reconnect()` uses the pool as well
 // - comprehensive sensors
 // - session is reused according its inner state, automatically
+
+
 template <class Session>
 class EndpointConnectionPool : public std::enable_shared_from_this<EndpointConnectionPool<Session>>, public IExtendedPool
 {
@@ -322,21 +268,21 @@ private:
             isExpired = true;
         }
 
-        void reconnect(UInt64 * connect_time) override
+        void reconnect() override
         {
             Session::close();
 
             if (auto lock = pool.lock())
             {
                 auto timeouts = getTimeouts(*this);
-                auto new_connection = lock->getConnection(timeouts, connect_time);
+                auto new_connection = lock->getConnection(timeouts);
                 Session::assign(*new_connection);
                 Session::setKeepAliveRequest(Session::getKeepAliveRequest() + 1);
             }
             else
             {
                 auto timer = CurrentThread::getProfileEvents().timer(metrics.elapsed_microseconds);
-                Session::reconnect(connect_time);
+                Session::reconnect();
                 ProfileEvents::increment(metrics.created);
             }
         }
@@ -388,17 +334,10 @@ private:
             Session::flushRequest();
         }
 
-        std::ostream & sendRequest(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
+        std::ostream & sendRequest(Poco::Net::HTTPRequest & request) override
         {
             auto idle = idleTime();
-
-            // Set data hooks for IO scheduling
-            if (ResourceLink link = CurrentThread::getReadResourceLink())
-                Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIORead(), log, request.getMethod(), request.getURI()));
-            if (ResourceLink link = CurrentThread::getWriteResourceLink())
-                Session::setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIOWrite(), log, request.getMethod(), request.getURI()));
-
-            std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
+            std::ostream & result = Session::sendRequest(request);
             result.exceptions(std::ios::badbit);
 
             request_stream = &result;
@@ -454,8 +393,6 @@ private:
                 }
             }
             response_stream = nullptr;
-            Session::setSendDataHooks();
-            Session::setReceiveDataHooks();
 
             group->atConnectionDestroy();
 
@@ -497,9 +434,9 @@ private:
             return std::make_shared<make_shared_enabler>(std::forward<Args>(args)...);
         }
 
-        void doConnect(UInt64 * connect_time)
+        void doConnect()
         {
-            Session::reconnect(connect_time);
+            Session::reconnect();
         }
 
         bool isCompleted() const
@@ -558,7 +495,7 @@ public:
         return host;
     }
 
-    IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) override
+    IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(const ConnectionTimeouts & timeouts) override
     {
         std::vector<ConnectionPtr> expired_connections;
 
@@ -587,7 +524,7 @@ public:
             }
         }
 
-        return prepareNewConnection(timeouts, connect_time);
+        return prepareNewConnection(timeouts);
     }
 
     const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const override
@@ -656,7 +593,7 @@ private:
     }
 
 
-    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
+    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts)
     {
         auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
 
@@ -674,7 +611,7 @@ private:
         try
         {
             auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
-            connection->doConnect(connect_time);
+            connection->doConnect();
         }
         catch (...)
         {
@@ -780,7 +717,7 @@ struct Hasher
     }
 };
 
-static IExtendedPool::Ptr
+IExtendedPool::Ptr
 createConnectionPool(ConnectionGroup::Ptr group, std::string host, UInt16 port, bool secure, ProxyConfiguration proxy_configuration)
 {
     if (secure)
@@ -790,7 +727,7 @@ createConnectionPool(ConnectionGroup::Ptr group, std::string host, UInt16 port, 
             group, std::move(host), port, secure, std::move(proxy_configuration));
 #else
         throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS support is disabled, because ClickHouse was built without SSL library");
+            ErrorCodes::SUPPORT_IS_DISABLED, "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
     }
     else

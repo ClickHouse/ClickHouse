@@ -112,7 +112,6 @@ if(ARCH_AMD64)
         set(OPENSSL_SYSTEM "macosx")
     else()
         macro(perl_generate_asm FILE_IN FILE_OUT)
-            execute_process(COMMAND sh -c "mkdir -p $(dirname ${FILE_OUT})")
             # Manually set $CC because the called Perl scripts require it.
             add_custom_command(OUTPUT ${FILE_OUT}
                 COMMAND ${CMAKE_COMMAND} -E env "CC=${CMAKE_CXX_COMPILER}" /usr/bin/env perl ${FILE_IN} ${FILE_OUT})

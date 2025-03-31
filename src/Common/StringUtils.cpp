@@ -23,7 +23,7 @@ bool endsWith(const std::string & s, const char * suffix, size_t suffix_size)
 }
 
 DECLARE_DEFAULT_CODE(
-static bool isAllASCII(const UInt8 * data, size_t size)
+bool isAllASCII(const UInt8 * data, size_t size)
 {
     UInt8 mask = 0;
     for (size_t i = 0; i < size; ++i)
@@ -34,7 +34,7 @@ static bool isAllASCII(const UInt8 * data, size_t size)
 
 DECLARE_SSE42_SPECIFIC_CODE(
 /// Copy from https://github.com/lemire/fastvalidate-utf-8/blob/master/include/simdasciicheck.h
-static bool isAllASCII(const UInt8 * data, size_t size)
+bool isAllASCII(const UInt8 * data, size_t size)
 {
     __m128i masks = _mm_setzero_si128();
 
@@ -55,7 +55,7 @@ static bool isAllASCII(const UInt8 * data, size_t size)
 })
 
 DECLARE_AVX2_SPECIFIC_CODE(
-static bool isAllASCII(const UInt8 * data, size_t size)
+bool isAllASCII(const UInt8 * data, size_t size)
 {
     __m256i masks = _mm256_setzero_si256();
 

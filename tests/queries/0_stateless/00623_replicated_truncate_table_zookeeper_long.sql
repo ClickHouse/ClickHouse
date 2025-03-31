@@ -1,5 +1,4 @@
--- Tags: long, replica, no-shared-merge-tree
--- no-shared-merge-tree: require sync replica, added new test
+-- Tags: long, replica
 
 DROP TABLE IF EXISTS replicated_truncate1;
 DROP TABLE IF EXISTS replicated_truncate2;

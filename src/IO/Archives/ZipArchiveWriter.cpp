@@ -310,25 +310,6 @@ void ZipArchiveWriter::finalize()
     finalized = true;
 }
 
-void ZipArchiveWriter::cancel() noexcept
-{
-    std::lock_guard lock{mutex};
-    if (finalized)
-        return;
-
-    if (zip_handle)
-    {
-        zipClose(zip_handle, /* global_comment= */ nullptr);
-        zip_handle = nullptr;
-    }
-
-    if (stream_info)
-    {
-        stream_info->getWriteBuffer().cancel();
-        stream_info.reset();
-    }
-}
-
 void ZipArchiveWriter::setCompression(const String & compression_method_, int compression_level_)
 {
     std::lock_guard lock{mutex};
@@ -364,19 +345,20 @@ int ZipArchiveWriter::compressionMethodToInt(const String & compression_method_)
 {
     if (compression_method_.empty())
         return MZ_COMPRESS_METHOD_DEFLATE; /// By default the compression method is "deflate".
-    if (compression_method_ == kStore)
+    else if (compression_method_ == kStore)
         return MZ_COMPRESS_METHOD_STORE;
-    if (compression_method_ == kDeflate)
+    else if (compression_method_ == kDeflate)
         return MZ_COMPRESS_METHOD_DEFLATE;
-    if (compression_method_ == kBzip2)
+    else if (compression_method_ == kBzip2)
         return MZ_COMPRESS_METHOD_BZIP2;
-    if (compression_method_ == kLzma)
+    else if (compression_method_ == kLzma)
         return MZ_COMPRESS_METHOD_LZMA;
-    if (compression_method_ == kZstd)
+    else if (compression_method_ == kZstd)
         return MZ_COMPRESS_METHOD_ZSTD;
-    if (compression_method_ == kXz)
+    else if (compression_method_ == kXz)
         return MZ_COMPRESS_METHOD_XZ;
-    throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Unknown compression method specified for a zip archive: {}", compression_method_);
+    else
+        throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Unknown compression method specified for a zip archive: {}", compression_method_);
 }
 
 String ZipArchiveWriter::intToCompressionMethod(int compression_method_)

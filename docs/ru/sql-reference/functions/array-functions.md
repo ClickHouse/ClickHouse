@@ -19,7 +19,7 @@ empty([x])
 Массив считается пустым, если он не содержит ни одного элемента.
 
 :::note Примечание
-Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM TABLE` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM TABLE` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
 :::
 
 Функция также поддерживает работу с типами [String](string-functions.md#empty) и [UUID](uuid-functions.md#empty).
@@ -63,7 +63,7 @@ notEmpty([x])
 Массив считается непустым, если он содержит хотя бы один элемент.
 
 :::note Примечание
-Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
 :::
 
 Функция также поддерживает работу с типами [String](string-functions.md#notempty) и [UUID](uuid-functions.md#notempty).
@@ -100,7 +100,7 @@ SELECT notEmpty([1,2]);
 Тип результата - UInt64.
 Функция также работает для строк.
 
-Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT length(arr) FROM table` преобразуется к запросу `SELECT arr.size0 FROM TABLE`.
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT length(arr) FROM table` преобразуется к запросу `SELECT arr.size0 FROM TABLE`.
 
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
 
@@ -304,24 +304,6 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 ┌─indexOf([1, 3, NULL, NULL], NULL)─┐
 │                                 3 │
 └───────────────────────────────────┘
-```
-
-## indexOfAssumeSorted(arr, x)
-
-Возвращает индекс первого элемента x (начиная с 1), если он есть в массиве, или 0, если его нет.
-Функция должна использоваться, если массив отсортирован в неубывающем порядке, так как используется бинарный поиск.
-Если внутренний тип Nullable, то будет использована функция ‘indexOf‘.
-
-Пример:
-
-``` sql
-SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
-```
-
-``` text
-┌─indexOf([1, 3, 3, 3, 4, 4, 5], NULL)─┐
-│                                 5    │
-└──────────────────────────────────--─-┘
 ```
 
 Элементы, равные `NULL`, обрабатываются как обычные значения.

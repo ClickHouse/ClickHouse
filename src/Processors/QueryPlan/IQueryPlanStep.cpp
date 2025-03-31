@@ -1,10 +1,6 @@
-#include <IO/Operators.h>
-#include <Processors/IProcessor.h>
-#include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Common/CurrentThread.h>
-
-#include <fmt/format.h>
+#include <Processors/IProcessor.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -12,43 +8,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
-IQueryPlanStep::IQueryPlanStep()
+const DataStream & IQueryPlanStep::getOutputStream() const
 {
-    step_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0;
-}
-
-void IQueryPlanStep::updateInputHeaders(Headers input_headers_)
-{
-    input_headers = std::move(input_headers_);
-    updateOutputHeader();
-}
-
-void IQueryPlanStep::updateInputHeader(Header input_header, size_t idx)
-{
-    if (idx >= input_headers.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot update input header {} for step {} because it has only {} headers",
-            idx, getName(), input_headers.size());
-
-    input_headers[idx] = input_header;
-    updateOutputHeader();
-}
-
-const Header & IQueryPlanStep::getOutputHeader() const
-{
-    if (!hasOutputHeader())
+    if (!hasOutputStream())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlanStep {} does not have output stream.", getName());
 
-    return *output_header;
-}
-
-const SortDescription & IQueryPlanStep::getSortDescription() const
-{
-    static SortDescription empty;
-    return empty;
+    return *output_stream;
 }
 
 static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep::FormatSettings & settings)
@@ -150,17 +117,5 @@ void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
 {
     processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
 }
-
-String IQueryPlanStep::getUniqID() const
-{
-    return fmt::format("{}_{}", getName(), step_index);
-}
-
-void IQueryPlanStep::serialize(Serialization & /*ctx*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serialize is not implemented for {}", getName());
-}
-
-void IQueryPlanStep::updateOutputHeader() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
 
 }

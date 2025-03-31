@@ -1,7 +1,4 @@
 #pragma once
-
-#include <Columns/ColumnNullable.h>
-#include <Core/Defines.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/TableJoin.h>
 
@@ -17,8 +14,6 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct JoinOnKeyColumns
 {
-    const ScatteredBlock & block;
-
     Names key_names;
 
     Columns materialized_keys_holder;
@@ -32,13 +27,9 @@ struct JoinOnKeyColumns
 
     Sizes key_sizes;
 
-    JoinOnKeyColumns(
-        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
+    explicit JoinOnKeyColumns(const Block & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
 
-    bool isRowFiltered(size_t i) const
-    {
-        return join_mask_column.isRowFiltered(i);
-    }
+    bool isRowFiltered(size_t i) const { return join_mask_column.isRowFiltered(i); }
 };
 
 template <bool lazy>
@@ -57,38 +48,14 @@ public:
         }
     };
 
-    class LazyOutput
+    struct LazyOutput
     {
-        PaddedPODArray<UInt64> row_refs;
-        size_t row_count = 0;   /// Total number of rows in all RowRef-s and RowRefList-s
-
-    public:
-        const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
-        size_t getRowCount() const { return row_count; }
-
-        void reserve(size_t size) { row_refs.reserve(size); }
-
-        void addRowRef(const RowRef * row_ref)
-        {
-            row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref));
-            ++row_count;
-        }
-
-        void addRowRefList(const RowRefList * row_ref_list)
-        {
-            row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref_list));
-            row_count += row_ref_list->rows;
-        }
-
-        void addDefault()
-        {
-            row_refs.emplace_back(0);
-            ++row_count;
-        }
+        PaddedPODArray<UInt64> blocks;
+        PaddedPODArray<UInt32> row_nums;
     };
 
     AddedColumns(
-        const ScatteredBlock & left_block_,
+        const Block & left_block_,
         const Block & block_with_columns_to_add,
         const Block & saved_block_sample,
         const HashJoin & join,
@@ -96,14 +63,10 @@ public:
         ExpressionActionsPtr additional_filter_expression_,
         bool is_asof_join,
         bool is_join_get_)
-        : src_block(left_block_)
-        , left_block(left_block_.getSourceBlock())
+        : left_block(left_block_)
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
-        , rows_to_add(left_block_.rows())
-        , join_data_avg_perkey_rows(join.getJoinedData()->avgPerKeyRows())
-        , output_by_row_list_threshold(join.getTableJoin().outputByRowListPerkeyRowsThreshold())
-        , join_data_sorted(join.getJoinedData()->sorted)
+        , rows_to_add(left_block.rows())
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -113,7 +76,8 @@ public:
         if constexpr (lazy)
         {
             has_columns_to_add = num_columns_to_add > 0;
-            lazy_output.reserve(rows_to_add);
+            lazy_output.blocks.reserve(rows_to_add);
+            lazy_output.row_nums.reserve(rows_to_add);
         }
 
         columns.reserve(num_columns_to_add);
@@ -157,15 +121,12 @@ public:
 
     void buildOutput();
 
-    void buildJoinGetOutput();
-
     ColumnWithTypeAndName moveColumn(size_t i)
     {
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
-    void appendFromBlock(const RowRefList * row_ref_list, bool has_default);
-    void appendFromBlock(const RowRef * row_ref, bool has_default);
+    void appendFromBlock(const Block & block, size_t row_num, bool has_default);
 
     void appendDefaultRow();
 
@@ -173,9 +134,6 @@ public:
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
-    static constexpr bool isLazy() { return lazy; }
-
-    const ScatteredBlock & src_block;
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
     ExpressionActionsPtr additional_filter_expression;
@@ -184,10 +142,6 @@ public:
     size_t rows_to_add;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
-    bool output_by_row_list = false;
-    size_t join_data_avg_perkey_rows = 0;
-    size_t output_by_row_list_threshold = 0;
-    bool join_data_sorted = false;
     IColumn::Filter filter;
 
     void reserve(bool need_replicate)
@@ -196,7 +150,7 @@ public:
             return;
 
         /// Do not allow big allocations when user set max_joined_block_rows to huge value
-        size_t reserve_size = std::min<size_t>(max_joined_block_rows, rows_to_add * 2);
+        size_t reserve_size = std::min<size_t>(max_joined_block_rows, DEFAULT_BLOCK_SIZE * 2);
 
         if (need_replicate)
             /// Reserve 10% more space for columns, because some rows can be repeated
@@ -255,27 +209,18 @@ private:
     void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
     {
         columns.push_back(src_column.column->cloneEmpty());
-        columns.back()->reserve(rows_to_add);
+        columns.back()->reserve(src_column.column->size());
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
-
-    /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache miss which may cause performance slow down.
-     *  And This problem would happen it we directly build output from `RowRef` or `RowRefList`.
-     */
-    template<bool from_row_list>
-    void buildOutputFromBlocks();
-
-    void buildOutputFromRowRefLists();
 };
 
 /// Adapter class to pass into addFoundRowAll
 /// In joinRightColumnsWithAdditionalFilter we don't want to add rows directly into AddedColumns,
 /// because they need to be filtered by additional_filter_expression.
-class PreSelectedRows : public std::vector<const RowRef *>
+class PreSelectedRows : public std::vector<RowRef>
 {
 public:
-    void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
-    static constexpr bool isLazy() { return false; }
+    void appendFromBlock(const Block & block, size_t row_num, bool /* has_default */) { this->emplace_back(&block, row_num); }
 };
 
 }

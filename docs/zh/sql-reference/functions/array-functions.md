@@ -16,7 +16,7 @@ empty([x])
 如果一个数组中不包含任何元素，则此数组为空数组。
 
 :::注意    
-可以通过启用[optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns)配置进行优化。设置`optimize_functions_to_subcolumns = 1`后，函数通过读取[size0](../../sql-reference/data-types/array.md#array-size)子列获取结果，不在读取和处理整个数组列，查询语句`SELECT empty(arr) FROM TABLE;`将转化为`SELECT arr.size0 = 0 FROM TABLE;`。
+可以通过启用[optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns)配置进行优化。设置`optimize_functions_to_subcolumns = 1`后，函数通过读取[size0](../../sql-reference/data-types/array.md#array-size)子列获取结果，不在读取和处理整个数组列，查询语句`SELECT empty(arr) FROM TABLE;`将转化为`SELECT arr.size0 = 0 FROM TABLE;`。
 :::
 
 此函数也适用于[strings](string-functions.md#empty)或[UUID](uuid-functions.md#empty)。
@@ -60,7 +60,7 @@ notEmpty([x])
 如果一个数组至少包含一个元素，则此数组为非空数组。
 
 :::注意    
-可以通过启用[optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns)配置进行优化。设置`optimize_functions_to_subcolumns = 1`后，函数通过读取[size0](../../sql-reference/data-types/array.md#array-size)子列获取结果，不在读取和处理整个数组列，查询语句`SELECT notEmpty(arr) FROM TABLE;`将转化为`SELECT arr.size0 != 0 FROM TABLE;`。
+可以通过启用[optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns)配置进行优化。设置`optimize_functions_to_subcolumns = 1`后，函数通过读取[size0](../../sql-reference/data-types/array.md#array-size)子列获取结果，不在读取和处理整个数组列，查询语句`SELECT notEmpty(arr) FROM TABLE;`将转化为`SELECT arr.size0 != 0 FROM TABLE;`。
 :::
 
 此函数也适用于[strings](string-functions.md#empty)或[UUID](uuid-functions.md#empty)。
@@ -97,7 +97,7 @@ SELECT notEmpty([1,2]);
 结果类型是UInt64。
 该函数也适用于字符串。
 
-可以通过启用[optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns)配置进行优化。设置`optimize_functions_to_subcolumns = 1`后，函数通过读取[size0](../../sql-reference/data-types/array.md#array-size)子列获取结果，不在读取和处理整个数组列，查询语句`SELECT length(arr) FROM table`将转化为`SELECT arr.size0 FROM TABLE`。
+可以通过启用[optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns)配置进行优化。设置`optimize_functions_to_subcolumns = 1`后，函数通过读取[size0](../../sql-reference/data-types/array.md#array-size)子列获取结果，不在读取和处理整个数组列，查询语句`SELECT length(arr) FROM table`将转化为`SELECT arr.size0 FROM TABLE`。
 
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
 
@@ -336,24 +336,6 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 ```
 
 设置为«NULL»的元素将作为普通的元素值处理。
-
-## indexOfAssumeSorted(arr, x)
-
-返回数组中第一个’x’元素的索引（从1开始），如果’x’元素不存在在数组中，则返回0.
-该函数应用于不按降序排序的数组，因为二进制搜索用于搜索。
-如果内部数组类型为空，则将使用’indexOf’函数。
-
-示例:
-
-``` sql
-SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
-```
-
-``` text
-┌─indexOf([1, 3, 3, 3, 4, 4, 5], NULL)─┐
-│                                 5    │
-└──────────────────────────────────--─-┘
-```
 
 ## arrayCount(\[func,\] arr1, ...) {#array-count}
 
@@ -863,13 +845,13 @@ arrayDifference(array)
 
 **参数**
 
--   `array` –类型为[数组](/sql-reference/data-types/array)。
+-   `array` –类型为[数组](https://clickhouse.com/docs/en/data_types/array/)。
 
 **返回值**
 
 返回相邻元素之间的差异数组。
 
-类型: [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/sql-reference/data-types/int-uint#integer-ranges), [Float\*](/sql-reference/data-types/float)。
+类型: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/)。
 
 **示例**
 
@@ -914,7 +896,7 @@ arrayDistinct(array)
 
 **参数**
 
--   `array` –类型为[数组](/sql-reference/data-types/array)。
+-   `array` –类型为[数组](https://clickhouse.com/docs/en/data_types/array/)。
 
 **返回值**
 

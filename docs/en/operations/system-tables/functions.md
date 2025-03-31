@@ -1,9 +1,7 @@
 ---
-description: 'System table containing information about normal and aggregate functions.'
-keywords: ['system table', 'functions']
-slug: /operations/system-tables/functions
-title: 'system.functions'
+slug: /en/operations/system-tables/functions
 ---
+# functions
 
 Contains information about normal and aggregate functions.
 

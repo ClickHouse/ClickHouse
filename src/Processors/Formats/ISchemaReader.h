@@ -189,15 +189,16 @@ void chooseResultColumnType(
                 column_name,
                 row,
                 type->getName());
-        throw Exception(
-            ErrorCodes::TYPE_MISMATCH,
-            "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
-            "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
-            new_type->getName(),
-            column_name,
-            row,
-            type->getName(),
-            hints_parsing_error);
+        else
+            throw Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
+                "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
+                new_type->getName(),
+                column_name,
+                row,
+                type->getName(),
+                hints_parsing_error);
     }
 }
 

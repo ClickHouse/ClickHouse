@@ -1,17 +1,16 @@
 #!/usr/bin/env python
 
-import shutil
-import unittest
 from hashlib import md5
 from pathlib import Path
+import shutil
 from typing import Dict, Set
-
-from ci_cache import CiCache
-from ci_config import CI
-from commit_status_helper import CommitStatusData
-from digest_helper import JOB_DIGEST_LEN
-from env_helper import S3_BUILDS_BUCKET, TEMP_PATH
+import unittest
 from s3_helper import S3Helper
+from ci_cache import CiCache
+from digest_helper import JOB_DIGEST_LEN
+from commit_status_helper import CommitStatusData
+from env_helper import S3_BUILDS_BUCKET, TEMP_PATH
+from ci_config import CI
 
 
 def _create_mock_digest_1(string):

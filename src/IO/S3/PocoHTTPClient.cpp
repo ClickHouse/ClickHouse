@@ -1,7 +1,4 @@
 #include <Poco/Timespan.h>
-#include <Common/LatencyBuckets.h>
-#include <Common/NetException.h>
-#include <Common/config_version.h>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -20,19 +17,17 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/S3/ProviderType.h>
-#include <Interpreters/Context.h>
 
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
 #include <aws/core/monitoring/HttpClientMetrics.h>
 #include <aws/core/utils/ratelimiter/RateLimiterInterface.h>
-#include <Poco/StreamCopier.h>
+#include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 
 #include <boost/algorithm/string.hpp>
-
 
 static const int SUCCESS_RESPONSE_MIN = 200;
 static const int SUCCESS_RESPONSE_MAX = 299;
@@ -74,28 +69,6 @@ namespace ProfileEvents
     extern const Event DiskS3PutRequestThrottlerSleepMicroseconds;
 }
 
-namespace LatencyBuckets
-{
-    extern const Event S3FirstByteReadAttempt1Microseconds;
-    extern const Event S3FirstByteReadAttempt2Microseconds;
-    extern const Event S3FirstByteReadAttemptNMicroseconds;
-
-    extern const Event S3FirstByteWriteAttempt1Microseconds;
-    extern const Event S3FirstByteWriteAttempt2Microseconds;
-    extern const Event S3FirstByteWriteAttemptNMicroseconds;
-
-    extern const Event DiskS3FirstByteReadAttempt1Microseconds;
-    extern const Event DiskS3FirstByteReadAttempt2Microseconds;
-    extern const Event DiskS3FirstByteReadAttemptNMicroseconds;
-
-    extern const Event DiskS3FirstByteWriteAttempt1Microseconds;
-    extern const Event DiskS3FirstByteWriteAttempt2Microseconds;
-    extern const Event DiskS3FirstByteWriteAttemptNMicroseconds;
-
-    extern const Event S3ConnectMicroseconds;
-    extern const Event DiskS3ConnectMicroseconds;
-}
-
 namespace CurrentMetrics
 {
     extern const Metric S3Requests;
@@ -105,14 +78,13 @@ namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_REDIRECTS;
-    extern const int DNS_ERROR;
 }
 
 namespace DB::S3
 {
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
-        std::function<ProxyConfiguration()> per_request_configuration_,
+        std::function<DB::ProxyConfiguration()> per_request_configuration_,
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
@@ -122,7 +94,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         bool s3_use_adaptive_timeouts_,
         const ThrottlerPtr & get_request_throttler_,
         const ThrottlerPtr & put_request_throttler_,
-        std::function<void(const ProxyConfiguration &)> error_report_)
+        std::function<void(const DB::ProxyConfiguration &)> error_report_)
     : per_request_configuration(per_request_configuration_)
     , force_region(force_region_)
     , remote_host_filter(remote_host_filter_)
@@ -135,8 +107,6 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , s3_use_adaptive_timeouts(s3_use_adaptive_timeouts_)
     , error_report(error_report_)
 {
-    /// This is used to identify configurations created by us.
-    userAgent = std::string(VERSION_FULL) + VERSION_OFFICIAL;
 }
 
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()
@@ -158,7 +128,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
             }
             else
             {
-                /// In global mode AWS C++ SDK sends `us-east-1` but accepts switching to another one if being suggested.
+                /// In global mode AWS C++ SDK send `us-east-1` but accept switching to another one if being suggested.
                 region = Aws::Region::AWS_GLOBAL;
             }
         }
@@ -188,25 +158,11 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , remote_host_filter(client_configuration.remote_host_filter)
     , s3_max_redirects(client_configuration.s3_max_redirects)
     , s3_use_adaptive_timeouts(client_configuration.s3_use_adaptive_timeouts)
-    , http_max_fields(client_configuration.http_max_fields)
-    , http_max_field_name_size(client_configuration.http_max_field_name_size)
-    , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
     , get_request_throttler(client_configuration.get_request_throttler)
     , put_request_throttler(client_configuration.put_request_throttler)
     , extra_headers(client_configuration.extra_headers)
-{
-}
-
-PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & client_configuration)
-    : timeouts(ConnectionTimeouts()
-       .withConnectionTimeout(Poco::Timespan(client_configuration.connectTimeoutMs * 1000))
-       .withSendTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
-       .withReceiveTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
-       .withTCPKeepAliveTimeout(Poco::Timespan(
-           client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0))),
-    remote_host_filter(Context::getGlobalContextInstance()->getRemoteHostFilter())
 {
 }
 
@@ -288,7 +244,7 @@ PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::Http
 
 void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount) const
 {
-    static const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
+    const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
         {ProfileEvents::S3ReadMicroseconds, ProfileEvents::S3WriteMicroseconds},
         {ProfileEvents::S3ReadRequestsCount, ProfileEvents::S3WriteRequestsCount},
         {ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors},
@@ -296,7 +252,7 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
         {ProfileEvents::S3ReadRequestsRedirects, ProfileEvents::S3WriteRequestsRedirects},
     };
 
-    static const ProfileEvents::Event disk_s3_events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
+    const ProfileEvents::Event disk_s3_events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
         {ProfileEvents::DiskS3ReadMicroseconds, ProfileEvents::DiskS3WriteMicroseconds},
         {ProfileEvents::DiskS3ReadRequestsCount, ProfileEvents::DiskS3WriteRequestsCount},
         {ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors},
@@ -309,32 +265,6 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
     ProfileEvents::increment(events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
     if (for_disk_s3)
         ProfileEvents::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
-}
-
-void PocoHTTPClient::addLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, LatencyBuckets::Count amount) const
-{
-    if (amount == 0)
-        return;
-
-    static const LatencyBuckets::Event events_map[static_cast<size_t>(S3LatencyType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
-        {LatencyBuckets::S3FirstByteReadAttempt1Microseconds, LatencyBuckets::S3FirstByteWriteAttempt1Microseconds},
-        {LatencyBuckets::S3FirstByteReadAttempt2Microseconds, LatencyBuckets::S3FirstByteWriteAttempt2Microseconds},
-        {LatencyBuckets::S3FirstByteReadAttemptNMicroseconds, LatencyBuckets::S3FirstByteWriteAttemptNMicroseconds},
-        {LatencyBuckets::S3ConnectMicroseconds, LatencyBuckets::S3ConnectMicroseconds},
-    };
-
-    static const LatencyBuckets::Event disk_s3_events_map[static_cast<size_t>(S3LatencyType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
-        {LatencyBuckets::DiskS3FirstByteReadAttempt1Microseconds, LatencyBuckets::DiskS3FirstByteWriteAttempt1Microseconds},
-        {LatencyBuckets::DiskS3FirstByteReadAttempt2Microseconds, LatencyBuckets::DiskS3FirstByteWriteAttempt2Microseconds},
-        {LatencyBuckets::DiskS3FirstByteReadAttemptNMicroseconds, LatencyBuckets::DiskS3FirstByteWriteAttemptNMicroseconds},
-        {LatencyBuckets::DiskS3ConnectMicroseconds, LatencyBuckets::DiskS3ConnectMicroseconds},
-    };
-
-    S3MetricKind kind = getMetricKind(request);
-
-    LatencyBuckets::increment(events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
-    if (for_disk_s3)
-        LatencyBuckets::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
 }
 
 String extractAttemptFromInfo(const Aws::String & request_info)
@@ -397,19 +327,6 @@ String getMethod(const Aws::Http::HttpRequest & request)
     }
 }
 
-PocoHTTPClient::S3LatencyType PocoHTTPClient::getFirstByteLatencyType(const String & sdk_attempt, const String & ch_attempt)
-{
-    S3LatencyType result = S3LatencyType::FirstByteAttempt1;
-    if (sdk_attempt != "1" || ch_attempt != "1")
-    {
-        if ((sdk_attempt == "1" && ch_attempt == "2") || (sdk_attempt == "2" && ch_attempt == "1"))
-            result = S3LatencyType::FirstByteAttempt2;
-        else
-            result = S3LatencyType::FirstByteAttemptN;
-    }
-    return result;
-}
-
 void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Http::HttpRequest & request,
     std::shared_ptr<PocoHTTPResponse> & response,
@@ -462,18 +379,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
     addMetric(request, S3MetricType::Count);
     CurrentMetrics::Increment metric_increment{CurrentMetrics::S3Requests};
 
-    UInt64 connect_time = 0;
-    UInt64 first_byte_time = 0;
-    bool latency_recorded = false;
-    S3LatencyType first_byte_latency_type = getFirstByteLatencyType(sdk_attempt, ch_attempt);
-
     try
     {
-        ProxyConfiguration proxy_configuration;
-        if (per_request_configuration)
-            proxy_configuration = per_request_configuration();
-
-        for (size_t attempt = 0; attempt <= s3_max_redirects; ++attempt)
+        const auto proxy_configuration = per_request_configuration();
+        for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
 
@@ -482,15 +391,11 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
 
-            /// Reset times, as this may be a next session after a redirect
-            connect_time = first_byte_time = 0;
-            latency_recorded = false;
             auto session = makeHTTPSession(
                 group,
                 target_uri,
                 getTimeouts(method, first_attempt, /*first_byte*/ true),
-                proxy_configuration,
-                &connect_time);
+                proxy_configuration);
 
             /// In case of error this address will be written to logs
             request.SetResolvedRemoteHost(session->getResolvedAddress());
@@ -542,18 +447,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
             }
 
             Poco::Net::HTTPResponse poco_response;
-            poco_response.setFieldLimit(static_cast<int>(http_max_fields));
-            poco_response.setNameLengthLimit(static_cast<int>(http_max_field_name_size));
-            poco_response.setValueLengthLimit(static_cast<int>(http_max_field_value_size));
 
             Stopwatch watch;
 
-            auto & request_body_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
-            /// We record connect time here and not earlier, so that if an exception occurs while sending a request,
-            /// we won't record the same latency twice.
-            addLatency(request, S3LatencyType::Connect, connect_time);
-            addLatency(request, first_byte_latency_type, first_byte_time);
-            latency_recorded = true;
+            auto & request_body_stream = session->sendRequest(poco_request);
 
             if (request.GetContentBody())
             {
@@ -603,6 +500,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     LOG_TEST(log, "Redirecting request to new location: {}", location);
 
                 addMetric(request, S3MetricType::Redirects);
+
                 continue;
             }
 
@@ -650,9 +548,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
             }
             else
             {
+
                 if (status_code == 429 || status_code == 503)
-                {
-                    /// API throttling
+                { // API throttling
                     addMetric(request, S3MetricType::Throttling);
                 }
                 else if (status_code >= 300)
@@ -670,29 +568,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
         }
         throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects while trying to access {}", request.GetUri().GetURIString());
     }
-    catch (const NetException & e)
-    {
-        if (!latency_recorded)
-        {
-            addLatency(request, S3LatencyType::Connect, connect_time);
-            addLatency(request, first_byte_latency_type, first_byte_time);
-        }
-        auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
-        error_message.text = fmt::format("Failed to make request to: {}: {}", uri, error_message.text);
-        LOG_INFO(log, error_message);
-
-        response->SetClientErrorType(e.code() == ErrorCodes::DNS_ERROR ? Aws::Client::CoreErrors::ENDPOINT_RESOLUTION_FAILURE : Aws::Client::CoreErrors::NETWORK_CONNECTION);
-        response->SetClientErrorMessage(getCurrentExceptionMessage(false));
-
-        addMetric(request, S3MetricType::Errors);
-    }
     catch (...)
     {
-        if (!latency_recorded)
-        {
-            addLatency(request, S3LatencyType::Connect, connect_time);
-            addLatency(request, first_byte_latency_type, first_byte_time);
-        }
         auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
         error_message.text = fmt::format("Failed to make request to: {}: {}", uri, error_message.text);
         LOG_INFO(log, error_message);

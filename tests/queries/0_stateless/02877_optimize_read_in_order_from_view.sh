@@ -14,13 +14,13 @@ EOF
 
 # The following SELECT is expected to read 20 rows. In fact it may decide to read more than 20 rows, but not too many anyway.
 # So we'll check that the number of read rows is less than 40.
-query="SELECT * FROM (SELECT * FROM view1) ORDER BY number DESC LIMIT 20 SETTINGS max_streams_for_merge_tree_reading = 1"
+query="SELECT * FROM (SELECT * FROM view1) ORDER BY number DESC LIMIT 20"
 
 query_id=${CLICKHOUSE_DATABASE}_optimize_read_in_order_from_view_$RANDOM$RANDOM
 
 $CLICKHOUSE_CLIENT -q "$query" --query_id="$query_id" --log_queries=1 --optimize_read_in_order=1
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 
 read_rows=$($CLICKHOUSE_CLIENT -q "SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query_id='${query_id}' AND type='QueryFinish'")
 

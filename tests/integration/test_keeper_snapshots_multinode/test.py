@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 import pytest
-
-import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
+import random
+import string
+import os
+import time
 
 cluster = ClickHouseCluster(__file__)
-
-# Disable `with_remote_database_disk` as the test does not use the default Keeper.
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True, with_remote_database_disk=False,
+    "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True
 )
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True, with_remote_database_disk=False,
+    "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True
 )
 node3 = cluster.add_instance(
-    "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True, with_remote_database_disk=False,
+    "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True
 )
+
+from kazoo.client import KazooClient, KazooState
 
 
 def wait_nodes():
@@ -34,7 +37,11 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
+    )
+    _fake_zk_instance.start()
+    return _fake_zk_instance
 
 
 def stop_zk(zk):
@@ -130,8 +137,5 @@ def test_restart_multinode(started_cluster):
         except Exception as ex:
             print("Got exception as ex", ex)
         finally:
-            for i in range(100):
-                if node1_zk.exists("/test_read_write_multinode_node" + str(i)):
-                    node1_zk.delete("/test_read_write_multinode_node" + str(i))
             for zk in [node1_zk, node2_zk, node3_zk]:
                 stop_zk(zk)

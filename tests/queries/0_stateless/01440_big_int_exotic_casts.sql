@@ -32,6 +32,8 @@ SELECT number y, toInt128(number) - y, toInt256(number) - y, toUInt256(number) -
 SELECT -number y, toInt128(number) + y, toInt256(number) + y, toUInt256(number) + y FROM numbers_mt(10) ORDER BY number;
 
 
+SET allow_experimental_bigint_types = 1;
+
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (x UInt64, i256 Int256, u256 UInt256, d256 Decimal256(2)) ENGINE = Memory;
 

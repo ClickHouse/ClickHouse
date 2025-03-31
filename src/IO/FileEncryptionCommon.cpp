@@ -1,13 +1,13 @@
 #include <IO/FileEncryptionCommon.h>
 
 #if USE_SSL
-#    include <base/MemorySanitizer.h>
-#    include <IO/ReadBuffer.h>
-#    include <IO/ReadHelpers.h>
-#    include <IO/WriteBuffer.h>
-#    include <IO/WriteHelpers.h>
-#    include <Common/SipHash.h>
-#    include <Common/safe_cast.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <Common/MemorySanitizer.h>
+#include <Common/SipHash.h>
+#include <Common/safe_cast.h>
 
 #    include <cassert>
 #    include <boost/algorithm/string/predicate.hpp>
@@ -226,14 +226,15 @@ Algorithm parseAlgorithmFromString(const String & str)
 {
     if (boost::iequals(str, "aes_128_ctr"))
         return Algorithm::AES_128_CTR;
-    if (boost::iequals(str, "aes_192_ctr"))
+    else if (boost::iequals(str, "aes_192_ctr"))
         return Algorithm::AES_192_CTR;
-    if (boost::iequals(str, "aes_256_ctr"))
+    else if (boost::iequals(str, "aes_256_ctr"))
         return Algorithm::AES_256_CTR;
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Encryption algorithm '{}' is not supported, specify one of the following: aes_128_ctr, aes_192_ctr, aes_256_ctr",
-        str);
+    else
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Encryption algorithm '{}' is not supported, specify one of the following: aes_128_ctr, aes_192_ctr, aes_256_ctr",
+            str);
 }
 
 void checkKeySize(size_t key_size, Algorithm algorithm) { checkKeySize(getCipher(algorithm), key_size); }

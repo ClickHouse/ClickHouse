@@ -1,5 +1,4 @@
 #include <IO/WriteHelpers.h>
-#include <Processors/Port.h>
 #include <QueryPipeline/Chain.h>
 
 namespace DB
@@ -130,16 +129,6 @@ OutputPort & Chain::getOutputPort() const
 {
     checkInitialized(processors);
     return processors.back()->getOutputs().front();
-}
-
-const Block & Chain::getInputHeader() const
-{
-    return getInputPort().getHeader();
-}
-
-const Block & Chain::getOutputHeader() const
-{
-    return getOutputPort().getHeader();
 }
 
 void Chain::reset()

@@ -1,8 +1,8 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/array/arrayEnumerateRanked.h>
-#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 
+#include <algorithm>
 
 namespace DB
 {
@@ -10,18 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-}
-
-UInt128 hash128depths(const std::vector<size_t> & indices, const ColumnRawPtrs & key_columns)
-{
-    SipHash hash;
-    for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)
-    {
-        // Debug: const auto & field = (*key_columns[j])[indices[j]]; DUMP(j, indices[j], field);
-        key_columns[j]->updateHashWithValue(indices[j], hash);
-    }
-
-    return hash.get128();
 }
 
 ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments, const char * function_name)

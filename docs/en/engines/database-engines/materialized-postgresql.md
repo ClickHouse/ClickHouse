@@ -1,22 +1,10 @@
 ---
-description: 'Creates a ClickHouse database with tables from PostgreSQL database.'
-sidebar_label: 'MaterializedPostgreSQL'
+slug: /en/engines/database-engines/materialized-postgresql
+sidebar_label: MaterializedPostgreSQL
 sidebar_position: 60
-slug: /engines/database-engines/materialized-postgresql
-title: 'MaterializedPostgreSQL'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-# MaterializedPostgreSQL
-
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
-
-:::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
-:::
+# [experimental] MaterializedPostgreSQL
 
 Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
 
@@ -31,7 +19,7 @@ SET allow_experimental_database_materialized_postgresql=1
 
 ## Creating a Database {#creating-a-database}
 
-```sql
+``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SETTINGS ...]
 ```
@@ -45,7 +33,7 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 
 ## Example of Use {#example-of-use}
 
-```sql
+``` sql
 CREATE DATABASE postgres_db
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
 
@@ -62,7 +50,7 @@ SELECT * FROM postgresql_db.postgres_table;
 
 After `MaterializedPostgreSQL` database is created, it does not automatically detect new tables in according PostgreSQL database. Such tables can be added manually:
 
-```sql
+``` sql
 ATTACH TABLE postgres_database.new_table;
 ```
 
@@ -74,7 +62,7 @@ Before version 22.1, adding a table to replication left a non-removed temporary 
 
 It is possible to remove specific tables from replication:
 
-```sql
+``` sql
 DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
 ```
 
@@ -85,7 +73,7 @@ PostgreSQL [schema](https://www.postgresql.org/docs/9.1/ddl-schemas.html) can be
 1. One schema for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_schema`.
 Tables are accessed via table name only:
 
-```sql
+``` sql
 CREATE DATABASE postgres_database
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
 SETTINGS materialized_postgresql_schema = 'postgres_schema';
@@ -96,7 +84,7 @@ SELECT * FROM postgres_database.table1;
 2. Any number of schemas with specified set of tables for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_tables_list`. Each table is written along with its schema.
 Tables are accessed via schema name and table name at the same time:
 
-```sql
+``` sql
 CREATE DATABASE database1
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
 SETTINGS materialized_postgresql_tables_list = 'schema1.table1,schema2.table2,schema1.table3',
@@ -113,7 +101,7 @@ Warning: for this case dots in table name are not allowed.
 
 3. Any number of schemas with full set of tables for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_schema_list`.
 
-```sql
+``` sql
 CREATE DATABASE database1
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
 SETTINGS materialized_postgresql_schema_list = 'schema1,schema2,schema3';
@@ -136,7 +124,7 @@ Warning: for this case dots in table name are not allowed.
 
 - index
 
-```bash
+``` bash
 postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
 postgres# CREATE unique INDEX postgres_table_index on postgres_table(a, c, e);
 postgres# ALTER TABLE postgres_table REPLICA IDENTITY USING INDEX postgres_table_index;
@@ -146,7 +134,7 @@ The primary key is always checked first. If it is absent, then the index, define
 If the index is used as a replica identity, there has to be only one such index in a table.
 You can check what type is used for a specific table with the following command:
 
-```bash
+``` bash
 postgres# SELECT CASE relreplident
           WHEN 'd' THEN 'default'
           WHEN 'n' THEN 'nothing'
@@ -166,12 +154,6 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 ### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
     Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
-
-    Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
-
-    ```sql
-    materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
-    ```
 
     Default value: empty list — means whole PostgreSQL database will be replicated.
 
@@ -201,7 +183,7 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
 
-    ```sql
+    ``` sql
     CREATE DATABASE database1
     ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
     SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
@@ -211,7 +193,7 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
 
-    ```sql
+    ``` sql
     ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
     ```
 
@@ -225,7 +207,7 @@ If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing 
 ### Failover of the logical replication slot {#logical-replication-slot-failover}
 
 Logical Replication Slots which exist on the primary are not available on standby replicas.
-So if there is a failover, new primary (the old physical standby) won't be aware of any slots which were existing with old primary. This will lead to a broken replication from PostgreSQL.
+So if there is a failover, new primary (the old physical standby) won’t be aware of any slots which were existing with old primary. This will lead to a broken replication from PostgreSQL.
 A solution to this is to manage replication slots yourself and define a permanent replication slot (some information can be found [here](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). You'll need to pass slot name via `materialized_postgresql_replication_slot` setting, and it has to be exported with `EXPORT SNAPSHOT` option. The snapshot identifier needs to be passed via `materialized_postgresql_snapshot` setting.
 
 Please note that this should be used only if it is actually needed. If there is no real need for that or full understanding why, then it is better to allow the table engine to create and manage its own replication slot.
@@ -276,7 +258,7 @@ Please note that this should be used only if it is actually needed. If there is 
     kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
     ```
 
-### Required permissions {#required-permissions}
+### Required permissions
 
 1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- create query privilege.
 

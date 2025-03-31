@@ -1,9 +1,10 @@
-import os
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+
+import os
+
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
@@ -13,7 +14,6 @@ node = cluster.add_instance(
     main_configs=["configs/config.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    with_remote_database_disk=False,  # Disable with_remote_database_disk as test_startup_with_small_bg_pool_partitioned drops Keeper connection
 )
 
 

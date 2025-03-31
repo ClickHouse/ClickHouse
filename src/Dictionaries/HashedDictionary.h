@@ -12,7 +12,7 @@
 #include <Dictionaries/HashedDictionaryCollectionTraits.h>
 #include <Dictionaries/HashedDictionaryParallelLoader.h>
 
-#include <Core/Block_fwd.h>
+#include <Core/Block.h>
 #include <Core/Defines.h>
 
 #include <Common/ArenaUtils.h>
@@ -25,9 +25,10 @@
 
 #include <DataTypes/DataTypesDecimal.h>
 
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/MaskOperations.h>
+#include <Functions/FunctionHelpers.h>
 
 #include <atomic>
 #include <memory>
@@ -333,19 +334,22 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
         if (container.empty())
             return;
 
-        if (!pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
-            {
-                ThreadGroupSwitcher switcher(thread_group, "HashedDictDtor");
-
-                /// Do not account memory that was occupied by the dictionaries for the query/user context.
-                MemoryTrackerBlockerInThread memory_blocker;
-
-                clearContainer(container);
-            }))
+        pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
         {
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachFromGroupIfNotDetached();
+            );
+
+            /// Do not account memory that was occupied by the dictionaries for the query/user context.
             MemoryTrackerBlockerInThread memory_blocker;
+
+            if (thread_group)
+                CurrentThread::attachToGroupIfDetached(thread_group);
+            setThreadName("HashedDictDtor");
+
             clearContainer(container);
-        }
+        });
 
         ++hash_tables_count;
     };
@@ -880,7 +884,6 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
         Block block;
 
@@ -1160,7 +1163,6 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
         QueryPipeline pipeline(source_ptr->loadAll());
 
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
         Block block;
         DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
 

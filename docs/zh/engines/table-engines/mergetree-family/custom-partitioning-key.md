@@ -59,9 +59,9 @@ WHERE table = 'visits'
 └───────────┴────────────────┴────────┘
 ```
 
-`partition` 列存储分区的名称。此示例中有两个分区：`201901` 和 `201902`。在 [ALTER ... PARTITION](/zh/sql-reference/statements/alter/partition) 语句中你可以使用该列值来指定分区名称。
+`partition` 列存储分区的名称。此示例中有两个分区：`201901` 和 `201902`。在 [ALTER ... PARTITION](#alter_manipulations-with-partitions) 语句中你可以使用该列值来指定分区名称。
 
-`name` 列为分区中数据片段的名称。在 [ALTER ATTACH PART](/zh/sql-reference/statements/alter/partition#drop-detached-partitionpart) 语句中你可以使用此列值中来指定片段名称。
+`name` 列为分区中数据片段的名称。在 [ALTER ATTACH PART](#alter_attach-partition) 语句中你可以使用此列值中来指定片段名称。
 
 这里我们拆解下第一个数据片段的名称：`201901_1_3_1`：
 
@@ -118,4 +118,4 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 注意，在操作服务器时，你不能手动更改文件系统上的片段集或其数据，因为服务器不会感知到这些修改。对于非复制表，可以在服务器停止时执行这些操作，但不建议这样做。对于复制表，在任何情况下都不要更改片段文件。
 
-ClickHouse 支持对分区执行这些操作：删除分区，将分区从一个表复制到另一个表，或创建备份。了解分区的所有操作，请参阅 [分区和片段的操作](/sql-reference/statements/alter/partition) 一节。
+ClickHouse 支持对分区执行这些操作：删除分区，将分区从一个表复制到另一个表，或创建备份。了解分区的所有操作，请参阅 [分区和片段的操作](../../../sql-reference/statements/alter.md#alter_manipulations-with-partitions) 一节。

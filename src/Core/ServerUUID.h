@@ -20,9 +20,6 @@ public:
     /// Loads server UUID from file or creates new one. Should be called on daemon startup.
     static void load(const fs::path & server_uuid_file, Poco::Logger * log);
 
-    /// Sets specific server UUID.
-    static void set(UUID & uuid);
-
     static void setRandomForUnitTests();
 };
 

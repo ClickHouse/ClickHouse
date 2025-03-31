@@ -1,11 +1,10 @@
 #pragma once
 
 #include <string>
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Poco/Timespan.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
 
 class Stopwatch;
 
@@ -59,7 +58,6 @@ protected:
     /// `max_block_size` can be ignored.
     virtual size_t countRows(size_t max_block_size);
     virtual bool supportsCountRows() const { return false; }
-    virtual bool supportsCustomSerializations() const { return false; }
 
     virtual void readPrefix() {}                /// delimiter before begin of result
     virtual void readSuffix() {}                /// delimiter after end of result
@@ -79,14 +77,13 @@ protected:
 
     void logError();
 
-    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
+    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
     size_t getRowNum() const { return total_rows; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
     void setRowsReadBefore(size_t rows) override { total_rows = rows; }
-    void setSerializationHints(const SerializationInfoByName & hints) override;
 
     Serializations serializations;
 

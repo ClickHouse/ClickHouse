@@ -1,5 +1,3 @@
-SET output_format_pretty_fallback_to_vertical = 0;
-
 DROP TABLE IF EXISTS t_desc_subcolumns;
 
 CREATE TABLE t_desc_subcolumns

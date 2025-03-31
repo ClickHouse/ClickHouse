@@ -60,7 +60,6 @@ Chain buildPushingToViewsChain(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     const ASTPtr & query_ptr,
-    size_t view_level,
     /// It is true when we should not insert into table, but only to views.
     /// Used e.g. for kafka. We should try to remove it somehow.
     bool no_destination,

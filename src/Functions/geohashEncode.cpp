@@ -8,7 +8,7 @@
 
 #include <string>
 
-constexpr size_t GEOHASH_MAX_TEXT_LENGTH = 16;
+#define GEOHASH_MAX_TEXT_LENGTH 16
 
 
 namespace DB
@@ -50,11 +50,6 @@ public:
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-        return std::make_shared<DataTypeString>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeString>();
     }
 

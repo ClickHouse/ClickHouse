@@ -1,7 +1,5 @@
 #include <Processors/LimitTransform.h>
 
-#include <Columns/IColumn.h>
-#include <Processors/Port.h>
 
 namespace DB
 {
@@ -319,9 +317,8 @@ void LimitTransform::splitChunk(PortsData & data)
             length = offset + limit - (rows_read - num_rows) - start;
     }
 
-    /// Check if other rows in current block equals to last one in limit
-    /// when rows read >= offset + limit.
-    if (with_ties && offset + limit <= rows_read && length)
+    /// check if other rows in current block equals to last one in limit
+    if (with_ties && length)
     {
         UInt64 current_row_num = start + length;
         previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, current_row_num - 1);

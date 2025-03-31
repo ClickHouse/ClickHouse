@@ -123,11 +123,8 @@ std::vector<uint8_t> CompressionCodecMultiple::getCodecsBytesFromData(const char
 {
     std::vector<uint8_t> result;
     uint8_t compression_methods_size = source[0];
-    result.reserve(compression_methods_size);
-
     for (size_t i = 0; i < compression_methods_size; ++i)
         result.push_back(source[1 + i]);
-
     return result;
 }
 

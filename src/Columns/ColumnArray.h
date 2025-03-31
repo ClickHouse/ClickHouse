@@ -74,7 +74,6 @@ public:
     size_t size() const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
     StringRef getDataAt(size_t n) const override;
     bool isDefaultAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
@@ -160,33 +159,15 @@ public:
     /// For example, `getDataInRange(0, size())` is the same as `getDataPtr()->clone()`.
     MutableColumnPtr getDataInRange(size_t start, size_t length) const;
 
-    ColumnPtr compress(bool force_compression) const override;
+    ColumnPtr compress() const override;
 
-    ColumnCheckpointPtr getCheckpoint() const override;
-    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
-    void rollback(const ColumnCheckpoint & checkpoint) override;
-
-    void forEachMutableSubcolumn(MutableColumnCallback callback) override
+    void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(offsets);
         callback(data);
     }
 
-    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
-    {
-        callback(*offsets);
-        offsets->forEachMutableSubcolumnRecursively(callback);
-        callback(*data);
-        data->forEachMutableSubcolumnRecursively(callback);
-    }
-
-    void forEachSubcolumn(ColumnCallback callback) const override
-    {
-        callback(offsets);
-        callback(data);
-    }
-
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*offsets);
         offsets->forEachSubcolumnRecursively(callback);
@@ -210,13 +191,6 @@ public:
 
     bool hasDynamicStructure() const override { return getData().hasDynamicStructure(); }
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
-
-    bool dynamicStructureEquals(const IColumn & rhs) const override
-    {
-        if (const auto * rhs_concrete = typeid_cast<const ColumnArray *>(&rhs))
-            return data->dynamicStructureEquals(*rhs_concrete->data);
-        return false;
-    }
 
 private:
     WrappedPtr data;

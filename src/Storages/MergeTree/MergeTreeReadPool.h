@@ -26,7 +26,6 @@ public:
 
     MergeTreeReadPool(
         RangesInDataParts && parts_,
-        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
@@ -34,7 +33,6 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const PoolSettings & settings_,
-        const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_);
 
     ~MergeTreeReadPool() override = default;
@@ -87,7 +85,7 @@ private:
     };
 
     const BackoffSettings backoff_settings;
-    BackoffState backoff_state TSA_GUARDED_BY(mutex);
+    BackoffState backoff_state;
 
     struct ThreadTask
     {
@@ -101,8 +99,8 @@ private:
         std::vector<size_t> sum_marks_in_parts;
     };
 
-    std::vector<ThreadTask> threads_tasks TSA_GUARDED_BY(mutex);
-    std::set<size_t> remaining_thread_tasks TSA_GUARDED_BY(mutex);
+    std::vector<ThreadTask> threads_tasks;
+    std::set<size_t> remaining_thread_tasks;
 
     LoggerPtr log = getLogger("MergeTreeReadPool");
 };

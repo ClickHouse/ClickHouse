@@ -3,7 +3,6 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
@@ -15,7 +14,6 @@
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/NetException.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
@@ -29,11 +27,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
-}
 
 namespace ErrorCodes
 {
@@ -50,7 +43,6 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
     extern const int BROKEN_PROJECTION;
     extern const int ABORTED;
-    extern const int CANNOT_WRITE_TO_OSTREAM;
 }
 
 
@@ -85,18 +77,7 @@ bool isRetryableException(std::exception_ptr exception_ptr)
 #endif
     catch (const ErrnoException & e)
     {
-        return e.getErrno() == EMFILE
-            || e.getErrno() == ENOMEM
-            || isNotEnoughMemoryErrorCode(e.code())
-            || e.code() == ErrorCodes::NETWORK_ERROR
-            || e.code() == ErrorCodes::SOCKET_TIMEOUT
-            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
-            || e.code() == ErrorCodes::ABORTED;
-
-    }
-    catch (const NetException &)
-    {
-        return true;
+        return e.getErrno() == EMFILE;
     }
     catch (const Coordination::Exception & e)
     {
@@ -108,24 +89,7 @@ bool isRetryableException(std::exception_ptr exception_ptr)
             || e.code() == ErrorCodes::NETWORK_ERROR
             || e.code() == ErrorCodes::SOCKET_TIMEOUT
             || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
-            || e.code() == ErrorCodes::ABORTED
-            || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM;
-    }
-    catch (const std::filesystem::filesystem_error & e)
-    {
-        return e.code() == std::errc::no_space_on_device ||
-            e.code() == std::errc::read_only_file_system ||
-            e.code() == std::errc::too_many_files_open_in_system ||
-            e.code() == std::errc::operation_not_permitted ||
-            e.code() == std::errc::device_or_resource_busy ||
-            e.code() == std::errc::permission_denied ||
-            e.code() == std::errc::too_many_files_open ||
-            e.code() == std::errc::text_file_busy ||
-            e.code() == std::errc::timed_out ||
-            e.code() == std::errc::not_enough_memory ||
-            e.code() == std::errc::not_supported ||
-            e.code() == std::errc::too_many_links ||
-            e.code() == std::errc::too_many_symbolic_link_levels;
+            || e.code() == ErrorCodes::ABORTED;
     }
     catch (const Poco::Net::NetException &)
     {
@@ -142,6 +106,7 @@ bool isRetryableException(std::exception_ptr exception_ptr)
         return false;
     }
 }
+
 
 static IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
@@ -195,10 +160,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
-    auto ratio_of_defaults = (*data_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization];
+    auto ratio_of_defaults = data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization;
     SerializationInfoByName serialization_infos;
 
-    if (data_part_storage.existsFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
+    if (data_part_storage.exists(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
         try
         {
@@ -206,9 +171,13 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             SerializationInfo::Settings settings{ratio_of_defaults, false};
             serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
         }
+        catch (const Poco::Exception & ex)
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, ex.message());
+        }
         catch (...)
         {
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load file {} of data part {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, data_part->name, getCurrentExceptionMessage(true));
+            throw;
         }
     }
 
@@ -270,7 +239,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     /// Checksums from the rest files listed in checksums.txt. May be absent. If present, they are subsequently compared with the actual data checksums.
     IMergeTreeDataPart::Checksums checksums_txt;
 
-    if (require_checksums || data_part_storage.existsFile("checksums.txt"))
+    if (require_checksums || data_part_storage.exists("checksums.txt"))
     {
         auto buf = data_part_storage.readFile("checksums.txt", read_settings, std::nullopt, std::nullopt);
         checksums_txt.read(*buf);
@@ -284,7 +253,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         auto file_name = it->name();
 
         /// We will check projections later.
-        if (data_part_storage.existsDirectory(file_name) && file_name.ends_with(".proj"))
+        if (data_part_storage.isDirectory(file_name) && file_name.ends_with(".proj"))
         {
             projections_on_disk.insert(file_name);
             continue;
@@ -354,7 +323,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                     broken_projections_message += "\n";
 
                 broken_projections_message += fmt::format(
-                    "Part `{}` has broken projection `{}` (error: {})",
+                    "Part {} has a broken projection {} (error: {})",
                     data_part->name, name, exception_message);
             }
 
@@ -420,7 +389,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
         {
             auto file_name = it->name();
-            if (!data_part_storage.existsDirectory(file_name))
+            if (!data_part_storage.isDirectory(file_name))
             {
                 auto remote_paths = data_part_storage.getRemotePaths(file_name);
                 for (const auto & remote_path : remote_paths)
@@ -429,47 +398,19 @@ IMergeTreeDataPart::Checksums checkDataPart(
         }
 
         ReadSettings read_settings;
-        read_settings.read_through_distributed_cache = false;
         read_settings.enable_filesystem_cache = false;
-        read_settings.enable_filesystem_cache_log = false;
-        read_settings.enable_filesystem_read_prefetches_log = false;
-        read_settings.page_cache = nullptr;
-        read_settings.load_marks_asynchronously = false;
-        read_settings.remote_fs_prefetch = false;
-        read_settings.page_cache_inject_eviction = false;
-        read_settings.use_page_cache_for_disks_without_file_cache = false;
-        read_settings.local_fs_method = LocalFSReadMethod::pread;
 
-        try
-        {
-            return checkDataPart(
-                data_part,
-                data_part_storage,
-                data_part->getColumns(),
-                data_part->getType(),
-                data_part->getFileNamesWithoutChecksums(),
-                read_settings,
-                require_checksums,
-                is_cancelled,
-                is_broken_projection,
-                throw_on_broken_projection);
-        }
-        catch (...)
-        {
-            if (isRetryableException(std::current_exception()))
-            {
-                LOG_DEBUG(
-                    getLogger("checkDataPart"),
-                    "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
-
-                /// We were unable to check data part because of some temporary exception
-                /// like Memory limit exceeded. If part is actually broken we will retry check
-                /// with the next read attempt of this data part.
-                return IMergeTreeDataPart::Checksums{};
-            }
-            throw;
-        }
-
+        return checkDataPart(
+            data_part,
+            data_part_storage,
+            data_part->getColumns(),
+            data_part->getType(),
+            data_part->getFileNamesWithoutChecksums(),
+            read_settings,
+            require_checksums,
+            is_cancelled,
+            is_broken_projection,
+            throw_on_broken_projection);
     };
 
     try
@@ -490,16 +431,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     catch (...)
     {
         if (isRetryableException(std::current_exception()))
-        {
-            LOG_DEBUG(
-                getLogger("checkDataPart"),
-                "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
-
-            /// We were unable to check data part because of some temporary exception
-            /// like Memory limit exceeded. If part is actually broken we will retry check
-            /// with the next read attempt of this data part.
-            return {};
-        }
+            throw;
         return drop_cache_and_check();
     }
 }

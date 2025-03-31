@@ -24,34 +24,27 @@ class DatabaseReplicatedDDLWorker : public DDLWorker
 public:
     DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_);
 
-    String enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &) override;
+    String enqueueQuery(DDLLogEntry & entry) override;
 
-    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query);
+    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context);
 
     void shutdown() override;
 
     bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms);
 
     static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
-                                   DatabaseReplicated * const database, bool committed = false, Coordination::Requests additional_checks = {}); /// NOLINT
+                                   DatabaseReplicated * const database, bool committed = false); /// NOLINT
 
     UInt32 getLogPointer() const;
 
     UInt64 getCurrentInitializationDurationMs() const;
-
 private:
     bool initializeMainThread() override;
-    void initializeReplication() override;
-
-    void createReplicaDirs(const ZooKeeperPtr &, const NameSet &) override { }
-    void markReplicasActive(bool) override { }
-
+    void initializeReplication();
     void initializeLogPointer(const String & processed_entry_name);
 
-    DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run) override;
+    DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper) override;
     bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat) override;
-
-    bool checkParentTableExists(const UUID & uuid) const;
 
     DatabaseReplicated * const database;
     mutable std::mutex mutex;
