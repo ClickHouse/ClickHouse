@@ -16,8 +16,6 @@
 namespace DB
 {
 
-inline mongocxx::instance inst{};
-
 struct MongoDBConfiguration
 {
     std::unique_ptr<mongocxx::uri> uri;
@@ -68,6 +66,8 @@ public:
         size_t num_streams) override;
 
 private:
+    mongocxx::instance inst{};
+
     template <typename OnError>
     std::optional<bsoncxx::document::value> visitWhereFunction(
         const ContextPtr & context,
