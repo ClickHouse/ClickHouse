@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int ABORTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -2432,7 +2433,7 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
 
             for (const auto & requested_replica : src_replicas)
             {
-                if (!existing_replicas.count(requested_replica))
+                if (!existing_replicas.contains(requested_replica))
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
