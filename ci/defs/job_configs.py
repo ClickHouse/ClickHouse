@@ -235,13 +235,13 @@ class JobConfigs:
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_BINARY
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_DARWIN,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_DARWIN,
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.ARM_V80COMPAT,
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_FREEBSD,
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_V80COMPAT,
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.AMD_FREEBSD,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.PPC64LE,
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_COMPAT,
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_MUSL,
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.AMD_COMPAT,
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.AMD_MUSL,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.RISCV64,
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.S390X,
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.S390X,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.LOONGARCH64
             RunnerLabels.BUILDER_ARM,  # fuzzers
         ],
