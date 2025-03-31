@@ -193,7 +193,7 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         return;
 
     /// Should not have children
-    if (node.children.size() != 0)
+    if (!node.children.empty())
         return;
 
     /// Move read step to a new node and set it to distributed read
