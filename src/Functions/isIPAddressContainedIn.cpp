@@ -72,35 +72,30 @@ struct IPTrait<IPKind::String>
 class IPAddressVariant
 {
 public:
-
-    template<IPKind kind>
-    static IPAddressVariant create(IPTrait<kind>::ElementType address)
+    explicit IPAddressVariant(UInt32 addr_): addr(addr_)
     {
-        IPAddressVariant ip;
-        if constexpr (kind == IPKind::IPv4)
-            ip.addr = address;
-        else if constexpr (kind == IPKind::IPv6)
-        {
-            ip.addr = IPv6AddrType();
-            auto * dst = std::get<IPv6AddrType>(ip.addr).data();
-            const char * src = reinterpret_cast<const char *>(&address.items);
-            memcpy(dst, src, IPV6_BINARY_LENGTH);
-        }
+    }
+
+    explicit IPAddressVariant(UInt128 addr_)
+    {
+        addr = IPv6AddrType();
+        auto * dst = std::get<IPv6AddrType>(addr).data();
+        const char * src = reinterpret_cast<const char *>(&addr_.items);
+        memcpy(dst, src, IPV6_BINARY_LENGTH);
+    }
+
+    explicit IPAddressVariant(std::string_view addr_)
+    {
+        UInt32 v4;
+        if (DB::parseIPv4whole(addr_.data(), addr_.data() + addr_.size(), reinterpret_cast<unsigned char *>(&v4)))
+            addr = v4;
         else
         {
-            UInt32 v4;
-            if (DB::parseIPv4whole(address.data(), address.data() + address.size(), reinterpret_cast<unsigned char *>(&v4)))
-                ip.addr = v4;
-            else
-            {
-                ip.addr = IPv6AddrType();
-                bool success = DB::parseIPv6whole(address.data(), address.data() + address.size(), std::get<IPv6AddrType>(ip.addr).data());
-                if (!success)
-                    throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Neither IPv4 nor IPv6 address: '{}'", address);
-            }
+            addr = IPv6AddrType();
+            bool success = DB::parseIPv6whole(addr_.data(), addr_.data() + addr_.size(), std::get<IPv6AddrType>(addr).data());
+            if (!success)
+                throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Neither IPv4 nor IPv6 address: '{}'", addr_);
         }
-
-        return ip;
     }
 
     UInt32 asV4() const
@@ -140,7 +135,7 @@ IPAddressCIDR parseIPWithCIDR(std::string_view cidr_str)
         throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "The text does not contain '/': {}", std::string(cidr_str));
 
     std::string_view addr_str = cidr_str.substr(0, pos_slash);
-    auto addr = IPAddressVariant::create<IPKind::String>(addr_str);
+    auto addr = IPAddressVariant(addr_str);
 
     uint8_t prefix = 0;
     auto prefix_str = cidr_str.substr(pos_slash+1);
@@ -185,7 +180,7 @@ namespace DB
         template <IPKind kind>
         static inline IPAddressVariant parseIP(const IPTrait<kind>::ColumnType * col_addr, size_t n)
         {
-            return IPAddressVariant::create<kind>(IPTrait<kind>::getElement(col_addr, n));
+            return IPAddressVariant(IPTrait<kind>::getElement(col_addr, n));
         }
 
         static std::optional<IPAddressVariant> parseConstantIP(const ColumnConst & col_addr)
