@@ -40,18 +40,33 @@ template <>
 struct IPTrait<IPKind::IPv4>
 {
     using ColumnType = DB::ColumnIPv4;
+    using ElementType = UInt32;
+    static inline ElementType getElement(const ColumnType * col, size_t n)
+    {
+        return col->getElement(n);
+    }
 };
 
 template <>
 struct IPTrait<IPKind::IPv6>
 {
     using ColumnType = DB::ColumnIPv6;
+    using ElementType = DB::UInt128;
+    static inline ElementType getElement(const ColumnType * col, size_t n)
+    {
+        return col->getElement(n);
+    }
 };
 
 template <>
 struct IPTrait<IPKind::String>
 {
     using ColumnType = DB::ColumnString;
+    using ElementType = std::string_view;
+    static inline ElementType getElement(const ColumnType * col, size_t n)
+    {
+        return col->getDataAt(n).toView();
+    }
 };
 
 class IPAddressVariant
@@ -59,34 +74,33 @@ class IPAddressVariant
 public:
 
     template<IPKind kind>
-    static IPAddressVariant create(std::string_view address_str)
+    static IPAddressVariant create(IPTrait<kind>::ElementType address)
     {
         IPAddressVariant ip;
         if constexpr (kind == IPKind::IPv4)
-            ip.addr = *(reinterpret_cast<const UInt32 *>(address_str.data()));
+            ip.addr = address;
         else if constexpr (kind == IPKind::IPv6)
         {
             ip.addr = IPv6AddrType();
             auto * dst = std::get<IPv6AddrType>(ip.addr).data();
-            const char * src = address_str.data();
+            const char * src = reinterpret_cast<const char *>(&address.items);
             std::memcpy(dst, src, IPV6_BINARY_LENGTH);
         }
         else
         {
             UInt32 v4;
-            if (DB::parseIPv4whole(address_str.data(), address_str.data() + address_str.size(), reinterpret_cast<unsigned char *>(&v4)))
+            if (DB::parseIPv4whole(address.data(), address.data() + address.size(), reinterpret_cast<unsigned char *>(&v4)))
                 ip.addr = v4;
             else
             {
                 ip.addr = IPv6AddrType();
-                bool success = DB::parseIPv6whole(address_str.data(), address_str.data() + address_str.size(), std::get<IPv6AddrType>(ip.addr).data());
+                bool success = DB::parseIPv6whole(address.data(), address.data() + address.size(), std::get<IPv6AddrType>(ip.addr).data());
                 if (!success)
-                    throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Neither IPv4 nor IPv6 address: '{}'", address_str);
+                    throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Neither IPv4 nor IPv6 address: '{}'", address);
             }
         }
 
         return ip;
-
     }
 
     UInt32 asV4() const
@@ -171,7 +185,7 @@ namespace DB
         template <IPKind kind>
         static inline IPAddressVariant parseIP(const IPTrait<kind>::ColumnType * col_addr, size_t n)
         {
-            return IPAddressVariant::create<kind>(col_addr->getDataAt(n).toView());
+            return IPAddressVariant::create<kind>(IPTrait<kind>::getElement(col_addr, n));
         }
 
         static std::optional<IPAddressVariant> parseConstantIP(const ColumnConst & col_addr)
