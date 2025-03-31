@@ -1289,11 +1289,12 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
     this->depth--;
 }
 
-void StatementGenerator::generateFromStatement(RandomGenerator & rg, const uint32_t allowed_clauses, FromStatement * ft)
+uint32_t StatementGenerator::generateFromStatement(RandomGenerator & rg, const uint32_t allowed_clauses, FromStatement * ft)
 {
     JoinClause * jc = ft->mutable_tos()->mutable_join_clause();
     const uint32_t njoined = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(4)) + 1);
 
+    chassert(njoined > 0);
     this->depth++;
     this->width++;
     generateFromElement(rg, allowed_clauses, jc->mutable_tos());
@@ -1343,6 +1344,7 @@ void StatementGenerator::generateFromStatement(RandomGenerator & rg, const uint3
     }
     this->width -= njoined;
     this->depth -= njoined;
+    return njoined;
 }
 
 void StatementGenerator::generateGroupByExpr(
@@ -1740,7 +1742,8 @@ void StatementGenerator::generateSelect(
         if ((allowed_clauses & allow_from) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
             && rg.nextSmallNumber() < 10)
         {
-            generateFromStatement(rg, allowed_clauses, ssc->mutable_from());
+            const uint32_t njoined = generateFromStatement(rg, allowed_clauses, ssc->mutable_from());
+            ssc->set_from_first(njoined == 1 && rg.nextSmallNumber() < 4);
         }
         const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;

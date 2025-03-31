@@ -379,7 +379,8 @@ private:
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
     void generateJoinConstraint(RandomGenerator & rg, bool allow_using, JoinConstraint * jc);
     void generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, uint32_t allowed_clauses, uint32_t ncols, Select * sel);
-    void generateFromStatement(RandomGenerator & rg, uint32_t allowed_clauses, FromStatement * ft);
+    /* Returns the number of from elements generated */
+    uint32_t generateFromStatement(RandomGenerator & rg, uint32_t allowed_clauses, FromStatement * ft);
     void addCTEs(RandomGenerator & rg, uint32_t allowed_clauses, CTEs * qctes);
     void generateSelect(RandomGenerator & rg, bool top, bool force_global_agg, uint32_t ncols, uint32_t allowed_clauses, Select * sel);
 

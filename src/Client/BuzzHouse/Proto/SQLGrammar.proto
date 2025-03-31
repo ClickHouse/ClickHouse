@@ -2645,15 +2645,16 @@ enum AllOrDistinct {
 
 message SelectStatementCore {
     optional AllOrDistinct s_or_d = 1;
-    repeated ResultColumn result_columns = 2;
-    optional FromStatement from = 3;
-    optional WhereStatement pre_where = 4;
-    optional WhereStatement where = 5;
-    optional GroupByStatement groupby = 6;
-    optional OrderByStatement orderby = 7;
+    optional bool from_first = 2;
+    repeated ResultColumn result_columns = 3;
+    optional FromStatement from = 4;
+    optional WhereStatement pre_where = 5;
+    optional WhereStatement where = 6;
+    optional GroupByStatement groupby = 7;
+    optional OrderByStatement orderby = 8;
     oneof limit_oneof {
-        LimitStatement limit = 8;
-        OffsetStatement offset = 9;
+        LimitStatement limit = 9;
+        OffsetStatement offset = 10;
     }
 }
 

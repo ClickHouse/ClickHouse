@@ -57,8 +57,9 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
     gen.levels[gen.current_level] = QueryLevel(gen.current_level);
-    gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
+    const auto u = gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
 
+    UNUSED(u);
     const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates;
     const bool prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
     gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;

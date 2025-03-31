@@ -2317,10 +2317,18 @@ CONV_FN(OffsetStatement, off)
 
 CONV_FN(SelectStatementCore, ssc)
 {
+    const bool from_first
+        = ssc.from_first() && ssc.has_from() && ssc.from().tos().tos_list_size() == 0 && ssc.from().tos().join_clause().clauses_size() == 0;
+
     ret += "SELECT ";
     if (ssc.has_s_or_d())
     {
         ret += AllOrDistinct_Name(ssc.s_or_d());
+        ret += " ";
+    }
+    if (from_first)
+    {
+        FromStatementToString(ret, ssc.from());
         ret += " ";
     }
     if (ssc.result_columns_size() == 0)
@@ -2338,7 +2346,7 @@ CONV_FN(SelectStatementCore, ssc)
             ResultColumnToString(ret, ssc.result_columns(i));
         }
     }
-    if (ssc.has_from())
+    if (!from_first && ssc.has_from())
     {
         ret += " ";
         FromStatementToString(ret, ssc.from());
