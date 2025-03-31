@@ -1457,11 +1457,6 @@ else()
     add_library(ssl ${SSL_SRC})
 endif()
 
-if (ENABLE_OPENSSL_FIPS)
-    target_compile_definitions(crypto PRIVATE -DOPENSSL_FIPS)
-    target_compile_definitions(ssl PRIVATE -DOPENSSL_FIPS)
-endif()
-
 target_include_directories(crypto
     SYSTEM PUBLIC "${PLATFORM_DIRECTORY}/include"
     PRIVATE "${PLATFORM_DIRECTORY}/include_private")

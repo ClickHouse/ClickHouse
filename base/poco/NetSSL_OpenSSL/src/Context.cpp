@@ -12,6 +12,11 @@
 //
 
 
+#include <openssl/bio.h>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#include <openssl/x509v3.h>
+
 #include "Poco/Net/Context.h"
 #include "Poco/Net/SSLManager.h"
 #include "Poco/Net/SSLException.h"
@@ -22,16 +27,7 @@
 #include "Poco/DirectoryIterator.h"
 #include "Poco/RegularExpression.h"
 #include "Poco/Timestamp.h"
-#include <openssl/bio.h>
-#include <openssl/err.h>
-#include <openssl/ssl.h>
-#include <openssl/x509v3.h>
 
-#if defined(BORINGSSL_API_VERSION)
-#if BORINGSSL_API_VERSION <= 9
-#define BORINGSSL_DEPRECATED 1
-#endif
-#endif
 
 namespace Poco {
 namespace Net {

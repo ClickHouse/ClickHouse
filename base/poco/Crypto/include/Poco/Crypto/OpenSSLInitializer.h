@@ -26,10 +26,6 @@
 #include "Poco/Crypto/Crypto.h"
 #include "Poco/Mutex.h"
 
-#if defined(OPENSSL_FIPS) && OPENSSL_VERSION_NUMBER < 0x010001000L
-#    include <openssl/fips.h>
-#endif
-
 
 extern "C" {
 struct CRYPTO_dynlock_value
@@ -94,34 +90,24 @@ namespace Crypto
     //
     inline bool OpenSSLInitializer::isFIPSEnabled()
     {
-#ifdef OPENSSL_FIPS
-        return EVP_default_properties_is_fips_enabled(nullptr) ? true : false;
-#else
-        return false;
-#endif
+        return EVP_default_properties_is_fips_enabled(nullptr);
     }
 
-#ifdef OPENSSL_FIPS
     inline void OpenSSLInitializer::enableFIPSMode(bool enabled)
     {
         if (!enabled)
         {
-            EVP_default_properties_enable_fips(NULL, 0);
+            EVP_default_properties_enable_fips(nullptr, 0);
             return;
         }
 
-        OSSL_PROVIDER * fips = OSSL_PROVIDER_load(NULL, "fips");
+        OSSL_PROVIDER * fips = OSSL_PROVIDER_load(nullptr, "fips");
         if (!fips)
             throw Exception("Failed to load FIPS provider");
 
-        if (EVP_default_properties_enable_fips(NULL, 1) != 1)
+        if (EVP_default_properties_enable_fips(nullptr, 1) != 1)
             throw Exception("Failed to enable FIPS mode");
     }
-#else
-    inline void OpenSSLInitializer::enableFIPSMode(bool /*enabled*/)
-    {
-    }
-#endif
 
 
 }

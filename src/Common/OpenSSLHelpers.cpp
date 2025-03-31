@@ -18,6 +18,7 @@ std::string encodeSHA256(std::string_view text)
 {
     return encodeSHA256(text.data(), text.size());
 }
+
 std::string encodeSHA256(const void * text, size_t size)
 {
     std::string out;
@@ -25,21 +26,25 @@ std::string encodeSHA256(const void * text, size_t size)
     encodeSHA256(text, size, reinterpret_cast<unsigned char *>(out.data()));
     return out;
 }
+
 void encodeSHA256(std::string_view text, unsigned char * out)
 {
     encodeSHA256(text.data(), text.size(), out);
 }
+
 void encodeSHA256(const void * text, size_t size, unsigned char * out)
 {
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-    SCOPE_EXIT(EVP_MD_CTX_free(ctx));  // Or use RAII
+    SCOPE_EXIT(EVP_MD_CTX_free(ctx));
 
-    if (!EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) ||
-        !EVP_DigestUpdate(ctx, text, size) ||
-        !EVP_DigestFinal_ex(ctx, out, nullptr))
-    {
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "SHA256 EVP hashing failed: {}", getOpenSSLErrors());
-    }
+    if (!EVP_DigestInit(ctx, EVP_sha256()))
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "SHA256 EVP_DigestInit failed: {}", getOpenSSLErrors());
+
+    if (!EVP_DigestUpdate(ctx, text, size))
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "SHA256 EVP_DigestUpdate failed: {}", getOpenSSLErrors());
+
+    if (!EVP_DigestFinal(ctx, out, nullptr))
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "SHA256 EVP_DigestFinal failed: {}", getOpenSSLErrors());
 }
 
 String getOpenSSLErrors()
