@@ -18,6 +18,8 @@
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
+#include <aws/s3/model/ChecksumAlgorithm.h>
+
 #include <utility>
 
 
@@ -703,6 +705,8 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetKey(key);
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
+    req.SetChecksumAlgorithm(Aws::S3::Model::ChecksumAlgorithm::CRC32C);
+
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
