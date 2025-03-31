@@ -61,6 +61,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/processColumnTransformers.h>
 #include <IO/Ask.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -1901,6 +1902,19 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             ColumnDescription column = columns_description_for_query.get(name);
             column.default_desc.kind = ColumnDefaultKind::Default;
             columns_for_storage_file.add(std::move(column));
+        }
+
+        if (parsed_insert_query->columns)
+        {
+            auto columns = processColumnTransformers(columns_for_storage_file, parsed_insert_query->columns, client_context->getCurrentDatabase(), client_context->getInsertionTable());
+            ColumnsDescription reordered_description{};
+            for (const auto & col_name : columns->children)
+            {
+                auto col = columns_for_storage_file.get(col_name->getColumnName());
+                reordered_description.add(col);
+            }
+
+            columns_for_storage_file = reordered_description;
         }
 
         StorageFile::CommonArguments args{
