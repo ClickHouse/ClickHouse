@@ -60,6 +60,7 @@ struct IntDivOrZeroName { static constexpr auto name = "intDivOrZero"; };
 
 struct L1Label { static constexpr auto name = "1"; };
 struct L2Label { static constexpr auto name = "2"; };
+struct L2TLabel { static constexpr auto name = "2T"; };
 struct L2SquaredLabel { static constexpr auto name = "2Squared"; };
 struct LinfLabel { static constexpr auto name = "inf"; };
 struct LpLabel { static constexpr auto name = "p"; };
@@ -1261,6 +1262,8 @@ using FunctionL1Distance = FunctionLDistance<L1Label>;
 
 using FunctionL2Distance = FunctionLDistance<L2Label>;
 
+using FunctionL2DistanceTranspose = FunctionLDistance<L2TLabel>;
+
 using FunctionL2SquaredDistance = FunctionLDistance<L2SquaredLabel>;
 
 using FunctionLinfDistance = FunctionLDistance<LinfLabel>;
@@ -1462,6 +1465,8 @@ extern FunctionPtr createFunctionArrayLpDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
 
+extern FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_);
+
 struct DotProduct
 {
     static constexpr auto name = "dotProduct";
@@ -1526,6 +1531,13 @@ struct L2DistanceTraits
     static constexpr auto CreateArrayFunction = createFunctionArrayL2Distance;
 };
 
+struct L2DistanceTransposeTraits
+{
+    static constexpr auto name = "L2TDistance";
+    static constexpr auto CreateTupleFunction = FunctionL2DistanceTranspose::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayL2DistanceTransposed;
+};
+
 struct L2SquaredDistanceTraits
 {
     static constexpr auto name = "L2SquaredDistance";
@@ -1568,6 +1580,7 @@ using TupleOrArrayFunctionLinfNorm = TupleOrArrayFunction<LinfNormTraits>;
 
 using TupleOrArrayFunctionL1Distance = TupleOrArrayFunction<L1DistanceTraits>;
 using TupleOrArrayFunctionL2Distance = TupleOrArrayFunction<L2DistanceTraits>;
+using TupleOrArrayFunctionL2DistanceTranspose = TupleOrArrayFunction<L2DistanceTransposeTraits>;
 using TupleOrArrayFunctionL2SquaredDistance = TupleOrArrayFunction<L2SquaredDistanceTraits>;
 using TupleOrArrayFunctionLpDistance = TupleOrArrayFunction<LpDistanceTraits>;
 using TupleOrArrayFunctionLinfDistance = TupleOrArrayFunction<LinfDistanceTraits>;
@@ -1668,12 +1681,14 @@ If the types of the first interval (or the interval in the tuple) and the second
 
     factory.registerFunction<TupleOrArrayFunctionL1Distance>();
     factory.registerFunction<TupleOrArrayFunctionL2Distance>();
+    factory.registerFunction<TupleOrArrayFunctionL2DistanceTranspose>();
     factory.registerFunction<TupleOrArrayFunctionL2SquaredDistance>();
     factory.registerFunction<TupleOrArrayFunctionLinfDistance>();
     factory.registerFunction<TupleOrArrayFunctionLpDistance>();
 
     factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceL2Transpose", FunctionL2DistanceTranspose::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::Case::Insensitive);
