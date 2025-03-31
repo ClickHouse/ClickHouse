@@ -1084,7 +1084,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
         if (all_keys_are_const)
         {
-            state.emplaceKey(method.data, 0, *aggregates_pool, params.limit_length).setMapped(place);
+            state.emplaceKey(method.data, 0, *aggregates_pool, params.optimization_indexes, params.limit_length).setMapped(place);
         }
         else
         {
@@ -1103,7 +1103,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
                 }
 
-                state.emplaceKey(method.data, i, *aggregates_pool, params.limit_length).setMapped(place);
+                state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_length).setMapped(place);
             }
         }
         return;
@@ -1294,7 +1294,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             }
 
             // std::cout << "@@@@@ method.data: " << method.data << std::endl;
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes_, params.limit_length);
+            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_length);
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
             if (emplace_result.isInserted())
