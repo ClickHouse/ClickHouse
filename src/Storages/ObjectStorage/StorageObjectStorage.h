@@ -157,7 +157,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const ASTPtr partition_by;
     const bool distributed_processing;
-    const bool is_table_function;
+    bool update_configuration_on_read;
 
     LoggerPtr log;
 };

@@ -98,10 +98,10 @@ StorageObjectStorage::StorageObjectStorage(
     , format_settings(format_settings_)
     , partition_by(partition_by_)
     , distributed_processing(distributed_processing_)
-    , is_table_function(is_table_function_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
     bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
+    update_configuration_on_read = !is_table_function_ || do_lazy_init;
     bool failed_init = false;
     auto do_init = [&]()
     {
@@ -362,7 +362,7 @@ void StorageObjectStorage::read(
 {
     /// We did configuration->update() in constructor,
     /// so in case of table function there is no need to do the same here again.
-    if (!is_table_function)
+    if (update_configuration_on_read)
         configuration->update(object_storage, local_context);
 
     if (partition_by && configuration->withPartitionWildcard())
