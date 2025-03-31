@@ -76,6 +76,12 @@ def parse_args():
     return parser.parse_args()
 
 
+def run_shell(name, command, **kwargs):
+    print(f"\n>>>> {name}\n")
+    Shell.check(command, **kwargs)
+    print(f"\n<<<< {name}\n")
+
+
 def main():
     args = parse_args()
 
@@ -106,7 +112,7 @@ def main():
         os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
         os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
         os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
-        os.environ["CTCACHE_DIR"] = "ccache/clang-tidy-cache"
+        os.environ["CTCACHE_DIR"] = f"{build_dir}/ccache/clang-tidy-cache"
         os.environ["CTCACHE_S3_BUCKET"] = Settings.S3_ARTIFACT_PATH
         os.environ["CTCACHE_S3_FOLDER"] = "ccache/clang-tidy-cache"
     if info.pr_number == 0:
@@ -155,7 +161,9 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
-        Shell.check("sccache --show-stats")
+        run_shell("Env vars", "env | sort")
+        run_shell("sccache stats", "env | sccache --show-stats")
+        run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
         if build_type in BUILD_TYPE_TO_DEB_PACKAGE_TYPE:
             targets = "clickhouse-bundle"
         elif build_type == BuildTypes.FUZZERS:
@@ -172,8 +180,9 @@ def main():
                 with_log=True,
             )
         )
-        Shell.check("sccache --show-stats", verbose=True)
-        Shell.check(f"ls -l {build_dir}/programs/", verbose=True)
+        run_shell("sccache stats", "env | sccache --show-stats")
+        run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
+        run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
         Shell.check("pwd")
         res = results[-1].is_ok()
 
