@@ -511,14 +511,14 @@ class JobConfigs:
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_ARM,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
             ["Build (amd_debug)"],
             ["Build (amd_tsan)"],
-            ["Build (amd_asan)"],
+            ["Build (arm_asan)"],
             ["Build (amd_ubsan)"],
             ["Build (amd_msan)"],
         ],
