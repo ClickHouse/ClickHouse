@@ -46,10 +46,10 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
     auto query_cache_usage_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"Unknown",     static_cast<Int8>(QueryCacheUsage::Unknown)},
-            {"None",        static_cast<Int8>(QueryCacheUsage::None)},
-            {"Write",       static_cast<Int8>(QueryCacheUsage::Write)},
-            {"Read",        static_cast<Int8>(QueryCacheUsage::Read)}
+            {"Unknown",     static_cast<Int8>(QueryCache::Usage::Unknown)},
+            {"None",        static_cast<Int8>(QueryCache::Usage::None)},
+            {"Write",       static_cast<Int8>(QueryCache::Usage::Write)},
+            {"Read",        static_cast<Int8>(QueryCache::Usage::Read)}
         });
 
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());

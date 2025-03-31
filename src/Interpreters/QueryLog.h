@@ -104,7 +104,7 @@ struct QueryLogElement
 
     TransactionID tid;
 
-    QueryCacheUsage query_cache_usage = QueryCacheUsage::Unknown;
+    QueryCache::Usage query_cache_usage = QueryCache::Usage::Unknown;
 
     static std::string name() { return "QueryLog"; }
 

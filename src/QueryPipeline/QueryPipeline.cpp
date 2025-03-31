@@ -647,14 +647,14 @@ void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCache::Writer
 
 void QueryPipeline::finalizeWriteInQueryCache()
 {
-    /// The pipeline can contain multiple StreamInQueryCacheTransforms which all points to different query cache writer objects.
-    /// We should call finalize() on all of them.
+    auto it = std::find_if(
+        processors->begin(), processors->end(),
+        [](ProcessorPtr processor){ return dynamic_cast<StreamInQueryCacheTransform *>(&*processor); });
 
-    for (auto& processor : *processors) {
-        if (auto* stream_processor = dynamic_cast<StreamInQueryCacheTransform *>(&*processor); stream_processor) {
-            stream_processor->finalizeWriteInQueryCache();
-        }
-    } 
+    /// The pipeline can contain up to three StreamInQueryCacheTransforms which all point to the same query cache writer object.
+    /// We can call finalize() on any of them.
+    if (it != processors->end())
+        dynamic_cast<StreamInQueryCacheTransform &>(**it).finalizeWriteInQueryCache();
 }
 
 void QueryPipeline::readFromQueryCache(
