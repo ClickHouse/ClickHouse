@@ -2093,7 +2093,8 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     auto plan_output_columns = plan.getCurrentHeader().getColumnsWithTypeAndName();
 
     ActionsDAG array_join_action_dag(plan_output_columns);
-    PlannerActionsVisitor actions_visitor(planner_context);
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set);
     std::unordered_set<std::string> array_join_expressions_output_nodes;
 
     Names array_join_column_names;

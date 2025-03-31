@@ -978,7 +978,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     ActionsDAG index_hint_actions_dag;
     auto & index_hint_actions_dag_outputs = index_hint_actions_dag.getOutputs();
     std::unordered_set<std::string_view> index_hint_actions_dag_output_node_names;
-    PlannerActionsVisitor actions_visitor(planner_context);
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set);
 
     for (const auto & argument : function_node.getArguments())
     {

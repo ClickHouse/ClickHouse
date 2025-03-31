@@ -73,7 +73,8 @@ const ActionsDAG::Node * appendExpression(
     const QueryTreeNodePtr & expression,
     const PlannerContextPtr & planner_context)
 {
-    PlannerActionsVisitor join_expression_visitor(planner_context);
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    PlannerActionsVisitor join_expression_visitor(planner_context, empty_correlated_columns_set);
     auto [join_expression_dag_node_raw_pointers, correlated_subtrees] = join_expression_visitor.visit(dag, expression);
     correlated_subtrees.assertEmpty("in join expression");
 
