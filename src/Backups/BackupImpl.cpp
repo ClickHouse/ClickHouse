@@ -123,7 +123,7 @@ BackupImpl::BackupImpl(
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
-    , writer(std::move(writer_))
+    , writer(std::move(writer_))  // 封装了对应的IBackupWriter实现，比如BackupWriterS3的实现类
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
     , version(CURRENT_BACKUP_VERSION)

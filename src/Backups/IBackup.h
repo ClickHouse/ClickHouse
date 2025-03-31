@@ -120,6 +120,7 @@ public:
     virtual size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const = 0;
 
     /// Puts a new entry to the backup.
+    // 实现类是 BackupImpl::writeFile
     virtual void writeFile(const BackupFileInfo & file_info, BackupEntryPtr entry) = 0;
 
     /// Whether it's possible to add new entries to the backup in multiple threads.

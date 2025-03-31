@@ -1086,6 +1086,9 @@ public:
     RefreshSet & getRefreshSet();
     const RefreshSet & getRefreshSet() const;
 
+    ThrottlerPtr & getBackupServerThrottler();
+    const ThrottlerPtr & getBackupServerThrottler() const;
+
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     /// If no ZooKeeper configured, throws an exception.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
