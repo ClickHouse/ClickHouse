@@ -34,7 +34,7 @@ class QueryCache
 public:
     enum class Usage : uint8_t
     {
-        Unknown,  /// we don't know what happened
+        Unknown,  /// we don't know what what happened
         None,     /// query result neither written nor read into/from query cache
         Write,    /// query result written into query cache
         Read,     /// query result read from query cache
@@ -64,7 +64,7 @@ public:
         /// The id and current roles of the user who executed the query.
         /// These members are necessary to ensure that a (non-shared, see below) entry can only be written and read by the same user with
         /// the same roles. Example attack scenarios:
-        /// - after DROP USER, it must not be possible to create a new user with the dropped user name and access the dropped user's
+        /// - after DROP USER, it must not be possible to create a new user with with the dropped user name and access the dropped user's
         ///   query cache entries
         /// - different roles of the same user may be tied to different row-level policies. It must not be possible to switch role and
         ///   access another role's cache entries
