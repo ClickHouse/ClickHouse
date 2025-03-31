@@ -34,16 +34,15 @@ void encodeSHA256(std::string_view text, unsigned char * out)
 
 void encodeSHA256(const void * text, size_t size, unsigned char * out)
 {
-    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-    SCOPE_EXIT(EVP_MD_CTX_free(ctx));
+    auto ctx = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>(EVP_MD_CTX_new(), EVP_MD_CTX_free);
 
-    if (!EVP_DigestInit(ctx, EVP_sha256()))
+    if (!EVP_DigestInit(ctx.get(), EVP_sha256()))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "SHA256 EVP_DigestInit failed: {}", getOpenSSLErrors());
 
-    if (!EVP_DigestUpdate(ctx, text, size))
+    if (!EVP_DigestUpdate(ctx.get(), text, size))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "SHA256 EVP_DigestUpdate failed: {}", getOpenSSLErrors());
 
-    if (!EVP_DigestFinal(ctx, out, nullptr))
+    if (!EVP_DigestFinal(ctx.get(), out, nullptr))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "SHA256 EVP_DigestFinal failed: {}", getOpenSSLErrors());
 }
 

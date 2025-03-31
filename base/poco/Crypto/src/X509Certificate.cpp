@@ -59,11 +59,7 @@ X509Certificate::X509Certificate(X509* pCert, bool shared):
 
 	if (shared)
 	{
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 		X509_up_ref(_pCert);
-#else
-		_pCert->references++;
-#endif
 	}
 
 	init();
@@ -323,12 +319,7 @@ std::string X509Certificate::signatureAlgorithm() const
 {
 	int sigNID = NID_undef;
 
-#if (OPENSSL_VERSION_NUMBER >=  0x1010000fL) && !defined(LIBRESSL_VERSION_NUMBER)
 	sigNID = X509_get_signature_nid(_pCert);
-#else
-	poco_check_ptr(_pCert->sig_alg);
-	sigNID = OBJ_obj2nid(_pCert->sig_alg->algorithm);
-#endif
 
 	if (sigNID != NID_undef)
 	{
