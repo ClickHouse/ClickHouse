@@ -381,8 +381,8 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Node * root, QueryPlan::Node
                     ExchangeDescription exchange_description;
                     exchange_description.name = "exchange_" + std::to_string(exchange_id);
                     ++exchange_id;
-                    exchange_description.kind = optimization_settings.force_exchange_kind == "Streaming" ?
-                         ExchangeDescription::Kind::Streaming : ExchangeDescription::Kind::Persisted;
+                    exchange_description.kind = optimization_settings.force_exchange_kind == "Persisted" ?
+                        ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming;
                     exchange_description.source_bucket_count = frame.list_of_shards.size();
                     exchange_description.destination_bucket_count = exchange_step->getResultBucketCount();
 
