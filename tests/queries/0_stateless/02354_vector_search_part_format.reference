@@ -5,39 +5,13 @@ Check tab_compact_full
 6	[0,2]	0
 7	[0,2.1]	0.09999990463256836
 8	[0,2.2]	0.20000004768371582
-Expression (Project names)
-  LazilyRead (Lazily Read)
-    Limit (preliminary LIMIT (without OFFSET))
-      Sorting (Sorting for ORDER BY)
-        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-          ReadFromMergeTree (default.tab_compact_full)
-          Indexes:
-            PrimaryKey
-              Condition: true
-              Parts: 1/1
-              Granules: 4/4
-            Skip
-              Name: idx
-              Description: vector_similarity GRANULARITY 2
-              Parts: 1/1
-              Granules: 2/4
+Granules: 4/4
+Description: vector_similarity GRANULARITY 2
+Granules: 2/4
 Check tab_wide_full
 6	[0,2]	0
 7	[0,2.1]	0.09999990463256836
 8	[0,2.2]	0.20000004768371582
-Expression (Project names)
-  LazilyRead (Lazily Read)
-    Limit (preliminary LIMIT (without OFFSET))
-      Sorting (Sorting for ORDER BY)
-        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-          ReadFromMergeTree (default.tab_wide_full)
-          Indexes:
-            PrimaryKey
-              Condition: true
-              Parts: 1/1
-              Granules: 4/4
-            Skip
-              Name: idx
-              Description: vector_similarity GRANULARITY 2
-              Parts: 1/1
-              Granules: 2/4
+Granules: 4/4
+Description: vector_similarity GRANULARITY 2
+Granules: 2/4

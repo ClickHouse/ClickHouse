@@ -5,6 +5,7 @@
 
 SET allow_experimental_vector_similarity_index = 1;
 
+SET parallel_replicas_local_plan=1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
 
 DROP TABLE IF EXISTS tab_compact_full;
 DROP TABLE IF EXISTS tab_wide_full;
@@ -27,12 +28,15 @@ FROM tab_compact_full
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3;
 
-EXPLAIN indexes = 1
-WITH [0.0, 2.0] AS reference_vec
-SELECT id, vec, L2Distance(vec, reference_vec)
-FROM tab_compact_full
-ORDER BY L2Distance(vec, reference_vec)
-LIMIT 3;
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id
+    FROM tab_compact_full
+    ORDER BY L2Distance(vec, reference_vec)
+    LIMIT 3
+)
+WHERE explain LIKE '%vector_similarity%' OR explain LIKE '%Granules:%';
 
 SELECT 'Check tab_wide_full';
 
@@ -42,12 +46,15 @@ FROM tab_wide_full
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3;
 
-EXPLAIN indexes = 1
-WITH [0.0, 2.0] AS reference_vec
-SELECT id, vec, L2Distance(vec, reference_vec)
-FROM tab_wide_full
-ORDER BY L2Distance(vec, reference_vec)
-LIMIT 3;
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id
+    FROM tab_wide_full
+    ORDER BY L2Distance(vec, reference_vec)
+    LIMIT 3
+)
+WHERE explain LIKE '%vector_similarity%' OR explain LIKE '%Granules:%';
 
 DROP TABLE tab_compact_full;
 DROP TABLE tab_wide_full;
