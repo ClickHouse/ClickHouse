@@ -63,10 +63,10 @@ Pipe StorageYTsaurus::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    YTsaurusClient::ConnectionInfo connection_info{.base_uri = configuration.base_uri, .auth_token = configuration.auth_token};
+    YTsaurusClient::ConnectionInfo connection_info{.http_proxy_url = configuration.http_proxy_url, .oauth_token = configuration.oauth_token};
     YTsaurusClientPtr client = std::make_unique<YTsaurusClient>(context, connection_info);
 
-    auto ptr = YTsaurusSourceFactory::createSource(std::move(client), configuration.path, sample_block, max_block_size);
+    auto ptr = YTsaurusSourceFactory::createSource(std::move(client), configuration.cypress_path, sample_block, max_block_size);
 
     return Pipe(ptr);
 }
@@ -78,13 +78,13 @@ YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args,
         engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
     if (engine_args.size() == 3)
     {
-        configuration.base_uri = checkAndGetLiteralArgument<String>(engine_args[0], "base_uri");
-        configuration.path = checkAndGetLiteralArgument<String>(engine_args[1], "path");
-        configuration.auth_token = checkAndGetLiteralArgument<String>(engine_args[2], "auth_token");
+        configuration.http_proxy_url = checkAndGetLiteralArgument<String>(engine_args[0], "http_proxy_url");
+        configuration.cypress_path = checkAndGetLiteralArgument<String>(engine_args[1], "cypress_path");
+        configuration.oauth_token = checkAndGetLiteralArgument<String>(engine_args[2], "oauth_token");
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Incorrect Ytsarurus table schema. Expected YTsaurus(<base_url>, <yt_path>, <auth_token>)");
+                            "Incorrect Ytsarurus table schema. Expected YTsaurus(http_proxy_url, cypress_path, oauth_token)");
     return configuration;
 }
 

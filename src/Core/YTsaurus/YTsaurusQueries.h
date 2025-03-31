@@ -27,7 +27,7 @@ struct IYTsaurusQuery
 
 struct YTsaurusReadTableQuery : public IYTsaurusQuery
 {
-    explicit YTsaurusReadTableQuery(const String& path_) : path(path_) {}
+    explicit YTsaurusReadTableQuery(const String& cypress_path_) : cypress_path(cypress_path_) {}
 
     String getQueryName() const override
     {
@@ -36,15 +36,15 @@ struct YTsaurusReadTableQuery : public IYTsaurusQuery
 
     QueryParameters getQueryParameters() const override
     {
-        return {{.name="path", .value=path}};
+        return {{.name="path", .value=cypress_path}};
     }
-    String path;
+    String cypress_path;
 };
 
 
 struct YTsaurusGetQuery : public IYTsaurusQuery
 {
-    explicit YTsaurusGetQuery(const String& path_) : path(path_) {}
+    explicit YTsaurusGetQuery(const String& cypress_path_) : cypress_path(cypress_path_) {}
 
     String getQueryName() const override
     {
@@ -53,9 +53,9 @@ struct YTsaurusGetQuery : public IYTsaurusQuery
 
     QueryParameters getQueryParameters() const override
     {
-        return {{.name="path", .value=path}};
+        return {{.name="path", .value=cypress_path}};
     }
-    String path;
+    String cypress_path;
 };
 
 
