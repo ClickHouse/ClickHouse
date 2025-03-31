@@ -1431,7 +1431,7 @@ TEST_F(FileCacheTest, FileCacheGetOrSet)
     settings[FileCacheSetting::max_file_segment_size] = 25;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
-    const auto user = FileCache::getCommonUser();
+    const auto & user = FileCache::getCommonUser();
     const auto key = DB::FileCacheKey::fromPath("key1");
 
     auto cache = DB::FileCache("1", settings);
