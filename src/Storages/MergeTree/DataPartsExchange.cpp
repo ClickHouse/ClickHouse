@@ -532,8 +532,7 @@ void Fetcher::readPartInfo(
     {
         for (const auto & disk_candidate : data.getDisks())
         {
-            /// TODO zero-copy: maybe redundant
-            if (disk_candidate->getDataSourceDescription().toString().empty())
+            if (disk_candidate->getDataSourceDescription().toString() == remote_fs_metadata)
             {
                 preffered_disk = disk_candidate;
                 break;
