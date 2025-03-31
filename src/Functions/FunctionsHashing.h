@@ -62,6 +62,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
+    extern const int OPENSSL_ERROR;
 }
 
 namespace impl
@@ -245,13 +246,22 @@ struct HalfMD5Impl
             uint64_t uint64_data;
         } buf;
 
-        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-        EVP_DigestInit_ex(ctx, EVP_md5(), nullptr);
-        EVP_DigestUpdate(ctx, begin, size);
-        EVP_DigestFinal_ex(ctx, buf.char_data, nullptr);
-        EVP_MD_CTX_free(ctx);
+        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+        const auto ctx = EVP_MD_CTX_ptr(EVP_MD_CTX_new(), EVP_MD_CTX_free);
 
-        /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
+        if (!ctx)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed");
+
+        if (!EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed");
+
+        if (!EVP_DigestUpdate(ctx.get(), begin, size))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
+
+        if (!EVP_DigestFinal_ex(ctx.get(), buf.char_data, nullptr))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
+
+        /// Compatibility with existing code. Cast is necessary for old poco AND macos where UInt64 != uint64_t
         transformEndianness<std::endian::big>(buf.uint64_data);
         return buf.uint64_data;
     }

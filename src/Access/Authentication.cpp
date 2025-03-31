@@ -15,10 +15,6 @@
 #include <base/types.h>
 #include "config.h"
 
-#if USE_SSL
-#   include <openssl/evp.h>
-#   include <openssl/sha.h>
-#endif
 
 namespace DB
 {
@@ -113,43 +109,11 @@ namespace
             && external_authenticators.checkKerberosCredentials(authentication_method.getKerberosRealm(), *gss_acceptor_context);
     }
 
-#if USE_SSL
-    std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t>& key, const std::string& data)
-    {
-        std::vector<uint8_t> result(EVP_MAX_MD_SIZE);
-        size_t out_len = 0;
-
-        EVP_MAC* mac = EVP_MAC_fetch(nullptr, "HMAC", nullptr);
-        EVP_MAC_CTX* ctx = EVP_MAC_CTX_new(mac);
-        OSSL_PARAM params[] = {
-            OSSL_PARAM_utf8_string("digest", const_cast<char*>("SHA256"), 0),
-            OSSL_PARAM_END
-        };
-
-        EVP_MAC_init(ctx, key.data(), key.size(), params);
-        EVP_MAC_update(ctx, reinterpret_cast<const unsigned char*>(data.data()), data.size());
-        EVP_MAC_final(ctx, result.data(), &out_len, result.size());
-
-        EVP_MAC_CTX_free(ctx);
-        EVP_MAC_free(mac);
-        result.resize(out_len);
-        return result;
-    }
-
-    std::vector<uint8_t> sha256(const std::vector<uint8_t>& data)
-    {
-        std::vector<uint8_t> hash(SHA256_DIGEST_LENGTH);
-        encodeSHA256(data.data(), data.size(), hash.data());
-        return hash;
-    }
-
-#endif
-
     std::string computeScramSHA256ClientProof(const std::vector<uint8_t> & salted_password [[maybe_unused]], const std::string& auth_message [[maybe_unused]])
     {
 #if USE_SSL
         auto client_key = hmacSHA256(salted_password, "Client Key");
-        auto stored_key = sha256(client_key);
+        auto stored_key = encodeSHA256(client_key);
         auto client_signature = hmacSHA256(stored_key, auth_message);
 
         String client_proof(client_key.size(), 0);

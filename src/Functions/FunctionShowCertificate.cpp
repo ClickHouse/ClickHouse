@@ -17,9 +17,8 @@
 #include <base/scope_guard.h>
 
 #if USE_SSL
-    #include <openssl/x509v3.h>
-    #include "Poco/Net/SSLManager.h"
-    #include "Poco/Crypto/X509Certificate.h"
+    #include <Poco/Net/SSLManager.h>
+    #include <Poco/Crypto/X509Certificate.h>
 #endif
 
 namespace DB
@@ -83,12 +82,6 @@ public:
 
             if (x509_cert->certificate())
             {
-                BIO * b = BIO_new(BIO_s_mem());
-                SCOPE_EXIT(
-                {
-                    BIO_free(b);
-                });
-
                 keys->insert("version");
                 values->insert(x509_cert->version());
 

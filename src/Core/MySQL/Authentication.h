@@ -7,8 +7,8 @@
 #include "config.h"
 
 #if USE_SSL
+#    include <openssl/evp.h>
 #    include <openssl/pem.h>
-#    include <openssl/rsa.h>
 #endif
 
 namespace DB

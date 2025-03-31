@@ -38,6 +38,7 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int OPENSSL_ERROR;
 }
 
 
@@ -53,11 +54,20 @@ struct MD4Impl
 
     static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-        EVP_DigestInit_ex(ctx, EVP_md4(), nullptr);
-        EVP_DigestUpdate(ctx, begin, size);
-        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
-        EVP_MD_CTX_free(ctx);
+        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+        EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+
+        if (!ctx)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
+
+        if (EVP_DigestInit_ex(ctx.get(), EVP_md4(), nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_md4) failed");
+
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
+
+        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
     }
 };
 
@@ -71,11 +81,20 @@ struct MD5Impl
 
     static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-        EVP_DigestInit_ex(ctx, EVP_md5(), nullptr);
-        EVP_DigestUpdate(ctx, begin, size);
-        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
-        EVP_MD_CTX_free(ctx);
+        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+        EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+
+        if (!ctx)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
+
+        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_md5) failed");
+
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
+
+        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
     }
 };
 
@@ -89,11 +108,20 @@ struct SHA1Impl
 
     static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-        EVP_DigestInit_ex(ctx, EVP_sha1(), nullptr);
-        EVP_DigestUpdate(ctx, begin, size);
-        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
-        EVP_MD_CTX_free(ctx);
+        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+        EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+
+        if (!ctx)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
+
+        if (EVP_DigestInit_ex(ctx.get(), EVP_sha1(), nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha1) failed");
+
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
+
+        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
     }
 };
 
@@ -107,11 +135,20 @@ struct SHA224Impl
 
     static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-        EVP_DigestInit_ex(ctx, EVP_sha224(), nullptr);
-        EVP_DigestUpdate(ctx, begin, size);
-        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
-        EVP_MD_CTX_free(ctx);
+        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+        EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+
+        if (!ctx)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
+
+        if (EVP_DigestInit_ex(ctx.get(), EVP_sha224(), nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha224) failed");
+
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
+
+        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
     }
 };
 
@@ -125,11 +162,20 @@ struct SHA256Impl
 
     static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-        EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr);
-        EVP_DigestUpdate(ctx, begin, size);
-        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
-        EVP_MD_CTX_free(ctx);
+        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+        EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+
+        if (!ctx)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
+
+        if (EVP_DigestInit_ex(ctx.get(), EVP_sha256(), nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha256) failed");
+
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
+
+        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
     }
 };
 
@@ -143,11 +189,20 @@ struct SHA384Impl
 
     static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-        EVP_DigestInit_ex(ctx, EVP_sha384(), nullptr);
-        EVP_DigestUpdate(ctx, begin, size);
-        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
-        EVP_MD_CTX_free(ctx);
+        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+        EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+
+        if (!ctx)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
+
+        if (EVP_DigestInit_ex(ctx.get(), EVP_sha384(), nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha384) failed");
+
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
+
+        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
     }
 };
 
@@ -161,11 +216,20 @@ struct SHA512Impl
 
     static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-        EVP_DigestInit_ex(ctx, EVP_sha512(), nullptr);
-        EVP_DigestUpdate(ctx, begin, size);
-        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
-        EVP_MD_CTX_free(ctx);
+        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+        EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+
+        if (!ctx)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
+
+        if (EVP_DigestInit_ex(ctx.get(), EVP_sha512(), nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha512) failed");
+
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
+
+        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
     }
 };
 
@@ -179,15 +243,20 @@ struct SHA512Impl256
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
-        /// Here, we use the EVP interface that is common to both BoringSSL and OpenSSL. Though BoringSSL is the default
-        /// SSL library that we use, for S390X architecture only OpenSSL is supported. But the SHA512-256, SHA512_256_Init,
-        /// SHA512_256_Update, SHA512_256_Final methods to calculate hash (similar to the other SHA functions) aren't available
-        /// in the current version of OpenSSL that we use which necessitates the use of the EVP interface.
-        auto * md_ctx = EVP_MD_CTX_create();
-        EVP_DigestInit_ex(md_ctx, EVP_sha512_256(), nullptr /*engine*/);
-        EVP_DigestUpdate(md_ctx, begin, size);
-        EVP_DigestFinal_ex(md_ctx, out_char_data, nullptr /*size*/);
-        EVP_MD_CTX_destroy(md_ctx);
+        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+        EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+
+        if (!ctx)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
+
+        if (EVP_DigestInit_ex(ctx.get(), EVP_sha512_256(), nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha512_256) failed");
+
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
+
+        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
     }
 };
 
@@ -201,11 +270,20 @@ struct RIPEMD160Impl
 
     static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
-        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-        EVP_DigestInit_ex(ctx, EVP_ripemd160(), nullptr);
-        EVP_DigestUpdate(ctx, begin, size);
-        EVP_DigestFinal_ex(ctx, out_char_data, nullptr);
-        EVP_MD_CTX_free(ctx);
+        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+        EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+
+        if (!ctx)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
+
+        if (EVP_DigestInit_ex(ctx.get(), EVP_ripemd160(), nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_ripemd160) failed");
+
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
+
+        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
     }
 };
 #endif

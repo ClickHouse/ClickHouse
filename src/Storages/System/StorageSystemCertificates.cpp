@@ -1,22 +1,22 @@
-#include "config.h"
+#include <Storages/System/StorageSystemCertificates.h>
 
 #include <Columns/IColumn.h>
 #include <Common/re2.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Storages/System/StorageSystemCertificates.h>
-#include <boost/algorithm/string.hpp>
-#include <filesystem>
 #include <base/scope_guard.h>
+
+#if USE_SSL
+    #include <Poco/Net/SSLManager.h>
+    #include <Poco/Crypto/X509Certificate.h>
+#endif
+
 #include <Poco/DateTimeFormatter.h>
 #include <Poco/File.h>
-#include <Poco/Net/X509Certificate.h>
-#if USE_SSL
-    #include <openssl/x509v3.h>
-    #include "Poco/Net/SSLManager.h"
-    #include "Poco/Crypto/X509Certificate.h"
-#endif
+
+#include <boost/algorithm/string.hpp>
+#include <filesystem>
 
 namespace DB
 {
