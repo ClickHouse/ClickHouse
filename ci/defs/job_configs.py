@@ -134,6 +134,7 @@ class JobConfigs:
             [
                 ArtifactNames.CH_AMD_ASAN,
                 ArtifactNames.DEB_AMD_ASAN,
+                ArtifactNames.UNITTEST_AMD_ASAN,
             ],
             [
                 ArtifactNames.CH_AMD_TSAN,
@@ -162,7 +163,6 @@ class JobConfigs:
             [
                 ArtifactNames.CH_ARM_ASAN,
                 ArtifactNames.DEB_ARM_ASAN,
-                ArtifactNames.UNITTEST_ARM_ASAN,
             ],
         ],
         runs_on=[
@@ -477,13 +477,13 @@ class JobConfigs:
             "ubsan",
         ],
         runs_on=[
-            RunnerLabels.BUILDER_ARM,
+            RunnerLabels.BUILDER_AMD,
             RunnerLabels.BUILDER_AMD,
             RunnerLabels.BUILDER_AMD,
             RunnerLabels.BUILDER_AMD,
         ],
         requires=[
-            [ArtifactNames.UNITTEST_ARM_ASAN],
+            [ArtifactNames.UNITTEST_AMD_ASAN],
             [ArtifactNames.UNITTEST_AMD_TSAN],
             [ArtifactNames.UNITTEST_AMD_MSAN],
             [ArtifactNames.UNITTEST_AMD_UBSAN],

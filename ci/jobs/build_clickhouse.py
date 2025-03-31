@@ -79,10 +79,6 @@ def parse_args():
 def main():
     args = parse_args()
 
-    # # for sccache
-    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
-    os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
-
     stop_watch = Utils.Stopwatch()
 
     stages = list(JobStages)
@@ -104,6 +100,13 @@ def main():
 
     cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type]
     info = Info()
+    if not info.is_local_run:
+        os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+        os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
+        os.environ["CTCACHE_DIR"] = "ccache/clang-tidy-cache"
+        os.environ["CTCACHE_S3_BUCKET"] = Settings.S3_ARTIFACT_PATH
+        os.environ["CTCACHE_S3_FOLDER"] = "clang-tidy-cache"
+        os.environ["CTCACHE_S3_NO_CREDENTIALS"] = "true"
     if info.pr_number == 0:
         cmake_cmd += " -DCLICKHOUSE_OFFICIAL_BUILD=1"
     cmake_cmd += f" {current_directory}"
@@ -121,7 +124,7 @@ def main():
         )
         res = results[-1].is_ok()
 
-    if info.pr_number == 0:
+    if info.pr_number == 0 and info.is_push_event:
         version_dict = info.get_custom_data("version")
     else:
         version_dict = CHVersion.get_current_version_as_dict()
