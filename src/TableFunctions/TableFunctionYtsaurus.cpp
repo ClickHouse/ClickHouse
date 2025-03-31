@@ -101,7 +101,7 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function 'ytsaurus' 4 parameters: "
-            "ytsaurus('base_uri', path, auth_token, structure).");
+            "ytsaurus('http_proxy_url', cypress_path, oauth_token, structure).");
     }
 }
 

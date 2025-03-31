@@ -13,9 +13,9 @@ namespace DB
 
 struct YTsaurusStorageConfiguration
 {
-    String base_uri;
-    String path;
-    String auth_token;
+    String http_proxy_url;
+    String cypress_path;
+    String oauth_token;
 };
 
 /**

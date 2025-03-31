@@ -38,8 +38,8 @@ class YTsaurusClient : private boost::noncopyable
 public:
     struct ConnectionInfo
     {
-        String base_uri;
-        String auth_token;
+        String http_proxy_url;
+        String oauth_token;
         String api_version = "v3";
     };
 
@@ -47,11 +47,11 @@ public:
 
     const ConnectionInfo & getConnectionInfo() { return connection_info; }
 
-    DB::ReadBufferPtr readTable(const String & path);
+    DB::ReadBufferPtr readTable(const String & cypress_path);
 
-    DB::ReadBufferPtr selectRows(const String & path);
+    DB::ReadBufferPtr selectRows(const String & cypress_path);
 
-    YTsaurusNodeType getNodeType(const String & path);
+    YTsaurusNodeType getNodeType(const String & cypress_path);
 
 private:
 
