@@ -1518,7 +1518,6 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
     error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY ALL")
 
     assert "UNSUPPORTED_METHOD" in error
-    instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
