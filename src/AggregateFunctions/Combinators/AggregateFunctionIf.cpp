@@ -3,6 +3,7 @@
 #include "AggregateFunctionNull.h"
 
 #include <absl/container/inlined_vector.h>
+#include <iostream>
 
 namespace DB
 {
@@ -315,7 +316,7 @@ public:
 
             for (size_t i = row_begin; i < row_end; i++)
             {
-                final_null_flags[i] = filter_null_map[i] || !filter_values[i];
+                final_null_flags[i] = (!!filter_null_map[i]) | !filter_values[i];
             }
         }
         else
@@ -347,16 +348,7 @@ public:
                 nested_columns[arg] = columns[arg];
         }
 
-        bool at_least_one = false;
-        for (size_t i = row_begin; i < row_end; i++)
-        {
-            if (!final_null_flags[i])
-            {
-                at_least_one = true;
-                break;
-            }
-        }
-
+        bool at_least_one = !memoryIsZero(final_null_flags.get(), row_begin, row_end);
         if (at_least_one)
         {
             this->setFlag(place);
