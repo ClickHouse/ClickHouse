@@ -2115,7 +2115,7 @@ CONV_FN(JoinedTableOrFunction, jtf)
     TableOrFunctionToString(ret, false, tof);
     if (jtf.has_table_alias())
     {
-        ret += " ";
+        ret += " AS ";
         TableToString(ret, jtf.table_alias());
     }
     if (jtf.final())
