@@ -2284,8 +2284,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 DataPartInfo
                 {
                     .data_part = ranges_in_data_part.data_part,
-                    .alter_conversions = MergeTreeData::getAlterConversionsForPart(
-                        ranges_in_data_part.data_part, mutations_snapshot, storage_snapshot->metadata, getContext())
+                    .alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges_in_data_part.data_part, mutations_snapshot, getContext())
                 });
         }
     }

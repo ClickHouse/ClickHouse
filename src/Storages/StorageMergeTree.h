@@ -69,8 +69,7 @@ public:
     std::optional<UInt64> totalBytes(ContextPtr) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
 
-    UInt64 getNumberOnFlyDataMutations() const override;
-    UInt64 getNumberOnFlyMetadataMutations() const override;
+    MutationCounters getMutationCounters() const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -152,8 +151,7 @@ private:
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
     /// Unfinished mutations that are required for AlterConversions.
-    Int64 num_data_mutations_to_apply = 0;
-    Int64 num_metadata_mutations_to_apply = 0;
+    MutationCounters mutation_counters;
 
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
@@ -315,10 +313,10 @@ private:
         ContextPtr context;
     };
 
-    struct MutationsSnapshot : public IMutationsSnapshot
+    struct MutationsSnapshot : public MutationsSnapshotBase
     {
         MutationsSnapshot() = default;
-        MutationsSnapshot(Params params_, Info info_) : IMutationsSnapshot(std::move(params_), std::move(info_)) {}
+        MutationsSnapshot(Params params_, MutationCounters counters_) : MutationsSnapshotBase(std::move(params_), std::move(counters_)) {}
 
         using MutationsByVersion = std::map<UInt64, std::shared_ptr<const MutationCommands>>;
         MutationsByVersion mutations_by_version;
@@ -326,6 +324,7 @@ private:
         MutationCommands getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
         NameSet getAllUpdatedColumns() const override;
+        bool hasMetadataMutations() const override { return counters.num_metadata > 0; }
     };
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
