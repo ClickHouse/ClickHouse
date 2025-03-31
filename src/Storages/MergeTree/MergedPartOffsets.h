@@ -107,9 +107,9 @@ private:
         UInt64 * compressed_data;
     };
 
-    static constexpr UInt8 PAGE_SIZE_DEGREE = 10;
-    static constexpr size_t PAGE_SIZE = 1 << PAGE_SIZE_DEGREE;
-    static constexpr size_t PAGE_MASK = PAGE_SIZE - 1;
+    static constexpr UInt8 PACKED_PAGE_SIZE_DEGREE = 10;
+    static constexpr size_t PACKED_PAGE_SIZE = 1 << PACKED_PAGE_SIZE_DEGREE;
+    static constexpr size_t PACKED_PAGE_MASK = PACKED_PAGE_SIZE - 1;
 
     PODArray<Page> pages;
     PODArray<UInt64> current_page_values;
@@ -119,7 +119,7 @@ public:
     /// @param val The _part_offset value to insert (must be greater than all previously inserted values)
     void insert(UInt64 val)
     {
-        if (current_page_values.size() >= PAGE_SIZE)
+        if (current_page_values.size() >= PACKED_PAGE_SIZE)
             flush();
 
         chassert(current_page_values.empty() || current_page_values.back() < val);
@@ -148,9 +148,9 @@ public:
     /// Decompresses the _part_offset value at the specified index
     UInt64 operator[](size_t i) const
     {
-        size_t page_pos = i >> PAGE_SIZE_DEGREE;
+        size_t page_pos = i >> PACKED_PAGE_SIZE_DEGREE;
         chassert(page_pos < pages.size());
-        size_t page_idx = i & PAGE_MASK;
+        size_t page_idx = i & PACKED_PAGE_MASK;
         return pages[page_pos][page_idx];
     }
 
@@ -178,10 +178,7 @@ public:
     {
     }
 
-    MergedPartOffsets(MergedPartOffsets && other) noexcept
-    {
-        std::swap(*this, other);
-    }
+    MergedPartOffsets(MergedPartOffsets && other) noexcept { std::swap(*this, other); }
 
     MergedPartOffsets & operator=(MergedPartOffsets && other) noexcept
     {
