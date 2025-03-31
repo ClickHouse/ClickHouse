@@ -1,4 +1,5 @@
 set enable_json_type=1;
+set enable_analyzer=1;
 
 drop table if exists test;
 create table test (data JSON) engine=Memory;
