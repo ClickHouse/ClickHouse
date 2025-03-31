@@ -119,7 +119,7 @@ CONV_FN(ExprColAlias, eca)
     }
 }
 
-static void convertToSQLString(String & ret, const String & s)
+static void ConvertToSQLString(String & ret, const String & s)
 {
     for (size_t i = 0; i < s.length(); i++)
     {
@@ -430,7 +430,7 @@ CONV_FN(LiteralValue, lit_val)
             break;
         case LitValType::kStringLit:
             ret += '\'';
-            convertToSQLString(ret, lit_val.string_lit());
+            ConvertToSQLString(ret, lit_val.string_lit());
             ret += '\'';
             break;
         case LitValType::kSpecialVal: {
