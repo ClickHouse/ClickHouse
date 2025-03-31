@@ -57,6 +57,24 @@ function mutations_thread() {
     done
 }
 
+function consistency_table_sync_non_existent_replica() {
+    echo "Testing sync from non-existent replica..."
+    local NON_EXISTENT_REPLICA="non_existent_replica_$RANDOM"
+
+    SYNC_OUTPUT=$($CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA test_table_1 LIGHTWEIGHT FROM '$NON_EXISTENT_REPLICA'" 2>&1)
+    EXIT_CODE=$?
+
+    if ! echo "$SYNC_OUTPUT" | grep -q "failed: replica does not exist"; then
+        echo "FAILED: Error was not detected properly for non-existent replica"
+        echo
+        echo "Full output from SYSTEM SYNC command (exit code $EXIT_CODE):"
+        echo "$SYNC_OUTPUT"
+        exit 1
+    fi
+
+    echo "Error correctly detected for non-existent replica"
+}
+
 export -f insert_thread
 export -f sync_and_drop_replicas
 export -f optimize_thread
@@ -64,6 +82,7 @@ export -f mutations_thread
 
 TIMEOUT=30
 
+consistency_table_sync_non_existent_replica
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c sync_and_drop_replicas 2> /dev/null &
 timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
@@ -80,12 +99,6 @@ if [ "$lost_parts_count" -ne 0 ]; then
     echo "Data consistency check failed: lost parts count is not zero"
     exit 1
 fi
-
-echo "Testing sync from non-existent replica..."
-NON_EXISTENT_REPLICA="non_existent_replica_$RANDOM"
-
-$CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA test_table_1 LIGHTWEIGHT FROM '$NON_EXISTENT_REPLICA'" 2>&1 | grep -q "failed: replica does not exist" && echo "Error correctly detected for non-existent replica" || echo "FAILED: Error was not detected properly for non-existent replica"
-
 
 echo "Data consistency check passed"
 
