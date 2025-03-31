@@ -46,6 +46,18 @@ public:
             return;
         }
 
+        if (isExistsFunction(node))
+        {
+            auto * function_node = node->as<FunctionNode>();
+            auto * subquery = function_node->getArguments().getNodes().front()->as<QueryNode>();
+            for (auto const & column : subquery->getCorrelatedColumns())
+            {
+                auto temp_node = column->clone();
+                visit(temp_node);
+            }
+            return;
+        }
+
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
             return;
@@ -183,6 +195,11 @@ public:
     static bool isIndexHintFunction(const QueryTreeNodePtr & node)
     {
         return node->as<FunctionNode>() && node->as<FunctionNode>()->getFunctionName() == "indexHint";
+    }
+
+    static bool isExistsFunction(const QueryTreeNodePtr & node)
+    {
+        return node->as<FunctionNode>() && node->as<FunctionNode>()->getFunctionName() == "exists";
     }
 
     static bool isColumnSourceMergeTree(const ColumnNode & node)
