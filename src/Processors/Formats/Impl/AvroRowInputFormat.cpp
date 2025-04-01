@@ -182,7 +182,7 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
 
         if (tmp.size() > field_type_size || tmp.empty())
             throw Exception(
-                ErrorCodes::CANNOT_PARSE_UUID,
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                 "Cannot parse type {}, expected non-empty binary data with size equal to or less than {}, got {}",
                 target_type->getName(),
                 field_type_size,
