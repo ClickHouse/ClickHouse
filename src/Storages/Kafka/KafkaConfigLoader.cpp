@@ -371,13 +371,13 @@ void updateGlobalConfiguration(
         [log = params.log, sink = exception_info_sink_ptr](
             cppkafka::KafkaHandleBase & handle, int level, const std::string & facility, const std::string & message)
         {
-            auto [poco_level, logs_level] = parseSyslogLevel(level);
+            auto [poco_level, client_logs_level] = parseSyslogLevel(level);
             const auto & kafka_object_config = handle.get_configuration();
             const std::string client_id_key{"client.id"};
             chassert(kafka_object_config.has_property(client_id_key) && "Kafka configuration doesn't have expected client.id set");
             LOG_IMPL(
                 log,
-                logs_level,
+                client_logs_level,
                 "[client.id:{}] [rdk:{}] {}",
                 kafka_object_config.get(client_id_key),
                 facility,

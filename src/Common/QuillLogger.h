@@ -21,13 +21,13 @@ namespace DB
 
 struct QuillFrontendOptions
 {
-    static constexpr quill::QueueType queue_type = quill::QueueType::BoundedBlocking;
+    static constexpr quill::QueueType queue_type = quill::QueueType::UnboundedBlocking;
 
     /**
    * Initial capacity of the queue. Used for UnboundedBlocking, UnboundedDropping, and
    * UnboundedUnlimited. Also serves as the capacity for BoundedBlocking and BoundedDropping.
    */
-    static constexpr uint32_t initial_queue_capacity = 512 * 1024;
+    static inline uint32_t initial_queue_capacity = 1024u;
 
     /**
    * Interval for retrying when using BoundedBlocking or UnboundedBlocking.
@@ -36,9 +36,20 @@ struct QuillFrontendOptions
     static constexpr uint32_t blocking_queue_retry_interval_ns = 800;
 
     /**
+   * Maximum capacity for unbounded queues (UnboundedBlocking, UnboundedDropping).
+   * This defines the maximum size to which the queue can grow before blocking or dropping messages.
+   */
+    static inline size_t unbounded_queue_max_capacity = 8 * 1024u * 1024u; // 8 MiB
+
+    /**
    * Enables huge pages on the frontend queues to reduce TLB misses. Available only for Linux.
    */
     static constexpr quill::HugePagesPolicy huge_pages_policy = quill::HugePagesPolicy::Never;
+
+    /**
+   * Define allocator for frontend queue.
+   */
+    static constexpr quill::AllocationPolicy allocation_policy = quill::AllocationPolicy::Global;
 };
 
 using QuillLogger = quill::LoggerImpl<QuillFrontendOptions>;

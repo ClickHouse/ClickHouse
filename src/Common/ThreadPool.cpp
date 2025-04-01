@@ -741,7 +741,6 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
             });
 
-
             if (parent_pool.jobs.empty() || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
                 // We enter here if:
@@ -751,6 +750,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 if (parent_pool.threads_remove_themselves)
                     removeSelfFromPoolNoPoolLock(); // Detach and remove itself from the pool
 
+                DB::QuillFrontend::shrink_thread_local_queue(DB::QuillFrontendOptions::initial_queue_capacity);
                 return;
             }
 
@@ -771,7 +771,8 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     /// job can contain packaged_task which can set exception during destruction
                     job_data.reset();
                 }
-                DB::QuillLogger::reset_thread_context();
+
+                DB::QuillFrontend::shrink_thread_local_queue(DB::QuillFrontendOptions::initial_queue_capacity);
                 job_is_done = true;
                 continue;
             }
@@ -850,7 +851,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         }
 
         DB::Exception::clearThreadFramePointers();
-        DB::QuillLogger::reset_thread_context();
+        DB::QuillFrontend::shrink_thread_local_queue(DB::QuillFrontendOptions::initial_queue_capacity);
         job_is_done = true;
     }
 }

@@ -102,6 +102,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, const std
     if (!config.getBool("remap_executable", false))
         DB::startQuillBackend();
 
+    DB::QuillFrontendOptions::initial_queue_capacity = config.getUInt64("logger.initial_queue_capacity", 4 * 1024);
+    DB::QuillFrontendOptions::unbounded_queue_max_capacity = config.getUInt64("logger.queue_max_capacity", 2 * 1024 * 1024);
+
     std::vector<std::shared_ptr<quill::Sink>> sinks;
 
     auto current_logger = config.getString("logger", "");
@@ -135,6 +138,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, const std
         std::cerr << "Logging " << log_level_string << " to " << log_path << std::endl;
 
         auto log_level = DB::parseQuillLogLevel(log_level_string);
+
         min_log_level = std::min(log_level, min_log_level);
 
         DB::RotatingSinkConfiguration file_config;

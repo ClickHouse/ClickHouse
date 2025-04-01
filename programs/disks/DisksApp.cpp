@@ -533,7 +533,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     global_context->setApplicationType(Context::ApplicationType::DISKS);
 
     if (config().has("macros"))
-        global_context->setMacros(std::make_unique<Macros>(config(), "macros", &logger()));
+        global_context->setMacros(std::make_unique<Macros>(config(), "macros", getRootLogger()));
 
     String path = config().getString("path", DBMS_DEFAULT_PATH);
 

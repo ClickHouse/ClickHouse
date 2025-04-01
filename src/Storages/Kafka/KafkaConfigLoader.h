@@ -4,12 +4,8 @@
 #include <cppkafka/cppkafka.h>
 #include <Core/Names.h>
 #include <Poco/Util/AbstractConfiguration.h>
-<<<<<<< HEAD
 #include <Common/Logger_fwd.h>
-=======
-#include <Common/Logger.h>
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
->>>>>>> master
 
 namespace DB
 {

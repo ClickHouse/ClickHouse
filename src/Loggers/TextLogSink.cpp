@@ -12,7 +12,6 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/setThreadName.h>
 #include <Common/IO.h>
-
 namespace DB
 {
 

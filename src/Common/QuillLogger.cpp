@@ -42,7 +42,13 @@ extern const int LOGICAL_ERROR;
 
 void startQuillBackend()
 {
-    quill::Backend::start();
+    quill::BackendOptions backend_options;
+    backend_options.error_notifier = [](const std::string & /* error_message */) {};
+    backend_options.transit_events_hard_limit = 128_KiB;
+    backend_options.transit_events_soft_limit = 4_KiB;
+    backend_options.transit_event_buffer_initial_capacity = 128;
+    backend_options.transit_event_decay_period = std::chrono::seconds{5};
+    quill::Backend::start(backend_options);
 }
 
 quill::LogLevel parseQuillLogLevel(std::string_view level)

@@ -100,6 +100,7 @@
 #include <Storages/System/StorageSystemViewRefreshes.h>
 #include <Storages/System/StorageSystemDNSCache.h>
 #include <Storages/System/StorageSystemLatencyBuckets.h>
+#include <Storages/System/StorageSystemLoggerThreads.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -234,6 +235,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemViewRefreshes>(context, system_database, "view_refreshes", "Lists all Refreshable Materialized Views of current server.");
     attach<StorageSystemWorkloads>(context, system_database, "workloads", "Contains a list of all currently existing workloads.");
     attach<StorageSystemResources>(context, system_database, "resources", "Contains a list of all currently existing resources.");
+    attach<StorageSystemLoggerThreads>(context, system_database, "logger_threads", "Contains logger related thread information.");
 
     if (has_zookeeper)
     {
