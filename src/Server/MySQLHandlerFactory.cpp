@@ -18,7 +18,9 @@ namespace DB
 MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
     : server(server_)
     , log(getLogger("MySQLHandlerFactory"))
+#if USE_SSL
     , private_key(Poco::Crypto::RSAKey::KL_2048, Poco::Crypto::RSAKey::EXP_LARGE)
+#endif
     , read_event(read_event_)
     , write_event(write_event_)
 {
