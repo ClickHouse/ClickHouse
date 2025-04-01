@@ -68,7 +68,7 @@ public:
 
     static void processIncludes(
         XMLDocumentPtr & config,
-        Substitutions & substitutions,
+        const Substitutions & substitutions,
         const std::string & include_from_path,
         bool throw_on_bad_incl,
         Poco::XML::DOMParser & dom_parser,
@@ -183,7 +183,7 @@ private:
     static void doIncludesRecursive(
             XMLDocumentPtr config,
             XMLDocumentPtr include_from,
-            Substitutions & substitutions,
+            const Substitutions & substitutions,
             bool throw_on_bad_incl,
             Poco::XML::DOMParser & dom_parser,
             const LoggerPtr & log,

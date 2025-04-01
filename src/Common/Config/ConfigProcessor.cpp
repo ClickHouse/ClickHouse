@@ -420,7 +420,7 @@ bool ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
 void ConfigProcessor::doIncludesRecursive(
     XMLDocumentPtr config,
     XMLDocumentPtr include_from,
-    Substitutions & substitutions,
+    const Substitutions & substitutions,
     bool throw_on_bad_incl,
     Poco::XML::DOMParser & dom_parser,
     const LoggerPtr & log,
@@ -431,7 +431,7 @@ void ConfigProcessor::doIncludesRecursive(
 {
     if (node->nodeType() == Node::TEXT_NODE)
     {
-        for (auto & substitution : substitutions)
+        for (const auto & substitution : substitutions)
         {
             std::string value = node->nodeValue();
 
@@ -851,7 +851,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
 
 void ConfigProcessor::processIncludes(
     XMLDocumentPtr & config,
-    Substitutions & substitutions,
+    const Substitutions & substitutions,
     const std::string & include_from_path,
     bool throw_on_bad_incl,
     Poco::XML::DOMParser & dom_parser,
