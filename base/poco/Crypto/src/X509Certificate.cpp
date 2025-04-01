@@ -43,9 +43,10 @@ X509Certificate::X509Certificate(const std::string& path):
 }
 
 
-X509Certificate::X509Certificate(X509* pCert):
-	_pCert(pCert)
+X509Certificate::X509Certificate(X509* pCert)
 {
+	_pCert = X509_dup(pCert);
+
 	poco_check_ptr(_pCert);
 
 	init();
@@ -56,7 +57,7 @@ X509Certificate::X509Certificate(X509* pCert, bool shared):
 	_pCert(pCert)
 {
 	poco_check_ptr(_pCert);
-	
+
 	if (shared)
 	{
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
