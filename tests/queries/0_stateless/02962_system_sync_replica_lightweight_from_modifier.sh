@@ -68,6 +68,7 @@ function consistency_table_sync_non_existent_replica() {
         echo "FAILED: Error was not detected properly for non-existent replica"
         echo
         echo "Full output from SYSTEM SYNC command (exit code $EXIT_CODE):"
+        echo
         echo "$SYNC_OUTPUT"
         exit 1
     fi
