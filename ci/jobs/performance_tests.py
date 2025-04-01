@@ -6,11 +6,10 @@ import time
 import traceback
 from pathlib import Path
 
-from ci.praktika.result import Result
-from ci.praktika.utils import MetaClasses, Shell, Utils
-
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.info import Info
+from ci.praktika.result import Result
+from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 perf_wd = f"{temp_dir}/perf_wd"
@@ -595,7 +594,7 @@ def main():
     # attach all logs with errors
     Shell.check(f"rm -f {perf_wd}/logs.tar.zst")
     Shell.check(
-        f'find {perf_wd} -type f -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" ! -path "*/db/*" ! -path "*/db0/*" -print0 | tar --null -T - -cf - | zstd -o {perf_wd}/logs.tar.zst',
+        f'cd {perf_wd} && find . -type f \( -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" \) ! -path "*/db/*" !  -path "*/db0/*" -print0 | tar --null -T - -cf - | zstd -o ./logs.tar.zst',
         verbose=True,
     )
     if Path(f"{perf_wd}/logs.tar.zst").is_file():
