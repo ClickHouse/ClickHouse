@@ -4,7 +4,7 @@
 #include <Common/VersionNumber.h>
 #include <Common/memory.h>
 
-#ifdef __linux__
+#ifdef OS_LINUX
 #if !defined(MADV_GUARD_INSTALL)
 #define MADV_GUARD_INSTALL 102
 #endif
@@ -20,7 +20,7 @@ static bool supportsGuardPages()
     return (linux_version >= madv_guard_minimal_version);
 }
 static bool supports_guard_pages = supportsGuardPages();
-#endif // __linux__
+#endif // OS_LINUX
 
 namespace DB::ErrorCodes
 {
@@ -30,7 +30,7 @@ namespace DB::ErrorCodes
 /// Uses MADV_GUARD_INSTALL if available, or mprotect() if not
 void memoryGuardInstall(void *addr, size_t len)
 {
-#ifdef __linux__
+#ifdef OS_LINUX
     if (supports_guard_pages)
     {
         if (madvise(addr, len, MADV_GUARD_INSTALL))
@@ -47,7 +47,7 @@ void memoryGuardInstall(void *addr, size_t len)
 /// Uses MADV_GUARD_REMOVE if available, or mprotect() if not
 void memoryGuardRemove(void *addr, size_t len)
 {
-#ifdef __linux__
+#ifdef OS_LINUX
     if (supports_guard_pages)
     {
         if (madvise(addr, len, MADV_GUARD_REMOVE))
