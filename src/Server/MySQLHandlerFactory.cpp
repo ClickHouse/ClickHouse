@@ -7,8 +7,6 @@
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>
-#    include <Poco/Crypto/EVPPKey.h>
-#    include <Poco/Crypto/RSAKey.h>
 #    include <Common/OpenSSLHelpers.h>
 #endif
 
@@ -18,7 +16,9 @@ namespace DB
 MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
     : server(server_)
     , log(getLogger("MySQLHandlerFactory"))
-    , private_key(Poco::Crypto::RSAKey::KL_2048, Poco::Crypto::RSAKey::EXP_LARGE)
+#if USE_SSL
+    , private_key(KeyPair::generateRSA())
+#endif
     , read_event(read_event_)
     , write_event(write_event_)
 {
@@ -43,14 +43,14 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, const ProfileEvents:
         String public_key_file = config.getString(certificate_file_property);
         String private_key_file = config.getString(private_key_file_property);
 
-        private_key = Poco::Crypto::RSAKey(public_key_file, private_key_file);
+        private_key = KeyPair::fromFile(private_key_file);
     }
     catch (...)
     {
         LOG_TRACE(log, "Failed to read RSA key pair from server certificate. Error: {}", getCurrentExceptionMessage(false));
         LOG_TRACE(log, "Generating new RSA key pair.");
 
-        private_key = Poco::Crypto::RSAKey(Poco::Crypto::RSAKey::KL_2048, Poco::Crypto::RSAKey::EXP_LARGE);
+        private_key = KeyPair::generateRSA();
     }
 #endif
 }
@@ -66,7 +66,7 @@ Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poc
         socket,
         ssl_enabled,
         connection_id,
-        Poco::Crypto::EVPPKey(&private_key)
+        private_key
     );
 #else
     return new MySQLHandler(server, tcp_server, socket, ssl_enabled, connection_id);

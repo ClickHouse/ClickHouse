@@ -1,8 +1,7 @@
 #pragma once
 
-#include <memory>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <Common/SSHWrapper.h>
+#include <Common/Crypto/X509Certificate.h>
 
 #include <base/types.h>
 
@@ -55,11 +54,11 @@ class SSLCertificateCredentials
     : public Credentials
 {
 public:
-    explicit SSLCertificateCredentials(const String & user_name_, SSLCertificateSubjects && subjects_);
-    const SSLCertificateSubjects & getSSLCertificateSubjects() const;
+    explicit SSLCertificateCredentials(const String & user_name_, X509Certificate::Subjects && subjects_);
+    const X509Certificate::Subjects & getSSLCertificateSubjects() const;
 
 private:
-    SSLCertificateSubjects certificate_subjects;
+    X509Certificate::Subjects certificate_subjects;
 };
 
 class BasicCredentials

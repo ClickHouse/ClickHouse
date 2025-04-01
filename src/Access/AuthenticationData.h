@@ -7,8 +7,8 @@
 
 #include <Access/Common/AuthenticationType.h>
 #include <Access/Common/HTTPAuthenticationScheme.h>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <Common/SSHWrapper.h>
+#include <Common/Crypto/X509Certificate.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 
@@ -59,9 +59,9 @@ public:
     const String & getKerberosRealm() const { return kerberos_realm; }
     void setKerberosRealm(const String & realm) { kerberos_realm = realm; }
 
-    const SSLCertificateSubjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
-    void setSSLCertificateSubjects(SSLCertificateSubjects && ssl_certificate_subjects_);
-    void addSSLCertificateSubject(SSLCertificateSubjects::Type type_, String && subject_);
+    const X509Certificate::Subjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
+    void setSSLCertificateSubjects(X509Certificate::Subjects && ssl_certificate_subjects_);
+    void addSSLCertificateSubject(X509Certificate::Subjects::Type type_, String && subject_);
 
 #if USE_SSH
     const std::vector<SSHKey> & getSSHKeys() const { return ssh_keys; }
@@ -102,7 +102,7 @@ private:
     Digest password_hash;
     String ldap_server_name;
     String kerberos_realm;
-    SSLCertificateSubjects ssl_certificate_subjects;
+    X509Certificate::Subjects ssl_certificate_subjects;
     String salt;
 #if USE_SSH
     std::vector<SSHKey> ssh_keys;

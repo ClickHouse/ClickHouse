@@ -17,6 +17,7 @@
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
+#    include <Common/Crypto/KeyPair.h>
 #endif
 
 #include <memory>
@@ -126,7 +127,7 @@ public:
         const Poco::Net::StreamSocket & socket_,
         bool ssl_enabled,
         uint32_t connection_id_,
-        EVP_PKEY * private_key_,
+        KeyPair & private_key_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -137,7 +138,7 @@ private:
         size_t packet_size, char * buf, size_t pos,
         std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet) override;
 
-    EVP_PKEY * private_key;
+    KeyPair & private_key;
     std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
 };
 #endif

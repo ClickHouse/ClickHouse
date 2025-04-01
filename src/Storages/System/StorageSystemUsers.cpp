@@ -20,8 +20,6 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSONString.h>
 
-#include <Access/Common/SSLCertificateSubjects.h>
-
 #include <base/types.h>
 #include <base/range.h>
 
@@ -155,9 +153,9 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
                 Poco::JSON::Array::Ptr subject_alt_names = new Poco::JSON::Array();
 
                 const auto & subjects = auth_data.getSSLCertificateSubjects();
-                for (const String & subject : subjects.at(SSLCertificateSubjects::Type::CN))
+                for (const String & subject : subjects.at(X509Certificate::Subjects::Type::CN))
                     common_names->add(subject);
-                for (const String & subject : subjects.at(SSLCertificateSubjects::Type::SAN))
+                for (const String & subject : subjects.at(X509Certificate::Subjects::Type::SAN))
                     subject_alt_names->add(subject);
 
                 if (common_names->size() > 0)

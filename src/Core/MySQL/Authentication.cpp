@@ -1,16 +1,15 @@
+#include <Access/Credentials.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
-#include <Poco/RandomStream.h>
-#include <Poco/SHA1Engine.h>
 #include <Interpreters/Session.h>
-#include <Access/Credentials.h>
 
 #include <Common/logger_useful.h>
-#include <Common/OpenSSLHelpers.h>
+
+#include <Poco/RandomStream.h>
+#include <Poco/SHA1Engine.h>
 
 #include <base/scope_guard.h>
 #include <base/defines.h>
-#include <string_view>
 
 
 using namespace std::literals;
@@ -107,7 +106,7 @@ void Native41::authenticate(
 
 #if USE_SSL
 
-Sha256Password::Sha256Password(EVP_PKEY * private_key_, LoggerPtr log_)
+Sha256Password::Sha256Password(KeyPair & private_key_, LoggerPtr log_)
     : private_key(private_key_), log(log_)
 {
     /** Native authentication sent 20 bytes + '\0' character = 21 bytes.
@@ -144,14 +143,8 @@ void Sha256Password::authenticate(
     if (auth_response == "\1")
     {
         LOG_TRACE(log, "Client requests public key.");
-        BIO * mem = BIO_new(BIO_s_mem());
-        SCOPE_EXIT(BIO_free(mem));
-        if (PEM_write_bio_PUBKEY(mem, private_key) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to write public key to memory. Error: {}", getOpenSSLErrors());
 
-        char * pem_buf = nullptr;
-        int64_t pem_size = BIO_get_mem_data(mem, &pem_buf);
-        String pem(pem_buf, pem_size);
+        std::string pem = private_key.publicKey();
 
         LOG_TRACE(log, "Key: {}", pem);
 
@@ -184,7 +177,8 @@ void Sha256Password::authenticate(
         const auto * ciphertext = reinterpret_cast<const unsigned char *>(unpack_auth_response.data());
         size_t ciphertext_len = unpack_auth_response.size();
 
-        EVP_PKEY_CTX_ptr ctx(EVP_PKEY_CTX_new(private_key, nullptr), &EVP_PKEY_CTX_free);
+        EVP_PKEY * pkey = static_cast<EVP_PKEY*>(private_key);
+        EVP_PKEY_CTX_ptr ctx(EVP_PKEY_CTX_new(pkey, nullptr), &EVP_PKEY_CTX_free);
         if (!ctx)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to create EVP_PKEY_CTX");
 

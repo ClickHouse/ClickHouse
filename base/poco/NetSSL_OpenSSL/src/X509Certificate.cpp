@@ -12,19 +12,14 @@
 //
 
 
-#include "Poco/Net/X509Certificate.h"
-#include "Poco/Net/SSLException.h"
-#include "Poco/Net/SSLManager.h"
-#include "Poco/Net/DNS.h"
-#include "Poco/TemporaryFile.h"
-#include "Poco/FileStream.h"
-#include "Poco/StreamCopier.h"
-#include "Poco/String.h"
-#include "Poco/RegularExpression.h"
-#include "Poco/DateTimeParser.h"
 #include <openssl/pem.h>
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
+
+#include "Poco/Net/X509Certificate.h"
+#include "Poco/String.h"
+#include "Poco/RegularExpression.h"
+#include "Poco/Net/IPAddress.h"
 
 
 namespace Poco {
@@ -69,11 +64,6 @@ X509Certificate& X509Certificate::operator = (const Poco::Crypto::X509Certificat
 }
 
 
-X509Certificate::~X509Certificate()
-{
-}
-
-
 bool X509Certificate::verify(const std::string& hostName) const
 {
 	return verify(*this, hostName);
@@ -82,7 +72,7 @@ bool X509Certificate::verify(const std::string& hostName) const
 
 bool X509Certificate::verify(const Poco::Crypto::X509Certificate& certificate, const std::string& hostName)
 {
-	if (X509_check_host(const_cast<X509*>(certificate.certificate()), hostName.c_str(), hostName.length(), 0, NULL) == 1)
+	if (X509_check_host(const_cast<X509*>(certificate.certificate()), hostName.c_str(), hostName.length(), 0, nullptr) == 1)
 	{
 		return true;
 	}

@@ -1,7 +1,7 @@
 #include <Access/Credentials.h>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <Common/Exception.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Common/Crypto/X509Certificate.h>
 
 namespace DB
 {
@@ -49,14 +49,14 @@ void AlwaysAllowCredentials::setUserName(const String & user_name_)
     user_name = user_name_;
 }
 
-SSLCertificateCredentials::SSLCertificateCredentials(const String & user_name_, SSLCertificateSubjects && subjects_)
+SSLCertificateCredentials::SSLCertificateCredentials(const String & user_name_, X509Certificate::Subjects && subjects_)
     : Credentials(user_name_)
     , certificate_subjects(subjects_)
 {
     is_ready = true;
 }
 
-const SSLCertificateSubjects & SSLCertificateCredentials::getSSLCertificateSubjects() const
+const X509Certificate::Subjects & SSLCertificateCredentials::getSSLCertificateSubjects() const
 {
     if (!isReady())
         throwNotReady();

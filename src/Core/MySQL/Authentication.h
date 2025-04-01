@@ -9,6 +9,7 @@
 #if USE_SSL
 #    include <openssl/evp.h>
 #    include <openssl/pem.h>
+#    include <Common/Crypto/KeyPair.h>
 #endif
 
 namespace DB
@@ -61,7 +62,7 @@ private:
 class Sha256Password : public IPlugin
 {
 public:
-    Sha256Password(EVP_PKEY * private_key_, LoggerPtr log_);
+    Sha256Password(KeyPair & private_key_, LoggerPtr log_);
 
     String getName() override { return "sha256_password"; }
 
@@ -72,7 +73,7 @@ public:
         std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address) override;
 
 private:
-    EVP_PKEY * private_key;
+    KeyPair & private_key;
 
     LoggerPtr log;
     String scramble;

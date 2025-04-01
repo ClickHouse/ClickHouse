@@ -8,11 +8,11 @@
 
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
+#include <Common/Crypto/KeyPair.h>
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Crypto/RSAKey.h>
-#include <Poco/Crypto/X509Certificate.h>
+#include <Common/Crypto/X509Certificate.h>
 
 #include <string>
 #include <filesystem>
@@ -37,8 +37,8 @@ public:
 
     struct Data
     {
-        Poco::Crypto::X509Certificate::List certs_chain;
-        Poco::Crypto::EVPPKey key;
+        X509Certificate::List certs_chain;
+        KeyPair key;
 
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
     };

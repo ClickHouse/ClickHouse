@@ -59,13 +59,13 @@ namespace Net
         /// the certificate. If shared is true, the
         /// certificate's reference count is incremented.
 
-        X509Certificate(const Poco::Crypto::X509Certificate & cert);
+        explicit X509Certificate(const Poco::Crypto::X509Certificate & cert);
         /// Creates the certificate by copying another one.
 
         X509Certificate & operator=(const Poco::Crypto::X509Certificate & cert);
         /// Assigns a certificate.
 
-        ~X509Certificate();
+        ~X509Certificate() = default;
         /// Destroys the X509Certificate.
 
         bool verify(const std::string & hostName) const;
@@ -88,7 +88,7 @@ namespace Net
 
     protected:
         static bool containsWildcards(const std::string & commonName);
-        static bool matchWildcard(const std::string & alias, const std::string & hostName);
+        static bool matchWildcard(const std::string & wildcard, const std::string & hostName);
 
     private:
         enum

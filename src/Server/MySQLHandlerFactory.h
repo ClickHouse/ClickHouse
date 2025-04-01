@@ -10,7 +10,7 @@
 
 #if USE_SSL
 #    include <openssl/rsa.h>
-#    include <Poco/Crypto/RSAKey.h>
+#    include <Common/Crypto/KeyPair.h>
 #endif
 
 namespace DB
@@ -24,7 +24,7 @@ private:
     LoggerPtr log;
 
 #if USE_SSL
-    Poco::Crypto::RSAKey private_key;
+    KeyPair private_key;
 
     bool ssl_enabled = true;
 #else

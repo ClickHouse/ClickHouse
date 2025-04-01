@@ -11,7 +11,7 @@
 
 #if USE_SSL
     #include <Poco/Net/SSLManager.h>
-    #include <Poco/Crypto/X509Certificate.h>
+    #include <Common/Crypto/X509Certificate.h>
 #endif
 
 #include <Poco/DateTimeFormatter.h>
@@ -50,7 +50,7 @@ static std::unordered_set<std::string> parse_dir(const std::string & dir)
     return ret;
 }
 
-static void populateTable(const Poco::Crypto::X509Certificate & certificate, MutableColumns & res_columns, const std::string & path, bool def)
+static void populateTable(const X509Certificate & certificate, MutableColumns & res_columns, const std::string & path, bool def)
 {
     size_t col = 0;
 
@@ -58,8 +58,8 @@ static void populateTable(const Poco::Crypto::X509Certificate & certificate, Mut
     res_columns[col++]->insert(certificate.serialNumber());
     res_columns[col++]->insert(certificate.signatureAlgorithm());
     res_columns[col++]->insert(certificate.issuerName());
-    res_columns[col++]->insert(certificate.validFromAsString());
-    res_columns[col++]->insert(certificate.expiresOnAsString());
+    res_columns[col++]->insert(certificate.validFrom());
+    res_columns[col++]->insert(certificate.expiresOn());
     res_columns[col++]->insert(certificate.subjectName());
     res_columns[col++]->insert(certificate.publicKeyAlgorithm());
     res_columns[col++]->insert(path);
@@ -78,7 +78,7 @@ static void enumCertificates(const std::string & dir, bool def, MutableColumns &
         if (!dir_entry.is_regular_file() || !RE2::FullMatch(dir_entry.path().filename().string(), cert_name))
             continue;
 
-        Poco::Crypto::X509Certificate cert(dir_entry.path());
+        X509Certificate cert(dir_entry.path());
         populateTable(cert, res_columns, dir_entry.path(), def);
     }
 }
@@ -103,7 +103,7 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
             }
             else
             {
-                auto certs = Poco::Crypto::X509Certificate::readPEM(afile.path());
+                auto certs = X509Certificate::fromFile(afile.path());
                 for (const auto & cert : certs)
                     populateTable(cert, res_columns, afile.path(), false);
             }
@@ -122,7 +122,7 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
         Poco::File afile(ca_paths.caDefaultFile);
         if (afile.exists())
         {
-            auto certs = Poco::Crypto::X509Certificate::readPEM(ca_paths.caDefaultFile);
+            auto certs = X509Certificate::fromFile(ca_paths.caDefaultFile);
             for (const auto & cert : certs)
                 populateTable(cert, res_columns, ca_paths.caDefaultFile, true);
         }

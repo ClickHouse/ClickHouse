@@ -61,8 +61,9 @@
 #include <Processors/Sinks/SinkToStorage.h>
 
 #if USE_SSL
-#   include <Poco/Net/SecureStreamSocket.h>
-#   include <Poco/Net/SecureStreamSocketImpl.h>
+#    include <Poco/Net/SecureStreamSocket.h>
+#    include <Poco/Net/SecureStreamSocketImpl.h>
+#    include <Common/Crypto/X509Certificate.h>
 #endif
 
 #include <Core/Protocol.h>
@@ -1722,7 +1723,7 @@ void TCPHandler::receiveHello()
             try
             {
                 session->authenticate(
-                    SSLCertificateCredentials{user, extractSSLCertificateSubjects(secure_socket.peerCertificate())},
+                    SSLCertificateCredentials{user, X509Certificate(secure_socket.peerCertificate()).extractAllSubjects()},
                     getClientAddress(client_info));
                 return;
             }
