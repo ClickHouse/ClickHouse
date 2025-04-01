@@ -64,7 +64,9 @@ class Digest:
 
         self.digest_cache[cache_key] = digest
 
-        if job_config.run_in_docker:
+        if (
+            job_config.run_in_docker and ":" not in job_config.run_in_docker
+        ):  # if : in image name - there is a tag, thus it's not managed by praktika e.g.: ubuntu:22.04
             # respect docker digest in the job digest
             docker_digest = docker_digests[job_config.run_in_docker.split("+")[0]]
             digest = "-".join([docker_digest, digest])

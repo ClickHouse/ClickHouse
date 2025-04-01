@@ -4,6 +4,7 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include "KernelHelper.h"
 #include "KernelUtils.h"
+#include <Common/logger_useful.h>
 
 namespace DB::ErrorCodes
 {
@@ -60,11 +61,15 @@ public:
         set_option("aws_access_key_id", access_key_id);
         set_option("aws_secret_access_key", secret_access_key);
         set_option("aws_token", token);
-
         set_option("aws_region", region);
-        set_option("allow_http", "true");
-        set_option("aws_endpoint", url.endpoint);
 
+        if (url.uri_str.starts_with("http"))
+        {
+            set_option("allow_http", "true");
+            set_option("aws_endpoint", url.endpoint);
+        }
+
+        LOG_TRACE(getLogger("KernelHelper"), "Using region: {}, endpoint: {}, uri: {}", region, url.endpoint, url.uri_str);
         return builder;
     }
 
@@ -106,12 +111,13 @@ DeltaLake::KernelHelperPtr getKernelHelper(
             const auto * s3_conf = dynamic_cast<const DB::StorageS3Configuration *>(configuration.get());
             const auto & s3_client = object_storage->getS3StorageClient();
             const auto & s3_credentials = s3_client->getCredentials();
+            const auto & url = s3_conf->getURL();
 
             return std::make_shared<DeltaLake::S3KernelHelper>(
-                s3_conf->getURL(),
+                url,
                 s3_credentials.GetAWSAccessKeyId(),
                 s3_credentials.GetAWSSecretKey(),
-                s3_client->getRegion(),
+                s3_client->getRegionForBucket(url.bucket),
                 s3_credentials.GetSessionToken());
         }
         default:

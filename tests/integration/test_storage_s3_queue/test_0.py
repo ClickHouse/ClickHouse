@@ -410,51 +410,121 @@ def test_streaming_to_view(started_cluster, mode):
 def test_streaming_to_many_views(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"streaming_to_many_views_{mode}"
-    dst_table_name = f"{table_name}_dst"
-    # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
 
-    for i in range(10):
-        table = f"{table_name}_{i + 1}"
-        create_table(
-            started_cluster,
-            node,
-            table,
-            mode,
-            files_path,
-            additional_settings={
-                "keeper_path": keeper_path,
-                "polling_min_timeout_ms": 100,
-                "polling_max_timeout_ms": 100,
-                "polling_backoff_ms": 0,
-            },
+    loading_retries = 2
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
+            "s3queue_loading_retries": loading_retries,
+            "polling_backoff_ms": 0,
+        },
+    )
+
+    tables_num = 10
+    mv_tables = [f"{table_name}_{i + 1}_mv" for i in range(tables_num)]
+    dst_tables = [f"{table_name}_{i + 1}_dst" for i in range(tables_num)]
+
+    for i in range(tables_num):
+        create_mv(node, table_name, dst_tables[i], mv_name=mv_tables[i])
+
+    start_idx = [0]
+    expect_files_num = [0]
+    expect_rows_num = [0]
+    files = []
+
+    def generate_files(files_num=20, row_num=100, file_prefix = "a"):
+        files.extend(
+            [
+                (f"{files_path}/{file_prefix}_{i}.csv", i)
+                for i in range(start_idx[0], start_idx[0] + files_num)
+            ]
         )
-        create_mv(node, table, dst_table_name)
+        generate_random_files(
+            started_cluster, files_path, files_num, files=files, row_num=row_num
+        )
+        start_idx[0] += files_num
+        expect_files_num[0] += files_num
+        expect_rows_num[0] += files_num * row_num
 
-    files_num = 20
-    row_num = 100
-    files = [(f"{files_path}/test_{i}.csv", i) for i in range(0, files_num)]
-    total_values = generate_random_files(
-        started_cluster, files_path, files_num, files=files, row_num=row_num
+    def check(dst_tables, expect_rows_num, expect_files_num):
+        for dst_table_name in dst_tables:
+
+            def get_uniq_paths_count():
+                return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
+
+            for _ in range(20):
+                if get_uniq_paths_count() == expect_files_num:
+                    break
+                time.sleep(1)
+
+            processed_files = node.query(
+                f"SELECT distinct(_path) FROM {dst_table_name}"
+            )
+            missing_files = [
+                x[0] for x in files if x[0] not in processed_files.strip().split("\n")
+            ]
+            assert (
+                get_uniq_paths_count() == expect_files_num
+            ), f"Missing files for {dst_table_name}: {missing_files}"
+
+            def get_rows_count():
+                return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+            for _ in range(20):
+                if get_rows_count() == expect_rows_num:
+                    break
+                time.sleep(1)
+
+            rows_count = get_rows_count()
+            assert (
+                expect_rows_num == rows_count
+            ), f"Missing or extra data for {dst_table_name}: {rows_count} (expected: {expect_rows_num})"
+
+    generate_files()
+    check(dst_tables, expect_rows_num[0], expect_files_num[0])
+
+    # Create incorrect destination table
+    broken_dst_table = f"{table_name}_{expect_files_num[0] + 1}_dst"
+    create_mv(
+        node,
+        table_name,
+        broken_dst_table,
+        mv_name=f"{table_name}_{expect_files_num[0] + 1}_mv",
+        format="column1 String, column2 JSON",
+        create_dst_table_first=False
     )
-    expected_values = sorted(set([tuple(i) for i in total_values]))
 
-    def check():
-        return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
-
-    for _ in range(20):
-        if check() == files_num:
-            break
-        time.sleep(1)
-    processed_files = node.query(f"SELECT distinct(_path) FROM {dst_table_name}")
-    missing_files = [
-        x[0] for x in files if x[0] not in processed_files.strip().split("\n")
-    ]
-    assert check() == files_num, f"Missing files: {missing_files}"
-    assert row_num * files_num == int(
-        node.query(f"SELECT count() FROM {dst_table_name}")
+    generate_files(file_prefix = "b")
+    rows_from_last_insert = 100 * 20
+    # we expect duplicates, but exactly certain amount,
+    # which must stop once loading retries limit is reached.
+    check(
+        dst_tables,
+        expect_rows_num[0] + rows_from_last_insert * loading_retries,
+        expect_files_num[0],
     )
+    check([broken_dst_table], 0, 0)
+
+    for i in range(20, 40):
+        log_message = f"File {files_path}/b_{i}.csv failed at try 2/2, retries node exists: true"
+        assert node.contains_in_log(
+            log_message
+        ), f"Cannot find log message 1 for path {files_path}/b_{i}.csv: {log_message}"
+        log_message = (
+            f"File {files_path}/b_{i}.csv failed to process and will not be retried"
+        )
+        assert node.contains_in_log(
+            log_message
+        ), f"Cannot find log message 2 for path {files_path}/b_{i}.csv: {log_message}"
 
 
 def test_multiple_tables_meta_mismatch(started_cluster):

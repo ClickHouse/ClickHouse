@@ -163,11 +163,13 @@ public:
         if (field == nullptr)
             return;
 
-        auto * const child = children.begin();
+        auto * child = children.begin();
         while (child != children.end())
         {
             if (child->get() == field)
                 break;
+
+            child++;
         }
 
         if (child == children.end())

@@ -1,4 +1,6 @@
--- Tags: no-parallel-replicas
+SET parallel_replicas_local_plan=1;
+
+
 DROP TABLE IF EXISTS BadTable;
 DROP TABLE IF EXISTS BadJoin;
 
