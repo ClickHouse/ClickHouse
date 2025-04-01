@@ -895,22 +895,19 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         {
             const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b)));
 
-            te->add_params()->mutable_database()->set_database("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
-            te->add_params()->mutable_table()->set_table("t" + std::to_string(t.tname));
+            t.setName(te);
         }
         else if (buf_view && nopt < (buf_table + buf_view + 1))
         {
             const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(hasTableOrView<SQLView>(b)));
 
-            te->add_params()->mutable_database()->set_database("d" + (v.db ? std::to_string(v.db->dname) : "efault"));
-            te->add_params()->mutable_table()->set_table("v" + std::to_string(v.tname));
+            v.setName(te);
         }
         else if (buf_dictionary && nopt < (buf_table + buf_view + buf_dictionary + 1))
         {
             const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(hasTableOrView<SQLDictionary>(b)));
 
-            te->add_params()->mutable_database()->set_database("d" + (d.db ? std::to_string(d.db->dname) : "efault"));
-            te->add_params()->mutable_table()->set_table("d" + std::to_string(d.tname));
+            d.setName(te);
         }
         else
         {
@@ -1025,8 +1022,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         {
             const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b)));
 
-            te->add_params()->mutable_database()->set_database("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
-            te->add_params()->mutable_table()->set_table("t" + std::to_string(t.tname));
+            t.setName(te);
             if ((has_sharding_key = rg.nextBool()))
             {
                 /// Optional sharding key
@@ -1039,8 +1035,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         {
             const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(hasTableOrView<SQLView>(b)));
 
-            te->add_params()->mutable_database()->set_database("d" + (v.db ? std::to_string(v.db->dname) : "efault"));
-            te->add_params()->mutable_table()->set_table("v" + std::to_string(v.tname));
+            v.setName(te);
             if ((has_sharding_key = rg.nextBool()))
             {
                 /// Optional sharding key
@@ -1051,8 +1046,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         {
             const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(hasTableOrView<SQLDictionary>(b)));
 
-            te->add_params()->mutable_database()->set_database("d" + (d.db ? std::to_string(d.db->dname) : "efault"));
-            te->add_params()->mutable_table()->set_table("d" + std::to_string(d.tname));
+            d.setName(te);
         }
         else
         {

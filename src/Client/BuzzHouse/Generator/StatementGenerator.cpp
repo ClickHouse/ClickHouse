@@ -2,6 +2,7 @@
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
+#include "SQLCatalog.h"
 
 namespace BuzzHouse
 {
@@ -124,7 +125,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     }
     next.dname = dname;
     next.finishDatabaseSpecification(deng);
-    cd->mutable_database()->set_database("d" + std::to_string(dname));
+    next.setName(cd->mutable_database());
     if (rg.nextSmallNumber() < 3)
     {
         cd->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
@@ -157,7 +158,7 @@ void StatementGenerator::generateNextCreateFunction(RandomGenerator & rg, Create
         next.cluster = rg.pickRandomly(fc.clusters);
         cf->mutable_cluster()->set_cluster(next.cluster.value());
     }
-    cf->mutable_function()->set_function("f" + std::to_string(fname));
+    next.setName(cf->mutable_function());
     this->staged_functions[fname] = std::move(next);
 }
 
@@ -415,7 +416,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
 
         cluster = d->getCluster();
         dp->set_sobject(SQLObject::DATABASE);
-        sot->mutable_database()->set_database("d" + std::to_string(d->dname));
+        d->setName(sot->mutable_database());
     }
     else if (drop_function && nopt < (drop_table + drop_view + drop_dictionary + drop_database + drop_function + 1))
     {
@@ -423,7 +424,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
 
         cluster = f.getCluster();
         dp->set_sobject(SQLObject::FUNCTION);
-        sot->mutable_function()->set_function("f" + std::to_string(f.fname));
+        f.setName(sot->mutable_function());
     }
     else
     {
@@ -846,14 +847,14 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
         const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
         cluster = d->getCluster();
-        trunc->mutable_all_tables()->set_database("d" + std::to_string(d->dname));
+        d->setName(trunc->mutable_all_tables());
     }
     else if (trunc_db && nopt < (trunc_table + trunc_db_tables + trunc_db + 1))
     {
         const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
         cluster = d->getCluster();
-        trunc->mutable_database()->set_database("d" + std::to_string(d->dname));
+        d->setName(trunc->mutable_database());
     }
     else
     {
@@ -1847,7 +1848,7 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
 
         cluster = d->getCluster();
         att->set_sobject(SQLObject::DATABASE);
-        sot->mutable_database()->set_database("d" + std::to_string(d->dname));
+        d->setName(sot->mutable_database());
     }
     else
     {
@@ -1909,7 +1910,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
 
         cluster = d->getCluster();
         det->set_sobject(SQLObject::DATABASE);
-        sot->mutable_database()->set_database("d" + std::to_string(d->dname));
+        d->setName(sot->mutable_database());
     }
     else
     {
@@ -2036,9 +2037,9 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         reload_function
         && nopt < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function + 1))
     {
-        const uint32_t & fname = rg.pickRandomly(this->functions);
+        const SQLFunction & f = rg.pickValueRandomlyFromMap(this->functions);
 
-        sc->mutable_reload_function()->set_function("f" + std::to_string(fname));
+        f.setName(sc->mutable_reload_function());
     }
     else if (
         reload_asynchronous_metrics
@@ -2310,7 +2311,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
     {
         const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
-        sc->mutable_sync_replicated_database()->set_database("d" + std::to_string(d->dname));
+        d->setName(sc->mutable_sync_replicated_database());
     }
     else if (
         restart_replica
@@ -2790,7 +2791,7 @@ static void backupOrRestoreSystemTable(BackupRestoreObject * bro, const String &
 static std::optional<String> backupOrRestoreDatabase(BackupRestoreObject * bro, const std::shared_ptr<SQLDatabase> & d)
 {
     bro->set_sobject(SQLObject::DATABASE);
-    bro->mutable_object()->mutable_database()->set_database("d" + std::to_string(d->dname));
+    d->setName(bro->mutable_object()->mutable_database());
     return d->getCluster();
 }
 

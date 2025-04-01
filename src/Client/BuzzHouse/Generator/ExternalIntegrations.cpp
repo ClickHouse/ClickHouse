@@ -80,7 +80,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
-            newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
+            t.db->setName(newd.mutable_database());
             t.db->finishDatabaseSpecification(deng);
             CreateDatabaseToString(buf, newd);
             res &= performQuery(buf + ";");
@@ -95,7 +95,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             ExprSchemaTable & est = const_cast<ExprSchemaTable &>(newt.est());
             if (t.db)
             {
-                est.mutable_database()->set_database("d" + std::to_string(t.db->dname));
+                t.db->setName(est.mutable_database());
             }
 
             CreateTableToString(buf, newt);

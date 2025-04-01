@@ -699,7 +699,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
                 : rg.pickRandomly(filterCollection<SQLFunction>(StatementGenerator::funcDeterministicLambda));
 
             min_args = max_args = func.get().nargs;
-            sfn->mutable_function()->set_function("f" + std::to_string(func.get().fname));
+            func.get().setName(sfn->mutable_function());
         }
         else
         {
