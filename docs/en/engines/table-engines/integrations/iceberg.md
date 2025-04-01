@@ -254,7 +254,7 @@ In Clickhouse the behavior is consistent with Spark. You can mentally replace Sp
 
 ## Metadata cache {#metadata-cache}
 
-`Iceberg` table engine and table function support metadata cache storing the information of manifest files, manifest list and metadata json. This feature is controlled by setting `use_iceberg_metadata_files_cache`, which is enabled by default.
+`Iceberg` table engine and table function support metadata cache storing the information of manifest files, manifest list and metadata json. The cache is stored in memory. This feature is controlled by setting `use_iceberg_metadata_files_cache`, which is enabled by default.
 
 ## See also {#see-also}
 
