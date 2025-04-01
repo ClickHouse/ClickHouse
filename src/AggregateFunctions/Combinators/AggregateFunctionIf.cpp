@@ -348,7 +348,7 @@ public:
                 nested_columns[arg] = columns[arg];
         }
 
-        bool at_least_one = !memoryIsZero(final_null_flags.get(), row_begin, row_end);
+        bool at_least_one = !memoryIsByte(final_null_flags.get(), row_begin, row_end, 1);
         if (at_least_one)
         {
             this->setFlag(place);
