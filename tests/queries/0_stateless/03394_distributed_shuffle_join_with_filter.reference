@@ -1,0 +1,13 @@
+Expression ((Project names + Projection))
+  Aggregating
+    GatherExchange
+      Expression ((Before GROUP BY + ))
+        JoinLogical
+          ShuffleExchange (by hash([__table1.src_ip]))
+            Expression
+              ReadFromMergeTree (default.test)
+          ShuffleExchange (by hash([__table2.dst_ip]))
+            Filter (( + Change column names to column identifiers))
+              ReadFromMergeTree (default.test)
+22250
+22250
