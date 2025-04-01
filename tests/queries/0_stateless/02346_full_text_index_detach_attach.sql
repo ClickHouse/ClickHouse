@@ -2,6 +2,8 @@
 
 SET allow_experimental_full_text_index = 1;
 
+DROP TABLE IF EXISTS tab;
+
 CREATE TABLE tab
 (
     k UInt64,
@@ -15,3 +17,5 @@ INSERT INTO tab VALUES (1, 'Hello World');
 
 ALTER TABLE tab DETACH PART 'all_1_1_0';
 ALTER TABLE tab ATTACH PART 'all_1_1_0';
+
+DROP TABLE tab;
