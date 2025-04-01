@@ -6,36 +6,35 @@ DROP DICTIONARY IF EXISTS d0;
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t0;
 
-CREATE TABLE t0 (key String, value String)
+CREATE TABLE t1 (key String, value String)
 ENGINE = MergeTree()
 PRIMARY KEY key;
+CREATE DICTIONARY d1 (key String, value String) PRIMARY KEY key SOURCE(CLICKHOUSE(TABLE t1)) LAYOUT(FLAT()) LIFETIME(min 0 max 0);
 
-INSERT INTO t0 VALUES ('key1', 'value1');
+SYSTEM RELOAD DICTIONARY d1;
 
-CREATE DICTIONARY d0 (key String, value String)
-PRIMARY KEY key
-SOURCE(CLICKHOUSE(TABLE t0))
-LAYOUT(HASHED())
-LIFETIME(min 0 max 0);
+SELECT * FROM system.asynchronous_metrics WHERE name = 'DictionaryTotalFailedUpdates';
+SELECT name, value, description FROM system.asynchronous_metrics WHERE name = 'DictionaryMaxUpdateDelay';
 
-SELECT * FROM d0;
+DETACH TABLE t1;
 
-SELECT sleep(1);
-SYSTEM RELOAD ASYNCHRONOUS METRICS;
-
-SELECT * FROM system.asynchronous_metrics WHERE name = 'DictionaryLoadFailed';
-SELECT name, value > 0, description FROM system.asynchronous_metrics WHERE name = 'DictionaryMaxLastSuccessfulUpdateTime';
-
--- Check failed dictionary d1
-CREATE DICTIONARY d1 (key String, value String) PRIMARY KEY key SOURCE(CLICKHOUSE(TABLE t1)) LAYOUT(HASHED()) LIFETIME(min 0 max 0);
-
-SELECT * FROM d1; -- {serverError 60}
+SYSTEM RELOAD DICTIONARY d1; -- {serverError UNKNOWN_TABLE}
 select sleep(1);
 SYSTEM RELOAD ASYNCHRONOUS METRICS;
 
-SELECT * FROM system.asynchronous_metrics WHERE name = 'DictionaryLoadFailed';
-SELECT name, value > 0, description FROM system.asynchronous_metrics WHERE name = 'DictionaryMaxLastSuccessfulUpdateTime';
+SELECT * FROM system.asynchronous_metrics WHERE name = 'DictionaryTotalFailedUpdates';
+SELECT name, value, description FROM system.asynchronous_metrics WHERE name = 'DictionaryMaxUpdateDelay';
 
+SYSTEM RELOAD DICTIONARY d1; -- {serverError UNKNOWN_TABLE}
+select sleep(1);
+SYSTEM RELOAD ASYNCHRONOUS METRICS;
+
+SELECT error_count FROM system.dictionaries WHERE name = 'd1';
+
+SELECT * FROM system.asynchronous_metrics WHERE name = 'DictionaryTotalFailedUpdates';
+SELECT name, value, description FROM system.asynchronous_metrics WHERE name = 'DictionaryMaxUpdateDelay';
+
+ATTACH TABLE t1;
 DROP DICTIONARY IF EXISTS d1;
 DROP DICTIONARY IF EXISTS d0;
 DROP TABLE IF EXISTS t1;
@@ -44,5 +43,5 @@ DROP TABLE IF EXISTS t0;
 -- Check metrics after dropping table
 SYSTEM RELOAD ASYNCHRONOUS METRICS;
 
-SELECT * FROM system.asynchronous_metrics WHERE name = 'DictionaryLoadFailed';
-SELECT * FROM system.asynchronous_metrics WHERE name = 'DictionaryMaxLastSuccessfulUpdateTime';
+SELECT * FROM system.asynchronous_metrics WHERE name = 'DictionaryTotalFailedUpdates';
+SELECT * FROM system.asynchronous_metrics WHERE name = 'DictionaryMaxUpdateDelay';

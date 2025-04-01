@@ -136,13 +136,13 @@ Total bytes used for the cache of JIT-compiled code.
 
 Total entries in the cache of JIT-compiled code.
 
-### DictionaryMaxLastSuccessfulUpdateTime {#dictionarymaxlastsuccessfulupdatetime}
+### DictionaryMaxUpdateDelay {#dictionarymaxlastsuccessfulupdatetime}
 
-The maximum duration(in seconds) of dictionary has been failed.
+The maximum delay(in seconds) of dictionary update.
 
-### DictionaryLoadFailed {#dictionaryloadfailed}
+### DictionaryTotalFailedUpdates {#dictionaryloadfailed}
 
-Amount of failed dictionaries.
+Number of errors since last successful loading in all dictionaries.
 
 ### DiskAvailable_*name* {#diskavailable_name}
 
