@@ -3,6 +3,9 @@ Trace visualizer is a tool for representation of a tracing data as a Gantt diagr
 # Quick start
 For now this tool is not integrated into ClickHouse and requires manual actions. Open `trace-visualizer/index.html` in your browser. It will show an example of data. To visualize your data click `Load` button and select your trace data JSON file.
 
+Single page version hosted on Pastila is available [here](https://pastila.nl/?0006e1ce/e72c2b3c90557337b43499e14eb2bf57.html).
+
+
 # Visualizing query trace
 First of all [opentelemetry_span_log](https://clickhouse.com/docs/operations/opentelemetry/) system table must be enabled to save query traces. Then run a query you want to trace with a setting:
 ```sql
