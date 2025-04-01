@@ -105,7 +105,9 @@ public:
     const DB::KeyDescription & getPartitionKeyDescription() const;
     const std::vector<Int32> & getPartitionKeyColumnIDs() const;
     Poco::JSON::Object::Ptr getSchemaObject() const { return schema_object; }
-    size_t getMemoryBytes() const;
+    /// Get size in bytes of how much memory one instance of this ManifestFileContent class takes.
+    /// Used for in-memory caches size accounting.
+    size_t getSizeInMemory() const;
 
     /// Fields with rows count in manifest files are optional
     /// they can be absent.
