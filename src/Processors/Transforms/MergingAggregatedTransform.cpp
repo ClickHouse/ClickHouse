@@ -85,7 +85,6 @@ MergingAggregatedTransform::MergingAggregatedTransform(
 
             auto reordering = makeReorderingActions(in_header, grouping_set_params);
 
-            std::cout << "MergingAggregatedTransform::MergingAggregatedTransform( called!@!" << std::endl;
             Aggregator::Params set_params(grouping_set_params.used_keys,
                 params.aggregates,
                 params.overflow_row,

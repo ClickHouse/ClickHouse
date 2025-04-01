@@ -12,7 +12,6 @@
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Common/ErrorCodes.h>
-#include <iostream>
 #include <DataTypes/DataTypeString.h>
 
 #include <Functions/FunctionFactory.h>
@@ -477,21 +476,16 @@ void addFilterStep(
 }
 
 std::optional<std::vector<UInt64>> FindOptimizationSublistIndexes(const auto& group_by_nodes, const auto& order_by_nodes) {
-    // TODO think what if ORDER BY section, maybe there is already an optimization for this case?
     std::vector<UInt64> result; // TODO reserve
-    (void)group_by_nodes;
     size_t i = 0;
-    (void)i;
     for (const auto& order_by_node : order_by_nodes) {
         const auto& order_by_node_typed = order_by_node->template as<SortNode &>();
         const auto& order_by_expression = order_by_node_typed.getExpression();
         if (order_by_expression->getNodeType() != QueryTreeNodeType::COLUMN) {
-            return std::nullopt; // TODO now it is MVP. FUNCTION and maybe some others are actually also possible for optimization
+            return std::nullopt; // TODO now it is MVP. FUNCTION and maybe some others are also possible for optimization
         }
         const auto& order_by_expression_as_column = order_by_expression->template as<ColumnNode &>();
-        (void)order_by_expression_as_column;
         auto order_by_column_name = order_by_expression_as_column.getColumnName();
-        std::cout << "order_by_column_name: " << order_by_column_name << std::endl;
         bool found = false;
         while (i < group_by_nodes.size()) {
             if (group_by_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN) {
@@ -500,7 +494,6 @@ std::optional<std::vector<UInt64>> FindOptimizationSublistIndexes(const auto& gr
             }
             const auto& group_by_node_typed = group_by_nodes[i]->template as<ColumnNode &>();
             const auto& group_by_column_name = group_by_node_typed.getColumnName();
-            std::cout << "group_by_column_name: " << group_by_column_name << std::endl;
             if (order_by_column_name == group_by_column_name) { // TODO also check sort order
                 result.push_back(i);
                 found = true;
@@ -540,8 +533,6 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     }
 
     auto limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
-    std::cout << "Planner.Cpp: getAggregatorParams: limit: " << limit_length << std::endl;
-    std::cout << "Planner.Cpp: getAggregatorParams: query_analysis_result.limit_length: " << query_analysis_result.limit_length << std::endl;
 
     const auto& order_by_nodes = query_node.getOrderBy().getNodes();
     const auto& group_by_nodes = query_node.getGroupBy().getNodes();
@@ -597,7 +588,6 @@ void addAggregationStep(QueryPlan & query_plan,
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
 
     auto limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
-    std::cout << "addAggregationStep: limit: " << limit_length << std::endl;
 
     auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result, select_query_info, query_node);
 
@@ -680,7 +670,6 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         && aggregation_analysis_result.grouping_sets_parameters_list.empty())
         max_threads = 1;
 
-    std::cout << "void addMergingAggregatedStep(QueryPlan & query_plan, called!@!" << std::endl;
     Aggregator::Params params(
         keys,
         aggregation_analysis_result.aggregate_descriptions,

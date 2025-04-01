@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
 
-#include <iostream>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -2176,7 +2175,6 @@ static void executeMergeAggregatedImpl(
       *  but it can work more slowly.
       */
 
-    std::cout << "static void executeMergeAggregatedImpl( called!@!" << std::endl;
     Aggregator::Params params(
         keys,
         aggregates,
@@ -2778,20 +2776,14 @@ static Aggregator::Params getAggregatorParams(
     size_t group_by_two_level_threshold,
     size_t group_by_two_level_threshold_bytes)
 {
-    std::cout << "static Aggregator::Params getAggregatorParams called!@!";
     const auto stats_collecting_params = StatsCollectingParams(
         calculateCacheKey(query_ptr),
         settings[Setting::collect_hash_table_stats_during_aggregation],
         context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
 
-    std::cout << "getAggregatorParams: query_ptr: " << query_ptr << std::endl;
-    // auto & query = query_ptr->as<ASTSelectQuery &>();
-    // UInt64 limit = query.hasFiltration() ? 0 : getLimitForSorting(query, context);
-
     const std::shared_ptr<const Context> context_ptr(&context, [](const Context*) {});
     auto limit = getLimitUIntValue(query_ptr, context_ptr, "LIMIT");
-    std::cout << "getAggregatorParams: limit: " << limit;
 
     return Aggregator::Params
     {
