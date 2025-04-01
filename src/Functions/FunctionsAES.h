@@ -24,7 +24,6 @@
 #include <initializer_list>
 
 
-
 namespace DB
 {
 namespace ErrorCodes
