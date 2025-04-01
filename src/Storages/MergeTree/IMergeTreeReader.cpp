@@ -73,7 +73,7 @@ IMergeTreeReader::IMergeTreeReader(
     }
 }
 
-const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
+const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
 {
     return avg_value_size_hints;
 }

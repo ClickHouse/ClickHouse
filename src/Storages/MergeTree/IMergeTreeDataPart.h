@@ -74,10 +74,6 @@ public:
 
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
-    using ValueSizeMap = std::map<std::string, double>;
-    using VirtualFields = std::unordered_map<String, Field>;
-
-    using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
