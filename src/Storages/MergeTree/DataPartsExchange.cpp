@@ -777,6 +777,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> FetcherZeroCopy::fetch
         creds.setPassword(password);
     }
 
+    {
+        ::sort(capability.begin(), capability.end());
+        capability.erase(std::unique(capability.begin(), capability.end()), capability.end());
+        const String & remote_fs_metadata = boost::algorithm::join(capability, ", ");
+        uri.addQueryParameter("remote_fs_metadata", remote_fs_metadata);
+    }
+
     ReadSettings read_settings = context->getReadSettings();
     /// Disable retries for fetches, this will be done by the engine itself.
     read_settings.http_max_tries = 1;
@@ -788,13 +795,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> FetcherZeroCopy::fetch
         .withSettings(read_settings)
         .withDelayInit(false)
         .create(creds);
-
-    {
-        ::sort(capability.begin(), capability.end());
-        capability.erase(std::unique(capability.begin(), capability.end()), capability.end());
-        const String & remote_fs_metadata = boost::algorithm::join(capability, ", ");
-        uri.addQueryParameter("remote_fs_metadata", remote_fs_metadata);
-    }
 
     String remote_fs_metadata;
     MergeTreeDataPartType part_type = MergeTreeDataPartType::Wide;
