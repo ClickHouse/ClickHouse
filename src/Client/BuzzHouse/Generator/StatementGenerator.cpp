@@ -1831,7 +1831,7 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
         const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(detached_views));
 
         cluster = v.getCluster();
-        att->set_sobject(SQLObject::VIEW);
+        att->set_sobject(SQLObject::TABLE);
         v.setName(sot->mutable_est(), false);
     }
     else if (attach_dictionary && nopt < (attach_table + attach_view + attach_dictionary + 1))
@@ -1893,7 +1893,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
         const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
 
         cluster = v.getCluster();
-        det->set_sobject(SQLObject::VIEW);
+        det->set_sobject(SQLObject::TABLE);
         v.setName(sot->mutable_est(), false);
     }
     else if (detach_dictionary && nopt < (detach_table + detach_view + detach_dictionary + 1))
@@ -3498,24 +3498,29 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
     else if (sq.has_explain() && !sq.explain().is_explain() && query.has_drop() && success)
     {
         const Drop & drp = query.drop();
+        const bool istable = drp.object().has_est() && drp.object().est().table().table()[0] == 't';
+        const bool isview = drp.object().has_est() && drp.object().est().table().table()[0] == 'v';
+        const bool isdictionary = drp.object().has_est() && drp.object().est().table().table()[0] == 'd';
+        const bool isdatabase = drp.object().has_database();
+        const bool isfunction = drp.object().has_function();
 
-        if (drp.sobject() == SQLObject::TABLE)
+        if (istable)
         {
             dropTable(false, true, static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
         }
-        else if (drp.sobject() == SQLObject::VIEW)
+        else if (isview)
         {
             this->views.erase(static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
         }
-        else if (drp.sobject() == SQLObject::DICTIONARY)
+        else if (isdictionary)
         {
             this->dictionaries.erase(static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
         }
-        else if (drp.sobject() == SQLObject::DATABASE)
+        else if (isdatabase)
         {
             dropDatabase(static_cast<uint32_t>(std::stoul(drp.object().database().database().substr(1))));
         }
-        else if (drp.sobject() == SQLObject::FUNCTION)
+        else if (isfunction)
         {
             this->functions.erase(static_cast<uint32_t>(std::stoul(drp.object().function().function().substr(1))));
         }
