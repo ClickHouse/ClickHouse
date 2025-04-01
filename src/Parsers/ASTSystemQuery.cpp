@@ -1,11 +1,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Common/quoteString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-
-#include <base/EnumReflection.h>
 
 
 namespace DB

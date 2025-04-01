@@ -43,6 +43,7 @@ protected:
         size_t column_idx,
         ColumnPtr & column,
         size_t rows_to_read,
+        size_t rows_offset,
         size_t from_mark,
         MergeTreeReaderStream & stream,
         ISerialization::SubstreamsCache & columns_cache,

@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>praktika report</title>
-<!--    <link rel="icon" href="https://w4z3pajszlbkfcw2wcylfei5km0xmwag.lambda-url.us-east-1.on.aws/" type="image/x-icon">-->
     <style>
 
         /* Default (Day Theme) */
@@ -43,8 +42,10 @@
             --header-background-color: #f4f4f4;
             --link-color: blue;
             --link-hover-color: darkblue;
+            --job-name-color: #654cf0;
             --file-link-color: blue;
             --file-link-hover-color: darkblue;
+            --table-border-color: #ccc;
         }
 
         body.night-theme {
@@ -55,6 +56,7 @@
             --pending-bar-color: #595801;
             --skipped-bar-color: #575757;
             --table-border-color: #444;
+            --job-name-color: #ffea00;
             --link-color: #ffea00;
             --link-hover-color: #ffaa00;
             --file-link-color: #007efc;
@@ -68,12 +70,22 @@
             left: 0;
             width: var(--status-width);
             background-color: var(--tile-background);
-            padding-left: 15px;
-            padding-right: 15px;
+            padding: 0;
             box-sizing: border-box;
             /*font-size: 18px;*/
             margin: 0;
             overflow-y: auto;
+        }
+
+        .status-widget {
+            border: 1px solid var(--table-border-color, #ccc); /* fallback to #ccc */
+            padding: 10px;
+            margin-bottom: 5px;
+            text-align: right;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
         }
 
         #toggle-status-bar {
@@ -105,6 +117,9 @@
             display: inline-block;
             margin-top: 5px;
             text-decoration: none;
+            word-break: break-word;       /* allows long strings to wrap mid-word */
+            white-space: normal;          /* enables wrapping */
+            max-width: 100%;              /* make sure it doesn’t overflow parent */
         }
 
         .file-link:hover {
@@ -112,20 +127,8 @@
             text-decoration: none;
         }
 
-        .key-value-pair {
-            display: flex;               /* Enable Flexbox for alignment */
-            justify-content: space-between; /* Distribute space between key and value */
-            padding-bottom: 15px;
-            padding-top: 15px;
-        }
-
         .json-key {
             font-weight: bold;
-        }
-
-        .json-value {
-            font-weight: normal;
-            font-family: 'Source Code Pro', monospace, sans-serif;
         }
         .external-link {
             color: var(--file-link-color);
@@ -138,12 +141,6 @@
         .external-link:hover {
             color: var(--file-link-hover-color);
             text-decoration: underline;
-        }
-        .json-value-small {
-            font-weight: normal;
-            font-family: 'Source Code Pro', monospace, sans-serif;
-            font-size: 0.75rem;
-            justify-content: left;
         }
         .dropdown-value {
             width: 100px;
@@ -273,18 +270,18 @@
         }
 
         .name-column a {
-            color: var(--link-color);
+            color: var(--job-name-color);
             text-decoration: underline;
             display: inline-block;
         }
 
-        .name-column a:hover {
-            color: var(--link-hover-color);
-        }
+        /*.name-column a:hover {*/
+        /*    color: var(--link-hover-color);*/
+        /*}*/
 
         /* Non-clickable text should look similar but without underline */
         .name-column .disabled {
-            color: var(--link-color); /* Same color as links */
+            color: var(--job-name-color); /* Same color as links */
             cursor: default; /* No pointer cursor */
             text-decoration: none; /* No underline */
         }
@@ -295,7 +292,7 @@
 
         th, td {
             padding: 8px;
-            border: 1px solid var(--table-border-color, #ccc);
+            border: 1px solid var(--table-border-color);
             text-align: left;
         }
 
@@ -447,168 +444,335 @@
         return 'status-other';
     }
 
-    function addInfoLineToStatus(info) {
+    function addFileLinksWidget(links) {
+        if (!Array.isArray(links) || links.length === 0) return;
+
         const statusContainer = document.getElementById('status-container');
-        const line = document.createElement('div');
-        line.className = 'json-value-small';
-        line.textContent = info;
-        statusContainer.appendChild(line);
+        const widget = document.createElement('div');
+        widget.className = 'status-widget';
+        widget.style.textAlign = 'left';
+
+        const base_url = window.location.origin + window.location.pathname;
+
+        links.forEach(link => {
+            const fileLink = document.createElement('a');
+            fileLink.href = link;
+            fileLink.target = '_blank';
+            fileLink.className = 'file-link';
+            fileLink.textContent = link.includes(base_url) ? "Report" : link.split('/').pop();
+
+            // Wrap each link in its own line for spacing
+            const line = document.createElement('div');
+            line.appendChild(fileLink);
+            widget.appendChild(line);
+        });
+
+        statusContainer.appendChild(widget);
     }
 
-    function addKeyValueToStatus(key, value, options = null, optionValues = null, link = null) {
+    function addDetailsWidget(runtimeCache, sha, PR) {
         const statusContainer = document.getElementById('status-container');
 
-        let keyValuePair = document.createElement('div');
-        keyValuePair.className = 'key-value-pair';
+        // Widget container
+        const widget = document.createElement('div');
+        widget.className = 'status-widget'
 
-        const keyElement = document.createElement('div');
-        keyElement.className = 'json-key';
-        keyElement.textContent = key !== "" ? key + ":" : "";
+        function addLine(text, options = {}) {
+            const el = document.createElement(options.tag || 'div');
+            el.textContent = text || 'N/A';
+            if (options.bold) el.style.fontWeight = "bold";
+            if (options.small) el.style.fontSize = "12px";
+            if (options.link) {
+                el.href = options.link;
+                el.target = "_blank";
+                el.className = "external-link";
+            }
+            widget.appendChild(el);
+        }
 
-        let valueElement;
+        function createDropdown(selected, options, optionValues, key) {
+            const select = document.createElement('select');
+            select.className = 'dropdown-value';
 
-        if (options) {
-            // Create dropdown if options are provided
-            valueElement = document.createElement('select');
-            valueElement.className = 'dropdown-value';
-
-            options.forEach((optionTextContent, i) => {
-                const option = document.createElement('option');
-                option.value = optionValues?.[i] ?? optionTextContent;
-                option.textContent = optionTextContent;
-
-                // Set the initially selected option
-                if (option.value === value) {
-                    option.selected = true;
-                }
-                valueElement.appendChild(option);
+            options.forEach((label, i) => {
+                const opt = document.createElement('option');
+                opt.textContent = label;
+                opt.value = optionValues[i];
+                if (optionValues[i] === selected) opt.selected = true;
+                select.appendChild(opt);
             });
 
-            // Update the URL parameter when the selected value changes
-            valueElement.addEventListener('change', (event) => {
+            select.addEventListener('change', (event) => {
                 const selectedValue = event.target.value;
                 updateUrlParameter(key, selectedValue);
             });
-        } else {
-            if (link) {
-                // Create clickable link if `link` is provided
-                valueElement = document.createElement('a');
-                valueElement.href = link;
-                valueElement.className = "external-link";
-                valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
-                valueElement.target = "_blank"; // Open in a new tab
-            } else {
-                // Create a simple text display if no options or link are provided
-                valueElement = document.createElement('div');
-                valueElement.className = "json-value";
-                valueElement.textContent = value || 'N/A';
-            }
+
+            return select;
         }
 
-        keyValuePair.appendChild(keyElement);
-        keyValuePair.appendChild(valueElement);
-        statusContainer.appendChild(keyValuePair);
+        // === PR + SHA ROW ===
+        const topRow = document.createElement("div");
+        topRow.style.display = "flex";
+        topRow.style.justifyContent = "space-between";
+        topRow.style.alignItems = "center";
+        topRow.style.margin = "8px 0";
+
+        // PR on the left
+        const prLabel = document.createElement("div");
+        if (PR > 0 && runtimeCache.prLink) {
+            const prLink = document.createElement("a");
+            prLink.textContent = `PR ${PR}`;
+            prLink.href = runtimeCache.prLink;
+            prLink.target = "_blank";
+            prLink.style.fontWeight = "bold";
+            prLink.className = "external-link";
+            prLabel.appendChild(prLink);
+        }
+        topRow.appendChild(prLabel);
+
+        // SHA dropdown on the right
+        const commits = runtimeCache.commits || [];
+        const shaSelectorText = commits.map(({ sha, message }) => {
+            const shortSha = (sha || "").substring(0, 8);
+            return message ? `${shortSha}: ${message}` : shortSha;
+        });
+        const shaSelectorValues = commits.map(c => c.sha);
+        shaSelectorText.push("latest");
+        shaSelectorValues.push("latest");
+
+        const currentSha = sha === "latest" ? (commits.at(-1)?.sha || "latest") : sha;
+        const shaDropdown = createDropdown(currentSha, shaSelectorText, shaSelectorValues, "sha");
+        topRow.appendChild(shaDropdown);
+
+        widget.appendChild(topRow);
+
+        // PR title / branch
+        if (PR > 0) {
+            const ext = runtimeCache.json0?.ext || {};
+            if (ext.pr_title) addLine(ext.pr_title, { small: true });
+            if (ext.git_branch) addLine(ext.git_branch, { small: true });
+        }
+
+        // Current SHA (full), small
+        addLine(currentSha, { small: true });
+
+        statusContainer.appendChild(widget);
     }
 
-    function addFileButtonToStatus(key, links) {
-        function getPRandShaFromLink(link) {
-            const url = new URL(link);
-            const params = new URLSearchParams(url.search);
+    function addStorageUsageChartToStatus(usage_data) {
+        const statusContainer = document.getElementById("status-container");
 
-            const PR = params.get('PR');
-            const sha = params.get('sha');
-
-            return { PR, sha };
+        if (!usage_data || !usage_data.uploaded || !usage_data.uploaded_details) {
+            console.error("Invalid or missing storage usage data.");
+            return;
         }
 
-        if (links == null) {
-            return
-        }
-        const statusContainer = document.getElementById('status-container');
+        const uploaded = usage_data.uploaded;
+        const originalDetails = usage_data.uploaded_details;
 
-        const keyElement = document.createElement('div');
-        keyElement.className = 'json-key';
-        //keyElement.textContent = columnSymbols[key] + ':' || key;
-        keyElement.textContent = '';
-        statusContainer.appendChild(keyElement);
+        // Group small files and sort
+        let sortedEntries = Object.entries(originalDetails)
+            .map(([name, size]) => [name, size])
+            .sort((a, b) => b[1] - a[1]);
 
-        if (Array.isArray(links) && links.length > 0) {
-            let base_url = window.location.origin + window.location.pathname;
-            links.forEach(link => {
-                const textLink = document.createElement('a');
-                textLink.href = link;
+        // Take top 20, rest go to "other"
+        let grouped = sortedEntries.slice(0, 20);
+        const rest = sortedEntries.slice(20);
+        const otherTotal = rest.reduce((sum, [, value]) => sum + value, 0);
+        if (otherTotal > 0) grouped.push(["other", otherTotal]);
 
-                if (!link.includes(base_url)) {
-                    textLink.textContent = link.split('/').pop();
-                } else {
-                    textLink.textContent = "Report";
+        const labels = grouped.map(([label]) => label);
+        const values = grouped.map(([, value]) => value);
+
+        const chartWrapper = document.createElement("div");
+        chartWrapper.className = 'status-widget'
+
+        // Total uploaded row
+        const totalRow = document.createElement("div");
+        totalRow.style.display = "flex";
+        totalRow.style.justifyContent = "space-between";
+        totalRow.style.margin = 0;
+
+        const totalLabel = document.createElement("span");
+        totalLabel.textContent = "uploaded:";
+        const uploadedMB = (uploaded / (1024 * 1024)).toFixed(2);
+        const totalSize = document.createElement("span");
+        totalSize.textContent = `${uploadedMB} MB`;
+
+        totalRow.appendChild(totalLabel);
+        totalRow.appendChild(totalSize);
+        chartWrapper.appendChild(totalRow);
+
+        // Canvas
+        const canvas = document.createElement("canvas");
+        canvas.width = 400;
+        canvas.height = 400;
+        canvas.style.width = "100%";
+        canvas.style.maxWidth = "400px";
+        canvas.style.margin = "0";
+        chartWrapper.appendChild(canvas);
+
+        const ctx = canvas.getContext("2d");
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const radius = 150;
+
+        const sliceData = [];
+        let startAngle = 0;
+        labels.forEach((label, index) => {
+            const value = values[index];
+            const sliceAngle = (value / uploaded) * 2 * Math.PI;
+            const color = stringToColor(label);
+
+            sliceData.push({
+                label,
+                startAngle,
+                endAngle: startAngle + sliceAngle,
+                color,
+            });
+
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle);
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            startAngle += sliceAngle;
+        });
+
+        // Legend + label mapping
+        const legend = document.createElement("div");
+        const legendMap = {}; // label => element
+
+        labels.forEach((label, index) => {
+            const value = values[index];
+            const percent = ((value / uploaded) * 100).toFixed(1);
+            const sizeMB = (value / (1024 * 1024)).toFixed(2);
+            const color = stringToColor(label);
+
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.alignItems = "center";
+            row.style.justifyContent = "space-between";
+            row.style.fontSize = "10px";
+            row.style.cursor = "pointer";
+
+            const left = document.createElement("span");
+            left.style.display = "flex";
+            left.style.alignItems = "center";
+
+            const dot = document.createElement("span");
+            dot.style.display = "inline-block";
+            dot.style.width = "8px";
+            dot.style.height = "8px";
+            dot.style.flexShrink = "0";
+            dot.style.marginRight = "6px";
+            dot.style.backgroundColor = color;
+
+            const labelText = document.createElement("span");
+            labelText.textContent = label;
+
+            left.appendChild(dot);
+            left.appendChild(labelText);
+
+            const right = document.createElement("span");
+            right.textContent = `${sizeMB} MB (${percent}%)`;
+
+            row.appendChild(left);
+            row.appendChild(right);
+            legend.appendChild(row);
+
+            legendMap[label] = row;
+
+            // Hover from legend to chart
+            row.addEventListener("mouseenter", () => drawChart(label));
+            row.addEventListener("mouseleave", () => drawChart(null));
+        });
+
+        chartWrapper.appendChild(legend);
+        statusContainer.appendChild(chartWrapper);
+
+        function drawChart(hoveredLabel) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            sliceData.forEach((slice) => {
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius, slice.startAngle, slice.endAngle);
+                ctx.closePath();
+                ctx.fillStyle = slice.color;
+                ctx.fill();
+                if (slice.label === hoveredLabel) {
+                    ctx.strokeStyle = "#000";
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
                 }
-                textLink.classList.add("file-link")
 
-                textLink.target = '_blank';
-                statusContainer.appendChild(textLink);
-                statusContainer.appendChild(document.createElement('br'));
+                // Legend underline toggle
+                const row = legendMap[slice.label];
+                if (row) {
+                    row.style.textDecoration = slice.label === hoveredLabel ? "underline" : "none";
+                }
             });
         }
+
+        drawChart(null); // Initial draw
+
+        // Color utility
+        function stringToColor(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const hue = hash % 360;
+            return `hsl(${hue}, 60%, 60%)`;
+        }
     }
 
-    function addTimeTraceWidget(results) {
+    function addTimeTraceWidget(results, statusWidget, originalTask) {
         const statusContainer = document.getElementById("status-container");
         if (!results || results.length === 0) {
             console.error("No results to visualize.");
             return;
         }
 
-        // Constants
-        const lineWidth = 5; // Height per task
-        const padding = 1; // Space between lines
+        const lineWidth = 5;
+        const padding = 1;
         const totalHeight = (lineWidth + padding) * results.length;
 
-        // Create and configure canvas
+        const widget = document.createElement("div");
+        widget.className = 'status-widget'
+        widget.style.height = `${totalHeight}px`;
+        widget.style.padding = "0";
+        statusContainer.appendChild(widget);
+
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
-        const tooltip = document.createElement("div");
 
-        canvas.style.position = "absolute";
-        canvas.style.left = "0px"; // Force canvas to start from the very left
-        canvas.style.width = "100%"; // Make it stretch within container
+        canvas.style.width = "100%";
         canvas.style.height = `${totalHeight}px`;
+        canvas.style.display = "block";
+        widget.appendChild(canvas);
 
         function resizeCanvas() {
-            canvas.width = statusContainer.clientWidth; // Full width of container
+            canvas.width = widget.clientWidth;
             canvas.height = totalHeight;
-            drawTimeline(); // Redraw after resizing
+            drawTimeline();
         }
-
-        statusContainer.appendChild(canvas);
         resizeCanvas();
-
-        // Tooltip styles
-        tooltip.style.position = "absolute";
-        tooltip.style.background = "black";
-        tooltip.style.color = "white";
-        tooltip.style.padding = "5px 10px";
-        tooltip.style.borderRadius = "4px";
-        tooltip.style.fontSize = "12px";
-        tooltip.style.display = "none";
-        tooltip.style.pointerEvents = "none";
-        statusContainer.appendChild(tooltip);
-
         window.addEventListener("resize", resizeCanvas);
 
         function getColorFromName(name) {
             let hash = 0;
             for (let i = 0; i < name.length; i++) {
-                hash = name.charCodeAt(i) + ((hash << 5) - hash); // Simple hash function
+                hash = name.charCodeAt(i) + ((hash << 5) - hash);
             }
-            const hue = Math.abs(hash % 360); // Map hash to 0-360 for color hue
-            return `hsl(${hue}, 70%, 60%)`; // Use HSL for vibrant, distinct colors
+            const hue = Math.abs(hash % 360);
+            return `hsl(${hue}, 70%, 60%)`;
         }
 
         function drawTimeline() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Store task positions for hover detection
             let taskRects = [];
 
             const minStartTime = runtimeCache.json0.start_time;
@@ -624,15 +788,8 @@
                 if (task.start_time === null) {
                     x = 0;
                     width = canvas.width;
-                    function getCssVariable(name) {
-                        return getComputedStyle(document.body).getPropertyValue(name).trim();
-                    }
-
-                    if (task.status === "pending") {
-                        color = getCssVariable('--pending-bar-color');
-                    } else {
-                        color = getCssVariable('--skipped-bar-color');
-                    }
+                    const getCss = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
+                    color = task.status === "pending" ? getCss('--pending-bar-color') : getCss('--skipped-bar-color');
                 } else if (task.duration === null) {
                     x = (task.start_time - minStartTime) * scaleX;
                     width = (maxTime - (task.start_time - minStartTime)) * scaleX;
@@ -643,114 +800,100 @@
                     color = getColorFromName(task.name);
                 }
 
-                // Draw the bar
                 ctx.fillStyle = color;
                 ctx.fillRect(x, y, width, height);
 
-                // Store task row position (entire row for hover detection)
-                taskRects.push({ x, y, width, height, name: task.name });
+                taskRects.push({ x, y, width, height, task });
             });
 
-            // Mouse move event for hover detection
             canvas.addEventListener("mousemove", (event) => {
                 const rect = canvas.getBoundingClientRect();
-                const tooltipRect = tooltip.getBoundingClientRect();
                 const mouseY = event.clientY - rect.top;
 
                 let hoveredTask = null;
-                for (let task of taskRects) {
-                    if (mouseY >= task.y && mouseY <= task.y + task.height) {
+                for (let { y, height, task } of taskRects) {
+                    if (mouseY >= y && mouseY <= y + height) {
                         hoveredTask = task;
                         break;
                     }
                 }
 
-                if (hoveredTask) {
-                    let tooltipX = event.clientX + 10; // Default tooltip position (right of mouse)
-                    // Prevent tooltip from going outside the right edge
-                    if (tooltipX + tooltipRect.width > rect.right) {
-                        tooltipX = rect.right - tooltipRect.width; // Stop moving right
-                    }
-                    tooltip.textContent = hoveredTask.name;
-                    tooltip.style.left = `${tooltipX}px`;
-                    tooltip.style.top = `${event.clientY + 10}px`;
-                    tooltip.style.display = "block";
-                } else {
-                    tooltip.style.display = "none";
+                if (hoveredTask && statusWidget?.update) {
+                    statusWidget.update(
+                        hoveredTask.name,
+                        hoveredTask.status,
+                        hoveredTask.start_time,
+                        hoveredTask.duration
+                    );
                 }
             });
 
-            // Hide tooltip on mouse out
             canvas.addEventListener("mouseleave", () => {
-                tooltip.style.display = "none";
+                if (statusWidget?.update && originalTask) {
+                    statusWidget.update(
+                        originalTask.name,
+                        originalTask.status,
+                        originalTask.start_time,
+                        originalTask.duration
+                    );
+                }
             });
         }
 
         drawTimeline();
-
-        // Redraw traces every 5 seconds
-        setInterval(() => {
-            drawTimeline();
-        }, 5000);
+        setInterval(drawTimeline, 5000);
     }
 
-    function addStatusToStatus(status, start_time, duration) {
-        const statusContainer = document.getElementById('status-container')
+    function addStatusWidget(name, status, start_time, duration, container = null) {
+        const statusContainer = container || document.getElementById('status-container');
 
-        let keyValuePair = document.createElement('div');
-        keyValuePair.className = 'key-value-pair';
-        let keyElement = document.createElement('div');
-        let valueElement = document.createElement('div');
-        keyElement.className = 'json-key';
-        valueElement.className = 'json-value';
-        //keyElement.textContent = columnSymbols['status'] + ':' || 'status:';
-        keyElement.textContent = '';
-        valueElement.classList.add('status-value');
-        valueElement.classList.add(getStatusClass(status));
-        valueElement.textContent = status;
-        keyValuePair.appendChild(keyElement);
-        keyValuePair.appendChild(valueElement);
-        statusContainer.appendChild(keyValuePair);
+        // Widget container
+        const widget = document.createElement('div');
+        const color = getComputedStyle(document.body).getPropertyValue('--table-border-color').trim();
+        widget.className = 'status-widget'
 
-        keyValuePair = document.createElement('div');
-        keyValuePair.className = 'key-value-pair';
-        keyElement = document.createElement('div');
-        valueElement = document.createElement('div');
-        keyElement.className = 'json-key';
-        valueElement.className = 'json-value';
-        //keyElement.textContent = columnSymbols['start_time'] + ':' || 'start_time:';
-        keyElement.textContent = ''
-        valueElement.textContent = formatTimestamp(start_time);
-        keyValuePair.appendChild(keyElement);
-        keyValuePair.appendChild(valueElement);
-        statusContainer.appendChild(keyValuePair);
+        // Helper to create a line
+        function addLine(value, className = '') {
+            const line = document.createElement('div');
+            line.textContent = value;
 
-        keyValuePair = document.createElement('div');
-        keyValuePair.className = 'key-value-pair';
-        keyElement = document.createElement('div');
-        valueElement = document.createElement('div');
-        keyElement.className = 'json-key';
-        valueElement.className = 'json-value';
-        //keyElement.textContent = columnSymbols['duration'] + ':' || 'duration:';
-        keyElement.textContent = ''
-        if (duration === null) {
-            // Set initial value to 0 and add a unique ID or data attribute to identify the duration element
-            valueElement.textContent = '00:00:00';
-            valueElement.setAttribute('id', 'duration-value');
-            if (start_time) {
-                let duration = Math.floor(Date.now() / 1000 - start_time);
-                setInterval(() => {
-                    duration++;
-                    valueElement.textContent = formatDuration(duration, true);
-                }, 1000);
-            }
-        } else {
-            // Format the duration if it's a valid number
-            valueElement.textContent = formatDuration(duration, true);
+            // Truncate long names
+            line.style.whiteSpace = "nowrap";
+            line.style.overflow = "hidden";
+            line.style.textOverflow = "ellipsis";
+
+            if (className) line.classList.add(className);
+            widget.appendChild(line);
         }
-        keyValuePair.appendChild(keyElement);
-        keyValuePair.appendChild(valueElement);
-        statusContainer.appendChild(keyValuePair);
+
+        // Make widget re-usable by external updates
+        widget.update = function (name, status, start_time, duration) {
+            widget.innerHTML = '';
+
+            addLine(name);
+            addLine(status, getStatusClass(status));
+            addLine(start_time ? formatTimestamp(start_time) : "0:00:00");
+            if (duration != null) {
+                addLine(formatDuration(duration, true));
+            } else if (start_time != null) {
+                const durationLine = document.createElement('div');
+                let seconds = Math.floor(Date.now() / 1000 - start_time);
+                durationLine.textContent = formatDuration(seconds, true);
+                setInterval(() => {
+                    seconds++;
+                    durationLine.textContent = formatDuration(seconds, true);
+                }, 1000);
+
+                widget.appendChild(durationLine);
+            } else {
+                addLine("--s");
+            }
+        };
+
+        // Initial fill
+        widget.update(name, status, start_time, duration);
+        statusContainer.appendChild(widget);
+        return widget;
     }
 
     const columns = ['status', 'name', 'duration', 'start_time'];
@@ -1119,35 +1262,21 @@
                 resultsDiv.appendChild(table); // Appends table correctly
             }
         }
-        // Status and info
-        if (PR > 0) {
-            addKeyValueToStatus("PR", PR, null, null, runtimeCache.prLink);
-        }
-        let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1).sha || sha) : sha;
-        const shaSelectorText = [];
-        const shaSelectorValues = [];
-
-        runtimeCache.commits.forEach(({ sha, message }) => {
-            const shortSha = (sha || "").substring(0, 8);
-            shaSelectorText.push(message ? `${shortSha}: ${message}` : shortSha);
-            shaSelectorValues.push(sha);
-        });
-        shaSelectorText.push("latest");
-        shaSelectorValues.push("latest");
-        addKeyValueToStatus("sha", sha || "latest", shaSelectorText, shaSelectorValues);
-
-        if (PR > 0) {
-            const { pr_title, git_branch } = runtimeCache.json0?.ext || {};
-            if (pr_title) addInfoLineToStatus(pr_title);
-            if (git_branch) addInfoLineToStatus(git_branch);
-        }
-        addInfoLineToStatus(current_sha);
-        addStatusToStatus(result.status, result.start_time, result.duration);
+        addDetailsWidget(runtimeCache, sha, PR)
+        //addInfoLineToStatus(current_sha);
+        const originalWorkflowDetails = {
+            name: result.name,
+            status: result.status,
+            start_time: result.start_time,
+            duration: result.duration
+        };
+        let statusWidget = addStatusWidget(result.name, result.status, result.start_time, result.duration);
         if (nameParams.length > 1) {
-            addFileButtonToStatus('files', result.links);
+            addFileLinksWidget(result.links);
         } else {
-            addTimeTraceWidget(result.results)
+            addTimeTraceWidget(result.results, statusWidget, originalWorkflowDetails);
         }
+        addStorageUsageChartToStatus(result.ext?.storage_usage)
     }
 
     async function fetchData(PR, REF, sha, nameParams) {
@@ -1219,9 +1348,14 @@
             document.getElementById('status-container').innerHTML = '';
         }
         async function checkForUpdates() {
+            const statusContainer = document.getElementById('status-container');
+            const scrollTop = statusContainer.scrollTop;
+
             if (await fetchData(PR, REF, sha, nameParams)) {
                 clearPage();
                 await renderResults(PR, sha, nameParams);
+
+                statusContainer.scrollTop = scrollTop;
             }
         }
         setInterval(checkForUpdates, 30000);

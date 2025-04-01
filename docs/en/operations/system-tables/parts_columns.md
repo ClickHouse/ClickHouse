@@ -104,11 +104,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.parts_columns LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 partition:                             tuple()

@@ -29,7 +29,7 @@ tables_with_database_column=(
 )
 # should have database = currentDatabase() condition
 #
-# NOTE: it is not that accuate, but at least something.
+# NOTE: it is not that accurate, but at least something.
 tests_with_database_column=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         xargs grep --with-filename $(printf -- "-e %s " "${tables_with_database_column[@]}") |
@@ -48,7 +48,7 @@ for test_case in "${tests_with_database_column[@]}"; do
 done
 
 # Queries with ReplicatedMergeTree
-# NOTE: it is not that accuate, but at least something.
+# NOTE: it is not that accurate, but at least something.
 tests_with_replicated_merge_tree=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         xargs grep --with-filename -e "Replicated.*MergeTree[ ]*(.*" | cut -d: -f1 | sort -u

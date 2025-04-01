@@ -21,7 +21,6 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
-#include <base/defines.h>
 #include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/re2.h>
