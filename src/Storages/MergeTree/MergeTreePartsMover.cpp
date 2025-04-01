@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -429,11 +430,12 @@ void MergeTreeZeroCopyPartsMover::swapClonedPart(TemporaryClonedPart & cloned_pa
     swapActivePart(cloned_part, part_lock);
 }
 
-MergeTreePartsMoverPtr MergeTreePartsMoverFactory::get(MergeTreeData * data, bool replicated)
+MergeTreePartsMoverPtr MergeTreePartsMoverFactory::get(MergeTreeData * data)
 {
-    if (!replicated || (*data->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
-        return std::make_shared<MergeTreePartsMover>(data);
-    return std::make_shared<MergeTreeZeroCopyPartsMover>(data);
+    bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(data) != nullptr;
+    if (replicated && (*data->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
+        return std::make_shared<MergeTreeZeroCopyPartsMover>(data);
+    return std::make_shared<MergeTreePartsMover>(data);
 }
 
 }

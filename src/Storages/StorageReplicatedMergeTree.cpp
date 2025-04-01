@@ -410,6 +410,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_sends_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_sends_network_bandwidth], getContext()->getReplicatedSendsThrottler()))
 {
     fetcher = DataPartsExchange::DataPartsExchangeFactory::getFetcher(*this);
+    parts_mover = MergeTreePartsMoverFactory::get(this);
 
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
     /// We create and deactivate all tasks for consistency.

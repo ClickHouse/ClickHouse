@@ -469,6 +469,7 @@ MergeTreeData::MergeTreeData(
     , pinned_part_uuids(std::make_shared<PinnedPartUUIDs>())
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
+    , parts_mover(MergeTreePartsMoverFactory::get(this))
     , background_operations_assignee(*this, BackgroundJobsAssignee::Type::DataProcessing, getContext())
     , background_moves_assignee(*this, BackgroundJobsAssignee::Type::Moving, getContext())
 {
@@ -546,8 +547,7 @@ MergeTreeData::MergeTreeData(
             background_moves_assignee.trigger();
     };
 
-    bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
-    parts_mover = MergeTreePartsMoverFactory::get(this, replicated);
+    parts_mover = MergeTreePartsMoverFactory::get(this);
 }
 
 VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMetadata & metadata)
