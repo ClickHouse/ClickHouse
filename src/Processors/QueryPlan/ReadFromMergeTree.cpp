@@ -1654,7 +1654,7 @@ static void buildIndexes(
     if (query_info.isFinal() && !settings[Setting::use_skip_indexes_if_final])
         indexes->use_skip_indexes = false;
 
-    if (!filter_dag.predicate || !indexes->use_skip_indexes)
+    if (!indexes->use_skip_indexes)
         return;
 
     const auto & all_indexes = metadata_snapshot->getSecondaryIndices();
@@ -1685,6 +1685,9 @@ static void buildIndexes(
         if (!ParserList::parseUtil(pos, expected, parse_single_id_or_literal, false))
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse ignore_data_skipping_indices ('{}')", indices);
     }
+
+    if (!filter_dag.predicate)
+        return;
 
     auto all_updated_columns = mutations_snapshot->getAllUpdatedColumns();
 
