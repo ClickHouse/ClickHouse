@@ -24,6 +24,9 @@ enum class PredicateOperator : UInt8
     GreaterOrEquals,
 };
 
+void serializePredicateOperator(PredicateOperator op, WriteBuffer & out);
+PredicateOperator deserializePredicateOperator(ReadBuffer & in);
+
 inline std::optional<PredicateOperator> getJoinPredicateOperator(const String & func_name)
 {
     if (func_name == "equals")
@@ -65,6 +68,13 @@ struct JoinExpressionActions
     {
     }
 
+    JoinExpressionActions(ActionsDAGPtr left_pre_join_actions_, ActionsDAGPtr right_pre_join_actions_, ActionsDAGPtr post_join_actions_)
+        : left_pre_join_actions(std::move(left_pre_join_actions_))
+        , right_pre_join_actions(std::move(right_pre_join_actions_))
+        , post_join_actions(std::move(post_join_actions_))
+    {
+    }
+
     ActionsDAGPtr left_pre_join_actions;
     ActionsDAGPtr right_pre_join_actions;
     ActionsDAGPtr post_join_actions;
@@ -88,6 +98,11 @@ public:
 
     operator bool() const { return actions_dag != nullptr; } /// NOLINT
 
+    using ActionsDAGRawPtrs = std::vector<const ActionsDAG *>;
+
+    void serialize(WriteBuffer & out, const ActionsDAGRawPtrs & dags) const;
+    static JoinActionRef deserialize(ReadBuffer & in, const ActionsDAGRawPtrs & dags);
+
 private:
     const ActionsDAG * actions_dag = nullptr;
     String column_name;
@@ -100,6 +115,9 @@ struct JoinPredicate
     JoinActionRef left_node;
     JoinActionRef right_node;
     PredicateOperator op;
+
+    void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
+    static JoinPredicate deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
 };
 
 /// JoinCondition determines if rows from two tables can be joined
@@ -115,6 +133,9 @@ struct JoinCondition
     /// Residual conditions depend on data from both tables and must be evaluated after the join has been performed.
     /// Unlike the join predicates, these conditions can be arbitrary expressions.
     std::vector<JoinActionRef> residual_conditions;
+
+    void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
+    static JoinCondition deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
 };
 
 struct JoinExpression
@@ -130,6 +151,9 @@ struct JoinExpression
 
     /// Indicates if the join expression is defined with the USING clause
     bool is_using = false;
+
+    void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
+    static JoinExpression deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
 };
 
 struct JoinInfo
@@ -145,6 +169,9 @@ struct JoinInfo
 
     /// The locality of the join (e.g., LOCAL, GLOBAL)
     JoinLocality locality;
+
+    void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
+    static JoinInfo deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
 };
 
 
@@ -153,67 +180,54 @@ String toString(const JoinActionRef & node);
 String toString(const JoinPredicate & predicate);
 String toString(const JoinCondition & condition);
 
-#define APPLY_FOR_JOIN_SETTINGS(M) \
-    M(JoinAlgorithm, join_algorithm) \
-    M(UInt64, max_block_size) \
-    \
-    M(Bool, join_use_nulls) \
-    M(Bool, any_join_distinct_right_table_keys) \
-    \
-    M(UInt64, max_rows_in_join) \
-    M(UInt64, max_bytes_in_join) \
-    \
-    M(OverflowMode, join_overflow_mode) \
-    M(Bool, join_any_take_last_row) \
-    \
-    /* CROSS JOIN settings */ \
-    M(UInt64, cross_join_min_rows_to_compress) \
-    M(UInt64, cross_join_min_bytes_to_compress) \
-    \
-    /* Partial merge join settings */ \
-    M(UInt64, partial_merge_join_left_table_buffer_bytes) \
-    M(UInt64, partial_merge_join_rows_in_right_blocks) \
-    M(UInt64, join_on_disk_max_files_to_merge) \
-    \
-    /* Grace hash join settings */ \
-    M(UInt64, grace_hash_join_initial_buckets) \
-    M(UInt64, grace_hash_join_max_buckets) \
-    \
-    /* Full sorting merge join settings */ \
-    M(UInt64, max_rows_in_set_to_optimize_join) \
-    \
-    /* Hash/Parallel hash join settings */ \
-    M(Bool, collect_hash_table_stats_during_joins) \
-    M(UInt64, max_size_to_preallocate_for_joins) \
-    \
-    M(Bool, query_plan_convert_outer_join_to_inner_join) \
-    M(Bool, multiple_joins_try_to_keep_original_names) \
-    \
-    M(Bool, parallel_replicas_prefer_local_join) \
-    M(Bool, allow_experimental_join_condition) \
-    \
-    M(UInt64, cross_to_inner_join_rewrite) \
-    \
-    M(UInt64, max_joined_block_size_rows) \
-    M(String, temporary_files_codec) \
-    M(UInt64, join_output_by_rowlist_perkey_rows_threshold) \
-    M(UInt64, join_to_sort_minimum_perkey_rows) \
-    M(UInt64, join_to_sort_maximum_table_rows) \
-    M(Bool, allow_experimental_join_right_table_sorting) \
-    M(UInt64, min_joined_block_size_bytes) \
-    M(MaxThreads, max_threads) \
-
+struct QueryPlanSerializationSettings;
 
 /// Subset of query settings that are relevant to join and used to configure join algorithms.
 struct JoinSettings
 {
-#define DECLARE_JOIN_SETTING_FILEDS(type, name) \
-    SettingField##type::ValueType name;
+    std::vector<JoinAlgorithm> join_algorithms;
 
-    APPLY_FOR_JOIN_SETTINGS(DECLARE_JOIN_SETTING_FILEDS)
-#undef DECLARE_JOIN_SETTING_FILEDS
+    UInt64 max_block_size;
 
-    static JoinSettings create(const Settings & query_settings);
+    UInt64 max_rows_in_join;
+    UInt64 max_bytes_in_join;
+    UInt64 default_max_bytes_in_join;
+
+    UInt64 max_joined_block_size_rows;
+    UInt64 min_joined_block_size_bytes;
+
+    OverflowMode join_overflow_mode;
+    bool join_any_take_last_row;
+
+    /* CROSS JOIN settings */
+    UInt64 cross_join_min_rows_to_compress;
+    UInt64 cross_join_min_bytes_to_compress;
+
+    /* Partial merge join settings */
+    UInt64 partial_merge_join_left_table_buffer_bytes;
+    UInt64 partial_merge_join_rows_in_right_blocks;
+    UInt64 join_on_disk_max_files_to_merge;
+
+    /* Grace hash join settings */
+    UInt64 grace_hash_join_initial_buckets;
+    UInt64 grace_hash_join_max_buckets;
+
+    /* Full sorting merge join settings */
+    UInt64 max_rows_in_set_to_optimize_join;
+    String temporary_files_codec;
+
+    /* Hash/Parallel hash join settings */
+    bool collect_hash_table_stats_during_joins;
+    UInt64 max_size_to_preallocate_for_joins;
+    UInt64 join_output_by_rowlist_perkey_rows_threshold;
+    bool allow_experimental_join_right_table_sorting;
+    UInt64 join_to_sort_minimum_perkey_rows;
+    UInt64 join_to_sort_maximum_table_rows;
+
+    explicit JoinSettings(const Settings & query_settings);
+    explicit JoinSettings(const QueryPlanSerializationSettings & settings);
+
+    void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
 };
 
 

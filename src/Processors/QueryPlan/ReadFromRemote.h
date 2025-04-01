@@ -97,6 +97,8 @@ public:
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
 
+    StorageID getStorageID() const { return storage_id; }
+
 private:
     Pipes addPipes(ASTPtr ast, const Header & out_header);
     void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header);

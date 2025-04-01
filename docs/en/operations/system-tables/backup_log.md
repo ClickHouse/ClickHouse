@@ -1,10 +1,14 @@
 ---
-description: "System table containing logging entries with information about `BACKUP` and `RESTORE` operations."
+description: 'System table containing logging entries with information about `BACKUP`
+  and `RESTORE` operations.'
+keywords: ['system table', 'backup_log']
 slug: /operations/system-tables/backup_log
-title: "system.backup_log"
-keywords: ["system table", "backup_log"]
+title: 'system.backup_log'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.backup_log
 
 <SystemTableCloud/>
 
@@ -28,13 +32,13 @@ Columns:
 - `error` ([String](../../sql-reference/data-types/string.md)) — Error message of the failed operation (empty string for successful operations).
 - `start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of the operation.
 - `end_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time of the operation.
-- `num_files` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of files stored in the backup.
-- `total_size` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total size of files stored in the backup.
-- `num_entries` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder, or the number of files inside the archive if the backup is stored as an archive. It is not the same as `num_files` if it's an incremental backup or if it contains empty files or duplicates. The following is always true: `num_entries <= num_files`.
-- `uncompressed_size` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Uncompressed size of the backup.
-- `compressed_size` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Compressed size of the backup. If the backup is not stored as an archive it equals to `uncompressed_size`.
-- `files_read` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of files read during the restore operation.
-- `bytes_read` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total size of files read during the restore operation.
+- `num_files` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of files stored in the backup.
+- `total_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Total size of files stored in the backup.
+- `num_entries` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder, or the number of files inside the archive if the backup is stored as an archive. It is not the same as `num_files` if it's an incremental backup or if it contains empty files or duplicates. The following is always true: `num_entries <= num_files`.
+- `uncompressed_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Uncompressed size of the backup.
+- `compressed_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Compressed size of the backup. If the backup is not stored as an archive it equals to `uncompressed_size`.
+- `files_read` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of files read during the restore operation.
+- `bytes_read` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Total size of files read during the restore operation.
 
 **Example**
 

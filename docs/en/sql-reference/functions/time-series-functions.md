@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/time-series-functions
+description: 'Documentation for Time Series Functions'
+sidebar_label: 'Time Series'
 sidebar_position: 172
-sidebar_label: Time Series
+slug: /sql-reference/functions/time-series-functions
+title: 'Time Series Functions'
 ---
 
 # Time Series Functions
@@ -14,7 +16,7 @@ Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wi
 
 **Syntax**
 
-``` sql
+```sql
 seriesOutliersDetectTukey(series);
 seriesOutliersDetectTukey(series, min_percentile, max_percentile, K);
 ```
@@ -36,13 +38,13 @@ At least four data points are required in `series` to detect outliers.
 
 Query:
 
-``` sql
+```sql
 SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4, 5, 6]) AS print_0;
 ```
 
 Result:
 
-``` text
+```text
 ┌───────────print_0─────────────────┐
 │[0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
 └───────────────────────────────────┘
@@ -50,13 +52,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 0.2, 0.8, 1.5) AS print_0;
 ```
 
 Result:
 
-``` text
+```text
 ┌─print_0──────────────────────────────┐
 │ [0,0,0,0,0,0,0,0,0,19.5,0,0,0,0,0,0] │
 └──────────────────────────────────────┘
@@ -69,7 +71,7 @@ FFT - [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transf
 
 **Syntax**
 
-``` sql
+```sql
 seriesPeriodDetectFFT(series);
 ```
 
@@ -85,25 +87,25 @@ seriesPeriodDetectFFT(series);
 
 Query:
 
-``` sql
+```sql
 SELECT seriesPeriodDetectFFT([1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6]) AS print_0;
 ```
 
 Result:
 
-``` text
+```text
 ┌───────────print_0──────┐
 │                      3 │
 └────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000))) AS print_0;
 ```
 
 Result:
 
-``` text
+```text
 ┌─print_0─┐
 │       6 │
 └─────────┘
@@ -115,7 +117,7 @@ Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Base
 
 **Syntax**
 
-``` sql
+```sql
 seriesDecomposeSTL(series, period);
 ```
 
@@ -135,13 +137,13 @@ the third array - residue component, and the fourth array - baseline(seasonal + 
 
 Query:
 
-``` sql
+```sql
 SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34], 3) AS print_0;
 ```
 
 Result:
 
-``` text
+```text
 ┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ [[
         -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,

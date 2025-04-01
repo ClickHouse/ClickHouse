@@ -21,6 +21,6 @@ uniqExact(x[, ...])
 
 **Смотрите также**
 
--   [uniq](/ru/sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniq](/sql-reference/aggregate-functions/reference/uniq)
 -   [uniqCombined](/ru/sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqcombined)
 -   [uniqHLL12](/ru/sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqhll12)

@@ -11,6 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -221,7 +222,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
     {
         LocalDateTime create_time_dt;
         in >> "create_time: " >> create_time_dt >> "\n";
-        create_time = DateLUT::serverTimezoneInstance().makeDateTime(
+        create_time = makeDateTime(DateLUT::serverTimezoneInstance(),
             create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
             create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
     }

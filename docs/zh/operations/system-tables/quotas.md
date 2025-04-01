@@ -17,7 +17,7 @@ slug: /zh/operations/system-tables/quotas
     - `['user_name', 'client_key']` — 具有相同 `client_key` 的连接共享相同的配额. 如果客户端没有提供密钥, 配额将跟踪 `user_name`.
     - `['client_key', 'ip_address']` — 具有相同 `client_key` 的连接共享相同的配额. 如果客户端没有提供密钥, 配额将跟踪 `ip_address`.
 - `durations` ([Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — 时间间隔以秒为单位.
-- `apply_to_all` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 逻辑值. 它显示了配额应用于哪些用户. 值:
+- `apply_to_all` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 逻辑值. 它显示了配额应用于哪些用户. 值:
     - `0` — 配额应用于 `apply_to_list` 中指定的用户.
     - `1` — 配额适用于除 `apply_to_except` 中列出的用户之外的所有用户.
 - `apply_to_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — 需要应用配额的用户名/[角色](../../operations/access-rights.md#role-management) 列表.

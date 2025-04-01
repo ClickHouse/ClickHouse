@@ -1,8 +1,8 @@
 ---
-description:  "The Star Schema Benchmark (SSB) data set and queries"
+description: 'The Star Schema Benchmark (SSB) data set and queries'
+sidebar_label: 'Star Schema Benchmark'
 slug: /getting-started/example-datasets/star-schema
-sidebar_label: Star Schema Benchmark
-title: "Star Schema Benchmark (SSB, 2009)"
+title: 'Star Schema Benchmark (SSB, 2009)'
 ---
 
 The Star Schema Benchmark is roughly based on the [TPC-H](tpch.md)'s tables and queries but unlike TPC-H, it uses a star schema layout.
@@ -15,7 +15,7 @@ References:
 
 First, checkout the star schema benchmark repository and compile the data generator:
 
-``` bash
+```bash
 git clone https://github.com/vadimtk/ssb-dbgen.git
 cd ssb-dbgen
 make
@@ -23,7 +23,7 @@ make
 
 Then, generate the data. Parameter `-s` specifies the scale factor. For example, with `-s 100`, 600 million rows are generated.
 
-``` bash
+```bash
 ./dbgen -s 1000 -T c
 ./dbgen -s 1000 -T l
 ./dbgen -s 1000 -T p
@@ -33,7 +33,7 @@ Then, generate the data. Parameter `-s` specifies the scale factor. For example,
 
 Now create tables in ClickHouse:
 
-``` sql
+```sql
 CREATE TABLE customer
 (
         C_CUSTKEY       UInt32,
@@ -120,7 +120,7 @@ ENGINE = MergeTree ORDER BY D_DATEKEY;
 
 The data can be imported as follows:
 
-``` bash
+```bash
 clickhouse-client --query "INSERT INTO customer FORMAT CSV" < customer.tbl
 clickhouse-client --query "INSERT INTO part FORMAT CSV" < part.tbl
 clickhouse-client --query "INSERT INTO supplier FORMAT CSV" < supplier.tbl
@@ -131,7 +131,7 @@ clickhouse-client --query "INSERT INTO date FORMAT CSV" < date.tbl
 In many use cases of ClickHouse, multiple tables are converted into a single denormalized flat table.
 This step is optional, below queries are listed in their original form and in a format rewritten for the denormalized table.
 
-``` sql
+```sql
 SET max_memory_usage = 20000000000;
 
 CREATE TABLE lineorder_flat
@@ -200,7 +200,7 @@ WHERE
 
 Denormalized table:
 
-``` sql
+```sql
 SELECT
     sum(LO_EXTENDEDPRICE * LO_DISCOUNT) AS revenue
 FROM

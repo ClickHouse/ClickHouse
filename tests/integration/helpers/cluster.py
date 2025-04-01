@@ -50,7 +50,7 @@ except Exception as e:
 import docker
 from dict2xml import dict2xml
 from docker.models.containers import Container
-from kazoo.client import KazooClient
+from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import KazooException
 from minio import Minio
 
@@ -276,7 +276,7 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     return p.returncode == 0
 
 
-def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
+def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
     try:
         subprocess.check_output(
             docker_exec(
@@ -284,24 +284,28 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
                 f"RABBITMQ_ERLANG_COOKIE={cookie}",
                 rabbitmq_id,
                 "rabbitmqctl",
-                "await_startup",
+                command,
             ),
             stderr=subprocess.STDOUT,
             timeout=timeout,
         )
-        return True
     except subprocess.CalledProcessError as e:
         # Raised if the command returns a non-zero exit code
         error_message = (
-            f"RabbitMQ startup failed with return code {e.returncode}. "
+            f"rabbitmqctl {command} failed with return code {e.returncode}. "
             f"Output: {e.output.decode(errors='replace')}"
         )
         raise RuntimeError(error_message)
     except subprocess.TimeoutExpired as e:
         # Raised if the command times out
         raise RuntimeError(
-            f"RabbitMQ startup timed out. Output: {e.output.decode(errors='replace')}"
+            f"rabbitmqctl {command} timed out. Output: {e.output.decode(errors='replace')}"
         )
+
+
+def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
+    run_rabbitmqctl(rabbitmq_id, cookie, "await_startup", timeout)
+    return True
 
 
 def rabbitmq_debuginfo(rabbitmq_id, cookie):
@@ -536,6 +540,7 @@ class ClickHouseCluster:
 
         self.spark_session = None
         self.with_iceberg_catalog = False
+        self.with_glue_catalog = False
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -1377,6 +1382,25 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
+    def setup_glue_catalog_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_glue_catalog.yml"
+                ),
+            ]
+        )
+        self.base_iceberg_catalog_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
+        )
+        return self.base_iceberg_catalog_cmd
+
     def setup_iceberg_catalog_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1395,7 +1419,6 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
         )
         return self.base_iceberg_catalog_cmd
-        # return self.base_minio_cmd
 
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
@@ -1555,6 +1578,7 @@ class ClickHouseCluster:
         with_nginx=False,
         with_redis=False,
         with_minio=False,
+        with_remote_database_disk=False,  # Currently, there is no remote storage can be used for the database disk. We disabled it as default.
         with_azurite=False,
         with_cassandra=False,
         with_ldap=False,
@@ -1563,6 +1587,7 @@ class ClickHouseCluster:
         with_coredns=False,
         with_prometheus=False,
         with_iceberg_catalog=False,
+        with_glue_catalog=False,
         handle_prometheus_remote_write=False,
         handle_prometheus_remote_read=False,
         use_old_analyzer=None,
@@ -1615,6 +1640,16 @@ class ClickHouseCluster:
 
         if tag is None:
             tag = DOCKER_BASE_TAG
+        else:
+            if with_remote_database_disk:
+                raise Exception(
+                    f"Can't add instance '{name}': not support remote database disk with the old version {tag}"
+                )
+            with_remote_database_disk = False
+
+        if with_remote_database_disk is None:
+            with_remote_database_disk = False
+
         if not env_variables:
             env_variables = {}
         self.use_keeper = use_keeper
@@ -1661,6 +1696,7 @@ class ClickHouseCluster:
             with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
+            with_remote_database_disk=with_remote_database_disk,
             with_azurite=with_azurite,
             with_jdbc_bridge=with_jdbc_bridge,
             with_hive=with_hive,
@@ -1668,6 +1704,7 @@ class ClickHouseCluster:
             with_cassandra=with_cassandra,
             with_ldap=with_ldap,
             with_iceberg_catalog=with_iceberg_catalog,
+            with_glue_catalog=with_glue_catalog,
             use_old_analyzer=use_old_analyzer,
             server_bin_path=self.server_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
@@ -1847,6 +1884,13 @@ class ClickHouseCluster:
         if with_iceberg_catalog and not self.with_iceberg_catalog:
             cmds.append(
                 self.setup_iceberg_catalog_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_glue_catalog and not self.with_glue_catalog:
+            cmds.append(
+                self.setup_glue_catalog_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
@@ -2183,8 +2227,8 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(
-                    user=mysql8_user,
-                    password=mysql8_pass,
+                    user=mysql_user,
+                    password=mysql_pass,
                     host=self.mysql8_ip,
                     port=self.mysql8_port,
                 )
@@ -2347,6 +2391,18 @@ class ClickHouseCluster:
 
         raise RuntimeError("Cannot wait RabbitMQ container")
 
+    def stop_rabbitmq_app(self, timeout=120):
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout)
+
+    def start_rabbitmq_app(self, timeout=120):
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout)
+        self.wait_rabbitmq_to_start()
+
+    def reset_rabbitmq(self, timeout=120):
+        self.stop_rabbitmq_app()
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
+        self.start_rabbitmq_app()
+
     def wait_nats_is_available(self, max_retries=5):
         retries = 0
         while True:
@@ -2428,7 +2484,7 @@ class ClickHouseCluster:
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
         connection_str = "mongodb://{user}:{password}@{host}:{port}".format(
-            host="localhost", port=self.mongo_port, user=mongo_user, password=mongo_pass
+            host="localhost", port=self.mongo_port, user=mongo_user, password=urllib.parse.quote_plus(mongo_pass)
         )
         if secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
@@ -3187,13 +3243,17 @@ class ClickHouseCluster:
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
 
-    def get_kazoo_client(self, zoo_instance_name, timeout: float = 30.0, retries=10):
+    def get_kazoo_client(
+        self, zoo_instance_name, timeout: float = 30.0, retries=10, external_port=None
+    ):
         use_ssl = False
         if self.with_zookeeper_secure:
             port = self.zookeeper_secure_port
             use_ssl = True
         elif self.with_zookeeper:
             port = self.zookeeper_port
+        elif external_port is not None:
+            port = external_port
         else:
             raise Exception("Cluster has no ZooKeeper")
 
@@ -3204,7 +3264,7 @@ class ClickHouseCluster:
         kazoo_retry = {
             "max_tries": retries,
         }
-        zk = KazooClient(
+        zk = KazooClientWithImplicitRetries(
             hosts=f"{ip}:{port}",
             timeout=timeout,
             connection_retry=kazoo_retry,
@@ -3332,6 +3392,7 @@ class ClickHouseInstance:
         with_mongo,
         with_redis,
         with_minio,
+        with_remote_database_disk,
         with_azurite,
         with_jdbc_bridge,
         with_hive,
@@ -3339,6 +3400,7 @@ class ClickHouseInstance:
         with_cassandra,
         with_ldap,
         with_iceberg_catalog,
+        with_glue_catalog,
         use_old_analyzer,
         server_bin_path,
         clickhouse_path_dir,
@@ -3427,6 +3489,7 @@ class ClickHouseInstance:
         )
         self.with_redis = with_redis
         self.with_minio = with_minio
+        self.with_remote_database_disk = with_remote_database_disk
         self.with_azurite = with_azurite
         self.with_cassandra = with_cassandra
         self.with_ldap = with_ldap
@@ -4420,14 +4483,14 @@ class ClickHouseInstance:
                     "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libmyodbc.so",
                     "Database": odbc_mysql_db,
                     "Uid": odbc_mysql_uid,
-                    "Pwd": odbc_mysql_pass,
+                    "Pwd": mysql_pass,
                     "Server": self.cluster.mysql8_host,
                 },
                 "PostgreSQL": {
                     "DSN": "postgresql_odbc",
                     "Database": odbc_psql_db,
                     "UserName": odbc_psql_user,
-                    "Password": odbc_psql_pass,
+                    "Password": pg_pass,
                     "Port": str(self.cluster.postgres_port),
                     "Servername": self.cluster.postgres_host,
                     "Protocol": "9.3",

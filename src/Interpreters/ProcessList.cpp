@@ -49,6 +49,7 @@ namespace Setting
     extern const SettingsString temporary_files_codec;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool trace_profile_events;
+    extern const SettingsMilliseconds low_priority_query_wait_time_ms;
 }
 
 namespace ErrorCodes
@@ -299,7 +300,9 @@ ProcessList::EntryPtr ProcessList::insert(
             query_,
             normalized_query_hash,
             client_info,
-            priorities.insert(settings[Setting::priority]),
+            priorities.insert(
+                settings[Setting::priority],
+                std::chrono::milliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
             std::move(thread_group),
             query_kind,
             settings,

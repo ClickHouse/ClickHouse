@@ -16,6 +16,11 @@ namespace CurrentMetrics
 extern const Metric KafkaLibrdkafkaThreads;
 }
 
+namespace ProfileEvents
+{
+extern const Event KafkaConsumerErrors;
+}
+
 namespace DB
 {
 
@@ -328,7 +333,10 @@ void loadProducerConfig(cppkafka::Configuration & kafka_config, const KafkaConfi
 
 template <typename TKafkaStorage>
 void updateGlobalConfiguration(
-    cppkafka::Configuration & kafka_config, TKafkaStorage & storage, const KafkaConfigLoader::LoadConfigParams & params)
+    cppkafka::Configuration & kafka_config,
+    TKafkaStorage & storage,
+    const KafkaConfigLoader::LoadConfigParams & params,
+    IKafkaExceptionInfoSinkWeakPtr exception_info_sink_ptr = IKafkaExceptionInfoSinkWeakPtr())
 {
     loadFromConfig(kafka_config, params, KafkaConfigLoader::CONFIG_KAFKA_TAG);
 
@@ -360,7 +368,8 @@ void updateGlobalConfiguration(
 #endif // USE_KRB5
     // No need to add any prefix, messages can be distinguished
     kafka_config.set_log_callback(
-        [log = params.log](cppkafka::KafkaHandleBase & handle, int level, const std::string & facility, const std::string & message)
+        [log = params.log, sink = exception_info_sink_ptr](
+            cppkafka::KafkaHandleBase & handle, int level, const std::string & facility, const std::string & message)
         {
             auto [poco_level, client_logs_level] = parseSyslogLevel(level);
             const auto & kafka_object_config = handle.get_configuration();
@@ -374,6 +383,14 @@ void updateGlobalConfiguration(
                 kafka_object_config.get(client_id_key),
                 facility,
                 message);
+            if (client_logs_level <= DB::LogsLevel::error)
+            {
+                if (auto sink_shared_ptr = sink.lock())
+                {
+                    ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
+                    sink_shared_ptr->setExceptionInfo(message, /* with_stacktrace = */ true);
+                }
+            }
         });
 
     /// NOTE: statistics should be consumed, otherwise it creates too much
@@ -409,7 +426,7 @@ void updateGlobalConfiguration(
 }
 
 template <typename TKafkaStorage>
-cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorage & storage, const ConsumerConfigParams & params)
+cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorage & storage, const ConsumerConfigParams & params, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr)
 {
     cppkafka::Configuration conf;
 
@@ -431,7 +448,7 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
     conf.set(
         "queued.min.messages", std::min(std::max(params.max_block_size, default_queued_min_messages), max_allowed_queued_min_messages));
 
-    updateGlobalConfiguration(conf, storage, params);
+    updateGlobalConfiguration(conf, storage, params, exception_info_sink_ptr);
     loadConsumerConfig(conf, params);
 
     // those settings should not be changed by users.
@@ -448,9 +465,9 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
 }
 
 template cppkafka::Configuration
-KafkaConfigLoader::getConsumerConfiguration<StorageKafka>(StorageKafka & storage, const ConsumerConfigParams & params);
+KafkaConfigLoader::getConsumerConfiguration<StorageKafka>(StorageKafka & storage, const ConsumerConfigParams & params, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr);
 template cppkafka::Configuration
-KafkaConfigLoader::getConsumerConfiguration<StorageKafka2>(StorageKafka2 & storage, const ConsumerConfigParams & params);
+KafkaConfigLoader::getConsumerConfiguration<StorageKafka2>(StorageKafka2 & storage, const ConsumerConfigParams & params, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr);
 
 template <typename TKafkaStorage>
 cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorage & storage, const ProducerConfigParams & params)
