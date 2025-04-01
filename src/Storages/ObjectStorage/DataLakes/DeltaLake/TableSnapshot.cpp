@@ -14,16 +14,8 @@
 #include <Common/ThreadStatus.h>
 #include <IO/ReadBufferFromString.h>
 #include "getSchemaFromSnapshot.h"
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/Context_fwd.h>
-#include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/KeyDescription.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <DataTypes/DataTypeNullable.h>
+#include "PartitionPruner.h"
 #include "KernelUtils.h"
-
-
 #include <fmt/ranges.h>
 
 namespace fs = std::filesystem;
@@ -66,70 +58,6 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
 namespace DeltaLake
 {
 
-class PartitionPruner
-{
-public:
-    PartitionPruner(
-        const DB::ActionsDAG * filter_dag,
-        const DB::NamesAndTypesList & table_schema_,
-        const DB::Names & partition_columns_,
-        DB::ContextPtr context)
-    {
-        if (!partition_columns_.empty())
-        {
-            DB::NamesAndTypesList partition_columns_description;
-
-            std::shared_ptr<DB::ASTFunction> partition_key_ast = std::make_shared<DB::ASTFunction>();
-            partition_key_ast->name = "tuple";
-            partition_key_ast->arguments = std::make_shared<DB::ASTExpressionList>();
-            partition_key_ast->children.push_back(partition_key_ast->arguments);
-
-            for (const auto & column_name : partition_columns_)
-            {
-                auto partition_ast = std::make_shared<DB::ASTIdentifier>(column_name);
-                partition_key_ast->arguments->children.emplace_back(std::move(partition_ast));
-                auto column = table_schema_.tryGetByName(column_name);
-                if (!column.has_value())
-                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Not found partition column in schema: {}", column_name);
-                partition_columns_description.emplace_back(column_name, removeNullable(column->type));
-            }
-
-            partition_key = DB::KeyDescription::getKeyFromAST(
-                std::move(partition_key_ast), DB::ColumnsDescription(partition_columns_description), context);
-
-            if (filter_dag)
-                key_condition.emplace(filter_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */);
-        }
-    }
-
-    bool canBePruned(const DB::ObjectInfoWithPartitionColumns & object_info) const
-    {
-        if (!key_condition.has_value())
-            return false;
-
-        DB::Row partition_key_values;
-        partition_key_values.reserve(object_info.partitions_info.size());
-        for (const auto & [name_and_type, value] : object_info.partitions_info)
-        {
-            if (value.isNull())
-                partition_key_values.push_back(DB::POSITIVE_INFINITY); // NULL_LAST
-            else
-                partition_key_values.push_back(value);
-        }
-
-        std::vector<DB::FieldRef> partition_values_ref(partition_key_values.begin(), partition_key_values.end());
-        bool can_be_true = key_condition->mayBeTrueInRange(
-            partition_key_values.size(), partition_values_ref.data(), partition_values_ref.data(), partition_key.data_types);
-
-        return !can_be_true;
-    }
-
-private:
-    std::optional<DB::KeyCondition> key_condition;
-    DB::KeyDescription partition_key;
-};
-
-
 class TableSnapshot::Iterator final : public DB::IObjectIterator
 {
 public:
@@ -161,7 +89,7 @@ public:
         })
     {
         if (filter_dag_)
-            pruner.emplace(filter_dag_, schema_, partition_columns_, DB::Context::getGlobalContextInstance());
+            pruner.emplace(*filter_dag_, schema_, partition_columns_, DB::Context::getGlobalContextInstance());
     }
 
     ~Iterator() override
