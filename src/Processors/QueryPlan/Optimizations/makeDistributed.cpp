@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
@@ -233,8 +234,9 @@ void optimizeExchanges(QueryPlan::Node & root)
         }
         else /// After all children were processed
         {
-            /// Try to push up GatherExchange child step
-            if (frame.node->children.size() == 1 && typeid_cast<ExpressionStep *>(frame.node->step.get()))
+            /// Try to push up GatherExchange above Expression or Filter step
+            if (frame.node->children.size() == 1 &&
+                (typeid_cast<ExpressionStep *>(frame.node->step.get()) || typeid_cast<FilterStep *>(frame.node->step.get())))
             {
                 auto & child_node = *frame.node->children[0];
                 auto * gather_step = typeid_cast<GatherExchangeStep *>(child_node.step.get());
