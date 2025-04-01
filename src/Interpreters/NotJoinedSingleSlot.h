@@ -34,7 +34,14 @@ private:
     size_t slot_index;
     const ConcurrentHashJoin & join;
     UInt64 max_block_size;
+    std::optional<HashJoin::BlockNullmapList::const_iterator> nulls_position;
+    std::optional<HashJoin::ScatteredBlocksList::const_iterator> used_position;
+    size_t current_block_start = 0; // For partial reading of a block
     bool flag_per_row;
+
+    size_t fillColumnsFromData(const HashJoin::ScatteredBlocksList & blocks, MutableColumns & columns_right);
+    size_t fillUsedFlagsRowByRow(const HashJoin & hash_join, MutableColumns & columns_right);
+    size_t fillNullsFromBlocks(const HashJoin & hash_join, MutableColumns & columns_right, size_t rows_already_added);
 
     // We'll keep a position in the single final map
     // or we might need to store an iterator if we do "ALL" join

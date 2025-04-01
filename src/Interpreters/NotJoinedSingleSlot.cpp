@@ -29,52 +29,196 @@ Block NotJoinedSingleSlot::getEmptyBlock()
 size_t NotJoinedSingleSlot::fillColumns(MutableColumns & columns_right)
 {
     if (done)
-        return 0; // no more data
+        return 0;    
 
-    // We read from slot № slot_index only
     const auto & slot_ptr = join.hash_joins[slot_index];
     std::unique_lock<std::mutex> lock(slot_ptr->mutex);
-
     HashJoin & hash_join = *slot_ptr->data;
-    if (hash_join.getJoinedData()->type == HashJoin::Type::EMPTY || hash_join.getJoinedData()->type == HashJoin::Type::CROSS)
+    const auto & right_data = hash_join.getJoinedData();
+
+    if (right_data->type == HashJoin::Type::EMPTY || right_data->type == HashJoin::Type::CROSS)
     {
         done = true;
         return 0;
     }
 
-    // We'll do the same approach that NotJoinedHash does
     size_t rows_added = 0;
-    bool prefer_maps_all = hash_join.getTableJoin().getMixedJoinExpression() != nullptr;
-    auto & map_variant = hash_join.getJoinedData()->maps[0];
+    const auto & blocks = right_data->blocks;
 
-    joinDispatch(
-        hash_join.getKind(),
-        hash_join.getStrictness(),
-        map_variant,
-        prefer_maps_all,
-        [&](auto, auto, auto & maps_holder)
-        {
-            // We do a switch on data->type
-            switch (hash_join.getJoinedData()->type)
+    if (right_data->type == HashJoin::Type::EMPTY)
+    {
+        rows_added = fillColumnsFromData(blocks, columns_right);
+        if (rows_added == 0)
+            done = true;
+        return rows_added;
+    }
+
+    if (flag_per_row)
+    {
+        rows_added = fillUsedFlagsRowByRow(hash_join, columns_right);
+    }
+    else
+    {
+
+        // We'll do the same approach that NotJoinedHash does
+        bool prefer_maps_all = hash_join.getTableJoin().getMixedJoinExpression() != nullptr;
+        auto & map_variant = hash_join.getJoinedData()->maps[0];
+
+        joinDispatch(
+            hash_join.getKind(),
+            hash_join.getStrictness(),
+            map_variant,
+            prefer_maps_all,
+            [&](auto, auto, auto & maps_holder)
             {
-    #define M(NAME) \
-                case HashJoin::Type::NAME: \
-                { \
-                    if (maps_holder.NAME) \
-                        rows_added = fillFromMap(hash_join, *maps_holder.NAME, columns_right); \
-                    break; \
+                // We do a switch on data->type
+                switch (hash_join.getJoinedData()->type)
+                {
+        #define M(NAME) \
+                    case HashJoin::Type::NAME: \
+                    { \
+                        if (maps_holder.NAME) \
+                            rows_added = fillFromMap(hash_join, *maps_holder.NAME, columns_right); \
+                        break; \
+                    }
+                    APPLY_FOR_JOIN_VARIANTS(M)
+        #undef M
+                    default:
+                        break;
                 }
-                APPLY_FOR_JOIN_VARIANTS(M)
-    #undef M
-                default:
-                    break;
-            }
-        });
+            });
+    }
+
+    if (!flag_per_row && rows_added < max_block_size)
+        rows_added += fillNullsFromBlocks(hash_join, columns_right, rows_added);
 
     // If we didn't add anything, consider we are done
     if (rows_added == 0)
         done = true;
 
+    return rows_added;
+}
+
+size_t NotJoinedSingleSlot::fillColumnsFromData(const HashJoin::ScatteredBlocksList & blocks, MutableColumns & columns_right)
+{
+    if (!position.has_value())
+        position = std::make_any<HashJoin::ScatteredBlocksList::const_iterator>(blocks.begin());
+
+    size_t rows_added = 0;
+    auto & block_it = std::any_cast<HashJoin::ScatteredBlocksList::const_iterator &>(position);
+    auto end_it = blocks.end();
+
+    for (; block_it != end_it && rows_added < max_block_size; ++block_it)
+    {
+        const auto & stored_block = *block_it;
+        size_t block_rows = stored_block.rows();
+        size_t to_read = std::min<size_t>(max_block_size - rows_added, block_rows - current_block_start);
+
+        for (size_t col = 0; col < columns_right.size(); ++col)
+        {
+            const auto & src_col = stored_block.getByPosition(col).column;
+            columns_right[col]->insertRangeFrom(*src_col, current_block_start, to_read);
+        }
+        rows_added += to_read;
+        current_block_start += to_read;
+
+        if (rows_added >= max_block_size)
+        {
+            if (current_block_start >= block_rows)
+            {
+                ++block_it;
+                current_block_start = 0;
+            }
+            break;
+        }
+        current_block_start = 0;
+    }
+    return rows_added;
+}
+
+size_t NotJoinedSingleSlot::fillUsedFlagsRowByRow(const HashJoin & hash_join, MutableColumns & columns_right)
+{
+    auto & blocks = hash_join.getJoinedData()->blocks;
+    if (!used_position.has_value())
+        used_position = blocks.begin();
+
+    size_t rows_added = 0;
+    auto end_it = blocks.end();
+
+    for (auto & it = *used_position; it != end_it && rows_added < max_block_size; ++it)
+    {
+        const auto & stored_block = *it;
+        size_t block_rows = stored_block.rows();
+        for (; current_block_start < block_rows && rows_added < max_block_size; ++current_block_start)
+        {
+            if (!hash_join.isUsed(&stored_block.getSourceBlock(), current_block_start))
+            {
+                for (size_t col = 0; col < columns_right.size(); ++col)
+                {
+                    columns_right[col]->insertFrom(*stored_block.getByPosition(col).column, current_block_start);
+                }
+                ++rows_added;
+            }
+        }
+        if (rows_added >= max_block_size)
+        {
+            if (current_block_start >= block_rows)
+            {
+                ++it;
+                current_block_start = 0;
+            }
+            break;
+        }
+        current_block_start = 0;
+    }
+    return rows_added;
+}
+
+size_t NotJoinedSingleSlot::fillNullsFromBlocks(
+    const HashJoin & hash_join,
+    MutableColumns & columns_right,
+    size_t rows_already_added)
+{
+    size_t rows_added = 0;
+    if (!nulls_position.has_value())
+        nulls_position = hash_join.getJoinedData()->blocks_nullmaps.begin();
+
+    auto & it = *nulls_position;
+    auto end_it = hash_join.getJoinedData()->blocks_nullmaps.end();
+
+    while (it != end_it && (rows_already_added + rows_added < max_block_size))
+    {
+        const auto * stored_block_ptr = it->block;
+        if (!stored_block_ptr)
+        {
+            ++it;
+            continue;
+        }
+        size_t block_rows = stored_block_ptr->rows();
+        const auto & mask_col = assert_cast<const ColumnUInt8 &>(*it->column).getData();
+        for (; current_block_start < block_rows && rows_already_added + rows_added < max_block_size; ++current_block_start)
+        {
+            if (mask_col[current_block_start])
+            {
+                for (size_t col = 0; col < columns_right.size(); ++col)
+                {
+                    columns_right[col]->insertFrom(*stored_block_ptr->getByPosition(col).column, current_block_start);
+                }
+                ++rows_added;
+            }
+        }
+        if (rows_already_added + rows_added >= max_block_size)
+        {
+            if (current_block_start >= block_rows)
+            {
+                ++it;
+                current_block_start = 0;
+            }
+            break;
+        }
+        current_block_start = 0;
+        ++it;
+    }
     return rows_added;
 }
 
