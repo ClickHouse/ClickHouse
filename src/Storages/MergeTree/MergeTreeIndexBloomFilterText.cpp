@@ -168,7 +168,7 @@ void MergeTreeIndexAggregatorBloomFilterText::preupdate(const Block & block, siz
     if (params.mode != BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL)
         return;
 
-    auto update_func = [&] (const char* data, size_t length, size_t column_index) {
+    auto update_func = [&]([[maybe_unused]] const char* data, [[maybe_unused]] size_t length, [[maybe_unused]] size_t column_index) {
 #if USE_DATASKETCHES
         token_extractor->stringToSketch(data, length, hot_elements_sketch[column_index]);
 #else
@@ -181,8 +181,7 @@ void MergeTreeIndexAggregatorBloomFilterText::preupdate(const Block & block, siz
 
 void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t * pos, size_t limit)
 {
-    auto update_func = [&] (const char* data, size_t length, size_t column_index) {
-        std::string key(data, length);
+    auto update_func = [&](const char* data, size_t length, size_t column_index) {
         if (params.mode == BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL)
         {
             token_extractor->limitedPaddedStringToBloomFilter(data, length, granule->bloom_filters[column_index], *common_filters[column_index]);

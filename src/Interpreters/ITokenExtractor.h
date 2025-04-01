@@ -37,7 +37,7 @@ struct ITokenExtractor
     virtual void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
 
 #if USE_DATASKETCHES
-    /// Updates Frequent data scketch from exact-match string filter value
+    /// Updates Frequent data sketch from exact-match string filter value
     virtual void stringToSketch(const char * data, size_t length, datasketches::frequent_items_sketch<std::string> & sketch) const = 0;
 #endif
 

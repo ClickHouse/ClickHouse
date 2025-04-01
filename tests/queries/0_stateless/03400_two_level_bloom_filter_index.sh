@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-fasttest, no-replicated-database
 # Tag no-replicated-database: grep -c
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

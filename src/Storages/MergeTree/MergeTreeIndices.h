@@ -95,7 +95,7 @@ struct IMergeTreeIndexAggregator
     /// After finishing updating `pos` will store the position of the first row which was not read.
     virtual void update(const Block & block, size_t * pos, size_t limit) = 0;
 
-    /// Simmilar method to method above. Used only for two-level bloom filter for texts.
+    /// Similar method to method above. Used only for two-level bloom filter for texts.
     virtual void preupdate(const Block & /*block*/, size_t * /*pos*/, size_t /*limit*/) {}
 
     /// Deserialize common state, if any exists. Useful for two-level bloom filter for texts.
