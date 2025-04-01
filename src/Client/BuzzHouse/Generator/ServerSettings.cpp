@@ -3,12 +3,6 @@
 namespace BuzzHouse
 {
 
-const auto probRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); };
-
-const auto highRange = [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); };
-
-const auto ratioRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 0.99)); };
-
 const auto nastyStrings = [](RandomGenerator & rg) { return "'" + rg.pickRandomly(rg.nasty_strings) + "'"; };
 
 std::unordered_map<String, CHSetting> performanceSettings
@@ -86,9 +80,9 @@ std::unordered_map<String, CHSetting> performanceSettings
              "'prefer_partial_merge'"},
             false)},
        {"low_cardinality_use_single_dictionary_for_part", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"max_bytes_ratio_before_external_group_by", CHSetting(ratioRange, {"0", "0.1", "0.5", "0.99"}, false)},
-       {"max_bytes_ratio_before_external_sort", CHSetting(ratioRange, {"0", "0.1", "0.5", "0.99"}, false)},
-       {"max_streams_to_max_threads_ratio", CHSetting(ratioRange, {"0", "0.1", "0.5", "0.99"}, false)},
+       {"max_bytes_ratio_before_external_group_by", CHSetting(probRange, {"0", "0.1", "0.5", "0.99"}, false)},
+       {"max_bytes_ratio_before_external_sort", CHSetting(probRange, {"0", "0.1", "0.5", "0.99"}, false)},
+       {"max_streams_to_max_threads_ratio", CHSetting(probRange, {"0", "0.1", "0.5", "0.99"}, false)},
        {"merge_tree_determine_task_size_by_prewhere_columns", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"min_count_to_compile_aggregate_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
        {"min_count_to_compile_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
@@ -213,7 +207,7 @@ std::unordered_map<String, CHSetting> performanceSettings
 
 std::unordered_map<String, CHSetting> serverSettings = {
     {"aggregate_functions_null_for_empty", CHSetting(trueOrFalse, {}, false)},
-    {"aggregation_memory_efficient_merge_threads", threadRange},
+    {"aggregation_memory_efficient_merge_threads", threadSetting},
     {"allow_asynchronous_read_from_io_pool_for_merge_tree", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"allow_changing_replica_until_first_data_packet", CHSetting(trueOrFalse, {}, false)},
     {"allow_introspection_functions", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -228,12 +222,12 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"asterisk_include_alias_columns", CHSetting(trueOrFalse, {}, false)},
     {"async_insert", CHSetting(trueOrFalse, {}, false)},
     {"async_insert_deduplicate", CHSetting(trueOrFalse, {}, false)},
-    {"async_insert_threads", threadRange},
+    {"async_insert_threads", threadSetting},
     {"async_insert_use_adaptive_busy_timeout", CHSetting(trueOrFalse, {}, false)},
     {"async_query_sending_for_remote", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"async_socket_for_remote", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"backup_restore_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
-    {"cache_warmer_threads", threadRange},
+    {"cache_warmer_threads", threadSetting},
     {"calculate_text_stack_trace", CHSetting(trueOrFalse, {}, false)},
     {"cancel_http_readonly_queries_on_client_close", CHSetting(trueOrFalse, {}, false)},
     {"cast_ipv4_ipv6_default_on_conversion_error", CHSetting(trueOrFalse, {}, false)},
@@ -398,7 +392,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"ignore_on_cluster_for_replicated_udf_queries", CHSetting(trueOrFalse, {}, false)},
     {"implicit_transaction", CHSetting(trueOrFalse, {}, false)},
     {"input_format_allow_errors_num", CHSetting(highRange, {}, false)},
-    {"input_format_allow_errors_ratio", CHSetting(ratioRange, {}, false)},
+    {"input_format_allow_errors_ratio", CHSetting(probRange, {}, false)},
     {"input_format_allow_seeks", CHSetting(trueOrFalse, {}, false)},
     {"input_format_arrow_allow_missing_columns", CHSetting(trueOrFalse, {}, false)},
     {"input_format_arrow_case_insensitive_column_matching", CHSetting(trueOrFalse, {}, false)},
@@ -526,45 +520,33 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"materialize_statistics_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_ttl_after_modify", CHSetting(trueOrFalse, {}, false)},
     {"materialized_views_ignore_errors", CHSetting(trueOrFalse, {}, false)},
-    /// {"max_bytes_in_distinct", CHSetting(highRange, {}, false)},
-    /*{"max_bytes_in_join",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             return std::to_string(
-                 rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
-         },
-         {"0", "1", "1000", "1000000"},
-         false)},*/
-    /// {"max_bytes_in_set", CHSetting(highRange, {}, false)},
-    /// {"max_bytes_to_read", CHSetting(highRange, {}, false)},
-    /// {"max_bytes_to_read_leaf", CHSetting(highRange, {}, false)},
-    /// {"max_bytes_to_sort", CHSetting(highRange, {}, false)},
-    /// {"max_bytes_to_transfer", CHSetting(highRange, {}, false)},
+    /// {"max_bytes_in_distinct", CHSetting(bytesRange, {}, false)},
+    /// {"max_bytes_in_join", CHSetting(bytesRange, {"0", "1", "1000", "1000000"}, false)},
+    /// {"max_bytes_in_set", CHSetting(bytesRange, {}, false)},
+    /// {"max_bytes_to_read", CHSetting(bytesRange, {}, false)},
+    /// {"max_bytes_to_read_leaf", CHSetting(bytesRange, {}, false)},
+    /// {"max_bytes_to_sort", CHSetting(bytesRange, {}, false)},
+    /// {"max_bytes_to_transfer", CHSetting(bytesRange, {}, false)},
     /// {"max_columns_to_read", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
-    {"max_download_threads", threadRange},
-    {"max_final_threads", threadRange},
+    {"max_download_threads", threadSetting},
+    {"max_final_threads", threadSetting},
     {"max_insert_delayed_streams_for_parallel_write",
      CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 12)); }, {}, false)},
-    {"max_insert_threads", threadRange},
+    {"max_insert_threads", threadSetting},
     /// {"max_memory_usage", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }, {}, false)},
     /// {"max_memory_usage_for_user", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }, {}, false)},
     {"max_parallel_replicas",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, 5)); }, {}, false)},
-    {"max_parsing_threads", threadRange},
+    {"max_parsing_threads", threadSetting},
     {"max_parts_to_move",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.5, 0, UINT32_C(4096))); },
          {"0", "1", "100", "1000"},
          false)},
-    /// {"max_result_bytes", CHSetting(highRange, {}, false)},
+    /// {"max_result_bytes", CHSetting(bytesRange, {}, false)},
     /// {"max_result_rows", CHSetting(highRange, {}, false)},
     /// {"max_rows_in_distinct", CHSetting(highRange, {}, false)},
-    /*{"max_rows_in_join",
-     CHSetting(
-         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(8192))); },
-         {"0", "8", "32", "64", "1024", "10000"},
-         false)},*/
+    /// {"max_rows_in_join", CHSetting(highRange, {"0", "8", "32", "64", "1024", "10000"}, false)},
     /// {"max_rows_in_set", CHSetting(highRange, {}, false)},
     /// {"max_rows_to_group_by", CHSetting(highRange, {}, false)},
     /// {"max_rows_to_read", CHSetting(highRange, {}, false)},
@@ -572,8 +554,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     /// {"max_rows_to_sort", CHSetting(highRange, {}, false)},
     /// {"max_temporary_columns", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
     /// {"max_temporary_non_const_columns", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
-    {"max_threads", threadRange},
-    {"max_threads_for_indexes", threadRange},
+    {"max_threads", threadSetting},
+    {"max_threads_for_indexes", threadSetting},
     {"memory_tracker_fault_probability", CHSetting(probRange, {}, false)},
     {"merge_tree_coarse_index_granularity",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(2, 32)); }, {}, false)},
@@ -889,8 +871,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "partial_merge_join_rows_in_right_blocks",
           "query_plan_max_limit_for_lazy_materialization"})
     {
-        performanceSettings.insert({{entry, CHSetting(max_rows_func, {"0", "512", "1024", "2048", "4096", "16384", "65536"}, false)}});
-        serverSettings.insert({{entry, CHSetting(max_rows_func, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
+        performanceSettings.insert({{entry, CHSetting(rowsRange, {"0", "512", "1024", "2048", "4096", "16384", "65536"}, false)}});
+        serverSettings.insert({{entry, CHSetting(rowsRange, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
     }
     /// Number of bytes values
     for (const auto & entry :
@@ -928,8 +910,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "prefetch_buffer_size"})
     {
         performanceSettings.insert(
-            {{entry, CHSetting(max_bytes_func, {"32768", "65536", "1048576", "4194304", "33554432", "50000000"}, false)}});
-        serverSettings.insert({{entry, CHSetting(max_bytes_func, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
+            {{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "50000000"}, false)}});
+        serverSettings.insert({{entry, CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
     }
     /// Block size settings
     for (const auto & entry :
