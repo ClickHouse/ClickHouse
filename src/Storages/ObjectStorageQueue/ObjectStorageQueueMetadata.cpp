@@ -652,12 +652,12 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
     return registered;
 }
 
-size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id, bool active)
+size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id, bool active, bool remove_metadata_if_no_registered)
 {
     if (active)
         return unregisterActive(storage_id);
     else
-        return unregisterNonActive(storage_id);
+        return unregisterNonActive(storage_id, remove_metadata_if_no_registered);
 }
 
 size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
@@ -687,7 +687,7 @@ size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id
     return remaining_nodes_num;
 }
 
-size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id)
+size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered)
 {
     const auto registry_path = zookeeper_path / "registry";
     const auto self = Info::create(storage_id);
@@ -732,7 +732,19 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
         if (!found)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: table '{}' is not registered", self.table_id);
 
-        code = zk_client->trySet(registry_path, new_registry_str, stat.version);
+        Coordination::Requests requests;
+        Coordination::Responses responses;
+        if (remove_metadata_if_no_registered && count == 0)
+        {
+            requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
+            requests.push_back(zkutil::makeRemoveRecursiveRequest(zookeeper_path, -1));
+
+            code = zk_client->tryMulti(requests, responses);
+        }
+        else
+        {
+            code = zk_client->trySet(registry_path, new_registry_str, stat.version);
+        }
 
         if (code == Coordination::Error::ZOK)
         {
@@ -744,6 +756,10 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
             || code == Coordination::Error::ZBADVERSION)
             continue;
 
+        if (!responses.empty())
+        {
+            zkutil::KeeperMultiException::check(code, requests, responses);
+        }
         throw zkutil::KeeperException(code);
     }
 
