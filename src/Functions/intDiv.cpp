@@ -89,6 +89,12 @@ private:
     }
 };
 
+template<typename A, typename B>
+struct DivideIntegralOrNullByConstantImpl : DivideIntegralByConstantImpl<A, B>
+{
+    using Op = DivideIntegralOrNullImpl<A, B>;
+};
+
 /** Specializations are specified for dividing numbers of the type UInt64, UInt32, Int64, Int32 by the numbers of the same sign.
   * Can be expanded to all possible combinations, but more code is needed.
   */
@@ -116,6 +122,26 @@ template <> struct BinaryOperationImpl<Int32, Int8, DivideIntegralImpl<Int32, In
 template <> struct BinaryOperationImpl<Int32, Int16, DivideIntegralImpl<Int32, Int16>> : DivideIntegralByConstantImpl<Int32, Int16> {};
 template <> struct BinaryOperationImpl<Int32, Int32, DivideIntegralImpl<Int32, Int32>> : DivideIntegralByConstantImpl<Int32, Int32> {};
 template <> struct BinaryOperationImpl<Int32, Int64, DivideIntegralImpl<Int32, Int64>> : DivideIntegralByConstantImpl<Int32, Int64> {};
+
+template <> struct BinaryOperationImpl<UInt64, UInt8, DivideIntegralOrNullImpl<UInt64, UInt8>> : DivideIntegralOrNullByConstantImpl<UInt64, UInt8> {};
+template <> struct BinaryOperationImpl<UInt64, UInt16, DivideIntegralOrNullImpl<UInt64, UInt16>> : DivideIntegralOrNullByConstantImpl<UInt64, UInt16> {};
+template <> struct BinaryOperationImpl<UInt64, UInt32, DivideIntegralOrNullImpl<UInt64, UInt32>> : DivideIntegralOrNullByConstantImpl<UInt64, UInt32> {};
+template <> struct BinaryOperationImpl<UInt64, UInt64, DivideIntegralOrNullImpl<UInt64, UInt64>> : DivideIntegralOrNullByConstantImpl<UInt64, UInt64> {};
+
+template <> struct BinaryOperationImpl<UInt32, UInt8, DivideIntegralOrNullImpl<UInt32, UInt8>> : DivideIntegralOrNullByConstantImpl<UInt32, UInt8> {};
+template <> struct BinaryOperationImpl<UInt32, UInt16, DivideIntegralOrNullImpl<UInt32, UInt16>> : DivideIntegralOrNullByConstantImpl<UInt32, UInt16> {};
+template <> struct BinaryOperationImpl<UInt32, UInt32, DivideIntegralOrNullImpl<UInt32, UInt32>> : DivideIntegralOrNullByConstantImpl<UInt32, UInt32> {};
+template <> struct BinaryOperationImpl<UInt32, UInt64, DivideIntegralOrNullImpl<UInt32, UInt64>> : DivideIntegralOrNullByConstantImpl<UInt32, UInt64> {};
+
+template <> struct BinaryOperationImpl<Int64, Int8, DivideIntegralOrNullImpl<Int64, Int8>> : DivideIntegralOrNullByConstantImpl<Int64, Int8> {};
+template <> struct BinaryOperationImpl<Int64, Int16, DivideIntegralOrNullImpl<Int64, Int16>> : DivideIntegralOrNullByConstantImpl<Int64, Int16> {};
+template <> struct BinaryOperationImpl<Int64, Int32, DivideIntegralOrNullImpl<Int64, Int32>> : DivideIntegralOrNullByConstantImpl<Int64, Int32> {};
+template <> struct BinaryOperationImpl<Int64, Int64, DivideIntegralOrNullImpl<Int64, Int64>> : DivideIntegralOrNullByConstantImpl<Int64, Int64> {};
+
+template <> struct BinaryOperationImpl<Int32, Int8, DivideIntegralOrNullImpl<Int32, Int8>> : DivideIntegralOrNullByConstantImpl<Int32, Int8> {};
+template <> struct BinaryOperationImpl<Int32, Int16, DivideIntegralOrNullImpl<Int32, Int16>> : DivideIntegralOrNullByConstantImpl<Int32, Int16> {};
+template <> struct BinaryOperationImpl<Int32, Int32, DivideIntegralOrNullImpl<Int32, Int32>> : DivideIntegralOrNullByConstantImpl<Int32, Int32> {};
+template <> struct BinaryOperationImpl<Int32, Int64, DivideIntegralOrNullImpl<Int32, Int64>> : DivideIntegralOrNullByConstantImpl<Int32, Int64> {};
 }
 
 struct NameIntDiv { static constexpr auto name = "intDiv"; };

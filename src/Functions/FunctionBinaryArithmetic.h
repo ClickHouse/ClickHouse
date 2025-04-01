@@ -2439,7 +2439,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         }
 
         /// Process special case when operation is divideOrNull, intDivOrNull, moduloOrNull or positiveModuloOrNull.
-        if (is_division_or_null)
+        if (is_division_or_null && input_rows_count > 0)
         {
             if (left_argument.column->onlyNull() || right_argument.column->onlyNull())
             {
