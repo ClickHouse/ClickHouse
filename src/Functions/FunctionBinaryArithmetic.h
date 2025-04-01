@@ -2439,14 +2439,14 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         }
 
         /// Process special case when operation is divideOrNull, intDivOrNull, moduloOrNull or positiveModuloOrNull.
-        if (is_division_or_null && input_rows_count > 0)
+        if (is_division_or_null)
         {
             if (left_argument.column->onlyNull() || right_argument.column->onlyNull())
             {
                 auto res = removeNullable(result_type)->createColumn();
                 res->insertManyDefaults(input_rows_count);
                 auto null_map_col = ColumnUInt8::create(input_rows_count, 1);
-                return wrapInNullable(std::move(res), std::move(null_map_col));
+                return null_map_col->size() > 0 ? wrapInNullable(std::move(res), std::move(null_map_col)) : makeNullable(std::move(res));
             }
             else if (result_type->isNullable())
             {
@@ -2455,7 +2455,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 for (size_t i = 0; i < input_rows_count; ++i)
                     null_map_data[i] = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
                 auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, right_nullmap);
-                return wrapInNullable(res, std::move(null_map_col));
+                return null_map_col->size() > 0 ? wrapInNullable(res, std::move(null_map_col)) : makeNullable(res);
             }
         }
 
