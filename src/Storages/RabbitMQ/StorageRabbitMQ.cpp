@@ -368,34 +368,23 @@ void StorageRabbitMQ::stopLoopIfNoReaders()
     std::lock_guard lock(loop_mutex);
     if (readers_count)
         return;
-    connection->getHandler().updateLoopState(Loop::STOP);
+    connection->getHandler().stopLoop();
 }
 
-void StorageRabbitMQ::startLoop()
+void StorageRabbitMQ::startBackgroundLoop()
 {
-    connection->getHandler().updateLoopState(Loop::RUN);
     looping_task->activateAndSchedule();
 }
 
-void StorageRabbitMQ::stopLoop()
+void StorageRabbitMQ::stopBackgroundLoop()
 {
-    /// SHUTDOWN state does not let loop be started.
-    connection->getHandler().updateLoopState(Loop::SHUTDOWN);
+    connection->getHandler().stopLoop(/* background */true);
 
     LOG_DEBUG(log, "Deactivating looping task");
 
     looping_task->deactivate();
 
     LOG_DEBUG(log, "Deactivated looping task");
-
-    /// Update state to STOP to allow loop to be started afterwards.
-    connection->getHandler().updateLoopState(Loop::STOP);
-}
-
-void StorageRabbitMQ::shutdownLoop()
-{
-    connection->getHandler().updateLoopState(Loop::SHUTDOWN);
-    looping_task->deactivate();
 }
 
 void StorageRabbitMQ::incrementReader()
@@ -740,7 +729,7 @@ void StorageRabbitMQ::unbindExchange()
         {
             streaming_task->deactivate();
 
-            stopLoop();
+            stopBackgroundLoop();
             std::string error;
 
             auto rabbit_channel = connection->createChannel();
@@ -804,7 +793,7 @@ void StorageRabbitMQ::read(
     if (!connection->isConnected())
     {
         if (connection->getHandler().loopRunning())
-            stopLoop();
+            stopBackgroundLoop();
         if (!connection->reconnect())
             throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "No connection to {}", connection->connectionInfoForLog());
     }
@@ -836,7 +825,7 @@ void StorageRabbitMQ::read(
     }
 
     if (!connection->getHandler().loopRunning() && connection->isConnected())
-        startLoop();
+        startBackgroundLoop();
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -905,11 +894,7 @@ void StorageRabbitMQ::shutdown(bool is_drop)
     streaming_task->deactivate();
     LOG_TRACE(log, "Deactivated streaming task");
 
-    if (is_drop)
-        /// We still need to do some staff with the loop later.
-        stopLoop();
-    else
-        shutdownLoop();
+    stopBackgroundLoop();
 
     LOG_TRACE(log, "Deactivated looping task");
 
@@ -922,10 +907,7 @@ void StorageRabbitMQ::shutdown(bool is_drop)
             consumer.lock()->closeConnections();
 
         if (is_drop)
-        {
             cleanupRabbitMQ();
-            shutdownLoop();
-        }
 
         /// It is important to close connection here - before removing consumers, because
         /// it will finish and clean callbacks, which might use those consumers data.
@@ -1204,7 +1186,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
     if (!connection->getHandler().loopRunning())
-        startLoop();
+        startBackgroundLoop();
 
     bool write_failed = false;
     try
@@ -1223,7 +1205,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent
      */
-    stopLoop();
+    stopBackgroundLoop();
     size_t queue_empty = 0;
 
     if (!connection->isConnected())
@@ -1310,7 +1292,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
 
     LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
-    startLoop();
+    startBackgroundLoop();
 
     /// Reschedule.
     return true;

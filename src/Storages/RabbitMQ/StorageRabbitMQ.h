@@ -166,9 +166,8 @@ private:
     void loopingFunc();
     void connectionFunc();
 
-    void startLoop();
-    void stopLoop();
-    void shutdownLoop();
+    void startBackgroundLoop();
+    void stopBackgroundLoop();
     void stopLoopIfNoReaders();
 
     static Names parseSettings(String settings_list);
