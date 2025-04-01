@@ -29,7 +29,7 @@ Block NotJoinedSingleSlot::getEmptyBlock()
 size_t NotJoinedSingleSlot::fillColumns(MutableColumns & columns_right)
 {
     if (done)
-        return 0;    
+        return 0;
 
     const auto & slot_ptr = join.hash_joins[slot_index];
     std::unique_lock<std::mutex> lock(slot_ptr->mutex);
