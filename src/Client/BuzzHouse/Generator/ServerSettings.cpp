@@ -7,6 +7,8 @@ const auto probRange = [](RandomGenerator & rg) { return std::to_string(rg.thres
 
 const auto highRange = [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); };
 
+const auto ratioRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 0.99)); };
+
 const auto nastyStrings = [](RandomGenerator & rg) { return "'" + rg.pickRandomly(rg.nasty_strings) + "'"; };
 
 std::unordered_map<String, CHSetting> performanceSettings
@@ -84,16 +86,9 @@ std::unordered_map<String, CHSetting> performanceSettings
              "'prefer_partial_merge'"},
             false)},
        {"low_cardinality_use_single_dictionary_for_part", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"max_bytes_ratio_before_external_group_by",
-        CHSetting(
-            [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 0.99)); },
-            {"0", "0.1", "0.5", "0.99"},
-            false)},
-       {"max_bytes_ratio_before_external_sort",
-        CHSetting(
-            [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 0.99)); },
-            {"0", "0.1", "0.5", "0.99"},
-            false)},
+       {"max_bytes_ratio_before_external_group_by", CHSetting(ratioRange, {"0", "0.1", "0.5", "0.99"}, false)},
+       {"max_bytes_ratio_before_external_sort", CHSetting(ratioRange, {"0", "0.1", "0.5", "0.99"}, false)},
+       {"max_streams_to_max_threads_ratio", CHSetting(ratioRange, {"0", "0.1", "0.5", "0.99"}, false)},
        {"merge_tree_determine_task_size_by_prewhere_columns", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"min_count_to_compile_aggregate_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
        {"min_count_to_compile_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
@@ -402,6 +397,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"ignore_on_cluster_for_replicated_named_collections_queries", CHSetting(trueOrFalse, {}, false)},
     {"ignore_on_cluster_for_replicated_udf_queries", CHSetting(trueOrFalse, {}, false)},
     {"implicit_transaction", CHSetting(trueOrFalse, {}, false)},
+    {"input_format_allow_errors_num", CHSetting(highRange, {}, false)},
+    {"input_format_allow_errors_ratio", CHSetting(ratioRange, {}, false)},
     {"input_format_allow_seeks", CHSetting(trueOrFalse, {}, false)},
     {"input_format_arrow_allow_missing_columns", CHSetting(trueOrFalse, {}, false)},
     {"input_format_arrow_case_insensitive_column_matching", CHSetting(trueOrFalse, {}, false)},
