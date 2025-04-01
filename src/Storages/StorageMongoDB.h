@@ -16,6 +16,22 @@
 namespace DB
 {
 
+class MongoDBInstanceHolder final : public boost::noncopyable
+{
+public:
+    MongoDBInstanceHolder(MongoDBInstanceHolder const &) = delete;
+    void operator=(MongoDBInstanceHolder const &) = delete;
+
+    static MongoDBInstanceHolder & instance()
+    {
+        static MongoDBInstanceHolder instance;
+        return instance;
+    }
+private:
+    MongoDBInstanceHolder() = default;
+    static mongocxx::instance inst;
+};
+
 struct MongoDBConfiguration
 {
     std::unique_ptr<mongocxx::uri> uri;
@@ -66,7 +82,7 @@ public:
         size_t num_streams) override;
 
 private:
-    mongocxx::instance inst{};
+    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
 
     template <typename OnError>
     std::optional<bsoncxx::document::value> visitWhereFunction(
