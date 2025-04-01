@@ -232,9 +232,9 @@ const std::vector<Int32> & ManifestFileContent::getPartitionKeyColumnIDs() const
     return partition_column_ids;
 }
 
-size_t ManifestFileContent::getMemoryBytes() const
+size_t ManifestFileContent::getSizeInMemory() const
 {
-    size_t total_size = sizeof(ManifestFileContent) + 200; /// assume we have some overhead
+    size_t total_size = sizeof(ManifestFileContent);
     if (partition_key_description)
         total_size += sizeof(DB::KeyDescription);
     total_size += partition_column_ids.capacity() * sizeof(Int32);

@@ -2483,7 +2483,8 @@ def test_metadata_cache(started_cluster, storage_type):
         )
     )
 
-    assert 0 <= int(
+    # The hits will be > 0 because of schema inference
+    assert 0 < int(
         instance.query(
             f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )

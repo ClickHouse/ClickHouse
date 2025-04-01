@@ -514,58 +514,63 @@ DataLakeMetadataPtr IcebergMetadata::create(
     return ptr;
 }
 
+void IcebergMetadata::initializeDataFilesAndSchemaProcessor(ManifestListPtr manifest_list_ptr) const
+{
+    for (const auto & manifest_file_content : *manifest_list_ptr)
+    {
+        for (const auto & data_file_path : manifest_file_content->getFiles())
+        {
+            if (std::holds_alternative<DataFileEntry>(data_file_path.file))
+                manifest_file_by_data_file.emplace(std::get<DataFileEntry>(data_file_path.file).file_name, manifest_file_content);
+        }
+    }
+}
+
 ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
 {
     auto configuration_ptr = configuration.lock();
     if (configuration_ptr == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
 
-    ManifestList manifest_list;
+    auto create_fn = [&]()
+    {
+        ManifestList manifest_list;
+        StorageObjectStorage::ObjectInfo object_info(filename);
+        auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, getContext(), log);
+        AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), filename, getFormatSettings(getContext()));
+
+        ManifestListCacheCell::CachedManifestList cached_manifest_list;
+
+        for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
+        {
+            const std::string file_path = manifest_list_deserializer.getValueFromRowByName(i, MANIFEST_FILE_PATH_COLUMN, TypeIndex::String).safeGet<std::string>();
+            const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPath(), table_location);
+            Int64 added_sequence_number = 0;
+            if (format_version > 1)
+                added_sequence_number = manifest_list_deserializer.getValueFromRowByName(i, SEQUENCE_NUMBER_COLUMN, TypeIndex::Int64).safeGet<Int64>();
+            cached_manifest_list.emplace_back(manifest_file_name, added_sequence_number);
+        }
+        /// We only return the list of {file name, seq number} for cache.
+        /// Because ManifestList holds a list of ManifestFilePtr which consume much memory space.
+        /// ManifestFilePtr is shared pointers can be held for too much time, so we cache ManifestFile seperately.
+        return cached_manifest_list;
+    };
+
+    auto convert_fn = [&](const String & filename_, Int64 inherited_sequence_number_)
+    {
+        return getManifestFile(filename_, inherited_sequence_number_);
+    };
+
+    Iceberg::ManifestListPtr manifest_list_ptr;
     if (manifest_cache)
     {
-        auto manifest_list_ptr = manifest_cache->getManifestList(IcebergMetadataFilesCache::getKey(configuration_ptr, filename),
-            [&](const String & filename_, Int64 inherited_sequence_number_){ return getManifestFile(filename_, inherited_sequence_number_); });
-        if (manifest_list_ptr)
-        {
-            for (const auto & manifest_file_content : *manifest_list_ptr)
-            {
-                for (const auto & data_file_path : manifest_file_content->getFiles())
-                {
-                    if (std::holds_alternative<DataFileEntry>(data_file_path.file))
-                        manifest_file_by_data_file.emplace(std::get<DataFileEntry>(data_file_path.file).file_name, manifest_file_content);
-                }
-                schema_processor.addIcebergTableSchema(manifest_file_content->getSchemaObject());
-            }
-            return manifest_list_ptr;
-        }
+        manifest_list_ptr = manifest_cache->getOrSetManifestList(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn, convert_fn);
     }
-
-    StorageObjectStorage::ObjectInfo object_info(filename);
-    auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, getContext(), log);
-    AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), filename, getFormatSettings(getContext()));
-
-    ManifestListCacheCell::CachedManifestList cached_manifest_list;
-
-    for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
+    else
     {
-        const std::string file_path = manifest_list_deserializer.getValueFromRowByName(i, MANIFEST_FILE_PATH_COLUMN, TypeIndex::String).safeGet<std::string>();
-        const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPath(), table_location);
-        Int64 added_sequence_number = 0;
-        if (format_version > 1)
-            added_sequence_number = manifest_list_deserializer.getValueFromRowByName(i, SEQUENCE_NUMBER_COLUMN, TypeIndex::Int64).safeGet<Int64>();
-
-        auto manifest_file_content = getManifestFile(manifest_file_name, added_sequence_number);
-        cached_manifest_list.emplace_back(manifest_file_name, added_sequence_number);
-        for (const auto & data_file_path : manifest_file_content->getFiles())
-        {
-            if (std::holds_alternative<DataFileEntry>(data_file_path.file))
-                manifest_file_by_data_file.emplace(std::get<DataFileEntry>(data_file_path.file).file_name, manifest_file_content);
-        }
-        manifest_list.push_back(manifest_file_content);
+        manifest_list_ptr = ManifestListCacheCell(create_fn()).getManifestList(convert_fn);
     }
-    ManifestListPtr manifest_list_ptr = std::make_shared<ManifestList>(std::move(manifest_list));
-    if (manifest_cache)
-        manifest_cache->setManifestList(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), std::move(cached_manifest_list));
+    initializeDataFilesAndSchemaProcessor(manifest_list_ptr);
     return manifest_list_ptr;
 }
 
@@ -573,34 +578,32 @@ ManifestFilePtr IcebergMetadata::getManifestFile(const String & filename, Int64 
 {
     auto configuration_ptr = configuration.lock();
 
-    if (manifest_cache)
+    auto create_fn = [&]()
     {
-        auto cached_manifest_file = manifest_cache->getManifestFile(IcebergMetadataFilesCache::getKey(configuration_ptr, filename));
-        if (cached_manifest_file)
-        {
-            schema_processor.addIcebergTableSchema(cached_manifest_file->getSchemaObject());
-            return cached_manifest_file;
-        }
-    }
-    ObjectInfo manifest_object_info(filename);
-    auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, getContext(), log);
-    AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(getContext()));
-    auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(manifest_file_deserializer, filename);
-    schema_processor.addIcebergTableSchema(schema_object);
-    auto manifest_file = std::make_shared<ManifestFileContent>(
-        manifest_file_deserializer,
-        format_version,
-        configuration_ptr->getPath(),
-        schema_id,
-        schema_object,
-        schema_processor,
-        inherited_sequence_number,
-        table_location,
-        getContext());
+        ObjectInfo manifest_object_info(filename);
+        auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, getContext(), log);
+        AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(getContext()));
+        auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(manifest_file_deserializer, filename);
+        schema_processor.addIcebergTableSchema(schema_object);
+        return std::make_shared<ManifestFileContent>(
+            manifest_file_deserializer,
+            format_version,
+            configuration_ptr->getPath(),
+            schema_id,
+            schema_object,
+            schema_processor,
+            inherited_sequence_number,
+            table_location,
+            getContext());
+    };
 
     if (manifest_cache)
-        manifest_cache->setManifestFile(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), manifest_file);
-    return manifest_file;
+    {
+        auto manifest_file = manifest_cache->getOrSetManifestFile(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
+        schema_processor.addIcebergTableSchema(manifest_file->getSchemaObject());
+        return manifest_file;
+    }
+    return create_fn();
 }
 
 Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const

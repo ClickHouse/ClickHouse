@@ -38,14 +38,14 @@ struct ManifestListCacheCell
     };
     using CachedManifestList = std::list<ManifestFileEntry>;
     CachedManifestList cached_manifest_files;
-    size_t getMemoryBytes() const
+    size_t getSizeInMemory() const
     {
         size_t total_size = sizeof(std::list<ManifestFileEntry>);
         for (const auto & entry: cached_manifest_files)
         {
             total_size += sizeof(ManifestFileEntry) + entry.data_path.capacity();
         }
-        return total_size + 200;
+        return total_size;
     }
 
     /// getManifestList will return a list of ManifestFilePtr, from cache or construct from scratch.
@@ -80,22 +80,23 @@ struct IcebergMetadataFilesCacheCell
     Iceberg::ManifestFilePtr manifest_file;
 
     size_t memory_bytes;
+    static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200; /// we always underestimate the size of an object;
 
     explicit IcebergMetadataFilesCacheCell(Poco::JSON::Object::Ptr metadata_object_, size_t memory_bytes_)
         : metadata_object(metadata_object_)
-        , memory_bytes(memory_bytes_)
+        , memory_bytes(memory_bytes_ + SIZE_IN_MEMORY_OVERHEAD)
     {
         CurrentMetrics::add(CurrentMetrics::IcebergMetadataFilesCacheSize, memory_bytes);
     }
     explicit IcebergMetadataFilesCacheCell(ManifestListCacheCell && manifest_list_)
         : manifest_list_cell(std::move(manifest_list_))
-        , memory_bytes(manifest_list_cell.getMemoryBytes())
+        , memory_bytes(manifest_list_cell.getSizeInMemory() + SIZE_IN_MEMORY_OVERHEAD)
     {
         CurrentMetrics::add(CurrentMetrics::IcebergMetadataFilesCacheSize, memory_bytes);
     }
     explicit IcebergMetadataFilesCacheCell(Iceberg::ManifestFilePtr manifest_file_)
         : manifest_file(manifest_file_)
-        , memory_bytes(manifest_file->getMemoryBytes())
+        , memory_bytes(manifest_file->getSizeInMemory() + SIZE_IN_MEMORY_OVERHEAD)
     {
         CurrentMetrics::add(CurrentMetrics::IcebergMetadataFilesCacheSize, memory_bytes);
     }
@@ -142,39 +143,36 @@ public:
         Base::set(data_path, std::make_shared<IcebergMetadataFilesCacheCell>(metadata_object, memory_bytes));
     }
 
+    template <typename LoadFunc, typename ConvertFunc>
+    Iceberg::ManifestListPtr getOrSetManifestList(const String & data_path, LoadFunc && load_fn, ConvertFunc && convert_fn)
+    {
+        auto load_fn_wrapper = [&]()
+        {
+            auto && cached_manifest_list = load_fn();
+            return std::make_shared<IcebergMetadataFilesCacheCell>(ManifestListCacheCell(std::move(cached_manifest_list)));
+        };
+        auto result = Base::getOrSet(data_path, load_fn_wrapper);
+        if (result.second)
+            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
+        return result.first->manifest_list_cell.getManifestList(convert_fn);
+    }
+
     template <typename LoadFunc>
-    Iceberg::ManifestListPtr getManifestList(const String & data_path, LoadFunc && load)
+    Iceberg::ManifestFilePtr getOrSetManifestFile(const String & data_path, LoadFunc && load_fn)
     {
-        const auto result = Base::get(data_path);
-        if (!result)
+        auto load_fn_wrapper = [&]()
         {
+            Iceberg::ManifestFilePtr manifest_file = load_fn();
+            return std::make_shared<IcebergMetadataFilesCacheCell>(manifest_file);
+        };
+        auto result = Base::getOrSet(data_path, load_fn_wrapper);
+        if (result.second)
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
-            return nullptr;
-        }
-        ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
-        return result->manifest_list_cell.getManifestList(load);
-    }
-
-    void setManifestList(const String & data_path, ManifestListCacheCell::CachedManifestList && cached_manifest_list)
-    {
-        Base::set(data_path, std::make_shared<IcebergMetadataFilesCacheCell>(ManifestListCacheCell(std::move(cached_manifest_list))));
-    }
-
-    Iceberg::ManifestFilePtr getManifestFile(const String & data_path)
-    {
-        auto result = Base::get(data_path);
-        if (!result)
-        {
-            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
-            return nullptr;
-        }
-        ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
-        return result->manifest_file;
-    }
-
-    void setManifestFile(const String & data_path, Iceberg::ManifestFilePtr manifest_file)
-    {
-        Base::set(data_path, std::make_shared<IcebergMetadataFilesCacheCell>(manifest_file));
+        else
+            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
+        return result.first->manifest_file;
     }
 
 private:
