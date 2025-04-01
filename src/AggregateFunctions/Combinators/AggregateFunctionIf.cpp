@@ -3,7 +3,6 @@
 #include "AggregateFunctionNull.h"
 
 #include <absl/container/inlined_vector.h>
-#include <iostream>
 
 namespace DB
 {
@@ -338,9 +337,7 @@ public:
                     const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
                     const UInt8 * col_null_map = nullmap_column.getData().data();
                     for (size_t r = row_begin; r < row_end; r++)
-                    {
-                        final_null_flags[r] |= col_null_map[r];
-                    }
+                        final_null_flags[r] |= !!col_null_map[r];
                 }
                 nested_columns[arg] = &nullable_col.getNestedColumn();
             }
