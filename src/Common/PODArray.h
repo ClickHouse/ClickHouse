@@ -135,8 +135,8 @@ protected:
         TAllocator::free(c_start - pad_left, allocated_bytes());
     }
 
-    template <typename... TAllocatorParams>
-    void PRESERVE_MOST realloc(size_t bytes, TAllocatorParams &&... allocator_params)
+    template <typename ... TAllocatorParams>
+    void realloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
         if (c_start == null)
         {
@@ -167,8 +167,8 @@ protected:
         return (stack_threshold > 0) && (allocated_bytes() <= stack_threshold);
     }
 
-    template <typename... TAllocatorParams>
-    void PRESERVE_MOST reserveForNextSize(TAllocatorParams &&... allocator_params)
+    template <typename ... TAllocatorParams>
+    void reserveForNextSize(TAllocatorParams &&... allocator_params)
     {
         if (empty())
         {
