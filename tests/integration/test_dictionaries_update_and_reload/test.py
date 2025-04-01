@@ -97,12 +97,12 @@ def test_reload_while_loading(started_cluster):
     assert get_loading_duration(instance, "slow") == 0
 
     query_id = str(uuid.uuid4())
-    # It's not possible to get a value from the dictionary within 2 second, so the following query fails by timeout.
+    # It's not possible to get a value from the dictionary within 10 seconds, so the following query fails by timeout.
     with pytest.raises(QueryTimeoutExceedException):
         query(
             "SELECT dictGetInt32('slow', 'a', toUInt64(5))",
             query_id=query_id,
-            timeout=2,
+            timeout=10,
         )
 
     # The instance should receive the query
@@ -131,7 +131,7 @@ def test_reload_while_loading(started_cluster):
     # SYSTEM RELOAD DICTIONARY should restart loading.
     query_id = str(uuid.uuid4())
     with pytest.raises(QueryTimeoutExceedException):
-        query("SYSTEM RELOAD DICTIONARY 'slow'", query_id=query_id, timeout=2)
+        query("SYSTEM RELOAD DICTIONARY 'slow'", query_id=query_id, timeout=10)
     # The instance should receive the query
     query("SYSTEM FLUSH LOGS")
     assert instance.wait_for_log_line(
