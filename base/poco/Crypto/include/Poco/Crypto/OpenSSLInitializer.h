@@ -58,9 +58,12 @@ namespace Crypto
         {
             if (!enabled)
             {
-                EVP_default_properties_enable_fips(nullptr, 0);
+                if (EVP_default_properties_enable_fips(nullptr, 0) != 1)
+                    throw Exception("Failed to disable FIPS mode");
                 return;
             }
+
+            poco_assert(!_fipsProvider);
 
             _fipsProvider = OSSL_PROVIDER_load(nullptr, "fips");
             if (!_fipsProvider)

@@ -1,5 +1,7 @@
 #include <Storages/System/StorageSystemCertificates.h>
 
+#include "config.h"
+
 #include <Columns/IColumn.h>
 #include <Common/re2.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -17,6 +19,7 @@
 
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
+
 
 namespace DB
 {

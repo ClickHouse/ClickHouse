@@ -705,6 +705,10 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetKey(key);
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
+
+    // By default AWS SDK uses MD5 as a checksum algorithm.
+    // MD5 is not supported in OpenSSL FIPS mode as it is considered weak and collision-prone.
+    // This has to be a checksum supported by AWS S3, GCS and MiniIO.
     req.SetChecksumAlgorithm(Aws::S3::Model::ChecksumAlgorithm::CRC32C);
 
     if (object_metadata.has_value())
