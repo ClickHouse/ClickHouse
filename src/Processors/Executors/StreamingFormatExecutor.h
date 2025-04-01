@@ -30,13 +30,13 @@ public:
         bool enable_preallocate = true);
 
     /// Returns numbers of new read rows.
-    size_t execute(size_t num_bytes = 0);
+    size_t execute(size_t number_of_chunks = 1);
 
     /// Execute with provided read buffer.
-    size_t execute(ReadBuffer & buffer, size_t num_bytes = 0);
+    size_t execute(ReadBuffer & buffer, size_t number_of_chunks = 1);
 
     /// Inserts into result columns already preprocessed chunk.
-    size_t insertChunk(Chunk chunk, size_t num_bytes = 0);
+    size_t insertChunk(Chunk chunk, size_t number_of_chunkstes = 0);
 
     /// Releases currently accumulated columns.
     MutableColumns getResultColumns();
@@ -45,7 +45,7 @@ public:
     void setQueryParameters(const NameToNameMap & parameters);
 
 private:
-    void preallocateResultColumns(size_t num_bytes, const Chunk & chunk);
+    void preallocateResultColumns(const Chunk & chunk, size_t number_of_chunks);
 
     const Block header;
     const InputFormatPtr format;

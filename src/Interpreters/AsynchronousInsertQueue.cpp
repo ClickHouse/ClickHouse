@@ -1091,7 +1091,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         executor.setQueryParameters(entry->query_parameters);
 
         size_t num_bytes = bytes->size();
-        size_t num_rows = executor.execute(*buffer, num_bytes);
+        size_t num_rows = executor.execute(*buffer, data->entries.size());
 
         total_rows += num_rows;
 

@@ -52,36 +52,28 @@ void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameter
         values_format->setQueryParameters(parameters);
 }
 
-void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const Chunk & chunk)
+void StreamingFormatExecutor::preallocateResultColumns(const Chunk & chunk, size_t number_of_chunks)
 {
     if (!try_preallocate || !enable_preallocate)
         return;
 
     try_preallocate = false; /// do it once
 
-    if (total_bytes && num_bytes)
+    /// Generate some dummy columns whose size is the original columns size * factor. It's
+    /// ok to do this because prepareForSquashing only uses the size of reference_columns
+    /// and nothing else.
+    Columns reference_columns;
+    for (const auto & column : chunk.getColumns())
+        reference_columns.emplace_back(ColumnNothing::create(static_cast<size_t>(std::ceil(column->size() * number_of_chunks))));
+
+    for (size_t i = 0; i < result_columns.size(); ++i)
     {
-        double factor = static_cast<double>(total_bytes) / num_bytes;
-
-        /// Generate some dummy columns whose size is the original columns size * factor. It's
-        /// ok to do this because prepareForSquashing only uses the size of reference_columns
-        /// and nothing else.
-        Columns reference_columns;
-        for (const auto & column : chunk.getColumns())
-            reference_columns.emplace_back(ColumnNothing::create(static_cast<size_t>(std::ceil(column->size() * factor))));
-
-        /// assuming that all chunks have same nature, specifically
-        /// similar raw data size/number of rows ratio
-        /// use first one to predict
-        for (size_t i = 0; i < result_columns.size(); ++i)
-        {
-            /// prepareForSquashing is used to reserve space, we don actually do squashing
-            result_columns[i]->prepareForSquashing({reference_columns[i]});
-        }
+        /// prepareForSquashing is used to reserve space, we don't actually do squashing
+        result_columns[i]->prepareForSquashing({reference_columns[i]});
     }
 }
 
-size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t num_bytes)
+size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t number_of_chunks)
 {
     format->setReadBuffer(buffer);
 
@@ -89,10 +81,10 @@ size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t num_bytes)
     /// but we cannot control lifetime of provided read buffer. To avoid heap use after free
     /// we call format->resetReadBuffer() method that resets all buffers inside format.
     SCOPE_EXIT(format->resetReadBuffer());
-    return execute(num_bytes);
+    return execute(number_of_chunks);
 }
 
-size_t StreamingFormatExecutor::execute(size_t num_bytes)
+size_t StreamingFormatExecutor::execute(size_t number_of_chunks)
 {
     for (size_t i = 0; i < result_columns.size(); ++i)
         result_columns[i]->updateCheckpoint(*checkpoints[i]);
@@ -116,7 +108,7 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
                     return new_rows;
 
                 case IProcessor::Status::PortFull:
-                    new_rows += insertChunk(port.pull(), num_bytes);
+                    new_rows += insertChunk(port.pull(), number_of_chunks);
                     break;
 
                 case IProcessor::Status::NeedData:
@@ -145,13 +137,13 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
     }
 }
 
-size_t StreamingFormatExecutor::insertChunk(Chunk chunk, size_t num_bytes)
+size_t StreamingFormatExecutor::insertChunk(Chunk chunk, size_t number_of_chunks)
 {
     size_t chunk_rows = chunk.getNumRows();
     if (adding_defaults_transform)
         adding_defaults_transform->transform(chunk);
 
-    preallocateResultColumns(num_bytes, chunk);
+    preallocateResultColumns(chunk, number_of_chunks);
 
     auto columns = chunk.detachColumns();
     for (size_t i = 0, s = columns.size(); i < s; ++i)
