@@ -487,7 +487,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
         object = cache_ptr->getMetadataObject(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path));
     }
     else
-        LOG_WARNING(log, "We are not using any cache for iceberg, because the setting use_iceberg_metadata_files_cache is false. This will slow down the performance.");
+        LOG_TRACE(log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
 
     if (!object)
     {
