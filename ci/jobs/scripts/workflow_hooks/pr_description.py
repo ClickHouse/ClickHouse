@@ -48,6 +48,7 @@ class Labels:
     PR_CRITICAL_BUGFIX = "pr-critical-bugfix"
     CAN_BE_TESTED = "can be tested"
     DO_NOT_TEST = "do not test"
+    NO_FAST_TESTS = "no-fast-tests"
     MUST_BACKPORT = "pr-must-backport"
     MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
     JEPSEN_TEST = "jepsen-test"
