@@ -471,7 +471,7 @@ class Utils:
     @staticmethod
     def raise_with_error(error_message, stdout="", stderr="", ex=None):
         Utils.print_formatted_error(error_message, stdout, stderr)
-        raise ex or RuntimeError()
+        raise ex or RuntimeError(error_message)
 
     @staticmethod
     def timestamp():
@@ -602,6 +602,36 @@ class Utils:
         if sorted:
             res.sort(reverse=True)
         return res
+
+    @classmethod
+    def compress_file(cls, path):
+        if Shell.check("which zstd"):
+            path_out = f"{path}.zst"
+            Shell.check(
+                f"rm -f {path_out} && zstd < {path} > {path_out}",
+                verbose=True,
+                strict=True,
+            )
+        elif Shell.check("which pigz"):
+            path_out = f"{path}.gz"
+            Shell.check(
+                f"rm -f {path_out} && pigz < {path} > {path_out}",
+                verbose=True,
+                strict=True,
+            )
+        elif Shell.check("which gzip"):
+            path_out = f"{path}.gz"
+            Shell.check(
+                f"rm -f {path_out} && gzip < {path} > {path_out}",
+                verbose=True,
+                strict=True,
+            )
+        else:
+            path_out = path
+            Utils.raise_with_error(
+                f"Failed to compress file [{path}] no zstd or gz installed"
+            )
+        return path_out
 
     @classmethod
     def add_to_PATH(cls, path):
