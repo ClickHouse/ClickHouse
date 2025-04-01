@@ -77,6 +77,7 @@ namespace ErrorCodes
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int HTTP_LENGTH_REQUIRED;
+    extern const int SESSION_ID_EMPTY;
 }
 
 namespace
@@ -226,25 +227,40 @@ void HTTPHandler::processQuery(
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
 
-    SCOPE_EXIT({ session->releaseSessionID(); });
-
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
     const auto & config = server.config();
 
+    /// Close http session (if any) after processing the request
+    bool close_session = false;
+    if (params.getParsed<bool>("close_session", false) && server.config().getBool("enable_http_close_session", true))
+        close_session = true;
+
     if (session_is_set)
     {
         session_id = params.get("session_id");
+        if (session_id.empty())
+            throw Exception(ErrorCodes::SESSION_ID_EMPTY, "Session id query parameter was provided, but it was empty");
         session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
         session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
     else
     {
+        session_id = "";
         /// We should create it even if we don't have a session_id
         session->makeSessionContext();
     }
+
+    /// We need to have both releasing/closing a session here and below. The problem with having it only as a SCOPE_EXIT
+    /// is that it will be invoked after finalizing the buffer in the end of processQuery, and that technically means that
+    /// the client has received all the data, but the session is not released yet. And it can (and sometimes does) happen
+    /// that we'll try to acquire the same session in another request before releasing the session here, and the session for
+    /// the following request will be technically locked, while it shouldn't be.
+    /// Also, SCOPE_EXIT is still needed to release a session in case of any exception. If the exception occurs at some point
+    /// after releasing the session below, this whole call will be no-op (due to named_session being nullptr already inside a session).
+    SCOPE_EXIT_SAFE({ releaseOrCloseSession(session_id, close_session); });
 
     auto context = session->makeQueryContext();
 
@@ -523,7 +539,7 @@ void HTTPHandler::processQuery(
             response.set(name, value);
     };
 
-    auto handle_exception_in_output_format = [&](IOutputFormat & current_output_format,
+    auto handle_exception_in_output_format = [&, session_id, close_session](IOutputFormat & current_output_format,
                                                  const String & format_name,
                                                  const ContextPtr & context_,
                                                  const std::optional<FormatSettings> & format_settings)
@@ -537,7 +553,7 @@ void HTTPHandler::processQuery(
             if (buffer_until_eof)
             {
                 auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
-                used_output.exception_writer = [&, format_name, header, context_, format_settings](WriteBuffer & buf, int code, const String & message)
+                used_output.exception_writer = [&, format_name, header, context_, format_settings, session_id, close_session](WriteBuffer & buf, int code, const String & message)
                 {
                     if (used_output.out_holder->isCanceled())
                     {
@@ -551,6 +567,7 @@ void HTTPHandler::processQuery(
                     auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
                     output_format->setException(message);
                     output_format->finalize();
+                    releaseOrCloseSession(session_id, close_session);
                     used_output.finalize();
                     used_output.exception_is_written = true;
                 };
@@ -567,6 +584,7 @@ void HTTPHandler::processQuery(
                 used_output.out_holder->setExceptionCode(status.code);
                 current_output_format.setException(status.message);
                 current_output_format.finalize();
+                releaseOrCloseSession(session_id, close_session);
                 used_output.finalize();
                 used_output.exception_is_written = true;
             }
@@ -583,7 +601,7 @@ void HTTPHandler::processQuery(
         {},
         handle_exception_in_output_format);
 
-    session->releaseSessionID();
+    releaseOrCloseSession(session_id, close_session);
 
     if (used_output.hasDelayed())
     {
@@ -666,14 +684,6 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     /// In case of exception, send stack trace to client.
     bool with_stacktrace = false;
-    /// Close http session (if any) after processing the request
-    bool close_session = false;
-    String session_id;
-
-    SCOPE_EXIT_SAFE({
-        if (close_session && !session_id.empty())
-            session->closeSession(session_id);
-    });
 
     OpenTelemetry::TracingContextHolderPtr thread_trace_context;
     SCOPE_EXIT({
@@ -731,12 +741,6 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         if (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true))
             with_stacktrace = true;
 
-        if (params.getParsed<bool>("close_session", false) && server.config().getBool("enable_http_close_session", true))
-            close_session = true;
-
-        if (close_session)
-            session_id = params.get("session_id");
-
         /// FIXME: maybe this check is already unnecessary.
         /// Workaround. Poco does not detect 411 Length Required case.
         if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
@@ -773,11 +777,18 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(status);
-
-        return;
     }
+}
 
-    used_output.finalize();
+void HTTPHandler::releaseOrCloseSession(const String & session_id, bool close_session)
+{
+    if (!session_id.empty())
+    {
+        if (close_session)
+            session->closeSession(session_id);
+        else
+            session->releaseSessionID();
+    }
 }
 
 DynamicQueryHandler::DynamicQueryHandler(

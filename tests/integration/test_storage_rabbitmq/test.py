@@ -13,7 +13,7 @@ import pytest
 from google.protobuf.internal.encoder import _VarintBytes
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 
@@ -71,9 +71,6 @@ def rabbitmq_cluster():
     try:
         cluster.start()
         logging.debug("rabbitmq_id is {}".format(instance.cluster.rabbitmq_docker_id))
-        instance.query("CREATE DATABASE test")
-        instance3.query("CREATE DATABASE test")
-
         yield cluster
 
     finally:
@@ -83,9 +80,12 @@ def rabbitmq_cluster():
 @pytest.fixture(autouse=True)
 def rabbitmq_setup_teardown():
     logging.debug("RabbitMQ is available - running test")
+    instance.query("CREATE DATABASE test")
+    instance3.query("CREATE DATABASE test")
     yield  # run test
     instance.query("DROP DATABASE test SYNC")
-    instance.query("CREATE DATABASE test")
+    instance3.query("DROP DATABASE test SYNC")
+    cluster.reset_rabbitmq()
 
 
 # Tests
@@ -511,6 +511,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
 def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     instance.query(
         """
+        SET allow_materialized_view_with_bad_select = true;
         DROP TABLE IF EXISTS test.view1;
         DROP TABLE IF EXISTS test.view2;
         DROP TABLE IF EXISTS test.view3;
@@ -3877,7 +3878,7 @@ def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
 def test_rabbitmq_json_type(rabbitmq_cluster):
     instance.query(
         """
-        SET allow_experimental_json_type=1;
+        SET enable_json_type=1;
         CREATE TABLE test.rabbitmq (data JSON)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
@@ -3931,3 +3932,25 @@ def test_rabbitmq_json_type(rabbitmq_cluster):
         DROP TABLE test.rabbitmq;
     """
     )
+
+
+def test_hiding_credentials(rabbitmq_cluster):
+    table_name = "test_hiding_credentials"
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.{table_name};
+        CREATE TABLE test.{table_name} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:{cluster.rabbitmq_port}',
+                     rabbitmq_exchange_name = '{table_name}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_username = 'clickhouse',
+                     rabbitmq_password = 'rabbitmq',
+                     rabbitmq_address = 'amqp://root:clickhouse@rabbitmq1:5672/';
+        """
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+    message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE test.{table_name}%'")
+    assert "rabbitmq_password = \\'[HIDDEN]\\'" in  message
+    assert "rabbitmq_address = \\'amqp://root:[HIDDEN]@rabbitmq1:5672/\\'" in  message

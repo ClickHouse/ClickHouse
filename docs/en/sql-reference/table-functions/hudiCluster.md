@@ -15,7 +15,7 @@ Allows processing files from Apache [Hudi](https://hudi.apache.org/) tables in A
 
 **Syntax**
 
-``` sql
+```sql
 hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
 ```
 

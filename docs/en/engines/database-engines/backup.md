@@ -15,7 +15,7 @@ Database backup works with both incremental and non-incremental backups.
 
 ## Creating a Database {#creating-a-database}
 
-``` sql
+```sql
     CREATE DATABASE backup_database
     ENGINE = Backup('database_name_inside_backup', 'backup_destination')
 ```
@@ -24,7 +24,7 @@ Backup destination can be any valid backup [destination](../../operations/backup
 
 With `Disk` backup destination, query to create database from backup looks like this:
 
-``` sql
+```sql
     CREATE DATABASE backup_database
     ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name')
 ```
@@ -38,7 +38,7 @@ With `Disk` backup destination, query to create database from backup looks like 
 
 Let's make an example with a `Disk` backup destination. Let's first setup backups disk in `storage.xml`:
 
-``` xml
+```xml
 <storage_configuration>
     <disks>
         <backups>
@@ -55,7 +55,7 @@ Let's make an example with a `Disk` backup destination. Let's first setup backup
 
 Example of usage. Let's create test database, tables, insert some data and then create a backup:
 
-``` sql
+```sql
 CREATE DATABASE test_database;
 
 CREATE TABLE test_database.test_table_1 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
@@ -72,13 +72,13 @@ BACKUP DATABASE test_database TO Disk('backups', 'test_database_backup');
 
 So now we have `test_database_backup` backup, let's create database Backup:
 
-``` sql
+```sql
 CREATE DATABASE test_database_backup ENGINE = Backup('test_database', Disk('backups', 'test_database_backup'));
 ```
 
 Now we can query any table from database:
 
-``` sql
+```sql
 SELECT id, value FROM test_database_backup.test_table_1;
 
 ┌─id─┬─value──────────────────────┐
@@ -100,7 +100,7 @@ SELECT id, value FROM test_database_backup.test_table_3;
 
 It is also possible to work with this database Backup as with any ordinary database. For example query tables in it:
 
-``` sql
+```sql
 SELECT database, name FROM system.tables WHERE database = 'test_database_backup':
 
 ┌─database─────────────┬─name─────────┐

@@ -11,7 +11,7 @@ title: 'mergeTreeIndex'
 
 Represents the contents of index and marks files of MergeTree tables. It can be used for introspection.
 
-``` sql
+```sql
 mergeTreeIndex(database, table, [with_marks = true])
 ```
 

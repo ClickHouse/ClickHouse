@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional
 
 import docker_images_helper
 import upload_result_helper
-from build_check import get_release_or_pr
 from ci_buddy import CIBuddy
 from ci_cache import CiCache
 from ci_config import BUILD_NAMES_MAPPING, CI
@@ -702,93 +701,7 @@ def _fetch_commit_tokens(message: str, pr_info: PRInfo) -> List[str]:
     return list(set(res + res_2))
 
 
-def _upload_build_artifacts(
-    pr_info: PRInfo,
-    build_name: str,
-    ci_cache: CiCache,
-    job_report: JobReport,
-    s3: S3Helper,
-    s3_destination: str,
-    upload_binary: bool,
-) -> str:
-    # There are ugly artifacts for the performance test. FIXME:
-    s3_performance_path = "/".join(
-        (
-            get_release_or_pr(pr_info, get_version_from_repo())[1],
-            pr_info.sha,
-            Utils.normalize_string(build_name),
-            "performance.tar.zst",
-        )
-    )
-    performance_urls = []
-    assert job_report.build_dir_for_upload, "Must be set for build job"
-    performance_path = Path(job_report.build_dir_for_upload) / "performance.tar.zst"
-    if upload_binary:
-        if performance_path.exists():
-            performance_urls.append(
-                s3.upload_build_file_to_s3(performance_path, s3_performance_path)
-            )
-            print(
-                "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
-                performance_urls[0],
-            )
-            performance_path.unlink()
-        build_urls = (
-            s3.upload_build_directory_to_s3(
-                Path(job_report.build_dir_for_upload),
-                s3_destination,
-                keep_dirs_in_s3_path=False,
-                upload_symlinks=False,
-            )
-            + performance_urls
-        )
-        print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
-    else:
-        build_urls = []
-        print("::notice ::No binaries will be uploaded for this job")
-    log_path = Path(job_report.additional_files[0])
-    log_url = ""
-    if log_path.exists():
-        log_url = s3.upload_build_file_to_s3(
-            log_path, s3_destination + "/" + log_path.name
-        )
-    print(f"::notice ::Log URL: {log_url}")
-
-    # generate and upload a build report
-    build_result = BuildResult(
-        build_name,
-        log_url,
-        build_urls,
-        job_report.version,
-        job_report.status,
-        int(job_report.duration),
-        GITHUB_JOB_API_URL(),
-        head_ref=pr_info.head_ref,
-        # PRInfo fetches pr number for release branches as well - set pr_number to 0 for release
-        #   so that build results are not mistakenly treated as feature branch builds
-        pr_number=pr_info.number if pr_info.is_pr else 0,
-    )
-    report_url = ci_cache.upload_build_report(build_result)
-    print(f"Report file has been uploaded to [{report_url}]")
-
-    # Upload master head's binaries
-    static_bin_name = CI.get_build_config(build_name).static_binary_name
-    if pr_info.is_master and static_bin_name:
-        # Full binary with debug info:
-        s3_path_full = "/".join((pr_info.base_ref, static_bin_name, "clickhouse-full"))
-        binary_full = Path(job_report.build_dir_for_upload) / "clickhouse"
-        url_full = s3.upload_build_file_to_s3(binary_full, s3_path_full)
-        print(f"::notice ::Binary static URL (with debug info): {url_full}")
-
-        # Stripped binary without debug info:
-        s3_path_compact = "/".join((pr_info.base_ref, static_bin_name, "clickhouse"))
-        binary_compact = Path(job_report.build_dir_for_upload) / "clickhouse-stripped"
-        url_compact = s3.upload_build_file_to_s3(binary_compact, s3_path_compact)
-        print(f"::notice ::Binary static URL (compact): {url_compact}")
-
-    return log_url
-
-
+# TODO: move to praktika build job post hook and remove
 def _upload_build_profile_data(
     pr_info: PRInfo,
     build_name: str,
@@ -1223,46 +1136,14 @@ def main() -> int:
             check_url = ""
 
             if CI.is_build_job(args.job_name):
-                assert (
-                    indata
-                ), f"--infile with config must be provided for POST action of a build type job [{args.job_name}]"
-
-                # upload binaries only for normal builds in PRs
-                upload_binary = (
-                    not pr_info.is_pr
-                    or CI.get_job_ci_stage(args.job_name)
-                    not in (CI.WorkflowStages.BUILDS_2,)
-                    or CiSettings.create_from_run_config(indata).upload_all
-                )
-
-                build_name = args.job_name
-                s3_path_prefix = "/".join(
-                    (
-                        get_release_or_pr(pr_info, get_version_from_repo())[0],
-                        pr_info.sha,
-                        build_name,
-                    )
-                )
-                log_url = _upload_build_artifacts(
-                    pr_info,
-                    build_name,
-                    ci_cache=CiCache(s3, indata["jobs_data"]["digests"]),
-                    job_report=job_report,
-                    s3=s3,
-                    s3_destination=s3_path_prefix,
-                    upload_binary=upload_binary,
-                )
-                _upload_build_profile_data(
-                    pr_info, build_name, job_report, git_runner, ch_helper
-                )
-                check_url = log_url
+                assert False, "obsolete code branch"
             else:
                 # test job
                 gh = GitHub(get_best_robot_token(), per_page=100)
                 additional_urls = []
                 s3_path_prefix = "/".join(
                     (
-                        get_release_or_pr(pr_info, get_version_from_repo())[0],
+                        str(pr_info.number),
                         pr_info.sha,
                         Utils.normalize_string(
                             job_report.check_name or _get_ext_check_name(args.job_name)

@@ -23,7 +23,7 @@ A tumbling time window assigns records to non-overlapping, continuous windows wi
 
 **Syntax**
 
-``` sql
+```sql
 tumble(time_attr, interval [, timezone])
 ```
 
@@ -40,13 +40,13 @@ tumble(time_attr, interval [, timezone])
 
 Query:
 
-``` sql
+```sql
 SELECT tumble(now(), toIntervalDay('1'));
 ```
 
 Result:
 
-``` text
+```text
 ┌─tumble(now(), toIntervalDay('1'))─────────────┐
 │ ('2024-07-04 00:00:00','2024-07-05 00:00:00') │
 └───────────────────────────────────────────────┘
@@ -58,7 +58,7 @@ Returns the inclusive lower bound of the corresponding [tumbling window](#tumble
 
 **Syntax**
 
-``` sql
+```sql
 tumbleStart(time_attr, interval [, timezone]);
 ```
 
@@ -94,7 +94,7 @@ Returns the exclusive upper bound of the corresponding [tumbling window](#tumble
 
 **Syntax**
 
-``` sql
+```sql
 tumbleEnd(time_attr, interval [, timezone]);
 ```
 
@@ -128,7 +128,7 @@ Result:
 
 A hopping time window has a fixed duration (`window_interval`) and hops by a specified hop interval (`hop_interval`). If the `hop_interval` is smaller than the `window_interval`, hopping windows are overlapping. Thus, records can be assigned to multiple windows.
 
-``` sql
+```sql
 hop(time_attr, hop_interval, window_interval [, timezone])
 ```
 
@@ -151,13 +151,13 @@ Since one record can be assigned to multiple hop windows, the function only retu
 
 Query:
 
-``` sql
+```sql
 SELECT hop(now(), INTERVAL '1' DAY, INTERVAL '2' DAY);
 ```
 
 Result:
 
-``` text
+```text
 ┌─hop(now(), toIntervalDay('1'), toIntervalDay('2'))─┐
 │ ('2024-07-03 00:00:00','2024-07-05 00:00:00')      │
 └────────────────────────────────────────────────────┘
@@ -169,7 +169,7 @@ Returns the inclusive lower bound of the corresponding [hopping window](#hop).
 
 **Syntax**
 
-``` sql
+```sql
 hopStart(time_attr, hop_interval, window_interval [, timezone]);
 ```
 **Arguments**
@@ -191,13 +191,13 @@ Since one record can be assigned to multiple hop windows, the function only retu
 
 Query:
 
-``` sql
+```sql
 SELECT hopStart(now(), INTERVAL '1' DAY, INTERVAL '2' DAY);
 ```
 
 Result:
 
-``` text
+```text
 ┌─hopStart(now(), toIntervalDay('1'), toIntervalDay('2'))─┐
 │                                     2024-07-03 00:00:00 │
 └─────────────────────────────────────────────────────────┘
@@ -209,7 +209,7 @@ Returns the exclusive upper bound of the corresponding [hopping window](#hop).
 
 **Syntax**
 
-``` sql
+```sql
 hopEnd(time_attr, hop_interval, window_interval [, timezone]);
 ```
 **Arguments**
@@ -231,13 +231,13 @@ Since one record can be assigned to multiple hop windows, the function only retu
 
 Query:
 
-``` sql
+```sql
 SELECT hopEnd(now(), INTERVAL '1' DAY, INTERVAL '2' DAY);
 ```
 
 Result:
 
-``` text
+```text
 ┌─hopEnd(now(), toIntervalDay('1'), toIntervalDay('2'))─┐
 │                                   2024-07-05 00:00:00 │
 └───────────────────────────────────────────────────────┘
