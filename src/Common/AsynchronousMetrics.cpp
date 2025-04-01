@@ -1164,8 +1164,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 /// These values are good to be averaged across the cluster of non-uniform servers.
 
                 Float64 num_cpus_to_normalize = max_cpu_cgroups > 0 ? max_cpu_cgroups : num_cpus;
+                const bool normalized_metrics_already_reported_for_cgroups = cgroup_cpu_metrics_present && (max_cpu_cgroups > 0);
 
-                if (num_cpus_to_normalize > 0 && !cgroup_cpu_metrics_present)
+                if (num_cpus_to_normalize > 0 && !normalized_metrics_already_reported_for_cgroups)
                     applyNormalizedCPUMetricsUpdate(new_values, num_cpus_to_normalize, delta_values_all_cpus, multiplier);
             }
 
