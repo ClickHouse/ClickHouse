@@ -793,38 +793,41 @@ SELECT json, json.a, json.b, json.c FROM test;
 
 ## Comparison between values of the JSON type {#comparison-between-values-of-the-json-type}
 
-Values of a `JSON` column cannot be compared with the `less/greater` functions, 
-but can be compared using the `equal` function.
-
-Two JSON objects are considered equal when they have the same set of paths and each of these paths has the same type and value in both objects.
+JSON objects are compared similarly to Maps. 
 
 For example:
 
 ```sql title="Query"
-CREATE TABLE test (json1 JSON(a UInt32), json2 JSON(a UInt32)) ENGINE=Memory;
+CREATE TABLE test (json1 JSON, json2 JSON) ENGINE=Memory;
 INSERT INTO test FORMAT JSONEachRow
-{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 43, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 43, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "World"}}
-{"json1" : {"a" : 42, "b" : [1, 2, 3], "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : 42.0, "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : "42", "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}};
+{"json1" : {}, "json2" : {}}
+{"json1" : {"a" : 42}, "json2" : {}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 41}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 42}}
+{"json1" : {"a" : 42}, "json2" : {"a" : [1, 2, 3]}}
+{"json1" : {"a" : 42}, "json2" : {"a" : "Hello"}}
+{"json1" : {"a" : 42}, "json2" : {"b" : 42}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 42, "b" : 42}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 41, "b" : 42}}
 
-SELECT json1, json2, json1 == json2 FROM test;
+SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 ```
 
 ```text title="Response"
-┌─json1──────────────────────────────────┬─json2─────────────────────────┬─equals(json1, json2)─┐
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":42,"b":"42","c":"Hello"} │                    1 │
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":43,"b":"42","c":"Hello"} │                    0 │
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":43,"b":"42","c":"Hello"} │                    0 │
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":42,"b":"42","c":"World"} │                    0 │
-│ {"a":42,"b":["1","2","3"],"c":"Hello"} │ {"a":42,"b":"42","c":"Hello"} │                    0 │
-│ {"a":42,"b":42,"c":"Hello"}            │ {"a":42,"b":"42","c":"Hello"} │                    0 │
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":42,"b":"42","c":"Hello"} │                    0 │
-└────────────────────────────────────────┴───────────────────────────────┴──────────────────────┘
+┌─json1──────┬─json2───────────────┬─less(json1, json2)─┬─equals(json1, json2)─┬─greater(json1, json2)─┐
+│ {}         │ {}                  │                  0 │                    1 │                     0 │
+│ {"a":"42"} │ {}                  │                  0 │                    0 │                     1 │
+│ {"a":"42"} │ {"a":"41"}          │                  0 │                    0 │                     1 │
+│ {"a":"42"} │ {"a":"42"}          │                  0 │                    1 │                     0 │
+│ {"a":"42"} │ {"a":["1","2","3"]} │                  0 │                    0 │                     1 │
+│ {"a":"42"} │ {"a":"Hello"}       │                  1 │                    0 │                     0 │
+│ {"a":"42"} │ {"b":"42"}          │                  1 │                    0 │                     0 │
+│ {"a":"42"} │ {"a":"42","b":"42"} │                  1 │                    0 │                     0 │
+│ {"a":"42"} │ {"a":"41","b":"42"} │                  0 │                    0 │                     1 │
+└────────────┴─────────────────────┴────────────────────┴──────────────────────┴───────────────────────┘
 ```
+
+**Note:** when 2 paths contain values of different data types, they are compared according to [comparison rule](variant.md#comparing-values-of-variant-type-comparing-values-of-variant-data) of `Variant` data type.
 
 ## Tips for better usage of the JSON type {#tips-for-better-usage-of-the-json-type}
 
