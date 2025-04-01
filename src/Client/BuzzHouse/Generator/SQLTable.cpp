@@ -673,7 +673,7 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const St
         const uint32_t first = rg.nextSmallNumber() - 1;
         const uint32_t second = std::max(rg.nextSmallNumber() - 1, first);
 
-        return fmt::format("{}[{}-{}].*", rg.nextBool() ? initial : "", std::to_string(first), std::to_string(second));
+        return fmt::format("{}[{}-{}].*", rg.nextBool() ? initial : "", first, second);
     }
     else if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
     {

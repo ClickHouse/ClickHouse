@@ -274,7 +274,7 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, c
     }
     if (scc.port)
     {
-        connection_str += fmt::format("{}port='{}'", has_something ? " " : "", std::to_string(scc.port));
+        connection_str += fmt::format("{}port='{}'", has_something ? " " : "", scc.port);
         has_something = true;
     }
     if (!scc.user.empty())
@@ -475,7 +475,7 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
     {
         connection_str += fmt::format("{}{}@", scc.user, scc.password.empty() ? "" : (":" + scc.password));
     }
-    connection_str += fmt::format("{}={}", scc.hostname, std::to_string(scc.port));
+    connection_str += fmt::format("{}={}", scc.hostname, scc.port);
 
     try
     {

@@ -808,8 +808,7 @@ bool StatementGenerator::joinedTableOrFunction(
 void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, TableOrSubquery * tos)
 {
     JoinedTableOrFunction * jtof = tos->mutable_joined_table();
-    const String name
-        = fmt::format("t{}d{}", std::to_string(this->levels[this->current_level].rels.size()), std::to_string(this->current_level));
+    const String name = fmt::format("t{}d{}", this->levels[this->current_level].rels.size(), this->current_level);
 
     jtof->mutable_table_alias()->set_table(name);
     jtof->set_final(joinedTableOrFunction(rg, name, allowed_clauses, false, jtof->mutable_tof()));
@@ -1685,7 +1684,7 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
         {
             /// Use CTE query
             CTEquery * nqcte = scte->mutable_cte_query();
-            const String name = fmt::format("cte{}d{}", std::to_string(i), std::to_string(this->current_level));
+            const String name = fmt::format("cte{}d{}", this->levels[this->current_level].cte_counter++, this->current_level);
             SQLRelation rel(name);
             const uint32_t ncols = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(5)) + 1);
 

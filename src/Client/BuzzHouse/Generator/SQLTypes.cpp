@@ -88,7 +88,7 @@ String BoolType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
 
 String IntType::typeName(const bool) const
 {
-    return fmt::format("{}Int{}", is_unsigned ? "U" : "", std::to_string(size));
+    return fmt::format("{}Int{}", is_unsigned ? "U" : "", size);
 }
 
 String IntType::MySQLtypeName(RandomGenerator &, const bool) const
@@ -178,7 +178,7 @@ String IntType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &)
 
 String FloatType::typeName(const bool) const
 {
-    return fmt::format("{}Float{}", size == 16 ? "B" : "", std::to_string(size));
+    return fmt::format("{}Float{}", size == 16 ? "B" : "", size);
 }
 
 String FloatType::MySQLtypeName(RandomGenerator &, const bool) const
@@ -375,7 +375,7 @@ String StringType::typeName(const bool) const
 {
     if (precision.has_value())
     {
-        return fmt::format("FixedString({})", std::to_string(precision.value()));
+        return fmt::format("FixedString({})", precision.value());
     }
     else
     {
@@ -387,7 +387,7 @@ String StringType::MySQLtypeName(RandomGenerator & rg, const bool) const
 {
     if (precision.has_value())
     {
-        return fmt::format("{}{}({})", rg.nextBool() ? "VAR" : "", rg.nextBool() ? "CHAR" : "BINARY", std::to_string(precision.value()));
+        return fmt::format("{}{}({})", rg.nextBool() ? "VAR" : "", rg.nextBool() ? "CHAR" : "BINARY", precision.value());
     }
     else
     {
@@ -399,7 +399,7 @@ String StringType::PostgreSQLtypeName(RandomGenerator & rg, const bool) const
 {
     if (precision.has_value())
     {
-        return fmt::format("{}CHAR({})", rg.nextBool() ? "VAR" : "", std::to_string(precision.value()));
+        return fmt::format("{}CHAR({})", rg.nextBool() ? "VAR" : "", precision.value());
     }
     else
     {

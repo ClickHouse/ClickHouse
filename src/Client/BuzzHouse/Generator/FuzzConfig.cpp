@@ -206,16 +206,16 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         throw DB::Exception(
             DB::ErrorCodes::BUZZHOUSE,
             "min_insert_rows value ({}) is higher than max_insert_rows value ({})",
-            std::to_string(min_insert_rows),
-            std::to_string(max_insert_rows));
+            min_insert_rows,
+            max_insert_rows);
     }
     if (min_nested_rows > max_nested_rows)
     {
         throw DB::Exception(
             DB::ErrorCodes::BUZZHOUSE,
             "min_nested_rows value ({}) is higher than max_nested_rows value ({})",
-            std::to_string(min_nested_rows),
-            std::to_string(max_nested_rows));
+            min_nested_rows,
+            max_nested_rows);
     }
     for (const auto & entry : std::views::values(metrics))
     {

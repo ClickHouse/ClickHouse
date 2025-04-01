@@ -69,7 +69,7 @@ class QueryLevel
 {
 public:
     bool global_aggregate = false, inside_aggregate = false, allow_aggregates = true, allow_window_funcs = true, group_by_all = false;
-    uint32_t level, aliases_counter = 0, window_counter = 0;
+    uint32_t level, cte_counter = 0, aliases_counter = 0, window_counter = 0;
     std::vector<GroupCol> gcols;
     std::vector<SQLRelation> rels;
     std::vector<uint32_t> projections;

@@ -264,7 +264,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool c
         {
             ret = "randomStringUTF8";
         }
-        lv->set_no_quote_str(fmt::format("{}({})", ret, std::to_string(nlen)));
+        lv->set_no_quote_str(fmt::format("{}({})", ret, nlen));
     }
     else if (noption < 601)
     {
@@ -925,7 +925,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             const uint32_t first = rg.nextSmallNumber() - 1;
             const uint32_t second = std::max(rg.nextSmallNumber() - 1, first);
 
-            ret = fmt::format("[{}-{}]", std::to_string(first), std::to_string(second));
+            ret = fmt::format("[{}-{}]", first, second);
         }
         expr->mutable_comp_expr()->set_columns(ret);
     }
