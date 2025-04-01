@@ -126,21 +126,20 @@ public:
         return std::filesystem::path(config->getDataSourceDescription()) / data_path;
     }
 
-    Poco::JSON::Object::Ptr getMetadataObject(const String & data_path)
+    template <typename LoadFunc>
+    Poco::JSON::Object::Ptr getOrSetMetadataObject(const String & data_path, LoadFunc && load_fn)
     {
-        auto result = Base::get(data_path);
-        if (!result)
+        auto load_fn_wrapper = [&]()
         {
+            const auto & [json_ptr, json_size] = load_fn();
+            return std::make_shared<IcebergMetadataFilesCacheCell>(json_ptr, json_size);
+        };
+        auto result = Base::getOrSet(data_path, load_fn_wrapper);
+        if (result.second)
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
-            return nullptr;
-        }
-        ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
-        return result->metadata_object;
-    }
-
-    void setMetadataObject(const String & data_path, Poco::JSON::Object::Ptr metadata_object, size_t memory_bytes)
-    {
-        Base::set(data_path, std::make_shared<IcebergMetadataFilesCacheCell>(metadata_object, memory_bytes));
+        else
+            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
+        return result.first->metadata_object;
     }
 
     template <typename LoadFunc, typename ConvertFunc>

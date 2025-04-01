@@ -294,26 +294,23 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(const 
 Poco::JSON::Object::Ptr IcebergMetadata::readJSON(const String & metadata_file_path, const ContextPtr & local_context) const
 {
     auto configuration_ptr = configuration.lock();
+    auto create_fn = [&]()
+    {
+        ObjectInfo object_info(metadata_file_path);
+        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
+
+        String json_str;
+        readJSONObjectPossiblyInvalid(json_str, *buf);
+
+        Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
+        Poco::Dynamic::Var json = parser.parse(json_str);
+        return std::make_pair(json.extract<Poco::JSON::Object::Ptr>(), json.size());
+    };
     if (manifest_cache)
     {
-        auto object = manifest_cache->getMetadataObject(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path));
-        if (object)
-            return object;
+        return manifest_cache->getOrSetMetadataObject(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), create_fn);
     }
-    ObjectInfo object_info(metadata_file_path);
-    auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
-
-    String json_str;
-    readJSONObjectPossiblyInvalid(json_str, *buf);
-
-    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-    Poco::Dynamic::Var json = parser.parse(json_str);
-    const auto & object = json.extract<Poco::JSON::Object::Ptr>();
-    if (manifest_cache)
-    {
-        manifest_cache->setMetadataObject(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), object, json_str.size());
-    }
-    return object;
+    return create_fn().first;
 }
 
 bool IcebergMetadata::update(const ContextPtr & local_context)
@@ -482,14 +479,11 @@ DataLakeMetadataPtr IcebergMetadata::create(
     Poco::JSON::Object::Ptr object = nullptr;
     IcebergMetadataFilesCachePtr cache_ptr;
     if (local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache])
-    {
         cache_ptr = local_context->getIcebergMetadataFilesCache();
-        object = cache_ptr->getMetadataObject(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path));
-    }
     else
         LOG_TRACE(log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
 
-    if (!object)
+    auto create_fn = [&]()
     {
         ObjectInfo object_info(metadata_file_path);
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
@@ -499,10 +493,12 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
         Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
         Poco::Dynamic::Var json = parser.parse(json_str);
-        object = json.extract<Poco::JSON::Object::Ptr>();
-        if (cache_ptr)
-            cache_ptr->setMetadataObject(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), object, json_str.size());
-    }
+        return std::make_pair(json.extract<Poco::JSON::Object::Ptr>(), json_str.size());
+    };
+    if (cache_ptr)
+        object = cache_ptr->getOrSetMetadataObject(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), create_fn);
+    else
+        object = create_fn().first;
 
     IcebergSchemaProcessor schema_processor;
 
@@ -552,7 +548,7 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
         }
         /// We only return the list of {file name, seq number} for cache.
         /// Because ManifestList holds a list of ManifestFilePtr which consume much memory space.
-        /// ManifestFilePtr is shared pointers can be held for too much time, so we cache ManifestFile seperately.
+        /// ManifestFilePtr is shared pointers can be held for too much time, so we cache ManifestFile separately.
         return cached_manifest_list;
     };
 
