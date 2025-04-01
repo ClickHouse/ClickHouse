@@ -328,9 +328,14 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+#if USE_SSL
         EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+
         if (!ctx)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
+#else
+        EVP_MD_CTX_ptr ctx(nullptr, nullptr);
+#endif
 
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
         {
@@ -375,6 +380,7 @@ public:
             }
             return col_to;
         }
+
         if (const ColumnIPv6 * col_from_ip = checkAndGetColumn<ColumnIPv6>(arguments[0].column.get()))
         {
             auto col_to = ColumnFixedString::create(Impl::length);
