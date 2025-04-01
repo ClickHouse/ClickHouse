@@ -2,7 +2,4 @@
   <include_endpoint>
     <endpoint>http://minio1:9001/root/data/</endpoint>
   </include_endpoint>
-  <include_access_key_id>
-    <access_key_id>minio</access_key_id>
-  </include_access_key_id>
 </clickhouse>
