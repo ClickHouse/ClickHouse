@@ -82,6 +82,8 @@ public:
 
     void preupdate(const Block & block, size_t * pos, size_t limit) override;
 
+    void setCommonState(std::shared_ptr<IMergeTreeIndexAggregator> another_aggregator) override;
+
     Names index_columns;
     String index_name;
     BloomFilterIndexParameters params;

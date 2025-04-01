@@ -1,3 +1,4 @@
+#include <memory>
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
 #include <Columns/ColumnArray.h>
@@ -114,6 +115,17 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilterText::getGranuleAndR
         index_name, index_columns.size(), params.params, common_filters);
     new_granule.swap(granule);
     return new_granule;
+}
+
+void MergeTreeIndexAggregatorBloomFilterText::setCommonState(std::shared_ptr<IMergeTreeIndexAggregator> another_aggregator)
+{
+    auto aggregator = std::static_pointer_cast<MergeTreeIndexAggregatorBloomFilterText>(another_aggregator);
+
+    common_filters = aggregator->common_filters;
+#if USE_DATASKETCHES
+    hot_elements_sketch = aggregator->hot_elements_sketch;
+#endif
+    hot_elements = aggregator->hot_elements;
 }
 
 void MergeTreeIndexAggregatorBloomFilterText::updateBase(const Block & block, size_t * pos, size_t limit, const std::function<void(const char*, size_t, size_t)> & callback)

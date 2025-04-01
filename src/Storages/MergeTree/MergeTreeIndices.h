@@ -102,6 +102,8 @@ struct IMergeTreeIndexAggregator
     virtual void deserializeCommonState(ReadBuffer & /*istr*/) {}
 
     virtual void serializeCommonState(WriteBuffer & /*ostr*/) const {}
+
+    virtual void setCommonState(std::shared_ptr<IMergeTreeIndexAggregator>) {}
 };
 
 using MergeTreeIndexAggregatorPtr = std::shared_ptr<IMergeTreeIndexAggregator>;

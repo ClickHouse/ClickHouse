@@ -405,6 +405,10 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
+                auto prev_aggregator = skip_indices_aggregators[i];
+                skip_indices_aggregators[i] = index_helper->createIndexAggregatorForPart(store, settings);
+                skip_indices_aggregators[i]->setCommonState(prev_aggregator);
+
                 if (stream.compressed_hashing.offset() >= settings.min_compress_block_size)
                     stream.compressed_hashing.next();
 
