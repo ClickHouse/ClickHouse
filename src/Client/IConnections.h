@@ -58,7 +58,6 @@ public:
     struct ReplicaInfo
     {
         size_t number_of_current_replica{0};
-        size_t number_of_replicas{0};
     };
 
     /// This is needed in max_parallel_replicas case.

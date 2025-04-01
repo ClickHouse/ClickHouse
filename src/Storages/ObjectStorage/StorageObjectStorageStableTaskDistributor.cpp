@@ -7,14 +7,15 @@ namespace DB
 {
 
 StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistributor(
-    std::shared_ptr<IObjectIterator> iterator_)
+    std::shared_ptr<IObjectIterator> iterator_,
+    size_t number_of_replicas_)
     : iterator(std::move(iterator_))
+    , connection_to_files(number_of_replicas_)
     , iterator_exhausted(false)
-    , log(getLogger("StorageObjectStorageStableTaskDistributor"))
 {
 }
 
-std::optional<String> StorageObjectStorageStableTaskDistributor::getNextTask(size_t number_of_current_replica, size_t number_of_replicas)
+std::optional<String> StorageObjectStorageStableTaskDistributor::getNextTask(size_t number_of_current_replica)
 {
     LOG_TRACE(
         log,
@@ -27,19 +28,16 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getNextTask(siz
         return file;
 
     // 2. Try to find a matching file from the iterator
-    if (auto file = getMatchingFileFromIterator(number_of_current_replica, number_of_replicas))
+    if (auto file = getMatchingFileFromIterator(number_of_current_replica))
         return file;
 
     // 3. Process unprocessed files if iterator is exhausted
     return getAnyUnprocessedFile(number_of_current_replica);
 }
 
-size_t StorageObjectStorageStableTaskDistributor::getReplicaForFile(const String & file_path, size_t number_of_replicas)
+size_t StorageObjectStorageStableTaskDistributor::getReplicaForFile(const String & file_path)
 {
-    if (number_of_replicas == 0)
-        return 0;
-
-    return ConsistentHashing(sipHash64(file_path), number_of_replicas);
+    return ConsistentHashing(sipHash64(file_path), connection_to_files.size());
 }
 
 std::optional<String> StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t number_of_current_replica)
@@ -53,10 +51,11 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getPreQueuedFil
         String next_file = files.back();
         files.pop_back();
 
-        if (!unprocessed_files.contains(next_file))
+        auto it = unprocessed_files.find(next_file);
+        if (it == unprocessed_files.end())
             continue;
 
-        unprocessed_files.erase(next_file);
+        unprocessed_files.erase(it);
 
         LOG_TRACE(
             log,
@@ -71,9 +70,15 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getPreQueuedFil
     return std::nullopt;
 }
 
-std::optional<String> StorageObjectStorageStableTaskDistributor::getMatchingFileFromIterator(size_t number_of_current_replica, size_t number_of_replicas)
+std::optional<String> StorageObjectStorageStableTaskDistributor::getMatchingFileFromIterator(size_t number_of_current_replica)
 {
-    while (!iterator_exhausted)
+    {
+        std::lock_guard lock(mutex);
+        if (iterator_exhausted)
+            return std::nullopt;
+    }
+
+    while (true)
     {
         ObjectInfoPtr object_info;
 
@@ -100,7 +105,7 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getMatchingFile
             file_path = object_info->getPath();
         }
 
-        size_t file_replica_idx = getReplicaForFile(file_path, number_of_replicas);
+        size_t file_replica_idx = getReplicaForFile(file_path);
         if (file_replica_idx == number_of_current_replica)
         {
             LOG_TRACE(
