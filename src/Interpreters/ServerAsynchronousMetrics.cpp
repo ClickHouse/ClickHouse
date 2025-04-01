@@ -223,18 +223,18 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "The number of used inodes on the volume where ClickHouse logs path is mounted." };
     }
     {
-        Duration max_last_successful_update_time;
+        Duration max_update_delay;
         size_t failed_counter = 0;
         const auto & external_dictionaries = getContext()->getExternalDictionariesLoader();
 
         for (const auto & load_result : external_dictionaries.getLoadResults()) {
-            if (load_result.status == ExternalLoaderStatus::LOADED || load_result.status == ExternalLoaderStatus::LOADED_AND_RELOADING) {
-                max_last_successful_update_time = std::max(max_last_successful_update_time, std::chrono::duration_cast<Duration>(current_time - load_result.last_successful_update_time));
+            if (load_result.error_count > 0 && load_result.loading_start_time.time_since_epoch().count() > 0) {
+                max_update_delay = std::max(max_update_delay, std::chrono::duration_cast<Duration>(current_time - load_result.last_successful_update_time));
             }
-            failed_counter += (load_result.status == ExternalLoaderStatus::FAILED || load_result.status == ExternalLoaderStatus::FAILED_AND_RELOADING);
+            failed_counter += load_result.error_count;
         }
-        new_values["DictionaryMaxLastSuccessfulUpdateTime"] = {max_last_successful_update_time.count(), "The maximum duration(in seconds) of dictionary has been failed"};
-        new_values["DictionaryLoadFailed"] = {failed_counter, "Amount of failed dictionaries"};
+        new_values["DictionaryMaxUpdateDelay"] = {max_update_delay.count(), "The maximum delay(in seconds) of dictionary update"};
+        new_values["DictionaryTotalFailedUpdates"] = {failed_counter, "Sum of sequantially failed updates in all dictionaries"};
     }
 
     /// Free and total space on every configured disk.
