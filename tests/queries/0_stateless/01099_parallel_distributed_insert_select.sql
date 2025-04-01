@@ -3,6 +3,7 @@
 -- <Warning> ConnectionPoolWithFailover: Connection failed at try №1 - is not a problem
 SET send_logs_level = 'fatal';
 
+SET enable_parallel_replicas = 0; -- see https://github.com/ClickHouse/ClickHouse/issues/34525,  FIXME: we shouldn't have this setting here
 SET prefer_localhost_replica = 1;
 
 DROP TABLE IF EXISTS local_01099_a;
