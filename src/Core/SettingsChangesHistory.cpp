@@ -75,6 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_hdfs_pread", true, true, "New setting."},
             {"low_priority_query_wait_time_ms", 1000, 1000, "New setting."},
             {"allow_experimental_shared_set_join", 0, 1, "A setting for ClickHouse Cloud to enable SharedSet and SharedJoin"},
+                      {"output_format_json_quote_64bit_integers", true, false, "Disable quoting of the 64 bit integers in JSON by default"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
