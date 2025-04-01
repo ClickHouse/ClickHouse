@@ -88,7 +88,7 @@ namespace Crypto
         /// If a private key is specified, you don't need to specify a public key file.
         /// OpenSSL will auto-create the public key from the private key.
 
-        ~RSAKey();
+        ~RSAKey() = default;
         /// Destroys the RSAKey.
 
         RSAKeyImpl::ByteVec modulus() const;

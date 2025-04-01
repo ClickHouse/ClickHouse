@@ -129,7 +129,7 @@ namespace Net
         /// Return true iff the session uses SSL or TLS,
         /// or false otherwise.
 
-        X509Certificate serverCertificate();
+        X509 * serverCertificate();
         /// Returns the server's certificate.
         ///
         /// The certificate is available after the first request has been sent.

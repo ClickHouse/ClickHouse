@@ -14,19 +14,19 @@
 #include <Poco/SHA1Engine.h>
 #include <boost/algorithm/hex.hpp>
 
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <Access/Common/AuthenticationType.h>
 #include "config.h"
 
 #if USE_SSL
-#     include <openssl/crypto.h>
-#     include <openssl/rand.h>
-#     include <openssl/err.h>
-#     include <openssl/evp.h>
-#     include <openssl/hmac.h>
-#     include <openssl/sha.h>
-#     include <openssl/buffer.h>
-#     include <openssl/bio.h>
+#    include <openssl/crypto.h>
+#    include <openssl/rand.h>
+#    include <openssl/err.h>
+#    include <openssl/evp.h>
+#    include <openssl/hmac.h>
+#    include <openssl/sha.h>
+#    include <openssl/buffer.h>
+#    include <openssl/bio.h>
+#    include <Common/Crypto/X509Certificate.h>
 #endif
 
 #if USE_BCRYPT
@@ -332,14 +332,14 @@ String AuthenticationData::getSalt() const
     return salt;
 }
 
-void AuthenticationData::setSSLCertificateSubjects(SSLCertificateSubjects && ssl_certificate_subjects_)
+void AuthenticationData::setSSLCertificateSubjects(X509Certificate::Subjects && ssl_certificate_subjects_)
 {
     if (ssl_certificate_subjects_.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'SSL CERTIFICATE' authentication type requires a non-empty list of subjects.");
     ssl_certificate_subjects = std::move(ssl_certificate_subjects_);
 }
 
-void AuthenticationData::addSSLCertificateSubject(SSLCertificateSubjects::Type type_, String && subject_)
+void AuthenticationData::addSSLCertificateSubject(X509Certificate::Subjects::Type type_, String && subject_)
 {
     ssl_certificate_subjects.insert(type_, std::move(subject_));
 }
@@ -408,11 +408,11 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::SSL_CERTIFICATE:
         {
-            using SSLCertificateSubjects::Type::CN;
-            using SSLCertificateSubjects::Type::SAN;
+            using X509Certificate::Subjects::Type::CN;
+            using X509Certificate::Subjects::Type::SAN;
 
             const auto &subjects = getSSLCertificateSubjects();
-            SSLCertificateSubjects::Type cert_subject_type = !subjects.at(SAN).empty() ? SAN : CN;
+            X509Certificate::Subjects::Type cert_subject_type = !subjects.at(SAN).empty() ? SAN : CN;
 
             node->ssl_cert_subject_type = toString(cert_subject_type);
             for (const auto & name : getSSLCertificateSubjects().at(cert_subject_type))
@@ -635,7 +635,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     }
     else if (query.type == AuthenticationType::SSL_CERTIFICATE)
     {
-        auto ssl_cert_subject_type = parseSSLCertificateSubjectType(*query.ssl_cert_subject_type);
+        auto ssl_cert_subject_type = X509Certificate::Subjects::parseSubjectType(*query.ssl_cert_subject_type);
         for (const auto & arg : args)
             auth_data.addSSLCertificateSubject(ssl_cert_subject_type, checkAndGetLiteralArgument<String>(arg, "ssl_certificate_subject"));
     }

@@ -30,10 +30,8 @@
 #include <Common/setThreadName.h>
 
 #if USE_SSL
-#    include <Poco/Crypto/RSAKey.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/SecureStreamSocket.h>
-
 #endif
 
 namespace DB
@@ -662,8 +660,7 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled,
     uint32_t connection_id_,
-    RSA & public_key_,
-    RSA & private_key_,
+    KeyPair & private_key_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_, read_event_, write_event_)

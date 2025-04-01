@@ -6,10 +6,11 @@
 #include <Access/GSSAcceptor.h>
 #include <Poco/SHA1Engine.h>
 #include <Common/Base64.h>
+#include <Common/Crypto/X509Certificate.h>
 #include <Common/Exception.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
-#include <Access/Common/SSLCertificateSubjects.h>
+#include <Poco/SHA1Engine.h>
 
 #include <base/types.h>
 #include "config.h"
@@ -234,7 +235,7 @@ namespace
             return false;
         }
 
-        for (SSLCertificateSubjects::Type type : {SSLCertificateSubjects::Type::CN, SSLCertificateSubjects::Type::SAN})
+        for (X509Certificate::Subjects::Type type : {X509Certificate::Subjects::Type::CN, X509Certificate::Subjects::Type::SAN})
         {
             for (const auto & subject : authentication_method.getSSLCertificateSubjects().at(type))
             {

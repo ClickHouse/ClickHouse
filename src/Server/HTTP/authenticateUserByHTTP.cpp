@@ -1,7 +1,4 @@
-#include <Server/HTTP/authenticateUserByHTTP.h>
-
 #include <Access/Authentication.h>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Common/Base64.h>
@@ -16,7 +13,7 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 #if USE_SSL
-#include <Poco/Net/X509Certificate.h>
+#include <Common/Crypto/X509Certificate.h>
 #endif
 
 
@@ -81,7 +78,7 @@ bool authenticateUserByHTTP(
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
     std::string spnego_challenge;
-    SSLCertificateSubjects certificate_subjects;
+    X509Certificate::Subjects certificate_subjects;
 
     if (config_credentials)
     {
@@ -104,7 +101,10 @@ bool authenticateUserByHTTP(
             throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication via parameters");
 
         if (request.havePeerCertificate())
-            certificate_subjects = extractSSLCertificateSubjects(request.peerCertificate());
+        {
+            auto certificate = X509Certificate(request.peerCertificate());
+            certificate_subjects = certificate.extractAllSubjects();
+        }
 
         if (certificate_subjects.empty())
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED,

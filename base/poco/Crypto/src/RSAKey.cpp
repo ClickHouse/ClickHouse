@@ -34,8 +34,8 @@ RSAKey::RSAKey(const X509Certificate& cert):
 }
 
 
-RSAKey::RSAKey(const PKCS12Container& cont):
-	KeyPair(new RSAKeyImpl(cont)),
+RSAKey::RSAKey(const PKCS12Container& cert):
+	KeyPair(new RSAKeyImpl(cert)),
 	_pImpl(KeyPair::impl().cast<RSAKeyImpl>())
 {
 }
@@ -61,10 +61,6 @@ RSAKey::RSAKey(std::istream* pPublicKeyStream, std::istream* pPrivateKeyStream, 
 {
 }
 
-
-RSAKey::~RSAKey()
-{
-}
 
 RSAKeyImpl::ByteVec RSAKey::modulus() const
 {

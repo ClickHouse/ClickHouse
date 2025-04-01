@@ -12,19 +12,14 @@
 //
 
 
-#include "Poco/Net/X509Certificate.h"
-#include "Poco/Net/SSLException.h"
-#include "Poco/Net/SSLManager.h"
-#include "Poco/Net/DNS.h"
-#include "Poco/TemporaryFile.h"
-#include "Poco/FileStream.h"
-#include "Poco/StreamCopier.h"
-#include "Poco/String.h"
-#include "Poco/RegularExpression.h"
-#include "Poco/DateTimeParser.h"
 #include <openssl/pem.h>
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
+
+#include "Poco/Net/X509Certificate.h"
+#include "Poco/String.h"
+#include "Poco/RegularExpression.h"
+#include "Poco/Net/IPAddress.h"
 
 
 namespace Poco {
@@ -33,7 +28,7 @@ namespace Net {
 
 X509Certificate::X509Certificate(std::istream& istr):
 	Poco::Crypto::X509Certificate(istr)
-{	
+{
 }
 
 
@@ -69,11 +64,6 @@ X509Certificate& X509Certificate::operator = (const Poco::Crypto::X509Certificat
 }
 
 
-X509Certificate::~X509Certificate()
-{
-}
-
-
 bool X509Certificate::verify(const std::string& hostName) const
 {
 	return verify(*this, hostName);
@@ -81,59 +71,8 @@ bool X509Certificate::verify(const std::string& hostName) const
 
 
 bool X509Certificate::verify(const Poco::Crypto::X509Certificate& certificate, const std::string& hostName)
-{		
-#if OPENSSL_VERSION_NUMBER < 0x10002000L
-	std::string commonName;
-	std::set<std::string> dnsNames;
-	certificate.extractNames(commonName, dnsNames);
-	if (!commonName.empty()) dnsNames.insert(commonName);
-	bool ok = (dnsNames.find(hostName) != dnsNames.end());
-	if (!ok)
-	{
-		for (std::set<std::string>::const_iterator it = dnsNames.begin(); !ok && it != dnsNames.end(); ++it)
-		{
-			try
-			{
-				// two cases: name contains wildcards or not
-				if (containsWildcards(*it))
-				{
-					// a compare by IPAddress is not possible with wildcards
-					// only allow compare by name
-					ok = matchWildcard(*it, hostName);
-				}
-				else
-				{
-					// it depends on hostName whether we compare by IP or by alias
-					IPAddress ip;
-					if (IPAddress::tryParse(hostName, ip))
-					{
-						// compare by IP
-						const HostEntry& heData = DNS::resolve(*it);
-						const HostEntry::AddressList& addr = heData.addresses();
-						HostEntry::AddressList::const_iterator it = addr.begin();
-						HostEntry::AddressList::const_iterator itEnd = addr.end();
-						for (; it != itEnd && !ok; ++it)
-						{
-							ok = (*it == ip);
-						}
-					}
-					else
-					{
-						ok = Poco::icompare(*it, hostName) == 0;
-					}
-				}
-			}
-			catch (NoAddressFoundException&)
-			{
-			}
-			catch (HostNotFoundException&)
-			{
-			}
-		}
-	}
-	return ok;
-#else
-	if (X509_check_host(const_cast<X509*>(certificate.certificate()), hostName.c_str(), hostName.length(), 0, NULL) == 1)
+{
+	if (X509_check_host(const_cast<X509*>(certificate.certificate()), hostName.c_str(), hostName.length(), 0, nullptr) == 1)
 	{
 		return true;
 	}

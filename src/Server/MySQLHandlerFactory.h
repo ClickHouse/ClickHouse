@@ -10,6 +10,7 @@
 
 #if USE_SSL
 #    include <openssl/rsa.h>
+#    include <Common/Crypto/KeyPair.h>
 #endif
 
 namespace DB
@@ -23,14 +24,7 @@ private:
     LoggerPtr log;
 
 #if USE_SSL
-    struct RSADeleter
-    {
-        void operator()(RSA * ptr) { RSA_free(ptr); }
-    };
-    using RSAPtr = std::unique_ptr<RSA, RSADeleter>;
-
-    RSAPtr public_key;
-    RSAPtr private_key;
+    KeyPair private_key;
 
     bool ssl_enabled = true;
 #else

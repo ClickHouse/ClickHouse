@@ -1,16 +1,15 @@
+#include <Access/Credentials.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
-#include <Poco/RandomStream.h>
-#include <Poco/SHA1Engine.h>
 #include <Interpreters/Session.h>
-#include <Access/Credentials.h>
 
 #include <Common/logger_useful.h>
-#include <Common/OpenSSLHelpers.h>
+
+#include <Poco/RandomStream.h>
+#include <Poco/SHA1Engine.h>
 
 #include <base/scope_guard.h>
 #include <base/defines.h>
-#include <string_view>
 
 
 using namespace std::literals;
@@ -107,8 +106,8 @@ void Native41::authenticate(
 
 #if USE_SSL
 
-Sha256Password::Sha256Password(RSA & public_key_, RSA & private_key_, LoggerPtr log_)
-    : public_key(public_key_), private_key(private_key_), log(log_)
+Sha256Password::Sha256Password(KeyPair & private_key_, LoggerPtr log_)
+    : private_key(private_key_), log(log_)
 {
     /** Native authentication sent 20 bytes + '\0' character = 21 bytes.
      *  This plugin must do the same to stay consistent with historical behavior if it is set to operate as a default plugin. [1]
@@ -145,15 +144,8 @@ void Sha256Password::authenticate(
     if (auth_response == "\1")
     {
         LOG_TRACE(log, "Client requests public key.");
-        BIO * mem = BIO_new(BIO_s_mem());
-        SCOPE_EXIT(BIO_free(mem));
-        if (PEM_write_bio_RSA_PUBKEY(mem, &public_key) != 1)
-        {
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to write public key to memory. Error: {}", getOpenSSLErrors());
-        }
-        char * pem_buf = nullptr;
-        int64_t pem_size = BIO_get_mem_data(mem, &pem_buf);
-        String pem(pem_buf, pem_size);
+
+        std::string pem = private_key.publicKey();
 
         LOG_TRACE(log, "Key: {}", pem);
 
@@ -183,10 +175,13 @@ void Sha256Password::authenticate(
         const auto & unpack_auth_response = *auth_response;
         const auto * ciphertext = reinterpret_cast<const unsigned char *>(unpack_auth_response.data());
 
-        std::vector<unsigned char> plaintext(RSA_size(&private_key));
-        int plaintext_size = RSA_private_decrypt(
-            static_cast<int>(unpack_auth_response.size()), ciphertext, plaintext.data(), &private_key, RSA_PKCS1_OAEP_PADDING);
-        if (plaintext_size == -1)
+        EVP_PKEY * pkey = static_cast<EVP_PKEY*>(private_key);
+        EVP_PKEY_CTX_ptr ctx(EVP_PKEY_CTX_new(pkey, nullptr), &EVP_PKEY_CTX_free);
+        if (!ctx)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to create EVP_PKEY_CTX");
+
+        if (EVP_PKEY_decrypt_init(ctx.get()) <= 0 ||
+            EVP_PKEY_CTX_set_rsa_padding(ctx.get(), RSA_PKCS1_OAEP_PADDING) <= 0)
         {
             if (!sent_public_key)
                 LOG_WARNING(log, "Client could have encrypted password with different public key since it didn't request it from server.");
