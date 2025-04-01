@@ -201,6 +201,12 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 
     char buf[signal_pipe_buf_size];
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
+
+    /// Signal pipe can be already closed in BaseDaemon::~BaseDaemon, but
+    /// sanitizerDeathCallback() can be called on exit handlers.
+    if (signal_pipe.fds_rw[1] == -1)
+        return;
+
     WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
 
     const StackTrace stack_trace;

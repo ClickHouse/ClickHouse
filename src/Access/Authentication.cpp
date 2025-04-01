@@ -57,6 +57,12 @@ namespace
         return Util::encodeSHA256(String(password).append(salt)) == password_sha256;
     }
 
+    bool checkPasswordScramSHA256(std::string_view password, const Digest & password_scram_sha256, const String & salt)
+    {
+        auto digest = Util::encodeScramSHA256(password, salt);
+        return digest == password_scram_sha256;
+    }
+
     bool checkPasswordDoubleSHA1MySQL(std::string_view scramble, std::string_view scrambled_password, const Digest & password_double_sha1)
     {
         /// scrambled_password = SHA1(password) XOR SHA1(scramble <concat> SHA1(SHA1(password)))
@@ -218,6 +224,11 @@ namespace
             case AuthenticationType::SHA256_PASSWORD:
             {
                 return checkPasswordSHA256(
+                    basic_credentials->getPassword(), authentication_method.getPasswordHashBinary(), authentication_method.getSalt());
+            }
+            case AuthenticationType::SCRAM_SHA256_PASSWORD:
+            {
+                return checkPasswordScramSHA256(
                     basic_credentials->getPassword(), authentication_method.getPasswordHashBinary(), authentication_method.getSalt());
             }
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:

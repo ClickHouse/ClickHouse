@@ -351,7 +351,6 @@ function run_tests()
         --testname
         --check-zookeeper-session
         --hung-check
-        --print-time
         --capture-client-stacktrace
         --queries "/repo/tests/queries"
         --test-runs "$NUM_TRIES"

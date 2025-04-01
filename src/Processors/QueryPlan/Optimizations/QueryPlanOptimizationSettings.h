@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <QueryPipeline/SizeLimits.h>
 
 #include <cstddef>
 
@@ -10,13 +11,17 @@ namespace DB
 
 struct Settings;
 
+class PreparedSetsCache;
+using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+
 struct QueryPlanOptimizationSettings
 {
     explicit QueryPlanOptimizationSettings(
         const Settings & from,
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
-        ExpressionActionsSettings actions_settings_);
+        ExpressionActionsSettings actions_settings_,
+        PreparedSetsCachePtr prepared_sets_cache_);
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
@@ -48,6 +53,7 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
+    bool convert_join_to_in;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -74,7 +80,18 @@ struct QueryPlanOptimizationSettings
     bool optimize_use_implicit_projections;
     bool force_use_projection;
     String force_projection_name;
+
+    /// If lazy materialization optimisation is enabled
+    bool optimize_lazy_materialization = false;
+    size_t max_limit_for_lazy_materialization = 0;
+
     size_t max_limit_for_ann_queries;
+
+    /// Setting needed for Sets (JOIN -> IN optimization)
+
+    SizeLimits network_transfer_limits;
+    size_t use_index_for_in_with_subqueries_max_values;
+    PreparedSetsCachePtr prepared_sets_cache;
 
     /// This is needed for conversion JoinLogical -> Join
 

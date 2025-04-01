@@ -128,6 +128,10 @@ public:
 
     using Nodes = std::list<Node>;
 
+    /// Extract subplan from plan from the root node.
+    /// The root node and all the children will be removed from the nodes.
+    static QueryPlan extractSubplan(Node * root, Nodes & nodes);
+
     Node * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
 
