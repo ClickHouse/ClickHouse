@@ -83,7 +83,7 @@ class JobConfigs:
         ],
         provides=[[]],  # [ArtifactNames.CH_TIDY_BIN],
         runs_on=[
-            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_ARM,
         ],
     )
     build_jobs = Job.Config(
@@ -236,12 +236,12 @@ class JobConfigs:
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_DARWIN,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_DARWIN,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_V80COMPAT,
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.AMD_FREEBSD,
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_FREEBSD,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.PPC64LE,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.AMD_COMPAT,
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.AMD_MUSL,
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_MUSL,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.RISCV64,
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.S390X,
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.S390X,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.LOONGARCH64
             RunnerLabels.BUILDER_ARM,  # fuzzers
         ],
@@ -424,7 +424,7 @@ class JobConfigs:
     )
     functional_tests_jobs_azure_master_only = Job.Config(
         name=JobNames.STATELESS,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -445,9 +445,9 @@ class JobConfigs:
             "azure, asan, 3/3",
         ],
         requires=[
-            ["Build (arm_asan)"],  # azure asan 1
-            ["Build (arm_asan)"],  # azure asan 2
-            ["Build (arm_asan)"],  # azure asan 3
+            ["Build (amd_asan)"],  # azure asan 1
+            ["Build (amd_asan)"],  # azure asan 2
+            ["Build (amd_asan)"],  # azure asan 3
         ],
     )
     bugfix_validation_job = Job.Config(
