@@ -84,7 +84,7 @@ public:
             if (x509_cert->certificate())
             {
                 keys->insert("version");
-                values->insert(x509_cert->version());
+                values->insert(std::to_string(x509_cert->version()));
 
                 keys->insert("serial_number");
                 values->insert(x509_cert->serialNumber());
