@@ -32,7 +32,8 @@ namespace ProfileEvents
 
 /// Guard pages interface.
 ///
-/// Uses MADV_GUARD_INSTALL/MADV_GUARD_REMOVE which does not splits VMA, unlike mprotect()
+/// Uses MADV_GUARD_INSTALL/MADV_GUARD_REMOVE (since Linux 6.13+) which does
+/// not splits VMA (unlike mprotect()), or fallback to mprotect()
 ///
 /// Uses MADV_GUARD_INSTALL if available, or mprotect() if not
 void memoryGuardInstall(void *addr, size_t len);
