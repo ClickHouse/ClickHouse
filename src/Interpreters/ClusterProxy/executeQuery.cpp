@@ -532,7 +532,7 @@ bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & con
     return is_reading_with_parallel_replicas(plan.getRootNode());
 }
 
-QueryPipeline executeInsertSelectWithParallelReplicas(const ASTInsertQuery & query_ast, ContextPtr context)
+std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(const ASTInsertQuery & query_ast, ContextPtr context)
 {
     if (!isSuitableForParallelReplicas(query_ast.select, context))
         return {};

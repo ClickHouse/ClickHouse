@@ -747,10 +747,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 }
 
 
-QueryPipeline InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
+std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "into {}", query.getTable());
-
     auto context_ptr = getContext();
     const Settings & settings = context_ptr->getSettingsRef();
     if (!settings[Setting::allow_experimental_analyzer])
@@ -769,6 +767,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(
 
     if (!isTrivialSelect(selects.front()))
         return {};
+
+    LOG_TRACE(
+        getLogger("InterpreterInsertQuery"),
+        "Building distributed insert select pipeline with parallel replicas: table={}",
+        query.getTable());
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context_ptr, no_destination, allow_materialized);
@@ -930,7 +933,9 @@ BlockIO InterpreterInsertQuery::execute()
             }
             if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
             {
-                res.pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
+                auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
+                if (pipeline)
+                    res.pipeline = std::move(*pipeline);
             }
         }
         if (!res.pipeline.initialized())
