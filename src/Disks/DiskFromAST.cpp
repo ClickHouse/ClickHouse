@@ -26,7 +26,7 @@ namespace ErrorCodes
 }
 
 std::string getOrCreateCustomDisk(
-    Poco::AutoPtr<Poco::XML::Document> xml_document,
+    const ASTs & disk_args,
     const std::string & serialization,
     ContextPtr context,
     bool attach)
@@ -36,20 +36,27 @@ std::string getOrCreateCustomDisk(
     if (server_config.has("include_from"))
         include_from_path = server_config.getString("include_from");
 
-    std::vector<std::pair<std::string, std::string>> substitutions;
-    zkutil::ZooKeeperNodeCache zk_node_cache([&]() { return context->getZooKeeper(); });
-    Poco::XML::DOMParser dom_parser(new Poco::XML::NamePool(65521));
-    ConfigProcessor::processIncludes(
-        xml_document,
-        substitutions,
-        include_from_path,
-        /* throw_on_bad_incl */!attach,
-        dom_parser,
-        getLogger("getOrCreateCustomDisk"),
-        {}, {},
-        &zk_node_cache);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    {
+        Poco::AutoPtr<Poco::XML::Document> xml_document = getDiskConfigurationFromASTImpl(disk_args, context);
+        Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool());
+        Poco::XML::DOMParser dom_parser(name_pool);
+        std::vector<std::pair<std::string, std::string>> substitutions;
+        zkutil::ZooKeeperNodeCache zk_node_cache([&]() { return context->getZooKeeper(); });
 
-    auto config = getDiskConfigurationFromDocument(xml_document);
+        ConfigProcessor::processIncludes(
+            xml_document,
+            substitutions,
+            include_from_path,
+            /* throw_on_bad_incl */!attach,
+            dom_parser,
+            getLogger("getOrCreateCustomDisk"),
+            {}, {},
+            &zk_node_cache);
+
+        config->load(xml_document);
+    }
+
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;
     config->keys(disk_settings_keys);
     /// Check that no settings are defined when disk from the config is referred.
@@ -138,9 +145,8 @@ public:
             const auto * function = ast->as<ASTFunction>();
             const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
             const auto & function_args = function_args_expr->children;
-            auto xml_document = getDiskConfigurationFromASTImpl(function_args, data.context);
             auto disk_setting_string = function->formatWithSecretsOneLine();
-            auto disk_name = getOrCreateCustomDisk(xml_document, disk_setting_string, data.context, data.attach);
+            auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach);
             ast = std::make_shared<ASTLiteral>(disk_name);
         }
     }
