@@ -30,6 +30,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/SipHash.h>
 #include <Common/intExp10.h>
 #include <Common/randomSeed.h>
@@ -156,7 +157,7 @@ size_t estimateValueSize(
 }
 
 ColumnPtr fillColumnWithRandomData(
-    const DataTypePtr type,
+    DataTypePtr type,
     UInt64 limit,
     UInt64 max_array_length,
     UInt64 max_string_length,

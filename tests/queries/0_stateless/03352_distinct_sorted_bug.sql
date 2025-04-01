@@ -9,10 +9,3 @@ INSERT INTO t0 VALUES (1);
 --               vptr for 'DB::ColumnConst'
 -- SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior ../src/Interpreters/AggregationCommon.h:90:35
 SELECT DISTINCT multiIf(1, 2, 1, materialize(toInt128(3)), 4), c0 FROM t0;
-
-DROP TABLE IF EXISTS t0__fuzz_41;
-CREATE TABLE t0__fuzz_41 (c0 DateTime) ENGINE = MergeTree ORDER BY c0;
-INSERT INTO t0__fuzz_41 FORMAT Values (1) (2) (3) (4) (5) (6) (7) (8) (9) (10);
-
-SELECT multiIf(1, 2, 1, materialize(3), 4), c0 FROM t0__fuzz_41 FORMAT Null;
-SELECT multiIf(0, 2, 1, materialize(3), 4), c0 FROM t0__fuzz_41 FORMAT Null;

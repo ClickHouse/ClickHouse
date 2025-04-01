@@ -219,12 +219,12 @@ CREATE TABLE sentiment_pooled (
    sentiment Float32
 )
 ENGINE = ExecutablePool(
-	'sentiment.py',
-	TabSeparated,
-	(SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20000)
+    'sentiment.py',
+    TabSeparated,
+    (SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20000)
 )
 SETTINGS
-	pool_size = 4;
+    pool_size = 4;
 ```
 
 ClickHouse will maintain 4 processes on-demand when your client queries the `sentiment_pooled` table.

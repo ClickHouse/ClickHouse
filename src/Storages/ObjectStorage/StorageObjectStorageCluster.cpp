@@ -5,7 +5,6 @@
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
@@ -95,7 +94,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Expected SELECT query from table function {}, got '{}'",
-            configuration->getEngineName(), queryToString(query));
+            configuration->getEngineName(), query->formatForErrorMessage());
     }
 
     auto * expression_list = table_function->arguments->as<ASTExpressionList>();
@@ -104,7 +103,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Expected SELECT query from table function {}, got '{}'",
-            configuration->getEngineName(), queryToString(query));
+            configuration->getEngineName(), query->formatForErrorMessage());
     }
 
     ASTs & args = expression_list->children;
@@ -133,7 +132,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
-        local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true);
+        local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
 
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);
 

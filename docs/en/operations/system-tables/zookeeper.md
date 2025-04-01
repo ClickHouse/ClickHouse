@@ -38,14 +38,14 @@ Columns:
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.zookeeper
 WHERE path = '/clickhouse/tables/01-08/visits/replicas'
 FORMAT Vertical
 ```
 
-``` text
+```text
 Row 1:
 ──────
 name:           example01-08-1

@@ -1,7 +1,5 @@
 ---
-alias:
-- TSVRawWithNames
-- RawWithNames
+alias: ['TSVRawWithNames', 'RawWithNames']
 description: 'Documentation for the TabSeparatedRawWithNames format'
 input_format: true
 keywords: ['TabSeparatedRawWithNames', 'TSVRawWithNames', 'RawWithNames']

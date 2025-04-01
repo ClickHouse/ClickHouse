@@ -9,6 +9,7 @@ import pytest
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import pg_pass
 from helpers.network import PartitionManager
 from helpers.postgres_utility import get_postgres_conn
 from helpers.port_forward import PortForward
@@ -44,7 +45,7 @@ def create_postgres_table(cursor, table_name):
 def create_and_fill_postgres_table(cursor, table_name, port, host):
     create_postgres_table(cursor, table_name)
     # Fill postgres table using clickhouse postgres table function and check
-    table_func = f"""postgresql('{host}:{port}', 'postgres_database', '{table_name}', 'postgres', 'mysecretpassword')"""
+    table_func = f"""postgresql('{host}:{port}', 'postgres_database', '{table_name}', 'postgres', '{pg_pass}')"""
     node1.query(
         f"""INSERT INTO TABLE FUNCTION {table_func} SELECT number, number, number from numbers(10000)"""
     )
@@ -154,7 +155,7 @@ def test_postgres_dictionaries_custom_query_full_load(started_cluster):
         HOST '{started_cluster.postgres_ip}'
         PORT {started_cluster.postgres_port}
         USER 'postgres'
-        PASSWORD 'mysecretpassword'
+        PASSWORD '{pg_pass}'
         QUERY $doc$SELECT id, value_1, value_2 FROM test_table_1 INNER JOIN test_table_2 USING (id);$doc$))
     LIFETIME(0)
     """
@@ -203,7 +204,7 @@ def test_postgres_dictionaries_custom_query_partial_load_simple_key(started_clus
         HOST '{started_cluster.postgres_ip}'
         PORT {started_cluster.postgres_port}
         USER 'postgres'
-        PASSWORD 'mysecretpassword'
+        PASSWORD '{pg_pass}'
         QUERY $doc$SELECT id, value_1, value_2 FROM test_table_1 INNER JOIN test_table_2 USING (id) WHERE {{condition}};$doc$))
     """
     )
@@ -254,7 +255,7 @@ def test_postgres_dictionaries_custom_query_partial_load_complex_key(started_clu
         HOST '{started_cluster.postgres_ip}'
         PORT {started_cluster.postgres_port}
         USER 'postgres'
-        PASSWORD 'mysecretpassword'
+        PASSWORD '{pg_pass}'
         QUERY $doc$SELECT id, key, value_1, value_2 FROM test_table_1 INNER JOIN test_table_2 USING (id, key) WHERE {{condition}};$doc$))
     """
     )
@@ -391,14 +392,14 @@ def test_postgres_schema(started_cluster):
     )
     cursor = conn.cursor()
 
-    cursor.execute("CREATE SCHEMA test_schema")
-    cursor.execute("CREATE TABLE test_schema.test_table (id integer, value integer)")
+    cursor.execute("CREATE SCHEMA test_schema_1")
+    cursor.execute("CREATE TABLE test_schema_1.test_table (id integer, value integer)")
     cursor.execute(
-        "INSERT INTO test_schema.test_table SELECT i, i FROM generate_series(0, 99) as t(i)"
+        "INSERT INTO test_schema_1.test_table SELECT i, i FROM generate_series(0, 99) as t(i)"
     )
 
     node1.query(
-        """
+        f"""
     DROP DICTIONARY IF EXISTS postgres_dict;
     CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
     PRIMARY KEY id
@@ -406,9 +407,9 @@ def test_postgres_schema(started_cluster):
         port 5432
         host 'postgres1'
         user  'postgres'
-        password 'mysecretpassword'
+        password '{pg_pass}'
         db 'postgres_database'
-        table 'test_schema.test_table'))
+        table 'test_schema_1.test_table'))
         LIFETIME(MIN 1 MAX 2)
         LAYOUT(HASHED());
     """
@@ -419,8 +420,8 @@ def test_postgres_schema(started_cluster):
     result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
     assert int(result.strip()) == 99
     node1.query("DROP DICTIONARY IF EXISTS postgres_dict")
-    cursor.execute("DROP TABLE test_schema.test_table")
-    cursor.execute("DROP SCHEMA test_schema")
+    cursor.execute("DROP TABLE test_schema_1.test_table")
+    cursor.execute("DROP SCHEMA test_schema_1")
 
 
 def test_predefined_connection_configuration(started_cluster):
@@ -450,11 +451,11 @@ def test_predefined_connection_configuration(started_cluster):
     result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
     assert int(result.strip()) == 99
 
-    cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
-    cursor.execute("CREATE SCHEMA test_schema")
-    cursor.execute("CREATE TABLE test_schema.test_table (id integer, value integer)")
+    cursor.execute("DROP SCHEMA IF EXISTS test_schema_2 CASCADE")
+    cursor.execute("CREATE SCHEMA test_schema_2")
+    cursor.execute("CREATE TABLE test_schema_2.test_table (id integer, value integer)")
     cursor.execute(
-        "INSERT INTO test_schema.test_table SELECT i, 100 FROM generate_series(0, 99) as t(i)"
+        "INSERT INTO test_schema_2.test_table SELECT i, 100 FROM generate_series(0, 99) as t(i)"
     )
 
     node1.query(
@@ -462,7 +463,7 @@ def test_predefined_connection_configuration(started_cluster):
     DROP DICTIONARY postgres_dict;
     CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
     PRIMARY KEY id
-    SOURCE(POSTGRESQL(NAME postgres1 SCHEMA test_schema))
+    SOURCE(POSTGRESQL(NAME postgres1 SCHEMA test_schema_2))
         LIFETIME(MIN 1 MAX 2)
         LAYOUT(HASHED());
     """
@@ -519,8 +520,12 @@ def test_bad_configuration(started_cluster):
     )
     cursor = conn.cursor()
 
+    cursor.execute("DROP SCHEMA IF EXISTS test_schema_3 CASCADE")
+    cursor.execute("CREATE SCHEMA test_schema_3")
+    cursor.execute("CREATE TABLE test_schema_3.test_table (id integer, value integer)")
+
     node1.query(
-        """
+        f"""
     DROP DICTIONARY IF EXISTS postgres_dict;
     CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
     PRIMARY KEY id
@@ -528,9 +533,9 @@ def test_bad_configuration(started_cluster):
         port 5432
         host 'postgres1'
         user  'postgres'
-        password 'mysecretpassword'
+        password '{pg_pass}'
         dbbb 'postgres_database'
-        table 'test_schema.test_table'))
+        table 'test_schema_3.test_table'))
         LIFETIME(MIN 1 MAX 2)
         LAYOUT(HASHED());
     """
@@ -547,10 +552,10 @@ def test_named_collection_from_ddl(started_cluster):
     cursor.execute("CREATE TABLE test_table (id integer, value integer)")
 
     node1.query(
-        """
+        f"""
         DROP NAMED COLLECTION IF EXISTS pg_conn;
         CREATE NAMED COLLECTION pg_conn
-        AS user = 'postgres', password = 'mysecretpassword', host = 'postgres1', port = 5432, database = 'postgres', table = 'test_table';
+        AS user = 'postgres', password = '{pg_pass}', host = 'postgres1', port = 5432, database = 'postgres', table = 'test_table';
     """
     )
 
@@ -572,10 +577,10 @@ def test_named_collection_from_ddl(started_cluster):
     assert int(result.strip()) == 99
 
     node1.query(
-        """
+        f"""
         DROP NAMED COLLECTION IF EXISTS pg_conn_2;
         CREATE NAMED COLLECTION pg_conn_2
-        AS user = 'postgres', password = 'mysecretpassword', host = 'postgres1', port = 5432, dbbb = 'postgres', table = 'test_table';
+        AS user = 'postgres', password = '{pg_pass}', host = 'postgres1', port = 5432, dbbb = 'postgres', table = 'test_table';
     """
     )
     node1.query(
@@ -635,7 +640,7 @@ def test_background_dictionary_reconnect(started_cluster):
         LAYOUT(DIRECT())
         SOURCE(POSTGRESQL(
             USER 'postgres'
-            PASSWORD 'mysecretpassword'
+            PASSWORD '{pg_pass}'
             DB 'postgres_database'
             QUERY $doc$SELECT * FROM dict;$doc$
             BACKGROUND_RECONNECT 'true'

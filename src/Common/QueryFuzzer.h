@@ -1,16 +1,19 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
-#include <unordered_set>
-#include <unordered_map>
-#include <vector>
 
 #include <pcg-random/pcg_random.hpp>
 
 #include <Core/Field.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/IASTHash.h>
 #include <Parsers/NullsAction.h>
+#include <Parsers/ParserInsertQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Common/SettingsChanges.h>
 #include <Common/randomSeed.h>
 
 
@@ -38,7 +41,8 @@ class QueryFuzzer
 {
 public:
     explicit QueryFuzzer(pcg64 fuzz_rand_ = randomSeed(), std::ostream * out_stream_ = nullptr, std::ostream * debug_stream_ = nullptr)
-        : fuzz_rand(fuzz_rand_)
+        : seed(0)
+        , fuzz_rand(fuzz_rand_)
         , out_stream(out_stream_)
         , debug_stream(debug_stream_)
     {
@@ -48,13 +52,96 @@ public:
     // ASTPtr to point to new AST with some random changes.
     void fuzzMain(ASTPtr & ast);
 
-    ASTs getInsertQueriesForFuzzedTables(const String & full_query);
     ASTs getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query);
     void notifyQueryFailed(ASTPtr ast);
 
     static bool isSuitableForFuzzing(const ASTCreateQuery & create);
 
+    UInt64 getSeed() const { return seed; }
+
+    void setSeed(const UInt64 new_seed)
+    {
+        seed = new_seed;
+        fuzz_rand = pcg64(seed);
+    }
+
+    /// When measuring performance, sometimes change settings
+    void getRandomSettings(SettingsChanges & settings_changes);
+
 private:
+    template <typename Parser>
+    ASTPtr tryParseQueryForFuzzedTables(const String & full_query)
+    {
+        String message;
+        const char * pos = full_query.data();
+        const char * end = full_query.data() + full_query.size();
+
+        if constexpr (std::is_same_v<Parser, ParserInsertQuery>)
+        {
+            Parser p(end, false);
+            return tryParseQuery(
+                p,
+                pos,
+                end,
+                message,
+                false,
+                "",
+                false,
+                DBMS_DEFAULT_MAX_QUERY_SIZE,
+                DBMS_DEFAULT_MAX_PARSER_DEPTH,
+                DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+                true);
+        }
+        else
+        {
+            Parser p;
+            return tryParseQuery(
+                p,
+                pos,
+                end,
+                message,
+                false,
+                "",
+                false,
+                DBMS_DEFAULT_MAX_QUERY_SIZE,
+                DBMS_DEFAULT_MAX_PARSER_DEPTH,
+                DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+                true);
+        }
+    }
+
+public:
+    template <typename ParsedAST, typename Parser>
+    ASTs getQueriesForFuzzedTables(const String & full_query)
+    {
+        auto parsed_query = tryParseQueryForFuzzedTables<Parser>(full_query);
+        if (!parsed_query)
+            return {};
+
+        const auto & query_ast = *parsed_query->template as<ParsedAST>();
+        if (!query_ast.table)
+            return {};
+
+        auto table_name = query_ast.getTable();
+        auto it = original_table_name_to_fuzzed.find(table_name);
+        if (it == original_table_name_to_fuzzed.end())
+            return {};
+
+        ASTs queries;
+        for (const auto & fuzzed_name : it->second)
+        {
+            /// Parse query from scratch for each table instead of clone,
+            /// to store proper pointers to inlined data,
+            /// which are not copied during clone.
+            auto & query = queries.emplace_back(tryParseQueryForFuzzedTables<Parser>(full_query));
+            query->template as<ParsedAST>()->setTable(fuzzed_name);
+        }
+
+        return queries;
+    }
+
+private:
+    UInt64 seed;
     pcg64 fuzz_rand;
 
     std::ostream * out_stream = nullptr;
@@ -67,13 +154,16 @@ private:
     // This field is reset for each fuzzMain() call.
     size_t current_ast_depth = 0;
 
+    // Used to track added tables in join clauses
+    uint32_t alias_counter = 0;
+
     // These arrays hold parts of queries that we can substitute into the query
     // we are currently fuzzing. We add some part from each new query we are asked
     // to fuzz, and keep this state between queries, so the fuzzing output becomes
     // more interesting over time, as the queries mix.
     // The hash tables are used for collection, and the vectors are used for random access.
     std::unordered_map<std::string, ASTPtr> column_like_map;
-    std::vector<std::pair<std::string, ASTPtr>> column_like;
+    std::vector<std::pair<std::string, ASTPtr>> column_like, colids;
 
     std::unordered_map<std::string, ASTPtr> table_like_map;
     std::vector<std::pair<std::string, ASTPtr>> table_like;
@@ -85,19 +175,18 @@ private:
 
     std::unordered_map<std::string, std::unordered_set<std::string>> original_table_name_to_fuzzed;
     std::unordered_map<std::string, size_t> index_of_fuzzed_table;
-    std::set<IAST::Hash> created_tables_hashes;
+    std::set<IASTHash> created_tables_hashes;
 
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
     Field fuzzField(Field field);
     ASTPtr getRandomColumnLike();
-    ASTPtr getRandomExpressionList();
+    ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
-    void replaceWithColumnLike(ASTPtr & ast);
-    void replaceWithTableLike(ASTPtr & ast);
+    void fuzzJoinType(ASTTableJoin * table_join);
     void fuzzOrderByElement(ASTOrderByElement * elem);
-    void fuzzOrderByList(IAST * ast);
+    void fuzzOrderByList(IAST * ast, size_t nproj);
     void fuzzColumnLikeExpressionList(IAST * ast);
     void fuzzNullsAction(NullsAction & action);
     void fuzzWindowFrame(ASTWindowDefinition & def);
@@ -110,12 +199,34 @@ private:
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);
+    ASTPtr tryNegateNextPredicate(const ASTPtr & pred, int prob);
+    ASTPtr setIdentifierAliasOrNot(ASTPtr & exp);
+    ASTPtr addJoinClause();
+    ASTPtr addArrayJoinClause();
+    ASTPtr generatePredicate();
+    void addOrReplacePredicate(ASTSelectQuery * sel, ASTSelectQuery::Expression expr);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
+
+    void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);
+    ASTPtr permutePredicateClause(const ASTPtr & predicate, int negProb);
+
+    template <typename Container>
+    const auto & pickRandomly(pcg64 & rand, const Container & container)
+    {
+        std::uniform_int_distribution<size_t> d{0, container.size() - 1};
+        auto it = container.begin();
+        std::advance(it, d(rand));
+
+        if constexpr (requires { it->first; })
+            return it->first;
+        else
+            return *it;
+    }
 };
 
 }

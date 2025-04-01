@@ -53,8 +53,8 @@ jobs:
   dockers_build_arm:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: [config_workflow]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBidWlsZCAoYXJtKQ==') }}
-    name: "Dockers build (arm)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
+    name: "Dockers Build (arm)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -83,16 +83,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers build (arm)' --workflow "MergeQueueCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "MergeQueueCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Dockers build (arm)' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  dockers_build_amd:
+  dockers_build_amd_and_merge:
     runs-on: [self-hosted, style-checker]
     needs: [config_workflow, dockers_build_arm]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBidWlsZCAoYW1kKQ==') }}
-    name: "Dockers build (amd)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKSBhbmQgTWVyZ2U=') }}
+    name: "Dockers Build (amd) and Merge"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -121,14 +121,14 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers build (amd)' --workflow "MergeQueueCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (amd) and Merge' --workflow "MergeQueueCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Dockers build (amd)' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (amd) and Merge' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   style_check:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd]
+    needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3R5bGUgY2hlY2s=') }}
     name: "Style check"
     outputs:
@@ -166,7 +166,7 @@ jobs:
 
   fast_test:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd]
+    needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RmFzdCB0ZXN0') }}
     name: "Fast test"
     outputs:
@@ -204,7 +204,7 @@ jobs:
 
   build_amd_binary:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
     name: "Build (amd_binary)"
     outputs:
@@ -242,7 +242,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_arm, dockers_build_amd, style_check, fast_test, build_amd_binary]
+    needs: [config_workflow, dockers_build_arm, dockers_build_amd_and_merge, style_check, fast_test, build_amd_binary]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:

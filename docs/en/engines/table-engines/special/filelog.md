@@ -18,7 +18,7 @@ This engine allows processing of application log files as a stream of records.
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -66,7 +66,7 @@ One FileLog table can have as many materialized views as you like, they do not r
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE logs (
     timestamp UInt64,
     level String,
@@ -88,7 +88,7 @@ Example:
 
 To stop receiving streams data or to change the conversion logic, detach the materialized view:
 
-``` sql
+```sql
   DETACH TABLE consumer;
   ATTACH TABLE consumer;
 ```

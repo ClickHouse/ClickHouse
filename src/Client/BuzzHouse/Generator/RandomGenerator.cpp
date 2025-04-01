@@ -162,7 +162,7 @@ double RandomGenerator::randomZeroOne()
 
 String RandomGenerator::nextJSONCol()
 {
-    const String & pick = pickRandomlyFromVector(jcols);
+    const String & pick = pickRandomly(jcols);
 
     return pick;
 }
@@ -178,7 +178,7 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
         use_bad_utf8 = true;
     }
     ret += delimiter;
-    const String & pick = pickRandomlyFromVector(
+    const String & pick = pickRandomly(
         use_bad_utf8 ? bad_utf8
                      : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese)));
 
@@ -194,7 +194,7 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
 
             while (i < max_iterations)
             {
-                const String & npick = pickRandomlyFromVector(
+                const String & npick = pickRandomly(
                     use_bad_utf8 ? bad_utf8
                                  : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
                                                                                : (this->nextBool() ? common_english : common_chinese)));
@@ -220,44 +220,44 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
     return ret;
 }
 
-static const constexpr char hex_digits[] = "0123456789abcdef";
+static const constexpr char hexDigits[] = "0123456789abcdef";
 
 String RandomGenerator::nextUUID()
 {
     return fmt::format(
         "{}{}{}{}{}{}{}{}-{}{}{}{}-{}{}{}{}-{}{}{}{}-{}{}{}{}{}{}{}{}{}{}{}{}",
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)]);
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)]);
 }
 
 String RandomGenerator::nextIPv4()
@@ -274,14 +274,14 @@ String RandomGenerator::nextIPv6()
 {
     return fmt::format(
         "{}:{}:{}:{}:{}:{}:{}:{}",
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)],
-        hex_digits[hex_digits_dist(generator)]);
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)],
+        hexDigits[hex_digits_dist(generator)]);
 }
 
 }
