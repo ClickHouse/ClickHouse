@@ -101,6 +101,9 @@ def main():
     cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type]
     info = Info()
     if not info.is_local_run:
+        # Default timeout (10min), can be too low, we run this in docker
+        # anyway, will be terminated once the build is finished
+        os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
         os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
         os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
         os.environ["CTCACHE_DIR"] = "ccache/clang-tidy-cache"
