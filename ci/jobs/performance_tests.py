@@ -6,8 +6,8 @@ import time
 import traceback
 from pathlib import Path
 
-from praktika.result import Result
-from praktika.utils import MetaClasses, Shell, Utils
+from ci.praktika.result import Result
+from ci.praktika.utils import MetaClasses, Shell, Utils
 
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.info import Info
@@ -308,8 +308,6 @@ def main():
     res = True
     results = []
 
-    # Shell.check(f"rm -rf {perf_wd} && mkdir -p {perf_wd}")
-
     # add right CH location to PATH
     Utils.add_to_PATH(perf_right)
     # TODO:
@@ -347,11 +345,6 @@ def main():
     if res and JobStages.INSTALL_CLICKHOUSE_REFERENCE in stages:
         print("Install Reference")
         if not Path(f"{perf_left}/.done").is_file():
-            # TODO: use config from the same sha as reference CH binary
-            # git checkout left_sha
-            # rm -rf /tmp/praktika/left && mkdir -p /tmp/praktika/left
-            # cp -r ./tests/config /tmp/praktika/left/config
-            # git checkout -
             commands = [
                 f"mkdir -p {perf_left_config}",
                 f"wget -nv -P {perf_left}/ {link_for_ref_ch}",
@@ -485,6 +478,8 @@ def main():
         test_files = [
             file for file in os.listdir("./tests/performance/") if file.endswith(".xml")
         ]
+        # TODO: in PRs filter test files against changed files list if only tests has been changed
+        # changed_files = info.get_custom_data("changed_files")
         if test_keyword:
             test_files = [file for file in test_files if test_keyword in file]
         else:
@@ -577,17 +572,6 @@ def main():
             )
         )
 
-    # Shell.check("find /tmp/praktika -type f")
-
-    # Stop the servers to free memory. Normally they are restarted before getting
-    # the profile info, so they shouldn't use much, but if the comparison script
-    # fails in the middle, this might not be the case.
-    # for _ in {1..30}
-    # do
-    # pkill clickhouse || break
-    # sleep 1
-    # done
-
     # dmesg -T > dmesg.log
     #
     # ls -lath
@@ -611,7 +595,7 @@ def main():
     # attach all logs with errors
     Shell.check(f"rm -f {perf_wd}/logs.tar.zst")
     Shell.check(
-        f'find {perf_wd} -type f \( -name "*err*.log" -o -name "*err*.tsv" \) -print0 | tar --null -T - -cf - | zstd -o {perf_wd}/logs.tar.zst',
+        f'find {perf_wd} -type f -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" ! -path "*/db/*" ! -path "*/db0/*" -print0 | tar --null -T - -cf - | zstd -o {perf_wd}/logs.tar.zst',
         verbose=True,
     )
     if Path(f"{perf_wd}/logs.tar.zst").is_file():
