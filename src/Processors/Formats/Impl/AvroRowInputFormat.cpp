@@ -66,6 +66,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 bool AvroInputStreamReadBufferAdapter::next(const uint8_t ** data, size_t * len)
