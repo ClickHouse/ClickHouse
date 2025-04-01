@@ -9,6 +9,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <DataTypes/DataTypeNullable.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace DeltaLake
 {
