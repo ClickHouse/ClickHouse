@@ -334,7 +334,7 @@ public:
         if (!ctx)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
 #else
-        EVP_MD_CTX_ptr ctx(nullptr, nullptr);
+        void * ctx = nullptr;
 #endif
 
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
