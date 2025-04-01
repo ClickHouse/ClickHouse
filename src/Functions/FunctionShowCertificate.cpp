@@ -74,10 +74,11 @@ public:
         {
 #if USE_SSL
             std::unique_ptr<Poco::Crypto::X509Certificate> x509_cert;
+
             if (!certificate.empty())
                 x509_cert = std::make_unique<Poco::Crypto::X509Certificate>(certificate);
 
-            if (!x509_cert->certificate())
+            if (!x509_cert || !x509_cert->certificate())
                 x509_cert = std::make_unique<Poco::Crypto::X509Certificate>(SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext()));
 
             if (x509_cert->certificate())
