@@ -196,64 +196,36 @@ class Result(MetaClasses.Serializable):
     def add_job_summary_to_info(
         self, with_local_run_command=False, with_test_in_run_command=False
     ):
-        if not self.is_ok():
-            failed = [r for r in self.results if not r.is_ok()]
-            if failed:
-                if (
-                    len(failed) == 1
-                    and failed[0].name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
-                    and failed[0].info
-                ):
-                    summary_info = failed[0].info
-                else:
-                    failed_str = ",".join([f.name for f in failed])
-                    summary_info = (
-                        f"Failed: {failed_str}"
-                        if len(failed_str) < 80
-                        else f"Failed: {len(failed)} tests"
-                    )
-            else:
-                summary_info = "Failed"
-        else:
-            summary_info = next(
-                (
-                    r.info
-                    for r in self.results
-                    if r.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS and r.info
-                ),
-                "ok",
-            )
+        subresult_with_tests = self
 
-        self.set_info(summary_info)
+        # Use a specific sub-result if configured
+        job_config = _Environment.get().JOB_CONFIG or {}
+        result_name_for_cidb = job_config.get("result_name_for_cidb", "")
+        if result_name_for_cidb:
+            for r in self.results:
+                if r.name == result_name_for_cidb:
+                    subresult_with_tests = r
+                    if subresult_with_tests.info:
+                        self.set_info(subresult_with_tests.info)
+                    break
 
-        if with_local_run_command and not self.is_ok():
+        # If no failures, nothing more to do
+        if self.is_ok():
+            return self
+
+        # Collect failed test case names
+        failed = [r.name for r in subresult_with_tests.results if not r.is_ok()]
+
+        if failed:
+            if len(failed) < 10:
+                failed_tcs = "\n".join(failed)
+                self.set_info(f"Failed:\n{failed_tcs}")
+
+        # Suggest local command to rerun
+        if with_local_run_command:
             command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
-            if with_test_in_run_command:
-                first_failed_test = None
-                first_failed_task_result = next(
-                    (r for r in self.results if not r.is_ok()), None
-                )
-                if (
-                    first_failed_task_result.name
-                    in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
-                ):
-                    # case: test cases are nested inside subtask
-                    first_failed_test = next(
-                        (
-                            r
-                            for r in first_failed_task_result.results
-                            if "fail" in r.status.lower()
-                        ),
-                        None,
-                    )
-                elif not any(
-                    r.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
-                    for r in self.results
-                ):
-                    # case: test cases are on the first level in job's Result
-                    first_failed_test = first_failed_task_result
-                if first_failed_test:
-                    command_info += f" --test {first_failed_test.name}"
+            if with_test_in_run_command and failed:
+                command_info += f" --test {failed[0]}"
             self.set_info(command_info)
 
         return self

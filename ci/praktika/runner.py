@@ -98,6 +98,7 @@ class Runner:
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
+        env.JOB_CONFIG = job
         env.dump()
         print(env)
 
@@ -288,7 +289,7 @@ class Runner:
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
-                        result.set_status(Result.Status.ERROR)
+                    result.set_status(Result.Status.ERROR)
                     result.set_info(info)
                     result.set_info("---").set_info(
                         process.get_latest_log(max_lines=20)
