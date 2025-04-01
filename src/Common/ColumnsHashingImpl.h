@@ -365,7 +365,7 @@ protected:
         const auto & rhs_key = keyHolderGetKey(rhs);
 
         // if constexpr (HasBegin<decltype(lhs_key)>::value) {
-        if constexpr (std::is_same_v<decltype(lhs_key), StringRef>) {
+        if constexpr (std::is_same_v<decltype(lhs_key), StringRef>) { // case complex list of expressions, for example, (Int64, String)
             // std::cout << "compareKeyHolders: case if (has .begin())" << std::endl;
             // std::cout << "\tcompareKeyHolders: lhs_key.size(): " << lhs_key.size() << std::endl;
             // std::cout << "\tcompareKeyHolders: rhs_key.size(): " << rhs_key.size() << std::endl;
@@ -378,6 +378,11 @@ protected:
             //     if (rhs_key[idx] < lhs_key[idx])
             //         return false;
             // }
+        } else if constexpr (std::is_same_v<decltype(lhs_key), Int128> 
+                             || std::is_same_v<decltype(lhs_key), UInt128>
+                             || std::is_same_v<decltype(lhs_key), Int256>
+                             || std::is_same_v<decltype(lhs_key), UInt256>) { // a "glued" sequence of several integers 
+            // TODO
         }
         else {
             // std::cout << "compareKeyHolders: case else (no .begin())" << std::endl;
@@ -435,7 +440,7 @@ protected:
         bool inserted = false;
         // std::cout << "\t@@@@@@ before emplace of key_holder=" << key_holder << ", data.size(): " << data.size() << std::endl;
         std::cout << "\t@@@@@@ before emplace data.size(): " << data.size() << std::endl;
-        data.emplace(key_holder, it, inserted); // видимо попытка вставки нового ключа (по которому делает group by) в мапу
+        data.emplace(key_holder, it, inserted);
         std::cout << "\t@@@@@@ after emplace  data.size(): " << data.size() << std::endl;
         // std::cout << "\t@@@@@@ it->getMapped(): " << it->getMapped() << std::endl;
         std::cout << "\t@@@@@@ inserted: " << inserted << std::endl;
@@ -451,38 +456,46 @@ protected:
         std::cout << "^^^^^^^^ Type of key_holder: " << typeid(key_holder).name() << std::endl;
         std::cout << "^^^^^^^^ Type of keyHolderGetKey(key_holder): " << typeid(keyHolderGetKey(key_holder)).name() << std::endl;
 
-        if constexpr (!std::is_same_v<decltype(key_holder), const VoidKey>) {
+        if constexpr (!std::is_same_v<decltype(key_holder), const VoidKey>) { // TODO VoidKey doesn't work in compareKeyHolders
             if constexpr (HasOstreamOperator<decltype(keyHolderGetKey(key_holder))>::value) {
                 std::cout << "^^^^^^^^ keyHolderGetKey(key_holder): " << keyHolderGetKey(key_holder) << std::endl;
             }
-            // std::cout << "^^^^^^^^ cout << keyHolderGetKey(key_holder) does not work" << std::endl;
             if (optimization_indexes && data.size() >= limit_length + 1) { // TODO do == and assert <=
                 std::cout << "data.size() >= limit_length + 1" << std::endl;
                 if constexpr (HasBegin<Data>::value) {
                     if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>) {
-                        auto min_key_holder = key_holder;
-                        for (const auto& data_el : data) {
-                            if constexpr (HasKey<KeyHolder>::value) {
-                                const auto& key = data_el.getKey();
-                                if (compareKeyHolders(key, min_key_holder.key, *optimization_indexes)) {
-                                    min_key_holder.key = key;
-                                }
-                            } else {
-                                if (compareKeyHolders(data_el.getKey(), min_key_holder, *optimization_indexes)) {
-                                    min_key_holder = data_el.getKey();
+                        if (!std::is_same_v<decltype(data.begin()->getKey()), StringRef>
+                            && !std::is_same_v<decltype(data.begin()->getKey()), Int128> 
+                            && !std::is_same_v<decltype(data.begin()->getKey()), UInt128>
+                            && !std::is_same_v<decltype(data.begin()->getKey()), Int256>
+                            && !std::is_same_v<decltype(data.begin()->getKey()), UInt256>) { // for MVP only simple types are supported
+                            // find minimal element of data
+                            auto min_key_holder = key_holder;
+                            for (const auto& data_el : data) {
+                                if constexpr (HasKey<KeyHolder>::value) {
+                                    const auto& key = data_el.getKey();
+                                    if (compareKeyHolders(key, min_key_holder.key, *optimization_indexes)) {
+                                        min_key_holder.key = key;
+                                    }
+                                } else {
+                                    if (compareKeyHolders(data_el.getKey(), min_key_holder, *optimization_indexes)) {
+                                        min_key_holder = data_el.getKey();
+                                    }
                                 }
                             }
-                        }
-                        const auto& min_key = keyHolderGetKey(min_key_holder);
-                        if constexpr (HasErase<Data, decltype(keyHolderGetKey(min_key_holder))>::value) {
-                            data.erase(min_key);
-                            if (min_key == keyHolderGetKey(key_holder)) {
-                                if constexpr (!has_mapped)
-                                    return EmplaceResult(inserted);
+                            const auto& min_key = keyHolderGetKey(min_key_holder);
+                            // erase found element
+                            if constexpr (HasErase<Data, decltype(keyHolderGetKey(min_key_holder))>::value) {
+                                data.erase(min_key);
+                                if (min_key == keyHolderGetKey(key_holder)) {
+                                    if constexpr (!has_mapped)
+                                        return EmplaceResult(inserted);
+                                }
                             }
                         }
                     }
                 } else if constexpr(HasForEachMapped<Data>::value) {
+                    // TODO implement
                     // data.forEachMapped([](auto el) {
                     //     std::cout << "forEachMapped el: " << el << std::endl;
                     // });
