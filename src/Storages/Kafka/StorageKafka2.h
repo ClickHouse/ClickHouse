@@ -148,11 +148,18 @@ private:
         Lost
     };
 
+    struct ReplicaState
+    {
+        String replica_name;
+        std::vector<std::pair<String, int32_t>> topics_assigned;
+    };
+
     // Configuration and state
     mutable std::mutex keeper_mutex;
     zkutil::ZooKeeperPtr keeper;
     const String keeper_path;
     const std::filesystem::path fs_keeper_path;
+    String replica_name;
     String replica_path;
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
@@ -225,6 +232,9 @@ private:
     // Creates only the replica in ZooKeeper. Shouldn't be called on the first replica as it is created in createTableIfNotExists
     void createReplica();
     void dropReplica();
+
+    std::set<std::pair<String, int32_t>> lookupReplicaState(zkutil::ZooKeeper & keeper_to_use);
+    UInt32 ActiveReplicaCount = 1; // We are always active
 
     // Takes lock over topic partitions and sets the committed offset in topic_partitions.
     std::optional<TopicPartitionLocks> lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions);

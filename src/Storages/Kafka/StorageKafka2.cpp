@@ -16,6 +16,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Poco/Dynamic/VarIterator.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Array.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Sources/BlocksListSource.h>
@@ -135,7 +139,8 @@ StorageKafka2::StorageKafka2(
     , keeper(getContext()->getZooKeeper())
     , keeper_path((*kafka_settings_)[KafkaSetting::kafka_keeper_path].value)
     , fs_keeper_path(keeper_path)
-    , replica_path(keeper_path + "/replicas/" + (*kafka_settings_)[KafkaSetting::kafka_replica_name].value)
+    , replica_name((*kafka_settings_)[KafkaSetting::kafka_replica_name].value)
+    , replica_path(keeper_path + "/replicas/" + replica_name)
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
     , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
@@ -745,18 +750,70 @@ void StorageKafka2::dropReplica()
     }
 }
 
+// достать все данные по активным репликам (например, уже залоченные партиции)
+// мне нужно какое-то множество пар <топик, партиция> -> возвращаю сет
+std::set<std::pair<String, int32_t>> StorageKafka2::lookupReplicaState(zkutil::ZooKeeper & keeper_to_use) {
+    Strings replicas;
+    if (Coordination::Error::ZOK != keeper_to_use.tryGetChildren(keeper_path + "/replicas", replicas))
+        return {};
+
+    // std::vector<StorageKafka2::ReplicaState> replica_states;
+    // replica_states.reserve(replicas.size());
+    ActiveReplicaCount = 1;
+    std::set<std::pair<String, int32_t>> locked_partitions;
+    for (const auto& replica : replicas) {
+        String current_replica_path = keeper_path + "/replicas/" + replica;
+        if (current_replica_path == replica_path) {
+            continue;
+        }
+        if (keeper_to_use.exists(current_replica_path)) {
+            ++ActiveReplicaCount;
+            String node_data;
+            if (!keeper_to_use.tryGet(current_replica_path + "/topics_assigned", node_data)) {
+                // replica_states.push_back({});
+                continue;
+            }
+            Poco::JSON::Parser parser;
+            Poco::Dynamic::Var result = parser.parse(node_data);
+            const Poco::JSON::Object::Ptr& object = result.extract<Poco::JSON::Object::Ptr>();
+            Poco::JSON::Array::Ptr current_topics = object->getArray("topics");
+            Poco::JSON::Array::Ptr current_partitions = object->getArray("partitions");
+            for (size_t i = 0; i < current_topics->size(); ++i) {
+                locked_partitions.emplace(std::make_pair(current_topics->getElement<String>(i), current_partitions->getElement<int32_t>(i)));
+            }
+        }
+    }
+    
+    return locked_partitions;
+}
+
 std::optional<StorageKafka2::TopicPartitionLocks>
 StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions)
 {
+    auto replica_states = lookupReplicaState(keeper_to_use);
+    size_t can_lock_partitions = static_cast<size_t>(std::ceil(static_cast<double>(topic_partitions.size()) / ActiveReplicaCount));
+    TopicPartitions aviable_topic_partitions;
+    aviable_topic_partitions.reserve(topic_partitions.size());
+    for (const auto & partition : topic_partitions) {
+        if (!replica_states.contains(std::make_pair(partition.topic, partition.partition_id))) {
+            aviable_topic_partitions.push_back(partition);
+        }
+    }
+
     std::vector<fs::path> topic_partition_paths;
-    topic_partition_paths.reserve(topic_partitions.size());
-    for (const auto & topic_partition : topic_partitions)
+    topic_partition_paths.reserve(aviable_topic_partitions.size());
+    for (const auto & topic_partition : aviable_topic_partitions)
         topic_partition_paths.emplace_back(getTopicPartitionPath(topic_partition));
 
     Coordination::Requests ops;
 
+    // отсеиваем лишние топики и из имеющихся пытаемся залочить [topic_partitions.size() / ActiveReplicaCount] + 1 (округление вверх)
+
     for (const auto & topic_partition_path : topic_partition_paths)
     {
+        if (ops.size() >= can_lock_partitions) {
+            break;
+        }
         const auto lock_file_path = String(topic_partition_path / lock_file_name);
 
         // It is okay that these paths are created in a different transaction. The important thing is the lock file.
@@ -778,6 +835,12 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
         return std::nullopt;
     }
 
+    // обновить состояние текущей реплики (в вектор запихиваем партиции, которые мы залочили и обновляем ts)
+
+    std::vector<String> locked_topics;
+    locked_topics.reserve(can_lock_partitions);
+    std::vector<int32_t> locked_partitions;
+    locked_partitions.reserve(can_lock_partitions);
     // We have the locks, let's gather the information we needed
     TopicPartitionLocks locks;
     {
@@ -799,8 +862,18 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
                 lock_info.committed_offset.value_or(0),
                 lock_info.intent_size.value_or(0));
             locks.emplace(TopicPartition(*tp_it), std::move(lock_info));
+
+            locked_topics.emplace_back(tp_it->topic);
+            locked_partitions.emplace_back(tp_it->partition_id);
         }
     }
+
+    Poco::JSON::Object topics_assigned_json;
+    topics_assigned_json.set("topics", locked_topics);
+    topics_assigned_json.set("partitions", locked_partitions);
+    std::stringstream topics_assigned_str;
+    Poco::JSON::Stringifier::stringify(topics_assigned_json, topics_assigned_str);
+    keeper_to_use.createOrUpdate(replica_path + "/topics_assigned", topics_assigned_str.str(), zkutil::CreateMode::Persistent);
 
     return locks;
 }
