@@ -76,6 +76,7 @@
 
 #include <Poco/Net/SocketAddress.h>
 
+#include <exception>
 #include <memory>
 #include <random>
 
@@ -1645,7 +1646,8 @@ void executeQuery(
     SetResultDetailsFunc set_result_details,
     QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
-    HandleExceptionInOutputFormatFunc handle_exception_in_output_format)
+    HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
+    QueryFinishCallback query_finish_callback)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1912,7 +1914,23 @@ void executeQuery(
         throw;
     }
 
+    std::exception_ptr exception_ptr;
+    if (query_finish_callback)
+    {
+        try
+        {
+            query_finish_callback();
+        }
+        catch (...)
+        {
+            exception_ptr = std::current_exception();
+        }
+    }
+
     streams.onFinish();
+
+    if (exception_ptr)
+        std::rethrow_exception(exception_ptr);
 }
 
 void executeTrivialBlockIO(BlockIO & streams, ContextPtr context)
