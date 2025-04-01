@@ -16,6 +16,11 @@
 namespace DB
 {
 
+/// As per MongoDB CXX driver documentation:
+/// You must create a mongocxx::instance object before you use the C++ driver,
+/// and this object must remain alive for as long as any other MongoDB objects are in scope.
+///
+/// mongocxx::instance must not be created more than once, therefore we use a singleton.
 class MongoDBInstanceHolder final : public boost::noncopyable
 {
 public:
