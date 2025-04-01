@@ -1073,7 +1073,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         header,
         format,
         std::move(on_error),
-        data->size_in_bytes,
+        data->entries.size(),
         std::move(adding_defaults_transform),
         insert_context->getSettingsRef()[Setting::async_insert_enable_preallocate]);
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
@@ -1091,7 +1091,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         executor.setQueryParameters(entry->query_parameters);
 
         size_t num_bytes = bytes->size();
-        size_t num_rows = executor.execute(*buffer, data->entries.size());
+        size_t num_rows = executor.execute(*buffer);
 
         total_rows += num_rows;
 

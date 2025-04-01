@@ -19,7 +19,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     const Block & header_,
     InputFormatPtr format_,
     ErrorCallback on_error_,
-    size_t total_bytes_,
+    size_t total_chunks_,
     SimpleTransformPtr adding_defaults_transform_,
     bool enable_preallocate_)
     : header(header_)
@@ -29,7 +29,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     , port(format->getPort().getHeader(), format.get())
     , result_columns(header.cloneEmptyColumns())
     , checkpoints(result_columns.size())
-    , total_bytes(total_bytes_)
+    , total_chunks(total_chunks_)
     , enable_preallocate(enable_preallocate_)
 {
     connect(format->getPort(), port);
@@ -52,7 +52,7 @@ void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameter
         values_format->setQueryParameters(parameters);
 }
 
-void StreamingFormatExecutor::preallocateResultColumns(const Chunk & chunk, size_t number_of_chunks)
+void StreamingFormatExecutor::preallocateResultColumns(const Chunk & chunk)
 {
     if (!try_preallocate || !enable_preallocate)
         return;
@@ -64,7 +64,7 @@ void StreamingFormatExecutor::preallocateResultColumns(const Chunk & chunk, size
     /// and nothing else.
     Columns reference_columns;
     for (const auto & column : chunk.getColumns())
-        reference_columns.emplace_back(ColumnNothing::create(static_cast<size_t>(std::ceil(column->size() * number_of_chunks))));
+        reference_columns.emplace_back(ColumnNothing::create(static_cast<size_t>(std::ceil(column->size() * total_chunks))));
 
     for (size_t i = 0; i < result_columns.size(); ++i)
     {
@@ -73,7 +73,7 @@ void StreamingFormatExecutor::preallocateResultColumns(const Chunk & chunk, size
     }
 }
 
-size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t number_of_chunks)
+size_t StreamingFormatExecutor::execute(ReadBuffer & buffer)
 {
     format->setReadBuffer(buffer);
 
@@ -81,10 +81,10 @@ size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t number_of_ch
     /// but we cannot control lifetime of provided read buffer. To avoid heap use after free
     /// we call format->resetReadBuffer() method that resets all buffers inside format.
     SCOPE_EXIT(format->resetReadBuffer());
-    return execute(number_of_chunks);
+    return execute();
 }
 
-size_t StreamingFormatExecutor::execute(size_t number_of_chunks)
+size_t StreamingFormatExecutor::execute()
 {
     for (size_t i = 0; i < result_columns.size(); ++i)
         result_columns[i]->updateCheckpoint(*checkpoints[i]);
@@ -108,7 +108,7 @@ size_t StreamingFormatExecutor::execute(size_t number_of_chunks)
                     return new_rows;
 
                 case IProcessor::Status::PortFull:
-                    new_rows += insertChunk(port.pull(), number_of_chunks);
+                    new_rows += insertChunk(port.pull());
                     break;
 
                 case IProcessor::Status::NeedData:
@@ -137,13 +137,13 @@ size_t StreamingFormatExecutor::execute(size_t number_of_chunks)
     }
 }
 
-size_t StreamingFormatExecutor::insertChunk(Chunk chunk, size_t number_of_chunks)
+size_t StreamingFormatExecutor::insertChunk(Chunk chunk)
 {
     size_t chunk_rows = chunk.getNumRows();
     if (adding_defaults_transform)
         adding_defaults_transform->transform(chunk);
 
-    preallocateResultColumns(chunk, number_of_chunks);
+    preallocateResultColumns(chunk);
 
     auto columns = chunk.detachColumns();
     for (size_t i = 0, s = columns.size(); i < s; ++i)
