@@ -44,13 +44,11 @@ protected:
         ColumnPtr & column,
         size_t rows_to_read,
         size_t from_mark,
-        size_t current_task_last_mark,
         MergeTreeReaderStream & stream,
         ISerialization::SubstreamsCache & columns_cache,
-        ISerialization::SubstreamsCache & substreams_cache,
         std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns);
 
-    void readPrefix(size_t column_idx, size_t from_mark, size_t current_task_last_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache);
+    void readPrefix(size_t column_idx, size_t from_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache);
 
     void createColumnsForReading(Columns & res_columns) const;
     bool needSkipStream(size_t column_pos, const ISerialization::SubstreamPath & substream) const;

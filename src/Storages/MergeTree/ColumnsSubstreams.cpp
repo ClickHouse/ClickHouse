@@ -16,7 +16,7 @@ void ColumnsSubstreams::addColumn(const String & column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add new column {} to ColumnsSubstreams: previous column {} has empty substreams", column, columns_substreams.back().first);
 
     columns_substreams.emplace_back(column, std::vector<String>());
-    column_to_first_substream_position[column] = total_substreams;
+    column_position_to_substream_positions.emplace_back();
 }
 
 void ColumnsSubstreams::addSubstreamToLastColumn(const String & substream)
@@ -25,28 +25,42 @@ void ColumnsSubstreams::addSubstreamToLastColumn(const String & substream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add new substream {} to ColumnsSubstreams: there are no columns", substream);
 
     columns_substreams.back().second.emplace_back(substream);
-    column_to_substream_positions[columns_substreams.back().first][substream] = total_substreams;
+    column_position_to_substream_positions[columns_substreams.size() - 1][substream] = total_substreams;
     ++total_substreams;
-}
-
-size_t ColumnsSubstreams::getSubstreamPosition(const String & column, const String & substream) const
-{
-    return column_to_substream_positions.at(column).at(substream);
 }
 
 size_t ColumnsSubstreams::getSubstreamPosition(size_t column_position, const String & substream) const
 {
-    return column_to_substream_positions.at(columns_substreams[column_position].first).at(substream);
-}
+    if (column_position >= columns_substreams.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get position for substream {}: column position {} is invalid, there are only {} columns", substream, column_position, columns_substreams.size());
 
-size_t ColumnsSubstreams::getFirstSubstreamPosition(const String & column) const
-{
-    return column_to_first_substream_position.at(column);
+    auto it = column_position_to_substream_positions[column_position].find(substream);
+    if (it == column_position_to_substream_positions[column_position].end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get position for substream {}: column {} with position {} doesn't have such substream", substream, columns_substreams[column_position].first, column_position);
+
+    return it->second;
 }
 
 size_t ColumnsSubstreams::getFirstSubstreamPosition(size_t column_position) const
 {
-    return column_to_first_substream_position.at(columns_substreams[column_position].first);
+    if (column_position >= columns_substreams.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get first substream position: column position {} is invalid, there are only {} columns", column_position, columns_substreams.size());
+
+    if (columns_substreams[column_position].second.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get first substream position: column {} with position {} doesn't have substreams", columns_substreams[column_position].first, column_position);
+
+    return getSubstreamPosition(column_position, columns_substreams[column_position].second.front());
+}
+
+size_t ColumnsSubstreams::getLastSubstreamPosition(size_t column_position) const
+{
+    if (column_position >= columns_substreams.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get last substream position: column position {} is invalid, there are only {} columns", column_position, columns_substreams.size());
+
+    if (columns_substreams[column_position].second.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get last substream position: column {} with position {} doesn't have substreams", columns_substreams[column_position].first, column_position);
+
+    return getSubstreamPosition(column_position, columns_substreams[column_position].second.back());
 }
 
 void ColumnsSubstreams::writeText(WriteBuffer & buf) const
@@ -72,8 +86,7 @@ void ColumnsSubstreams::writeText(WriteBuffer & buf) const
 void ColumnsSubstreams::readText(ReadBuffer & buf)
 {
     columns_substreams.clear();
-    column_to_substream_positions.clear();
-    column_to_first_substream_position.clear();
+    column_position_to_substream_positions.clear();
     total_substreams = 0;
 
     assertString("columns substreams version: 1\n", buf);
@@ -81,8 +94,7 @@ void ColumnsSubstreams::readText(ReadBuffer & buf)
     DB::readText(num_columns, buf);
     assertString(" columns:\n", buf);
     columns_substreams.reserve(num_columns);
-    column_to_substream_positions.reserve(num_columns);
-    column_to_first_substream_position.reserve(num_columns);
+    column_position_to_substream_positions.resize(num_columns);
     for (size_t i = 0; i != num_columns; ++i)
     {
         size_t num_substreams;
@@ -92,21 +104,17 @@ void ColumnsSubstreams::readText(ReadBuffer & buf)
         readBackQuotedStringWithSQLStyle(column, buf);
         assertString(":\n", buf);
 
-        column_to_first_substream_position[column] = total_substreams;
-
         std::vector<String> substreams(num_substreams);
         for (size_t j = 0; j != num_substreams; ++j)
         {
             assertChar('\t', buf);
             readString(substreams[j], buf);
             assertChar('\n', buf);
-            column_to_substream_positions[column][substreams[j]] = total_substreams++;
+            column_position_to_substream_positions[i][substreams[j]] = total_substreams++;
         }
 
         columns_substreams.emplace_back(std::move(column), std::move(substreams));
     }
-
-
 }
 
 }

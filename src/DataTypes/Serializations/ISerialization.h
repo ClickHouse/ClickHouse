@@ -485,7 +485,7 @@ public:
     static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
 
     /// Return true if the specified path contains prefix that should be deserialized in deserializeBinaryBulkStatePrefix.
-    static bool hasPrefix(const SubstreamPath & path);
+    static bool hasPrefix(const SubstreamPath & path, bool use_specialized_prefixes_substreams = false);
 
 protected:
     template <typename State, typename StatePtr>

@@ -25,10 +25,9 @@ public:
     /// Add new stream for last added column.
     void addSubstreamToLastColumn(const String & substream);
 
-    size_t getSubstreamPosition(const String & column, const String & substream) const;
     size_t getSubstreamPosition(size_t column_position, const String & substream) const;
-    size_t getFirstSubstreamPosition(const String & column) const;
     size_t getFirstSubstreamPosition(size_t column_position) const;
+    size_t getLastSubstreamPosition(size_t column_position) const;
 
     void writeText(WriteBuffer & buf) const;
     void readText(ReadBuffer & buf);
@@ -38,8 +37,7 @@ public:
 
 private:
     std::vector<std::pair<String, std::vector<String>>> columns_substreams;
-    std::unordered_map<String, size_t> column_to_first_substream_position;
-    std::unordered_map<String, std::unordered_map<String, size_t>> column_to_substream_positions;
+    std::vector<std::unordered_map<String, size_t>> column_position_to_substream_positions;
     size_t total_substreams = 0;
 };
 

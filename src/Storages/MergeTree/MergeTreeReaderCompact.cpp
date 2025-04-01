@@ -160,10 +160,8 @@ void MergeTreeReaderCompact::readData(
     ColumnPtr & column,
     size_t rows_to_read,
     size_t from_mark,
-    size_t current_task_last_mark,
     MergeTreeReaderStream & stream,
     ISerialization::SubstreamsCache & columns_cache,
-    ISerialization::SubstreamsCache & substreams_cache,
     std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns)
 {
     const auto & name_and_type = columns_to_read[column_idx];
@@ -179,7 +177,6 @@ void MergeTreeReaderCompact::readData(
         {
             auto stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
             size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], stream_name);
-            stream.adjustRightMark(current_task_last_mark);
             stream.seekToMarkAndColumn(from_mark, substream_position);
         }
 
@@ -230,7 +227,7 @@ void MergeTreeReaderCompact::readData(
         else
         {
             const auto & serialization = serializations[column_idx];
-            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], seek_to_substream_mark ? &substreams_cache : nullptr);
+            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], nullptr);
         }
 
         columns_cache[name] = column;
@@ -248,7 +245,7 @@ void MergeTreeReaderCompact::readData(
     }
 }
 
-void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, size_t current_task_last_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache)
+void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache)
 {
     if (columns_for_offsets[column_idx])
     {
@@ -276,7 +273,6 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, siz
         {
             auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
             size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], stream_name);
-            stream.adjustRightMark(current_task_last_mark);
             stream.seekToMarkAndColumn(from_mark, substream_position);
         }
 

@@ -454,7 +454,7 @@ bool ISerialization::isDynamicOrObjectStructureSubcolumn(const DB::ISerializatio
     return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure;
 }
 
-bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path)
+bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_substreams)
 {
     if (path.empty())
         return false;
@@ -464,9 +464,12 @@ bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path)
         case SubstreamType::DynamicStructure: [[fallthrough]];
         case SubstreamType::ObjectStructure: [[fallthrough]];
         case SubstreamType::DeprecatedObjectStructure: [[fallthrough]];
+        case SubstreamType::DictionaryKeysPrefix: [[fallthrough]];
+        case SubstreamType::VariantDiscriminatorsPrefix:
+            return true;
         case SubstreamType::DictionaryKeys: [[fallthrough]];
         case SubstreamType::VariantDiscriminators:
-            return true;
+            return !use_specialized_prefixes_substreams;
         default:
             return false;
     }
