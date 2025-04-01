@@ -207,15 +207,15 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
 {
     if constexpr (MemoryTrackerDebugBlockerInThread::isEnabled())
     {
-        if (MemoryTrackerDebugBlockerInThread::isBlocked())
-            return;
-
         if (size < 0)
             return;
 
         /// The choice is arbitrary (maybe we should decrease it)
         constexpr Int64 threshold = 16 * 1024 * 1024;
         if (size < threshold)
+            return;
+
+        if (MemoryTrackerDebugBlockerInThread::isBlocked())
             return;
 
         MemoryTrackerBlockerInThread blocker(VariableContext::Global);
