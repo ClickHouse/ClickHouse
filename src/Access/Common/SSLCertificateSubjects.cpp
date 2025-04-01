@@ -21,7 +21,8 @@ SSLCertificateSubjects extractSSLCertificateSubjects(const Poco::Net::X509Certif
     if (!certificate.commonName().empty())
         subjects.insert(SSLCertificateSubjects::Type::CN, certificate.commonName());
 
-    auto general_names_deleter = [](STACK_OF(GENERAL_NAME)* names) {
+    auto general_names_deleter = [](STACK_OF(GENERAL_NAME)* names)
+    {
         GENERAL_NAMES_free(names);
     };
 

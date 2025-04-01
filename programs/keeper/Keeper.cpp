@@ -315,9 +315,9 @@ try
 
     UseSSL use_ssl;
 #if USE_OPENSSL_FIPS
-	Poco::Crypto::OpenSSLInitializer::enableFIPSMode(true);
+    Poco::Crypto::OpenSSLInitializer::enableFIPSMode(true);
 
-	if (!Poco::Crypto::OpenSSLInitializer::isFIPSEnabled())
+    if (!Poco::Crypto::OpenSSLInitializer::isFIPSEnabled())
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to enable FIPS mode.");
 #endif
 
