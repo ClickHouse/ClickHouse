@@ -795,7 +795,6 @@ ParallelParsingInputFormat
 ParallelParsingInputFormatThreads
 ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
-Parametrized
 ParquetCompression
 ParquetMetadata
 ParquetVersion
@@ -987,6 +986,7 @@ SelfManaged
 Sematext
 SendExternalTables
 SendScalars
+ServerSettings
 SetOperationMode
 ShareAlike
 ShareSet
@@ -1305,6 +1305,8 @@ arrayJoin
 arrayLast
 arrayLastIndex
 arrayLastOrNull
+arrayLevenshteinDistance
+arrayLevenshteinDistanceWeighted
 arrayMap
 arrayMax
 arrayMin
@@ -1332,6 +1334,7 @@ arrayShiftLeft
 arrayShiftRight
 arrayShingles
 arrayShuffle
+arraySimilarity
 arraySlice
 arraySort
 arraySplit
@@ -2093,8 +2096,8 @@ kRing
 kafka
 kafkaMurmurHash
 kafkacat
-keccak
 kbytes
+keccak
 keepalive
 keepermap
 kerberized
@@ -2568,6 +2571,7 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
+quantized
 quartile
 queryID
 queryString
@@ -2699,6 +2703,7 @@ runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
+runtimes
 russian
 rustc
 rustup
@@ -2943,6 +2948,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+tmpfs
 toBFloat
 toBool
 toColumnTypeName
@@ -3070,7 +3076,6 @@ tryPunycodeDecode
 tskv
 tsv
 tui
-tmpfs
 tukey
 tumbleEnd
 tumbleStart
