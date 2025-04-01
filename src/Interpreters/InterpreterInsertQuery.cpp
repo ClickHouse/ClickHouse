@@ -928,7 +928,7 @@ BlockIO InterpreterInsertQuery::execute()
             {
                 res.pipeline = std::move(*distributed);
             }
-            if (context->canUseParallelReplicasOnInitiator())
+            if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
             {
                 res.pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
             }
