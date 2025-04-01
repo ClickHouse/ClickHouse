@@ -1679,14 +1679,32 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
     this->depth++;
     for (uint32_t i = 0; i < nclauses; i++)
     {
-        CTEquery * cte = i == 0 ? qctes->mutable_cte() : qctes->add_other_ctes();
-        const String name = fmt::format("cte{}d{}", std::to_string(i), std::to_string(this->current_level));
-        SQLRelation rel(name);
-        const uint32_t ncols = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(5)) + 1);
+        SingleCTE * scte = qctes->has_cte() ? qctes->add_other_ctes() : qctes->mutable_cte();
 
-        cte->mutable_table()->set_table(name);
-        generateDerivedTable(rg, rel, allowed_clauses, ncols, cte->mutable_query());
-        this->ctes[this->current_level][name] = std::move(rel);
+        if (rg.nextBool())
+        {
+            /// Use CTE query
+            CTEquery * nqcte = scte->mutable_cte_query();
+            const String name = fmt::format("cte{}d{}", std::to_string(i), std::to_string(this->current_level));
+            SQLRelation rel(name);
+            const uint32_t ncols = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(5)) + 1);
+
+            generateDerivedTable(rg, rel, allowed_clauses, ncols, nqcte->mutable_query());
+            nqcte->mutable_table()->set_table(name);
+            this->ctes[this->current_level][name] = std::move(rel);
+        }
+        else
+        {
+            /// Use CTE expression
+            CTEexpr * expr = scte->mutable_cte_expr();
+            const String name = fmt::format("c{}", this->levels[this->current_level].aliases_counter++);
+            SQLRelation rel("");
+
+            generateExpression(rg, expr->mutable_expr());
+            expr->mutable_col_alias()->set_column(name);
+            rel.cols.emplace_back(SQLRelationCol("", {name}));
+            this->levels[this->current_level].rels.emplace_back(rel);
+        }
         this->width++;
     }
     this->width -= nclauses;
@@ -1715,9 +1733,12 @@ void StatementGenerator::addWindowDefs(RandomGenerator & rg, SelectStatementCore
 void StatementGenerator::generateSelect(
     RandomGenerator & rg, const bool top, bool force_global_agg, const uint32_t ncols, uint32_t allowed_clauses, Select * sel)
 {
+    CTEs * qctes = nullptr;
+
     if ((allowed_clauses & allow_cte) && this->depth < this->fc.max_depth && this->width < this->fc.max_width && rg.nextMediumNumber() < 13)
     {
-        this->addCTEs(rg, allowed_clauses, sel->mutable_ctes());
+        qctes = sel->mutable_ctes();
+        this->addCTEs(rg, allowed_clauses, qctes);
     }
     if ((allowed_clauses & allow_set) && !force_global_agg && this->depth<this->fc.max_depth && this->fc.max_width> this->width + 1
         && rg.nextSmallNumber() < 3)
@@ -1770,17 +1791,24 @@ void StatementGenerator::generateSelect(
             const uint32_t njoined = generateFromStatement(rg, allowed_clauses, ssc->mutable_from());
             ssc->set_from_first(njoined == 1 && rg.nextSmallNumber() < 4);
         }
-        if ((allowed_clauses & allow_window_clause) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
-            && rg.nextSmallNumber() < 3)
-        {
-            addWindowDefs(rg, ssc);
-        }
         const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
         /// Most of the times disallow aggregates and window functions inside predicates
         this->levels[this->current_level].allow_aggregates = rg.nextSmallNumber() < 3;
         this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
+        if ((allowed_clauses & allow_cte) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
+            && rg.nextMediumNumber() < 13)
+        {
+            /// Add possible CTE expressions referencing columns in the FROM clause
+            qctes = qctes ? qctes : sel->mutable_ctes();
+            this->addCTEs(rg, allowed_clauses, qctes);
+        }
+        if ((allowed_clauses & allow_window_clause) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
+            && rg.nextSmallNumber() < 3)
+        {
+            addWindowDefs(rg, ssc);
+        }
         if ((allowed_clauses & allow_prewhere) && this->depth < this->fc.max_depth && ssc->has_from() && rg.nextSmallNumber() < 2)
         {
             generateWherePredicate(rg, ssc->mutable_pre_where()->mutable_expr()->mutable_expr());

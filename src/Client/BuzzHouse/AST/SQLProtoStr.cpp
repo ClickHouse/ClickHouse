@@ -2428,14 +2428,38 @@ CONV_FN(CTEquery, cteq)
     ret += ")";
 }
 
+CONV_FN(CTEexpr, cte_expr)
+{
+    ExprToString(ret, cte_expr.expr());
+    ret += " AS `";
+    ColumnToString(ret, 1, cte_expr.col_alias());
+    ret += "`";
+}
+
+CONV_FN(SingleCTE, scte)
+{
+    if (scte.has_cte_query())
+    {
+        CTEqueryToString(ret, scte.cte_query());
+    }
+    else if (scte.has_cte_expr())
+    {
+        CTEexprToString(ret, scte.cte_expr());
+    }
+    else
+    {
+        ret += "1 AS c0";
+    }
+}
+
 CONV_FN(CTEs, cteq)
 {
     ret += "WITH ";
-    CTEqueryToString(ret, cteq.cte());
+    SingleCTEToString(ret, cteq.cte());
     for (int i = 0; i < cteq.other_ctes_size(); i++)
     {
         ret += ", ";
-        CTEqueryToString(ret, cteq.other_ctes(i));
+        SingleCTEToString(ret, cteq.other_ctes(i));
     }
     ret += " ";
 }

@@ -508,10 +508,16 @@ void QueryOracle::findTablesWithPeersAndReplace(
         }
         if (sel.has_ctes())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().cte().query()), gen, replace);
+            if (sel.ctes().cte().has_cte_query())
+            {
+                findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().cte().cte_query().query()), gen, replace);
+            }
             for (int i = 0; i < sel.ctes().other_ctes_size(); i++)
             {
-                findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().other_ctes(i).query()), gen, replace);
+                if (sel.ctes().other_ctes(i).has_cte_query())
+                {
+                    findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().other_ctes(i).cte_query().query()), gen, replace);
+                }
             }
         }
     }

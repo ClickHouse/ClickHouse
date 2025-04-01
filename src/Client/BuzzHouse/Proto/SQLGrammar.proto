@@ -2682,9 +2682,21 @@ message CTEquery {
     required Select query = 2;
 }
 
+message CTEexpr {
+    required Expr expr = 1;
+    required Column col_alias = 2;
+}
+
+message SingleCTE {
+    oneof cte_oneof {
+        CTEquery cte_query = 1;
+        CTEexpr cte_expr = 2;
+    }
+}
+
 message CTEs {
-    required CTEquery cte = 1;
-    repeated CTEquery other_ctes = 2;
+    required SingleCTE cte = 1;
+    repeated SingleCTE other_ctes = 2;
 }
 
 message SetValue {
