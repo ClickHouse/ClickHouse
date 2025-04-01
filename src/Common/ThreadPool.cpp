@@ -220,6 +220,20 @@ size_t ThreadPoolImpl<Thread>::getMaxThreads() const
 }
 
 template <typename Thread>
+size_t ThreadPoolImpl<Thread>::getMaxFreeThreads() const
+{
+    std::lock_guard lock(mutex);
+    return max_free_threads;
+}
+
+template <typename Thread>
+size_t ThreadPoolImpl<Thread>::getQueueSize() const
+{
+    std::lock_guard lock(mutex);
+    return queue_size;
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
 {
     value = std::min(value, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));

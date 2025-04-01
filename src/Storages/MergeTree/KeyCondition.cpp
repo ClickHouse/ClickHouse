@@ -32,7 +32,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteBufferFromString.h>
@@ -45,7 +44,7 @@
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
-#include <boost/geometry/geometries/multi_polygon.hpp>
+#include <boost/smart_ptr/make_shared_object.hpp>
 
 
 namespace DB
@@ -53,12 +52,13 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool analyze_index_with_space_filling_curves;
+    extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
 }
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int BAD_TYPE_OF_FIELD;
+extern const int LOGICAL_ERROR;
+extern const int BAD_TYPE_OF_FIELD;
 }
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
@@ -84,12 +84,12 @@ String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool req
                     bool is_prefect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
                     return is_prefect_prefix ? fixed_prefix : "";
                 }
-                return fixed_prefix;
+            return fixed_prefix;
             case '\\':
                 ++pos;
-                if (pos == end)
-                    break;
-                [[fallthrough]];
+            if (pos == end)
+                break;
+            [[fallthrough]];
             default:
                 fixed_prefix += *pos;
         }
@@ -119,7 +119,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
         {
             case '\0':
                 pos = end;
-                break;
+            break;
 
             case '\\':
             {
@@ -141,11 +141,11 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
                     case '+':
                     case '{':
                         fixed_prefix += *pos;
-                        break;
+                    break;
                     default:
                         /// all other escape sequences are not supported
-                        pos = end;
-                        break;
+                            pos = end;
+                    break;
                 }
 
                 ++pos;
@@ -155,7 +155,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
             /// non-trivial cases
             case '|':
                 fixed_prefix.clear();
-                [[fallthrough]];
+            [[fallthrough]];
             case '(':
             case '[':
             case '^':
@@ -163,7 +163,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
             case '.':
             case '+':
                 pos = end;
-                break;
+            break;
 
             /// Quantifiers that allow a zero number of occurrences.
             case '{':
@@ -172,12 +172,12 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
                 if (!fixed_prefix.empty())
                     fixed_prefix.pop_back();
 
-                pos = end;
-                break;
+            pos = end;
+            break;
             default:
                 fixed_prefix += *pos;
-                pos++;
-                break;
+            pos++;
+            break;
         }
     }
 
@@ -212,269 +212,269 @@ static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & pr
 
 const KeyCondition::AtomMap KeyCondition::atom_map
 {
-    {
-        "notEquals",
-        [] (RPNElement & out, const Field & value)
         {
-            out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-            out.range = Range(value);
-            return true;
-        }
-    },
-    {
-        "equals",
-        [] (RPNElement & out, const Field & value)
+            "notEquals",
+            [] (RPNElement & out, const Field & value)
+            {
+                out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                out.range = Range(value);
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_IN_RANGE;
-            out.range = Range(value);
-            return true;
-        }
-    },
-    {
-        "less",
-        [] (RPNElement & out, const Field & value)
+            "equals",
+            [] (RPNElement & out, const Field & value)
+            {
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.range = Range(value);
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_IN_RANGE;
-            out.range = Range::createRightBounded(value, false);
-            return true;
-        }
-    },
-    {
-        "greater",
-        [] (RPNElement & out, const Field & value)
+            "less",
+            [] (RPNElement & out, const Field & value)
+            {
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.range = Range::createRightBounded(value, false);
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_IN_RANGE;
-            out.range = Range::createLeftBounded(value, false);
-            return true;
-        }
-    },
-    {
-        "lessOrEquals",
-        [] (RPNElement & out, const Field & value)
+            "greater",
+            [] (RPNElement & out, const Field & value)
+            {
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.range = Range::createLeftBounded(value, false);
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_IN_RANGE;
-            out.range = Range::createRightBounded(value, true);
-            return true;
-        }
-    },
-    {
-        "greaterOrEquals",
-        [] (RPNElement & out, const Field & value)
+            "lessOrEquals",
+            [] (RPNElement & out, const Field & value)
+            {
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.range = Range::createRightBounded(value, true);
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_IN_RANGE;
-            out.range = Range::createLeftBounded(value, true);
-            return true;
-        }
-    },
-    {
-        "in",
-        [] (RPNElement & out, const Field &)
+            "greaterOrEquals",
+            [] (RPNElement & out, const Field & value)
+            {
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.range = Range::createLeftBounded(value, true);
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_IN_SET;
-            return true;
-        }
-    },
-    {
-        "notIn",
-        [] (RPNElement & out, const Field &)
+            "in",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_IN_SET;
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_NOT_IN_SET;
-            return true;
-        }
-    },
-    {
-        "globalIn",
-        [] (RPNElement & out, const Field &)
+            "notIn",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_IN_SET;
-            return true;
-        }
-    },
-    {
-        "globalNotIn",
-        [] (RPNElement & out, const Field &)
+            "globalIn",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_IN_SET;
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_NOT_IN_SET;
-            return true;
-        }
-    },
-    {
-        "nullIn",
-        [] (RPNElement & out, const Field &)
+            "globalNotIn",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_IN_SET;
-            return true;
-        }
-    },
-    {
-        "notNullIn",
-        [] (RPNElement & out, const Field &)
+            "nullIn",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_IN_SET;
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_NOT_IN_SET;
-            return true;
-        }
-    },
-    {
-        "globalNullIn",
-        [] (RPNElement & out, const Field &)
+            "notNullIn",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_IN_SET;
-            return true;
-        }
-    },
-    {
-        "globalNotNullIn",
-        [] (RPNElement & out, const Field &)
+            "globalNullIn",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_IN_SET;
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_NOT_IN_SET;
-            return true;
-        }
-    },
-    {
-        "empty",
-        [] (RPNElement & out, const Field & value)
+            "globalNotNullIn",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                return true;
+            }
+        },
         {
-            if (value.getType() != Field::Types::String)
-                return false;
+            "empty",
+            [] (RPNElement & out, const Field & value)
+            {
+                if (value.getType() != Field::Types::String)
+                    return false;
 
-            out.function = RPNElement::FUNCTION_IN_RANGE;
-            out.range = Range("");
-            return true;
-        }
-    },
-    {
-        "notEmpty",
-        [] (RPNElement & out, const Field & value)
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.range = Range("");
+                return true;
+            }
+        },
         {
-            if (value.getType() != Field::Types::String)
-                return false;
+            "notEmpty",
+            [] (RPNElement & out, const Field & value)
+            {
+                if (value.getType() != Field::Types::String)
+                    return false;
 
-            out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-            out.range = Range("");
-            return true;
-        }
-    },
-    {
-        "like",
-        [] (RPNElement & out, const Field & value)
+                out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                out.range = Range("");
+                return true;
+            }
+        },
         {
-            if (value.getType() != Field::Types::String)
-                return false;
+            "like",
+            [] (RPNElement & out, const Field & value)
+            {
+                if (value.getType() != Field::Types::String)
+                    return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
-            if (prefix.empty())
-                return false;
+                String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+                if (prefix.empty())
+                    return false;
 
-            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
-            out.function = RPNElement::FUNCTION_IN_RANGE;
-            out.range = !right_bound.empty()
-                ? Range(prefix, true, right_bound, false)
-                : Range::createLeftBounded(prefix, true);
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.range = !right_bound.empty()
+                    ? Range(prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix, true);
 
-            return true;
-        }
-    },
-    {
-        "notLike",
-        [] (RPNElement & out, const Field & value)
+                return true;
+            }
+        },
         {
-            if (value.getType() != Field::Types::String)
-                return false;
+            "notLike",
+            [] (RPNElement & out, const Field & value)
+            {
+                if (value.getType() != Field::Types::String)
+                    return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
-            if (prefix.empty())
-                return false;
+                String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+                if (prefix.empty())
+                    return false;
 
-            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
-            out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-            out.range = !right_bound.empty()
-                ? Range(prefix, true, right_bound, false)
-                : Range::createLeftBounded(prefix, true);
+                out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                out.range = !right_bound.empty()
+                    ? Range(prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix, true);
 
-            return true;
-        }
-    },
-    {
-        "startsWith",
-        [] (RPNElement & out, const Field & value)
+                return true;
+            }
+        },
         {
-            if (value.getType() != Field::Types::String)
-                return false;
+            "startsWith",
+            [] (RPNElement & out, const Field & value)
+            {
+                if (value.getType() != Field::Types::String)
+                    return false;
 
-            String prefix = value.safeGet<String>();
-            if (prefix.empty())
-                return false;
+                String prefix = value.safeGet<String>();
+                if (prefix.empty())
+                    return false;
 
-            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
-            out.function = RPNElement::FUNCTION_IN_RANGE;
-            out.range = !right_bound.empty()
-                ? Range(prefix, true, right_bound, false)
-                : Range::createLeftBounded(prefix, true);
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.range = !right_bound.empty()
+                    ? Range(prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix, true);
 
-            return true;
-        }
-    },
-    {
-        "match",
-        [] (RPNElement & out, const Field & value)
+                return true;
+            }
+        },
         {
-            if (value.getType() != Field::Types::String)
-                return false;
+            "match",
+            [] (RPNElement & out, const Field & value)
+            {
+                if (value.getType() != Field::Types::String)
+                    return false;
 
-            const String & expression = value.safeGet<String>();
+                const String & expression = value.safeGet<String>();
 
-            /// This optimization can't process alternation - this would require
-            /// a comprehensive parsing of regular expression.
-            if (expression.contains('|'))
-                return false;
+                /// This optimization can't process alternation - this would require
+                /// a comprehensive parsing of regular expression.
+                if (expression.contains('|'))
+                    return false;
 
-            String prefix = extractFixedPrefixFromRegularExpression(expression);
-            if (prefix.empty())
-                return false;
+                String prefix = extractFixedPrefixFromRegularExpression(expression);
+                if (prefix.empty())
+                    return false;
 
-            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
-            out.function = RPNElement::FUNCTION_IN_RANGE;
-            out.range = !right_bound.empty()
-                ? Range(prefix, true, right_bound, false)
-                : Range::createLeftBounded(prefix, true);
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.range = !right_bound.empty()
+                    ? Range(prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix, true);
 
-            return true;
-        }
-    },
-    {
-        "isNotNull",
-        [] (RPNElement & out, const Field &)
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_IS_NOT_NULL;
-            // isNotNull means (-Inf, +Inf)
-            out.range = Range::createWholeUniverseWithoutNull();
-            return true;
-        }
-    },
-    {
-        "isNull",
-        [] (RPNElement & out, const Field &)
+            "isNotNull",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_IS_NOT_NULL;
+                // isNotNull means (-Inf, +Inf)
+                out.range = Range::createWholeUniverseWithoutNull();
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_IS_NULL;
-            // isNull means +Inf (NULLS_LAST) or -Inf (NULLS_FIRST), We don't support discrete
-            // ranges, instead will use the inverse of (-Inf, +Inf). The inversion happens in
-            // checkInHyperrectangle.
-            out.range = Range::createWholeUniverseWithoutNull();
-            return true;
-        }
-    },
-    {
-        "pointInPolygon",
-        [] (RPNElement & out, const Field &)
+            "isNull",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_IS_NULL;
+                // isNull means +Inf (NULLS_LAST) or -Inf (NULLS_FIRST), We don't support discrete
+                // ranges, instead will use the inverse of (-Inf, +Inf). The inversion happens in
+                // checkInHyperrectangle.
+                out.range = Range::createWholeUniverseWithoutNull();
+                return true;
+            }
+        },
         {
-            out.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
-            return true;
+            "pointInPolygon",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
+                return true;
+            }
         }
-    }
 };
 
 static const std::set<std::string_view> always_relaxed_atom_functions = {"match"};
@@ -728,8 +728,8 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
 }
 
 const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyCondition::space_filling_curve_name_to_type {
-    {"mortonEncode", SpaceFillingCurveType::Morton},
-    {"hilbertEncode", SpaceFillingCurveType::Hilbert}
+        {"mortonEncode", SpaceFillingCurveType::Morton},
+        {"hilbertEncode", SpaceFillingCurveType::Hilbert}
 };
 
 static bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & condition_bloom_filter_data,
@@ -786,7 +786,7 @@ Block KeyCondition::getBlockWithConstants(
 {
     Block result
     {
-        { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
+            { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
     if (syntax_analyzer_result)
@@ -855,6 +855,8 @@ KeyCondition::KeyCondition(
     : key_expr(key_expr_)
     , key_subexpr_names(getAllSubexpressionNames(*key_expr))
     , single_point(single_point_)
+    , date_time_overflow_behavior_ignore(
+          context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -930,8 +932,8 @@ static Field applyFunctionForField(
 {
     ColumnsWithTypeAndName columns
     {
-        { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
-    };
+            { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
+        };
 
     auto col = func->execute(columns, func->getResultType(), 1, /* dry_run = */ false);
     return (*col)[0];
@@ -1063,6 +1065,24 @@ bool applyFunctionChainToColumn(
     return true;
 }
 
+bool KeyCondition::isFunctionReallyMonotonic(const IFunctionBase & func, const IDataType & arg_type) const
+{
+    if (date_time_overflow_behavior_ignore && func.getName() == "toDateTime")
+    {
+        const IDataType * type = &arg_type;
+        if (const auto * lowcard_type = typeid_cast<const DataTypeLowCardinality *>(type))
+            type = lowcard_type->getDictionaryType().get();
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type))
+            type = nullable_type->getNestedType().get();
+
+        /// toDateTime(date) may overflow, breaking monotonicity.
+        if (isDateOrDate32(type))
+            return false;
+    }
+
+    return true;
+}
+
 bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     const RPNBuilderTreeNode & node,
     size_t & out_key_column_num,
@@ -1088,9 +1108,12 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         out_key_column_num,
         out_key_column_type,
         transform_functions,
-        [](const IFunctionBase & func, const IDataType & type)
+        [this](const IFunctionBase & func, const IDataType & type)
         {
             if (!func.hasInformationAboutMonotonicity())
+                return false;
+
+            if (!isFunctionReallyMonotonic(func, type))
                 return false;
 
             /// Range is irrelevant in this case.
@@ -1584,6 +1607,9 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
         if (!func || !func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
             return false;
 
+        if (!isFunctionReallyMonotonic(*func, *key_column_type))
+            return false;
+
         key_column_type = func->getResultType();
         if (kind == FunctionWithOptionalConstArg::Kind::NO_CONST)
             out_functions_chain.push_back(func);
@@ -1796,10 +1822,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     {
                         const auto & arg_types = func_base->getArgumentTypes();
                         if (!arg_types.empty() && isStringOrFixedString(arg_types[0]))
-                        {
                             func_name = func_name + "OrNull";
-                        }
-
                     }
 
                     auto func_builder = FunctionFactory::instance().tryGet(func_name, context);
@@ -1875,6 +1898,39 @@ bool KeyCondition::canSetValuesBeWrappedByFunctions(
         {
             return func.isDeterministic();
         });
+}
+
+struct KeyCondition::RPNElement::Polygon
+{
+    using PointT = boost::geometry::model::d2::point_xy<Float64>;
+    using PolygonT = boost::geometry::model::polygon<PointT>;
+    PolygonT data;
+};
+
+KeyCondition::RPNElement::RPNElement()
+    : polygon(std::make_shared<Polygon>())
+{
+}
+
+KeyCondition::RPNElement::RPNElement(Function function_)
+    : function(function_)
+    , polygon(std::make_shared<Polygon>())
+{
+}
+
+KeyCondition::RPNElement::RPNElement(Function function_, size_t key_column_)
+    : function(function_)
+    , key_column(key_column_)
+    , polygon(std::make_shared<Polygon>())
+{
+}
+
+KeyCondition::RPNElement::RPNElement(Function function_, size_t key_column_, const Range & range_)
+    : function(function_)
+    , range(range_)
+    , key_column(key_column_)
+    , polygon(std::make_shared<Polygon>())
+{
 }
 
 static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const String & node_column_name)
@@ -1979,9 +2035,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
                 auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
                 auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
-                out.polygon.outer().push_back({x, y});
+                out.polygon->data.outer().push_back({x, y});
             }
-            boost::geometry::correct(out.polygon);
+            boost::geometry::correct(out.polygon->data);
             return atom_it->second(out, const_value);
         };
 
@@ -3251,7 +3307,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             /// Because the polygon may have a hole so the "can_be_false" should always be true.
             rpn_stack.emplace_back(
-                boost::geometry::intersects(polygon_by_minmax_index, element.polygon), true);
+                boost::geometry::intersects(polygon_by_minmax_index, element.polygon->data), true);
         }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
@@ -3507,7 +3563,7 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
         }
         case FUNCTION_POINT_IN_POLYGON:
         {
-            auto points_in_polygon = polygon.outer();
+            auto points_in_polygon = polygon->data.outer();
             buf << "(";
             print_wrapped_column(buf);
             buf << " in ";

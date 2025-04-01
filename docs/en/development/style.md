@@ -1,7 +1,9 @@
 ---
-slug: /development/style
+description: 'Coding style guidelines for ClickHouse C++ development'
+sidebar_label: 'C++ Style Guide'
 sidebar_position: 70
-sidebar_label: C++ Style Guide
+slug: /development/style
+title: 'C++ Style Guide'
 ---
 
 # C++ Style Guide
@@ -21,7 +23,7 @@ Many of the rules do not have logical reasons; they are dictated by established 
 
 **3.** Opening and closing curly brackets must be on a separate line.
 
-``` cpp
+```cpp
 inline void readBoolText(bool & x, ReadBuffer & buf)
 {
     char tmp = '0';
@@ -32,30 +34,30 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
 
 **4.** If the entire function body is a single `statement`, it can be placed on a single line. Place spaces around curly braces (besides the space at the end of the line).
 
-``` cpp
+```cpp
 inline size_t mask() const                { return buf_size() - 1; }
 inline size_t place(HashValue x) const    { return x & mask(); }
 ```
 
 **5.** For functions. Don't put spaces around brackets.
 
-``` cpp
+```cpp
 void reinsert(const Value & x)
 ```
 
-``` cpp
+```cpp
 memcpy(&buf[place_value], &x, sizeof(x));
 ```
 
 **6.** In `if`, `for`, `while` and other expressions, a space is inserted in front of the opening bracket (as opposed to function calls).
 
-``` cpp
+```cpp
 for (size_t i = 0; i < rows; i += storage.index_granularity)
 ```
 
 **7.** Add spaces around binary operators (`+`, `-`, `*`, `/`, `%`, ...) and the ternary operator `?:`.
 
-``` cpp
+```cpp
 UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
 UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
 UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
@@ -63,7 +65,7 @@ UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
 **8.** If a line feed is entered, put the operator on a new line and increase the indent before it.
 
-``` cpp
+```cpp
 if (elapsed_ns)
     message << " ("
         << rows_read_on_server * 1000000000 / elapsed_ns << " rows/s., "
@@ -72,7 +74,7 @@ if (elapsed_ns)
 
 **9.** You can use spaces for alignment within a line, if desired.
 
-``` cpp
+```cpp
 dst.ClickLogID         = click.LogID;
 dst.ClickEventID       = click.EventID;
 dst.ClickGoodEvent     = click.GoodEvent;
@@ -90,7 +92,7 @@ If necessary, the operator can be wrapped to the next line. In this case, the of
 
 **14.** In a `template <...>` expression, use a space between `template` and `<`; no spaces after `<` or before `>`.
 
-``` cpp
+```cpp
 template <typename TKey, typename TValue>
 struct AggregatedStatElement
 {}
@@ -98,7 +100,7 @@ struct AggregatedStatElement
 
 **15.** In classes and structures, write `public`, `private`, and `protected` on the same level as `class/struct`, and indent the rest of the code.
 
-``` cpp
+```cpp
 template <typename T>
 class MultiVersion
 {
@@ -115,7 +117,7 @@ public:
 
 But if the inner `statement` contains curly brackets or `else`, the external block should be written in curly brackets.
 
-``` cpp
+```cpp
 /// Finish write.
 for (auto & stream : streams)
     stream.second->finalize();
@@ -127,7 +129,7 @@ for (auto & stream : streams)
 
 **20.** Non-ASCII characters can be used in string literals.
 
-``` cpp
+```cpp
 << ", " << (timer.elapsed() / chunks_stats.hits) << " μsec/hit.";
 ```
 
@@ -139,7 +141,7 @@ for (auto & stream : streams)
 
 **24.** `A const` (related to a value) must be written before the type name.
 
-``` cpp
+```cpp
 //correct
 const char * pos
 const std::string & s
@@ -149,7 +151,7 @@ char const * pos
 
 **25.** When declaring a pointer or reference, the `*` and `&` symbols should be separated by spaces on both sides.
 
-``` cpp
+```cpp
 //correct
 const char * pos
 //incorrect
@@ -163,7 +165,7 @@ In other words, the template parameters are specified only in `using` and aren't
 
 `using` can be declared locally, such as inside a function.
 
-``` cpp
+```cpp
 //correct
 using FileStreams = std::map<std::string, std::shared_ptr<Stream>>;
 FileStreams streams;
@@ -173,14 +175,14 @@ std::map<std::string, std::shared_ptr<Stream>> streams;
 
 **27.** Do not declare several variables of different types in one statement.
 
-``` cpp
+```cpp
 //incorrect
 int x, *y;
 ```
 
 **28.** Do not use C-style casts.
 
-``` cpp
+```cpp
 //incorrect
 std::cerr << (int)c <<; std::endl;
 //correct
@@ -199,7 +201,7 @@ For template classes and structs, do not separate the method declarations from t
 
 **32.** Always use the prefix increment/decrement operators if postfix is not required.
 
-``` cpp
+```cpp
 for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 ```
 
@@ -209,7 +211,7 @@ for (Names::const_iterator it = column_names.begin(); it != column_names.end(); 
 
 This is very important. Writing the comment might help you realize that the code isn't necessary, or that it is designed wrong.
 
-``` cpp
+```cpp
 /** Part of piece of memory, that can be used.
   * For example, if internal_buffer is 1MB, and there was only 10 bytes loaded to buffer from file for reading,
   * then working_buffer will have size of only 10 bytes
@@ -221,7 +223,7 @@ This is very important. Writing the comment might help you realize that the code
 
 **3.** Place comments before the code they describe. In rare cases, comments can come after the code, on the same line.
 
-``` cpp
+```cpp
 /** Parses and executes the query.
 */
 void executeQuery(
@@ -239,7 +241,7 @@ void executeQuery(
 
 **6.** Do not add comments that do not provide additional information. In particular, do not leave empty comments like this:
 
-``` cpp
+```cpp
 /*
 * Procedure Name:
 * Original procedure name:
@@ -278,25 +280,25 @@ Note: You can use Doxygen to generate documentation from these comments. But Dox
 
 **13.** Do not use uppercase letters. Do not use excessive punctuation.
 
-``` cpp
+```cpp
 /// WHAT THE FAIL???
 ```
 
 **14.** Do not use comments to make delimiters.
 
-``` cpp
+```cpp
 ///******************************************************
 ```
 
 **15.** Do not start discussions in comments.
 
-``` cpp
+```cpp
 /// Why did you do this stuff?
 ```
 
 **16.** There's no need to write a comment at the end of a block describing what it was about.
 
-``` cpp
+```cpp
 /// for
 ```
 
@@ -304,19 +306,19 @@ Note: You can use Doxygen to generate documentation from these comments. But Dox
 
 **1.** Use lowercase letters with underscores in the names of variables and class members.
 
-``` cpp
+```cpp
 size_t max_block_size;
 ```
 
 **2.** For the names of functions (methods), use camelCase beginning with a lowercase letter.
 
-``` cpp
+```cpp
 std::string getName() const override { return "Memory"; }
 ```
 
 **3.** For the names of classes (structs), use CamelCase beginning with an uppercase letter. Prefixes other than I are not used for interfaces.
 
-``` cpp
+```cpp
 class StorageMemory : public IStorage
 ```
 
@@ -326,21 +328,21 @@ class StorageMemory : public IStorage
 
 For more complex cases, either follow the rules for class names, or add the prefix `T`.
 
-``` cpp
+```cpp
 template <typename TKey, typename TValue>
 struct AggregatedStatElement
 ```
 
 **6.** Names of template constant arguments: either follow the rules for variable names, or use `N` in simple cases.
 
-``` cpp
+```cpp
 template <bool without_www>
 struct ExtractDomain
 ```
 
 **7.** For abstract classes (interfaces) you can add the `I` prefix.
 
-``` cpp
+```cpp
 class IProcessor
 ```
 
@@ -348,13 +350,13 @@ class IProcessor
 
 In all other cases, use a name that describes the meaning.
 
-``` cpp
+```cpp
 bool info_successfully_loaded = false;
 ```
 
 **9.** Names of `define`s and global constants use ALL_CAPS with underscores.
 
-``` cpp
+```cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
 ```
 
@@ -371,7 +373,7 @@ If the file contains a single function, name the file the same way as the functi
 
 **12.** Constructor arguments that are used just to initialize the class members should be named the same way as the class members, but with an underscore at the end.
 
-``` cpp
+```cpp
 FileQueueProcessor(
     const std::string & path_,
     const std::string & prefix_,
@@ -388,13 +390,13 @@ The underscore suffix can be omitted if the argument is not used in the construc
 
 **13.** There is no difference in the names of local variables and class members (no prefixes required).
 
-``` cpp
+```cpp
 timer (not m_timer)
 ```
 
 **14.** For the constants in an `enum`, use CamelCase with a capital letter. ALL_CAPS is also acceptable. If the `enum` is non-local, use an `enum class`.
 
-``` cpp
+```cpp
 enum class CompressionMethod
 {
     QuickLZ = 0,
@@ -448,7 +450,7 @@ In servers that handle user requests, it's usually enough to catch exceptions at
 
 In thread functions, you should catch and keep all exceptions to rethrow them in the main thread after `join`.
 
-``` cpp
+```cpp
 /// If there weren't any calculations yet, calculate the first block synchronously
 if (!started)
 {
@@ -464,14 +466,14 @@ if (exception)
 
 Never hide exceptions without handling. Never just blindly put all exceptions to log.
 
-``` cpp
+```cpp
 //Not correct
 catch (...) {}
 ```
 
 If you need to ignore some exceptions, do so only for specific ones and rethrow the rest.
 
-``` cpp
+```cpp
 catch (const DB::Exception & e)
 {
     if (e.code() == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION)
@@ -483,7 +485,7 @@ catch (const DB::Exception & e)
 
 When using functions with response codes or `errno`, always check the result and throw an exception in case of error.
 
-``` cpp
+```cpp
 if (0 != close(fd))
     throw ErrnoException(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file {}", file_name);
 ```
@@ -509,7 +511,7 @@ Use the following options:
 
 You can create a separate code block inside a single function in order to make certain variables local, so that the destructors are called when exiting the block.
 
-``` cpp
+```cpp
 Block block = data.in->read();
 
 {
@@ -581,7 +583,7 @@ If the function allocates an object on heap and returns it, use `shared_ptr` or 
 
 In rare cases (updating a value in a loop) you might need to return the value via an argument. In this case, the argument should be a reference.
 
-``` cpp
+```cpp
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
 /** Allows creating an aggregate function by its name.
@@ -613,7 +615,7 @@ If arguments are required for initialization, then you normally shouldn't write 
 
 If later you'll need to delay initialization, you can add a default constructor that will create an invalid object. Or, for a small number of objects, you can use `shared_ptr/unique_ptr`.
 
-``` cpp
+```cpp
 Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
 
 /// For deferred initialization
@@ -668,13 +670,13 @@ Always use `#pragma once` instead of include guards.
 
 **24.** Do not use `trailing return type` for functions unless necessary.
 
-``` cpp
+```cpp
 auto f() -> void
 ```
 
 **25.** Declaration and initialization of variables.
 
-``` cpp
+```cpp
 //right way
 std::string s = "Hello";
 std::string s{"Hello"};
@@ -740,7 +742,7 @@ But other things being equal, cross-platform or portable code is preferred.
 
 **2.** Language: C++20 (see the list of available [C++20 features](https://en.cppreference.com/w/cpp/compiler_support#C.2B.2B20_features)).
 
-**3.** Compiler: `clang`. At the time of writing (July 2022), the code is compiled using clang version >= 12. (It can also be compiled using `gcc`, but it's untested and not suitable for production usage).
+**3.** Compiler: `clang`. At the time of writing (March 2025), the code is compiled using clang version >= 19.
 
 The standard library is used (`libc++`).
 
@@ -788,7 +790,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **1.** The C++20 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
 
-**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse. See [Guidelines for adding new third-party libraries](contrib.md#adding-third-party-libraries) for details.
+**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse. See [Guidelines for adding new third-party libraries](/development/contrib#adding-and-maintaining-third-party-libraries) for details.
 
 **3.** Preference is always given to libraries that are already in use.
 
@@ -834,32 +836,32 @@ For example, use `memcpy` instead of `std::copy` for copying large chunks of mem
 
 Any of the following wrapping styles are allowed:
 
-``` cpp
+```cpp
 function(
   T1 x1,
   T2 x2)
 ```
 
-``` cpp
+```cpp
 function(
   size_t left, size_t right,
   const & RangesInDataParts ranges,
   size_t limit)
 ```
 
-``` cpp
+```cpp
 function(size_t left, size_t right,
   const & RangesInDataParts ranges,
   size_t limit)
 ```
 
-``` cpp
+```cpp
 function(size_t left, size_t right,
       const & RangesInDataParts ranges,
       size_t limit)
 ```
 
-``` cpp
+```cpp
 function(
       size_t left,
       size_t right,

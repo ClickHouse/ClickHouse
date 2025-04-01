@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/ObjectUtils.h>
@@ -9,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -24,8 +26,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 
-#include <Parsers/queryToString.h>
-
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>
@@ -34,6 +34,8 @@
 #include <Processors/Merges/Algorithms/VersionedCollapsingAlgorithm.h>
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+
+#include <fmt/ranges.h>
 
 namespace ProfileEvents
 {

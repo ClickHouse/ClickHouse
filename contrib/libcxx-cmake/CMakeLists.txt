@@ -97,11 +97,3 @@ target_compile_definitions(cxx PUBLIC -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
 
 target_link_libraries(cxx PUBLIC cxx-headers)
 target_link_libraries(cxx PUBLIC cxxabi)
-
-install(
-    TARGETS cxx
-    EXPORT global
-    ARCHIVE DESTINATION lib
-    RUNTIME DESTINATION lib
-    LIBRARY DESTINATION lib
-)

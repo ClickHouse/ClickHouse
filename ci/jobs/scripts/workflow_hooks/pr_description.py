@@ -48,6 +48,7 @@ class Labels:
     PR_CRITICAL_BUGFIX = "pr-critical-bugfix"
     CAN_BE_TESTED = "can be tested"
     DO_NOT_TEST = "do not test"
+    NO_FAST_TESTS = "no-fast-tests"
     MUST_BACKPORT = "pr-must-backport"
     MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
     JEPSEN_TEST = "jepsen-test"
@@ -65,6 +66,8 @@ class Labels:
     RELEASE = "release"
     RELEASE_LTS = "release-lts"
     SUBMODULE_CHANGED = "submodule changed"
+
+    CI_PERFORMANCE = "ci-performance"
 
     # automatic backport for critical bug fixes
     AUTO_BACKPORT = {"pr-critical-bugfix"}
@@ -89,8 +92,7 @@ def check_category(pr_body: str) -> Tuple[bool, str]:
     lines = list(map(lambda x: x.strip(), pr_body.split("\n") if pr_body else []))
     lines = [re.sub(r"\s+", " ", line) for line in lines]
 
-    # Check if body contains "Reverts ClickHouse/ClickHouse#36337"
-    if [True for line in lines if re.match(rf"\AReverts [A-Za-z0-9_.-/]+#\d+\Z", line)]:
+    if "Reverts ClickHouse/" in pr_body:
         return True, LABEL_CATEGORIES["pr-not-for-changelog"][0]
 
     category = ""

@@ -25,7 +25,7 @@ sidebar_label: "Операторы"
 
 `a * b` - функция `multiply(a, b)`
 
-Для умножения кортежа на число также может быть использована [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), для скалярного произведения: [dotProduct](../../sql-reference/functions/tuple-functions.md#dotproduct).
+Для умножения кортежа на число также может быть использована [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), для скалярного произведения: [dotProduct](/sql-reference/functions/array-functions#arraydotproduct).
 
 `a / b` - функция `divide(a, b)`
 
@@ -73,7 +73,7 @@ sidebar_label: "Операторы"
 
 ## Операторы для работы с множествами {#operatory-dlia-raboty-s-mnozhestvami}
 
-Смотрите [операторы IN](../../sql-reference/operators/in.md#select-in-operators) и оператор [EXISTS](../../sql-reference/operators/exists.md).
+Смотрите [операторы IN](/sql-reference/operators/in) и оператор [EXISTS](../../sql-reference/operators/exists.md).
 
 `a IN ...` - функция `in(a, b)`
 
@@ -269,19 +269,19 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 6
 **Смотрите также**
 
 -   Тип данных [Interval](../../sql-reference/operators/index.md)
--   Функции преобразования типов [toInterval](../../sql-reference/operators/index.md#function-tointerval)
+-   Функции преобразования типов [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear)
 
 ## Оператор логического "И" {#logical-and-operator}
 
-Синтаксис `SELECT a AND b` — вычисляет логическую конъюнкцию между `a` и `b` функцией [and](../../sql-reference/functions/logical-functions.md#logical-and-function).
+Синтаксис `SELECT a AND b` — вычисляет логическую конъюнкцию между `a` и `b` функцией [and](/sql-reference/functions/logical-functions#and).
 
 ## Оператор логического "ИЛИ" {#logical-or-operator}
 
-Синтаксис `SELECT a OR b` — вычисляет логическую дизъюнкцию между `a` и `b` функцией [or](../../sql-reference/functions/logical-functions.md#logical-or-function).
+Синтаксис `SELECT a OR b` — вычисляет логическую дизъюнкцию между `a` и `b` функцией [or](/sql-reference/functions/logical-functions#or).
 
 ## Оператор логического отрицания {#logical-negation-operator}
 
-Синтаксис `SELECT NOT a` — вычисляет логическое отрицание `a` функцией [not](../../sql-reference/functions/logical-functions.md#logical-not-function).
+Синтаксис `SELECT NOT a` — вычисляет логическое отрицание `a` функцией [not](/sql-reference/functions/logical-functions#not).
 
 ## Условный оператор {#uslovnyi-operator}
 
@@ -343,7 +343,7 @@ ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL
     -   `0` в обратном случае.
 -   Для прочих значений оператор `IS NULL` всегда возвращает `0`.
 
-Оператор можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` читается только подстолбец [null](../../sql-reference/data-types/nullable.md#finding-null) вместо чтения и обработки данных всего столбца. Запрос `SELECT n IS NULL FROM table` преобразуется к запросу `SELECT n.null FROM TABLE`.
+Оператор можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` читается только подстолбец [null](../../sql-reference/data-types/nullable.md#finding-null) вместо чтения и обработки данных всего столбца. Запрос `SELECT n IS NULL FROM table` преобразуется к запросу `SELECT n.null FROM TABLE`.
 
 <!-- -->
 
@@ -364,7 +364,7 @@ SELECT x+100 FROM t_null WHERE y IS NULL
     -   `1`, в обратном случае.
 -   Для прочих значений оператор `IS NOT NULL` всегда возвращает `1`.
 
-Оператор можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` читается только подстолбец [null](../../sql-reference/data-types/nullable.md#finding-null) вместо чтения и обработки данных всего столбца. Запрос `SELECT n IS NOT NULL FROM table` преобразуется к запросу `SELECT NOT n.null FROM TABLE`.
+Оператор можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` читается только подстолбец [null](../../sql-reference/data-types/nullable.md#finding-null) вместо чтения и обработки данных всего столбца. Запрос `SELECT n IS NOT NULL FROM table` преобразуется к запросу `SELECT NOT n.null FROM TABLE`.
 
 <!-- -->
 

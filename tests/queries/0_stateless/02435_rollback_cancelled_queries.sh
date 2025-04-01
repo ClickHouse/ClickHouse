@@ -105,7 +105,7 @@ timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
 
 wait
 
-$CLICKHOUSE_CLIENT -q 'system flush logs'
+#$CLICKHOUSE_CLIENT -q 'system flush logs'
 
 ID="02435_insert_last_${CLICKHOUSE_DATABASE}_$RANDOM"
 insert_data 1

@@ -23,10 +23,6 @@ public:
 
     NamesAndTypesList getTableSchema() const override { return {}; }
 
-    const DataLakePartitionColumns & getPartitionColumns() const override { return partition_columns; }
-
-    const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
-
     bool operator ==(const IDataLakeMetadata & other) const override
     {
         const auto * hudi_metadata = dynamic_cast<const HudiMetadata *>(&other);
@@ -35,7 +31,10 @@ public:
             && data_files == hudi_metadata->data_files;
     }
 
-    static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context)
+    static DataLakeMetadataPtr create(
+        ObjectStoragePtr object_storage,
+        ConfigurationObserverPtr configuration,
+        ContextPtr local_context)
     {
         return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
     }
@@ -44,8 +43,6 @@ private:
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
     mutable Strings data_files;
-    std::unordered_map<String, String> column_name_to_physical_name;
-    DataLakePartitionColumns partition_columns;
 
     Strings getDataFilesImpl() const;
 };

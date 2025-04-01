@@ -78,7 +78,6 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
@@ -108,6 +107,8 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_not_comparable_types_in_order_by;
+    extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
 }
 
 
@@ -170,6 +171,8 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
     }
     return true;
 }
+
+ExpressionAnalyzerData::ExpressionAnalyzerData() = default;
 
 ExpressionAnalyzerData::~ExpressionAnalyzerData() = default;
 
@@ -1044,7 +1047,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         // Grace hash join requires that columns exist in left_sample_block.
         Block left_sample_block(left_sample_columns);
         if (sanitizeBlock(left_sample_block, false) && GraceHashJoin::isSupported(analyzed_join))
-            return std::make_shared<GraceHashJoin>(context, analyzed_join, left_sample_block, right_sample_block, context->getTempDataOnDisk());
+            return std::make_shared<GraceHashJoin>(
+                context->getSettingsRef()[Setting::grace_hash_join_initial_buckets],
+                context->getSettingsRef()[Setting::grace_hash_join_max_buckets],
+                analyzed_join, left_sample_block, right_sample_block, context->getTempDataOnDisk());
     }
 
     if (algorithm == JoinAlgorithm::AUTO)

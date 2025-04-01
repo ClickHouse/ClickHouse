@@ -102,7 +102,7 @@ ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100
 SELECT count(), sum(size) FROM system.filesystem_cache
 41	250543
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)
-SYSTEM FLUSH LOGS
+SYSTEM FLUSH LOGS query_log
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0
 SELECT count() FROM test_02241
 5010500
@@ -212,7 +212,7 @@ ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100
 SELECT count(), sum(size) FROM system.filesystem_cache
 41	250543
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)
-SYSTEM FLUSH LOGS
+SYSTEM FLUSH LOGS query_log
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0
 SELECT count() FROM test_02241
 5010500
@@ -322,7 +322,7 @@ ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100
 SELECT count(), sum(size) FROM system.filesystem_cache
 41	250543
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)
-SYSTEM FLUSH LOGS
+SYSTEM FLUSH LOGS query_log
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0
 SELECT count() FROM test_02241
 5010500
