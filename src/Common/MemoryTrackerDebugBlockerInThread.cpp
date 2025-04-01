@@ -2,15 +2,22 @@
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
 
-thread_local uint64_t MemoryTrackerDebugBlockerInThread::counter = 0;
+#include <cstdint>
+
+static thread_local uint64_t MemoryTrackerDebugBlockerInThreadCounter;
 
 MemoryTrackerDebugBlockerInThread::MemoryTrackerDebugBlockerInThread()
 {
-    ++counter;
+    ++MemoryTrackerDebugBlockerInThreadCounter;
 }
 
 MemoryTrackerDebugBlockerInThread::~MemoryTrackerDebugBlockerInThread()
 {
-    --counter;
+    --MemoryTrackerDebugBlockerInThreadCounter;
+}
+
+bool MemoryTrackerDebugBlockerInThread::isBlocked()
+{
+    return MemoryTrackerDebugBlockerInThreadCounter > 0;
 }
 #endif
