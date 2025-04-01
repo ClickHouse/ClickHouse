@@ -50,7 +50,7 @@ namespace Setting
 {
 extern const SettingsInt64 iceberg_timestamp_ms;
 extern const SettingsInt64 iceberg_snapshot_id;
-extern const SettingsBool  use_iceberg_metadata_files_cache;
+extern const SettingsBool use_iceberg_metadata_files_cache;
 }
 
 
