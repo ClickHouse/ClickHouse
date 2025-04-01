@@ -155,6 +155,49 @@ def test_max_constraint(started_cluster):
     )
 
 
+def test_disallowed_constraint(started_cluster):
+    # Default value
+    assert_query_settings(
+        instance,
+        "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+        {},
+        result="10000000000",
+    )
+
+    # Valid value
+    assert_query_settings(
+        instance,
+        "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+        settings={"max_memory_usage": 6000000002},
+        result="6000000002",
+    )
+
+    # Invalid values
+    assert_query_settings(
+        instance,
+        "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+        settings={"max_memory_usage": 6000000000},
+        result=None,
+        exception=" Setting max_memory_usage shouldn't be 6000000000",
+    )
+
+    assert_query_settings(
+        instance,
+        "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+        settings={"max_memory_usage": 6000000001},
+        result=None,
+        exception=" Setting max_memory_usage shouldn't be 6000000001",
+    )
+
+    # Check that the disallowed values returned are as expected
+    assert_query_settings(
+        instance,
+        "SELECT disallowed_values FROM system.settings WHERE name='max_memory_usage'",
+        settings={"max_memory_usage": 10000000000},
+        result="['6000000000','6000000001']"
+    )
+
+
 def assert_query_settings(
     instance, query, settings, result=None, exception=None, user=None
 ):

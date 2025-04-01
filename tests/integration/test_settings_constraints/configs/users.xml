@@ -8,6 +8,8 @@
                 <max_memory_usage>
                     <min>5000000000</min>
                     <max>20000000000</max>
+                    <disallow>6000000000</disallow>
+                    <disallow>6000000001</disallow>
                 </max_memory_usage>
                <force_index_by_date>
                    <readonly/>
