@@ -2912,15 +2912,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         true /*allow_lambda_expression*/,
         allow_table_expressions /*allow_table_expression*/);
 
-    auto & function_node = *function_node_ptr;
-
     if (is_special_function_exists)
     {
         checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
         /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
         auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
-        auto * exists_subquery = exists_subquery_argument->as<QueryNode>();
-        if (!exists_subquery->isCorrelated())
+        bool correlated_exists_subquery = exists_subquery_argument->getNodeType() == QueryTreeNodeType::QUERY
+            ? exists_subquery_argument->as<QueryNode>()->isCorrelated()
+            : exists_subquery_argument->as<UnionNode>()->isCorrelated();
+        if (!correlated_exists_subquery)
         {
             auto constant_data_type = std::make_shared<DataTypeUInt64>();
 
@@ -2950,7 +2950,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         else
         {
             auto function_exists = std::make_shared<FunctionExists>();
-            function_node.resolveAsFunction(
+            function_node_ptr->resolveAsFunction(
                 std::make_shared<FunctionToFunctionBaseAdaptor>(
                     function_exists, DataTypes{}, function_exists->getReturnTypeImpl({})
                 )
@@ -2978,6 +2978,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
         }
     }
+
+    auto & function_node = *function_node_ptr;
 
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
     if (is_special_function_in)
