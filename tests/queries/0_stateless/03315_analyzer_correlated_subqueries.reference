@@ -10,37 +10,25 @@ QUERY id: 0
         LIST id: 4, nodes: 1
           CONSTANT id: 5, constant_value: UInt64_2, constant_value_type: UInt8
   WHERE
-    FUNCTION id: 6, function_name: in, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 6, function_name: exists, function_type: ordinary, result_type: UInt8
       ARGUMENTS
-        LIST id: 7, nodes: 2
-          CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt64
-          QUERY id: 9, is_subquery: 1, is_correlated: 1
+        LIST id: 7, nodes: 1
+          QUERY id: 8, alias: __table2, is_subquery: 1, is_correlated: 1
             CORRELATED COLUMNS
-              COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 3
+              COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 3
             PROJECTION COLUMNS
-              1 UInt64
+              count() UInt64
             PROJECTION
-              LIST id: 11, nodes: 1
-                CONSTANT id: 12, constant_value: UInt64_1, constant_value_type: UInt64
+              LIST id: 10, nodes: 1
+                FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
             JOIN TREE
-              QUERY id: 13, alias: __table1, is_subquery: 1, is_correlated: 1
-                CORRELATED COLUMNS
-                  COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 3
-                PROJECTION COLUMNS
-                  count() UInt64
-                PROJECTION
-                  LIST id: 14, nodes: 1
-                    FUNCTION id: 15, function_name: count, function_type: aggregate, result_type: UInt64
-                JOIN TREE
-                  TABLE id: 16, alias: __table2, table_name: system.one
-                WHERE
-                  FUNCTION id: 17, function_name: equals, function_type: ordinary, result_type: UInt8
-                    ARGUMENTS
-                      LIST id: 18, nodes: 2
-                        COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 3
-                        CONSTANT id: 19, constant_value: UInt64_2, constant_value_type: UInt8
-            LIMIT
-              CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt64
+              TABLE id: 12, alias: __table3, table_name: system.one
+            WHERE
+              FUNCTION id: 13, function_name: equals, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 14, nodes: 2
+                    COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 3
+                    CONSTANT id: 15, constant_value: UInt64_2, constant_value_type: UInt8
 QUERY id: 0
   PROJECTION COLUMNS
     number UInt64
@@ -53,34 +41,26 @@ QUERY id: 0
         LIST id: 4, nodes: 1
           CONSTANT id: 5, constant_value: UInt64_2, constant_value_type: UInt8
   WHERE
-    FUNCTION id: 6, function_name: in, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 6, function_name: exists, function_type: ordinary, result_type: UInt8
       ARGUMENTS
-        LIST id: 7, nodes: 2
-          CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt64
-          QUERY id: 9, is_subquery: 1, is_correlated: 1
+        LIST id: 7, nodes: 1
+          QUERY id: 8, alias: __table2, is_subquery: 1, is_correlated: 1
             CORRELATED COLUMNS
-              COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 3
+              COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 3
             PROJECTION COLUMNS
-              1 UInt64
+              1 UInt8
+              dummy UInt8
+              1 UInt8
             PROJECTION
-              LIST id: 11, nodes: 1
-                CONSTANT id: 12, constant_value: UInt64_1, constant_value_type: UInt64
+              LIST id: 10, nodes: 3
+                CONSTANT id: 11, constant_value: UInt64_1, constant_value_type: UInt8
+                COLUMN id: 12, column_name: dummy, result_type: UInt8, source_id: 13
+                CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
             JOIN TREE
-              QUERY id: 13, alias: __table1, is_subquery: 1, is_correlated: 1
-                CORRELATED COLUMNS
-                  COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 3
-                PROJECTION COLUMNS
-                  1 UInt8
-                PROJECTION
-                  LIST id: 14, nodes: 1
-                    CONSTANT id: 15, constant_value: UInt64_1, constant_value_type: UInt8
-                JOIN TREE
-                  TABLE id: 16, alias: __table2, table_name: system.one
-                WHERE
-                  FUNCTION id: 17, function_name: equals, function_type: ordinary, result_type: UInt8
-                    ARGUMENTS
-                      LIST id: 18, nodes: 2
-                        COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 3
-                        CONSTANT id: 19, constant_value: UInt64_2, constant_value_type: UInt8
-            LIMIT
-              CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt64
+              TABLE id: 13, alias: __table3, table_name: system.one
+            WHERE
+              FUNCTION id: 15, function_name: equals, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 16, nodes: 2
+                    COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 3
+                    CONSTANT id: 17, constant_value: UInt64_2, constant_value_type: UInt8
