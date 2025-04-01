@@ -23,10 +23,6 @@
 #include "Poco/Crypto/Crypto.h"
 #include "Poco/Mutex.h"
 
-#if defined(OPENSSL_FIPS) && OPENSSL_VERSION_NUMBER < 0x010001000L
-#    include <openssl/fips.h>
-#endif
-
 
 extern "C" {
 struct CRYPTO_dynlock_value
@@ -104,7 +100,7 @@ namespace Crypto
         FIPS_mode_set(enabled);
     }
 #else
-    inline void OpenSSLInitializer::enableFIPSMode(bool /*enabled*/)
+    inline void OpenSSLInitializer::enableFIPSMode(bool)
     {
     }
 #endif
