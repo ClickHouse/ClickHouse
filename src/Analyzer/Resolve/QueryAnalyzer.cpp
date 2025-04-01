@@ -2945,7 +2945,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             node = function_node_ptr;
             function_name = "in";
             is_special_function_in = true;
-            is_special_function_exists = false;
         }
         else
         {
