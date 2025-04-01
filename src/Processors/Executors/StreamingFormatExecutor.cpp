@@ -21,8 +21,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     ErrorCallback on_error_,
     size_t total_bytes_,
     SimpleTransformPtr adding_defaults_transform_,
-    double preallocate_factor_,
-    double min_preallocate_factor_)
+    bool enable_preallocate_)
     : header(header_)
     , format(std::move(format_))
     , on_error(std::move(on_error_))
@@ -31,8 +30,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     , result_columns(header.cloneEmptyColumns())
     , checkpoints(result_columns.size())
     , total_bytes(total_bytes_)
-    , preallocate_factor(preallocate_factor_)
-    , min_preallocate_factor(min_preallocate_factor_)
+    , enable_preallocate(enable_preallocate_)
 {
     connect(format->getPort(), port);
 
@@ -56,31 +54,29 @@ void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameter
 
 void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const Chunk & chunk)
 {
-    if (!try_preallocate || preallocate_factor == 0.0f)
+    if (!try_preallocate || !enable_preallocate)
         return;
 
     try_preallocate = false; /// do it once
 
     if (total_bytes && num_bytes)
     {
-        double factor = preallocate_factor > 0 ? preallocate_factor : static_cast<double>(total_bytes) / num_bytes;
-        if (preallocate_factor > 0 || factor >= min_preallocate_factor)
-        {
-            /// Generate some dummy columns whose size is the original columns size * factor. It's
-            /// ok to do this because prepareForSquashing only uses the size of reference_columns
-            /// and nothing else.
-            Columns reference_columns;
-            for (const auto & column : chunk.getColumns())
-                reference_columns.emplace_back(ColumnNothing::create(static_cast<size_t>(std::ceil(column->size() * factor))));
+        double factor = static_cast<double>(total_bytes) / num_bytes;
 
-            /// assuming that all chunks have same nature, specifically
-            /// similar raw data size/number of rows ratio
-            /// use first one to predict
-            for (size_t i = 0; i < result_columns.size(); ++i)
-            {
-                /// prepareForSquashing is used to reserve space, we don actually do squashing
-                result_columns[i]->prepareForSquashing({reference_columns[i]});
-            }
+        /// Generate some dummy columns whose size is the original columns size * factor. It's
+        /// ok to do this because prepareForSquashing only uses the size of reference_columns
+        /// and nothing else.
+        Columns reference_columns;
+        for (const auto & column : chunk.getColumns())
+            reference_columns.emplace_back(ColumnNothing::create(static_cast<size_t>(std::ceil(column->size() * factor))));
+
+        /// assuming that all chunks have same nature, specifically
+        /// similar raw data size/number of rows ratio
+        /// use first one to predict
+        for (size_t i = 0; i < result_columns.size(); ++i)
+        {
+            /// prepareForSquashing is used to reserve space, we don actually do squashing
+            result_columns[i]->prepareForSquashing({reference_columns[i]});
         }
     }
 }
