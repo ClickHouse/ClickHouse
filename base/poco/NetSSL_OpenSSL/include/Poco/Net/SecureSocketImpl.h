@@ -20,11 +20,12 @@
 
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
+
 #include "Poco/Net/Context.h"
 #include "Poco/Net/NetSSL.h"
 #include "Poco/Net/Session.h"
 #include "Poco/Net/SocketImpl.h"
-#include "Poco/Net/X509Certificate.h"
+// #include "Poco/Net/X509Certificate.h"
 
 #include <mutex>
 

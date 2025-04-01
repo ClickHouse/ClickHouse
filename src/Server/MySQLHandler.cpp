@@ -664,13 +664,12 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_, read_event_, write_event_)
-    , public_key(public_key_)
     , private_key(private_key_)
 {}
 
 void MySQLHandlerSSL::authPluginSSL()
 {
-    auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(public_key, private_key, log);
+    auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(private_key, log);
 }
 
 void MySQLHandlerSSL::finishHandshakeSSL(

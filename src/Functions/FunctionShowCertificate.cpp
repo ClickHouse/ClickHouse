@@ -17,9 +17,8 @@
 #include <base/scope_guard.h>
 
 #if USE_SSL
-    #include <openssl/x509v3.h>
-    #include "Poco/Net/SSLManager.h"
-    #include "Poco/Crypto/X509Certificate.h"
+    #include <Poco/Net/SSLManager.h>
+    #include <Common/Crypto/X509Certificate.h>
 #endif
 
 namespace DB

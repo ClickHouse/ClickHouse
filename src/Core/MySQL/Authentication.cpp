@@ -140,7 +140,6 @@ void Sha256Password::authenticate(
         LOG_TRACE(log, "Authentication method match.");
     }
 
-    bool sent_public_key = false;
     if (auth_response == "\1")
     {
         LOG_TRACE(log, "Client requests public key.");
@@ -151,7 +150,6 @@ void Sha256Password::authenticate(
 
         AuthMoreData data(pem);
         packet_endpoint->sendPacket(data);
-        sent_public_key = true;
 
         AuthSwitchResponse response;
         packet_endpoint->receivePacket(response);
@@ -171,9 +169,13 @@ void Sha256Password::authenticate(
      */
     if (!is_secure_connection && !auth_response->empty() && auth_response != String("\0", 1))
     {
+        using EVP_PKEY_CTX_ptr = std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)>;
+
         LOG_TRACE(log, "Received nonempty password.");
+
         const auto & unpack_auth_response = *auth_response;
         const auto * ciphertext = reinterpret_cast<const unsigned char *>(unpack_auth_response.data());
+        size_t ciphertext_len = unpack_auth_response.size();
 
         EVP_PKEY * pkey = static_cast<EVP_PKEY*>(private_key);
         EVP_PKEY_CTX_ptr ctx(EVP_PKEY_CTX_new(pkey, nullptr), &EVP_PKEY_CTX_free);
@@ -183,13 +185,20 @@ void Sha256Password::authenticate(
         if (EVP_PKEY_decrypt_init(ctx.get()) <= 0 ||
             EVP_PKEY_CTX_set_rsa_padding(ctx.get(), RSA_PKCS1_OAEP_PADDING) <= 0)
         {
-            if (!sent_public_key)
-                LOG_WARNING(log, "Client could have encrypted password with different public key since it didn't request it from server.");
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to decrypt auth data. Error: {}", getOpenSSLErrors());
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to init EVP decrypt context: {}", getOpenSSLErrors());
         }
 
-        password.resize(plaintext_size);
-        for (int i = 0; i < plaintext_size; ++i)
+        size_t plaintext_length = 0;
+        if (EVP_PKEY_decrypt(ctx.get(), nullptr, &plaintext_length, ciphertext, ciphertext_len) <= 0)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to get decrypted length: {}", getOpenSSLErrors());
+
+        std::vector<unsigned char> plaintext(plaintext_length);
+        if (EVP_PKEY_decrypt(ctx.get(), plaintext.data(), &plaintext_length, ciphertext, ciphertext_len) <= 0)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to decrypt auth data: {}", getOpenSSLErrors());
+
+        plaintext.resize(plaintext_length);
+
+        for (size_t i = 0; i < plaintext_length; ++i)
         {
             password[i] = plaintext[i] ^ static_cast<unsigned char>(scramble[i % SCRAMBLE_LENGTH]);
         }
