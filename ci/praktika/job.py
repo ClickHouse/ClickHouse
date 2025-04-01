@@ -54,6 +54,9 @@ class Job:
 
         parameter: Any = None
 
+        # List of commands to call upon job completion
+        post_hooks: List[str] = field(default_factory=list)
+
         def parametrize(
             self,
             parameter: Optional[List[Any]] = None,

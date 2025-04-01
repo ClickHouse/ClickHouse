@@ -638,7 +638,7 @@ FileCache::getOrSet(
 
     assertInitialized();
 
-    FileSegment::Range initial_range(offset, offset + size - 1);
+    FileSegment::Range initial_range(offset, std::min(offset + size, file_size) - 1);
     /// result_range is initial range, which will be adjusted according to
     /// 1. aligned_offset, aligned_end_offset
     /// 2. max_file_segments_limit
@@ -764,14 +764,16 @@ FileCache::getOrSet(
         }
     }
 
+    /// Compare with initial_range and not result_range,
+    /// See comment in splitRange for explanation.
     chassert(file_segments_limit
-             ? file_segments.back()->range().left <= result_range.right
-             : file_segments.back()->range().contains(result_range.right),
+             ? file_segments.back()->range().left <= initial_range.right
+             : file_segments.back()->range().contains(initial_range.right),
              fmt::format(
                  "Unexpected state. Back: {}, result range: {}, "
-                 "limit: {}, initial offset: {}, initial size: {}",
+                 "limit: {}, initial offset: {}, initial size: {}, file size: {}",
                  file_segments.back()->range().toString(), result_range.toString(),
-                 file_segments_limit, offset, size));
+                 file_segments_limit, offset, size, file_size));
 
     chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
 

@@ -1,6 +1,6 @@
 ---
 description: 'Documentation for Exact and Approximate Nearest Neighbor Search'
-keywords: ['vector similarity search', 'ann', 'indices', 'index', 'nearest neighbor']
+keywords: ['vector similarity search', 'ann', 'knn', 'hnsw', 'indices', 'index', 'nearest neighbor']
 sidebar_label: 'Exact and Approximate Nearest Neighbor Search'
 slug: /engines/table-engines/mergetree-family/annindexes
 title: 'Exact and Approximate Nearest Neighbor Search'
@@ -90,7 +90,7 @@ CREATE TABLE table
 (
   [...],
   vectors Array(Float*),
-  INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>) [GRANULARITY <N>]
+  INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>]
 )
 ENGINE = MergeTree
 ORDER BY [...]
@@ -99,7 +99,7 @@ ORDER BY [...]
 Alternatively, to add a vector similarity index to an existing table:
 
 ```sql
-ALTER TABLE table ADD INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>) [GRANULARITY N];
+ALTER TABLE table ADD INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY N];
 ```
 
 Vector similarity indexes are special kinds of skipping indexes (see [here](mergetree.md#table_engine-mergetree-data_skipping-indexes) and [here](../../../optimize/skipping-indexes)).
@@ -116,6 +116,9 @@ Function `<distance_function>` must be either
 
 For normalized data, `L2Distance` is usually the best choice, otherwise `cosineDistance` is recommended to compensate for scale.
 
+`<dimensions>` restricts the number of elements which every array in the underlying column must have (the value must be > 0).
+If ClickHouse finds an array with a different number of elements during index creation, the index is discarded and an error is returned.
+
 The GRANULARITY parameter `<N>` refers to the size of the index granules (see [here](../../../optimize/skipping-indexes)).
 The default value of 100 million should work reasonably well for most use cases but it can also be tuned.
 We recommend tuning only for advanced users who understand the implications of what they are doing (see below).
@@ -130,7 +133,7 @@ CREATE TABLE table
 (
   [...],
   vectors Array(Float*),
-  INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) [GRANULARITY N]
+  INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY [...]
@@ -148,7 +151,7 @@ Further restrictions apply:
 - Vector similarity indexes can only be build on columns of type [Array(Float32)](../../../sql-reference/data-types/array.md) or [Array(Float64)](../../../sql-reference/data-types/array.md). Arrays of nullable and low-cardinality floats such as `Array(Nullable(Float32))` and `Array(LowCardinality(Float32))` are not allowed.
 - Vector similarity indexes must be build on single columns.
 - Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
-- Vector similarity indexes require that all arrays in the underlying column contain the same number of elements. This is checked during index creation. To detect violations of this requirement as soon as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
+- Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements. This is checked during index creation. To detect violations of this requirement as soon as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
 - Likewise, array values in the underlying column must not be (`[]`) or have a default value (also `[]`).
 
 ## Using a Vector Similarity Index {#using-a-vector-similarity-index}
@@ -227,7 +230,7 @@ To enforce index usage, you can run the SELECT query with setting [force_data_sk
 Users may optionally specify a `WHERE` clause with additional filter conditions in SELECT queries.
 Depending on these filter conditions, ClickHouse will utilize post-filtering or pre-filtering.
 These two strategies determine the order in which the filters are evaluated:
-- With post-filtering, the vector similarity index is evaluated first, afterwards ClickHouse evaluates the additional filter specified of the `WHERE` clause.
+- With post-filtering, the vector similarity index is evaluated first, afterwards ClickHouse evaluates the additional filter(s) specified of the `WHERE` clause.
 - With pre-filtering, the filter evaluation order is the other way round.
 
 Both strategies have different trade-offs:
@@ -287,7 +290,7 @@ Vector similarity indexes are ideally only used if the data is immutable or rare
 To speed up index creation, the following techniques can be used:
 
 First, index creation can be parallelized.
-The maximum number of index creation threads can be configured using server setting [max_build_vector_similarity_index_thread_pool_size](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size).
+The maximum number of index creation threads can be configured using server setting [max_build_vector_similarity_index_thread_pool_size](/operations/server-configuration-parameters/settings#max_build_vector_similarity_index_thread_pool_size).
 For optimal performance, the setting value should be configured to the number of CPU cores.
 
 Second, to speed up INSERT statements, users may disable the creation of skipping indexes on newly inserted parts using session setting [materialize_skip_indexes_on_insert](../../../operations/settings/settings.md).
@@ -325,6 +328,8 @@ WHERE type = 'QueryFinish' AND query_id = '<...>'
 ORDER BY event_time_microseconds;
 ```
 
+For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.
+
 ## Differences to Regular Skipping Indexes {#differences-to-regular-skipping-indexes}
 
 As all regular [skipping indexes](/optimize/skipping-indexes), vector similarity indexes are constructed over granules and each indexed block consists of `GRANULARITY = [N]`-many granules (`[N]` = 1 by default for normal skipping indexes).
@@ -353,7 +358,7 @@ If no `GRANULARITY` was specified for vector similarity indexes, the default val
 ## Example {#approximate-nearest-neighbor-search-example}
 
 ```sql
-CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
 

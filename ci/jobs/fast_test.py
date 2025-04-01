@@ -136,6 +136,10 @@ def main():
                 f"NOTE: It's a local run and clickhouse binary is not found [{clickhouse_bin_path}] - will be built"
             )
             time.sleep(5)
+        clickhouse_server_link = Path(f"{build_dir}/programs/clickhouse-server")
+        if not clickhouse_server_link.is_file():
+            Shell.check(f"ln -sf {clickhouse_bin_path} {clickhouse_server_link}")
+        Shell.check(f"chmod +x {clickhouse_bin_path}")
 
     Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
 
@@ -186,8 +190,6 @@ def main():
     if res and JobStages.BUILD in stages:
         commands = [
             f"mkdir -p {Settings.OUTPUT_DIR}/binaries",
-            f"cp ./programs/clickhouse {Settings.OUTPUT_DIR}/binaries/clickhouse",
-            f"zstd --threads=0 --force programs/clickhouse-stripped -o {Settings.OUTPUT_DIR}/binaries/clickhouse-stripped.zst",
             "sccache --show-stats",
             "clickhouse-client --version",
             "clickhouse-test --help",
@@ -232,9 +234,10 @@ def main():
         )
         if not results[-1].is_ok():
             attach_files.append(f"{temp_dir}/build/programs/clickhouse")
-            attach_files.append(
-                f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log"
-            )
+            attach_files += [
+                f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
+                f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
+            ]
 
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
@@ -255,9 +258,10 @@ def main():
             )
         if not results[-1].is_ok():
             attach_files.append(f"{temp_dir}/build/programs/clickhouse")
-            attach_files.append(
-                f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log"
-            )
+            attach_files += [
+                f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
+                f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
+            ]
 
     CH.terminate()
 

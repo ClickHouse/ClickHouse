@@ -132,7 +132,7 @@ size_t getHostNamePrefixDistance(const std::string & local_hostname, const std::
 
 size_t getHostNameLevenshteinDistance(const std::string & local_hostname, const std::string & host)
 {
-    return levenshteinDistance(local_hostname, host);
+    return levenshteinDistanceCaseInsensitive(local_hostname, host);
 }
 
 }

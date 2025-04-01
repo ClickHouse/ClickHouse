@@ -8,7 +8,7 @@ SET parallel_replicas_local_plan=1; -- this setting is randomized, set it explic
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(id Int32, vec1 Array(Float32), vec2 Array(Float32), INDEX idx vec1 TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab(id Int32, vec1 Array(Float32), vec2 Array(Float32), INDEX idx vec1 TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0], [1.0, 0.0]), (1, [1.1, 0.0], [1.1, 0.0]), (2, [1.2, 0.0], [1.2, 0.0]), (3, [1.3, 0.0], [1.3, 0.0]), (4, [1.4, 0.0], [1.4, 0,0]), (5, [1.5, 0.0], [1.5, 0.0]), (6, [0.0, 2.0], [0.0, 2.0]), (7, [0.0, 2.1], [0.0, 2.1]), (8, [0.0, 2.2], [0.0, 2.2]), (9, [0.0, 2.3], [0.0, 2.3]), (10, [0.0, 2.4], [0.0, 2.4]), (11, [0.0, 2.5], [0.0, 2.5]);
 

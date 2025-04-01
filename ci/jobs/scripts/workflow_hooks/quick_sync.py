@@ -9,7 +9,7 @@ from ci.praktika.utils import Shell
 
 def check():
     info = Info()
-    if info.user_name not in ("maxknv", "yariks5s", "kssenii"):
+    if info.user_name not in ("yariks5s", "kssenii", "maxknv"):
         print(f"Not enabled for [{info.user_name}]")
         return
     if not Shell.check(
