@@ -44,8 +44,7 @@ class Foundation_API Thread : private ThreadImpl
 /// The name of a thread can be changed at any time.
 {
 public:
-    typedef ThreadImpl::TIDImpl TID;
-
+    using TID = ThreadImpl::TIDImpl;
     using ThreadImpl::Callable;
 
     enum Priority

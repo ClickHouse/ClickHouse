@@ -17,9 +17,9 @@
 #ifndef NetSSL_SSLManager_INCLUDED
 #define NetSSL_SSLManager_INCLUDED
 
-#include <unordered_map>
-
+#include <openssl/evp.h>
 #include <openssl/ssl.h>
+
 #include "Poco/BasicEvent.h"
 #include "Poco/Mutex.h"
 #include "Poco/Net/CertificateHandlerFactoryMgr.h"
@@ -30,9 +30,9 @@
 #include "Poco/Net/VerificationErrorArgs.h"
 #include "Poco/SharedPtr.h"
 #include "Poco/Util/AbstractConfiguration.h"
-#if defined(OPENSSL_FIPS) && OPENSSL_VERSION_NUMBER < 0x010001000L
-#    include <openssl/fips.h>
-#endif
+
+#include <unordered_map>
+
 
 
 namespace Poco
@@ -294,11 +294,8 @@ namespace Net
         static const std::string CFG_DISABLE_PROTOCOLS;
         static const std::string CFG_DH_PARAMS_FILE;
         static const std::string CFG_ECDH_CURVE;
-
-#ifdef OPENSSL_FIPS
         static const std::string CFG_FIPS_MODE;
         static const bool VAL_FIPS_MODE;
-#endif
 
     protected:
         static int verifyClientCallback(int ok, X509_STORE_CTX * pStore);
@@ -380,11 +377,7 @@ namespace Net
 
     inline bool SSLManager::isFIPSEnabled()
     {
-#ifdef OPENSSL_FIPS
-        return FIPS_mode() ? true : false;
-#else
-        return false;
-#endif
+        return EVP_default_properties_is_fips_enabled(nullptr);
     }
 
 
