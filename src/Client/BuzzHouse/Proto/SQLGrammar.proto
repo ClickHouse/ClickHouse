@@ -1079,7 +1079,7 @@ enum SQLFunc {
     FUNCrightPad = 1074;
     FUNCrightPadUTF8 = 1075;
     FUNCrightUTF8 = 1076;
-    FUNCripeMD160 = 1077;
+    FUNCRIPEMD160 = 1077;
     FUNCround = 1078;
     FUNCroundAge = 1079;
     FUNCroundBankers = 1080;
