@@ -19,6 +19,7 @@ workflow = Workflow.Config(
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_jobs,
+        *JobConfigs.tidy_arm_build_jobs,
         *[
             job.set_dependency(
                 [
@@ -54,8 +55,6 @@ workflow = Workflow.Config(
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
         *JobConfigs.performance_comparison_with_master_head_jobs,
-        #TODO: remove - test
-        *JobConfigs.functional_tests_jobs_azure_master_only,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,

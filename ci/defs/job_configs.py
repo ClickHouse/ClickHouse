@@ -83,6 +83,36 @@ class JobConfigs:
         ],
         provides=[[]],  # [ArtifactNames.CH_TIDY_BIN],
         runs_on=[
+            RunnerLabels.BUILDER_AMD,
+        ],
+    )
+    tidy_arm_build_jobs = Job.Config(
+        name=JobNames.BUILD,
+        runs_on=["...from params..."],
+        requires=["Build (amd_tidy)"],
+        command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
+        run_in_docker="clickhouse/binary-builder+--network=host",
+        timeout=3600 * 4,
+        allow_merge_on_failure=True,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./src",
+                "./contrib/",
+                "./CMakeLists.txt",
+                "./PreLoad.cmake",
+                "./cmake",
+                "./base",
+                "./programs",
+                "./rust",
+                "./ci/jobs/build_clickhouse.py",
+            ],
+            with_git_submodules=True,
+        ),
+    ).parametrize(
+        parameter=[
+            BuildTypes.ARM_TIDY,
+        ],
+        runs_on=[
             RunnerLabels.BUILDER_ARM,
         ],
     )
