@@ -547,15 +547,16 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
     {
         std::unordered_set<std::string> expr_columns;
-        bool contains_nondeterministic_func = false;
+        bool is_injective = true;
 
         std::function<void(const QueryTreeNodePtr &)> get_columns = [&](const QueryTreeNodePtr & node) -> void
         {
             if (const auto * func = node->as<FunctionNode>())
             {
-                if (!func->getFunction()->isDeterministic())
+                auto function = func->getFunctionOrThrow();
+                if (!function->isInjective(func->getArgumentColumns()))
                 {
-                    contains_nondeterministic_func = true;
+                    is_injective = false;
                     return;
                 }
                 for (const auto & arg : func->getArguments())
@@ -577,7 +578,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
             }
         };
 
-        if (contains_nondeterministic_func)
+        if (!is_injective)
             return false;
 
         for (const auto & expr : exprs)
