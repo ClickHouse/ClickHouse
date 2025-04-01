@@ -355,9 +355,9 @@ optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanO
             optimization_settings.max_entries_for_hash_table_stats,
             optimization_settings.max_size_to_preallocate_for_joins};
         if (auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params.setKey(hash_table_key_hashes->key_hash_left)))
-            lhs_estimation = std::min(lhs_estimation.value_or(std::numeric_limits<size_t>::max()), hint->source_rows);
+            lhs_estimation = std::min<size_t>(lhs_estimation.value_or(std::numeric_limits<size_t>::max()), hint->source_rows);
         if (auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params.setKey(hash_table_key_hashes->key_hash_right)))
-            rhs_estimation = std::min(rhs_estimation.value_or(std::numeric_limits<size_t>::max()), hint->source_rows);
+            rhs_estimation = std::min<size_t>(rhs_estimation.value_or(std::numeric_limits<size_t>::max()), hint->source_rows);
     }
 
     LOG_TRACE(
