@@ -18,7 +18,7 @@
 
 #if USE_SSL
     #include <Poco/Net/SSLManager.h>
-    #include <Poco/Crypto/X509Certificate.h>
+    #include <Common/Crypto/X509Certificate.h>
 #endif
 
 namespace DB
