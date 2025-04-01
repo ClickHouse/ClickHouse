@@ -73,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_convert_join_to_in", false, false, "New setting"},
             {"enable_hdfs_pread", true, true, "New setting."},
             {"low_priority_query_wait_time_ms", 1000, 1000, "New setting."},
+            {"allow_experimental_correlated_subqueries", false, false, "Added new setting to allow correlated subqueries execution."}
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
