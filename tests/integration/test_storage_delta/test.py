@@ -188,6 +188,7 @@ def get_delta_metadata(delta_metadata_file):
 
 
 def create_delta_table(
+    instance,
     storage_type,
     table_name,
     cluster,
@@ -212,14 +213,14 @@ def create_delta_table(
 
         if run_on_cluster:
             assert table_function
-            return (f"deltalakeS3Cluster('cluster_simple', s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+            instance.query(f"deltalakeS3Cluster('cluster_simple', s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
                     f"SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}")
         else:
             if table_function:
-                return (f"deltalakeS3(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+                instance.query(f"deltalakeS3(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
                         f"SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}")
             else:
-                return (
+                instance.query(
                     f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
@@ -231,18 +232,18 @@ def create_delta_table(
     elif storage_type == "azure":
         if run_on_cluster:
             assert table_function
-            return f"""
+            instance.query(f"""
                 deltalakeAzureCluster('cluster_simple', azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
                 SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
-            """
+            """)
         else:
             if table_function:
-                return f"""
+                instance.query(f"""
                     deltalakeAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
                     SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
-                """
+                """)
             else:
-                return (
+                instance.query(
                     f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
@@ -311,7 +312,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
 
     assert len(files) == 2  # 1 metadata files + 1 data file
 
-    instance.query(create_delta_table(storage_type, TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel))
+    create_delta_table(instance, storage_type, TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel)
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
@@ -341,7 +342,7 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
 
     assert len(files) == 11  # 10 partitions and 1 metadata file
 
-    instance.query(create_delta_table(storage_type, TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel))
+    create_delta_table(instance, storage_type, TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
 
 
@@ -385,7 +386,7 @@ def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
             ok = True
     assert ok
 
-    instance.query(create_delta_table(storage_type, TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
+    create_delta_table(instance, storage_type, TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel)
     assert (
         int(
             instance.query(
@@ -456,7 +457,7 @@ def test_multiple_log_files(started_cluster, use_delta_kernel):
     )
     assert len(s3_objects) == 1
 
-    instance.query(create_delta_table("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     write_delta_from_df(
@@ -506,7 +507,7 @@ def test_metadata(started_cluster, use_delta_kernel):
     assert next(iter(stats["minValues"].values())) == 0
     assert next(iter(stats["maxValues"].values())) == 99
 
-    instance.query(create_delta_table("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
 
@@ -608,12 +609,7 @@ def test_restart_broken(started_cluster, use_delta_kernel):
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
 
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME}
-        ENGINE=DeltaLake(s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{bucket}/')
-        SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}""")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel, bucket=bucket)
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
@@ -1028,7 +1024,7 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    instance.query(create_delta_table("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
+    create_delta_table(instance,"s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel)
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
