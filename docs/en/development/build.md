@@ -29,6 +29,8 @@ The tutorial assumes that you have the ClickHouse repository and all submodules 
 
 ## Install Prerequisites {#install-prerequisites}
 
+First, see the generic [prerequisites documentation](developer-instruction.md).
+
 ClickHouse uses CMake and Ninja for building.
 
 You can optionally install ccache to let the build reuse already compiled object files.

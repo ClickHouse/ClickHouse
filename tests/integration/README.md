@@ -80,7 +80,7 @@ Notes:
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```bash
-$ ./runner --binary $HOME/ClickHouse/programs/clickhouse  --odbc-bridge-binary $HOME/ClickHouse/programs/clickhouse-odbc-bridge --base-configs-dir $HOME/ClickHouse/programs/server/ 'test_ssl_cert_authentication -ss'
+$ ./runner --binary $HOME/ClickHouse/programs/clickhouse  --odbc-bridge-binary $HOME/ClickHouse/programs/clickhouse-odbc-bridge --base-configs-dir $HOME/ClickHouse/programs/server/ -- test_ssl_cert_authentication -ss
 Start tests
 ====================================================================================================== test session starts ======================================================================================================
 platform linux -- Python 3.8.10, pytest-7.1.2, pluggy-1.0.0 -- /usr/bin/python3

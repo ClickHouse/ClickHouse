@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import shutil
@@ -9,6 +10,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
+from helpers.database_disk import get_database_disk_name, replace_text_in_metadata
 
 test_recover_staled_replica_run = 1
 
@@ -21,6 +23,8 @@ main_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 1},
+    # Disable `with_remote_database_disk` as in `test_startup_without_zk`, Keeper rejects `main_node` connections before restarting
+    with_remote_database_disk=False,
 )
 dummy_node = cluster.add_instance(
     "dummy_node",
@@ -759,11 +763,11 @@ def create_some_tables(db):
         settings=settings,
     )
     main_node.query(
-        f"CREATE MATERIALIZED VIEW {db}.mv1 (n int) ENGINE=ReplicatedMergeTree order by n AS SELECT n FROM recover.rmt1",
+        f"CREATE MATERIALIZED VIEW {db}.mv1 (n int) ENGINE=ReplicatedMergeTree order by n AS SELECT n FROM {db}.rmt1",
         settings=settings,
     )
     dummy_node.query(
-        f"CREATE MATERIALIZED VIEW {db}.mv2 (n int) ENGINE=ReplicatedMergeTree order by n  AS SELECT n FROM recover.rmt2",
+        f"CREATE MATERIALIZED VIEW {db}.mv2 (n int) ENGINE=ReplicatedMergeTree order by n  AS SELECT n FROM {db}.rmt2",
         settings=settings,
     )
     main_node.query(
@@ -931,6 +935,11 @@ def test_recover_staled_replica(started_cluster):
         )
     for table in ["m1", "mt1"]:
         assert dummy_node.query(f"SELECT count() FROM recover.{table}") == "0\n"
+
+    logging.debug("Result: %s", dummy_node.query("SHOW DATABASES"))
+    logging.debug("Result: %s", dummy_node.query("SHOW TABLES FROM recover_broken_tables"))
+    logging.debug("Result: %s", dummy_node.query("SHOW TABLES FROM recover_broken_replicated_tables"))
+
     global test_recover_staled_replica_run
     assert (
         dummy_node.query(
@@ -945,10 +954,6 @@ def test_recover_staled_replica(started_cluster):
         == f"{test_recover_staled_replica_run}\n"
     )
     test_recover_staled_replica_run += 1
-
-    print(dummy_node.query("SHOW DATABASES"))
-    print(dummy_node.query("SHOW TABLES FROM recover_broken_tables"))
-    print(dummy_node.query("SHOW TABLES FROM recover_broken_replicated_tables"))
 
     table = dummy_node.query(
         "SHOW TABLES FROM recover_broken_tables LIKE 'mt1_41_%' LIMIT 1"
@@ -1305,58 +1310,11 @@ def test_force_synchronous_settings(started_cluster):
     )
     select_thread.join()
 
-
-def test_recover_digest_mismatch(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
-
-    main_node.query(
-        "CREATE DATABASE recover_digest_mismatch ENGINE = Replicated('/clickhouse/databases/recover_digest_mismatch', 'shard1', 'replica1');"
+    main_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
+    dummy_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
+    snapshotting_node.query(
+        "DROP DATABASE test_force_synchronous_settings SYNC"
     )
-    dummy_node.query(
-        "CREATE DATABASE recover_digest_mismatch ENGINE = Replicated('/clickhouse/databases/recover_digest_mismatch', 'shard1', 'replica2');"
-    )
-
-    create_some_tables("recover_digest_mismatch")
-
-    main_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
-    dummy_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
-
-    ways_to_corrupt_metadata = [
-        "mv /var/lib/clickhouse/metadata/recover_digest_mismatch/t1.sql /var/lib/clickhouse/metadata/recover_digest_mismatch/m1.sql",
-        "sed --follow-symlinks -i 's/Int32/String/' /var/lib/clickhouse/metadata/recover_digest_mismatch/mv1.sql",
-        "rm -f /var/lib/clickhouse/metadata/recover_digest_mismatch/d1.sql",
-        "rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/",  # Will trigger "Directory already exists"
-        "rm -rf /var/lib/clickhouse/store",
-    ]
-
-    for command in ways_to_corrupt_metadata:
-        print(f"Corrupting data using `{command}`")
-        need_remove_is_active_node = "rm -rf" in command
-        dummy_node.stop_clickhouse(kill=not need_remove_is_active_node)
-        dummy_node.exec_in_container(["bash", "-c", command])
-
-        query = (
-            "SELECT name, uuid, create_table_query FROM system.tables WHERE database='recover_digest_mismatch' AND name NOT LIKE '.inner_id.%' "
-            "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"
-        )
-        expected = main_node.query(query)
-
-        if need_remove_is_active_node:
-            # NOTE Otherwise it fails to recreate ReplicatedMergeTree table due to "Replica already exists"
-            main_node.query(
-                "SYSTEM DROP REPLICA '2' FROM DATABASE recover_digest_mismatch"
-            )
-
-        # There is a race condition between deleting active node and creating it on server startup
-        # So we start a server only after we deleted all table replicas from the Keeper
-        dummy_node.start_clickhouse()
-        assert_eq_with_retry(dummy_node, query, expected)
-
-    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
-
-    print("Everything Okay")
 
 
 def test_replicated_table_structure_alter(started_cluster):
@@ -1394,8 +1352,24 @@ def test_replicated_table_structure_alter(started_cluster):
     )
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
 
-    command = "rm -f /var/lib/clickhouse/metadata/table_structure/mem.sql"
-    competing_node.exec_in_container(["bash", "-c", command])
+    metadata_path = competing_node.query(
+        f"SELECT metadata_path FROM system.tables WHERE database='table_structure' AND name='mem'"
+    ).strip()
+    db_disk_name = get_database_disk_name(competing_node)
+    competing_node.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "-C",
+            "/etc/clickhouse-server/config.xml",
+            "--disk",
+            f"{db_disk_name}",
+            "--save-logs",
+            "--query",
+            f"remove {metadata_path}",
+        ],
+        user="root",
+    )
     competing_node.restart_clickhouse(kill=True)
 
     dummy_node.query("ATTACH DATABASE table_structure")
@@ -1479,13 +1453,16 @@ def test_table_metadata_corruption(started_cluster):
     main_node.query("SYSTEM SYNC DATABASE REPLICA table_metadata_corruption")
     dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_metadata_corruption")
 
+    metadata_path = dummy_node.query(
+        f"SELECT metadata_path FROM system.tables WHERE database='table_metadata_corruption' AND name='rmt1'"
+    ).strip()
     # Server should handle this by throwing an exception during table loading, which should lead to server shutdown
-    corrupt = "sed --follow-symlinks -i 's/ReplicatedMergeTree/CorruptedMergeTree/' /var/lib/clickhouse/metadata/table_metadata_corruption/rmt1.sql"
 
-    print(f"Corrupting metadata using `{corrupt}`")
+    print(f"Corrupting metadata {metadata_path}")
     dummy_node.stop_clickhouse(kill=True)
-    dummy_node.exec_in_container(["bash", "-c", corrupt])
-
+    replace_text_in_metadata(
+        dummy_node, metadata_path, "ReplicatedMergeTree", "CorruptedMergeTree"
+    )
     query = (
         "SELECT name, uuid, create_table_query FROM system.tables WHERE database='table_metadata_corruption' AND name NOT LIKE '.inner_id.%' "
         "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"
@@ -1494,11 +1471,13 @@ def test_table_metadata_corruption(started_cluster):
 
     # We expect clickhouse server to shutdown without LOGICAL_ERRORs or deadlocks
     dummy_node.start_clickhouse(expected_to_fail=True)
+
     assert not dummy_node.contains_in_log("LOGICAL_ERROR")
 
-    fix_corrupt = "sed --follow-symlinks -i 's/CorruptedMergeTree/ReplicatedMergeTree/' /var/lib/clickhouse/metadata/table_metadata_corruption/rmt1.sql"
-    print(f"Fix corrupted metadata using `{fix_corrupt}`")
-    dummy_node.exec_in_container(["bash", "-c", fix_corrupt])
+    print(f"Fix corrupted metadata")
+    replace_text_in_metadata(
+        dummy_node, metadata_path, "CorruptedMergeTree", "ReplicatedMergeTree"
+    )
 
     dummy_node.start_clickhouse()
     assert_eq_with_retry(dummy_node, query, expected)
@@ -1595,3 +1574,22 @@ def test_detach_attach_table(started_cluster):
     assert (
         main_node.query("SELECT * FROM detach_attach_db.detach_attach_table;") == "1\n"
     )
+
+
+def test_alter_rename(started_cluster):
+    settings = {
+        "distributed_ddl_output_mode": "none",
+        "alter_sync": 0,
+    }
+    res = main_node.query(
+        """
+        DROP DATABASE IF EXISTS bug SYNC;
+        CREATE DATABASE bug ENGINE = Replicated('/clickhouse/databases/bug');
+        CREATE TABLE bug.table (`date` DateTime, `id` String) ENGINE = ReplicatedReplacingMergeTree(date) ORDER BY id SETTINGS deduplicate_merge_projection_mode = 'drop';
+        ALTER TABLE bug.table ADD PROJECTION max_date (SELECT max(date));
+        RENAME TABLE bug.table TO bug.table2;
+        SELECT value from system.zookeeper WHERE path = '/clickhouse/databases/bug/metadata';
+        """,
+        settings=settings,
+    )
+    assert "PROJECTION" in res

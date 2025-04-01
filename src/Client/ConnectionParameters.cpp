@@ -70,6 +70,8 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 {
     security = enableSecureConnection(config, host_) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
 
+    bind_host = config.getString("bind_host", "");
+
     /// changed the default value to "default" to fix the issue when the user in the prompt is blank
     user = config.getString("user", "default");
 

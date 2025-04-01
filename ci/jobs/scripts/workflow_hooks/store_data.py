@@ -1,14 +1,6 @@
-import sys
-
-from praktika.info import Info
-from praktika.utils import Shell
-
-sys.path.append("./tests/ci")
-from digest_helper import DockerDigester
-
-# TODO: script ensures seamless migration to praktika
-#  it stores docker digests in old format for legacy ci jobs, as a praktika pipeline pre-hook
-#  to be removed once migrated
+from ci.jobs.scripts.clickhouse_version import CHVersion
+from ci.praktika.info import Info
+from ci.praktika.utils import Shell
 
 if __name__ == "__main__":
     info = Info()
@@ -26,3 +18,18 @@ if __name__ == "__main__":
     if changed_files_str:
         changed_files = changed_files_str.split("\n")
         info.store_custom_data("changed_files", changed_files)
+
+    if info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
+        # store previous commits for perf tests
+        raw = Shell.get_output(
+            f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={info.git_branch}&per_page=30' -q '.[].sha' | head -n30",
+            verbose=True,
+        )
+        commits = raw.splitlines()
+
+        for sha in commits:
+            if sha == info.sha:
+                break
+            commits.pop(0)
+
+        info.store_custom_data("previous_commits_sha", commits)

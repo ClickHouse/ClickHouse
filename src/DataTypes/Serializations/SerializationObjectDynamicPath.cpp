@@ -136,6 +136,7 @@ void SerializationObjectDynamicPath::serializeBinaryBulkWithMultipleStreams(cons
 
 void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & result_column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -151,7 +152,7 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, dynamic_path_state->nested_state, cache);
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, rows_offset, limit, settings, dynamic_path_state->nested_state, cache);
         settings.path.pop_back();
     }
     /// Otherwise, read the whole shared data column and extract requested path from it.
@@ -174,7 +175,7 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
         if (result_column->empty())
             dynamic_path_state->shared_data = DataTypeObject::getTypeOfSharedData()->createColumn();
         size_t prev_size = result_column->size();
-        shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_path_state->shared_data, limit, settings, dynamic_path_state->nested_state, cache);
+        shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_path_state->shared_data, rows_offset, limit, settings, dynamic_path_state->nested_state, cache);
         /// If we need to read a subcolumn from Dynamic column, create an empty Dynamic column, fill it and extract subcolumn.
         MutableColumnPtr dynamic_column = path_subcolumn.empty() ? result_column->assumeMutable() : ColumnDynamic::create(max_dynamic_types)->getPtr();
         /// Check if we don't have any paths in shared data in current range.

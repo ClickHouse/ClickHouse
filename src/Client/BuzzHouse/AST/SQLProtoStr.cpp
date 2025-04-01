@@ -12,7 +12,7 @@
 namespace BuzzHouse
 {
 
-static constexpr char hex_digits[] = "0123456789ABCDEF";
+static constexpr char hexDigits[] = "0123456789ABCDEF";
 static constexpr char digits[] = "0123456789";
 
 CONV_FN(Expr, expr);
@@ -89,8 +89,9 @@ CONV_FN(Function, func)
 
 CONV_FN(Cluster, clust)
 {
-    ret += " ON CLUSTER ";
+    ret += " ON CLUSTER '";
     ret += clust.cluster();
+    ret += "'";
 }
 
 CONV_FN(Window, win)
@@ -166,8 +167,8 @@ static void convertToSQLString(String & ret, const String & s)
                     const uint8_t & x = static_cast<uint8_t>(c);
 
                     ret += "\\x";
-                    ret += hex_digits[(x & 0xF0) >> 4];
-                    ret += hex_digits[x & 0x0F];
+                    ret += hexDigits[(x & 0xF0) >> 4];
+                    ret += hexDigits[x & 0x0F];
                 }
             }
         }
@@ -413,8 +414,8 @@ CONV_FN(LiteralValue, lit_val)
             for (size_t i = 0; i < s.length(); i++)
             {
                 const uint8_t & x = static_cast<uint8_t>(s[i]);
-                ret += hex_digits[(x & 0xF0) >> 4];
-                ret += hex_digits[x & 0x0F];
+                ret += hexDigits[(x & 0xF0) >> 4];
+                ret += hexDigits[x & 0x0F];
             }
             ret += '\'';
         }
@@ -764,6 +765,55 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
         case BottomTypeNameType::kIPv6:
             ret += "IPv6";
             break;
+        case BottomTypeNameType::kDecimal: {
+            const Decimal & dec = btn.decimal();
+
+            ret += "Decimal";
+            if (dec.has_decimaln())
+            {
+                uint32_t precision = 0;
+                const DecimalN & dn = dec.decimaln();
+
+                switch (dn.precision())
+                {
+                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
+                        precision = 9;
+                        break;
+                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
+                        precision = 18;
+                        break;
+                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
+                        precision = 38;
+                        break;
+                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
+                        precision = 76;
+                        break;
+                }
+                ret += DecimalN_DecimalPrecision_Name(dn.precision()).substr(1);
+                ret += "(";
+                ret += std::to_string(dn.scale() % (precision + 1));
+                ret += ")";
+            }
+            else if (dec.has_decimal_simple())
+            {
+                const DecimalSimple & ds = dec.decimal_simple();
+
+                if (ds.has_precision())
+                {
+                    const uint32_t precision = std::max<uint32_t>(1, ds.precision() % 77);
+
+                    ret += "(";
+                    ret += std::to_string(precision);
+                    if (ds.has_scale())
+                    {
+                        ret += ",";
+                        ret += std::to_string(ds.scale() % (precision + 1));
+                    }
+                    ret += ")";
+                }
+            }
+        }
+        break;
         default: {
             if (lcard)
             {
@@ -773,55 +823,6 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             {
                 switch (btn.bottom_one_of_case())
                 {
-                    case BottomTypeNameType::kDecimal: {
-                        const Decimal & dec = btn.decimal();
-
-                        ret += "Decimal";
-                        if (dec.has_decimaln())
-                        {
-                            uint32_t precision = 0;
-                            const DecimalN & dn = dec.decimaln();
-
-                            switch (dn.precision())
-                            {
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
-                                    precision = 9;
-                                    break;
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
-                                    precision = 18;
-                                    break;
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
-                                    precision = 38;
-                                    break;
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
-                                    precision = 76;
-                                    break;
-                            }
-                            ret += DecimalN_DecimalPrecision_Name(dn.precision()).substr(1);
-                            ret += "(";
-                            ret += std::to_string(dn.scale() % (precision + 1));
-                            ret += ")";
-                        }
-                        else if (dec.has_decimal_simple())
-                        {
-                            const DecimalSimple & ds = dec.decimal_simple();
-
-                            if (ds.has_precision())
-                            {
-                                const uint32_t precision = std::max<uint32_t>(1, ds.precision() % 77);
-
-                                ret += "(";
-                                ret += std::to_string(precision);
-                                if (ds.has_scale())
-                                {
-                                    ret += ",";
-                                    ret += std::to_string(ds.scale() % (precision + 1));
-                                }
-                                ret += ")";
-                            }
-                        }
-                    }
-                    break;
                     case BottomTypeNameType::kJdef: {
                         const JSONDef & jdef = btn.jdef();
 
@@ -1103,20 +1104,26 @@ CONV_FN(ExprIn, ein)
         ret += "GLOBAL ";
     if (ein.not_())
         ret += "NOT ";
-    ret += "IN (";
-    if (ein.has_exprs())
+    ret += "IN ";
+    using InType = ExprIn::InOneofCase;
+    switch (ein.in_oneof_case())
     {
-        ExprListToString(ret, ein.exprs());
+        case InType::kSingleExpr:
+            ExprToString(ret, ein.single_expr());
+            break;
+        case InType::kExprs:
+            ret += "(";
+            ExprListToString(ret, ein.exprs());
+            ret += ")";
+            break;
+        case InType::kSel:
+            ret += "(";
+            ExplainQueryToString(ret, ein.sel());
+            ret += ")";
+            break;
+        default:
+            ret += "1";
     }
-    else if (ein.has_sel())
-    {
-        ExplainQueryToString(ret, ein.sel());
-    }
-    else
-    {
-        ret += "1";
-    }
-    ret += ")";
 }
 
 CONV_FN(ExprAny, eany)
@@ -1788,6 +1795,22 @@ CONV_FN(GenerateSeriesFunc, gsf)
     ret += ")";
 }
 
+static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & est)
+{
+    ret += "'";
+    if (est.has_database())
+    {
+        DatabaseToString(ret, est.database());
+    }
+    else
+    {
+        ret += "default";
+    }
+    ret += "', '";
+    TableToString(ret, est.table());
+    ret += "'";
+}
+
 CONV_FN(TableFunction, tf);
 
 static void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
@@ -1798,20 +1821,7 @@ static void TableOrFunctionToString(String & ret, const bool tudf, const TableOr
         case TableOrFunctionType::kEst:
             if (tudf)
             {
-                const ExprSchemaTable & est = tof.est();
-
-                ret += "'";
-                if (est.has_database())
-                {
-                    DatabaseToString(ret, est.database());
-                }
-                else
-                {
-                    ret += "default";
-                }
-                ret += "', '";
-                TableToString(ret, est.table());
-                ret += "'";
+                FlatExprSchemaTableToString(ret, tof.est());
             }
             else
             {
@@ -1988,11 +1998,8 @@ CONV_FN(ClusterFunc, cluster)
 
 CONV_FN(MergeTreeIndexFunc, mfunc)
 {
-    ret += "mergeTreeIndex('";
-    ret += mfunc.mdatabase();
-    ret += "', '";
-    ret += mfunc.mtable();
-    ret += "'";
+    ret += "mergeTreeIndex(";
+    FlatExprSchemaTableToString(ret, mfunc.est());
     if (mfunc.has_with_marks())
     {
         ret += ", with_marks = ";
@@ -2003,9 +2010,8 @@ CONV_FN(MergeTreeIndexFunc, mfunc)
 
 CONV_FN(GenerateRandomFunc, grfunc)
 {
-    ret += "generateRandom('";
-    ret += grfunc.structure();
-    ret += "'";
+    ret += "generateRandom(";
+    ExprToString(ret, grfunc.structure());
     if (grfunc.has_random_seed())
     {
         ret += ", ";
@@ -2107,7 +2113,7 @@ CONV_FN(JoinedTableOrFunction, jtf)
         ret += " ";
         TableToString(ret, jtf.table_alias());
     }
-    if (tof.has_est() && jtf.final())
+    if (jtf.final())
     {
         ret += " FINAL";
     }
@@ -3072,10 +3078,10 @@ CONV_FN(Insert, insert)
     {
         ExprSchemaTableToString(ret, insert.est());
     }
-    else if (insert.has_tfunction())
+    else if (insert.has_tfunc())
     {
         ret += "FUNCTION ";
-        TableFunctionToString(ret, insert.tfunction());
+        TableFunctionToString(ret, insert.tfunc());
     }
     if (insert.cols_size())
     {

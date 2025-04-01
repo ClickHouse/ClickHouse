@@ -15,6 +15,7 @@ bool ask(std::string question, ReadBuffer & in, WriteBuffer & out)
         writeText(question, out);
         out.next();
         readStringUntilNewlineInto(answer, in);
+        skipToNextLineOrEOF(in);
 
         if (answer.empty() || answer == "n" || answer == "N")
             return false;

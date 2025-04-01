@@ -68,7 +68,6 @@ def get_run_command(
     image: DockerImage,
 ) -> str:
     additional_options = ["--hung-check"]
-    additional_options.append("--print-time")
 
     additional_options_str = (
         '-e ADDITIONAL_OPTIONS="' + " ".join(additional_options) + '"'

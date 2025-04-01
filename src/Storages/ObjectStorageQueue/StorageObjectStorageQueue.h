@@ -63,6 +63,9 @@ public:
 
     ObjectStorageQueueSettings getSettings() const;
 
+    /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
+    static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
+
 private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
@@ -96,6 +99,7 @@ private:
 
     std::atomic<bool> mv_attached = false;
     std::atomic<bool> shutdown_called = false;
+    std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
 
     LoggerPtr log;
@@ -109,7 +113,7 @@ private:
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
-    const ObjectStorageQueueTableMetadata & getTableMetadata() const { return files_metadata->getTableMetadata(); }
+    const ObjectStorageQueueTableMetadata & getTableMetadata() const;
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
     std::shared_ptr<ObjectStorageQueueSource> createSource(
@@ -134,7 +138,8 @@ private:
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-        const std::string & exception_message = {}) const;
+        const std::string & exception_message = {},
+        int error_code = 0) const;
 };
 
 }

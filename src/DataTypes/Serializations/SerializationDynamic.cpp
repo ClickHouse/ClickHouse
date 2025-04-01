@@ -427,6 +427,7 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreamsAndCountTotalSi
 
 void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
     DB::ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -452,7 +453,7 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of internal columns of Dynamic. Expected: {}, Got: {}", structure_state->variant_type->getName(), variant_info.variant_type->getName());
 
     settings.path.push_back(Substream::DynamicData);
-    dynamic_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(column_dynamic.getVariantColumnPtr(), limit, settings, dynamic_state->variant_state, cache);
+    dynamic_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(column_dynamic.getVariantColumnPtr(), rows_offset, limit, settings, dynamic_state->variant_state, cache);
     settings.path.pop_back();
 
     column = std::move(mutable_column);
@@ -636,7 +637,6 @@ static void serializeTextImpl(
     const IColumn & column,
     size_t row_num,
     WriteBuffer & ostr,
-    const FormatSettings & settings,
     NestedSerialize nested_serialize)
 {
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
@@ -649,7 +649,7 @@ static void serializeTextImpl(
         auto variant_type = decodeDataType(buf);
         auto tmp_variant_column = variant_type->createColumn();
         auto variant_serialization = variant_type->getDefaultSerialization();
-        variant_serialization->deserializeBinary(*tmp_variant_column, buf, settings);
+        variant_serialization->deserializeBinary(*tmp_variant_column, buf, FormatSettings{});
         nested_serialize(*variant_serialization, *tmp_variant_column, 0, ostr);
     }
     /// Otherwise just use serialization for Variant.
@@ -666,7 +666,7 @@ void SerializationDynamic::serializeTextCSV(const IColumn & column, size_t row_n
         serialization.serializeTextCSV(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, settings, nested_serialize);
+    serializeTextImpl(column, row_num, ostr, nested_serialize);
 }
 
 void SerializationDynamic::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -704,7 +704,7 @@ void SerializationDynamic::serializeTextEscaped(const IColumn & column, size_t r
         serialization.serializeTextEscaped(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, settings, nested_serialize);
+    serializeTextImpl(column, row_num, ostr, nested_serialize);
 }
 
 void SerializationDynamic::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -742,7 +742,7 @@ void SerializationDynamic::serializeTextQuoted(const IColumn & column, size_t ro
         serialization.serializeTextQuoted(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, settings, nested_serialize);
+    serializeTextImpl(column, row_num, ostr, nested_serialize);
 }
 
 void SerializationDynamic::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -780,7 +780,7 @@ void SerializationDynamic::serializeTextJSON(const IColumn & column, size_t row_
         serialization.serializeTextJSON(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, settings, nested_serialize);
+    serializeTextImpl(column, row_num, ostr, nested_serialize);
 }
 
 void SerializationDynamic::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
@@ -790,7 +790,7 @@ void SerializationDynamic::serializeTextJSONPretty(const IColumn & column, size_
         serialization.serializeTextJSONPretty(col, row, buf, settings, indent);
     };
 
-    serializeTextImpl(column, row_num, ostr, settings, nested_serialize);
+    serializeTextImpl(column, row_num, ostr, nested_serialize);
 }
 
 void SerializationDynamic::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -828,7 +828,7 @@ void SerializationDynamic::serializeTextRaw(const IColumn & column, size_t row_n
         serialization.serializeTextRaw(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, settings, nested_serialize);
+    serializeTextImpl(column, row_num, ostr, nested_serialize);
 }
 
 void SerializationDynamic::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -866,7 +866,7 @@ void SerializationDynamic::serializeText(const IColumn & column, size_t row_num,
         serialization.serializeText(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, settings, nested_serialize);
+    serializeTextImpl(column, row_num, ostr, nested_serialize);
 }
 
 void SerializationDynamic::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -904,7 +904,7 @@ void SerializationDynamic::serializeTextXML(const IColumn & column, size_t row_n
         serialization.serializeTextXML(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, settings, nested_serialize);
+    serializeTextImpl(column, row_num, ostr, nested_serialize);
 }
 
 }

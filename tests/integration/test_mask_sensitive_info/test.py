@@ -16,6 +16,8 @@ node = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
     with_azurite=True,
+    # Disable `with_remote_database_disk` as `test_create_table` might access minIO and expect `DNS_ERROR`. However, minIO might be enabled when `with_remote_database_disk` is enabled;
+    with_remote_database_disk=False,
 )
 base_search_query = "SELECT COUNT() FROM system.query_log WHERE query LIKE "
 
@@ -236,6 +238,7 @@ def test_create_table():
     masked_azure_conn_string = re.sub(
         account_key_pattern, "AccountKey=[HIDDEN]\\1", azure_conn_string
     )
+    masked_sas_conn_string = 'BlobEndpoint=https://my-endpoint/;SharedAccessSignature=[HIDDEN]'
     azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
     azure_account_name = "devstoreaccount1"
     azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
@@ -278,6 +281,14 @@ def test_create_table():
         f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_2.csv', '{azure_account_name}', '{azure_account_key}')",
         f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_3.csv', '{azure_account_name}', '{azure_account_key}', 'CSV')",
         f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_4.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none')",
+        f"AzureQueue('{azure_conn_string}', 'cont', '*', 'CSV') SETTINGS mode = 'unordered'",
+        f"AzureQueue('{azure_conn_string}', 'cont', '*', 'CSV', 'none') SETTINGS mode = 'unordered'",
+        f"AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '{azure_account_key}', 'CSV') SETTINGS mode = 'unordered'",
+        f"AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none') SETTINGS mode = 'unordered'",
+        (
+            f"AzureBlobStorage('BlobEndpoint=https://my-endpoint/;SharedAccessSignature=sp=r&st=2025-09-29T14:58:11Z&se=2025-09-29T00:00:00Z&spr=https&sv=2022-11-02&sr=c&sig=SECRET%SECRET%SECRET%SECRET', 'exampledatasets', 'example.csv')",
+            "STD_EXCEPTION",
+        )
     ]
 
     def make_test_case(i):
@@ -349,6 +360,11 @@ def test_create_table():
             f"CREATE TABLE table25 (`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_2.csv', '{azure_account_name}', '[HIDDEN]')",
             f"CREATE TABLE table26 (`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_3.csv', '{azure_account_name}', '[HIDDEN]', 'CSV')",
             f"CREATE TABLE table27 (`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_4.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none')",
+            f"CREATE TABLE table28 (`x` int) ENGINE = AzureQueue('{masked_azure_conn_string}', 'cont', '*', 'CSV') SETTINGS mode = 'unordered'",
+            f"CREATE TABLE table29 (`x` int) ENGINE = AzureQueue('{masked_azure_conn_string}', 'cont', '*', 'CSV', 'none') SETTINGS mode = 'unordered'",
+            f"CREATE TABLE table30 (`x` int) ENGINE = AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '[HIDDEN]', 'CSV') SETTINGS mode = 'unordered'",
+            f"CREATE TABLE table31 (`x` int) ENGINE = AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none') SETTINGS mode = 'unordered'",
+            f"CREATE TABLE table32 (`x` int) ENGINE = AzureBlobStorage('{masked_sas_conn_string}', 'exampledatasets', 'example.csv')",
         ],
         must_not_contain=[password],
     )

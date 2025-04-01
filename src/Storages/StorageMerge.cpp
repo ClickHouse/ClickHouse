@@ -637,9 +637,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             if (storage_metadata_snapshot->getColumns().empty())
             {
-                /// (Assuming that view has empty list of columns iff it's parametrized.)
+                /// (Assuming that view has empty list of columns iff it's parameterized.)
                 if (storage->isView() && storage->as<StorageView>() && storage->as<StorageView>()->isParameterizedView())
-                    throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parametrized view can't be queried through a Merge table.");
+                    throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parameterized view can't be queried through a Merge table.");
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Table has no columns.");
             }
@@ -1656,14 +1656,14 @@ bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, 
     return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(nullptr, ctx); }) == nullptr;
 }
 
-std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const
+std::optional<UInt64> StorageMerge::totalRows(ContextPtr query_context) const
 {
-    return totalRowsOrBytes([&](const auto & table) { return table->totalRows(settings); });
+    return totalRowsOrBytes([&](const auto & table) { return table->totalRows(query_context); });
 }
 
-std::optional<UInt64> StorageMerge::totalBytes(const Settings & settings) const
+std::optional<UInt64> StorageMerge::totalBytes(ContextPtr query_context) const
 {
-    return totalRowsOrBytes([&](const auto & table) { return table->totalBytes(settings); });
+    return totalRowsOrBytes([&](const auto & table) { return table->totalBytes(query_context); });
 }
 
 template <typename F>

@@ -14,6 +14,40 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
+static const std::unordered_map<OutFormat, InFormat> outIn{
+    {OutFormat::OUT_CSV, InFormat::IN_CSV},
+    {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
+    {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
+    {OutFormat::OUT_Values, InFormat::IN_Values},
+    {OutFormat::OUT_JSON, InFormat::IN_JSON},
+    {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
+    {OutFormat::OUT_JSONColumnsWithMetadata, InFormat::IN_JSONColumnsWithMetadata},
+    {OutFormat::OUT_JSONCompact, InFormat::IN_JSONCompact},
+    {OutFormat::OUT_JSONCompactColumns, InFormat::IN_JSONCompactColumns},
+    {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
+    {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
+    {OutFormat::OUT_JSONCompactEachRow, InFormat::IN_JSONCompactEachRow},
+    {OutFormat::OUT_JSONCompactEachRowWithNames, InFormat::IN_JSONCompactEachRowWithNames},
+    {OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes, InFormat::IN_JSONCompactEachRowWithNamesAndTypes},
+    {OutFormat::OUT_JSONCompactStringsEachRow, InFormat::IN_JSONCompactStringsEachRow},
+    {OutFormat::OUT_JSONCompactStringsEachRowWithNames, InFormat::IN_JSONCompactStringsEachRowWithNames},
+    {OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes, InFormat::IN_JSONCompactStringsEachRowWithNamesAndTypes},
+    {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
+    {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
+    {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
+    {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
+    {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
+    {OutFormat::OUT_Avro, InFormat::IN_Avro},
+    {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
+    {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
+    {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream},
+    {OutFormat::OUT_ORC, InFormat::IN_ORC},
+    {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
+    {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
+    {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
+    {OutFormat::OUT_Native, InFormat::IN_Native},
+    {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack}};
+
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 /// or
@@ -94,9 +128,33 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
     }
-    ts->set_format(OutFormat::OUT_CSV);
+    ts->set_format(sq1.explain().inner_query().select().format());
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+}
+
+void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, const uint32_t ncols, SelectStatementCore * ssc)
+{
+    const uint32_t noption = rg.nextSmallNumber();
+
+    if (noption < 3)
+    {
+        gen.setAllowNotDetermistic(false);
+        gen.enforceFinal(true);
+        gen.setAllowEngineUDF(false);
+        if (noption == 1)
+        {
+            gen.generateLimit(rg, ssc->has_orderby(), ncols, ssc->mutable_limit());
+        }
+        else
+        {
+            gen.generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
+        }
+        gen.setAllowNotDetermistic(true);
+        gen.enforceFinal(false);
+        gen.setAllowEngineUDF(true);
+        gen.levels.clear();
+    }
 }
 
 /// Dump and read table oracle
@@ -108,15 +166,12 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
     SelectStatementCore * sel = ts->mutable_sel()->mutable_select_core();
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
     OrderByList * obs = sel->mutable_orderby()->mutable_olist();
-    ExprSchemaTable * est = jtf->mutable_tof()->mutable_est();
 
-    if (t.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-    }
-    est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    t.setName(jtf->mutable_tof()->mutable_est(), false);
     jtf->set_final(t.supportsFinal());
+
     gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    const uint32_t ncols = static_cast<uint32_t>(gen.entries.size());
     for (const auto & entry : gen.entries)
     {
         ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
@@ -136,44 +191,12 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
         first = false;
     }
     gen.entries.clear();
-    ts->set_format(OutFormat::OUT_CSV);
+
+    addLimitOrOffset(rg, gen, ncols, sel);
+    ts->set_format(rg.pickRandomly(outIn));
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
-
-static const std::unordered_map<OutFormat, InFormat> out_in{
-    {OutFormat::OUT_CSV, InFormat::IN_CSV},
-    {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
-    {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
-    {OutFormat::OUT_Values, InFormat::IN_Values},
-    {OutFormat::OUT_JSON, InFormat::IN_JSON},
-    {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
-    {OutFormat::OUT_JSONColumnsWithMetadata, InFormat::IN_JSONColumnsWithMetadata},
-    {OutFormat::OUT_JSONCompact, InFormat::IN_JSONCompact},
-    {OutFormat::OUT_JSONCompactColumns, InFormat::IN_JSONCompactColumns},
-    {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
-    {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
-    {OutFormat::OUT_JSONCompactEachRow, InFormat::IN_JSONCompactEachRow},
-    {OutFormat::OUT_JSONCompactEachRowWithNames, InFormat::IN_JSONCompactEachRowWithNames},
-    {OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes, InFormat::IN_JSONCompactEachRowWithNamesAndTypes},
-    {OutFormat::OUT_JSONCompactStringsEachRow, InFormat::IN_JSONCompactStringsEachRow},
-    {OutFormat::OUT_JSONCompactStringsEachRowWithNames, InFormat::IN_JSONCompactStringsEachRowWithNames},
-    {OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes, InFormat::IN_JSONCompactStringsEachRowWithNamesAndTypes},
-    {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
-    {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
-    {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
-    {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
-    {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
-    {OutFormat::OUT_Avro, InFormat::IN_Avro},
-    {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
-    {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
-    {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream},
-    {OutFormat::OUT_ORC, InFormat::IN_ORC},
-    {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
-    {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
-    {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
-    {OutFormat::OUT_Native, InFormat::IN_Native},
-    {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack}};
 
 void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2)
 {
@@ -181,10 +204,10 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     bool first = true;
     std::error_code ec;
     Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
-    FileFunc * ff = ins->mutable_tfunction()->mutable_file();
+    FileFunc * ff = ins->mutable_tfunc()->mutable_file();
     SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
-    OutFormat outf = rg.pickRandomly(out_in);
+    OutFormat outf = rg.pickRandomly(outIn);
 
     /// Remove the file if exists
     if (!std::filesystem::remove(nfile, ec) && ec)
@@ -224,26 +247,14 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
 
     /// Set the table on select
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-    ExprSchemaTable * est = jtf->mutable_tof()->mutable_est();
 
-    if (t.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-    }
-    est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    t.setName(jtf->mutable_tof()->mutable_est(), false);
     jtf->set_final(t.supportsFinal());
 }
 
 void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
 {
-    Truncate * trunc = sq3.mutable_explain()->mutable_inner_query()->mutable_trunc();
-    ExprSchemaTable * est = trunc->mutable_est();
-
-    if (t.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-    }
-    est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    t.setName(sq3.mutable_explain()->mutable_inner_query()->mutable_trunc()->mutable_est(), false);
 }
 
 void QueryOracle::generateImportQuery(
@@ -251,15 +262,10 @@ void QueryOracle::generateImportQuery(
 {
     Insert * ins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
     InsertFromFile * iff = ins->mutable_insert_file();
-    const FileFunc & ff = sq2.explain().inner_query().insert().tfunction().file();
-    ExprSchemaTable * est = ins->mutable_est();
+    const FileFunc & ff = sq2.explain().inner_query().insert().tfunc().file();
     const OutFormat & outf = ff.outformat();
 
-    if (t.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-    }
-    est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    t.setName(ins->mutable_est(), false);
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
@@ -267,7 +273,7 @@ void QueryOracle::generateImportQuery(
     }
     gen.entries.clear();
     iff->set_path(ff.path());
-    iff->set_format(out_in.at(outf));
+    iff->set_format(outIn.at(outf));
     if (ff.has_fcomp())
     {
         iff->set_fcomp(ff.fcomp());
@@ -381,14 +387,20 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     else
     {
         ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
-        FileFunc * ff = ins->mutable_tfunction()->mutable_file();
+        FileFunc * ff = ins->mutable_tfunc()->mutable_file();
+        OutFormat outf = rg.pickRandomly(outIn);
 
         if (!std::filesystem::remove(qfile, ec) && ec)
         {
             LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         }
         ff->set_path(qfile.generic_string());
-        ff->set_outformat(OutFormat::OUT_CSV);
+        if (peer_query == PeerQuery::ClickHouseOnly && outf == OutFormat::OUT_Parquet)
+        {
+            /// ClickHouse prints server version on Parquet file, making checksum incompatible between versions
+            outf = OutFormat::OUT_CSV;
+        }
+        ff->set_outformat(outf);
         sel = ins->mutable_select();
     }
 
@@ -448,6 +460,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             ->mutable_select()
             ->set_allocated_sel(osel);
         nsel->mutable_orderby()->set_oall(true);
+        addLimitOrOffset(rg, gen, ncols, nsel);
     }
     else if (measure_performance)
     {
@@ -631,7 +644,7 @@ void QueryOracle::replaceQueryWithTablePeers(
     {
         /// Use a different file for the peer database
         std::error_code ec;
-        FileFunc & ff = const_cast<FileFunc &>(sq2.explain().inner_query().insert().tfunction().file());
+        FileFunc & ff = const_cast<FileFunc &>(sq2.explain().inner_query().insert().tfunc().file());
 
         if (!std::filesystem::remove(qfile_peer, ec) && ec)
         {
@@ -646,15 +659,11 @@ void QueryOracle::replaceQueryWithTablePeers(
         Insert * ins = next.mutable_explain()->mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
 
-        // Then insert the data
-        gen.setTableRemote(rg, false, t, ins->mutable_tfunction());
+        /// Then insert the data
+        gen.setTableRemote(rg, false, t, ins->mutable_tfunc());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-        ExprSchemaTable * est = jtf->mutable_tof()->mutable_est();
-        if (t.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-        }
-        est->mutable_table()->set_table("t" + std::to_string(t.tname));
+
+        t.setName(jtf->mutable_tof()->mutable_est(), false);
         jtf->set_final(t.supportsFinal());
         gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)

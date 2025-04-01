@@ -78,7 +78,7 @@ size_t getMaxBytesBeforeExternalSort(size_t max_bytes_before_external_sort, doub
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
 
         auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value() && !std::isnan(ratio))
+        if (available_system_memory.has_value())
         {
             size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
             if (threshold)
@@ -462,6 +462,15 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
+        if (need_finish_sorting)
+            finishSorting(pipeline, prefix_description, result_description, limit);
+
+        return;
+    }
+
+    if (type == Type::PartitionedFinishSorting)
+    {
+        bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 

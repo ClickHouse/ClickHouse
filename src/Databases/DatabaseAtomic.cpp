@@ -192,6 +192,7 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
         db_disk->replaceFile(table_metadata_path, table_metadata_path_drop); /// Mark table as dropped
         DatabaseOrdinary::detachTableUnlocked(table_name);  /// Should never throw
         table_name_to_path.erase(table_name);
+        snapshot_detached_tables.erase(table_name);
     }
 
     if (table->storesDataOnDisk())
@@ -691,6 +692,11 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             auto table_id = table.second->getStorageID();
             table_id.database_name = database_name;
             table.second->renameInMemory(table_id);
+        }
+
+        for (auto & [detached_table_name, snapshot] : snapshot_detached_tables)
+        {
+            snapshot.database = database_name;
         }
 
         path_to_metadata_symlink = fs::path("metadata") / new_name_escaped;

@@ -7,7 +7,11 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Object.h>
-#include <aws/glue/GlueClient.h>
+
+namespace Aws::Glue
+{
+    class GlueClient;
+}
 
 namespace DataLake
 {
@@ -22,7 +26,7 @@ public:
         const String & endpoint,
         DB::ContextPtr context_);
 
-    ~GlueCatalog() override = default;
+    ~GlueCatalog() override;
 
     bool empty() const override;
 

@@ -85,7 +85,7 @@ LAYOUT(FLAT())
 
 :::note
 When using the SQL console in [ClickHouse Cloud](https://clickhouse.com), you must specify a user (`default` or any other user with the role `default_role`) and password when creating a dictionary.
-:::note
+:::
 
 ```sql
 CREATE USER IF NOT EXISTS clickhouse_admin

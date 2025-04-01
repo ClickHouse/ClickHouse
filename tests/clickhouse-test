@@ -1738,9 +1738,7 @@ class TestCase:
         return TestResult(self.name, TestStatus.OK, None, total_time, description)
 
     def print_test_time(self, test_time) -> str:
-        if self.args.print_time:
-            return f" {test_time:.2f} sec."
-        return ""
+        return f" {test_time:.2f} sec."
 
     def process_result(self, result: TestResult, messages):
         args = self.args
@@ -1851,6 +1849,10 @@ class TestCase:
                 + database
                 + "_1"
             )
+            for env_to_param in ["CLICKHOUSE_USER_FILES", "CLICKHOUSE_USER_FILES_UNIQUE"]:
+                value = os.environ.get(env_to_param, None)
+                if value:
+                    query_params += f" --param_{env_to_param}={value}"
 
         params = {
             "client": client + " --database=" + database + query_params,
@@ -2266,7 +2268,7 @@ class TestSuite:
                 try:
                     if filepath.endswith(".sql"):
                         for line in lines:
-                            if "{CLICKHOUSE_DATABASE" in line:
+                            if "{CLICKHOUSE_" in line:
                                 need_query_params = True
                 except UnicodeDecodeError:
                     pass
@@ -3571,9 +3573,6 @@ def parse_args():
     )
     parser.add_argument(
         "--client-option", nargs="+", help="Specify additional client argument"
-    )
-    parser.add_argument(
-        "--print-time", action="store_true", dest="print_time", help="Print test time"
     )
     parser.add_argument(
         "--check-zookeeper-session",

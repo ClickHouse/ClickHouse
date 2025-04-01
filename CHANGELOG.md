@@ -20,7 +20,7 @@
 * Skipping index cache is reverted. [#77447](https://github.com/ClickHouse/ClickHouse/pull/77447) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 
 #### New Feature
-* `JSON` data type is production-ready. See https://jsonbench.com/. `Dynamic` and `Varaint` data types are production-ready. [#77785](https://github.com/ClickHouse/ClickHouse/pull/77785) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `JSON` data type is production-ready. See https://jsonbench.com/. `Dynamic` and `Variant` data types are production-ready. [#77785](https://github.com/ClickHouse/ClickHouse/pull/77785) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Introduce the SSH protocol for clickhouse-server. Now, it is possible to connect to ClickHouse using any SSH client. This closes: [#74340](https://github.com/ClickHouse/ClickHouse/issues/74340). [#74989](https://github.com/ClickHouse/ClickHouse/pull/74989) ([George Gamezardashvili](https://github.com/Infjoker)).
 * Replace table functions with their -Cluster alternatives if parallel replicas are enabled. Fixes [#65024](https://github.com/ClickHouse/ClickHouse/issues/65024). [#70659](https://github.com/ClickHouse/ClickHouse/pull/70659) ([Konstantin Bogdanov](https://github.com/thevar1able)).
 * A new implementation of the Userspace Page Cache, which allows caching data in the in-process memory instead of relying on the OS page cache, which is useful when the data is stored on a remote virtual filesystem without backing with the local filesystem cache. [#70509](https://github.com/ClickHouse/ClickHouse/pull/70509) ([Michael Kolupaev](https://github.com/al13n321)).
