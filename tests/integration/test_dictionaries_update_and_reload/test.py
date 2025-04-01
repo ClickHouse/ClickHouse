@@ -1,5 +1,6 @@
 import os
 import time
+import uuid
 
 import pytest
 
@@ -93,9 +94,21 @@ def test_reload_while_loading(started_cluster):
     assert get_status("slow") == "NOT_LOADED"
     assert get_loading_duration("slow") == 0
 
-    # It's not possible to get a value from the dictionary within 1 second, so the following query fails by timeout.
+    query_id = str(uuid.uuid4())
+    # It's not possible to get a value from the dictionary within 2 second, so the following query fails by timeout.
     with pytest.raises(QueryTimeoutExceedException):
-        query("SELECT dictGetInt32('slow', 'a', toUInt64(5))", timeout=1)
+        query(
+            "SELECT dictGetInt32('slow', 'a', toUInt64(5))",
+            query_id=query_id,
+            timeout=2,
+        )
+
+    # The instance should receive the query
+    query("SYSTEM FLUSH LOGS")
+    assert instance.wait_for_log_line(
+        query_id,
+        look_behind_lines=1000,
+    )
 
     # The dictionary is now loading.
     assert get_status("slow") == "LOADING"
@@ -110,8 +123,15 @@ def test_reload_while_loading(started_cluster):
     assert duration >= prev_duration
 
     # SYSTEM RELOAD DICTIONARY should restart loading.
+    query_id = str(uuid.uuid4())
     with pytest.raises(QueryTimeoutExceedException):
-        query("SYSTEM RELOAD DICTIONARY 'slow'", timeout=1)
+        query("SYSTEM RELOAD DICTIONARY 'slow'", query_id=query_id, timeout=2)
+    # The instance should receive the query
+    query("SYSTEM FLUSH LOGS")
+    assert instance.wait_for_log_line(
+        query_id,
+        look_behind_lines=1000,
+    )
     assert get_status("slow") == "LOADING"
     prev_start_time, prev_duration = start_time, duration
     start_time, duration = get_loading_start_time("slow"), get_loading_duration("slow")
