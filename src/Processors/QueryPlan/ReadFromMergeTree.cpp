@@ -1686,9 +1686,6 @@ static void buildIndexes(
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse ignore_data_skipping_indices ('{}')", indices);
     }
 
-    if (!filter_dag.predicate)
-        return;
-
     auto all_updated_columns = mutations_snapshot->getAllUpdatedColumns();
 
     UsefulSkipIndexes skip_indexes;
@@ -1745,6 +1742,9 @@ static void buildIndexes(
         }
         else
         {
+            if (!filter_dag.predicate)
+                continue;
+
             condition = index_helper->createIndexCondition(filter_dag.predicate, context);
         }
 
