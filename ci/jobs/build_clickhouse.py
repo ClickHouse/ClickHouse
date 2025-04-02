@@ -161,8 +161,7 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
-        run_shell("Env vars", "env | sort")
-        run_shell("sccache stats", "env | sccache --show-stats")
+        run_shell("sccache stats", "sccache --show-stats")
         run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
         if build_type in BUILD_TYPE_TO_DEB_PACKAGE_TYPE:
             targets = "clickhouse-bundle"
@@ -180,7 +179,7 @@ def main():
                 with_log=True,
             )
         )
-        run_shell("sccache stats", "env | sccache --show-stats")
+        run_shell("sccache stats", "sccache --show-stats")
         run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
         run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
         Shell.check("pwd")
