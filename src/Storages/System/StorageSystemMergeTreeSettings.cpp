@@ -1,5 +1,6 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Core/SettingsTierType.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -8,7 +9,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
-#include "DataTypes/DataTypeArray.h"
 
 
 namespace DB
