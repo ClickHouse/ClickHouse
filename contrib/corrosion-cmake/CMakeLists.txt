@@ -84,7 +84,7 @@ else()
     set(RUSTCWRAPPER "")
 endif()
 
-set(RUSTFLAGS)
+# Note that RUSTFLAGS is defined in cpu_features.cmake
 if (CMAKE_OSX_DEPLOYMENT_TARGET)
     list(APPEND RUSTFLAGS "-C" "link-arg=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif()
