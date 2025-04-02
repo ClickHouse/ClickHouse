@@ -38,7 +38,6 @@ namespace Setting
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool use_iceberg_partition_pruning;
-    extern const SettingsBool hive_partitioning_style_writes_omit_partition_columns_from_files;
 }
 
 namespace ErrorCodes
