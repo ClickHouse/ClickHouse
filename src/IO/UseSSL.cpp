@@ -11,14 +11,20 @@ namespace DB
 UseSSL::UseSSL()
 {
 #if USE_SSL
-    Poco::Net::initializeSSL();
+    if (ref_count++ == 0)
+    {
+        OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, nullptr);
+    }
 #endif
 }
 
 UseSSL::~UseSSL()
 {
 #if USE_SSL
-    Poco::Net::uninitializeSSL();
+    // if (--ref_count == 0)
+    // {
+    //
+    // }
 #endif
 }
 }

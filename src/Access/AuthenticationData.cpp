@@ -1,30 +1,24 @@
 #include <Access/AccessControl.h>
 #include <Access/AuthenticationData.h>
+#include <Access/Common/AuthenticationType.h>
+#include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTPublicSSHKey.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <IO/WriteHelpers.h>
 
-#include <Common/Base64.h>
-#include <Poco/SHA1Engine.h>
 #include <boost/algorithm/hex.hpp>
+#include <Poco/SHA1Engine.h>
 
-#include <Access/Common/AuthenticationType.h>
 #include "config.h"
 
 #if USE_SSL
-#    include <openssl/crypto.h>
 #    include <openssl/rand.h>
 #    include <openssl/err.h>
-#    include <openssl/evp.h>
-#    include <openssl/hmac.h>
-#    include <openssl/sha.h>
-#    include <openssl/buffer.h>
-#    include <openssl/bio.h>
 #    include <Common/Crypto/X509Certificate.h>
 #    include <Common/OpenSSLHelpers.h>
 #endif
@@ -535,19 +529,21 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         if (query.type == AuthenticationType::SHA256_PASSWORD)
         {
 #if USE_SSL
-            ///random generator FIPS complaint
+            /// random generator FIPS compliant
             uint8_t key[32];
             if (RAND_bytes(key, sizeof(key)) != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
 
             String salt;
             salt.resize(sizeof(key) * 2);
+
             char * buf_pos = salt.data();
             for (uint8_t k : key)
             {
                 writeHexByteUppercase(k, buf_pos);
                 buf_pos += 2;
             }
+
             value.append(salt);
             auth_data.setSalt(salt);
 #else
@@ -559,22 +555,25 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         if (query.type == AuthenticationType::SCRAM_SHA256_PASSWORD)
         {
 #if USE_SSL
-            ///random generator FIPS complaint
+            /// random generator FIPS compliant
             uint8_t key[32];
             if (RAND_bytes(key, sizeof(key)) != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
 
             String salt;
             salt.resize(sizeof(key) * 2);
+
             char * buf_pos = salt.data();
             for (uint8_t k : key)
             {
                 writeHexByteUppercase(k, buf_pos);
                 buf_pos += 2;
             }
+
             auth_data.setSalt(salt);
             auto digest = Util::encodeScramSHA256(value, salt);
             auth_data.setPasswordHashBinary(digest, validate);
+
             return auth_data;
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

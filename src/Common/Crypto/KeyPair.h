@@ -31,17 +31,17 @@ public:
     explicit KeyPair(EVP_PKEY *key_) : key(key_) {}
     explicit operator EVP_PKEY *() const { return key; }
 
-    KeyPair & operator=(const KeyPair &other)
-    {
-        if (this == &other)
-            return *this;
-
-        key = EVP_PKEY_dup(other.key);
-        if (!key)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_PKEY_dup failed: {}", getOpenSSLErrors());
-
-        return *this;
-    }
+    // KeyPair & operator=(const KeyPair &other)
+    // {
+    //     if (this == &other)
+    //         return *this;
+    //
+    //     key = EVP_PKEY_dup(other.key);
+    //     if (!key)
+    //         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_PKEY_dup failed: {}", getOpenSSLErrors());
+    //
+    //     return *this;
+    // }
 
     static KeyPair fromFile(const std::string & path, const std::string & password = "")
     {
@@ -60,6 +60,7 @@ public:
                 nullptr,
                 password.empty() ? nullptr : const_cast<char *>(password.c_str())
             );
+
             BIO_free(file);
         }
 
@@ -72,6 +73,7 @@ public:
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
 
             key = PEM_read_bio_PUBKEY(file, nullptr, nullptr, nullptr);
+
             BIO_free(file);
         }
 

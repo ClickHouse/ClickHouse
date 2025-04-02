@@ -1,15 +1,14 @@
 #pragma once
 
-#include <atomic>
-#include <memory>
 #include <Server/IServer.h>
 #include <Server/TCPServerConnectionFactory.h>
 #include <Common/ProfileEvents.h>
 
 #include "config.h"
 
+#include <atomic>
+
 #if USE_SSL
-#    include <openssl/rsa.h>
 #    include <Common/Crypto/KeyPair.h>
 #endif
 

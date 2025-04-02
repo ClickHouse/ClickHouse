@@ -7,7 +7,6 @@
 #include "config.h"
 
 #if USE_SSL
-#    include <openssl/pem.h>
 #    include <Common/Crypto/KeyPair.h>
 #endif
 
