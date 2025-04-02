@@ -118,6 +118,10 @@ if [[ -n "$USE_OLD_ANALYZER" ]] && [[ "$USE_OLD_ANALYZER" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
 fi
 
+if [[ -n "$USE_DISTRIBUTED_PLAN" ]] && [[ "$USE_DISTRIBUTED_PLAN" -eq 1 ]]; then
+    ln -sf $SRC_PATH/users.d/distributed_plan.xml $DEST_SERVER_PATH/users.d/
+fi
+
 # FIXME DataPartsExchange may hang for http_send_timeout seconds
 # when nobody is going to read from the other side of socket (due to "Fetching of part was cancelled"),
 # but socket is owned by HTTPSessionPool, so it's not closed.
