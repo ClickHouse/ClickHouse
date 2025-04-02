@@ -12,7 +12,7 @@ bool cgroupsV2Enabled()
 #if defined(OS_LINUX)
     try
     {
-        /// This file exists iff the host has cgroups v2 enabled.
+        /// This file exists if the host has cgroups v2 enabled.
         auto controllers_file = default_cgroups_mount / "cgroup.controllers";
         if (!fs::exists(controllers_file))
             return false;
@@ -36,16 +36,22 @@ fs::path cgroupV2PathOfProcess()
     std::ifstream cgroup_name_file("/proc/self/cgroup");
     if (!cgroup_name_file.is_open())
         return {};
-    /// With cgroups v2, there will be a *single* line with prefix "0::/"
+    /// With cgroups v2, there will be a line with prefix "0::/"
     /// (see https://docs.kernel.org/admin-guide/cgroup-v2.html)
-    std::string cgroup;
-    std::getline(cgroup_name_file, cgroup);
-    static const std::string v2_prefix = "0::/";
-    if (!cgroup.starts_with(v2_prefix))
-        return {};
-    cgroup = cgroup.substr(v2_prefix.length());
+    /// Similar logic is used in Kubernetes
+    /// (see https://github.com/kubernetes/kubernetes/blob/83bb5d570580a3f477737fec5c24ba8fc3554264/vendor/github.com/opencontainers/cgroups/fs2/defaultpath.go#L68)
     /// Note: The 'root' cgroup can have an empty cgroup name, this is valid
-    return default_cgroups_mount / cgroup;
+    static const std::string v2_prefix = "0::/";
+    std::string cgroup;
+    while (std::getline(cgroup_name_file, cgroup))
+    {
+        if (cgroup.starts_with(v2_prefix))
+        {
+            cgroup = cgroup.substr(v2_prefix.length());
+            return default_cgroups_mount / cgroup;
+        }
+    }
+    return {};
 #else
     return {};
 #endif
