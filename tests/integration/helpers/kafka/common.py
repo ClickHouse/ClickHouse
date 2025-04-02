@@ -1,31 +1,5 @@
-import io
-import logging
-import os.path as p
-import random
-import socket
-import string
-import time
-from contextlib import contextmanager
-
-import avro.datafile
-import avro.io
-from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
-from google.protobuf.internal.encoder import _VarintBytes
-from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
-from kafka.admin import NewTopic
-from kafka.protocol.admin import DescribeGroupsRequest_v1
-from kafka.protocol.group import MemberAssignment
-
-from helpers.client import QueryRuntimeException
-from helpers.test_tools import TSV
-
-from . import kafka_pb2, social_pb2
-
-KAFKA_TOPIC_OLD = "old_t"
-KAFKA_CONSUMER_GROUP_OLD = "old_cg"
-KAFKA_TOPIC_NEW = "new_t"
-KAFKA_CONSUMER_GROUP_NEW = "new_cg"
-
+from helpers.kafka.common_direct import *
+from helpers.kafka.common_direct import _VarintBytes
 
 def get_kafka_producer(port, serializer, retries):
     errors = []
@@ -490,3 +464,8 @@ def describe_consumer_group(kafka_cluster, name):
         member_info["assignment"] = member_topics_assignment
         res.append(member_info)
     return res
+
+KAFKA_TOPIC_OLD = "old_t"
+KAFKA_CONSUMER_GROUP_OLD = "old_cg"
+KAFKA_TOPIC_NEW = "new_t"
+KAFKA_CONSUMER_GROUP_NEW = "new_cg"
