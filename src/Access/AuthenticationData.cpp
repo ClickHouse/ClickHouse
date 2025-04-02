@@ -9,7 +9,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <IO/WriteHelpers.h>
 
-#include <Common/OpenSSLHelpers.h>
 #include <Common/Base64.h>
 #include <Poco/SHA1Engine.h>
 #include <boost/algorithm/hex.hpp>
