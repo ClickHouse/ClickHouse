@@ -73,108 +73,38 @@ public:
         if (input_rows_count)
         {
 #if USE_SSL
-            std::unique_ptr<Poco::Crypto::X509Certificate> x509_cert;
+            std::unique_ptr<X509Certificate> x509_cert;
             if (!certificate.empty())
-                x509_cert = std::make_unique<Poco::Crypto::X509Certificate>(certificate);
+                x509_cert = std::make_unique<X509Certificate>(certificate);
 
-            const X509 * cert = x509_cert ?
-                x509_cert->certificate() :
-                SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext());
+            if (!x509_cert)
+                x509_cert = std::make_unique<X509Certificate>(SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext()));
 
-            if (cert)
+            if (x509_cert)
             {
-                BIO * b = BIO_new(BIO_s_mem());
-                SCOPE_EXIT(
-                {
-                    BIO_free(b);
-                });
-
                 keys->insert("version");
-                values->insert(std::to_string(X509_get_version(cert) + 1));
+                values->insert(x509_cert->version());
 
-                {
-                    char buf[1024] = {0};
-                    const ASN1_INTEGER * sn = X509_get0_serialNumber(cert);
-                    BIGNUM * bnsn = ASN1_INTEGER_to_BN(sn, nullptr);
-                    SCOPE_EXIT(
-                    {
-                        BN_free(bnsn);
-                    });
-                    if (BN_print(b, bnsn) > 0 && BIO_read(b, buf, sizeof(buf)) > 0)
-                    {
-                        keys->insert("serial_number");
-                        values->insert(buf);
-                    }
+                keys->insert("serial_number");
+                values->insert(x509_cert->serialNumber());
 
-                }
+                keys->insert("signature_algo");
+                values->insert(x509_cert->signatureAlgorithm());
 
-                {
-                    const ASN1_BIT_STRING *sig = nullptr;
-                    const X509_ALGOR *al = nullptr;
-                    char buf[1024] = {0};
-                    X509_get0_signature(&sig, &al, cert);
-                    if (al)
-                    {
-                        OBJ_obj2txt(buf, sizeof(buf), al->algorithm, 0);
-                        keys->insert("signature_algo");
-                        values->insert(buf);
-                    }
-                }
+                keys->insert("issuer");
+                values->insert(x509_cert->issuerName());
 
-                char * issuer = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
-                if (issuer)
-                {
-                    SCOPE_EXIT(
-                    {
-                        OPENSSL_free(issuer);
-                    });
-                    keys->insert("issuer");
-                    values->insert(issuer);
-                }
+                keys->insert("not_before");
+                values->insert(x509_cert->validFrom());
 
-                {
-                    char buf[1024] = {0};
-                    if (ASN1_TIME_print(b, X509_get_notBefore(cert)) && BIO_read(b, buf, sizeof(buf)) > 0)
-                    {
-                        keys->insert("not_before");
-                        values->insert(buf);
-                    }
-                }
+                keys->insert("not_after");
+                values->insert(x509_cert->expiresOn());
 
-                {
-                    char buf[1024] = {0};
-                    if (ASN1_TIME_print(b, X509_get_notAfter(cert)) && BIO_read(b, buf, sizeof(buf)) > 0)
-                    {
-                        keys->insert("not_after");
-                        values->insert(buf);
-                    }
-                }
+                keys->insert("subject");
+                values->insert(x509_cert->subjectName());
 
-                char * subject = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
-                if (subject)
-                {
-                    SCOPE_EXIT(
-                    {
-                        OPENSSL_free(subject);
-                    });
-                    keys->insert("subject");
-                    values->insert(subject);
-                }
-
-                if (X509_PUBKEY * pkey = X509_get_X509_PUBKEY(cert))
-                {
-                    char buf[1024] = {0};
-                    ASN1_OBJECT *ppkalg = nullptr;
-                    const unsigned char *pk = nullptr;
-                    int ppklen = 0;
-                    X509_ALGOR *pa = nullptr;
-                    if (X509_PUBKEY_get0_param(&ppkalg, &pk, &ppklen, &pa, pkey) &&
-                        i2a_ASN1_OBJECT(b, ppkalg) > 0 && BIO_read(b, buf, sizeof(buf)) > 0)
-                    {
-                        keys->insert("pkey_algo");
-                        values->insert(buf);
-                    }
-                }
+                keys->insert("pkey_algo");
+                values->insert(x509_cert->publicKeyAlgorithm());
             }
             offsets->insert(keys->size());
 #endif
