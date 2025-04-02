@@ -131,7 +131,7 @@ private:
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
-    void initializeDataFilesAndSchemaProcessor(Iceberg::ManifestListPtr manifest_list_ptr) const;
+    void initializeDataFiles(Iceberg::ManifestListPtr manifest_list_ptr) const;
 
     Iceberg::ManifestFilePtr getManifestFile(const String & filename, Int64 inherited_sequence_number) const;
 

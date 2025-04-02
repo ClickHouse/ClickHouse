@@ -483,7 +483,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
     else
         LOG_TRACE(log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
 
-    auto create_fn = [&]()
+    auto create_fn = [metadata_file_path, object_storage, local_context, log]()
     {
         ObjectInfo object_info(metadata_file_path);
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
@@ -510,7 +510,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
     return ptr;
 }
 
-void IcebergMetadata::initializeDataFilesAndSchemaProcessor(ManifestListPtr manifest_list_ptr) const
+void IcebergMetadata::initializeDataFiles(ManifestListPtr manifest_list_ptr) const
 {
     for (const auto & manifest_file_content : *manifest_list_ptr)
     {
@@ -566,7 +566,7 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
     {
         manifest_list_ptr = ManifestListCacheCell(create_fn()).getManifestList(convert_fn);
     }
-    initializeDataFilesAndSchemaProcessor(manifest_list_ptr);
+    initializeDataFiles(manifest_list_ptr);
     return manifest_list_ptr;
 }
 
