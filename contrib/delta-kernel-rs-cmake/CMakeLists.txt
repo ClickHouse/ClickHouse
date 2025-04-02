@@ -55,23 +55,9 @@ else()
     SET(CRYPTONAME "crypto")
 endif()
 
-if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
-    set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};release")
-else()
-    set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};debug")
-endif()
-
-if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    set(profile "")
-else()
-    if (ENABLE_THINLTO)
-        set(profile "release-thinlto")
-    else()
-        set(profile "release")
-    endif()
-endif()
-
-corrosion_import_crate(MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml" NO_STD PROFILE ${profile} CRATE_TYPES staticlib ALL_FEATURES FLAGS --offline)
+# Ideally we would disable all features to remove dependencies but currently we can't pass our own s3 client to ffi, so we
+# are forced to enable `default-engine`. If we had we could remove `default-engine` then we could also remove the OpenSSL dependency
+clickhouse_import_crate(MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml" FEATURES "default-engine")
 corrosion_set_env_vars(delta_kernel_ffi
         "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}"
         "OPENSSL_LIBS=${SSLNAME}:${CRYPTONAME}"
