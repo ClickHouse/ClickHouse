@@ -198,6 +198,33 @@ def test_disallowed_constraint(started_cluster):
     )
 
 
+def test_disallowed_constraint_merge_tree(started_cluster):
+    # Default value
+    assert_query_settings(
+        instance,
+        "SELECT value FROM system.merge_tree_settings WHERE name='min_bytes_for_wide_part'",
+        {},
+        result="10485760",
+    )
+
+    assert_query_settings(
+        instance,
+        "SELECT disallowed_values FROM system.merge_tree_settings WHERE name='min_bytes_for_wide_part'",
+        {},
+        result="['5000']",
+    )
+
+    # Test by creating a merge tree table with valid setting, followed by alters with both valid and invalid (disallowed) settings
+    # Valid values
+    instance.query("CREATE TABLE test (x Int) ENGINE=MergeTree ORDER BY x SETTINGS min_bytes_for_wide_part=2000")
+    instance.query("ALTER TABLE test MODIFY SETTING min_bytes_for_wide_part=3000")
+    # Invalid value
+    assert " Setting min_bytes_for_wide_part shouldn't be 5000." in instance.query_and_get_error(
+        "ALTER TABLE test MODIFY SETTING min_bytes_for_wide_part=5000")
+    # Clean up
+    instance.query("DROP TABLE IF EXISTS test")
+
+
 def assert_query_settings(
     instance, query, settings, result=None, exception=None, user=None
 ):

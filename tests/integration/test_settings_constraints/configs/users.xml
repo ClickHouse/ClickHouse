@@ -11,6 +11,11 @@
                     <disallow>6000000000</disallow>
                     <disallow>6000000001</disallow>
                 </max_memory_usage>
+                <merge_tree_min_bytes_for_wide_part>
+                    <min>1000</min>
+                    <max>100000000</max>
+                    <disallow>5000</disallow>
+                </merge_tree_min_bytes_for_wide_part>
                <force_index_by_date>
                    <readonly/>
                </force_index_by_date>
