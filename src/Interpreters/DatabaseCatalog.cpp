@@ -1560,6 +1560,7 @@ std::pair<std::vector<StorageID>, std::vector<StorageID>> DatabaseCatalog::remov
 void DatabaseCatalog::updateDependencies(
     const StorageID & table_id, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies)
 {
+    LOG_DEBUG(log, "updating dependencies for {}", table_id.getFullTableName());
     std::lock_guard lock{databases_mutex};
     referential_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true);
     loading_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true);
@@ -1567,6 +1568,7 @@ void DatabaseCatalog::updateDependencies(
         referential_dependencies.addDependencies(table_id, new_referential_dependencies);
     if (!new_loading_dependencies.empty())
         loading_dependencies.addDependencies(table_id, new_loading_dependencies);
+    LOG_DEBUG(log, "finish updating dependencies for {}", table_id.getFullTableName());
 }
 
 void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(

@@ -8,6 +8,8 @@
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
@@ -64,6 +66,21 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextP
 {
 }
 
+void addTableDependencies(const ASTAlterQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
+{
+    QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
+    auto ref_dependencies = getDependenciesFromAlterQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromAlterQuery(context->getGlobalContext(), qualified_name, query_ptr);
+    DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies, loading_dependencies);
+}
+
+void checkTableCanBeAlteredWithNoCyclicDependencies(const ASTAlterQuery & alter, const ASTPtr & query_ptr, const ContextPtr & context)
+{
+    QualifiedTableName qualified_name{alter.getDatabase(), alter.getTable()};
+    auto ref_dependencies = getDependenciesFromAlterQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
+    auto loading_dependencies = getLoadingDependenciesFromAlterQuery(context->getGlobalContext(), qualified_name, query_ptr, /*can_throw*/ true);
+    DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies, loading_dependencies);
+}
 
 BlockIO InterpreterAlterQuery::execute()
 {
@@ -134,6 +151,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!table)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);
 
+    checkTableCanBeAlteredWithNoCyclicDependencies(alter, query_ptr, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");

@@ -18,6 +18,8 @@ using TableNamesSet = std::unordered_set<QualifiedTableName>;
 /// Does not validate AST, works a best-effort way.
 TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw = false);
 
+TableNamesSet getLoadingDependenciesFromAlterQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw = false);
+
 
 class DDLMatcherBase
 {
