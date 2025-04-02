@@ -19,7 +19,6 @@
 
 #include <deque>
 #include <unordered_map>
-#include <Interpreters/TransposedMetricLog.h>
 
 namespace DB
 {
