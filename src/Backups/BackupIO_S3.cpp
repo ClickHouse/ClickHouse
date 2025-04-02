@@ -325,10 +325,10 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
                 src_disk->isDisk(),
                 src_disk->isRemote(),
                 src_disk->isVolume(),
-                client->isChecksumEnabled())
+                client->isChecksumEnabled());
     if (src_disk->isDisk() && client->isChecksumEnabled()) {
         LOG_WARNING(log, "Backup data from local disk to remote S3 storage with checksum enabled. The effective bandwidth will probably halfed"
-                         "because data will be write twice, one for checksum computation, the other for data uploading..")
+                         "because data will be write twice, one for checksum computation, the other for data uploading..");
     }
     /// Fallback to copy through buffers.
     BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
