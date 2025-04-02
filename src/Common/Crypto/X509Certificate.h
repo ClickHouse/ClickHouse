@@ -287,7 +287,7 @@ bool operator==(const X509Certificate::Subjects & rhs) const
         using GeneralNamesPtr = std::unique_ptr<STACK_OF(GENERAL_NAME), decltype(general_names_deleter)>;
         GeneralNamesPtr cert_names(
             static_cast<STACK_OF(GENERAL_NAME)*>(
-                X509_get_ext_d2i(const_cast<X509*>(certificate), NID_subject_alt_name, nullptr, nullptr)
+                X509_get_ext_d2i(certificate, NID_subject_alt_name, nullptr, nullptr)
             ),
             general_names_deleter
         );
