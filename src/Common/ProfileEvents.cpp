@@ -386,7 +386,7 @@ The server successfully detected this situation and will download merged part fr
     M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel mode. This is time spent in syscalls, excluding waiting time during blocking syscalls.", ValueType::Microseconds) \
     M(MemoryOvercommitWaitTimeMicroseconds, "Total time spent in waiting for memory to be freed in OvercommitTracker.", ValueType::Microseconds) \
     M(MemoryAllocatorPurge, "Total number of times memory allocator purge was requested", ValueType::Number) \
-    M(MemoryAllocatorPurgeTimeMicroseconds, "Total number of times memory allocator purge was requested", ValueType::Microseconds) \
+    M(MemoryAllocatorPurgeTimeMicroseconds, "Total time spent for memory allocator purge", ValueType::Microseconds) \
     M(SoftPageFaults, "The number of soft page faults in query execution threads. Soft page fault usually means a miss in the memory allocator cache, which requires a new memory mapping from the OS and subsequent allocation of a page of physical memory.", ValueType::Number) \
     M(HardPageFaults, "The number of hard page faults in query execution threads. High values indicate either that you forgot to turn off swap on your server, or eviction of memory pages of the ClickHouse binary during very high memory pressure, or successful usage of the 'mmap' read method for the tables data.", ValueType::Number) \
     \

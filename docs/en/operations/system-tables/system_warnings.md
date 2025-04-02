@@ -1,7 +1,7 @@
 ---
 description: 'This table contains warning messages about clickhouse server.'
 keywords: [ 'system table', 'warnings' ]
-slug: /en/operations/system-tables/system_warnings
+slug: /operations/system-tables/system_warnings
 title: 'system.warnings'
 ---
 

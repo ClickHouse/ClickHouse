@@ -228,28 +228,42 @@ class Result(MetaClasses.Serializable):
 
         if with_local_run_command and not self.is_ok():
             command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
-            first_failed_test = next((r for r in self.results if not r.is_ok()), None)
-            if (
-                first_failed_test
-                and first_failed_test.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
-            ):
-                first_failed_test = next(
-                    (
-                        r
-                        for r in first_failed_test.results
-                        if "fail" in r.status.lower()
-                    ),
-                    None,
+            if with_test_in_run_command:
+                first_failed_test = None
+                first_failed_task_result = next(
+                    (r for r in self.results if not r.is_ok()), None
                 )
-            if with_test_in_run_command and first_failed_test:
-                command_info += f" --test {first_failed_test.name}"
+                if (
+                    first_failed_task_result.name
+                    in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
+                ):
+                    # case: test cases are nested inside subtask
+                    first_failed_test = next(
+                        (
+                            r
+                            for r in first_failed_task_result.results
+                            if "fail" in r.status.lower()
+                        ),
+                        None,
+                    )
+                elif not any(
+                    r.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
+                    for r in self.results
+                ):
+                    # case: test cases are on the first level in job's Result
+                    first_failed_test = first_failed_task_result
+                if first_failed_test:
+                    command_info += f" --test {first_failed_test.name}"
             self.set_info(command_info)
 
         return self
 
     @classmethod
     def file_name_static(cls, name):
-        return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
+        if not name:
+            return cls.experimental_file_name_static()
+        else:
+            return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
 
     @classmethod
     def experimental_file_name_static(cls):
@@ -367,12 +381,21 @@ class Result(MetaClasses.Serializable):
         )
 
     @classmethod
-    def from_gtest_run(cls, name, unit_tests_path, with_log=False):
+    def from_gtest_run(cls, unit_tests_path, name="", with_log=False):
+        """
+        Runs gtest and generates praktika Result
+        :param unit_tests_path:
+        :param name: Should be set if executed as a job subtask with name @name.
+        If it's a job itself job.name will be taken as name by default
+        :param with_log:
+        :return:
+        """
         Shell.check(f"rm {ResultTranslator.GTEST_RESULT_FILE}")
         result = Result.from_commands_run(
             name=name,
             command=[
-                f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
+                f"chmod +x {unit_tests_path}",
+                f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'",
             ],
             with_log=with_log,
         )
@@ -673,7 +696,7 @@ class _ResultS3:
 
 
 class ResultTranslator:
-    GTEST_RESULT_FILE = "./tmp_ci/gtest.json"
+    GTEST_RESULT_FILE = "./ci/tmp/gtest.json"
 
     @classmethod
     def from_gtest(cls):

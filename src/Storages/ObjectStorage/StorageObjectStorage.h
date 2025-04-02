@@ -70,6 +70,7 @@ public:
         LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
+        bool is_table_function_ = false,
         bool lazy_init = false);
 
     String getName() const override;
@@ -160,6 +161,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const ASTPtr partition_by;
     const bool distributed_processing;
+    bool update_configuration_on_read;
 
     LoggerPtr log;
 };
@@ -252,7 +254,7 @@ public:
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
     virtual bool supportsFileIterator() const { return false; }
-    virtual ObjectIterator iterate()
+    virtual ObjectIterator iterate(std::function<void(FileProgress)> /* callback */, size_t /* list_batch_size */)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
