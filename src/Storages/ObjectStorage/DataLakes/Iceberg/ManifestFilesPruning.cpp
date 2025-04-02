@@ -167,8 +167,6 @@ ManifestFilesPruner::ManifestFilesPruner(
             }
         }
     }
-
-
 }
 
 bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
