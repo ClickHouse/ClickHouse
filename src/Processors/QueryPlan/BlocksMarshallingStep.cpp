@@ -13,7 +13,8 @@ namespace DB
 
 static ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::Traits{
+    return ITransformingStep::Traits
+    {
         {
             .returns_single_stream = true,
             .preserves_number_of_streams = true,
@@ -21,7 +22,8 @@ static ITransformingStep::Traits getTraits()
         },
         {
             .preserves_number_of_rows = true,
-        }};
+        }
+    };
 }
 
 struct MarshallBlocks : ISimpleTransform
