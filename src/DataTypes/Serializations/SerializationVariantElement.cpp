@@ -169,13 +169,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.pop_back();
 
-    /// Deserialization state saves `num_rows_read` to track rows processed in previous deserialization.
-    /// Whether discriminators are cached or not, `num_rows_read` serves as the starting offset
-    /// for new discriminators.
-    /// Must reset `num_rows_read` to 0 when upper layer re-initiates read with an empty column.
-    if (result_column->empty())
-        variant_element_state->num_rows_read = 0;
-    size_t discriminators_offset = variant_element_state->num_rows_read;
+    size_t discriminators_offset = variant_element_state->discriminators_size;
 
     if (!variant_rows_offset)
     {
@@ -263,7 +257,6 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     if (variant_limit == 0 || variant_element_state->variant->empty())
     {
         mutable_column->insertManyDefaults(num_new_discriminators);
-        variant_element_state->num_rows_read = result_column->size();
         return;
     }
 
