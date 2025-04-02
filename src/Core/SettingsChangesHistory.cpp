@@ -697,6 +697,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
             {"max_merge_delayed_streams_for_parallel_write", 1000, 100, "New setting"},
+            {"allow_summing_columns_in_partition_or_order_key", true, false, "Don't allow summing of partition or sorting key columns"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.3",
         {

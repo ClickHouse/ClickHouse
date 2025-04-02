@@ -196,6 +196,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_nullable_key;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool allow_suspicious_indices;
+    extern const MergeTreeSettingsBool allow_summing_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool async_insert;
     extern const MergeTreeSettingsBool check_sample_column_is_correct;
@@ -517,7 +518,7 @@ MergeTreeData::MergeTreeData(
     setProperties(metadata_, metadata_, !sanity_checks);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
-    merging_params.check(metadata_);
+    merging_params.check(*settings, metadata_);
 
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
@@ -1084,7 +1085,7 @@ void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_poli
 }
 
 
-void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadata) const
+void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const
 {
     const auto columns = metadata.getColumns().getAllPhysical();
 
@@ -1218,8 +1219,10 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                     column_to_sum);
         }
 
+        auto allow_summing_columns_in_partition_or_order_key = settings[MergeTreeSetting::allow_summing_columns_in_partition_or_order_key];
+
         /// Check that summing columns are not in partition key.
-        if (metadata.isPartitionKeyDefined())
+        if (!allow_summing_columns_in_partition_or_order_key && metadata.isPartitionKeyDefined())
         {
             auto partition_key_columns = metadata.getPartitionKey().expression->getRequiredColumns();
 
@@ -1234,7 +1237,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
         }
 
         /// Check that summing columns are not in sorting key.
-        if (metadata.isSortingKeyDefined())
+        if (!allow_summing_columns_in_partition_or_order_key && metadata.isSortingKeyDefined())
         {
             auto sorting_key_columns = metadata.getSortingKey().expression->getRequiredColumns();
 
