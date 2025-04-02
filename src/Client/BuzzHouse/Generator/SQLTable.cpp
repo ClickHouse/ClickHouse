@@ -1916,6 +1916,10 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         next.cols[ncname] = std::move(col);
     }
     setClusterInfo(rg, next);
+    if (next.cluster.has_value())
+    {
+        cd->mutable_cluster()->set_cluster(next.cluster.value());
+    }
 
     /// Layout properties
     const auto & layoutSettings = allDictionaryLayoutSettings.at(dl);

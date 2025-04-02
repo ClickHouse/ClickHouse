@@ -3502,6 +3502,10 @@ CONV_FN(CreateView, create_view)
         ret += "IF NOT EXISTS ";
     }
     ExprSchemaTableToString(ret, create_view.est());
+    if (create_view.has_cluster())
+    {
+        ClusterToString(ret, create_view.cluster());
+    }
     if (materialized)
     {
         if (!replace && refreshable)

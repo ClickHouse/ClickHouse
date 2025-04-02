@@ -342,6 +342,11 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             next.cols.insert(i);
         }
     }
+    setClusterInfo(rg, next);
+    if (next.cluster.has_value())
+    {
+        cv->mutable_cluster()->set_cluster(next.cluster.value());
+    }
     if (next.is_deterministic)
     {
         this->setAllowNotDetermistic(false);
@@ -478,6 +483,7 @@ static const auto optimize_table_lambda = [](const SQLTable & t) { return t.isAt
 void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot)
 {
     const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(optimize_table_lambda));
+    const std::optional<String> cluster = t.getCluster();
 
     t.setName(ot->mutable_est(), false);
     if (t.isMergeTreeFamily())
@@ -510,6 +516,10 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
         {
             dde->set_ded_star(true);
         }
+    }
+    if (cluster.has_value())
+    {
+        ot->mutable_cluster()->set_cluster(cluster.value());
     }
     ot->set_final((t.supportsFinal() || t.isMergeTreeFamily()) && rg.nextSmallNumber() < 3);
     if (rg.nextSmallNumber() < 3)
@@ -892,6 +902,10 @@ void StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, Exchan
     t1.setName(et->mutable_est1(), false);
     t2.setName(et->mutable_est2(), false);
     this->ids.clear();
+    if (t1.cluster.has_value() && t2.cluster.has_value() && t1.cluster == t2.cluster)
+    {
+        et->mutable_cluster()->set_cluster(t1.cluster.value());
+    }
     if (rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, et->mutable_setting_values());

@@ -3440,13 +3440,14 @@ message CreateView {
     optional bool if_not_exists = 2;
     optional bool materialized = 3;
     required ExprSchemaTable est = 4;
-    optional RefreshableView refresh = 5;
-    optional CreateMatViewTo to = 6;
-    optional TableEngine engine = 7;
-    optional bool populate = 8;
-    optional bool empty = 9;
-    required Select select = 10;
-    optional string comment = 11;
+    optional Cluster cluster = 5;
+    optional RefreshableView refresh = 6;
+    optional CreateMatViewTo to = 7;
+    optional TableEngine engine = 8;
+    optional bool populate = 9;
+    optional bool empty = 10;
+    required Select select = 11;
+    optional string comment = 12;
 }
 
 message DictionaryColumn {
