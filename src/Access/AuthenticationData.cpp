@@ -27,6 +27,7 @@
 #    include <openssl/buffer.h>
 #    include <openssl/bio.h>
 #    include <Common/Crypto/X509Certificate.h>
+#    include <Common/OpenSSLHelpers.h>
 #endif
 
 #if USE_BCRYPT
@@ -35,6 +36,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int AUTHENTICATION_FAILED;
@@ -45,27 +47,6 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
-namespace
-{
-#if USE_SSL
-
-std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<uint8_t>& salt, int iterations)
-{
-    std::vector<uint8_t> derived_key(SHA256_DIGEST_LENGTH);
-    PKCS5_PBKDF2_HMAC(
-        password.data(),
-        static_cast<Int32>(password.size()),
-        salt.data(),
-        static_cast<Int32>(salt.size()),
-        iterations,
-        EVP_sha256(),
-        SHA256_DIGEST_LENGTH,
-        derived_key.data());
-    return derived_key;
-}
-
-#endif
-}
 
 AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_view text [[maybe_unused]])
 {
