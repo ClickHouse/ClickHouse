@@ -88,7 +88,7 @@ protected:
     NamedCollection(
         ImplPtr pimpl_,
         const std::string & collection_name,
-        const bool is_mutable_
+        bool is_mutable_
     );
 
     void assertMutable() const;
@@ -112,7 +112,7 @@ public:
     NamedCollection::SourceId getSourceId() const override { return SourceId::SQL; }
 
 private:
-    NamedCollectionFromSQL(const ASTCreateNamedCollectionQuery & query_);
+    explicit NamedCollectionFromSQL(const ASTCreateNamedCollectionQuery & query_);
 
     ASTCreateNamedCollectionQuery create_query_ptr;
 };

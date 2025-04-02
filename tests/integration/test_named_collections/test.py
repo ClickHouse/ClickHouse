@@ -794,6 +794,7 @@ def test_keeper_storage_remove_on_cluster(cluster, ignore, expected_raise):
         node.query(
             f"DROP NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
         )
+    node.query("DROP NAMED COLLECTION IF EXISTS test_nc")
 
 
 @pytest.mark.parametrize(
