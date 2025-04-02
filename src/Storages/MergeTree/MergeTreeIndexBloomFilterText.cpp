@@ -1,4 +1,5 @@
 #include <memory>
+#include <unordered_set>
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
 #include <Columns/ColumnArray.h>
@@ -31,6 +32,56 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
+}
+
+FrequentGranulasSketch::FrequentGranulasSketch(size_t hash_map_size_) : hash_map_size(hash_map_size_)
+{
+}
+
+void FrequentGranulasSketch::update(const char * data, size_t data_length, size_t granula_index)
+{
+    if (!granules_sketches.contains(granula_index))
+    {
+        granules_sketches.emplace(granula_index, hash_map_size);
+    }
+    auto it = granules_sketches.find(granula_index);
+    it->second.update(std::string(data, data_length));
+}
+
+std::vector<std::string> FrequentGranulasSketch::getMostFrequentTokens(size_t num_tokens) const
+{
+    std::unordered_set<std::string> candidates;
+    for (const auto & [_, granule_sketch] : granules_sketches)
+    {
+        size_t cur_tokens = 0;
+        for (const auto & token : granule_sketch.get_frequent_items(datasketches::frequent_items_error_type::NO_FALSE_NEGATIVES))
+        {
+            cur_tokens++;
+            if (cur_tokens > num_tokens)
+                break;
+
+            candidates.insert(token.get_item());
+        }
+    }
+    
+    std::unordered_map<std::string, size_t> frequency_candidates;
+    for (const auto & candidate : candidates)
+    {
+        for (const auto & [_, granule_sketch] : granules_sketches)
+            frequency_candidates[candidate] += granule_sketch.get_estimate(candidate) > 0;
+    }
+
+    std::vector<std::pair<size_t, std::string>> sorted_frequent_items;
+    for (const auto & [token, frequency] : frequency_candidates)
+        sorted_frequent_items.push_back({frequency, token});
+
+    std::sort(sorted_frequent_items.rbegin(), sorted_frequent_items.rend());
+    
+    std::vector<std::string> result;
+    for (size_t i = 0; i < num_tokens; ++i)
+        result.push_back(sorted_frequent_items[i].second);
+
+    return result;
 }
 
 MergeTreeIndexGranuleBloomFilterText::MergeTreeIndexGranuleBloomFilterText(
@@ -102,7 +153,7 @@ MergeTreeIndexAggregatorBloomFilterText::MergeTreeIndexAggregatorBloomFilterText
     {
 #if USE_DATASKETCHES
         for (size_t i = 0; i < index_columns.size(); ++i)
-            hot_elements_sketch.emplace_back(params_.num_hot_tokens);
+            hot_elements_sketch.emplace_back(params_.num_hash_size);
 #else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Two level bloom filter should be compiled with datasketches-cpp");
 #endif
@@ -175,7 +226,7 @@ void MergeTreeIndexAggregatorBloomFilterText::updateBase(const Block & block, si
     *pos += rows_read;
 }
 
-void MergeTreeIndexAggregatorBloomFilterText::preupdate(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorBloomFilterText::preupdate(const Block & block, size_t * pos, size_t limit, [[maybe_unused]] size_t granula_index)
 {
     if (params.mode != BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL)
         return;
@@ -183,7 +234,14 @@ void MergeTreeIndexAggregatorBloomFilterText::preupdate(const Block & block, siz
     auto update_func = [&]([[maybe_unused]] const char* data, [[maybe_unused]] size_t length, [[maybe_unused]] size_t column_index)
     {
 #if USE_DATASKETCHES
-        token_extractor->stringToSketch(data, length, hot_elements_sketch[column_index]);
+        size_t cur = 0;
+        size_t token_start = 0;
+        size_t token_len = 0;
+
+        while (cur < length && token_extractor->nextInString(data, length, &cur, &token_start, &token_len))
+        {
+            hot_elements_sketch[column_index].update(data + token_start, token_len, granula_index);
+        }
 #else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Two level bloom filter should be compiled with datasketches-cpp");
 #endif
@@ -220,9 +278,9 @@ void MergeTreeIndexAggregatorBloomFilterText::serializeCommonState(WriteBuffer &
             if (common_filters[column_index]->isEmpty())
             {
 #if USE_DATASKETCHES
-                for (const auto & sketch_key : hot_elements_sketch[column_index].get_frequent_items(datasketches::frequent_items_error_type::NO_FALSE_NEGATIVES))
+                for (const auto & sketch_key : hot_elements_sketch[column_index].getMostFrequentTokens(params.num_hot_tokens))
                 {
-                    common_filters[column_index]->add(sketch_key.get_item().data(), sketch_key.get_item().size());
+                    common_filters[column_index]->add(sketch_key.data(), sketch_key.size());
                 }
 #else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Two level bloom filter should be compiled with datasketches-cpp");

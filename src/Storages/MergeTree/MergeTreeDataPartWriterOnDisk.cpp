@@ -387,10 +387,11 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             store = it->second;
         }
 
-        for (const auto & granule : granules_to_write)
+        for (size_t granula_index = 0; granula_index < granules_to_write.size(); ++granula_index)
         {
+            const auto & granule = granules_to_write[granula_index];
             size_t pos = granule.start_row;
-            skip_indices_aggregators[i]->preupdate(skip_indexes_block, &pos, granule.rows_to_write);
+            skip_indices_aggregators[i]->preupdate(skip_indexes_block, &pos, granule.rows_to_write, granula_index);
         }
 
         skip_indices_aggregators[i]->serializeCommonState(stream.compressed_hashing);

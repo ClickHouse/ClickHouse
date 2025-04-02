@@ -96,7 +96,7 @@ struct IMergeTreeIndexAggregator
     virtual void update(const Block & block, size_t * pos, size_t limit) = 0;
 
     /// Similar method to method above. Used only for two-level bloom filter for texts.
-    virtual void preupdate(const Block & /*block*/, size_t * /*pos*/, size_t /*limit*/) {}
+    virtual void preupdate(const Block & /*block*/, size_t * /*pos*/, size_t /*limit*/, size_t /*granula_index*/) {}
 
     /// Deserialize common state, if any exists. Useful for two-level bloom filter for texts.
     virtual void deserializeCommonState(ReadBuffer & /*istr*/) {}

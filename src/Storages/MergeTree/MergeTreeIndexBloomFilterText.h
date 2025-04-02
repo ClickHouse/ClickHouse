@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -32,6 +33,24 @@ struct BloomFilterIndexParameters
 
     BloomFilterParameters common_params;
     BloomFilterParameters params;
+
+    size_t num_hash_size = 64;
+};
+
+/// Structure that can accept pair of token and granula index and return the most frequent tokens in granulas.
+/// The frequency of the token is calculated as number of granulas which contains this token.
+class FrequentGranulasSketch
+{
+public:
+    explicit FrequentGranulasSketch(size_t hash_map_size_);
+
+    void update(const char * data, size_t data_length, size_t granula_index);
+
+    std::vector<std::string> getMostFrequentTokens(size_t num_tokens) const;
+
+private:
+    size_t hash_map_size;
+    std::unordered_map<size_t, datasketches::frequent_items_sketch<std::string>> granules_sketches;
 };
 
 struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranule
@@ -80,7 +99,7 @@ public:
 
     void update(const Block & block, size_t * pos, size_t limit) override;
 
-    void preupdate(const Block & block, size_t * pos, size_t limit) override;
+    void preupdate(const Block & block, size_t * pos, size_t limit, size_t granula_index) override;
 
     void setCommonState(std::shared_ptr<IMergeTreeIndexAggregator> another_aggregator) override;
 
@@ -94,7 +113,7 @@ public:
     /// This filters used only for two-level bloom filter.
     std::vector<std::shared_ptr<BloomFilter>> common_filters;
 #if USE_DATASKETCHES
-    std::vector<datasketches::frequent_items_sketch<std::string>> hot_elements_sketch;
+    std::vector<FrequentGranulasSketch> hot_elements_sketch;
 #endif
     std::vector<std::unordered_set<std::string>> hot_elements;
 
