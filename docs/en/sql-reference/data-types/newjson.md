@@ -827,7 +827,7 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 └────────────┴─────────────────────┴────────────────────┴──────────────────────┴───────────────────────┘
 ```
 
-**Note:** when 2 paths contain values of different data types, they are compared according to [comparison rule](variant.md#comparing-values-of-variant-type-comparing-values-of-variant-data) of `Variant` data type.
+**Note:** when 2 paths contain values of different data types, they are compared according to [comparison rule](/sql-reference/data-types/variant#comparing-values-of-variant-data) of `Variant` data type.
 
 ## Tips for better usage of the JSON type {#tips-for-better-usage-of-the-json-type}
 
