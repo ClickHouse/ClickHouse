@@ -120,7 +120,7 @@ public:
 
     bool isBackupDatabase() const { return deng == DatabaseEngineValues::DBackup; }
 
-    std::optional<String> getCluster() const { return cluster; }
+    const std::optional<String> & getCluster() const { return cluster; }
 
     bool isAttached() const { return attached == DetachStatus::ATTACHED; }
 
@@ -233,7 +233,7 @@ public:
 
     bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::ClickHouse; }
 
-    std::optional<String> getCluster() const { return cluster; }
+    const std::optional<String> & getCluster() const { return cluster; }
 
     bool isAttached() const { return (!db || db->isAttached()) && attached == DetachStatus::ATTACHED; }
 
@@ -344,7 +344,7 @@ public:
     uint32_t fname = 0, nargs = 0;
     std::optional<String> cluster;
 
-    std::optional<String> getCluster() const { return cluster; }
+    const std::optional<String> & getCluster() const { return cluster; }
 
     void setName(Function * f) const { f->set_function("f" + std::to_string(fname)); }
 };
