@@ -145,17 +145,17 @@ namespace
     }
 }
 
-
+// 从S3上读取文件，即Restore的过程
 BackupReaderS3::BackupReaderS3(
     const S3::URI & s3_uri_,
     const String & access_key_id_,
     const String & secret_access_key_,
     bool allow_s3_native_copy,
-    const ReadSettings & read_settings_,
+    const ReadSettings & read_settings_, // 对应的带宽控制存在于 read端
     const WriteSettings & write_settings_,
     const ContextPtr & context_,
     bool is_internal_backup)
-    : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
+    : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3")) // 构造父类
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
 {
@@ -279,6 +279,9 @@ BackupWriterS3::BackupWriterS3(
     }
 }
 
+/**
+ * 调用者是 void BackupImpl::writeFile
+ */
 void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
                                       bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
@@ -313,7 +316,20 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
             return; /// copied!
         }
     }
-
+    LOG_WARNING(log, "Debug information. src_disk name {}, "
+                     "isDisk {}, "
+                     "isRemote {}, "
+                     "isVolume {}, "
+                     "checksum enabled {}",
+                src_disk->getName() ,
+                src_disk->isDisk(),
+                src_disk->isRemote(),
+                src_disk->isVolume(),
+                client->isChecksumEnabled())
+    if (src_disk->isDisk() && client->isChecksumEnabled()) {
+        LOG_WARNING(log, "Backup data from local disk to remote S3 storage with checksum enabled. The effective bandwidth will probably halfed"
+                         "because data will be write twice, one for checksum computation, the other for data uploading..")
+    }
     /// Fallback to copy through buffers.
     BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
 }
@@ -346,6 +362,7 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
 
 void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
 {
+    // 调用的 非成员方法 void copyDataToS3File(
     copyDataToS3File(create_read_buffer, start_pos, length, client, s3_uri.bucket, fs::path(s3_uri.key) / path_in_backup,
                      s3_settings.request_settings, blob_storage_log,
                      threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));

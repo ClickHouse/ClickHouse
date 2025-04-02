@@ -22,7 +22,7 @@ protected:
 
     int fd;
 
-    ThrottlerPtr throttler;
+    ThrottlerPtr throttler; // Another throttler
     ThrottlerPtr getThrottler();
 
     bool nextImpl() override;

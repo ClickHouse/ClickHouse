@@ -240,12 +240,12 @@ def assert_took(took, should_take):
         #
         # BUT: only in case of HTTP, HTTPS will not require this.
         pytest.param(
-            "default",
-            "remote",
-            None,
-            None,
-            None,
-            0,
+            "default", # The storage policy, using the default storage policy, which means where the data is stored locally
+            "remote", # The backup storage, remote means use S3 backup
+            None, # The mode, server mode or not
+            None, # The setting
+            None, # The setting value
+            0, # Should take. Should take = 0 means that we doesn't care about the time it takes
             id="no_local_to_remote_throttling",
         ),
         # reading 1e6*8 bytes with 1M default bandwidth should take (8-1)/1=7 seconds

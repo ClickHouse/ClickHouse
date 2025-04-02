@@ -636,6 +636,10 @@ namespace
             ProfileEvents::increment(ProfileEvents::S3UploadPart);
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
+            LOG_TRACE(
+                log,
+                "Is checksum enabled ? {}, is Client for disk? ", client_ptr->isChecksumEnabled(), client_ptr->isClientForDisk()
+            );
             if(client_ptr->isChecksumEnabled()
                 && ( dynamic_cast<AsynchronousReadBufferFromFileDescriptor*>(buffer.get())
                     || dynamic_cast<ReadBufferFromFileDescriptor*>(buffer.get()) )){
@@ -648,7 +652,6 @@ namespace
                 break;
                 // const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
                 std::unique_ptr<SeekableReadBuffer> buffer = create_read_buffer();
-                if()
             }
             auto outcome = client_ptr->UploadPart(req); // 在S3Client.h
             if (blob_storage_log)

@@ -76,6 +76,9 @@ void BackupWriterDefault::copyDataToFile(const String & path_in_backup, const Cr
     write_buffer->finalize();
 }
 
+/*
+ * 调用者是 void BackupWriterS3::copyFileFromDisk
+ */
 void BackupWriterDefault::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
                                            bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
@@ -87,7 +90,7 @@ void BackupWriterDefault::copyFileFromDisk(const String & path_in_backup, DiskPt
             return src_disk->readEncryptedFile(src_path, settings);
         return src_disk->readFile(src_path, settings);
     };
-
+    // 调用 void BackupWriterS3::copyDataToFile
     copyDataToFile(path_in_backup, create_read_buffer, start_pos, length);
 }
 

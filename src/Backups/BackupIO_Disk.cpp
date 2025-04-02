@@ -117,6 +117,10 @@ void BackupWriterDisk::removeEmptyDirectoriesImpl(const fs::path & current_dir)
         disk->removeDirectory(current_dir);
 }
 
+/**
+ * 这是从本地到本地的拷贝，与checksum无关
+ * 区分  BackupWriterS3::copyFileFromDisk
+ */
 void BackupWriterDisk::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
                                         bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {

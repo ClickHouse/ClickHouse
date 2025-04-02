@@ -2834,6 +2834,7 @@ Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means
 )", 0) \
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
+
 )", 0) \
     DECLARE(Bool, restore_replicated_merge_tree_to_shared_merge_tree, false, R"(
 Replace table engine from Replicated*MergeTree -> Shared*MergeTree during RESTORE.

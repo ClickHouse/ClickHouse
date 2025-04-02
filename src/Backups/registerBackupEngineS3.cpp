@@ -103,7 +103,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             if (!params.password.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password is not applicable, backup cannot be encrypted");
         }
-
+        // 在读模式下(读和写是以S3为视角的，读模式就是从S3读取，即从从一个Backup读取文件，就是restore，写模式就是写入到S3，就是备份)
         if (params.open_mode == IBackup::OpenMode::READ)
         {
             auto reader = std::make_shared<BackupReaderS3>(
@@ -118,18 +118,18 @@ void registerBackupEngineS3(BackupFactory & factory)
 
             return std::make_unique<BackupImpl>(params, archive_params, reader);
         }
-
+        //备份到S3
         auto writer = std::make_shared<BackupWriterS3>(
             S3::URI{s3_uri},
             access_key_id,
             secret_access_key,
             params.allow_s3_native_copy,
             params.s3_storage_class,
-            params.read_settings,
+            params.read_settings, //
             params.write_settings,
             params.context,
             params.is_internal_backup);
-
+        // 构造的事一个BackupImpl对象
         return std::make_unique<BackupImpl>(params, archive_params, writer);
 
 #else
@@ -137,7 +137,7 @@ void registerBackupEngineS3(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("S3", creator_fn);
+    factory.registerBackupEngine("S3", creator_fn); // 注册这个function
 }
 
 }
