@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include "Parsers/ASTSetQuery.h"
+#include <Parsers/ASTSetQuery.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
