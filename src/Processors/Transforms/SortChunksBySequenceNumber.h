@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 struct ChunkSequenceNumber : public ChunkInfoCloneable<ChunkSequenceNumber>
 {
     explicit ChunkSequenceNumber(UInt64 sequence_number_)
