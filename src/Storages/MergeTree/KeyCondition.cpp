@@ -572,7 +572,7 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
     return need_inversion ? makeASTFunction("not", cloned_node) : cloned_node;
 }
 
-static const ActionsDAG::Node & cloneASTWithInversionPushDown(
+static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node & node,
     ActionsDAG & inverted_dag,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
@@ -615,13 +615,13 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         case (ActionsDAG::ActionType::ALIAS):
         {
             /// Ignore aliases
-            res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+            res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
             handled_inversion = true;
             break;
         }
         case (ActionsDAG::ActionType::ARRAY_JOIN):
         {
-            const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false);
+            const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false);
             res = &inverted_dag.addArrayJoin(arg, {});
             break;
         }
@@ -630,7 +630,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
             auto name = node.function_base->getName();
             if (name == "not")
             {
-                res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion);
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion);
                 handled_inversion = true;
             }
             else if (name == "indexHint")
@@ -644,7 +644,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                         children = index_hint_dag.getOutputs();
 
                         for (auto & arg : children)
-                            arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
+                            arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
                     }
                 }
 
@@ -654,14 +654,14 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
             else if (name == "materialize")
             {
                 /// Remove "materialize" from index analysis.
-                res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
             }
             else if (need_inversion && (name == "and" || name == "or"))
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
                 for (auto & arg : children)
-                    arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
+                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
 
                 FunctionOverloadResolverPtr function_builder;
 
@@ -682,7 +682,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
                 for (auto & arg : children)
-                    arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false);
+                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false);
 
                 auto it = inverse_relations.find(name);
                 if (it != inverse_relations.end())
@@ -729,13 +729,13 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     return *res;
 }
 
-static ActionsDAG cloneASTWithInversionPushDown(const ActionsDAG::Node * predicate, const ContextPtr & context)
+static ActionsDAG cloneDAGWithInversionPushDown(const ActionsDAG::Node * predicate, const ContextPtr & context)
 {
     ActionsDAG res;
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> inputs_mapping;
 
-    predicate = &DB::cloneASTWithInversionPushDown(*predicate, res, inputs_mapping, context, false);
+    predicate = &DB::cloneDAGWithInversionPushDown(*predicate, res, inputs_mapping, context, false);
 
     res.getOutputs() = {predicate};
 
@@ -853,7 +853,7 @@ ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(const ActionsDA
     * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
     * are pushed down and applied (when possible) to leaf nodes.
     */
-    dag = cloneASTWithInversionPushDown(predicate_, context);
+    dag = cloneDAGWithInversionPushDown(predicate_, context);
 
     predicate = dag->getOutputs()[0];
 }
