@@ -750,6 +750,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 if (parent_pool.threads_remove_themselves)
                     removeSelfFromPoolNoPoolLock(); // Detach and remove itself from the pool
 
+                ALLOW_ALLOCATIONS_IN_SCOPE;
                 DB::QuillFrontend::shrink_thread_local_queue(DB::QuillFrontendOptions::initial_queue_capacity);
                 return;
             }
