@@ -292,7 +292,7 @@ private:
     /// and data scanning thread is finished.
     bool iterator_finished = false;
 
-    /// A CV to notify data scanning thread to contonue,
+    /// A CV to notify data scanning thread to continue,
     /// as current data batch is fully read.
     std::condition_variable schedule_next_batch_cv;
 
