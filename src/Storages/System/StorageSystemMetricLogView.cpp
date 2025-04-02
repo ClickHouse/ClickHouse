@@ -380,7 +380,7 @@ public:
                     else
                         output_columns.push_back(ColumnInt64::create(start, end));
                 }
-                column.assign(SECONDS_IN_HOUR, 0L);
+                column.assign(SECONDS_IN_HOUR, static_cast<Int64>(0));
             }
         }
 
