@@ -849,7 +849,6 @@ ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(const ActionsDA
     * are pushed down and applied (when possible) to leaf nodes.
     */
     dag = cloneASTWithInversionPushDown(predicate_, context);
-    assert(inverted_dag.getOutputs().size() == 1);
 
     predicate = dag->getOutputs()[0];
 }
