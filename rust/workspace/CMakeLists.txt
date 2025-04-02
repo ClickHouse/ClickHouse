@@ -42,13 +42,6 @@ function(clickhouse_import_crate)
 
 endfunction()
 
-# TODO: add via properties if necessary
-## -Wno-dollar-in-identifier-extension: cxx bridge complies names with '$'
-## -Wno-unused-macros: unused CXXBRIDGE1_RUST_STRING
-#set(CXXBRIDGE_CXXFLAGS "-Wno-dollar-in-identifier-extension -Wno-unused-macros")
-#set(RUST_CXXFLAGS "${RUST_CXXFLAGS} ${CXXBRIDGE_CXXFLAGS}")
-#message(STATUS "RUST_CXXFLAGS (for skim): ${RUST_CXXFLAGS}")
-
 clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
 
 # Set cargo config (see contrib/delta-kernel-rs-cmake/CMakeLists.txt)

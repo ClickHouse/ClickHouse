@@ -12,6 +12,15 @@ rustdocflags = @RUSTFLAGS@
 [unstable]
 @RUST_CARGO_BUILD_STD@
 
+[profile.release]
+debug = false
+strip = true
+
+# We use LTO to slightly decrease binary size
+[profile.release-thinlto]
+inherits = "release"
+lto = true
+
 [source.crates-io]
 registry = 'sparse+https://index.crates.io/'
 replace-with = 'local-registry'
