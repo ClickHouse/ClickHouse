@@ -200,8 +200,8 @@ namespace
                 keys.emplace(path.substr(collection_prefix.size() + 1));
         }
 
-        return NamedCollection::create(
-            config, collection_name, collection_prefix, keys, NamedCollection::SourceId::CONFIG, /* is_mutable */false);
+        return NamedCollectionFromConfig::create(
+            config, collection_name, collection_prefix, keys);
     }
 
     NamedCollectionsMap getNamedCollections(const Poco::Util::AbstractConfiguration & config)
@@ -321,33 +321,31 @@ void NamedCollectionFactory::updateFromSQL(const ASTAlterNamedCollectionQuery & 
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
-    if (!exists(query.collection_name, lock))
+    auto collection_name = query.collection_name;
+    if (!exists(collection_name, lock))
     {
         if (query.if_exists)
             return;
 
         throw Exception(
             ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
-            "Cannot remove collection `{}`, because it doesn't exist",
-            query.collection_name);
+            "Cannot update collection `{}`, because it doesn't exist",
+            collection_name);
     }
+    auto updated_collection_ptr = metadata_storage->update(query);
 
-    metadata_storage->update(query);
+    auto it = loaded_named_collections.find(collection_name);
+    chassert(it != loaded_named_collections.end());
 
-    auto collection = getMutable(query.collection_name, lock);
-    auto collection_lock = collection->lock();
-
-    for (const auto & [name, value] : query.changes)
+    if (!it->second->isMutable())
     {
-        auto it_override = query.overridability.find(name);
-        if (it_override != query.overridability.end())
-            collection->setOrUpdate<String, true>(name, convertFieldToString(value), it_override->second);
-        else
-            collection->setOrUpdate<String, true>(name, convertFieldToString(value), {});
+        throw Exception(
+            ErrorCodes::NAMED_COLLECTION_IS_IMMUTABLE,
+            "Cannot get collection `{}` for modification, "
+            "because collection was defined as immutable",
+            collection_name);
     }
-
-    for (const auto & key : query.delete_keys)
-        collection->remove<true>(key);
+    it->second = updated_collection_ptr;
 }
 
 void NamedCollectionFactory::reloadFromSQL()

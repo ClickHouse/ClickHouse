@@ -22,6 +22,8 @@ ColumnsDescription StorageSystemNamedCollections::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(), "Name of the collection."},
         {"collection", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Collection internals."},
+        {"source", std::make_shared<DataTypeString>(), "Named collection source."},
+        {"create_query", std::make_shared<DataTypeString>(), "Named collection create query."},
     };
 }
 
@@ -50,12 +52,13 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         auto & tuple_column = column_map->getNestedData();
         auto & key_column = tuple_column.getColumn(0);
         auto & value_column = tuple_column.getColumn(1);
+        bool access_secrets = access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
 
         size_t size = 0;
         for (const auto & key : collection->getKeys())
         {
             key_column.insertData(key.data(), key.size());
-            if (access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS))
+            if (access_secrets)
                 value_column.insert(collection->get<String>(key));
             else
                 value_column.insert("[HIDDEN]");
@@ -63,6 +66,9 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         }
 
         offsets.push_back(offsets.back() + size);
+
+        res_columns[2]->insert(NamedCollection::sourceIdToString(collection->getSourceId()));
+        res_columns[3]->insert(collection->getCreateStatement(access_secrets));
     }
 }
 
