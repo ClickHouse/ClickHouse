@@ -118,7 +118,7 @@ private:
     // Size - number of files
     std::vector<ManifestFileEntry> files;
 
-    std::set<Int32> columns_with_bounds;
+    std::set<Int32> column_ids_which_have_bounds;
 
 };
 

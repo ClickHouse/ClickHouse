@@ -170,7 +170,6 @@ ManifestFileContent::ManifestFileContent(
     partition_key_ast->arguments = std::make_shared<DB::ASTExpressionList>();
     partition_key_ast->children.push_back(partition_key_ast->arguments);
 
-    bool has_non_empty_key = false;
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -187,10 +186,9 @@ ManifestFileContent::ManifestFileContent(
 
         partition_key_ast->arguments->children.emplace_back(std::move(partition_ast));
         partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics.type));
-        has_non_empty_key = true;
     }
 
-    if (has_non_empty_key)
+    if (!partition_columns_description.empty())
         this->partition_key_description.emplace(DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), context));
 
     for (size_t i = 0; i < manifest_file_deserializer.rows(); ++i)
@@ -265,7 +263,7 @@ ManifestFileContent::ManifestFileContent(
                     else
                         value_for_bounds[number].second = bound_value;
 
-                    columns_with_bounds.insert(number);
+                    column_ids_which_have_bounds.insert(number);
                 }
             }
         }
@@ -325,12 +323,12 @@ const DB::KeyDescription & ManifestFileContent::getPartitionKeyDescription() con
 
 bool ManifestFileContent::hasBoundsInfoInManifests() const
 {
-    return !columns_with_bounds.empty();
+    return !column_ids_which_have_bounds.empty();
 }
 
 const std::set<Int32> & ManifestFileContent::getColumnsIDsWithBounds() const
 {
-    return columns_with_bounds;
+    return column_ids_which_have_bounds;
 }
 
 std::optional<Int64> ManifestFileContent::getRowsCountInAllDataFilesExcludingDeleted() const
