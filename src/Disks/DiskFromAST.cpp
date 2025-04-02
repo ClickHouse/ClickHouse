@@ -38,9 +38,11 @@ std::string getOrCreateCustomDisk(
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     {
-        Poco::AutoPtr<Poco::XML::Document> xml_document = getDiskConfigurationFromASTImpl(disk_args, context);
+        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context);
+
         Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool());
         Poco::XML::DOMParser dom_parser(name_pool);
+
         std::vector<std::pair<std::string, std::string>> substitutions;
         zkutil::ZooKeeperNodeCache zk_node_cache([&]() { return context->getZooKeeper(); });
 

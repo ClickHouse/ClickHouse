@@ -98,11 +98,6 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
 DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context)
 {
     auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context);
-    return getDiskConfigurationFromDocument(xml_document);
-}
-
-DiskConfigurationPtr getDiskConfigurationFromDocument(const Poco::AutoPtr<Poco::XML::Document> & xml_document)
-{
     Poco::AutoPtr<Poco::Util::XMLConfiguration> conf(new Poco::Util::XMLConfiguration());
     conf->load(xml_document);
     return conf;
