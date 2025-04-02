@@ -49,6 +49,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 max_bytes_in_set;
