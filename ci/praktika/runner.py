@@ -98,6 +98,7 @@ class Runner:
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
+        env.JOB_CONFIG = job
         env.dump()
         print(env)
 
@@ -281,21 +282,18 @@ class Runner:
                         print(
                             f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
                         )
-                        result.set_status(Result.Status.ERROR).set_info(
-                            ResultInfo.TIMEOUT
-                        )
+                        info = ResultInfo.TIMEOUT
                     elif result.is_running():
                         info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]."
                         print(info)
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
-                        result.set_status(Result.Status.ERROR).set_info(info)
-                # add log snippet to report info
-                latest_log = process.get_latest_log(max_lies=20)
-                result.set_status(Result.Status.ERROR).set_info(info)
-                if latest_log:
-                    result.set_info("---").set_info(latest_log).set_info("---")
+                    result.set_status(Result.Status.ERROR)
+                    result.set_info(info)
+                    result.set_info("---").set_info(
+                        process.get_latest_log(max_lines=20)
+                    ).set_info("---")
             result.dump()
 
         return exit_code
@@ -434,7 +432,7 @@ class Runner:
                     passwd=workflow.get_secret(
                         Settings.SECRET_CI_DB_PASSWORD
                     ).get_value(),
-                ).insert(result)
+                ).insert(result, result_name_for_cidb=job.result_name_for_cidb)
             except Exception as ex:
                 traceback.print_exc()
                 error = f"ERROR: Failed to insert data into CI DB, exception [{ex}]"
