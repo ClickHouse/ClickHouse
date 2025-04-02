@@ -38,8 +38,11 @@
 #include <Common/FailPoint.h>
 
 #include <Common/config_version.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/Types.h>
 #include "config.h"
+
+#include <fmt/ranges.h>
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -57,6 +60,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
+    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
@@ -95,7 +99,8 @@ Connection::Connection(const String & host_, UInt16 port_,
     const String & cluster_secret_,
     const String & client_name_,
     Protocol::Compression compression_,
-    Protocol::Secure secure_)
+    Protocol::Secure secure_,
+    const String & bind_host_)
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
     , proto_send_chunked(proto_send_chunked_), proto_recv_chunked(proto_recv_chunked_)
@@ -109,6 +114,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     , client_name(client_name_)
     , compression(compression_)
     , secure(secure_)
+    , bind_host(bind_host_)
     , log_wrapper(*this)
 {
     /// Don't connect immediately, only on first need.
@@ -124,11 +130,12 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 {
     try
     {
-        LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
+        LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
             default_database.empty() ? "(not specified)" : default_database,
             user,
             static_cast<bool>(secure) ? ". Secure" : "",
-            static_cast<bool>(compression) ? "" : ". Uncompressed");
+            static_cast<bool>(compression) ? "" : ". Uncompressed",
+            bind_host.empty() ? "(not specified)" : bind_host);
 
         auto addresses = DNSResolver::instance().resolveAddressList(host, port);
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
@@ -152,6 +159,13 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 /// we want to postpone SSL handshake until first read or write operation
                 /// so any errors during negotiation would be properly processed
                 static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
+
+                if (!bind_host.empty())
+                {
+                    Poco::Net::SocketAddress socket_address(bind_host, 0);
+
+                    static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
+                }
 #else
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
 #endif
@@ -159,6 +173,13 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             else
             {
                 socket = std::make_unique<Poco::Net::StreamSocket>();
+
+                if (!bind_host.empty())
+                {
+                    Poco::Net::SocketAddress socket_address(bind_host, 0);
+
+                    static_cast<Poco::Net::StreamSocket*>(socket.get())->bind(socket_address, true);
+                }
             }
 
             try
@@ -226,7 +247,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         connected = true;
         setDescription();
 
-        sendHello();
+        sendHello(timeouts.handshake_timeout);
         receiveHello(timeouts.handshake_timeout);
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
@@ -367,7 +388,7 @@ void Connection::disconnect()
 }
 
 
-void Connection::sendHello()
+void Connection::sendHello([[maybe_unused]] const Poco::Timespan & handshake_timeout)
 {
     /** Disallow control characters in user controlled parameters
       *  to mitigate the possibility of SSRF.
@@ -420,7 +441,7 @@ void Connection::sendHello()
         writeStringBinary(String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) + user, *out);
         writeStringBinary(password, *out);
 
-        performHandshakeForSSHAuth();
+        performHandshakeForSSHAuth(handshake_timeout);
     }
 #endif
     else if (!jwt.empty())
@@ -457,8 +478,10 @@ void Connection::sendAddendum()
 
 
 #if USE_SSH
-void Connection::performHandshakeForSSHAuth()
+void Connection::performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout)
 {
+    TimeoutSetter timeout_setter(*socket, handshake_timeout, handshake_timeout);
+
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
@@ -475,11 +498,7 @@ void Connection::performHandshakeForSSHAuth()
         else if (packet_type == Protocol::Server::Exception)
             receiveException()->rethrow();
         else
-        {
-            /// Close connection, to not stay in unsynchronised state.
-            disconnect();
-            throwUnexpectedPacket(packet_type, "SSHChallenge or Exception");
-        }
+            throwUnexpectedPacket(timeout_setter, packet_type, "SSHChallenge or Exception");
     }
 
     writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
@@ -573,15 +592,7 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else
-    {
-        /// Reset timeout_setter before disconnect,
-        /// because after disconnect socket will be invalid.
-        timeout_setter.reset();
-
-        /// Close connection, to not stay in unsynchronised state.
-        disconnect();
-        throwUnexpectedPacket(packet_type, "Hello or Exception");
-    }
+        throwUnexpectedPacket(timeout_setter, packet_type, "Hello or Exception");
 }
 
 void Connection::setDefaultDatabase(const String & database)
@@ -712,7 +723,7 @@ bool Connection::ping(const ConnectionTimeouts & timeouts)
         }
 
         if (pong != Protocol::Server::Pong)
-            throwUnexpectedPacket(pong, "Pong");
+            throwUnexpectedPacket(timeout_setter, pong, "Pong");
     }
     catch (const Poco::Exception & e)
     {
@@ -751,7 +762,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (response_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else if (response_type != Protocol::Server::TablesStatusResponse)
-        throwUnexpectedPacket(response_type, "TablesStatusResponse");
+        throwUnexpectedPacket(timeout_setter, response_type, "TablesStatusResponse");
 
     TablesStatusResponse response;
     response.read(*in, server_revision);
@@ -811,6 +822,7 @@ void Connection::sendQuery(
             level,
             !(*settings)[Setting::allow_suspicious_codecs],
             (*settings)[Setting::allow_experimental_codecs],
+            (*settings)[Setting::enable_deflate_qpl_codec],
             (*settings)[Setting::enable_zstd_qat_codec]);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
@@ -818,6 +830,14 @@ void Connection::sendQuery(
         compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
 
     query_id = query_id_;
+
+    /// Avoid reusing connections that had been left in the intermediate state
+    /// (i.e. not all packets had been sent).
+    bool completed = false;
+    SCOPE_EXIT({
+        if (!completed)
+            disconnect();
+    });
 
     writeVarUInt(Protocol::Client::Query, *out);
     writeStringBinary(query_id, *out);
@@ -938,6 +958,8 @@ void Connection::sendQuery(
         sendData(Block(), "", false);
         out->next();
     }
+
+    completed = true;
 }
 
 
@@ -962,7 +984,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, block.cloneEmpty());
+        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, block.cloneEmpty(), format_settings);
     }
 
     if (scalar)
@@ -1388,7 +1410,7 @@ void Connection::initBlockInput()
                 maybe_compressed_in = in;
         }
 
-        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision);
+        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
     }
 }
 
@@ -1398,7 +1420,7 @@ void Connection::initBlockLogsInput()
     if (!block_logs_in)
     {
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_unique<NativeReader>(*in, server_revision);
+        block_logs_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
     }
 }
 
@@ -1407,7 +1429,7 @@ void Connection::initBlockProfileEventsInput()
 {
     if (!block_profile_events_in)
     {
-        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision);
+        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
     }
 }
 
@@ -1476,8 +1498,14 @@ InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement(
 }
 
 
-void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected) const
+void Connection::throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected)
 {
+    /// Reset timeout_setter before disconnect, because after disconnect socket will be invalid.
+    timeout_setter.reset();
+
+    /// Close connection, to avoid leaving it in an unsynchronised state.
+    disconnect();
+
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
             "Unexpected packet from server {} (expected {}, got {})",
                        getDescription(), expected, String(Protocol::Server::toString(packet_type)));
@@ -1500,7 +1528,8 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         "", /* cluster_secret */
         std::string(DEFAULT_CLIENT_NAME),
         parameters.compression,
-        parameters.security);
+        parameters.security,
+        parameters.bind_host);
 }
 
 }

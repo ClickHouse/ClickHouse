@@ -1,8 +1,14 @@
 #include <Interpreters/HashJoin/AddedColumns.h>
-#include <Interpreters/NullableUtils.h>
+#include <DataTypes/NullableUtils.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 JoinOnKeyColumns::JoinOnKeyColumns(
     const ScatteredBlock & block_, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
     : block(block_)
@@ -28,6 +34,9 @@ template<bool from_row_list>
 void AddedColumns<false>::buildOutputFromBlocks() {}
 
 template<>
+void AddedColumns<true>::buildOutputFromRowRefLists();
+
+template<>
 void AddedColumns<true>::buildOutput()
 {
     if (!output_by_row_list)
@@ -36,41 +45,21 @@ void AddedColumns<true>::buildOutput()
     {
         if (join_data_avg_perkey_rows < output_by_row_list_threshold)
             buildOutputFromBlocks<true>();
-        else if (join_data_sorted)
-        {
-            for (size_t i = 0; i < this->size(); ++i)
-            {
-                auto & col = columns[i];
-                for (auto row_ref_i : lazy_output.row_refs)
-                {
-                    if (row_ref_i)
-                    {
-                        const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-                        col->insertRangeFrom(*row_ref_list->block->getByPosition(right_indexes[i]).column, row_ref_list->row_num, row_ref_list->rows);
-                    }
-                    else
-                        type_name[i].type->insertDefaultInto(*col);
-                }
-            }
-        }
         else
-        {
-            for (size_t i = 0; i < this->size(); ++i)
-            {
-                auto & col = columns[i];
-                for (auto row_ref_i : lazy_output.row_refs)
-                {
-                    if (row_ref_i)
-                    {
-                        const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-                        for (auto it = row_ref_list->begin(); it.ok(); ++it)
-                            col->insertFrom(*it->block->getByPosition(right_indexes[i]).column, it->row_num);
-                    }
-                    else
-                        type_name[i].type->insertDefaultInto(*col);
-                }
-            }
-        }
+            buildOutputFromRowRefLists();
+    }
+}
+
+template<>
+void AddedColumns<true>::buildOutputFromRowRefLists()
+{
+    const size_t output_row_count = lazy_output.getRowCount();
+
+    for (size_t i = 0; i < this->size(); ++i)
+    {
+        auto & col = columns[i];
+        col->reserve(col->size() + output_row_count);
+        col->fillFromRowRefs(type_name[i].type, right_indexes[i], lazy_output.getRowRefs(), join_data_sorted);
     }
 }
 
@@ -80,7 +69,7 @@ void AddedColumns<true>::buildJoinGetOutput()
     for (size_t i = 0; i < this->size(); ++i)
     {
         auto & col = columns[i];
-        for (auto row_ref_i : lazy_output.row_refs)
+        for (auto row_ref_i : lazy_output.getRowRefs())
         {
             if (!row_ref_i)
             {
@@ -105,9 +94,9 @@ void AddedColumns<true>::buildOutputFromBlocks()
         return;
     std::vector<const Block *> blocks;
     std::vector<UInt32> row_nums;
-    blocks.reserve(lazy_output.row_refs.size());
-    row_nums.reserve(lazy_output.row_refs.size());
-    for (auto row_ref_i : lazy_output.row_refs)
+    blocks.reserve(lazy_output.getRowCount());
+    row_nums.reserve(lazy_output.getRowCount());
+    for (auto row_ref_i : lazy_output.getRowRefs())
     {
         if (row_ref_i)
         {
@@ -135,14 +124,7 @@ void AddedColumns<true>::buildOutputFromBlocks()
     }
     for (size_t i = 0; i < this->size(); ++i)
     {
-        auto & col = columns[i];
-        for (size_t j = 0; j < blocks.size(); ++j)
-        {
-            if (blocks[j])
-                col->insertFrom(*blocks[j]->getByPosition(right_indexes[i]).column, row_nums[j]);
-            else
-                type_name[i].type->insertDefaultInto(*col);
-        }
+        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], blocks, row_nums);
     }
 }
 
@@ -193,6 +175,13 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
 }
 
 template <>
+__attribute__((noreturn)) void AddedColumns<false>::appendFromBlock(const RowRefList *, bool)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for RowRefList in non-lazy mode");
+}
+
+
+template <>
 void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
 {
 #ifndef NDEBUG
@@ -200,9 +189,23 @@ void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
 #endif
     if (has_columns_to_add)
     {
-        lazy_output.row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref));
+        lazy_output.addRowRef(row_ref);
     }
 }
+
+template <>
+void AddedColumns<true>::appendFromBlock(const RowRefList * row_ref_list, bool)
+{
+#ifndef NDEBUG
+    checkBlock(*row_ref_list->block);
+#endif
+    if (has_columns_to_add)
+    {
+        lazy_output.addRowRefList(row_ref_list);
+    }
+}
+
+
 template<>
 void AddedColumns<false>::appendDefaultRow()
 {
@@ -214,7 +217,7 @@ void AddedColumns<true>::appendDefaultRow()
 {
     if (has_columns_to_add)
     {
-        lazy_output.row_refs.emplace_back(0);
+        lazy_output.addDefault();
     }
 }
 }

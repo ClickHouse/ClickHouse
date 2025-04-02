@@ -39,7 +39,7 @@ SELECT [DISTINCT] expr_list
 -   [JOIN 子句](../../../sql-reference/statements/select/join.md)
 -   [PREWHERE 子句](../../../sql-reference/statements/select/prewhere.md)
 -   [WHERE 子句](../../../sql-reference/statements/select/where.md)
--   [GROUP BY 子句](../../../sql-reference/statements/select/group-by.md)
+-   [GROUP BY 子句](/sql-reference/statements/select/group-by)
 -   [LIMIT BY 子句](../../../sql-reference/statements/select/limit-by.md)
 -   [HAVING 子句](../../../sql-reference/statements/select/having.md)
 -   [SELECT 子句](#select-clause)
@@ -51,7 +51,7 @@ SELECT [DISTINCT] expr_list
 
 ## SELECT 子句 {#select-clause}
 
-[表达式](../../../sql-reference/syntax.md#syntax-expressions) 指定 `SELECT` 子句是在上述子句中的所有操作完成后计算的。 这些表达式的工作方式就好像它们应用于结果中的单独行一样。 如果表达式 `SELECT` 子句包含聚合函数，然后ClickHouse将使用 [GROUP BY](../../../sql-reference/statements/select/group-by.md) 聚合参数应用在聚合函数和表达式上。
+[表达式](/sql-reference/syntax#expressions) 指定 `SELECT` 子句是在上述子句中的所有操作完成后计算的。 这些表达式的工作方式就好像它们应用于结果中的单独行一样。 如果表达式 `SELECT` 子句包含聚合函数，然后ClickHouse将使用 [GROUP BY](../../../sql-reference/statements/select/group-by.md) 聚合参数应用在聚合函数和表达式上。
 
 如果在结果中包含所有列，请使用星号 (`*`）符号。 例如, `SELECT * FROM ...`.
 
@@ -158,4 +158,4 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 有关详细信息，请参阅部分 “Settings”. 可以使用外部排序（将临时表保存到磁盘）和外部聚合。
 
-[原始文章](/docs/en/sql-reference/statements/select/)
+[原始文章](/sql-reference/statements/select/)

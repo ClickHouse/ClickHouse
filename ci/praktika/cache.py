@@ -69,12 +69,12 @@ class Cache:
         )
         Path(record_file_local_dir).mkdir(parents=True, exist_ok=True)
 
-        if S3.head_object(record_path):
-            res = S3.copy_file_from_s3(
-                s3_path=record_path, local_path=record_file_local_dir
-            )
-        else:
-            res = None
+        # _skip_download_counter=True to avoid races for multithreaded downloads
+        res = S3.copy_file_from_s3(
+            s3_path=record_path,
+            local_path=record_file_local_dir,
+            _skip_download_counter=True,
+        )
 
         if res:
             print(f"Cache record found, job [{job_name}], digest [{job_digest}]")

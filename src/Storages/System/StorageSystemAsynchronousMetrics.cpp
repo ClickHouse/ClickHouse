@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/AsynchronousMetrics.h>

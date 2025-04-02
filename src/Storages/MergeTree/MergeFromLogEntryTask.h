@@ -3,8 +3,6 @@
 #include <memory>
 #include <utility>
 
-#include <pcg_random.hpp>
-
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
@@ -55,7 +53,6 @@ private:
     Priority priority;
 
     MergeTaskPtr merge_task;
-    pcg64 rng;
 };
 
 

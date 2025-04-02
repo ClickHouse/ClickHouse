@@ -166,9 +166,13 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override;
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+
+    void forEachSubcolumn(ColumnCallback callback) const override;
+
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
 
     bool structureEquals(const IColumn & rhs) const override;
 
@@ -176,6 +180,7 @@ public:
 
     void finalize() override;
     bool isFinalized() const override;
+    bool canBeInsideNullable() const override { return true; }
 
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
@@ -241,6 +246,8 @@ public:
     static void fillPathColumnFromSharedData(IColumn & path_column, StringRef path, const ColumnPtr & shared_data_column, size_t start, size_t end);
 
 private:
+    class SortedPathsIterator;
+
     void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, StringRef path, StringRef value, StringRef & res) const;
 

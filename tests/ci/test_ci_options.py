@@ -97,7 +97,7 @@ _TEST_JOB_LIST = [
     "Upgrade check (asan)",
     "Upgrade check (tsan)",
     "Upgrade check (msan)",
-    "Unit tests (release)",
+    "Unit tests (binary)",
     "Unit tests (asan)",
     "Unit tests (msan)",
     "Unit tests (tsan)",

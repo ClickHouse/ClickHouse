@@ -26,7 +26,7 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
-上述中的[uniq](../../sql-reference/data-types/aggregatefunction.md#agg_function-uniq)， anyIf ([任何](../../sql-reference/data-types/aggregatefunction.md#agg_function-any)+[如果](../../sql-reference/data-types/aggregatefunction.md#agg-functions-combinator-if)) 以及 [分位数](../../sql-reference/data-types/aggregatefunction.md) 都为ClickHouse中支持的聚合函数。
+上述中的[uniq](/sql-reference/aggregate-functions/reference/uniq)， anyIf ([任何](/sql-reference/aggregate-functions/reference/any)+[如果](/sql-reference/aggregate-functions/combinators#-if)) 以及 [分位数](../../sql-reference/data-types/aggregatefunction.md) 都为ClickHouse中支持的聚合函数。
 
 ## 使用指南 {#shi-yong-zhi-nan}
 

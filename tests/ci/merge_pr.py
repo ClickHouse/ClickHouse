@@ -18,9 +18,9 @@ from ci_config import CI
 from commit_status_helper import (
     get_commit,
     get_commit_filtered_statuses,
+    post_commit_status,
     trigger_mergeable_check,
     update_upstream_sync_status,
-    post_commit_status,
 )
 from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY
 from get_robot_token import get_best_robot_token
