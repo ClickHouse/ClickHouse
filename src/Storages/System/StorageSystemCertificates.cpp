@@ -1,3 +1,5 @@
+#include <Storages/System/StorageSystemCertificates.h>
+
 #include "config.h"
 
 #include <Columns/IColumn.h>
@@ -12,8 +14,14 @@
     #include <Common/Crypto/X509Certificate.h>
 #endif
 
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/constants.hpp>
+#include <boost/algorithm/string/split.hpp>
+
 #include <Poco/DateTimeFormatter.h>
 #include <Poco/File.h>
+
+#include <filesystem>
 
 
 namespace DB
@@ -101,7 +109,7 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
             {
                 auto certs = X509Certificate::fromFile(afile.path());
                 for (const auto & cert : certs)
-                    populateTable(cert.certificate(), res_columns, afile.path(), false);
+                    populateTable(cert, res_columns, afile.path(), false);
             }
         }
     }
@@ -120,7 +128,7 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
         {
             auto certs = X509Certificate::fromFile(ca_paths.caDefaultFile);
             for (const auto & cert : certs)
-                populateTable(cert.certificate(), res_columns, ca_paths.caDefaultFile, true);
+                populateTable(cert, res_columns, ca_paths.caDefaultFile, true);
         }
     }
 #endif
