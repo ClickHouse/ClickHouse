@@ -1,6 +1,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 
@@ -47,8 +48,10 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     if (temporary)
         ostr << "TEMPORARY ";
 
-    if (has_all_tables)
-        ostr << "ALL TABLES FROM ";
+    if (has_all)
+        ostr << "ALL ";
+    if (has_tables)
+        ostr << "TABLES FROM ";
     else if (!table && !database_and_tables && database)
         ostr << "DATABASE ";
     else if (is_dictionary)
@@ -104,6 +107,13 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         chassert(table);
         table->format(ostr, settings, state, frame);
     }
+
+    if (!like.empty())
+        ostr << (settings.hilite ? hilite_keyword : "")
+                      << (not_like ? " NOT" : "")
+                      << (case_insensitive_like ? " ILIKE " : " LIKE")
+                      << (settings.hilite ? hilite_none : "")
+                      << DB::quote << like;
 
     formatOnCluster(ostr, settings);
 
