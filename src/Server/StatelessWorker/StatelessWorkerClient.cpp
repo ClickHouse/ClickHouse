@@ -2,9 +2,11 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <Core/ProtocolDefines.h>
 #include <base/types.h>
 
 namespace DB
@@ -72,7 +74,7 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
 
 /// Get task status by its id.
 /// If wait_for_ms is set, the function will wait for the task to finish for the specified amount of time.
-String getTaskStatus(const String & endpoint_uri, const String & task_id, UInt32 wait_for_ms, const ContextPtr & context)
+DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const String & task_id, UInt32 wait_for_ms, const ContextPtr & context)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -105,10 +107,11 @@ String getTaskStatus(const String & endpoint_uri, const String & task_id, UInt32
         .withDelayInit(false)
         .create(creds);
 
-    std::string s;
-    readStringUntilEOF(s, *in);
+    DistributedQueryTaskStatus result;
+    result.read(*in, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
+    in->eof();
 
-    return s;
+    return result;
 }
 
 void cancelTask(const String & endpoint_uri, const String & task_id, const ContextPtr & context)

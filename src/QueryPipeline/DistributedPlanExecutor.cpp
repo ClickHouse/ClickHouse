@@ -451,7 +451,7 @@ QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr 
 }
 
 void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage,
-    const String & object_storage_path, ContextMutablePtr context, std::function<bool()> is_cancelled)
+    const String & object_storage_path, ContextMutablePtr context, std::function<bool()> is_cancelled, ProgressCallback progress_callback)
 {
     Stopwatch execute_task_watch;
     const auto & task = task_description.task;
@@ -516,6 +516,8 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Task pipeline must be completed");
 
         pipeline.setProcessListElement(context->getProcessListElement());
+
+        pipeline.setProgressCallback(progress_callback);
 
         CompletedPipelineExecutor executor(pipeline);
         if (is_cancelled)
@@ -800,11 +802,15 @@ protected:
             auto & task = started_tasks.front();
             auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, 1000, context);
 
-            if (task_status == "Running\n")
+            auto progress_callback = context->getProgressCallback();
+            if (progress_callback)
+                progress_callback(task_status.progress);
+
+            if (task_status.status == "Running")
                 continue;
 
-            if (task_status != "Finished\n")
-                error_message += " Task " + task.task_id + " error: " + task_status + "\n";
+            if (task_status.status != "Finished")
+                error_message += " Task " + task.task_id + " error: " + task_status.error_message + "\n";
 
             started_tasks.pop_front();
         }

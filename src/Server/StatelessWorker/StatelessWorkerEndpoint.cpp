@@ -1,5 +1,6 @@
 #include <Server/StatelessWorker/StatelessWorkerEndpoint.h>
 #include <Server/StatelessWorker/StatelessTaskExecutor.h>
+#include <Server/StatelessWorker/StatelessWorkerProtocol.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
@@ -8,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include "Processors/QueryPlan/QueryPlan.h"
 #include "QueryPipeline/DistributedPlanExecutor.h"
+#include <Core/ProtocolDefines.h>
 
 namespace DB
 {
@@ -149,52 +151,59 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBuffer &
     {
         UInt64 wait_milliseconds = 0;
         if (params.has("wait_for_ms"))
-        {
             wait_milliseconds = parse<UInt64>(params.get("wait_for_ms"));
-        }
+
+        UInt64 client_version = DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS;
+        if (params.has("client_version"))
+            client_version = parse<UInt64>(params.get("client_version"));
 
         body.eof();
+
         auto status = task_runner->getStatus(task_id, wait_milliseconds);
+        DistributedQueryTaskStatus task_status;
+        task_status.progress = std::move(status.progress);
+
         switch (status.result)
         {
             case StatelessTaskExecutor::TaskRunnig:
             {
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-                writeString("Running\n", out);
+                task_status.status = "Running";
                 break;
             }
             case StatelessTaskExecutor::TaskFinished:
             {
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-                writeString("Finished\n", out);
+                task_status.status = "Finished";
                 break;
             }
             case StatelessTaskExecutor::TaskCancelled:
             {
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-                writeString("Cancelled\n", out);
+                task_status.status = "Cancelled";
                 break;
             }
             case StatelessTaskExecutor::TaskFailed:
             {
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-                writeString("Failed\n", out);
-                writeString(status.message, out);
+                task_status.status = "Failed";
+                task_status.error_message = status.message;
                 break;
             }
             case StatelessTaskExecutor::UnknownTaskId:
             {
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-                writeString("Unknown task\n", out);
+                task_status.status = "Unknown task";
                 break;
             }
             default:
             {
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-                writeString(fmt::format("Unexpected task status: {}\n", static_cast<int>(status.result)), out);
+                task_status.status = fmt::format("Unexpected task status: {}", static_cast<int>(status.result));
                 break;
             }
         }
+        task_status.write(out, client_version);
     }
     else if (operation == "cancel")
     {

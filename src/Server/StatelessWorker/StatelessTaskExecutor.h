@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <base/types.h>
 #include <base/defines.h>
+#include <IO/Progress.h>
 #include "QueryPipeline/DistributedPlanExecutor.h"
 
 namespace DB
@@ -33,6 +34,7 @@ public:
     {
         Result result;
         String message;
+        Progress progress;
     };
 
     Result startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task, const String & unique_temp_file_path);
@@ -51,6 +53,7 @@ private:
     {
         std::shared_future<String> completion_future;
         std::shared_ptr<std::atomic<bool>> cancelled = std::make_shared<std::atomic<bool>>(false);
+        std::shared_ptr<Progress> progress = std::make_shared<Progress>();
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;

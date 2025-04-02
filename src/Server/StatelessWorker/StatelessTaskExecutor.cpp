@@ -49,7 +49,12 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         return *cancelled;
     };
 
-    auto task_function = [task_description, object_storage, object_storage_path, query_context, task_promise, is_task_cancelled]() mutable
+    auto update_progress = [task_progress = task_state->progress](const Progress & progress)
+    {
+        task_progress->incrementPiecewiseAtomically(progress);
+    };
+
+    auto task_function = [task_description, object_storage, object_storage_path, query_context, task_promise, is_task_cancelled, update_progress]() mutable
     {
         auto query_scope = std::make_unique<CurrentThread::QueryScope>(query_context);
 
@@ -61,7 +66,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 
         try
         {
-            doExecuteTask(task_description, object_storage, object_storage_path, query_context, is_task_cancelled);
+            doExecuteTask(task_description, object_storage, object_storage_path, query_context, is_task_cancelled, update_progress);
             task_promise->set_value("");
         }
         catch (std::exception & e)
@@ -86,23 +91,29 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String & task_id, UInt64 wait_milliseconds)
 {
     /// Make a copy of task completion future to wait for it outside of the lock
-    std::shared_future<void> completion_future;
+    std::shared_future<String> completion_future;
+    std::shared_ptr<Progress> progress;
     {
         std::lock_guard lock(tasks_mutex);
         auto it = tasks.find(task_id);
         if (it == tasks.end())
-            return TaskStatus{Result::UnknownTaskId, ""};
+            return TaskStatus{Result::UnknownTaskId, "", {}};
         completion_future = it->second->completion_future;
+        progress = it->second->progress;
     }
 
     if (completion_future.valid() && completion_future.wait_for(std::chrono::milliseconds(wait_milliseconds)) == std::future_status::timeout)
-        return TaskStatus{Result::TaskRunnig, ""};
+    {
+        Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
+        return TaskStatus{Result::TaskRunnig, "", std::move(progress_delta)};
+    }
 
+    Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
     auto error_message = completion_future.get();
     if (error_message.empty())
-        return TaskStatus{Result::TaskFinished, ""};
+        return TaskStatus{Result::TaskFinished, "", std::move(progress_delta)};
     else
-        return TaskStatus{Result::TaskFailed, error_message};
+        return TaskStatus{Result::TaskFailed, error_message, std::move(progress_delta)};
 }
 
 StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & task_id)

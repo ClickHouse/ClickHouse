@@ -3,7 +3,8 @@
 #include <Processors/Chunk.h>
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
-#include "Processors/QueryPlan/QueryPlan.h"
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <IO/Progress.h>
 
 namespace DB
 {
@@ -31,7 +32,7 @@ struct DistributedQueryTaskDescription
 
 /// Executes a task locally
 void doExecuteTask(const DistributedQueryTaskDescription & task, ObjectStoragePtr object_storage,
-    const String & object_storage_path, ContextMutablePtr context, std::function<bool()> is_cancelled = nullptr);
+    const String & object_storage_path, ContextMutablePtr context, std::function<bool()> is_cancelled = nullptr, ProgressCallback progress_callback = nullptr);
 
 /// Returns object storage and path for temporary files
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context);
