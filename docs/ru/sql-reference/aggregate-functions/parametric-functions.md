@@ -20,7 +20,7 @@ histogram(number_of_bins)(values)
 
 **Аргументы**
 
-`values` — [выражение](../syntax.md#syntax-expressions), предоставляющее входные значения.
+`values` — [выражение](/sql-reference/syntax#expressions), предоставляющее входные значения.
 
 **Параметры**
 

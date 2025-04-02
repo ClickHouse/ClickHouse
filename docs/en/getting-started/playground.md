@@ -1,9 +1,10 @@
 ---
-sidebar_label: ClickHouse Playground
-sidebar_position: 2
-keywords: [clickhouse, playground, getting, started, docs]
-description: The ClickHouse Playground allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
+description: 'The ClickHouse Playground allows people to experiment with ClickHouse
+  by running queries instantly, without setting up their server or cluster.'
+keywords: ['clickhouse', 'playground', 'getting', 'started', 'docs']
+sidebar_label: 'ClickHouse Playground'
 slug: /getting-started/playground
+title: 'ClickHouse Playground'
 ---
 
 # ClickHouse Playground
@@ -35,12 +36,12 @@ The service also have quotas on its usage.
 
 HTTPS endpoint example with `curl`:
 
-``` bash
+```bash
 curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
 ```
 
 TCP endpoint example with [CLI](../interfaces/cli.md):
 
-``` bash
+```bash
 clickhouse client --secure --host play.clickhouse.com --user explorer
 ```

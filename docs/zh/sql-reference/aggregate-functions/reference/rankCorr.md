@@ -13,14 +13,14 @@ rankCorr(x, y)
 
 **参数**
 
--   `x` — 任意值。[Float32](../../../sql-reference/data-types/float.md#float32-float64) 或 [Float64](../../../sql-reference/data-types/float.md#float32-float64)。
--   `y` — 任意值。[Float32](../../../sql-reference/data-types/float.md#float32-float64) 或 [Float64](../../../sql-reference/data-types/float.md#float32-float64)。
+-   `x` — 任意值。[Float32](/sql-reference/data-types/float) 或 [Float64](/sql-reference/data-types/float)。
+-   `y` — 任意值。[Float32](/sql-reference/data-types/float) 或 [Float64](/sql-reference/data-types/float)。
 
 **返回值**
 
 -   Returns a rank correlation coefficient of the ranks of x and y. The value of the correlation coefficient ranges from -1 to +1. If less than two arguments are passed, the function will return an exception. The value close to +1 denotes a high linear relationship, and with an increase of one random variable, the second random variable also increases. The value close to -1 denotes a high linear relationship, and with an increase of one random variable, the second random variable decreases. The value close or equal to 0 denotes no relationship between the two random variables.
 
-类型: [Float64](../../../sql-reference/data-types/float.md#float32-float64)。
+类型: [Float64](/sql-reference/data-types/float)。
 
 **示例**
 

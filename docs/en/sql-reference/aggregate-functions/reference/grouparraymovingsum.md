@@ -1,15 +1,15 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/grouparraymovingsum
+description: 'Calculates the moving sum of input values.'
 sidebar_position: 144
-title: "groupArrayMovingSum"
-description: "Calculates the moving sum of input values."
+slug: /sql-reference/aggregate-functions/reference/grouparraymovingsum
+title: 'groupArrayMovingSum'
 ---
 
 # groupArrayMovingSum
 
 Calculates the moving sum of input values.
 
-``` sql
+```sql
 groupArrayMovingSum(numbers_for_summing)
 groupArrayMovingSum(window_size)(numbers_for_summing)
 ```
@@ -18,7 +18,7 @@ The function can take the window size as a parameter. If left unspecified, the f
 
 **Arguments**
 
-- `numbers_for_summing` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) resulting in a numeric data type value.
+- `numbers_for_summing` — [Expression](/sql-reference/syntax#expressions) resulting in a numeric data type value.
 - `window_size` — Size of the calculation window.
 
 **Returned values**
@@ -29,7 +29,7 @@ The function can take the window size as a parameter. If left unspecified, the f
 
 The sample table:
 
-``` sql
+```sql
 CREATE TABLE t
 (
     `int` UInt8,
@@ -39,7 +39,7 @@ CREATE TABLE t
 ENGINE = TinyLog
 ```
 
-``` text
+```text
 ┌─int─┬─float─┬──dec─┐
 │   1 │   1.1 │ 1.10 │
 │   2 │   2.2 │ 2.20 │
@@ -50,7 +50,7 @@ ENGINE = TinyLog
 
 The queries:
 
-``` sql
+```sql
 SELECT
     groupArrayMovingSum(int) AS I,
     groupArrayMovingSum(float) AS F,
@@ -58,13 +58,13 @@ SELECT
 FROM t
 ```
 
-``` text
+```text
 ┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
 │ [1,3,7,14] │ [1.1,3.3000002,7.7000003,15.47] │ [1.10,3.30,7.70,15.47] │
 └────────────┴─────────────────────────────────┴────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT
     groupArrayMovingSum(2)(int) AS I,
     groupArrayMovingSum(2)(float) AS F,
@@ -72,7 +72,7 @@ SELECT
 FROM t
 ```
 
-``` text
+```text
 ┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
 │ [1,3,6,11] │ [1.1,3.3000002,6.6000004,12.17] │ [1.10,3.30,6.60,12.17] │
 └────────────┴─────────────────────────────────┴────────────────────────┘

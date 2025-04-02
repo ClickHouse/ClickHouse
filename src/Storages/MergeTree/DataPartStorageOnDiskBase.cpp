@@ -18,6 +18,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
+#include <fmt/ranges.h>
+
 namespace DB
 {
 

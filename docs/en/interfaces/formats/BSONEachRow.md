@@ -1,10 +1,11 @@
 ---
-title: BSONEachRow
-slug: /interfaces/formats/BSONEachRow
-keywords: [BSONEachRow]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the BSONEachRow format'
+input_format: true
+keywords: ['BSONEachRow']
+output_format: true
+slug: /interfaces/formats/BSONEachRow
+title: 'BSONEachRow'
 ---
 
 | Input | Output | Alias |

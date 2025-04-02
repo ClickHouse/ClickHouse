@@ -1,9 +1,11 @@
 ---
-description: "Learn how to use projections to improve the performance of queries that you run frequently using the UK property dataset, which contains data about prices paid for real-estate property in England and Wales"
-slug: /getting-started/example-datasets/uk-price-paid
-sidebar_label: UK Property Prices
+description: 'Learn how to use projections to improve the performance of queries that
+  you run frequently using the UK property dataset, which contains data about prices
+  paid for real-estate property in England and Wales'
+sidebar_label: 'UK Property Prices'
 sidebar_position: 1
-title: "The UK property prices dataset"
+slug: /getting-started/example-datasets/uk-price-paid
+title: 'The UK property prices dataset'
 ---
 
 Projections are a great way to improve the performance of queries that you run frequently. We will demonstrate the power of projections

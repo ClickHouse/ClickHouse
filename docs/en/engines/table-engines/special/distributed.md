@@ -1,9 +1,12 @@
 ---
-sidebar_label: "Distributed"
+description: 'Tables with Distributed engine do not store any data of their own, but
+  allow distributed query processing on multiple servers. Reading is automatically
+  parallelized. During a read, the table indexes on remote servers are used, if there
+  are any.'
+sidebar_label: 'Distributed'
 sidebar_position: 10
-title: "Distributed Table Engine"
-description: "Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers. Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any."
 slug: /engines/table-engines/special/distributed
+title: 'Distributed Table Engine'
 ---
 
 # Distributed Table Engine
@@ -16,7 +19,7 @@ Tables with Distributed engine do not store any data of their own, but allow dis
 
 ## Creating a Table {#distributed-creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -30,7 +33,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 When the `Distributed` table is pointing to a table on the current server you can adopt that table's schema:
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
@@ -128,7 +131,7 @@ For **Insert limit settings** (`..._insert`) see also:
 
 **Example**
 
-``` sql
+```sql
 CREATE TABLE hits_all AS hits
 ENGINE = Distributed(logs, default, hits[, sharding_key[, policy_name]])
 SETTINGS
@@ -144,7 +147,7 @@ Instead of the database name, you can use a constant expression that returns a s
 
 Clusters are configured in the [server configuration file](../../../operations/configuration-files.md):
 
-``` xml
+```xml
 <remote_servers>
     <logs>
         <!-- Inter-server per-cluster secret for Distributed queries
@@ -202,7 +205,7 @@ Here a cluster is defined with the name `logs` that consists of two shards, each
 
 Cluster names must not contain dots.
 
-The parameters `host`, `port`, and optionally `user`, `password`, `secure`, `compression` are specified for each server:
+The parameters `host`, `port`, and optionally `user`, `password`, `secure`, `compression`, `bind_host` are specified for each server:
 
 - `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server does not start. If you change the DNS record, restart the server.
 - `port` – The TCP port for messenger activity (`tcp_port` in the config, usually set to 9000). Not to be confused with `http_port`.
@@ -210,6 +213,7 @@ The parameters `host`, `port`, and optionally `user`, `password`, `secure`, `com
 - `password` – The password for connecting to a remote server (not masked). Default value: empty string.
 - `secure` - Whether to use a secure SSL/TLS connection. Usually also requires specifying the port (the default secure port is `9440`). The server should listen on `<tcp_port_secure>9440</tcp_port_secure>` and be configured with correct certificates.
 - `compression` - Use data compression. Default value: `true`.
+- `bind_host` - The source address to use when connecting to the remote server from this node. IPv4 address only supported. Intended for advanced deployment use cases where setting the source IP address used by ClickHouse distributed queries is needed.
 
 When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load_balancing](../../../operations/settings/settings.md#load_balancing) setting. If the connection with the server is not established, there will be an attempt to connect with a short timeout. If the connection failed, the next replica will be selected, and so on for all the replicas. If the connection attempt failed for all the replicas, the attempt will be repeated the same way, several times. This works in favour of resiliency, but does not provide complete fault tolerance: a remote server might accept the connection, but might not work, or work poorly.
 

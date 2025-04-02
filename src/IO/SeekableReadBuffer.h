@@ -42,6 +42,8 @@ public:
     /// This function is like getPosition(), but it returns std::nullopt instead of throwing exception.
     std::optional<off_t> tryGetPosition();
 
+    /// Shouldn't be called frequently, may be expensive.
+    /// (In particular, in AsynchronousBoundedReadBuffer it waits for prefetch, to avoid race condition.)
     virtual String getInfoForLog() { return ""; }
 
     /// NOTE: This method should be thread-safe against seek(), since it can be
@@ -93,6 +95,7 @@ public:
 
     /// For tables that have an external storage (like S3) as their main storage we'd like to distinguish whether we're reading from this storage or from a local cache.
     /// It allows to reuse all the optimisations done for reading from local tables when reading from cache.
+    /// Usually `offset` is equal to getPosition().
     virtual bool isContentCached([[maybe_unused]] size_t offset, [[maybe_unused]] size_t size) { return false; }
 };
 

@@ -1,13 +1,15 @@
 ---
+description: 'Documentation for ARRAY JOIN Clause'
+sidebar_label: 'ARRAY JOIN'
 slug: /sql-reference/statements/select/array-join
-sidebar_label: ARRAY JOIN
+title: 'ARRAY JOIN Clause'
 ---
 
 # ARRAY JOIN Clause
 
 It is a common operation for tables that contain an array column to produce a new table that has a column with each individual array element of that initial column, while values of other columns are duplicated. This is the basic case of what `ARRAY JOIN` clause does.
 
-Its name comes from the fact that it can be looked at as executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](../../../sql-reference/functions/array-join.md#functions_arrayjoin) function, but the clause functionality is broader.
+Its name comes from the fact that it can be looked at as executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](/sql-reference/functions/array-join) function, but the clause functionality is broader.
 
 Syntax:
 
@@ -144,7 +146,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 └───────┴─────────┴───┴─────┴────────┘
 ```
 
-The example below uses the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
+The example below uses the [arrayEnumerate](/sql-reference/functions/array-functions#arrayenumeratearr) function:
 
 ```sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -277,7 +279,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-Example of using the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
+Example of using the [arrayEnumerate](/sql-reference/functions/array-functions#arrayenumeratearr) function:
 
 ```sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num

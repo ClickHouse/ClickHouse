@@ -18,10 +18,10 @@ sidebar_position: 34
 
         Это один из методов создания таблицы.
 
--   Запросе [INSERT INTO TABLE FUNCTION](../../sql-reference/statements/insert-into.md#inserting-into-table-function).
+-   Запросе [INSERT INTO TABLE FUNCTION](/sql-reference/statements/insert-into#inserting-using-a-table-function).
 
 :::danger Предупреждение
-Если настройка [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) выключена, то использовать табличные функции невозможно.
+Если настройка [allow_ddl](/operations/settings/settings#allow_ddl) выключена, то использовать табличные функции невозможно.
 :::
 
 | Функция               | Описание                                                                                                                              |

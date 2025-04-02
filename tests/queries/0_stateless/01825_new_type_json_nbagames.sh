@@ -9,7 +9,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS nbagames"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS nbagames_string"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS nbagames_from_string"
 
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE nbagames (data JSON) ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_json_type 1
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE nbagames (data JSON) ENGINE = MergeTree ORDER BY tuple()" --enable_json_type 1
 
 cat $CUR_DIR/data_json/nbagames_sample.json | ${CLICKHOUSE_CLIENT} -q "INSERT INTO nbagames FORMAT JSONAsObject"
 
@@ -40,7 +40,7 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q \
 GROUP BY player ORDER BY triple_doubles DESC, player LIMIT 5"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE nbagames_string (data String) ENGINE = MergeTree ORDER BY tuple()"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE nbagames_from_string (data JSON) ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_json_type 1
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE nbagames_from_string (data JSON) ENGINE = MergeTree ORDER BY tuple()" --enable_json_type 1
 
 cat $CUR_DIR/data_json/nbagames_sample.json | ${CLICKHOUSE_CLIENT} -q "INSERT INTO nbagames_string FORMAT JSONAsString"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO nbagames_from_string SELECT data FROM nbagames_string"

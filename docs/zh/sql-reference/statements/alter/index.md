@@ -23,7 +23,7 @@ sidebar_label: ALTER
 
 这些 `ALTER` 语句操作视图:
 
--   [ALTER TABLE ... MODIFY QUERY](../../../sql-reference/statements/alter/view.md) — 修改一个 [Materialized view](../create/view.md#materialized) 结构.
+-   [ALTER TABLE ... MODIFY QUERY](../../../sql-reference/statements/alter/view.md) — 修改一个 [Materialized view](/sql-reference/statements/create/view#materialized-view) 结构.
 -   [ALTER LIVE VIEW](../../../sql-reference/statements/alter/view.md#alter-live-view) — 刷新一个 [Live view](../create/view.md#live-view).
 
 这些 `ALTER` 语句修改与基于角色的访问控制相关的实体:

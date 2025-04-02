@@ -1,10 +1,11 @@
 ---
-title: JSONStrings
-slug: /interfaces/formats/JSONStrings
-keywords: [JSONStrings]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the JSONStrings format'
+input_format: true
+keywords: ['JSONStrings']
+output_format: true
+slug: /interfaces/formats/JSONStrings
+title: 'JSONStrings'
 ---
 
 | Input | Output | Alias |

@@ -5,6 +5,9 @@
 namespace DB
 {
 
+class ReadBuffer;
+class WriteBuffer;
+
 /// Join method.
 enum class JoinKind : uint8_t
 {
@@ -16,6 +19,9 @@ enum class JoinKind : uint8_t
     Comma, /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
     Paste, /// Used to join parts without `ON` clause.
 };
+
+void serializeJoinKind(JoinKind kind, WriteBuffer & out);
+JoinKind deserializeJoinKind(ReadBuffer & in);
 
 const char * toString(JoinKind kind);
 
@@ -44,6 +50,9 @@ enum class JoinStrictness : uint8_t
     Anti, /// LEFT or RIGHT. Same as SEMI JOIN but filter values that are NOT exists in other table.
 };
 
+void serializeJoinStrictness(JoinStrictness strictness, WriteBuffer & out);
+JoinStrictness deserializeJoinStrictness(ReadBuffer & in);
+
 const char * toString(JoinStrictness strictness);
 
 /// Algorithm for distributed query processing.
@@ -53,6 +62,9 @@ enum class JoinLocality : uint8_t
     Local, /// Perform JOIN, using only data available on same servers (co-located data).
     Global /// Collect and merge data from remote servers, and broadcast it to each server.
 };
+
+void serializeJoinLocality(JoinLocality locality, WriteBuffer & out);
+JoinLocality deserializeJoinLocality(ReadBuffer & in);
 
 const char * toString(JoinLocality locality);
 
