@@ -485,7 +485,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     auto create_fn = [&]()
     {
-        ObjectInfo object_info(metadata_file_path);
+        ObjectInfo object_info(metadata_file_path); // NOLINT
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
 
         String json_str;
@@ -495,6 +495,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
         Poco::Dynamic::Var json = parser.parse(json_str);
         return std::make_pair(json.extract<Poco::JSON::Object::Ptr>(), json_str.size());
     };
+
     if (cache_ptr)
         object = cache_ptr->getOrSetMetadataObject(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), create_fn);
     else
