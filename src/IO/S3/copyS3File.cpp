@@ -637,9 +637,7 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
             LOG_TRACE(
-                log,
-                "Is checksum enabled ? {}, is Client for disk? ", client_ptr->isChecksumEnabled(), client_ptr->isClientForDisk()
-            );
+                log, "Is checksum enabled ? {}, is Client for disk? {}", client_ptr->isChecksumEnabled(), client_ptr->isClientForDisk());
 //            if(client_ptr->isChecksumEnabled()
 //                && ( dynamic_cast<AsynchronousReadBufferFromFileDescriptor*>(buffer.get())
 //                    || dynamic_cast<ReadBufferFromFileDescriptor*>(buffer.get()) )){
