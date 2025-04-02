@@ -123,8 +123,6 @@ namespace Setting
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool apply_settings_from_server;
-    extern const SettingsUInt64 parallel_block_marshaling_threads;
-    extern const SettingsUInt64 parallel_block_marshaling_queue_size;
 }
 
 namespace ServerSetting
