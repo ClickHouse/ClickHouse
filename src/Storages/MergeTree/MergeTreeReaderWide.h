@@ -90,17 +90,18 @@ private:
     void deserializePrefix(
         const SerializationPtr & serialization,
         const NameAndTypePair & name_and_type,
+        size_t from_mark,
         size_t current_task_last_mark,
         DeserializeBinaryBulkStateMap & deserialize_state_map,
         ISerialization::SubstreamsCache & cache,
         ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
         ISerialization::StreamCallback prefixes_prefetch_callback);
 
-    void deserializePrefixForAllColumns(size_t num_columns, size_t current_task_last_mark);
-    void deserializePrefixForAllColumnsWithPrefetch(size_t num_columns, size_t current_task_last_mark, Priority priority);
+    void deserializePrefixForAllColumns(size_t num_columns, size_t from_mark, size_t current_task_last_mark);
+    void deserializePrefixForAllColumnsWithPrefetch(size_t num_columns, size_t from_mark, size_t current_task_last_mark, Priority priority);
 
     using StreamCallbackGetter = std::function<ISerialization::StreamCallback(const NameAndTypePair &)>;
-    void deserializePrefixForAllColumnsImpl(size_t num_columns, size_t current_task_last_mark, StreamCallbackGetter prefixes_prefetch_callback_getter);
+    void deserializePrefixForAllColumnsImpl(size_t num_columns, size_t from_mark, size_t current_task_last_mark, StreamCallbackGetter prefixes_prefetch_callback_getter);
 
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
