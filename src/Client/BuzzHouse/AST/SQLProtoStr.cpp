@@ -3138,7 +3138,7 @@ CONV_FN(Drop, dt)
 
 CONV_FN(Insert, insert)
 {
-    if (insert.has_ctes() && insert.has_select())
+    if (insert.has_ctes())
     {
         CTEsToString(ret, insert.ctes());
     }
