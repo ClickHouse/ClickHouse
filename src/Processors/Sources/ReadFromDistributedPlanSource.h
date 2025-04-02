@@ -22,11 +22,13 @@ public:
 
 private:
     Chunk generate() override;
+    void onCancel() noexcept override;
 
     const UUID unique_query_id;
     const DistributedQueryPlan distributed_query_plan;
 
-    bool executed = false;
+    bool started = false;
+    std::shared_ptr<std::atomic<bool>> cancellation_flag = std::make_shared<std::atomic<bool>>(false);
 };
 
 }

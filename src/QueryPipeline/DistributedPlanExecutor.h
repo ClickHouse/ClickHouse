@@ -11,7 +11,7 @@ namespace DB
 
 struct DistributedQueryPlan;
 
-void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context);
+void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context, std::shared_ptr<std::atomic<bool>> is_cancelled);
 
 /// Contains info about hosts assigned to exchange buckets
 struct ExchangeStreamDestinations

@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 class TaskParameters : public IParameterLookup
@@ -388,11 +389,12 @@ private:
     void startStageWithDependencies(const String & stage_name, std::unordered_set<String> & executed_stages);
 
 protected:
-    DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
+    DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_)
         : unique_query_id(unique_query_id_)
         , distributed_query_plan(distributed_query_plan_)
         , context(std::move(context_))
         , query_status(context->getProcessListElement())
+        , is_cancelled(std::move(is_cancelled_))
     {
     }
 
@@ -403,12 +405,16 @@ protected:
     {
         if (query_status)
             query_status->checkTimeLimit();
+
+        if (*is_cancelled)
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
     }
 
     const UUID unique_query_id;
     const DistributedQueryPlan & distributed_query_plan;
     ContextPtr context;
     QueryStatusPtr query_status;
+    std::shared_ptr<std::atomic<bool>> is_cancelled;
     LoggerPtr logger = getLogger("DistributedQueryPlanExecutor");
 };
 
@@ -556,19 +562,19 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     return {object_storage, object_storage_path};
 }
 
-void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescription & task, ContextPtr context)
+void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescription & task, ContextPtr context, std::shared_ptr<std::atomic<bool>> is_cancelled)
 {
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(toString(unique_query_id), context);
 
-    doExecuteTask(task, object_storage, object_storage_path, Context::createCopy(context));
+    doExecuteTask(task, object_storage, object_storage_path, Context::createCopy(context), [is_cancelled]() -> bool { return *is_cancelled; });
 }
 
 /// Runs tasks in local threads. Useful for testing and debugging.
 class DistributedQueryPlanExecutorLocal final : public DistributedQueryPlanExecutor
 {
 public:
-    DistributedQueryPlanExecutorLocal(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
-        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, makeContextForLocalExecution(context_))
+    DistributedQueryPlanExecutorLocal(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_)
+        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, makeContextForLocalExecution(context_), std::move(is_cancelled_))
     {
     }
 
@@ -591,11 +597,11 @@ protected:
         std::promise<void> task_promise;
         std::future<void> future = task_promise.get_future();
 
-        std::thread([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context]() mutable
+        std::thread([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, is_cancelled = this->is_cancelled]() mutable
         {
             try
             {
-                executeTask(query_id, task_description, ctx);
+                executeTask(query_id, task_description, ctx, is_cancelled);
                 promise.set_value();
             }
             catch (...)
@@ -649,8 +655,8 @@ private:
 class DistributedQueryPlanExecutorRemote final : public DistributedQueryPlanExecutor
 {
 public:
-    DistributedQueryPlanExecutorRemote(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
-        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_))
+    DistributedQueryPlanExecutorRemote(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_)
+        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_), std::move(is_cancelled_))
     {
         QueryStatusPtr query_status = context->getProcessListElement();
 
@@ -873,14 +879,14 @@ void DistributedQueryPlanExecutor::execute()
         waitForStage(stage_name);
 }
 
-void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context)
+void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context, std::shared_ptr<std::atomic<bool>> is_cancelled)
 {
     bool run_locally = context->getSettingsRef()[Setting::execute_distributed_plan_locally];
     std::unique_ptr<DistributedQueryPlanExecutor> executor;
     if (run_locally)
-        executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context);
+        executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context, is_cancelled);
     else
-        executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, context);
+        executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, context, is_cancelled);
 
     try
     {

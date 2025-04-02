@@ -10,13 +10,18 @@ namespace DB
 
 Chunk ReadFromDistributedPlanSource::generate()
 {
-    if (!executed)
+    if (!started)
     {
-        executeDistributedQuery(unique_query_id, distributed_query_plan, CurrentThread::getQueryContext());
-        executed = true;
+        started = true;
+        executeDistributedQuery(unique_query_id, distributed_query_plan, CurrentThread::getQueryContext(), cancellation_flag);
     }
 
     return {};
+}
+
+void ReadFromDistributedPlanSource::onCancel() noexcept
+{
+    *cancellation_flag = true;
 }
 
 }
