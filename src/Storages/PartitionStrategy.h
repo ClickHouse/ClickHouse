@@ -54,7 +54,7 @@ struct PartitionStrategyProvider
         ContextPtr context,
         const std::string & file_format,
         const std::string & partitioning_style = "",
-        bool omit_partition_columns_from_file = true);
+        bool write_partition_columns_into_files = false);
 };
 
 struct StringfiedPartitionStrategy : PartitionStrategy
