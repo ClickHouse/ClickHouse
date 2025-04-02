@@ -19,7 +19,7 @@
 
 #include <deque>
 #include <unordered_map>
-#include <Storages/System/StorageSystemMetricLogView.h>
+#include <Interpreters/TransposedMetricLog.h>
 
 namespace DB
 {
@@ -242,12 +242,12 @@ public:
         size_t rows_count = chunk.getNumRows();
 
         const auto & columns = chunk.getColumns();
-        const auto & event_time_column = checkAndGetColumn<ColumnDateTime>(*columns[StorageSystemMetricLogView::EVENT_TIME_POSITION]);
-        const auto & value_column = checkAndGetColumn<ColumnInt64>(*columns[StorageSystemMetricLogView::VALUE_POSITION]);
-        const auto & metric_column = checkAndGetColumn<ColumnLowCardinality>(*columns[StorageSystemMetricLogView::METRIC_POSITION]);
-        const auto & date_column = checkAndGetColumn<ColumnDate>(*columns[StorageSystemMetricLogView::EVENT_DATE_POSITION]);
-        const auto & hostname_column = checkAndGetColumn<ColumnLowCardinality>(*columns[StorageSystemMetricLogView::HOSTNAME_POSITION]);
-        const auto & hour_column = checkAndGetColumn<ColumnDateTime>(*columns[StorageSystemMetricLogView::EVENT_TIME_HOUR_POSITION]);
+        const auto & event_time_column = checkAndGetColumn<ColumnDateTime>(*columns[TransposedMetricLog::EVENT_TIME_POSITION]);
+        const auto & value_column = checkAndGetColumn<ColumnInt64>(*columns[TransposedMetricLog::VALUE_POSITION]);
+        const auto & metric_column = checkAndGetColumn<ColumnLowCardinality>(*columns[TransposedMetricLog::METRIC_POSITION]);
+        const auto & date_column = checkAndGetColumn<ColumnDate>(*columns[TransposedMetricLog::EVENT_DATE_POSITION]);
+        const auto & hostname_column = checkAndGetColumn<ColumnLowCardinality>(*columns[TransposedMetricLog::HOSTNAME_POSITION]);
+        const auto & hour_column = checkAndGetColumn<ColumnDateTime>(*columns[TransposedMetricLog::EVENT_TIME_HOUR_POSITION]);
 
         if (rows_count && current_hour == -1)
         {

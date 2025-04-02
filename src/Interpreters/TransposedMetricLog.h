@@ -48,6 +48,14 @@ public:
     static constexpr std::string_view PROFILE_EVENT_PREFIX = "ProfileEvent_";
     static constexpr std::string_view CURRENT_METRIC_PREFIX = "CurrentMetric_";
 
+    /// Order for elements in view
+    static constexpr size_t EVENT_TIME_POSITION = 0;
+    static constexpr size_t VALUE_POSITION = 1;
+    static constexpr size_t METRIC_POSITION = 2;
+    static constexpr size_t HOSTNAME_POSITION = 3;
+    static constexpr size_t EVENT_DATE_POSITION = 4;
+    static constexpr size_t EVENT_TIME_HOUR_POSITION = 5;
+
     /// This table is usually queried by time range + some fixed metric name.
     static const char * getDefaultOrderBy() { return "event_date, toStartOfHour(event_time), metric"; }
 
