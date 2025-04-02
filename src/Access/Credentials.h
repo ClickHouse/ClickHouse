@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Common/SSHWrapper.h>
-#include <Common/Crypto/X509Certificate.h>
+
+#if USE_SSL
+#    include <Common/Crypto/X509Certificate.h>
+#endif
 
 #include <base/types.h>
 
@@ -50,6 +53,7 @@ public:
     void setUserName(const String & user_name_);
 };
 
+#if USE_SSL
 class SSLCertificateCredentials
     : public Credentials
 {
@@ -60,6 +64,7 @@ public:
 private:
     X509Certificate::Subjects certificate_subjects;
 };
+#endif
 
 class BasicCredentials
     : public Credentials

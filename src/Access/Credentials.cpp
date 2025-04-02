@@ -49,6 +49,7 @@ void AlwaysAllowCredentials::setUserName(const String & user_name_)
     user_name = user_name_;
 }
 
+#if USE_SSL
 SSLCertificateCredentials::SSLCertificateCredentials(const String & user_name_, X509Certificate::Subjects && subjects_)
     : Credentials(user_name_)
     , certificate_subjects(subjects_)
@@ -62,6 +63,7 @@ const X509Certificate::Subjects & SSLCertificateCredentials::getSSLCertificateSu
         throwNotReady();
     return certificate_subjects;
 }
+#endif
 
 BasicCredentials::BasicCredentials()
 {

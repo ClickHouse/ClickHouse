@@ -13,7 +13,7 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 #if USE_SSL
-#include <Common/Crypto/X509Certificate.h>
+#    include <Common/Crypto/X509Certificate.h>
 #endif
 
 
@@ -78,7 +78,9 @@ bool authenticateUserByHTTP(
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
     std::string spnego_challenge;
+#if USE_SSL
     X509Certificate::Subjects certificate_subjects;
+#endif
 
     if (config_credentials)
     {
@@ -110,6 +112,7 @@ bool authenticateUserByHTTP(
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
                             "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name or Subject Alternative Name");
 #else
+        UNUSED(log);
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "SSL certificate authentication disabled because ClickHouse was built without SSL library");
 #endif
@@ -165,7 +168,12 @@ bool authenticateUserByHTTP(
         checkUserNameNotEmpty(user, "authentication via parameters");
     }
 
-    if (!certificate_subjects.empty())
+    if (has_config_credentials)
+    {
+        current_credentials = std::make_unique<AlwaysAllowCredentials>(*config_credentials);
+    }
+#if USE_SSL
+    else if (!certificate_subjects.empty())
     {
         chassert(!user.empty());
         if (!current_credentials)
@@ -184,11 +192,7 @@ bool authenticateUserByHTTP(
         if (!gss_acceptor_context)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: unexpected 'Negotiate' HTTP Authorization scheme expected");
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
         const auto spnego_response = base64Encode(gss_acceptor_context->processToken(base64Decode(spnego_challenge), log));
-#pragma clang diagnostic pop
-
         if (!spnego_response.empty())
             response.set("WWW-Authenticate", "Negotiate " + spnego_response);
 
@@ -204,10 +208,7 @@ bool authenticateUserByHTTP(
             return false;
         }
     }
-    else if (has_config_credentials)
-    {
-        current_credentials = std::make_unique<AlwaysAllowCredentials>(*config_credentials);
-    }
+#endif
     else // I.e., now using user name and password strings ("Basic").
     {
         if (!current_credentials)

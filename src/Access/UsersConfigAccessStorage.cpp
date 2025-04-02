@@ -197,6 +197,7 @@ namespace
         }
         else if (has_certificates)
         {
+#if USE_SSL
             user->authentication_methods.emplace_back(AuthenticationType::SSL_CERTIFICATE);
 
             /// Fill list of allowed certificates.
@@ -219,6 +220,9 @@ namespace
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown certificate pattern type: {}", key);
             }
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificates support is disabled, because ClickHouse was built without SSL library");
+#endif
         }
         else if (has_ssh_keys)
         {

@@ -147,6 +147,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
             {
                 auth_params_json.set("realm", auth_data.getKerberosRealm());
             }
+#if USE_SSL
             else if (auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)
             {
                 Poco::JSON::Array::Ptr common_names = new Poco::JSON::Array();
@@ -163,6 +164,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
                 if (subject_alt_names->size() > 0)
                     auth_params_json.set("subject_alt_names", subject_alt_names);
             }
+#endif
 
             std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             oss.exceptions(std::ios::failbit);

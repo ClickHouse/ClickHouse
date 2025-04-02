@@ -148,7 +148,9 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 {
     return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
+#if USE_SSL
         && (lhs.ssl_certificate_subjects == rhs.ssl_certificate_subjects)
+#endif
 #if USE_SSH
         && (lhs.ssh_keys == rhs.ssh_keys)
 #endif
@@ -332,6 +334,7 @@ String AuthenticationData::getSalt() const
     return salt;
 }
 
+#if USE_SSL
 void AuthenticationData::setSSLCertificateSubjects(X509Certificate::Subjects && ssl_certificate_subjects_)
 {
     if (ssl_certificate_subjects_.empty())
@@ -343,6 +346,7 @@ void AuthenticationData::addSSLCertificateSubject(X509Certificate::Subjects::Typ
 {
     ssl_certificate_subjects.insert(type_, std::move(subject_));
 }
+#endif
 
 std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 {
@@ -408,6 +412,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::SSL_CERTIFICATE:
         {
+#if USE_SSL
             using X509Certificate::Subjects::Type::CN;
             using X509Certificate::Subjects::Type::SAN;
 
@@ -419,6 +424,9 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
                 node->children.push_back(std::make_shared<ASTLiteral>(name));
 
             break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificates support is disabled, because ClickHouse was built without SSL library");
+#endif
         }
         case AuthenticationType::SSH_KEY:
         {
@@ -635,9 +643,13 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     }
     else if (query.type == AuthenticationType::SSL_CERTIFICATE)
     {
+#if USE_SSL
         auto ssl_cert_subject_type = X509Certificate::Subjects::parseSubjectType(*query.ssl_cert_subject_type);
         for (const auto & arg : args)
             auth_data.addSSLCertificateSubject(ssl_cert_subject_type, checkAndGetLiteralArgument<String>(arg, "ssl_certificate_subject"));
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificates support is disabled, because ClickHouse was built without SSL library");
+#endif
     }
     else if (query.type == AuthenticationType::HTTP)
     {

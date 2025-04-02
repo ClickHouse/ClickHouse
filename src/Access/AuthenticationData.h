@@ -59,9 +59,11 @@ public:
     const String & getKerberosRealm() const { return kerberos_realm; }
     void setKerberosRealm(const String & realm) { kerberos_realm = realm; }
 
+#if USE_SSL
     const X509Certificate::Subjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
     void setSSLCertificateSubjects(X509Certificate::Subjects && ssl_certificate_subjects_);
     void addSSLCertificateSubject(X509Certificate::Subjects::Type type_, String && subject_);
+#endif
 
 #if USE_SSH
     const std::vector<SSHKey> & getSSHKeys() const { return ssh_keys; }
@@ -102,8 +104,12 @@ private:
     Digest password_hash;
     String ldap_server_name;
     String kerberos_realm;
+#if USE_SSL
     X509Certificate::Subjects ssl_certificate_subjects;
+#endif
+
     String salt;
+
 #if USE_SSH
     std::vector<SSHKey> ssh_keys;
 #endif

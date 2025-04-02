@@ -1,15 +1,20 @@
 #pragma once
 
 #include <Common/Exception.h>
-#include <Common/OpenSSLHelpers.h>
 
 #include <boost/container/flat_set.hpp>
+
+#include "config.h"
+
+#if USE_SSL
+#include <Common/OpenSSLHelpers.h>
 #include <openssl/crypto.h>
 #include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
+#endif
 
 #include <memory>
 
@@ -23,6 +28,7 @@ namespace ErrorCodes
 }
 
 
+#if USE_SSL
 class X509Certificate
 {
 public:
@@ -314,5 +320,6 @@ bool operator==(const X509Certificate::Subjects & rhs) const
 private:
     X509 * certificate;
 };
+#endif
 
 }
