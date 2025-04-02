@@ -695,55 +695,76 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
     Coordination::Error code = Coordination::Error::ZOK;
     for (size_t i = 0; i < 1000; ++i)
     {
-        Coordination::Stat stat;
-        std::string registry_str;
-        auto zk_client = getZooKeeper();
-
-        bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
-        if (!node_exists)
-        {
-            LOG_WARNING(log, "Cannot unregister: registry does not exist");
-            chassert(false);
-            return 0;
-        }
-
-        Strings registered;
-        splitInto<','>(registered, registry_str);
-
-        bool found = false;
-        std::string new_registry_str;
-        size_t count = 0;
-        for (const auto & elem : registered)
-        {
-            if (elem.empty())
-                continue;
-
-            auto info = Info::deserialize(elem);
-            if (info == self)
-                found = true;
-            else
-            {
-                if (!new_registry_str.empty())
-                    new_registry_str += ",";
-                new_registry_str += elem;
-                count += 1;
-            }
-        }
-        if (!found)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: table '{}' is not registered", self.table_id);
-
         Coordination::Requests requests;
         Coordination::Responses responses;
-        if (remove_metadata_if_no_registered && count == 0)
+        size_t count = 0;
+        try
         {
-            requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
-            requests.push_back(zkutil::makeRemoveRecursiveRequest(zookeeper_path, -1));
+            Coordination::Stat stat;
+            std::string registry_str;
+            auto zk_client = getZooKeeper();
 
-            code = zk_client->tryMulti(requests, responses);
+            bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
+            if (!node_exists)
+            {
+                LOG_WARNING(log, "Cannot unregister: registry does not exist");
+                chassert(false);
+                return 0;
+            }
+
+            Strings registered;
+            splitInto<','>(registered, registry_str);
+
+            bool found = false;
+            std::string new_registry_str;
+            for (const auto & elem : registered)
+            {
+                if (elem.empty())
+                    continue;
+
+                auto info = Info::deserialize(elem);
+                if (info == self)
+                    found = true;
+                else
+                {
+                    if (!new_registry_str.empty())
+                        new_registry_str += ",";
+                    new_registry_str += elem;
+                    count += 1;
+                }
+            }
+            if (!found)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: table '{}' is not registered", self.table_id);
+
+            if (remove_metadata_if_no_registered && count == 0)
+            {
+                requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
+                requests.push_back(zkutil::makeRemoveRecursiveRequest(zookeeper_path, -1));
+
+                code = zk_client->tryMulti(requests, responses);
+            }
+            else
+            {
+                code = zk_client->trySet(registry_path, new_registry_str, stat.version);
+            }
         }
-        else
+        catch (const zkutil::KeeperMultiException & e)
         {
-            code = zk_client->trySet(registry_path, new_registry_str, stat.version);
+            if (Coordination::isHardwareError(e.code))
+            {
+                LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                continue;
+            }
+            throw;
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            if (Coordination::isHardwareError(e.code))
+            {
+                LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                continue;
+            }
+            throw;
         }
 
         if (code == Coordination::Error::ZOK)
