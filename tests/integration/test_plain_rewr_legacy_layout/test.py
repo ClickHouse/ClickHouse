@@ -11,10 +11,11 @@ from helpers.s3_tools import get_file_contents
 
 cluster = ClickHouseCluster(__file__)
 
-NUM_WORKERS=2
+NUM_WORKERS = 2
 MAX_ROWS = 100
 
-key_prefix="data/"
+key_prefix = "data/"
+
 
 def gen_insert_values(size):
     return ",".join(
@@ -22,9 +23,10 @@ def gen_insert_values(size):
         for i in range(size)
     )
 
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
-    node_names=["source", "dest"]
+    node_names = ["source", "dest"]
     for i in range(NUM_WORKERS):
         cluster.add_instance(
             node_names[i],
@@ -72,18 +74,22 @@ def test(storage_policy):
 
     def copy_to_legacy_layout(node_from, node_to):
         metadata_it = cluster.minio_client.list_objects(
-            cluster.minio_bucket, f"{key_prefix}{node_from}/__meta/", recursive=True)
+            cluster.minio_bucket, f"{key_prefix}{node_from}/__meta/", recursive=True
+        )
         remote_to_local = {}
         for obj in metadata_it:
             remote_path = obj.object_name
             assert remote_path.endswith("prefix.path")
 
-            local_path = get_file_contents(cluster.minio_client, cluster.minio_bucket, remote_path).strip()
+            local_path = get_file_contents(
+                cluster.minio_client, cluster.minio_bucket, remote_path
+            ).strip()
             remote_dir = os.path.dirname(remote_path).replace("__meta/", "")
             remote_to_local[remote_dir] = local_path
 
         data_it = cluster.minio_client.list_objects(
-            cluster.minio_bucket, f"{key_prefix}{node_from}/", recursive=True)
+            cluster.minio_bucket, f"{key_prefix}{node_from}/", recursive=True
+        )
 
         for obj in data_it:
             remote_path = obj.object_name
@@ -91,13 +97,15 @@ def test(storage_policy):
             assert remote_dir in remote_to_local
             filename = os.path.basename(remote_path)
 
-            destination_key = f"{key_prefix}{node_to}/{remote_to_local[remote_dir]}{filename}"
+            destination_key = (
+                f"{key_prefix}{node_to}/{remote_to_local[remote_dir]}{filename}"
+            )
 
             cluster.minio_client.copy_object(
-                    cluster.minio_bucket,
-                    destination_key,
-                    CopySource(cluster.minio_bucket, obj.object_name))
-
+                cluster.minio_bucket,
+                destination_key,
+                CopySource(cluster.minio_bucket, obj.object_name),
+            )
 
     copy_to_legacy_layout("source", "dest")
 
@@ -105,5 +113,11 @@ def test(storage_policy):
     dest.restart_clickhouse()
 
     create_insert(dest, [])
-    assert int(dest.query("SELECT value FROM system.events WHERE name = 'DiskPlainRewritableLegacyLayoutDiskCount'").strip()) > 0
-
+    assert (
+        int(
+            dest.query(
+                "SELECT value FROM system.events WHERE name = 'DiskPlainRewritableLegacyLayoutDiskCount'"
+            ).strip()
+        )
+        > 0
+    )
