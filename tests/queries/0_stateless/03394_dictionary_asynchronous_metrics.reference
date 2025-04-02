@@ -4,7 +4,8 @@ DictionaryMaxUpdateDelay	0	The maximum delay(in seconds) of dictionary update
 DictionaryTotalFailedUpdates	1	Sum of sequantially failed updates in all dictionaries
 DictionaryMaxUpdateDelay	1	The maximum delay(in seconds) of dictionary update
 0
+2
 DictionaryTotalFailedUpdates	2	Sum of sequantially failed updates in all dictionaries
-DictionaryMaxUpdateDelay	2	The maximum delay(in seconds) of dictionary update
+DictionaryMaxUpdateDelay	1	The maximum delay(in seconds) of dictionary update
 DictionaryTotalFailedUpdates	0	Sum of sequantially failed updates in all dictionaries
 DictionaryMaxUpdateDelay	0	The maximum delay(in seconds) of dictionary update
