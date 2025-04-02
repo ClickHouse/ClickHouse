@@ -168,8 +168,12 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     node2 = cluster.instances["node2"]
 
     zk_client = start_cluster.get_kazoo_client("zoo1")
-    zk_client.create("/minio")
-    zk_client.create("/minio/access_key_id")
+
+    if not zk_client.exists("/minio"):
+        zk_client.create("/minio")
+    if not zk_client.exists("/minio/access_key_id"):
+        zk_client.create("/minio/access_key_id")
+
     zk_client.set("/minio/access_key_id", b"minio")
     node1.query(
         f"""
