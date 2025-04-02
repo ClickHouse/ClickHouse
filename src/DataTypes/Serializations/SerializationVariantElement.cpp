@@ -120,6 +120,12 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
         variant_element_state = checkAndGetState<DeserializeBinaryBulkStateVariantElement>(state);
+        if (!variant_element_state->discriminators || result_column->empty())
+        {
+            variant_element_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
+            variant_element_state->discriminators_size = 0;
+        }
+
         variant_element_state->discriminators = cached_discriminators;
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
@@ -169,7 +175,13 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.pop_back();
 
-    size_t discriminators_offset = variant_element_state->discriminators_size;
+    /// Deserialization state saves the size of discriminators to track rows processed in previous deserialization.
+    /// Whether discriminators are cached or not, this size serves as the starting offset
+    /// for new discriminators.
+    /// Must reset it to 0 when upper layer re-initiates read with an empty column.
+    if (result_column->empty())
+        variant_element_state->discriminators_size = 0;
+    size_t discriminators_offset = variant_element_state->num_rows_read;
 
     if (!variant_rows_offset)
     {
