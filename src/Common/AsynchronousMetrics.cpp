@@ -1071,14 +1071,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 if (name.starts_with("cpu"))
                 {
-                    if (cgroup_cpu_metrics_present)
-                    {
-                        /// Skip the CPU metrics if we already have them from cgroup
-                        ProcStatValuesCPU current_values{};
-                        current_values.read(*proc_stat);
-                        continue;
-                    }
-
                     String cpu_num_str = name.substr(strlen("cpu"));
                     UInt64 cpu_num = 0;
                     if (!cpu_num_str.empty())
@@ -1090,10 +1082,18 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                         if (proc_stat_values_per_cpu.size() <= cpu_num)
                             proc_stat_values_per_cpu.resize(cpu_num + 1);
+
+                        ++num_cpus;
                     }
 
                     ProcStatValuesCPU current_values{};
                     current_values.read(*proc_stat);
+
+                    if (cgroup_cpu_metrics_present)
+                    {
+                        /// Skip the CPU metrics if we already have them from cgroup
+                        continue;
+                    }
 
                     ProcStatValuesCPU & prev_values = !cpu_num_str.empty() ? proc_stat_values_per_cpu[cpu_num] : proc_stat_values_all_cpus;
 
@@ -1105,7 +1105,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                         if (!cpu_num_str.empty())
                         {
                             cpu_suffix = "CPU" + cpu_num_str;
-                            ++num_cpus;
                         }
                         else
                             delta_values_all_cpus = delta_values;
