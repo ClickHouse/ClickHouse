@@ -454,7 +454,7 @@ class JobConfigs:
     )
     functional_tests_jobs_azure_master_only = Job.Config(
         name=JobNames.STATELESS,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -470,14 +470,14 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
-            "azure, asan, 1/3",
-            "azure, asan, 2/3",
-            "azure, asan, 3/3",
+            "azure, arm_asan, 1/3",
+            "azure, arm_asan, 2/3",
+            "azure, arm_asan, 3/3",
         ],
         requires=[
-            ["Build (amd_asan)"],  # azure asan 1
-            ["Build (amd_asan)"],  # azure asan 2
-            ["Build (amd_asan)"],  # azure asan 3
+            ["Build (arm_asan)"],  # azure asan 1
+            ["Build (arm_asan)"],  # azure asan 2
+            ["Build (arm_asan)"],  # azure asan 3
         ],
     )
     bugfix_validation_job = Job.Config(
@@ -532,11 +532,11 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
-            "debug",
-            "tsan",
-            "asan",
-            "ubsan",
-            "msan",
+            "amd_debug",
+            "amd_tsan",
+            "arm_asan",
+            "amd_ubsan",
+            "amd_msan",
         ],
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
@@ -597,19 +597,19 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
-            "asan",
-            "tsan",
-            "msan",
-            "debug",
+            "arm_asan",
+            "amd_tsan",
+            "amd_msan",
+            "amd_debug",
         ],
         runs_on=[
-            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_ARM,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            ["Build (amd_asan)"],
+            ["Build (arm_asan)"],
             ["Build (amd_tsan)"],
             ["Build (amd_msan)"],
             ["Build (amd_debug)"],
@@ -736,16 +736,22 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
-            "debug",
-            "asan",
-            "tsan",
-            "msan",
-            "ubsan",
+            "amd_debug",
+            "arm_asan",
+            "amd_tsan",
+            "amd_msan",
+            "amd_ubsan",
         ],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(5)],
+        runs_on=[
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_ARM,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+        ],
         requires=[
             ["Build (amd_debug)"],
-            ["Build (amd_asan)"],
+            ["Build (arm_asan)"],
             ["Build (amd_tsan)"],
             ["Build (amd_msan)"],
             ["Build (amd_ubsan)"],
@@ -758,16 +764,22 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
-            "debug",
-            "asan",
-            "tsan",
-            "msan",
-            "ubsan",
+            "amd_debug",
+            "arm_asan",
+            "amd_tsan",
+            "amd_msan",
+            "amd_ubsan",
         ],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(5)],
+        runs_on=[
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_ARM,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+        ],
         requires=[
             ["Build (amd_debug)"],
-            ["Build (amd_asan)"],
+            ["Build (arm_asan)"],
             ["Build (amd_tsan)"],
             ["Build (amd_msan)"],
             ["Build (amd_ubsan)"],
