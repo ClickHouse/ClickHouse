@@ -25,7 +25,6 @@ ISerialization::Kind ISerialization::getKind(const IColumn & column)
     if (column.isSparse())
         return Kind::SPARSE;
 
-    // TODO(nickitat): create dedicated method
     if (const auto * column_blob = typeid_cast<const ColumnBlob *>(&column))
         return column_blob->concreteIsSparse() ? Kind::DETACHED_OVER_SPARSE : Kind::DETACHED;
 

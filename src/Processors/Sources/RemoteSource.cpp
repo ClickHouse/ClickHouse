@@ -309,8 +309,7 @@ Pipe createRemoteSourcePipe(
     bool add_totals,
     bool add_extremes,
     bool async_read,
-    bool async_query_sending,
-    size_t parallel_marshalling_threads)
+    bool async_query_sending)
 {
     Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending));
     pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<AddSequenceNumber>(header); });
@@ -321,9 +320,10 @@ Pipe createRemoteSourcePipe(
     if (add_extremes)
         pipe.addExtremesSource(std::make_shared<RemoteExtremesSource>(query_executor));
 
-    pipe.resize(parallel_marshalling_threads);
+    // TODO(nickitat): implement
+    pipe.resize(16);
     pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<ConvertBlobColumnsTransform>(header); });
-    pipe.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipe.getHeader(), parallel_marshalling_threads));
+    pipe.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipe.getHeader(), 16));
 
     return pipe;
 }

@@ -1844,9 +1844,9 @@ void Planner::buildPlanForQueryNode()
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
 
-    if (select_query_options.to_stage != QueryProcessingStage::Complete
-        && planner_context->getQueryContext()->getInitialQueryId() != planner_context->getQueryContext()->getCurrentQueryId()
-        && !select_query_options.is_internal && !select_query_options.is_subquery)
+    if (select_query_options.to_stage != QueryProcessingStage::Complete && !select_query_options.is_subquery
+        && !planner_context->getQueryContext()->getClientInfo().distributed_depth
+        && planner_context->getQueryContext()->getInitialQueryId() != planner_context->getQueryContext()->getCurrentQueryId())
         query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 
     if (!select_query_options.only_analyze)

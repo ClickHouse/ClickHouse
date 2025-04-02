@@ -117,6 +117,5 @@ Pipe createRemoteSourcePipe(
     bool add_totals,
     bool add_extremes,
     bool async_read,
-    bool async_query_sending,
-    size_t parallel_marshalling_threads);
+    bool async_query_sending);
 }
