@@ -34,14 +34,12 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, const ProfileEvents:
         ssl_enabled = false;
     }
 
-    /// Reading rsa keys for SHA256 authentication plugin.
+    /// Reading RSA keys for SHA256 authentication plugin.
     try
     {
         const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
-        String certificate_file_property = "openSSL.server.certificateFile";
-        String private_key_file_property = "openSSL.server.privateKeyFile";
 
-        String public_key_file = config.getString(certificate_file_property);
+        String private_key_file_property = "openSSL.server.privateKeyFile";
         String private_key_file = config.getString(private_key_file_property);
 
         private_key = KeyPair::fromFile(private_key_file);
