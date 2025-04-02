@@ -141,17 +141,14 @@ ColumnsDescription getColumnsDescription()
     result.push_back(NameAndTypePair(TransposedMetricLog::HOSTNAME_NAME, std::make_shared<DataTypeString>()));
     result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_DATE_NAME, std::make_shared<DataTypeDate>()));
     result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_TIME_NAME, std::make_shared<DataTypeDateTime>()));
+    result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_TIME_MICROSECONDS_NAME, std::make_shared<DataTypeDateTime64>(6)));
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         result.push_back(NameAndTypePair(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + ProfileEvents::getName(ProfileEvents::Event(i)), std::make_shared<DataTypeUInt64>()));
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
         result.push_back(NameAndTypePair(std::string{TransposedMetricLog::CURRENT_METRIC_PREFIX} + CurrentMetrics::getName(CurrentMetrics::Metric(i)), std::make_shared<DataTypeInt64>()));
 
-    /// Doesn't support subsecond precision, it's just an alias
-    NamesAndAliases aliases;
-    aliases.push_back(NameAndAliasPair(TransposedMetricLog::EVENT_TIME_MICROSECONDS_NAME, std::make_shared<DataTypeDateTime64>(6), "toDateTime64(event_time, 6)"));
-
-    return ColumnsDescription{result, aliases};
+    return ColumnsDescription{result};
 }
 
 ColumnsDescription getColumnsDescriptionForView()
@@ -339,6 +336,17 @@ public:
                 }
                 rows_count = string_column->size();
                 output_columns.push_back(std::move(string_column));
+            }
+            else if (column_name == TransposedMetricLog::EVENT_TIME_MICROSECONDS_NAME)
+            {
+                auto date_time_64_column = ColumnDateTime64::create(0, 6);
+                date_time_64_column->reserve(rows_count);
+                for (size_t i = min_second_in_hour; i < static_cast<size_t>(max_second_in_hour + 1); ++i)
+                    if (filter[i])
+                        date_time_64_column->insertValue(DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(times[i], 0, DecimalUtils::scaleMultiplier<Decimal64>(6)));
+                rows_count = date_time_64_column->size();
+                output_columns.push_back(std::move(date_time_64_column));
+
             }
             else if (column_name.starts_with(TransposedMetricLog::PROFILE_EVENT_PREFIX) || column_name.starts_with(TransposedMetricLog::CURRENT_METRIC_PREFIX))
             {

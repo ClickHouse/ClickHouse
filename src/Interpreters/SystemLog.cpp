@@ -223,7 +223,14 @@ std::shared_ptr<TSystemLog> createSystemLog(
             auto schema = config.getString(config_prefix + ".schema_type", "wide");
             /// NOTE, fixed schema, it's not allowed to change order by for efficiency reasons
             if (schema == "transposed_with_wide_view")
+            {
                 log_settings.engine += std::string{" ORDER BY ("} + TSystemLog::getDefaultOrderBy() + ")";
+            }
+            else
+            {
+                String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
+                log_settings.engine += " ORDER BY (" + order_by + ")";
+            }
         }
         else
         {
