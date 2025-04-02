@@ -38,6 +38,7 @@ namespace Setting
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool use_iceberg_partition_pruning;
+    extern const SettingsBool hive_partitioning_style_writes_omit_partition_columns_from_files;
 }
 
 namespace ErrorCodes
@@ -172,7 +173,6 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-
     sanityCheckPartitioningConfiguration(partition_by, nullptr, configuration);
 
     bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
@@ -492,7 +492,13 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (ASTPtr partition_by_ast = getPartitionByAst(partition_by, query, configuration))
     {
-        auto partition_strategy = PartitionStrategyProvider::get(partition_by_ast, sample_block, local_context, configuration->format, configuration->partitioning_style);
+        auto partition_strategy = PartitionStrategyProvider::get(
+            partition_by_ast,
+            sample_block,
+            local_context,
+            configuration->format,
+            configuration->partitioning_style,
+            configuration->write_partition_columns_into_files);
         return std::make_shared<PartitionedStorageObjectStorageSink>(
             partition_strategy, object_storage, configuration, format_settings, sample_block, local_context);
     }

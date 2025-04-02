@@ -56,7 +56,8 @@ namespace ErrorCodes
 
 namespace
 {
-    std::optional<std::string> extractNamedArgument(ASTs & arguments, const std::string & argument_name, ASTs::iterator & argument_position)
+    template <typename T>
+    std::optional<T> extractNamedArgument(ASTs & arguments, const std::string & argument_name, ASTs::iterator & argument_position)
     {
         for (auto * arg_it = arguments.begin(); arg_it != arguments.end(); ++arg_it)
         {
@@ -82,27 +83,20 @@ namespace
                         name->name());
                 }
 
-                if (value->value.getType() != Field::Types::String)
-                {
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Wrong parameter type for '{}'",
-                        name->name());
-                }
-
                 argument_position = arg_it;
 
-                return value->value.safeGet<String>();
+                return value->value.safeGet<T>();
             }
         }
 
         return std::nullopt;
     }
 
-    std::optional<std::string> extractNamedArgumentAndRemoveFromList(ASTs & arguments, const std::string & argument_name)
+    template <typename T>
+    std::optional<T> extractNamedArgumentAndRemoveFromList(ASTs & arguments, const std::string & argument_name)
     {
         ASTs::iterator iterator;
-        auto named_arg_opt = extractNamedArgument(arguments, argument_name, iterator);
+        auto named_arg_opt = extractNamedArgument<T>(arguments, argument_name, iterator);
 
         if (named_arg_opt)
         {
@@ -135,7 +129,8 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "max_connections",
     "expiration_window_seconds",
     "no_sign_request",
-    "partitioning_style"
+    "partitioning_style",
+    "write_partition_columns_into_files"
 };
 
 String StorageS3Configuration::getDataSourceDescription() const
@@ -234,6 +229,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
         url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
 
     partitioning_style = collection.getOrDefault<String>("partitioning_style", "auto");
+    write_partition_columns_into_files = collection.getOrDefault<bool>("write_partition_columns_into_files", false);
 
     auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
     auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
@@ -257,7 +253,8 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 {
     size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
 
-    partitioning_style = extractNamedArgumentAndRemoveFromList(args, "partitioning_style").value_or("auto");
+    partitioning_style = extractNamedArgumentAndRemoveFromList<std::string>(args, "partitioning_style").value_or("auto");
+    write_partition_columns_into_files = extractNamedArgumentAndRemoveFromList<bool>(args, "write_partition_columns_into_files").value_or(false);
 
     if (count == 0 || count > getMaxNumberOfArguments(with_structure))
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
