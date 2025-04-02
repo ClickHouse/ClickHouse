@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
 #include <Columns/ColumnArray.h>
+#include "Common/Exception.h"
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/quoteString.h>
 #include "Interpreters/BloomFilter.h"
@@ -36,52 +37,39 @@ namespace ErrorCodes
 
 #if USE_DATASKETCHES
 
-FrequentGranulasSketch::FrequentGranulasSketch(size_t hash_map_size_) : hash_map_size(hash_map_size_)
+FrequentGranulasSketch::FrequentGranulasSketch(size_t hash_map_size_, BloomFilterParameters params)
+    : granula_sketch(hash_map_size_)
+    , last_granule_tokens(params)
 {
 }
 
-void FrequentGranulasSketch::update(const char * data, size_t data_length, size_t granula_index)
+void FrequentGranulasSketch::update(const char * data, size_t data_length, int granula_index)
 {
-    if (!granules_sketches.contains(granula_index))
+    if (granula_index < last_granule_index)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Indices of granules in FrequentGranulasSketch should come in increasing order.");
+
+    if (granula_index != last_granule_index)
     {
-        granules_sketches.emplace(granula_index, hash_map_size);
+        last_granule_index = granula_index;
+        last_granule_tokens.clear();
     }
-    auto it = granules_sketches.find(granula_index);
-    it->second.update(std::string(data, data_length));
+    if (!last_granule_tokens.find(data, data_length))
+    {
+        last_granule_tokens.add(data, data_length);
+        std::string key(data, data_length);
+        granula_sketch.update(key);
+    }
 }
 
 std::vector<std::string> FrequentGranulasSketch::getMostFrequentTokens(size_t num_tokens) const
 {
-    std::unordered_set<std::string> candidates;
-    for (const auto & [_, granule_sketch] : granules_sketches)
-    {
-        size_t cur_tokens = 0;
-        for (const auto & token : granule_sketch.get_frequent_items(datasketches::frequent_items_error_type::NO_FALSE_NEGATIVES))
-        {
-            cur_tokens++;
-            if (cur_tokens > num_tokens)
-                break;
-
-            candidates.insert(token.get_item());
-        }
-    }
-
-    std::unordered_map<std::string, size_t> frequency_candidates;
-    for (const auto & candidate : candidates)
-    {
-        for (const auto & [_, granule_sketch] : granules_sketches)
-            frequency_candidates[candidate] += granule_sketch.get_estimate(candidate) > 0;
-    }
-
-    std::vector<std::pair<size_t, std::string>> sorted_frequent_items;
-    for (const auto & [token, frequency] : frequency_candidates)
-        sorted_frequent_items.push_back({frequency, token});
-
-    std::sort(sorted_frequent_items.rbegin(), sorted_frequent_items.rend());
-
     std::vector<std::string> result;
-    for (size_t i = 0; i < num_tokens; ++i)
-        result.push_back(sorted_frequent_items[i].second);
+    for (const auto & item : granula_sketch.get_frequent_items(datasketches::NO_FALSE_POSITIVES))
+    {
+        if (result.size() >= num_tokens)
+            break;
+        result.push_back(item.get_item());
+    }
 
     return result;
 }
@@ -157,7 +145,7 @@ MergeTreeIndexAggregatorBloomFilterText::MergeTreeIndexAggregatorBloomFilterText
     {
 #if USE_DATASKETCHES
         for (size_t i = 0; i < index_columns.size(); ++i)
-            hot_elements_sketch.emplace_back(params_.num_hash_size);
+            hot_elements_sketch.emplace_back(params_.num_hash_size, params.common_params);
 #else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Two level bloom filter should be compiled with datasketches-cpp");
 #endif

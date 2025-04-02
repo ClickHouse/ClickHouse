@@ -41,19 +41,23 @@ struct BloomFilterIndexParameters
 
 /// Structure that can accept pair of token and granula index and return the most frequent tokens in granulas.
 /// The frequency of the token is calculated as number of granulas which contains this token.
+/// `granula_index` in updte method should come in increasing order.
 class FrequentGranulasSketch
 {
 public:
-    explicit FrequentGranulasSketch(size_t hash_map_size_);
+    explicit FrequentGranulasSketch(size_t hash_map_size_, BloomFilterParameters params);
 
-    void update(const char * data, size_t data_length, size_t granula_index);
+    void update(const char * data, size_t data_length, int granula_index);
 
     std::vector<std::string> getMostFrequentTokens(size_t num_tokens) const;
 
 private:
-    size_t hash_map_size;
-    std::unordered_map<size_t, datasketches::frequent_items_sketch<std::string>> granules_sketches;
+    datasketches::frequent_items_sketch<std::string> granula_sketch;
+    BloomFilter last_granule_tokens;
+    int last_granule_index = -1;
 };
+
+#endif
 
 struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranule
 {
@@ -82,8 +86,6 @@ struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranul
 
     bool containsInBloomFilters(const BloomFilter & another_filter, size_t column_index);
 };
-
-#endif
 
 using MergeTreeIndexGranuleBloomFilterTextPtr = std::shared_ptr<MergeTreeIndexGranuleBloomFilterText>;
 
