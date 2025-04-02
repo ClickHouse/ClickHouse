@@ -50,11 +50,15 @@ list(APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake"
 # Define function corrosion_import_crate()
 include ("${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake/Corrosion.cmake")
 
-# NOTE: this can also be done by overriding rustc, but it not trivial with rustup.
-set(RUST_CFLAGS "${CMAKE_C_FLAGS}")
-
 set(CXX_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx/include")
-set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
+
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    set(RUST_CFLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_DEBUG}")
+    set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_DEBUG} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
+else ()
+    set(RUST_CFLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_RELWITHDEBINFO}")
+    set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
+endif()
 
 if (CMAKE_OSX_SYSROOT)
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -isysroot ${CMAKE_OSX_SYSROOT}")

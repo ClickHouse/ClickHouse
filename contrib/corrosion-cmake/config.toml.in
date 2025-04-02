@@ -1,4 +1,5 @@
 [env]
+# This is unused right now
 CC = "@CMAKE_C_COMPILER@"
 CXX = "@CMAKE_CXX_COMPILER@"
 CFLAGS = "@RUST_CFLAGS@"
