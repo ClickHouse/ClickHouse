@@ -474,16 +474,16 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     auto log = getLogger("IcebergMetadata");
 
-    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr, log.get());
-
     Poco::JSON::Object::Ptr object = nullptr;
-    IcebergMetadataFilesCachePtr cache_ptr;
+    IcebergMetadataFilesCachePtr cache_ptr = nullptr;
     if (local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache])
         cache_ptr = local_context->getIcebergMetadataFilesCache();
     else
         LOG_TRACE(log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
 
-    auto create_fn = [metadata_file_path, object_storage, local_context, log]()
+    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr, log.get());
+
+    auto create_fn = [&]()
     {
         ObjectInfo object_info(metadata_file_path);
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
