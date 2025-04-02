@@ -75,8 +75,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_hdfs_pread", true, true, "New setting."},
             {"low_priority_query_wait_time_ms", 1000, 1000, "New setting."},
             {"allow_experimental_shared_set_join", 0, 1, "A setting for ClickHouse Cloud to enable SharedSet and SharedJoin"},
-            {"parallel_block_marshaling_threads", 1, 8, "New setting."},
-            {"parallel_block_marshaling_queue_size", 1, 8, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
@@ -95,7 +93,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_timestamp_ms", 0, 0, "New setting."},
             {"iceberg_snapshot_id", 0, 0, "New setting."},
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
-
             /// Release closed. Please use 25.4
             {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
         });

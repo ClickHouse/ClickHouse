@@ -18,7 +18,6 @@
 #include <Interpreters/ProfileEventsExt.h>
 #include <QueryPipeline/BlockIO.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/BlockQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
@@ -78,8 +77,6 @@ struct QueryState
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     std::unique_ptr<NativeWriter> block_out;
     Block block_for_insert;
-
-    std::unique_ptr<BlockQueue> block_queue;
 
     /// Query text.
     String query;
@@ -323,7 +320,6 @@ private:
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput(QueryState & state);
     void initBlockOutput(QueryState & state, const Block & block);
-    void initBlockQueue(QueryState & state);
     void initLogsBlockOutput(QueryState & state, const Block & block);
     void initProfileEventsBlockOutput(QueryState & state, const Block & block);
     static CompressionCodecPtr getCompressionCodec(const Settings & query_settings, Protocol::Compression compression);

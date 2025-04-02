@@ -2506,24 +2506,6 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
     }
 }
 
-void TCPHandler::initBlockQueue(QueryState & state)
-{
-    if (!state.block_queue)
-    {
-        state.block_queue = std::make_unique<BlockQueue>(
-            state.query_context->getSettingsRef()[Setting::parallel_block_marshaling_queue_size],
-            state.query_context->getSettingsRef()[Setting::parallel_block_marshaling_threads],
-            [this, &state](const Block & block)
-            {
-                return prepare(
-                    block,
-                    getCompressionCodec(state.query_context->getSettingsRef(), state.compression),
-                    client_tcp_protocol_version,
-                    getFormatSettings(state.query_context));
-            });
-    }
-}
-
 void TCPHandler::sendData(QueryState & state, const Block & block)
 {
     initBlockOutput(state, block);

@@ -385,10 +385,6 @@
     \
     M(IsServerShuttingDown, "Indicates if the server is shutting down: 0 = no, 1 = yes") \
     \
-    M(BlockQueueThreads, "Number of threads in the BlockQueue thread pool.") \
-    M(BlockQueueThreadsActive, "Number of threads in the BlockQueue thread pool running a task.") \
-    M(BlockQueueThreadsScheduled, "Number of queued or active jobs in the BlockQueue thread pool.") \
-    \
     M(TotalMergeFailures, "Number of all failed merges since startup, including the ones that were aborted") \
     M(NonAbortedMergeFailures, "Number of failed merges since startup, excluding the merges that were aborted") \
 

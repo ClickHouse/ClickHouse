@@ -6,25 +6,26 @@
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
 
-#include <Core/Block.h>
-#include <Core/Protocol.h>
-#include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/MemoryTracker.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/Exception.h>
-#include <Common/ErrorCodes.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
-#include <Common/typeid_cast.h>
-#include <Common/TerminalSize.h>
-#include <Common/StringUtils.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/NetException.h>
-#include <Common/SignalHandlers.h>
-#include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Columns/ColumnBlob.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
+#include <Core/Protocol.h>
 #include <Formats/FormatFactory.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/NetException.h>
+#include <Common/SignalHandlers.h>
+#include <Common/StringUtils.h>
+#include <Common/TerminalSize.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -85,8 +86,6 @@
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
 #include "config.h"
-
-#include <Columns/ColumnBlob.h>
 
 #if USE_GWP_ASAN
 #    include <Common/GWPAsan.h>
