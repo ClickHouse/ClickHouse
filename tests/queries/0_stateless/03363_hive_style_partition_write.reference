@@ -28,3 +28,6 @@ test/t_03363_function/year=2024/country=Germany/<snowflakeid>.parquet	7
 test/t_03363_function/year=1999/country=Brazil/<snowflakeid>.parquet	8
 test/t_03363_function/year=2100/country=Japan/<snowflakeid>.parquet	9
 test/t_03363_function/year=2024/country=CN/<snowflakeid>.parquet	10
+1
+3
+USA	2022	1
