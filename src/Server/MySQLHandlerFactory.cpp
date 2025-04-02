@@ -14,14 +14,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_CLOSE_FILE;
-    extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int OPENSSL_ERROR;
-}
-
 MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
     : server(server_)
     , log(getLogger("MySQLHandlerFactory"))
