@@ -9,6 +9,7 @@
 #include <Common/Logger.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include "KernelPointerWrapper.h"
 #include "KernelHelper.h"
 #include <boost/noncopyable.hpp>
@@ -29,6 +30,7 @@ public:
     explicit TableSnapshot(
         KernelHelperPtr helper_,
         DB::ObjectStoragePtr object_storage_,
+        bool read_schema_same_as_table_schema_,
         LoggerPtr log_);
 
     /// Get snapshot version.
@@ -38,7 +40,7 @@ public:
     bool update();
 
     /// Iterate over DeltaLake data files.
-    DB::ObjectIterator iterate();
+    DB::ObjectIterator iterate(DB::IDataLakeMetadata::FileProgressCallback callback, size_t list_batch_size);
 
     /// Get schema from DeltaLake table metadata.
     const DB::NamesAndTypesList & getTableSchema();
@@ -59,6 +61,7 @@ private:
 
     const KernelHelperPtr helper;
     const DB::ObjectStoragePtr object_storage;
+    const bool read_schema_same_as_table_schema;
     const LoggerPtr log;
 
     mutable KernelExternEngine engine;

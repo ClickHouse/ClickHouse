@@ -148,7 +148,7 @@ def _build_dockers(workflow, job_name):
                     with_log=True,
                 )
             )
-            if results[0].is_ok():
+            if results[-1].is_ok():
                 ready.append(docker.name)
             else:
                 job_status = Result.Status.FAILED
@@ -233,6 +233,19 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     results = []
     files = []
+    env = _Environment.get()
+    _ = RunConfig(
+        name=workflow.name,
+        digest_jobs={},
+        digest_dockers={},
+        sha=env.SHA,
+        cache_success=[],
+        cache_success_base64=[],
+        cache_artifacts={},
+        cache_jobs={},
+        filtered_jobs={},
+        custom_data={},
+    ).dump()
 
     if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
@@ -267,48 +280,27 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         result_ = _check_db(workflow)
         results.append(result_)
 
-    if Path(Settings.CUSTOM_DATA_FILE).is_file():
-        with open(Settings.CUSTOM_DATA_FILE, "r", encoding="utf8") as f:
-            custom_data = json.load(f)
-        print(f"Custom data: [{custom_data}]")
-    else:
-        custom_data = {}
-        print(f"Custom data has not been provided")
-
-    env = _Environment.get()
-    workflow_config = RunConfig(
-        name=workflow.name,
-        digest_jobs={},
-        digest_dockers={},
-        sha=env.SHA,
-        cache_success=[],
-        cache_success_base64=[],
-        cache_artifacts={},
-        cache_jobs={},
-        filtered_jobs={},
-        custom_data=custom_data,
-    ).dump()
-
     if workflow.enable_merge_commit:
         assert False, "NOT implemented"
+
+    # read object from fs after .pre_hooks as some users's custom data may be added there
+    workflow_config = RunConfig.from_fs(workflow.name)
 
     if results[-1].is_ok() and workflow.dockers:
         sw_ = Utils.Stopwatch()
         print("Calculate docker's digests")
-        try:
-            dockers = workflow.dockers
-            dockers = Docker.sort_in_build_order(dockers)
-            for docker in dockers:
-                workflow_config.digest_dockers[docker.name] = (
-                    Digest().calc_docker_digest(docker, dockers)
-                )
-            workflow_config.dump()
-            res = True
-        except Exception as e:
-            res = False
+        dockers = workflow.dockers
+        dockers = Docker.sort_in_build_order(dockers)
+        for docker in dockers:
+            workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
+                docker, dockers
+            )
+        workflow_config.dump()
         results.append(
             Result.create_from(
-                name="Calculate docker digests", status=res, stopwatch=sw_
+                name="Calculate docker digests",
+                status=Result.Status.SUCCESS,
+                stopwatch=sw_,
             )
         )
 
@@ -462,9 +454,9 @@ def _finish_workflow(workflow, job_name):
     if workflow.enable_merge_ready_status:
         pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
         app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        from praktika.gh_auth_deprecated import GHAuth
+        from .gh_auth import GHAuth
 
-        GHAuth.auth(app_key=pem, app_id=app_id)
+        GHAuth.auth(app_id=app_id, app_key=pem)
         if not GH.post_commit_status(
             name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
             or f"Ready For Merge [{workflow.name}]",
@@ -509,7 +501,8 @@ if __name__ == "__main__":
             name=job_name,
             status=Result.Status.ERROR,
             stopwatch=sw,
-            info=f"Failed with Exception [{e}]\n{error_traceback}",
+            # try out .info generated in runner._run() which works for all jobs automatically
+            # info=f"Failed with Exception [{e}]\n{error_traceback}",
         )
 
     result.dump().complete_job()

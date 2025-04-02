@@ -63,6 +63,9 @@ public:
 
     ObjectStorageQueueSettings getSettings() const;
 
+    /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
+    static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
+
 private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
@@ -135,7 +138,8 @@ private:
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-        const std::string & exception_message = {}) const;
+        const std::string & exception_message = {},
+        int error_code = 0) const;
 };
 
 }

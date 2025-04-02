@@ -9,14 +9,15 @@
 namespace DB
 {
 
+using VirtualFields = std::unordered_map<String, Field>;
+using ValueSizeMap = std::map<std::string, double>;
+
 /// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
 /// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.
 /// Avoids loading the marks file if it is not needed (e.g. when reading the whole part).
 class IMergeTreeReader : private boost::noncopyable
 {
 public:
-    using ValueSizeMap = std::map<std::string, double>;
-    using VirtualFields = std::unordered_map<String, Field>;
     using DeserializeBinaryBulkStateMap = std::unordered_map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
@@ -34,8 +35,10 @@ public:
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
     /// current_task_last mark is needed for asynchronous reading (mainly from remote fs).
+    /// If rows_offset is not 0, when reading from MergeTree, the first rows_offset rows will be skipped.
     virtual size_t readRows(size_t from_mark, size_t current_task_last_mark,
-                            bool continue_reading, size_t max_rows_to_read, Columns & res_columns) = 0;
+                            bool continue_reading, size_t max_rows_to_read,
+                            size_t rows_offset, Columns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 
@@ -73,7 +76,8 @@ protected:
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
-    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
+
+    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
@@ -134,5 +138,20 @@ private:
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
 };
+
+using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+
+MergeTreeReaderPtr createMergeTreeReader(
+    const MergeTreeDataPartInfoForReaderPtr & read_info,
+    const NamesAndTypesList & columns,
+    const StorageSnapshotPtr & storage_snapshot,
+    const MarkRanges & mark_ranges,
+    const VirtualFields & virtual_fields,
+    UncompressedCache * uncompressed_cache,
+    MarkCache * mark_cache,
+    DeserializationPrefixesCache * deserialization_prefixes_cache,
+    const MergeTreeReaderSettings & reader_settings,
+    const ValueSizeMap & avg_value_size_hints,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
 }

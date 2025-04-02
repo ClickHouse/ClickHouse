@@ -1395,7 +1395,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             static constexpr size_t sector_size = 512;
 
             /// Always in milliseconds according to the docs.
-            static constexpr double time_multiplier = 1e-6;
+            static constexpr double time_multiplier = 1e-3;
 
 #define BLOCK_DEVICE_EXPLANATION \
     " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." \

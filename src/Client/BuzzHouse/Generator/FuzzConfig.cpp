@@ -117,10 +117,12 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_nested_rows", [&](const JSONObjectType & value) { max_nested_rows = value.getUInt64(); }},
         {"max_depth", [&](const JSONObjectType & value) { max_depth = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
         {"max_width", [&](const JSONObjectType & value) { max_width = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
+        {"max_columns", [&](const JSONObjectType & value) { max_columns = std::max(UINT64_C(1), value.getUInt64()); }},
         {"max_databases", [&](const JSONObjectType & value) { max_databases = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_dictionaries", [&](const JSONObjectType & value) { max_dictionaries = static_cast<uint32_t>(value.getUInt64()); }},
         {"query_time", [&](const JSONObjectType & value) { metrics.insert({{"query_time", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_memory", [&](const JSONObjectType & value) { metrics.insert({{"query_memory", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_bytes_read",
@@ -129,7 +131,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"time_to_run", [&](const JSONObjectType & value) { time_to_run = static_cast<uint32_t>(value.getUInt64()); }},
         {"fuzz_floating_points", [&](const JSONObjectType & value) { fuzz_floating_points = value.getBool(); }},
         {"test_with_fill", [&](const JSONObjectType & value) { test_with_fill = value.getBool(); }},
-        {"use_dump_table_oracle", [&](const JSONObjectType & value) { use_dump_table_oracle = value.getBool(); }},
+        {"dump_table_oracle_compare_content", [&](const JSONObjectType & value) { dump_table_oracle_compare_content = value.getBool(); }},
         {"compare_success_results", [&](const JSONObjectType & value) { compare_success_results = value.getBool(); }},
         {"allow_infinite_tables", [&](const JSONObjectType & value) { allow_infinite_tables = value.getBool(); }},
         {"compare_explains", [&](const JSONObjectType & value) { compare_explains = value.getBool(); }},
@@ -204,16 +206,16 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         throw DB::Exception(
             DB::ErrorCodes::BUZZHOUSE,
             "min_insert_rows value ({}) is higher than max_insert_rows value ({})",
-            std::to_string(min_insert_rows),
-            std::to_string(max_insert_rows));
+            min_insert_rows,
+            max_insert_rows);
     }
     if (min_nested_rows > max_nested_rows)
     {
         throw DB::Exception(
             DB::ErrorCodes::BUZZHOUSE,
             "min_nested_rows value ({}) is higher than max_nested_rows value ({})",
-            std::to_string(min_nested_rows),
-            std::to_string(max_nested_rows));
+            min_nested_rows,
+            max_nested_rows);
     }
     for (const auto & entry : std::views::values(metrics))
     {

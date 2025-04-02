@@ -334,6 +334,17 @@ protected:
                 result.replacement = url_arg;
                 return true;
             }
+
+            static re2::RE2 sas_signature_pattern = "SharedAccessSignature=.*?(;|$)";
+            if (RE2::Replace(&url_arg, sas_signature_pattern, "SharedAccessSignature=[HIDDEN]\\1"))
+            {
+                chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
+                result.start = url_arg_idx;
+                result.are_named = argument_is_named;
+                result.count = 1;
+                result.replacement = url_arg;
+                return true;
+            }
         }
 
         return false;

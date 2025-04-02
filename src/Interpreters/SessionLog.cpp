@@ -99,7 +99,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SCRAM_SHA256_PASSWORD),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 11);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 12);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
