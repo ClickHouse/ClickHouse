@@ -90,6 +90,7 @@ StorageObjectStorage::StorageObjectStorage(
     LoadingStrictnessLevel mode,
     bool distributed_processing_,
     ASTPtr partition_by_,
+    bool is_table_function_,
     bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
@@ -100,6 +101,7 @@ StorageObjectStorage::StorageObjectStorage(
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
     bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
+    update_configuration_on_read = !is_table_function_ || do_lazy_init;
     bool failed_init = false;
     auto do_init = [&]()
     {
@@ -358,7 +360,11 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    configuration->update(object_storage, local_context);
+    /// We did configuration->update() in constructor,
+    /// so in case of table function there is no need to do the same here again.
+    if (update_configuration_on_read)
+        configuration->update(object_storage, local_context);
+
     if (partition_by && configuration->withPartitionWildcard())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

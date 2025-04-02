@@ -148,7 +148,7 @@ def _build_dockers(workflow, job_name):
                     with_log=True,
                 )
             )
-            if results[0].is_ok():
+            if results[-1].is_ok():
                 ready.append(docker.name)
             else:
                 job_status = Result.Status.FAILED
@@ -289,20 +289,18 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if results[-1].is_ok() and workflow.dockers:
         sw_ = Utils.Stopwatch()
         print("Calculate docker's digests")
-        try:
-            dockers = workflow.dockers
-            dockers = Docker.sort_in_build_order(dockers)
-            for docker in dockers:
-                workflow_config.digest_dockers[docker.name] = (
-                    Digest().calc_docker_digest(docker, dockers)
-                )
-            workflow_config.dump()
-            res = True
-        except Exception as e:
-            res = False
+        dockers = workflow.dockers
+        dockers = Docker.sort_in_build_order(dockers)
+        for docker in dockers:
+            workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
+                docker, dockers
+            )
+        workflow_config.dump()
         results.append(
             Result.create_from(
-                name="Calculate docker digests", status=res, stopwatch=sw_
+                name="Calculate docker digests",
+                status=Result.Status.SUCCESS,
+                stopwatch=sw_,
             )
         )
 
@@ -503,7 +501,8 @@ if __name__ == "__main__":
             name=job_name,
             status=Result.Status.ERROR,
             stopwatch=sw,
-            info=f"Failed with Exception [{e}]\n{error_traceback}",
+            # try out .info generated in runner._run() which works for all jobs automatically
+            # info=f"Failed with Exception [{e}]\n{error_traceback}",
         )
 
     result.dump().complete_job()

@@ -36,6 +36,14 @@ void StorageSystemQueryConditionCache::fillData(MutableColumns & res_columns, Co
 
     std::vector<QueryConditionCache::Cache::KeyMapped> content = query_condition_cache->dump();
 
+    auto to_string = [](const auto & values)
+    {
+        String str;
+        for (auto val : values)
+            str += std::to_string(val);
+        return str;
+    };
+
     for (const auto & [key, entry] : content)
     {
         res_columns[0]->insert(key.table_id);
@@ -44,7 +52,7 @@ void StorageSystemQueryConditionCache::fillData(MutableColumns & res_columns, Co
         res_columns[3]->insert(QueryConditionCache::QueryConditionCacheEntryWeight()(*entry));
 
         std::shared_lock lock(entry->mutex);
-        res_columns[4]->insert(toString(entry->matching_marks));
+        res_columns[4]->insert(to_string(entry->matching_marks));
     }
 }
 

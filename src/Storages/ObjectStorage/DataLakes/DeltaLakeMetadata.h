@@ -18,6 +18,7 @@ namespace DB
 namespace StorageObjectStorageSetting
 {
 extern const StorageObjectStorageSettingsBool allow_experimental_delta_kernel_rs;
+extern const StorageObjectStorageSettingsBool delta_lake_read_schema_same_as_table_schema;
 }
 
 struct DeltaLakePartitionColumn
@@ -61,8 +62,12 @@ public:
     {
 #if USE_DELTA_KERNEL_RS
         auto configuration_ptr = configuration.lock();
-        if (configuration_ptr->getSettingsRef()[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs])
-            return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration);
+        const auto & settings_ref = configuration_ptr->getSettingsRef();
+        if (settings_ref[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs])
+            return std::make_unique<DeltaLakeMetadataDeltaKernel>(
+                object_storage,
+                configuration,
+                settings_ref[StorageObjectStorageSetting::delta_lake_read_schema_same_as_table_schema]);
         else
             return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 #else

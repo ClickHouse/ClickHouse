@@ -9,12 +9,14 @@ namespace DB
 
 DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     ObjectStoragePtr object_storage,
-    ConfigurationObserverPtr configuration_)
+    ConfigurationObserverPtr configuration_,
+    bool read_schema_same_as_table_schema_)
     : log(getLogger("DeltaLakeMetadata"))
     , table_snapshot(
         std::make_shared<DeltaLake::TableSnapshot>(
             getKernelHelper(configuration_.lock(), object_storage),
             object_storage,
+            read_schema_same_as_table_schema_,
             log))
 {
 }
@@ -35,9 +37,9 @@ Strings DeltaLakeMetadataDeltaKernel::getDataFiles() const
     throwNotImplemented("getDataFiles()");
 }
 
-ObjectIterator DeltaLakeMetadataDeltaKernel::iterate() const
+ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(FileProgressCallback callback, size_t list_batch_size) const
 {
-    return table_snapshot->iterate();
+    return table_snapshot->iterate(callback, list_batch_size);
 }
 
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema() const

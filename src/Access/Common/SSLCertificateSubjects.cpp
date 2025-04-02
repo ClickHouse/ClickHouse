@@ -17,36 +17,45 @@ namespace ErrorCodes
 #if USE_SSL
 SSLCertificateSubjects extractSSLCertificateSubjects(const Poco::Net::X509Certificate & certificate)
 {
-
     SSLCertificateSubjects subjects;
     if (!certificate.commonName().empty())
-    {
         subjects.insert(SSLCertificateSubjects::Type::CN, certificate.commonName());
-    }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wused-but-marked-unused"
-    auto stackof_general_name_deleter = [](void * ptr) { GENERAL_NAMES_free(static_cast<STACK_OF(GENERAL_NAME) *>(ptr)); };
-    std::unique_ptr<void, decltype(stackof_general_name_deleter)> cert_names(
-        X509_get_ext_d2i(const_cast<X509 *>(certificate.certificate()), NID_subject_alt_name, nullptr, nullptr),
-        stackof_general_name_deleter);
-
-    if (STACK_OF(GENERAL_NAME) * names = static_cast<STACK_OF(GENERAL_NAME) *>(cert_names.get()))
+    auto general_names_deleter = [](STACK_OF(GENERAL_NAME)* names)
     {
-        for (int i = 0; i < sk_GENERAL_NAME_num(names); ++i)
+        GENERAL_NAMES_free(names);
+    };
+
+    using GeneralNamesPtr = std::unique_ptr<STACK_OF(GENERAL_NAME), decltype(general_names_deleter)>;
+    GeneralNamesPtr cert_names(
+        static_cast<STACK_OF(GENERAL_NAME)*>(
+            X509_get_ext_d2i(const_cast<X509*>(certificate.certificate()), NID_subject_alt_name, nullptr, nullptr)
+        ),
+        general_names_deleter
+    );
+
+    if (!cert_names)
+        return subjects;
+
+    const auto * names = reinterpret_cast<const STACK_OF(GENERAL_NAME)*>(cert_names.get());
+    uint8_t count = OPENSSL_sk_num(reinterpret_cast<const _STACK*>(names));
+    for (uint8_t i = 0; i < count; ++i)
+    {
+        const GENERAL_NAME* name = static_cast<const GENERAL_NAME*>(OPENSSL_sk_value(reinterpret_cast<const _STACK*>(names), i));
+
+        if (name->type == GEN_DNS || name->type == GEN_URI)
         {
-            const GENERAL_NAME * name = sk_GENERAL_NAME_value(names, i);
-            if (name->type == GEN_DNS || name->type == GEN_URI)
+            const ASN1_IA5STRING* ia5 = name->d.ia5;
+            const char* data = reinterpret_cast<const char*>(ASN1_STRING_get0_data(ia5));
+            std::size_t len = ASN1_STRING_length(ia5);
+            if (data && len > 0)
             {
-                const char * data = reinterpret_cast<const char *>(ASN1_STRING_get0_data(name->d.ia5));
-                std::size_t len = ASN1_STRING_length(name->d.ia5);
-                std::string subject = (name->type == GEN_DNS ? "DNS:" : "URI:") + std::string(data, len);
-                subjects.insert(SSLCertificateSubjects::Type::SAN, std::move(subject));
+                std::string prefix = (name->type == GEN_DNS) ? "DNS:" : "URI:";
+                subjects.insert(SSLCertificateSubjects::Type::SAN, prefix + std::string(data, len));
             }
         }
     }
 
-#pragma clang diagnostic pop
     return subjects;
 }
 #endif

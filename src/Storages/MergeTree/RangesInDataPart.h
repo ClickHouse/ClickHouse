@@ -65,7 +65,7 @@ struct RangesInDataPart
     size_t getRowsCount() const;
 };
 
-struct RangesInDataParts: public std::vector<RangesInDataPart>
+struct RangesInDataParts : public std::vector<RangesInDataPart>
 {
     using std::vector<RangesInDataPart>::vector; /// NOLINT(modernize-type-traits)
 
@@ -74,13 +74,5 @@ struct RangesInDataParts: public std::vector<RangesInDataPart>
     size_t getMarksCountAllParts() const;
     size_t getRowsCountAllParts() const;
 };
-
-struct DataPartInfo
-{
-    DataPartPtr data_part;
-    AlterConversionsPtr alter_conversions;
-};
-using DataPartsInfo = std::unordered_map<size_t, DataPartInfo>;
-using DataPartsInfoPtr = std::shared_ptr<DataPartsInfo>;
 
 }

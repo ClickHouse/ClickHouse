@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from ._environment import _Environment
 from .settings import Settings
-from .utils import MetaClasses, Shell
+from .utils import MetaClasses, Shell, Utils
 
 
 @dataclasses.dataclass
@@ -267,25 +267,6 @@ class S3:
         )
 
     @classmethod
-    def compress_file(cls, path):
-        if Shell.check("which zstd"):
-            path_out = f"{path}.zst"
-            Shell.check(f"zstd < {path} > {path_out}", verbose=True, strict=True)
-        elif Shell.check("which pigz"):
-            path_out = f"{path}.gz"
-            Shell.check(f"pigz < {path} > {path_out}", verbose=True, strict=True)
-        elif Shell.check("which gzip"):
-            path_out = f"{path}.gz"
-            Shell.check(f"gzip < {path} > {path_out}", verbose=True, strict=True)
-        else:
-            print(f"ERROR: Failed to compress file [{path}] no zstd or gz installed")
-            _Environment.get().add_info(
-                f"Failed to compress file [{path}] no zstd or gz installed"
-            )
-            path_out = path
-        return path_out
-
-    @classmethod
     def _upload_file_to_s3(
         cls, local_file_path, upload_to_s3: bool, text: bool = False, s3_subprefix=""
     ) -> str:
@@ -302,7 +283,7 @@ class S3:
                         f"NOTE: File [{local_file_path}] exceeds threshold [Settings.COMPRESS_THRESHOLD_MB:{Settings.COMPRESS_THRESHOLD_MB}] - compress"
                     )
                     text = False
-                    local_file_path = cls.compress_file(local_file_path)
+                    local_file_path = Utils.compress_file(local_file_path)
             html_link = S3.copy_file_to_s3(
                 s3_path=s3_path, local_path=local_file_path, text=text
             )
