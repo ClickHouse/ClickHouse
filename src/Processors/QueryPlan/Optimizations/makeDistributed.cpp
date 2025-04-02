@@ -277,10 +277,8 @@ Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step, const Quer
 /// Builds distributed plan by splitting the query plan into multiple stages connected by exchanges.
 /// Exchange step are split into ExchangeSink and ExchangeSource.
 /// This allows to build a separate plan fragment (a part of the original full plan) for each stage.
-DistributedQueryPlan makeDistributedPlan(QueryPlan::Node * root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    (void)nodes;
-
     size_t exchange_id = 0;
 
     DistributedQueryPlan distributed_plan;
