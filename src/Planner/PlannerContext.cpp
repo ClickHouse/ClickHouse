@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const QueryTreeNodePtr & column_node)
@@ -106,9 +107,14 @@ TableExpressionData * PlannerContext::getTableExpressionDataOrNull(const QueryTr
 
 const ColumnIdentifier & PlannerContext::getColumnNodeIdentifierOrThrow(const QueryTreeNodePtr & column_node) const
 {
-    auto & column_node_typed = column_node->as<ColumnNode &>();
-    const auto & column_name = column_node_typed.getColumnName();
-    auto column_source = column_node_typed.getColumnSource();
+    auto * column_node_typed = column_node->as<ColumnNode>();
+    if (!column_node_typed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "JOIN USING clause expected column identifier. Actual {}",
+            column_node->formatASTForErrorMessage());
+
+    const auto & column_name = column_node_typed->getColumnName();
+    auto column_source = column_node_typed->getColumnSource();
     const auto & table_expression_data = getTableExpressionDataOrThrow(column_source);
     return table_expression_data.getColumnIdentifierOrThrow(column_name);
 }
