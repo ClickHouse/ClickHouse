@@ -123,7 +123,7 @@ def test_replicated(started_cluster):
         f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')"
     )
 
-    def create_table():
+    def do_create_table():
         create_table(
             started_cluster,
             node1,
@@ -137,9 +137,9 @@ def test_replicated(started_cluster):
             database_name="r",
         )
 
-    create_table()
-    node1.query(f"DROP TABLE {table_name} SYNC")
-    create_table()
+    do_create_table()
+    node1.query(f"DROP TABLE r.{table_name} SYNC")
+    do_create_table()
 
     assert '"processing_threads_num":16' in node1.query(
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
