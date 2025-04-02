@@ -26,7 +26,8 @@ public:
     /// Whether `iterate()` method is supported for the data lake.
     virtual bool supportsFileIterator() const { return false; }
     /// Return iterator to `data files`.
-    virtual ObjectIterator iterate() const { throwNotImplemented("iterate()"); }
+    using FileProgressCallback = std::function<void(FileProgress)>;
+    virtual ObjectIterator iterate(FileProgressCallback /* callback */, size_t /* list_batch_size */) const { throwNotImplemented("iterate()"); }
 
     /// Table schema from data lake metadata.
     virtual NamesAndTypesList getTableSchema() const = 0;
