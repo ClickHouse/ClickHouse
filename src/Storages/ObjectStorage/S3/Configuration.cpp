@@ -251,10 +251,10 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
-
     partitioning_style = extractNamedArgumentAndRemoveFromList<std::string>(args, "partitioning_style").value_or("auto");
     write_partition_columns_into_files = extractNamedArgumentAndRemoveFromList<bool>(args, "write_partition_columns_into_files").value_or(false);
+
+    size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
 
     if (count == 0 || count > getMaxNumberOfArguments(with_structure))
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
