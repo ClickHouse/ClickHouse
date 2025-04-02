@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <queue>
+#include <sstream>
 
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
@@ -13,12 +14,17 @@
 #include <Poco/PatternFormatter.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Poco/DOM/Document.h>
+#include <Poco/DOM/DOMWriter.h>
+#include <Poco/DOM/Node.h>
+#include <Poco/XML/XMLWriter.h>
 
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Exception.h>
 #include <Common/parseGlobs.h>
 #include <Common/re2.h>
+#include <Common/XMLUtils.h>
 
 namespace DB
 {
@@ -40,6 +46,27 @@ static void setupLogging(const std::string & log_level)
     Poco::Logger::root().setLevel(log_level);
 }
 
+static std::string getXMLSubTreeAsString(DB::XMLDocumentPtr config_xml, const std::string& key) {
+    Poco::XML::Node * node = DB::XMLUtils::getRootNode(config_xml.get())->getNodeByPath(key);
+    if (!node)
+        return "";
+    
+    Poco::XML::DOMWriter writer;
+    writer.setNewLine("\n");
+    writer.setIndent("    ");
+    writer.setOptions(Poco::XML::XMLWriter::PRETTY_PRINT);
+    
+    std::ostringstream oss;
+
+    // Write all the node's children
+    Poco::XML::Node * child = node->firstChild();
+    while (child) {
+        writer.writeNode(oss, child);
+        child = child->nextSibling();
+    }
+
+    return oss.str();
+}
 
 static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::ConfigurationPtr configuration, const std::string & pattern, bool ignore_errors)
 {
@@ -61,7 +88,7 @@ static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::Configurati
         Poco::Util::AbstractConfiguration::Keys keys;
         configuration->keys(node, keys);
 
-        /// This is a leave
+        /// This is a leaf
         if (keys.empty())
         {
             if (!re2::RE2::FullMatch(node, *matcher))
@@ -90,7 +117,11 @@ static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::Configurati
 }
 
 
+<<<<<<< HEAD
 static DB::ConfigurationPtr get_configuration(const std::string & config_path, bool process_zk_includes, bool throw_on_bad_include_from)
+=======
+static DB::XMLDocumentPtr getXMLconfiguration(const std::string & config_path, bool process_zk_includes)
+>>>>>>> 19c7432a0c0 (Add support for handling non-scalar values)
 {
     DB::ConfigProcessor processor(config_path,
         /* throw_on_bad_incl = */ false,
@@ -111,13 +142,18 @@ static DB::ConfigurationPtr get_configuration(const std::string & config_path, b
         zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
         config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
     }
-    return DB::ConfigurationPtr(new Poco::Util::XMLConfiguration(config_xml));
+    return config_xml;
 }
 
 
 static std::vector<std::string> extractFromConfig(const std::string & config_path, const std::string & key, bool process_zk_includes, bool ignore_errors, bool get_users)
 {
+<<<<<<< HEAD
     DB::ConfigurationPtr configuration = get_configuration(config_path, process_zk_includes, !ignore_errors);
+=======
+    DB::XMLDocumentPtr configuration_xml = getXMLconfiguration(config_path, process_zk_includes);
+    DB::ConfigurationPtr configuration = DB::ConfigurationPtr(new Poco::Util::XMLConfiguration(configuration_xml));
+>>>>>>> 19c7432a0c0 (Add support for handling non-scalar values)
 
     if (get_users)
     {
@@ -129,15 +165,33 @@ static std::vector<std::string> extractFromConfig(const std::string & config_pat
         const auto config_dir = fs::path{config_path}.remove_filename().string();
         if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
             users_config_path = fs::path(config_dir) / users_config_path;
+<<<<<<< HEAD
         configuration = get_configuration(users_config_path, process_zk_includes, !ignore_errors);
+=======
+        configuration_xml = getXMLconfiguration(users_config_path, process_zk_includes);
+        configuration = DB::ConfigurationPtr(new Poco::Util::XMLConfiguration(configuration_xml));
+>>>>>>> 19c7432a0c0 (Add support for handling non-scalar values)
     }
 
-    /// Check if a key has globs.
+    // Check if this key has a non-scalar value by looking for subkeys
+    Poco::Util::XMLConfiguration::Keys keys;
+    configuration->keys(key, keys);
+    if (!keys.empty()) {
+        // Non-scalar object, Output XML node 
+        return {getXMLSubTreeAsString(configuration_xml, key)};
+    }
+
+    // Check if a key has globs.
     if (key.find_first_of("*?{") != std::string::npos)
         return extactFromConfigAccordingToGlobs(configuration, key, ignore_errors);
 
+<<<<<<< HEAD
     /// Do not throw exception if not found.
     if (ignore_errors)
+=======
+    // Do not throw exception if not found.
+    if (try_get)
+>>>>>>> 19c7432a0c0 (Add support for handling non-scalar values)
         return {configuration->getString(key, "")};
     return {configuration->getString(key)};
 }
