@@ -1,4 +1,5 @@
 import pytest
+import uuid
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -23,6 +24,8 @@ def started_cluster():
 def test_merge_tree_prewarm_index_cache(started_cluster):
     node.query(
         """
+        SYSTEM DROP PRIMARY INDEX CACHE;
+
         DROP TABLE IF EXISTS t_prewarm_index_cache;
 
         CREATE TABLE t_prewarm_index_cache (d Date, u UInt64)
@@ -62,6 +65,8 @@ def test_merge_tree_prewarm_index_cache(started_cluster):
         == "2\n"
     )
 
+    log_comment = str(uuid.uuid4())
+
     node.query(
         """
         SELECT count() FROM t_prewarm_index_cache WHERE _part = '20220201_2_2_0' AND u = 2;
@@ -69,7 +74,8 @@ def test_merge_tree_prewarm_index_cache(started_cluster):
 
         SELECT count() FROM t_prewarm_index_cache WHERE _part = '20220101_1_1_0' AND u = 1;
         SELECT count() FROM t_prewarm_index_cache WHERE _part = '20220101_4_4_0' AND u = 4;
-    """
+    """,
+        settings={"log_comment": log_comment},
     )
 
     node.query("SYSTEM FLUSH LOGS")
@@ -85,9 +91,9 @@ def test_merge_tree_prewarm_index_cache(started_cluster):
     """
 
     result = node.query(
-        """
-        SELECT extract(query, '\d{8}_\d+_\d+_\d+') AS part, ProfileEvents['LoadedPrimaryIndexFiles'] FROM system.query_log
-        WHERE query LIKE 'SELECT count() FROM t_prewarm_index_cache%' AND type = 'QueryFinish'
+        f"""
+        SELECT extract(query, '\d{{8}}_\d+_\d+_\d+') AS part, ProfileEvents['LoadedPrimaryIndexFiles'] FROM system.query_log
+        WHERE type = 'QueryFinish' AND Settings['log_comment'] = '{log_comment}'
         ORDER BY event_time_microseconds
     """
     )
