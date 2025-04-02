@@ -106,7 +106,7 @@ IcebergMetadata::IcebergMetadata(
     , relevant_snapshot_schema_id(-1)
     , table_location(last_metadata_object->getValue<String>(TABLE_LOCATION_FIELD))
 {
-    updateState(context_);
+    updateState(context_, true);
 }
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
@@ -319,16 +319,20 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 
     const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr, log.get());
 
-    last_metadata_version = metadata_version;
-
-    last_metadata_object = readJSON(metadata_file_path, local_context);
+    bool metadata_file_changed = false;
+    if (last_metadata_version != metadata_version)
+    {
+        last_metadata_version = metadata_version;
+        last_metadata_object = readJSON(metadata_file_path, local_context);
+        metadata_file_changed = true;
+    }
 
     chassert(format_version == last_metadata_object->getValue<int>(FORMAT_VERSION_FIELD));
 
     auto previous_snapshot_id = relevant_snapshot_id;
     auto previous_snapshot_schema_id = relevant_snapshot_schema_id;
 
-    updateState(local_context);
+    updateState(local_context, metadata_file_changed);
 
     if (previous_snapshot_id != relevant_snapshot_id)
     {
@@ -395,7 +399,7 @@ void IcebergMetadata::updateSnapshot()
         configuration_ptr->getPath());
 }
 
-void IcebergMetadata::updateState(const ContextPtr & local_context)
+void IcebergMetadata::updateState(const ContextPtr & local_context, bool metadata_file_changed)
 {
     auto configuration_ptr = configuration.lock();
     std::optional<String> manifest_list_file;
@@ -436,7 +440,7 @@ void IcebergMetadata::updateState(const ContextPtr & local_context)
         relevant_snapshot_id = local_context->getSettingsRef()[Setting::iceberg_snapshot_id];
         updateSnapshot();
     }
-    else
+    else if (metadata_file_changed)
     {
         if (!last_metadata_object->has(CURRENT_SNAPSHOT_ID_FIELD_IN_METADATA_FILE))
             relevant_snapshot_id = -1;

@@ -120,7 +120,7 @@ private:
 
     mutable std::optional<Strings> cached_unprunned_files_for_last_processed_snapshot;
 
-    void updateState(const ContextPtr & local_context);
+    void updateState(const ContextPtr & local_context, bool metadata_file_changed);
 
     void updateSnapshot();
 
