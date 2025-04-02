@@ -385,9 +385,13 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->clearMarkCache();
             break;
         case Type::DROP_ICEBERG_METADATA_CACHE:
+#if USE_AVRO
             getContext()->checkAccess(AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE);
             system_context->clearIcebergMetadataFilesCache();
             break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
+#endif
         case Type::DROP_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
