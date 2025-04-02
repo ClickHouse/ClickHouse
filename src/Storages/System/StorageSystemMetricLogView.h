@@ -1,12 +1,10 @@
 #pragma once
 
 #include <Storages/StorageView.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
-
 
 /// Special view for transposed representation of system.metric_log.
 /// Can be used as compatibility layer, when you want to store transposed table, but your queries want wide table.
@@ -16,6 +14,14 @@ namespace DB
 class StorageSystemMetricLogView final : public IStorage
 {
 public:
+    /// Order for elements in view
+    static constexpr size_t EVENT_TIME_POSITION = 0;
+    static constexpr size_t VALUE_POSITION = 1;
+    static constexpr size_t METRIC_POSITION = 2;
+    static constexpr size_t HOSTNAME_POSITION = 3;
+    static constexpr size_t EVENT_DATE_POSITION = 4;
+    static constexpr size_t EVENT_TIME_HOUR_POSITION = 5;
+
     explicit StorageSystemMetricLogView(const StorageID & table_id_, const StorageID & source_storage_id);
 
     std::string getName() const override { return "SystemMetricLogView"; }
@@ -37,31 +43,6 @@ public:
     std::optional<String> addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context);
 private:
     StorageView internal_view;
-};
-
-
-/// Unfortunately the logic of this view is not easy to express with
-/// default SQL operators in effective way. All attempts with GROUP BY are terribly slow and resource consuming.
-/// That is why it's not just a normal StorageView, but a custom pipeline on top of StorageView.
-///
-/// This is one of the steps of this custom pipeline. It's public because we need to allow
-/// filter push down through it and it's possible only with custom code in filterPushDown.cpp
-class CustomMetricLogStep : public ITransformingStep
-{
-    SortDescription sort_description;
-public:
-    CustomMetricLogStep(Block input_header_, Block output_header_);
-
-    String getName() const override
-    {
-        return "CustomMetricLogStep";
-    }
-
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-
-    void updateOutputHeader() override {}
-
-    const SortDescription & getSortDescription() const override;
 };
 
 }
