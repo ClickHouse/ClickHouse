@@ -616,6 +616,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
 void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
 {
     String buf;
+    TableOrFunction * tof = ins->mutable_tof();
     const uint32_t noption = rg.nextLargeNumber();
     const uint32_t noption2 = rg.nextMediumNumber();
     const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
@@ -627,7 +628,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
     if (cluster.has_value() || (!fc.clusters.empty() && noption2 < 11))
     {
         /// If the table is set on cluster, always insert to all replicas/shards
-        ClusterFunc * cdf = ins->mutable_tfunc()->mutable_cluster();
+        ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
 
         cdf->set_cname((cluster.has_value() || rg.nextBool()) ? ClusterFunc::clusterAllReplicas : ClusterFunc::cluster);
         cdf->set_ccluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
@@ -643,12 +644,12 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
     else if (noption2 < 21)
     {
         /// Use insert into remote
-        setTableRemote(rg, true, t, ins->mutable_tfunc());
+        setTableRemote(rg, true, false, t, tof->mutable_tfunc());
     }
     else
     {
         /// Use insert into table
-        t.setName(ins->mutable_est(), false);
+        t.setName(tof->mutable_est(), false);
     }
     flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);

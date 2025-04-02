@@ -126,7 +126,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
-void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, const uint32_t ncols, SelectStatementCore * ssc)
+void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, const uint32_t ncols, SelectStatementCore * ssc) const
 {
     const uint32_t noption = rg.nextSmallNumber();
 
@@ -150,6 +150,38 @@ void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & ge
     }
 }
 
+void QueryOracle::insertOnTableOrCluster(
+    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const bool remote, TableOrFunction * tof) const
+{
+    const std::optional<String> & cluster = t.getCluster();
+
+    if (remote)
+    {
+        gen.setTableRemote(rg, false, true, t, tof->mutable_tfunc());
+    }
+    else if (cluster.has_value())
+    {
+        /// If the table is set on cluster, always insert to all replicas/shards
+        ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
+
+        cdf->set_cname(ClusterFunc::clusterAllReplicas);
+        cdf->set_ccluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
+        t.setName(cdf->mutable_tof()->mutable_est(), true);
+        if (rg.nextSmallNumber() < 4)
+        {
+            /// Optional sharding key
+            gen.flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
+            cdf->set_sharding_key(rg.pickRandomly(gen.remote_entries).getBottomName());
+            gen.remote_entries.clear();
+        }
+    }
+    else
+    {
+        /// Use insert into table
+        t.setName(tof->mutable_est(), false);
+    }
+}
+
 /// Dump and read table oracle
 void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1)
 {
@@ -160,7 +192,7 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
     OrderByList * obs = sel->mutable_orderby()->mutable_olist();
 
-    t.setName(jtf->mutable_tof()->mutable_est(), false);
+    insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
     jtf->set_final(t.supportsFinal());
 
     gen.flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
@@ -198,7 +230,7 @@ void QueryOracle::generateExportQuery(
     bool first = true;
     std::error_code ec;
     Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
-    FileFunc * ff = ins->mutable_tfunc()->mutable_file();
+    FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
     SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
     OutFormat outf = rg.pickRandomly(outIn);
@@ -256,13 +288,20 @@ void QueryOracle::generateExportQuery(
     /// Set the table on select
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
-    t.setName(jtf->mutable_tof()->mutable_est(), false);
+    insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
     jtf->set_final(t.supportsFinal());
 }
 
 void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
 {
-    t.setName(sq3.mutable_explain()->mutable_inner_query()->mutable_trunc()->mutable_est(), false);
+    const std::optional<String> & cluster = t.getCluster();
+    Truncate * trunc = sq3.mutable_explain()->mutable_inner_query()->mutable_trunc();
+
+    t.setName(trunc->mutable_est(), false);
+    if (cluster.has_value())
+    {
+        trunc->mutable_cluster()->set_cluster(cluster.value());
+    }
 }
 
 void QueryOracle::generateImportQuery(
@@ -272,11 +311,11 @@ void QueryOracle::generateImportQuery(
     Insert * nins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.explain().inner_query().insert();
-    const FileFunc & ff = oins.tfunc().file();
+    const FileFunc & ff = oins.tof().tfunc().file();
     const InFormat & inf
         = (!can_test_query_success && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(outIn) : outIn.at(ff.outformat());
 
-    t.setName(nins->mutable_est(), false);
+    insertOnTableOrCluster(rg, gen, t, false, nins->mutable_tof());
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
@@ -398,7 +437,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     else
     {
         ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
-        FileFunc * ff = ins->mutable_tfunc()->mutable_file();
+        FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
         OutFormat outf = rg.pickRandomly(outIn);
 
         if (!std::filesystem::remove(qfile, ec) && ec)
@@ -603,7 +642,7 @@ void QueryOracle::findTablesWithPeersAndReplace(
                     {
                         if (replace)
                         {
-                            gen.setTableRemote(rg, false, t, torfunc.mutable_tfunc());
+                            insertOnTableOrCluster(rg, gen, t, true, &torfunc);
                         }
                         found_tables.insert(tname);
                         can_test_query_success &= t.hasClickHousePeer();
@@ -661,7 +700,7 @@ void QueryOracle::replaceQueryWithTablePeers(
     {
         /// Use a different file for the peer database
         std::error_code ec;
-        FileFunc & ff = const_cast<FileFunc &>(sq2.explain().inner_query().insert().tfunc().file());
+        FileFunc & ff = const_cast<FileFunc &>(sq2.explain().inner_query().insert().tof().tfunc().file());
 
         if (!std::filesystem::remove(qfile_peer, ec) && ec)
         {
@@ -677,10 +716,10 @@ void QueryOracle::replaceQueryWithTablePeers(
         SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
 
         /// Then insert the data
-        gen.setTableRemote(rg, false, t, ins->mutable_tfunc());
+        insertOnTableOrCluster(rg, gen, t, true, ins->mutable_tof());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
-        t.setName(jtf->mutable_tof()->mutable_est(), false);
+        insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
         jtf->set_final(t.supportsFinal());
         gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)

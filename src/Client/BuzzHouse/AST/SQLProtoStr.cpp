@@ -3138,20 +3138,16 @@ CONV_FN(Drop, dt)
 
 CONV_FN(Insert, insert)
 {
-    if (insert.has_ctes() && insert.has_est() && insert.has_select())
+    if (insert.has_ctes() && insert.has_select())
     {
         CTEsToString(ret, insert.ctes());
     }
     ret += "INSERT INTO TABLE ";
-    if (insert.has_est())
-    {
-        ExprSchemaTableToString(ret, insert.est());
-    }
-    else if (insert.has_tfunc())
+    if (insert.tof().has_tfunc())
     {
         ret += "FUNCTION ";
-        TableFunctionToString(ret, insert.tfunc());
     }
+    TableOrFunctionToString(ret, false, insert.tof());
     if (insert.cols_size())
     {
         ret += " (";

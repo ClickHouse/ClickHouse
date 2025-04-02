@@ -3203,18 +3203,15 @@ message InsertFromFile {
 
 message Insert {
     optional CTEs ctes = 1;
-    oneof into_oneof {
-        ExprSchemaTable est = 2;
-        TableFunction tfunc = 3;
-    }
-    repeated ColumnPath cols = 4;
+    required TableOrFunction tof = 2;
+    repeated ColumnPath cols = 3;
     oneof insert_oneof {
-        ValuesStatement values = 5;
-        Select select = 6;
-        InsertFromFile insert_file = 7;
-        string query = 8;
+        ValuesStatement values = 4;
+        Select select = 5;
+        InsertFromFile insert_file = 6;
+        string query = 7;
     }
-    optional SettingValues setting_values = 9;
+    optional SettingValues setting_values = 8;
 }
 
 message PartitionExpr {

@@ -193,19 +193,10 @@ void StatementGenerator::generateDerivedTable(
     }
 }
 
-void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_engine, const SQLTable & t, TableFunction * tfunc)
+void StatementGenerator::setTableRemote(
+    RandomGenerator & rg, const bool table_engine, const bool use_cluster, const SQLTable & t, TableFunction * tfunc)
 {
-    if (!table_engine && t.hasClickHousePeer())
-    {
-        const ServerCredentials & sc = fc.clickhouse_server.value();
-        RemoteFunc * rfunc = tfunc->mutable_remote();
-
-        rfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
-        t.setName(rfunc->mutable_tof()->mutable_est(), true);
-        rfunc->set_user(sc.user);
-        rfunc->set_password(sc.password);
-    }
-    else if ((table_engine && t.isMySQLEngine() && rg.nextSmallNumber() < 7) || (!table_engine && t.hasMySQLPeer()))
+    if ((table_engine && t.isMySQLEngine() && rg.nextSmallNumber() < 7) || (!table_engine && t.hasMySQLPeer()))
     {
         const ServerCredentials & sc = fc.mysql_server.value();
         MySQLFunc * mfunc = tfunc->mutable_mysql();
@@ -271,11 +262,41 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
     else
     {
         RemoteFunc * rfunc = tfunc->mutable_remote();
+        TableOrFunction * tof = rfunc->mutable_tof();
+        const std::optional<String> & cluster = t.getCluster();
 
-        chassert(table_engine);
-        rfunc->set_address(fc.getConnectionHostAndPort());
+        if (!table_engine && t.hasClickHousePeer())
+        {
+            const ServerCredentials & sc = fc.clickhouse_server.value();
 
-        t.setName(rfunc->mutable_tof()->mutable_est(), true);
+            rfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
+            rfunc->set_user(sc.user);
+            rfunc->set_password(sc.password);
+        }
+        else
+        {
+            chassert(table_engine);
+            rfunc->set_address(fc.getConnectionHostAndPort());
+        }
+        if (use_cluster && cluster.has_value())
+        {
+            ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
+
+            cdf->set_cname(ClusterFunc::clusterAllReplicas);
+            cdf->set_ccluster(cluster.value());
+            t.setName(cdf->mutable_tof()->mutable_est(), true);
+            if (rg.nextSmallNumber() < 4)
+            {
+                /// Optional sharding key
+                this->flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
+                cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
+                this->remote_entries.clear();
+            }
+        }
+        else
+        {
+            t.setName(tof->mutable_est(), true);
+        }
     }
 }
 
@@ -394,7 +415,7 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
 
-            setTableRemote(rg, true, *t, tf);
+            setTableRemote(rg, true, false, *t, tf);
             addTableRelation(rg, true, rel_name, *t);
         }
         else if (remote_view && nopt2 < (remote_table + remote_view + 1))
