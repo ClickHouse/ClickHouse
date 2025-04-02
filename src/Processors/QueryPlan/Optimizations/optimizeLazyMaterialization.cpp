@@ -267,7 +267,8 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
     if (lazily_read_info->lazily_read_columns.empty())
         return;
 
-    lazily_read_info->data_parts_info = std::make_shared<DataPartsInfo>();
+    lazily_read_info->data_part_infos = std::make_shared<DataPartInfoByIndex>();
+
     auto lazy_column_reader = std::make_unique<MergeTreeLazilyReader>(
         sorting_step->getOutputHeader(),
         reading_step->getMergeTreeData(),
