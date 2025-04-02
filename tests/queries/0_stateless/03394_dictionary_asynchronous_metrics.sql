@@ -23,7 +23,7 @@ select sleep(1);
 SYSTEM RELOAD ASYNCHRONOUS METRICS;
 
 SELECT * FROM system.asynchronous_metrics WHERE name = 'DictionaryTotalFailedUpdates';
-SELECT name, value, description FROM system.asynchronous_metrics WHERE name = 'DictionaryMaxUpdateDelay';
+SELECT name, value >= 1, description FROM system.asynchronous_metrics WHERE name = 'DictionaryMaxUpdateDelay';
 
 SYSTEM RELOAD DICTIONARY d1; -- {serverError UNKNOWN_TABLE}
 select sleep(1);
@@ -32,7 +32,7 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS;
 SELECT error_count FROM system.dictionaries WHERE name = 'd1';
 
 SELECT * FROM system.asynchronous_metrics WHERE name = 'DictionaryTotalFailedUpdates';
-SELECT name, value, description FROM system.asynchronous_metrics WHERE name = 'DictionaryMaxUpdateDelay';
+SELECT name, value >= 2, description FROM system.asynchronous_metrics WHERE name = 'DictionaryMaxUpdateDelay';
 
 ATTACH TABLE t1;
 DROP DICTIONARY IF EXISTS d1;

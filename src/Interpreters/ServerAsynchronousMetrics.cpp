@@ -228,7 +228,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         const auto & external_dictionaries = getContext()->getExternalDictionariesLoader();
 
         for (const auto & load_result : external_dictionaries.getLoadResults()) {
-            if (load_result.error_count > 0 && load_result.loading_start_time.time_since_epoch().count() > 0) {
+            if (load_result.error_count > 0 && load_result.last_successful_update_time.time_since_epoch().count() > 0) {
                 max_update_delay = std::max(max_update_delay, std::chrono::duration_cast<Duration>(current_time - load_result.last_successful_update_time));
             }
             failed_counter += load_result.error_count;
