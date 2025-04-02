@@ -148,9 +148,8 @@ ManifestFilesPruner::ManifestFilesPruner(
             partition_key_condition.emplace(transformed_dag.get(), context, partition_key->column_names, partition_key->expression, true /* single_point */);
     }
 
-    if (manifest_file.hasBoundsInfoInManifests())
+    if (manifest_file.hasBoundsInfoInManifests() && transformed_dag != nullptr)
     {
-        if (transformed_dag != nullptr)
         {
             const auto & bounded_colums = manifest_file.getColumnsIDsWithBounds();
             for (Int32 used_column_id : used_columns_in_filter)
