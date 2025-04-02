@@ -101,6 +101,14 @@ class Info:
         return self.env.INSTANCE_TYPE
 
     @property
+    def is_merge_queue_event(self):
+        return self.env.EVENT_TYPE == "merge_group"
+
+    @property
+    def is_push_event(self):
+        return self.env.EVENT_TYPE == "push"
+
+    @property
     def instance_lifecycle(self):
         return self.env.INSTANCE_LIFE_CYCLE
 

@@ -158,12 +158,6 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-base"],
     ),
-    # Docker.Config(
-    #     name="clickhouse/sqllogic-test",
-    #     path="./ci/docker/test/sqllogic",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
     Docker.Config(
         name="clickhouse/integration-test",
         path="./docker/test/integration/base",
@@ -275,19 +269,6 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/sqlancer-test",
         path="./ci/docker/sqlancer-test",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    # TODO: remove redundant images
-    Docker.Config(
-        name="clickhouse/clickbench",
-        path="./docker/test/clickbench",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/sqltest",
-        path="./docker/test/sqltest",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),

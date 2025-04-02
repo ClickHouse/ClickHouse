@@ -814,21 +814,24 @@ class JobConfigs:
     )
     clickbench_master_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
-        runs_on=["..params.."],
-        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        command="python3 ./ci/jobs/clickbench.py",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./tests/ci/clickbench.py", "./docker"],
+            include_paths=["./ci/jobs/clickbench.py", "./ci/jobs/scripts/clickbench/"],
         ),
-        allow_merge_on_failure=True,
+        run_in_docker="clickhouse/stateless-test+--shm-size=16g",
     ).parametrize(
         parameter=[
-            "release",
-            "aarch64",
+            BuildTypes.AMD_RELEASE,
+            BuildTypes.ARM_RELEASE,
         ],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD, RunnerLabels.FUNC_TESTER_ARM],
+        runs_on=[
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_ARM,
+        ],
         requires=[
-            ["Build (amd_release)"],
-            ["Build (arm_release)"],
+            [ArtifactNames.CH_AMD_RELEASE],
+            [ArtifactNames.CH_ARM_RELEASE],
         ],
     )
     docs_job = Job.Config(
@@ -893,12 +896,16 @@ class JobConfigs:
     )
     sqltest_master_job = Job.Config(
         name=JobNames.SQL_TEST,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command="python3 ./ci/jobs/sqltest_job.py",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./tests/ci/sqltest.py"],
+            include_paths=[
+                "./ci/jobs/sqltest_job.py",
+            ],
         ),
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-        requires=["Build (amd_release)"],
+        requires=[ArtifactNames.CH_ARM_RELEASE],
+        run_in_docker="clickhouse/stateless-test",
+        timeout=10800,
     )
     # TODO: run by labels Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX
     bugfix_validation = Job.Config(
