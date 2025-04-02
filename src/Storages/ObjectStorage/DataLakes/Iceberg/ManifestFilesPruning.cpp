@@ -104,7 +104,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
     {
         auto column = schema_processor.tryGetFieldCharacteristics(current_schema_id, column_id);
 
-        /// Columns which we dropped and doesn't exist in current schema
+        /// Columns which we dropped and don't exist in current schema
         /// cannot be queried in WHERE expression.
         if (!column.has_value())
             continue;
