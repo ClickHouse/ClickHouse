@@ -22,6 +22,7 @@ instance = cluster.add_instance(
     clickhouse_path_dir="clickhouse_path",
 )
 
+
 # Fixtures
 @pytest.fixture(scope="module")
 def kafka_cluster():
@@ -32,6 +33,7 @@ def kafka_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
@@ -59,7 +61,8 @@ def kafka_setup_teardown():
         retries += 1
         time.sleep(0.5)
     yield  # run test
-        
+
+
 # Tests
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
@@ -397,6 +400,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             format_opts["expected"]["error"] in errors_result["error"]
         ), "Proper error for format: {}".format(format_name)
         k.kafka_delete_topic(admin_client, topic_name)
+
 
 @pytest.mark.parametrize(
     "create_query_generator",
@@ -812,6 +816,7 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
             format_name
         )
         k.kafka_delete_topic(k.get_admin_client(kafka_cluster), topic_name)
+
 
 if __name__ == "__main__":
     cluster.start()

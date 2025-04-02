@@ -22,6 +22,7 @@ instance = cluster.add_instance(
     clickhouse_path_dir="clickhouse_path",
 )
 
+
 # Fixtures
 @pytest.fixture(scope="module")
 def kafka_cluster():
@@ -32,6 +33,7 @@ def kafka_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
@@ -60,7 +62,9 @@ def kafka_setup_teardown():
         time.sleep(0.5)
     yield  # run test
 
+
 # Tests
+
 
 def test_kafka_handling_commit_failure(kafka_cluster):
     messages = [json.dumps({"key": j + 1, "value": "x" * 300}) for j in range(22)]
@@ -100,9 +104,7 @@ def test_kafka_handling_commit_failure(kafka_cluster):
     # while materialized view is working to inject zookeeper failure
 
     with kafka_cluster.pause_container("kafka1"):
-        instance.wait_for_log_line(
-            "timeout", timeout=60, look_behind_lines=100
-        )
+        instance.wait_for_log_line("timeout", timeout=60, look_behind_lines=100)
 
     # kafka_cluster.open_bash_shell('instance')
     instance.wait_for_log_line("Committed offset 22")
@@ -363,5 +365,3 @@ def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
         kafka_thread.join()
 
         assert result == 1, "Messages from kafka get duplicated!"
-
-

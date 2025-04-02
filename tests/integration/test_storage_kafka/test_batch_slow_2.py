@@ -22,6 +22,7 @@ instance = cluster.add_instance(
     clickhouse_path_dir="clickhouse_path",
 )
 
+
 # Fixtures
 @pytest.fixture(scope="module")
 def kafka_cluster():
@@ -32,6 +33,7 @@ def kafka_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
@@ -59,8 +61,10 @@ def kafka_setup_teardown():
         retries += 1
         time.sleep(0.5)
     yield  # run test
-        
+
+
 # Tests
+
 
 @pytest.mark.parametrize(
     "create_query_generator",

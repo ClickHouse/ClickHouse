@@ -1,6 +1,7 @@
 from helpers.kafka.common_direct import *
 from helpers.kafka.common_direct import _VarintBytes
 
+
 def get_kafka_producer(port, serializer, retries):
     errors = []
     for _ in range(retries):
@@ -464,6 +465,7 @@ def describe_consumer_group(kafka_cluster, name):
         member_info["assignment"] = member_topics_assignment
         res.append(member_info)
     return res
+
 
 KAFKA_TOPIC_OLD = "old_t"
 KAFKA_CONSUMER_GROUP_OLD = "old_cg"

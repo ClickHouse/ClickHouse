@@ -22,6 +22,7 @@ instance = cluster.add_instance(
     clickhouse_path_dir="clickhouse_path",
 )
 
+
 # Fixtures
 @pytest.fixture(scope="module")
 def kafka_cluster():
@@ -32,6 +33,7 @@ def kafka_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
@@ -60,7 +62,9 @@ def kafka_setup_teardown():
         time.sleep(0.5)
     yield  # run test
 
+
 # Tests
+
 
 def test_formats_errors(kafka_cluster):
     admin_client = KafkaAdminClient(
@@ -151,5 +155,3 @@ def test_formats_errors(kafka_cluster):
 
             instance.query(f"DROP TABLE test.{table_name}")
             instance.query("DROP TABLE test.view")
-
-

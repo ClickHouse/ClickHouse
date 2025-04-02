@@ -22,6 +22,7 @@ instance = cluster.add_instance(
     clickhouse_path_dir="clickhouse_path",
 )
 
+
 # Fixtures
 @pytest.fixture(scope="module")
 def kafka_cluster():
@@ -32,6 +33,7 @@ def kafka_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
@@ -60,7 +62,9 @@ def kafka_setup_teardown():
         time.sleep(0.5)
     yield  # run test
 
+
 # Tests
+
 
 @pytest.mark.parametrize(
     "create_query_generator",
@@ -259,5 +263,3 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
         prev_count = instance.query_with_retry(
             count_query, check_callback=lambda res: int(res) > prev_count
         )
-
-
