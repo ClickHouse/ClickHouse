@@ -922,76 +922,133 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(
     const IndexDescription & index)
 {
     std::unique_ptr<ITokenExtractor> tokenizer;
-    size_t n = index.arguments[0].safeGet<size_t>();
 
     if (index.type == NgramTokenExtractor::getName())
     {
+        size_t n = index.arguments[0].safeGet<size_t>();
         tokenizer = std::make_unique<NgramTokenExtractor>(n);
+
+        /// One level index
+        if (index.arguments.size() == 4)
+        {
+            BloomFilterParameters bloom_filter_params(
+                index.arguments[1].safeGet<size_t>(),
+                index.arguments[2].safeGet<size_t>(),
+                index.arguments[3].safeGet<size_t>());
+
+            BloomFilterIndexParameters params{
+                .mode = BloomFilterIndexParameters::BloomFilterIndexMode::ONE_LEVEL,
+                .num_hot_tokens = 0,
+                .common_params = bloom_filter_params,
+                .params = bloom_filter_params,
+            };
+            return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
+        }
+        /// Two level index with common bloom-filter parameters
+        else if (index.arguments.size() == 5)
+        {
+            BloomFilterParameters bloom_filter_params(
+                index.arguments[1].safeGet<size_t>(),
+                index.arguments[2].safeGet<size_t>(),
+                index.arguments[3].safeGet<size_t>());
+
+            BloomFilterIndexParameters params{
+                .mode = BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL,
+                .num_hot_tokens = index.arguments[4].safeGet<size_t>(),
+                .common_params = bloom_filter_params,
+                .params = bloom_filter_params,
+            };
+            return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
+        }
+        else if (index.arguments.size() == 8)
+        {
+            BloomFilterParameters first_level_bloom_filter_params(
+                index.arguments[1].safeGet<size_t>(),
+                index.arguments[2].safeGet<size_t>(),
+                index.arguments[3].safeGet<size_t>());
+
+            BloomFilterParameters second_level_bloom_filter_params(
+                index.arguments[5].safeGet<size_t>(),
+                index.arguments[6].safeGet<size_t>(),
+                index.arguments[7].safeGet<size_t>());
+
+            BloomFilterIndexParameters params{
+                .mode = BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL,
+                .num_hot_tokens = index.arguments[4].safeGet<size_t>(),
+                .common_params = first_level_bloom_filter_params,
+                .params = second_level_bloom_filter_params,
+            };
+            return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of paramets index type: {}. Seen {}, expected 4, 5 or 8", backQuote(index.name), index.arguments.size());
+        }
     }
     else if (index.type == SplitTokenExtractor::getName())
     {
         tokenizer = std::make_unique<SplitTokenExtractor>();
+
+        /// One level index
+        if (index.arguments.size() == 3)
+        {
+            BloomFilterParameters bloom_filter_params(
+                index.arguments[0].safeGet<size_t>(),
+                index.arguments[1].safeGet<size_t>(),
+                index.arguments[2].safeGet<size_t>());
+
+            BloomFilterIndexParameters params{
+                .mode = BloomFilterIndexParameters::BloomFilterIndexMode::ONE_LEVEL,
+                .num_hot_tokens = 0,
+                .common_params = bloom_filter_params,
+                .params = bloom_filter_params,
+            };
+            return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
+        }
+        /// Two level index with common bloom-filter parameters
+        else if (index.arguments.size() == 4)
+        {
+            BloomFilterParameters bloom_filter_params(
+                index.arguments[0].safeGet<size_t>(),
+                index.arguments[1].safeGet<size_t>(),
+                index.arguments[2].safeGet<size_t>());
+
+            BloomFilterIndexParameters params{
+                .mode = BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL,
+                .num_hot_tokens = index.arguments[3].safeGet<size_t>(),
+                .common_params = bloom_filter_params,
+                .params = bloom_filter_params,
+            };
+            return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
+        }
+        else if (index.arguments.size() == 7)
+        {
+            BloomFilterParameters first_level_bloom_filter_params(
+                index.arguments[0].safeGet<size_t>(),
+                index.arguments[1].safeGet<size_t>(),
+                index.arguments[2].safeGet<size_t>());
+
+            BloomFilterParameters second_level_bloom_filter_params(
+                index.arguments[4].safeGet<size_t>(),
+                index.arguments[5].safeGet<size_t>(),
+                index.arguments[6].safeGet<size_t>());
+
+            BloomFilterIndexParameters params{
+                .mode = BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL,
+                .num_hot_tokens = index.arguments[3].safeGet<size_t>(),
+                .common_params = first_level_bloom_filter_params,
+                .params = second_level_bloom_filter_params,
+            };
+            return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of paramets index type: {}. Seen {}, expected 3, 4 or 7", backQuote(index.name), index.arguments.size());
+        }
     }
     else
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index type: {}", backQuote(index.name));
-    }
-
-    /// One level index
-    if (index.arguments.size() == 4)
-    {
-        BloomFilterParameters bloom_filter_params(
-            index.arguments[1].safeGet<size_t>(),
-            index.arguments[2].safeGet<size_t>(),
-            index.arguments[3].safeGet<size_t>());
-
-        BloomFilterIndexParameters params{
-            .mode = BloomFilterIndexParameters::BloomFilterIndexMode::ONE_LEVEL,
-            .num_hot_tokens = 0,
-            .common_params = bloom_filter_params,
-            .params = bloom_filter_params,
-        };
-        return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
-    }
-    /// Two level index with common bloom-filter parameters
-    else if (index.arguments.size() == 5)
-    {
-        BloomFilterParameters bloom_filter_params(
-            index.arguments[1].safeGet<size_t>(),
-            index.arguments[2].safeGet<size_t>(),
-            index.arguments[3].safeGet<size_t>());
-
-        BloomFilterIndexParameters params{
-            .mode = BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL,
-            .num_hot_tokens = index.arguments[4].safeGet<size_t>(),
-            .common_params = bloom_filter_params,
-            .params = bloom_filter_params,
-        };
-        return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
-    }
-    else if (index.arguments.size() == 8)
-    {
-        BloomFilterParameters first_level_bloom_filter_params(
-            index.arguments[1].safeGet<size_t>(),
-            index.arguments[2].safeGet<size_t>(),
-            index.arguments[3].safeGet<size_t>());
-
-        BloomFilterParameters second_level_bloom_filter_params(
-            index.arguments[5].safeGet<size_t>(),
-            index.arguments[6].safeGet<size_t>(),
-            index.arguments[7].safeGet<size_t>());
-
-        BloomFilterIndexParameters params{
-            .mode = BloomFilterIndexParameters::BloomFilterIndexMode::TWO_LEVEL,
-            .num_hot_tokens = index.arguments[4].safeGet<size_t>(),
-            .common_params = first_level_bloom_filter_params,
-            .params = second_level_bloom_filter_params,
-        };
-        return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
-    }
-    else
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of paramets index type: {}. Seen {}, expected 4, 5 or 8", backQuote(index.name), index.arguments.size());
     }
 }
 

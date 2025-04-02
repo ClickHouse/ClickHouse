@@ -41,7 +41,7 @@ struct BloomFilterIndexParameters
 
 /// Structure that can accept pair of token and granula index and return the most frequent tokens in granulas.
 /// The frequency of the token is calculated as number of granulas which contains this token.
-/// `granula_index` in updte method should come in increasing order.
+/// `granula_index` in update method should come in increasing order.
 class FrequentGranulasSketch
 {
 public:
