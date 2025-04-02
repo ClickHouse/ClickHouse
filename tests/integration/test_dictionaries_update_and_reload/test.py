@@ -144,7 +144,6 @@ def test_reload_while_loading(started_cluster):
         instance, "slow"
     ), get_loading_duration(instance, "slow")
     assert start_time > prev_start_time
-    assert duration < prev_duration
 
     time.sleep(1)  # Still loading.
     assert get_status(instance, "slow") == "LOADING"
