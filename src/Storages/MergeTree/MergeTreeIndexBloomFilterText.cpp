@@ -34,6 +34,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+#if USE_DATASKETCHES
+
 FrequentGranulasSketch::FrequentGranulasSketch(size_t hash_map_size_) : hash_map_size(hash_map_size_)
 {
 }
@@ -63,7 +65,7 @@ std::vector<std::string> FrequentGranulasSketch::getMostFrequentTokens(size_t nu
             candidates.insert(token.get_item());
         }
     }
-    
+
     std::unordered_map<std::string, size_t> frequency_candidates;
     for (const auto & candidate : candidates)
     {
@@ -76,13 +78,15 @@ std::vector<std::string> FrequentGranulasSketch::getMostFrequentTokens(size_t nu
         sorted_frequent_items.push_back({frequency, token});
 
     std::sort(sorted_frequent_items.rbegin(), sorted_frequent_items.rend());
-    
+
     std::vector<std::string> result;
     for (size_t i = 0; i < num_tokens; ++i)
         result.push_back(sorted_frequent_items[i].second);
 
     return result;
 }
+
+#endif
 
 MergeTreeIndexGranuleBloomFilterText::MergeTreeIndexGranuleBloomFilterText(
     const String & index_name_,

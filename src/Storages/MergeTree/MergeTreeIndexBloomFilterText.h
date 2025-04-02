@@ -37,6 +37,8 @@ struct BloomFilterIndexParameters
     size_t num_hash_size = 64;
 };
 
+#if USE_DATASKETCHES
+
 /// Structure that can accept pair of token and granula index and return the most frequent tokens in granulas.
 /// The frequency of the token is calculated as number of granulas which contains this token.
 class FrequentGranulasSketch
@@ -80,6 +82,8 @@ struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranul
 
     bool containsInBloomFilters(const BloomFilter & another_filter, size_t column_index);
 };
+
+#endif
 
 using MergeTreeIndexGranuleBloomFilterTextPtr = std::shared_ptr<MergeTreeIndexGranuleBloomFilterText>;
 
