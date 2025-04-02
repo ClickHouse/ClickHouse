@@ -1,13 +1,17 @@
 #include "PartitionPruner.h"
 
 #if USE_DELTA_KERNEL_RS
+#include <DataTypes/DataTypeNullable.h>
+
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/KeyDescription.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <DataTypes/DataTypeNullable.h>
+
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/KeyDescription.h>
+
 
 namespace DB::ErrorCodes
 {
@@ -21,6 +25,9 @@ namespace
 {
     DB::ASTPtr createPartitionKeyAST(const DB::Names & partition_columns)
     {
+        /// DeltaLake supports only plain partition keys,
+        /// e.g. by column names without any functions.
+
         std::shared_ptr<DB::ASTFunction> partition_key_ast = std::make_shared<DB::ASTFunction>();
         partition_key_ast->name = "tuple";
         partition_key_ast->arguments = std::make_shared<DB::ASTExpressionList>();
