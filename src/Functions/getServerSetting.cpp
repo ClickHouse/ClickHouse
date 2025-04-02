@@ -39,32 +39,58 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto value = getValue(arguments);
+        if (arguments.size() != 1)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Number of arguments for function {} can't be {}, should be 1",
+                getName(),
+                arguments.size());
+
+        if (!isString(arguments[0].type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The argument of function {} should be a constant string with the name of a setting",
+                String{name});
+        const auto * column = arguments[0].column.get();
+
+        if (!column || !checkAndGetColumnConstStringOrFixedString(column))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "The argument of function {} should be a constant string with the name of a setting",
+                String{name});
+
+        std::string_view setting_name{column->getDataAt(0).toView()};
+        auto value = getContext()->getServerSettings().get(setting_name);
+
         return applyVisitor(FieldToDataType{}, value);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto value = getValue(arguments);
-        return result_type->createColumnConst(input_rows_count, convertFieldToType(value, *result_type));
-    }
+        if (arguments.size() != 1)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Number of arguments for function {} can't be {}, should be 1",
+                getName(),
+                arguments.size());
 
-private:
-    Field getValue(const ColumnsWithTypeAndName & arguments) const
-    {
         if (!isString(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "The argument of function {} should be a constant string with the name of a setting",
-                            String{name});
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The argument of function {} should be a constant string with the name of a setting",
+                String{name});
         const auto * column = arguments[0].column.get();
+
         if (!column || !checkAndGetColumnConstStringOrFixedString(column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "The argument of function {} should be a constant string with the name of a setting",
-                            String{name});
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "The argument of function {} should be a constant string with the name of a setting",
+                String{name});
 
         std::string_view setting_name{column->getDataAt(0).toView()};
+        auto value = getContext()->getServerSettings().get(setting_name);
 
-        return getContext()->getServerSettings().get(setting_name);
+        return result_type->createColumnConst(input_rows_count, convertFieldToType(value, *result_type));
     }
 };
 

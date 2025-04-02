@@ -14,4 +14,6 @@ SELECT ('TEST INVALID ARGUMENTS');
 
 SELECT getServerSetting(10); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+SELECT getServerSetting('allow_use_jemalloc_memory')(10); -- { serverError FUNCTION_CANNOT_HAVE_PARAMETERS }
+
 SELECT getServerSetting('marks_compression_codec') -- { serverError UNKNOWN_SETTING }
