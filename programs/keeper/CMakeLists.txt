@@ -13,6 +13,7 @@ set (CLICKHOUSE_KEEPER_LINK
         clickhouse-keeper-converter-lib
         clickhouse-keeper-client-lib
         clickhouse_functions
+        clickhouse_storages_system
         dbms
 )
 

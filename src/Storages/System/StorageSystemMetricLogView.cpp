@@ -13,7 +13,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Processors/Transforms/CheckSortedTransform.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeString.h>
@@ -30,9 +29,6 @@
 #include <Core/Settings.h>
 #include <Columns/ColumnSet.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-
-#include <Common/logger_useful.h>
-#include <fmt/ranges.h>
 #include <Processors/ISimpleTransform.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>

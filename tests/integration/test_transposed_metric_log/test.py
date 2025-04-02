@@ -210,9 +210,9 @@ def test_data_correctness(start_cluster):
 
     assert old_data == new_data
 
-def exec_query_and_print_stats(node, name, query):
+def exec_query_and_print_stats(node, name, query, settings={}):
     query_id = uuid.uuid4().hex
-    node.query(query, query_id=query_id)
+    node.query(query, query_id=query_id, settings=settings)
 
     node.query("SYSTEM FLUSH LOGS")
 
@@ -252,3 +252,12 @@ def test_some_perf(start_cluster, node):
 
     exec_query_and_print_stats(node, "optimize wide table", "OPTIMIZE TABLE system.metric_log_0 FINAL")
     exec_query_and_print_stats(node, "optimize narrow table", "OPTIMIZE TABLE system.transposed_metric_log FINAL")
+
+    exec_query_and_print_stats(node, "wide single column (max_threads = 2)", "SELECT event_time, ProfileEvent_Query FROM system.metric_log_0 WHERE event_date < yesterday() order by event_time FORMAT Null", settings={"max_threads": 2})
+    exec_query_and_print_stats(node, "view single column (max_threads = 2)", "SELECT event_time, ProfileEvent_Query FROM system.metric_log WHERE event_date < yesterday() order by event_time FORMAT Null", settings={"max_threads": 2})
+
+    exec_query_and_print_stats(node, "wide all column (max_threads = 2)", "SELECT * FROM system.metric_log_0 WHERE event_date < yesterday() order by event_time FORMAT Null", settings={"max_threads": 2})
+    exec_query_and_print_stats(node, "view all column (max_threads = 2)", "SELECT * FROM system.metric_log WHERE event_date < yesterday() order by event_time FORMAT Null", settings={"max_threads": 2})
+
+    exec_query_and_print_stats(node, "wide all column with filter (max_threads = 2)", "SELECT * FROM system.metric_log_0 WHERE event_date < yesterday() and event_time between toDateTime('2024-10-01 07:13:44') and toDateTime('2024-10-01 09:59:59') order by event_time FORMAT Null", settings={"max_threads": 2})
+    exec_query_and_print_stats(node, "view all column with filter (max_threads = 2)", "SELECT * FROM system.metric_log WHERE event_date < yesterday() and event_time between toDateTime('2024-10-01 07:13:44') and toDateTime('2024-10-01 09:59:59') order by event_time FORMAT Null", settings={"max_threads": 2})
