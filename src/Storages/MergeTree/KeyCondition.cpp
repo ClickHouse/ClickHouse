@@ -651,6 +651,11 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 res = &inverted_dag.addFunction(node.function_base, children, "");
                 handled_inversion = true;
             }
+            else if (name == "materialize")
+            {
+                /// Remove "materialize" from index analysis.
+                res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+            }
             else if (need_inversion && (name == "and" || name == "or"))
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
