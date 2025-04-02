@@ -696,7 +696,6 @@ void TCPHandler::runImpl()
                 return res;
             });
 
-            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             query_state->query_context->setBlockMarshallingCallback(
                 [this, &query_state](const Block & block)
                 {
@@ -1306,13 +1305,13 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     }
 
                     sendLogs(state);
-                }
 
-                // Block might be empty in case of timeout, i.e. there is no data to process
-                if (block && !state.io.null_format)
-                {
-                    OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
-                    sendData(state, block);
+                    // Block might be empty in case of timeout, i.e. there is no data to process
+                    if (!state.io.null_format && block)
+                    {
+                        OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
+                        sendData(state, block);
+                    }
                 }
             }
         }

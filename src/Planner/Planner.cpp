@@ -1844,19 +1844,15 @@ void Planner::buildPlanForQueryNode()
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
 
-    // if (select_query_options.to_stage != QueryProcessingStage::Complete
-    //     && planner_context->getQueryContext()->getInitialQueryId() != planner_context->getQueryContext()->getCurrentQueryId()
-    //     && !select_query_options.is_internal && !select_query_options.is_subquery)
-    //     query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
+    if (select_query_options.to_stage != QueryProcessingStage::Complete
+        && planner_context->getQueryContext()->getInitialQueryId() != planner_context->getQueryContext()->getCurrentQueryId()
+        && !select_query_options.is_internal && !select_query_options.is_subquery)
+        query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 
     if (!select_query_options.only_analyze)
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, useful_sets);
 
     query_node_to_plan_step_mapping[&query_node] = query_plan.getRootNode();
-
-    WriteBufferFromOwnString wb;
-    query_plan.explainPlan(wb, ExplainPlanOptions{});
-    LOG_DEBUG(&Poco::Logger::get("debug"), "final query plan:\n{}", wb.str());
 }
 
 SelectQueryInfo Planner::buildSelectQueryInfo() const

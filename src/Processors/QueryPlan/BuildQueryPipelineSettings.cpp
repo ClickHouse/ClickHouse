@@ -31,7 +31,6 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     /// So, enable and disable this optimizations together.
     enable_multiple_filters_transforms_for_and_chain = settings[Setting::query_plan_merge_filters];
 
-    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     block_marshalling_callback = from->getBlockMarshallingCallback();
 }
 

@@ -293,13 +293,6 @@ Chunk RemoteExtremesSource::generate()
 
 void ConvertBlobColumnsTransform::transform(Chunk & chunk)
 {
-    LOG_DEBUG(
-        &Poco::Logger::get("debug"),
-        "__PRETTY_FUNCTION__={}, __LINE__={}, num_rows={}, chunk={}",
-        __PRETTY_FUNCTION__,
-        __LINE__,
-        chunk.getNumRows(),
-        chunk.dumpStructure());
     const auto rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
     for (auto & column : columns)

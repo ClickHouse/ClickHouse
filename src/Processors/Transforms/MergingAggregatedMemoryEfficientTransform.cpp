@@ -313,8 +313,6 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             bucket &= 0xFFFF;
             agg_info->bucket_num = bucket;
         }
-        if (delayed[0] != -1 && delayed[1] != -1)
-            LOG_DEBUG(&Poco::Logger::get("debug"), "delayed[0]={}, delayed[1]={}", delayed[0], delayed[1]);
         bool is_overflows = agg_info->is_overflows;
 
         if (is_overflows)
