@@ -5,6 +5,7 @@
 #include <memory>
 #include <queue>
 #include <sstream>
+#include <fstream> 
 
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
@@ -237,6 +238,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
     std::string log_level;
     std::string config_path;
     std::string key;
+    std::string output_file;
 
     namespace po = boost::program_options;
 
@@ -250,7 +252,8 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         ("users", po::bool_switch(&get_users), "Return values from users.xml config")
         ("log-level", po::value<std::string>(&log_level)->default_value("error"), "log level")
         ("config-file,c", po::value<std::string>(&config_path)->required(), "path to config file")
-        ("key,k", po::value<std::string>(&key)->default_value(""), "key to get value for");
+        ("key,k", po::value<std::string>(&key)->default_value(""), "key to get value for")
+        ("output,o", po::value<std::string>(&output_file), "output file path");
 
     po::positional_options_description positional_desc;
     positional_desc.add("config-file", 1);
@@ -279,21 +282,39 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
             std::cout << value << std::endl;
 =======
 
+        std::ostream* output_stream = &std::cout;
+        std::unique_ptr<std::ofstream> file_stream;
+        
+        // If output file is provided, use it as the output stream
+        if (!output_file.empty())
+        {
+            file_stream = std::make_unique<std::ofstream>(output_file);
+            if (!file_stream->is_open())
+                throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Cannot open output file: {}", output_file);
+            output_stream = file_stream.get();
+        }
+
         if (key.empty())
         {
             // If no key provided, print the entire configuration tree
             DB::XMLDocumentPtr configuration_xml = getXMLconfiguration(config_path, process_zk_includes);
             if (get_users)
                 configuration_xml = getUsersXMLConfiguration(configuration_xml, config_path, try_get);
-            std::cout << getXMLSubTreeAsString(configuration_xml, "") << std::endl;
+            *output_stream << getXMLSubTreeAsString(configuration_xml, "") << std::endl;
         }
         else
         {
             for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, try_get, get_users))
-                std::cout << value << std::endl;
+                *output_stream << value << std::endl;
         }
 
+<<<<<<< HEAD
 >>>>>>> b09b26d2e01 (Add support for outputting entire tree if key is not specified)
+=======
+        if (file_stream)
+            file_stream->close();
+
+>>>>>>> 1138f06c5a0 (Add support for --output to specify output file)
     }
     catch (...)
     {
