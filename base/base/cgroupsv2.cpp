@@ -12,7 +12,7 @@ bool cgroupsV2Enabled()
 #if defined(OS_LINUX)
     try
     {
-        /// This file exists if the host has cgroups v2 enabled.
+        /// This file exists iff the host has cgroups v2 enabled.
         auto controllers_file = default_cgroups_mount / "cgroup.controllers";
         if (!fs::exists(controllers_file))
             return false;
@@ -36,11 +36,13 @@ fs::path cgroupV2PathOfProcess()
     std::ifstream cgroup_name_file("/proc/self/cgroup");
     if (!cgroup_name_file.is_open())
         return {};
-    /// With cgroups v2, there will be a line with prefix "0::/"
-    /// (see https://docs.kernel.org/admin-guide/cgroup-v2.html)
-    /// Similar logic is used in Kubernetes
-    /// (see https://github.com/kubernetes/kubernetes/blob/83bb5d570580a3f477737fec5c24ba8fc3554264/vendor/github.com/opencontainers/cgroups/fs2/defaultpath.go#L68)
-    /// Note: The 'root' cgroup can have an empty cgroup name, this is valid
+    /// https://docs.kernel.org/admin-guide/cgroup-v2.html says:
+    ///   /proc/$PID/cgroup” lists a process’s cgroup membership. If legacy cgroup is in use in the
+    ///   system, this file may contain multiple lines, one for each hierarchy. The entry for cgroup
+    ///   v2 is always in the format “0::$PATH”.
+    ///
+    /// So we're basically looking for a (v2) line with prefix "0::/", possibly among lines with
+    /// other prefixes belonging v1. Note: It is valid to have an empty name as 'root' cgroup v2.
     static const std::string v2_prefix = "0::/";
     std::string cgroup;
     while (std::getline(cgroup_name_file, cgroup))
