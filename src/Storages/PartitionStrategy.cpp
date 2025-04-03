@@ -101,10 +101,10 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyProvider::get(ASTPtr partiti
                                                                   const Block & sample_block,
                                                                   ContextPtr context,
                                                                   const std::string & file_format,
-                                                                  const std::string & partitioning_style,
+                                                                  const std::string & partition_strategy,
                                                                   bool write_partition_columns_into_files)
 {
-    if (partitioning_style == "hive")
+    if (partition_strategy == "hive")
     {
         if (file_format.empty())
         {

@@ -53,11 +53,12 @@ namespace
     void sanityCheckPartitioningConfiguration(
         const ASTPtr & table_level_partition_by,
         const ASTPtr & query_partition_by,
-        const StorageObjectStorage::ConfigurationPtr & configuration)
+        const std::string & partition_strategy,
+        bool has_partition_wildcard)
     {
         if (!table_level_partition_by && !query_partition_by)
         {
-            // do we want to assert that `partitioning_style` is not set to something different style AND
+            // do we want to assert that `partition_strategy` is not set to something different style AND
             // wildcard is not set either?
             return;
         }
@@ -68,32 +69,30 @@ namespace
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table level partition expression and query level partition expression can't be specified together, this is a bug");
         }
 
-        static std::unordered_map<std::string, bool> partitioning_style_to_wildcard_acceptance =
+        static std::unordered_map<std::string, bool> partition_strategy_to_wildcard_acceptance =
         {
             {"auto", true},
             {"hive", false}
         };
 
-        if (!partitioning_style_to_wildcard_acceptance.contains(configuration->partitioning_style))
+        if (!partition_strategy_to_wildcard_acceptance.contains(partition_strategy))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Unknown partitioning style '{}'",
-                configuration->partitioning_style);
+                partition_strategy);
         }
 
-        bool has_partition_wildcard = configuration->withPartitionWildcard();
-
-        if (has_partition_wildcard && !partitioning_style_to_wildcard_acceptance.at(configuration->partitioning_style))
+        if (has_partition_wildcard && !partition_strategy_to_wildcard_acceptance.at(partition_strategy))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The {} wildcard can't be used with {} partitioning style",
-                PartitionedSink::PARTITION_ID_WILDCARD, configuration->partitioning_style);
+                PartitionedSink::PARTITION_ID_WILDCARD, partition_strategy);
         }
 
-        if (!has_partition_wildcard && partitioning_style_to_wildcard_acceptance.at(configuration->partitioning_style))
+        if (!has_partition_wildcard && partition_strategy_to_wildcard_acceptance.at(partition_strategy))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Partitioning style '{}' requires {} wildcard",
-                configuration->partitioning_style,
+                partition_strategy,
                 PartitionedSink::PARTITION_ID_WILDCARD);
         }
     }
@@ -109,7 +108,7 @@ namespace
             }
         }
 
-        sanityCheckPartitioningConfiguration(table_level_partition_by, query_partition_by, configuration);
+        sanityCheckPartitioningConfiguration(table_level_partition_by, query_partition_by, configuration->partition_strategy, configuration->withPartitionWildcard());
 
         if (table_level_partition_by)
         {
@@ -172,7 +171,7 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    sanityCheckPartitioningConfiguration(partition_by, nullptr, configuration);
+    sanityCheckPartitioningConfiguration(partition_by, nullptr, configuration->partition_strategy, configuration->withPartitionWildcard());
 
     bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
     bool failed_init = false;
@@ -496,7 +495,7 @@ SinkToStoragePtr StorageObjectStorage::write(
             sample_block,
             local_context,
             configuration->format,
-            configuration->partitioning_style,
+            configuration->partition_strategy,
             configuration->write_partition_columns_into_files);
         return std::make_shared<PartitionedStorageObjectStorageSink>(
             partition_strategy, object_storage, configuration, format_settings, sample_block, local_context);

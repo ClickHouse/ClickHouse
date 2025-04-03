@@ -131,7 +131,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "max_connections",
     "expiration_window_seconds",
     "no_sign_request",
-    "partitioning_style",
+    "partition_strategy",
     "write_partition_columns_into_files"
 };
 
@@ -230,7 +230,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     else
         url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
 
-    partitioning_style = collection.getOrDefault<String>("partitioning_style", "auto");
+    partition_strategy = collection.getOrDefault<String>("partition_strategy", "auto");
     write_partition_columns_into_files = collection.getOrDefault<bool>("write_partition_columns_into_files", false);
 
     auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
@@ -253,7 +253,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    partitioning_style = extractNamedArgumentAndRemoveFromList<std::string>(args, "partitioning_style").value_or("auto");
+    partition_strategy = extractNamedArgumentAndRemoveFromList<std::string>(args, "partition_strategy").value_or("auto");
     write_partition_columns_into_files = extractNamedArgumentAndRemoveFromList<bool>(args, "write_partition_columns_into_files").value_or(false);
 
     size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);

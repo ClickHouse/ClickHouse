@@ -23,18 +23,23 @@ struct PartitionStrategy
     virtual PartitionExpressionActionsAndColumnName getExpression() = 0;
     virtual std::string getPath(const std::string & prefix, const std::string & partition_key) = 0;
 
+    /*
+     * Hive style partition strategy will put partition column keys and values in the filepath itself
+     * So we need to remove those columns from the chunk.
+     *
+     * Default behavior is not to remove, therefore the base class simply returns the same chunk
+     * */
     virtual Chunk getChunkWithoutPartitionColumnsIfNeeded(const Chunk & chunk)
     {
-        Chunk result;
-
-        for (const auto & column : chunk.getColumns())
-        {
-            result.addColumn(column);
-        }
-
-        return result;
+        return chunk.clone();
     }
 
+    /*
+     * Hive style partition strategy will put partition column keys and values in the filepath itself
+     * So we need to remove those columns from the block.
+     *
+     * Default behavior is not to remove, therefore the base class simply returns the same block
+     * */
     virtual Block getBlockWithoutPartitionColumnsIfNeeded()
     {
         return sample_block;
@@ -53,7 +58,7 @@ struct PartitionStrategyProvider
         const Block & sample_block,
         ContextPtr context,
         const std::string & file_format,
-        const std::string & partitioning_style = "",
+        const std::string & partition_strategy = "",
         bool write_partition_columns_into_files = false);
 };
 
