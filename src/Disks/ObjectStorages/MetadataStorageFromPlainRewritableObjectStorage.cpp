@@ -97,8 +97,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
         /// unlike blob storage, which has no concept of directories, therefore existsOrHasAnyChild
         /// is not applicable.
         auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
-        auto dir_iter = object_storage->iterate(common_key_prefix, 1);
-        bool has_data = dir_iter->isValid();
+        bool has_data = object_storage->iterate(common_key_prefix, 1)->isValid();
         /// No metadata directory: legacy layout is likely in use.
         if (has_data && !has_metadata)
         {
