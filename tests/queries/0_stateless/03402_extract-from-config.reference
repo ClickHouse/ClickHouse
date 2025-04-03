@@ -1,0 +1,134 @@
+9000
+
+        <!-- Possible levels [1]:
+
+          - none (turns off logging)
+          - fatal
+          - critical
+          - error
+          - warning
+          - notice
+          - information
+          - debug
+          - trace
+          - test (not for production usage)
+
+            [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114
+        -->
+        <level>trace</level>
+
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+
+        <!-- Rotation policy
+             See https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/FileChannel.h#L54-L85
+          -->
+        <size>never</size>
+
+        <count>10</count>
+
+
+        <!-- <console>1</console> --> <!-- Default behavior is autodetection (log to console if not daemon mode and is tty) -->
+        <!-- <console_log_level>trace</console_log_level> -->
+
+        <!-- <use_syslog>0</use_syslog> -->
+        <!-- <syslog_level>trace</syslog_level> -->
+
+        <!-- <stream_compress>0</stream_compress> -->
+
+        <!-- Per level overrides (legacy):
+
+        For example to suppress logging of the ConfigReloader you can use:
+        NOTE: levels.logger is reserved, see below.
+        -->
+        <!--
+        <levels>
+          <ConfigReloader>none</ConfigReloader>
+        </levels>
+        -->
+
+        <!-- Per level overrides:
+
+        For example to suppress logging of the RBAC for default user you can use:
+        (But please note that the logger name maybe changed from version to version, even after minor upgrade)
+        -->
+        <!--
+        <levels>
+          <logger>
+            <name>ContextAccess (default)</name>
+            <level>none</level>
+          </logger>
+          <logger>
+            <name>DatabaseOrdinary (test)</name>
+            <level>none</level>
+          </logger>
+        </levels>
+        -->
+        <!-- Structured log formatting:
+        You can specify log format(for now, JSON only). In that case, the console log will be printed
+        in specified format like JSON.
+        For example, as below:
+
+        {"date_time":"1650918987.180175","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
+        {"date_time_utc":"2024-11-06T09:06:09Z","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
+        To enable JSON logging support, please uncomment the entire <formatting> tag below.
+
+        a) You can modify key names by changing values under tag values inside <names> tag.
+        For example, to change DATE_TIME to MY_DATE_TIME, you can do like:
+            <date_time>MY_DATE_TIME</date_time>
+            <date_time_utc>MY_UTC_DATE_TIME</date_time_utc>
+        b) You can stop unwanted log properties to appear in logs. To do so, you can simply comment out (recommended)
+        that property from this file.
+        For example, if you do not want your log to print query_id, you can comment out only <query_id> tag.
+        However, if you comment out all the tags under <names>, the program will print default values for as
+        below.
+        -->
+        <!-- <formatting>
+            <type>json</type>
+            <names>
+                <date_time>date_time</date_time>
+                <date_time_utc>date_time_utc</date_time_utc>
+                <thread_name>thread_name</thread_name>
+                <thread_id>thread_id</thread_id>
+                <level>level</level>
+                <query_id>query_id</query_id>
+                <logger_name>logger_name</logger_name>
+                <message>message</message>
+                <source_file>source_file</source_file>
+                <source_line>source_line</source_line>
+            </names>
+        </formatting> -->
+    
+        
+    
+        <!-- Disable rotation
+             https://pocoproject.org/docs/Poco.FileChannel.html
+        -->
+        
+    
+::
+
+        <header>
+            <name>Access-Control-Allow-Origin</name>
+            <value>*</value>
+        </header>
+
+        <header>
+            <name>Access-Control-Allow-Headers</name>
+            <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
+        </header>
+
+        <header>
+            <name>Access-Control-Allow-Methods</name>
+            <value>POST, GET, OPTIONS</value>
+        </header>
+
+        <header>
+            <name>Access-Control-Max-Age</name>
+            <value>86400</value>
+        </header>
+
+    
+
+0
