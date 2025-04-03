@@ -257,6 +257,9 @@
     M(OutdatedPartsLoadingThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Outdated data parts.") \
+    M(FreezePartThreads, "Number of threads in the threadpool for freezing data parts.") \
+    M(FreezePartThreadsActive, "Number of active threads in the threadpool for freezing data parts.") \
+    M(FreezePartThreadsScheduled, "Number of queued or active jobs in the threadpool for freezing data parts.") \
     M(PolygonDictionaryThreads, "Number of threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsActive, "Number of active threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsScheduled, "Number of queued or active jobs in the threadpool for polygon dictionaries.") \
