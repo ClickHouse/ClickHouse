@@ -273,8 +273,7 @@ Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revi
         ColumnWithTypeAndName column = elem;
 
         // TODO(nickitat): support Tuple
-        if (!elem.column->isConst()
-            && (!elem.type->haveSubtypes() || elem.type->lowCardinality() || elem.type->isNullable() || isArray(elem.type->getTypeId())))
+        if (!elem.column->isConst() && !isTuple(elem.type->getTypeId()))
         {
             auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
             { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };

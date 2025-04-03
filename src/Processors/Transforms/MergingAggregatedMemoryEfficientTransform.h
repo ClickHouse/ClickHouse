@@ -93,8 +93,6 @@ private:
     std::vector<InputPorts::iterator> index_to_input;
     HashSet<uint64_t> wait_input_ports_numbers;
 
-    std::optional<OpenTelemetry::SpanHolder> span_holder;
-
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
     void addChunk(Chunk chunk, size_t input);
     /// Push chunks if all inputs has single level.

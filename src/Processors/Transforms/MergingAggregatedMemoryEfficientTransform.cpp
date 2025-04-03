@@ -39,7 +39,6 @@ void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_
     Chunk chunk;
     chunk.getChunkInfos().add(std::move(info));
     output.push(std::move(chunk));
-    span_holder.reset();
 }
 
 bool GroupingAggregatedTransform::tryPushTwoLevelData()
@@ -180,10 +179,7 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
         }
 
         if (!wait_input_ports_numbers.empty())
-        {
-            span_holder.emplace("GroupingAggregatedTransform::wait");
             return Status::NeedData;
-        }
     }
 
     if (!output.canPush())
@@ -253,10 +249,7 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
             continue;
 
         if (need_data)
-        {
-            span_holder.emplace("GroupingAggregatedTransform::wait");
             return Status::NeedData;
-        }
     }
 
     if (pushed_to_output)
