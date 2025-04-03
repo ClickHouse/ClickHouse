@@ -604,7 +604,8 @@ class Utils:
         return res
 
     @classmethod
-    def compress_file(cls, path):
+    def compress_file_zst(cls, path):
+        path_out = ""
         if Shell.check("which zstd"):
             path_out = f"{path}.zst"
             Shell.check(
@@ -612,6 +613,12 @@ class Utils:
                 verbose=True,
                 strict=True,
             )
+        return path_out
+
+    @classmethod
+    def compress_file(cls, path):
+        if Shell.check("which zstd"):
+            return cls.compress_file_zst(path)
         elif Shell.check("which pigz"):
             path_out = f"{path}.gz"
             Shell.check(
@@ -632,6 +639,26 @@ class Utils:
                 f"Failed to compress file [{path}] no zstd or gz installed"
             )
         return path_out
+
+    @classmethod
+    def decompress_file(cls, path, path_to=None, remove_archive=False):
+        path = str(path)
+        path_to = path_to or Path(path).parent
+        res = False
+        if path.endswith(".zst"):
+            if not Shell.check("which zstd", verbose=True):
+                print("ERROR: No zstd installed to decompress artifact")
+                return False
+            res = Shell.check(
+                f"zstd --decompress -o {path_to} {path}",
+                verbose=True,
+            )
+        else:
+            Utils.raise_with_error("TODO: not implemented")
+        if res and remove_archive:
+            Shell.check(f"rm -f {path}", verbose=True)
+
+        return res
 
     @classmethod
     def add_to_PATH(cls, path):

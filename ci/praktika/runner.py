@@ -123,6 +123,7 @@ class Runner:
 
         if job.requires and job.name not in (
             Settings.CI_CONFIG_JOB_NAME,
+            Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
             Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
             Settings.FINISH_WORKFLOW_JOB_NAME,
         ):
@@ -147,6 +148,7 @@ class Runner:
                             if job.name
                             not in (
                                 Settings.CI_CONFIG_JOB_NAME,
+                                Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
                                 Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
                                 Settings.FINISH_WORKFLOW_JOB_NAME,
                             )
@@ -173,33 +175,50 @@ class Runner:
             else:
                 prefixes = [env.get_s3_prefix()] * len(required_artifacts)
             for artifact, prefix in zip(required_artifacts, prefixes):
-                if isinstance(artifact.path, (tuple, list)):
-                    artifact_paths = artifact.path
-                else:
-                    artifact_paths = [artifact.path]
-                for artifact_path in artifact_paths:
-                    recursive = False
-                    include_pattern = ""
-                    if "*" in artifact_path:
-                        s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
-                        recursive = True
-                        include_pattern = Path(artifact_path).name
-                        assert "*" in include_pattern
-                    else:
-                        s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
+                if artifact.compress_zst:
+                    archive_name = f"{artifact.name}.zst"
+                    s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{archive_name}"
                     if not S3.copy_file_from_s3(
                         s3_path=s3_path,
                         local_path=Settings.INPUT_DIR,
-                        recursive=recursive,
-                        include_pattern=include_pattern,
+                        recursive=False,
                     ):
                         if artifact.type != Artifact.Type.PHONY:
                             Utils.raise_with_error(
                                 f"Failed to download artifact [{artifact.name}]"
                             )
                         else:
-                            print(f"NOTE: no artifact report from [{artifact.name}]")
-
+                            if not Utils.decompress_file(
+                                Path(Settings.INPUT_DIR) / archive_name
+                            ):
+                                Utils.raise_with_error(
+                                    f"ERROR: failed to decompress artifact [{artifact.name}]"
+                                )
+                else:
+                    if isinstance(artifact.path, (tuple, list)):
+                        artifact_paths = artifact.path
+                    else:
+                        artifact_paths = [artifact.path]
+                    for artifact_path in artifact_paths:
+                        recursive = False
+                        include_pattern = ""
+                        if "*" in artifact_path:
+                            s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
+                            recursive = True
+                            include_pattern = Path(artifact_path).name
+                            assert "*" in include_pattern
+                        else:
+                            s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
+                        if not S3.copy_file_from_s3(
+                            s3_path=s3_path,
+                            local_path=Settings.INPUT_DIR,
+                            recursive=recursive,
+                            include_pattern=include_pattern,
+                        ):
+                            if artifact.type != Artifact.Type.PHONY:
+                                Utils.raise_with_error(
+                                    f"Failed to download artifact [{artifact.name}]"
+                                )
         return 0
 
     def _run(self, workflow, job, docker="", no_docker=False, param=None, test=""):
@@ -388,6 +407,18 @@ class Runner:
                 artifact_links = []
                 s3_path = f"{Settings.S3_ARTIFACT_PATH}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
                 for artifact in providing_artifacts:
+                    if artifact.compress_zst:
+                        if isinstance(artifact.path, (tuple, list)):
+                            Utils.raise_with_error(
+                                "TODO: list of paths is not supported with comress = True"
+                            )
+                        if "*" in artifact.path:
+                            Utils.raise_with_error(
+                                "TODO: globe is not supported with comress = True"
+                            )
+                        print(f"Compress artifact file [{artifact.path}]")
+                        artifact.path = Utils.compress_file_zst(artifact.path)
+
                     if isinstance(artifact.path, (tuple, list)):
                         artifact_paths = artifact.path
                     else:
