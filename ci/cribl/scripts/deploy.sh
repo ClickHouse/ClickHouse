@@ -1,7 +1,7 @@
 #!/bin/bash
 set -ex
 
-S3_PREFIX="s3://io.cribl.cdn.staging/cribl-search/clickhouse"
+S3_PREFIX="s3://${S3_BUCKET}/cribl-search/clickhouse"
 
 PROGRAMS_DIR="${BUILD_DIR}/programs"
 TARBALL="clickhouse.tgz"

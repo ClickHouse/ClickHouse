@@ -42,7 +42,9 @@ pipeline {
     stage('Deploy') {
       steps {
         script {
-          sh "ci/cribl/scripts/deploy.sh"
+          withCredentials([string(credentialsId: 'STAGING_BUCKET', variable: 'S3_BUCKET')]) {
+            sh "ci/cribl/scripts/deploy.sh"
+          }
         }
       }
     }
