@@ -1869,17 +1869,45 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
     const auto & dictionary_table_lambda
         = [&next](const SQLTable & t) { return t.isAttached() && (t.is_deterministic || !next.is_deterministic); };
+    const auto & dictionary_view_lambda
+        = [&next](const SQLView & v) { return v.isAttached() && (v.is_deterministic || !next.is_deterministic); };
     const bool has_table = collectionHas<SQLTable>(dictionary_table_lambda);
+    const bool has_view = collectionHas<SQLView>(dictionary_view_lambda);
 
-    if (has_table && rg.nextSmallNumber() < 9)
+    const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table);
+    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!systemTables.empty());
+    const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view);
+    const uint32_t null_src = 2;
+    const uint32_t prob_space = dict_table + dict_system_table + dict_view + null_src;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.generator);
+
+    if (dict_table && nopt < (dict_table + 1))
     {
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(dictionary_table_lambda));
 
         t.setName(source->mutable_est(), false);
     }
-    else
+    else if (dict_system_table && nopt < (dict_table + dict_system_table + 1))
+    {
+        ExprSchemaTable * est = source->mutable_est();
+
+        est->mutable_database()->set_database("system");
+        est->mutable_table()->set_table(rg.pickRandomly(systemTables));
+    }
+    else if (dict_view && nopt < (dict_table + dict_system_table + dict_view + 1))
+    {
+        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(dictionary_view_lambda));
+
+        v.setName(source->mutable_est(), false);
+    }
+    else if (null_src && nopt < (dict_table + dict_system_table + dict_view + null_src + 1))
     {
         source->set_null_src(true);
+    }
+    else
+    {
+        chassert(0);
     }
 
     /// Set columns
