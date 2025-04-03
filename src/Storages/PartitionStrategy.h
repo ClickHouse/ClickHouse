@@ -51,7 +51,7 @@ protected:
     ContextPtr context;
 };
 
-struct PartitionStrategyProvider
+struct PartitionStrategyFactory
 {
     static std::shared_ptr<PartitionStrategy> get(
         ASTPtr partition_by,
@@ -62,9 +62,9 @@ struct PartitionStrategyProvider
         bool write_partition_columns_into_files = false);
 };
 
-struct StringfiedPartitionStrategy : PartitionStrategy
+struct StringifiedPartitionStrategy : PartitionStrategy
 {
-    StringfiedPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_);
+    StringifiedPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_);
 
     PartitionExpressionActionsAndColumnName getExpression() override;
     std::string getPath(const std::string & prefix, const std::string & partition_key) override;

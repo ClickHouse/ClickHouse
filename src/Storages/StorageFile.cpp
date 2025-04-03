@@ -1990,7 +1990,7 @@ SinkToStoragePtr StorageFile::write(
         if (path_for_partitioned_write.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty path for partitioned write");
 
-        auto partition_strategy = PartitionStrategyProvider::get(insert_query->partition_by, metadata_snapshot->getSampleBlock(), context, format_name);
+        auto partition_strategy = PartitionStrategyFactory::get(insert_query->partition_by, metadata_snapshot->getSampleBlock(), context, format_name);
 
         return std::make_shared<PartitionedStorageFileSink>(
             partition_strategy,

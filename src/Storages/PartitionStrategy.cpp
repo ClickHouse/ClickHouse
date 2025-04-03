@@ -97,12 +97,12 @@ PartitionStrategy::PartitionStrategy(ASTPtr partition_by_, const Block & sample_
 
 }
 
-std::shared_ptr<PartitionStrategy> PartitionStrategyProvider::get(ASTPtr partition_by,
-                                                                  const Block & sample_block,
-                                                                  ContextPtr context,
-                                                                  const std::string & file_format,
-                                                                  const std::string & partition_strategy,
-                                                                  bool write_partition_columns_into_files)
+std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partition_by,
+                                                                 const Block & sample_block,
+                                                                 ContextPtr context,
+                                                                 const std::string & file_format,
+                                                                 const std::string & partition_strategy,
+                                                                 bool write_partition_columns_into_files)
 {
     if (partition_strategy == "hive")
     {
@@ -119,15 +119,15 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyProvider::get(ASTPtr partiti
             write_partition_columns_into_files);
     }
 
-    return std::make_shared<StringfiedPartitionStrategy>(partition_by, sample_block, context);
+    return std::make_shared<StringifiedPartitionStrategy>(partition_by, sample_block, context);
 }
 
-StringfiedPartitionStrategy::StringfiedPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_)
+StringifiedPartitionStrategy::StringifiedPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_)
     : PartitionStrategy(partition_by_, sample_block_, context_)
 {
 }
 
-StringfiedPartitionStrategy::PartitionExpressionActionsAndColumnName StringfiedPartitionStrategy::getExpression()
+StringifiedPartitionStrategy::PartitionExpressionActionsAndColumnName StringifiedPartitionStrategy::getExpression()
 {
     PartitionExpressionActionsAndColumnName actions_with_column_name;
 
@@ -140,7 +140,7 @@ StringfiedPartitionStrategy::PartitionExpressionActionsAndColumnName StringfiedP
     return actions_with_column_name;
 }
 
-std::string StringfiedPartitionStrategy::getPath(
+std::string StringifiedPartitionStrategy::getPath(
     const std::string & prefix,
     const std::string & partition_key)
 {

@@ -100,7 +100,7 @@ namespace
     ASTPtr getPartitionByAst(const ASTPtr & table_level_partition_by, const ASTPtr & query, const StorageObjectStorage::ConfigurationPtr & configuration)
     {
         ASTPtr query_partition_by = nullptr;
-        if (const auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query))
+        if (const auto insert_query = query->as<ASTInsertQuery>())
         {
             if (insert_query->partition_by)
             {
@@ -490,7 +490,7 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (ASTPtr partition_by_ast = getPartitionByAst(partition_by, query, configuration))
     {
-        auto partition_strategy = PartitionStrategyProvider::get(
+        auto partition_strategy = PartitionStrategyFactory::get(
             partition_by_ast,
             sample_block,
             local_context,
