@@ -338,7 +338,7 @@ size_t ManifestFileContent::getSizeInMemory() const
     size_t total_size = sizeof(ManifestFileContent);
     if (partition_key_description)
         total_size += sizeof(DB::KeyDescription);
-    total_size += partition_column_ids.capacity() * sizeof(Int32);
+    total_size += column_ids_which_have_bounds.size() * sizeof(Int32);
     total_size += files.capacity() * sizeof(ManifestFileEntry);
     return total_size;
 }
