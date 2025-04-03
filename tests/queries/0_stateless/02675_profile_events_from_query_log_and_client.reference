@@ -14,7 +14,7 @@ INSERT
 READ
 INSERT and READ INSERT
  [ 0 ] FileOpen: 9
- [ 0 ] FileOpen: 9
+ [ 0 ] FileOpen: 9 
 DROP
 CHECK with query_log
 QueryFinish	INSERT INTO times SELECT now() + INTERVAL 1 day SETTINGS optimize_on_insert = 0;	FileOpen	9

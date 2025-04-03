@@ -462,16 +462,16 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
     auto & global_dictionary = low_cardinality_state->shared_dictionary;
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
-    bool need_update_dictionary = global_dictionary == nullptr;
-    if (need_update_dictionary)
-        global_dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type);
-
     size_t max_limit = column.size() - offset;
     limit = limit ? std::min(limit, max_limit) : max_limit;
 
     /// Do not write anything for empty column. (May happen while writing empty arrays.)
     if (limit == 0)
         return;
+
+    bool need_update_dictionary = global_dictionary == nullptr;
+    if (need_update_dictionary)
+        global_dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type);
 
     auto sub_column = low_cardinality_column.cutAndCompact(offset, limit);
     ColumnPtr positions = sub_column->getIndexesPtr();

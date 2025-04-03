@@ -98,7 +98,7 @@ FILES_PER_PART_WIDE = (
 # In debug build there are additional requests (from MergeTreeDataPartWriterWide.cpp:554 due to additional validation).
 FILES_PER_PART_WIDE_DEBUG = 2  # Additional requests to S3 in debug build
 
-FILES_PER_PART_COMPACT = FILES_PER_PART_BASE + 1 + 1 + 2
+FILES_PER_PART_COMPACT = FILES_PER_PART_BASE + 1 + 1 + 2 + 1
 FILES_PER_PART_COMPACT_DEBUG = 0
 
 
