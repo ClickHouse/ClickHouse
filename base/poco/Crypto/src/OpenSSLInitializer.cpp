@@ -37,6 +37,7 @@ namespace Crypto {
 
 Poco::FastMutex* OpenSSLInitializer::_mutexes(0);
 Poco::AtomicCounter OpenSSLInitializer::_rc;
+OSSL_PROVIDER * OpenSSLInitializer::legacy_provider;
 
 
 OpenSSLInitializer::OpenSSLInitializer()
@@ -74,8 +75,8 @@ void OpenSSLInitializer::initialize()
 		rnd.read(seed, sizeof(seed));
 		RAND_seed(seed, SEEDSIZE);
 
-        OSSL_PROVIDER *legacy = OSSL_PROVIDER_load(NULL, "legacy");
-        if (!legacy)
+        legacy_provider = OSSL_PROVIDER_load(NULL, "legacy");
+        if (!legacy_provider)
             throw std::runtime_error("Failed to load OpenSSL legacy provider");
 
 		int nMutexes = CRYPTO_num_locks();
@@ -106,6 +107,7 @@ void OpenSSLInitializer::uninitialize()
 		CRYPTO_set_id_callback(0);
 		delete [] _mutexes;
 
+        OSSL_PROVIDER_unload(legacy_provider);
 		CONF_modules_free();
 	}
 }
