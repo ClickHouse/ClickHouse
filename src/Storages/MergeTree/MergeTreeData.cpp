@@ -295,6 +295,7 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
+    extern const int TABLE_IS_READ_ONLY;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -6117,10 +6118,28 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         reservation->update(reservation->getSize() - file_size);
     }
 
-    if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
-        restored_parts_holder->addPart(part);
-    else
-        restored_parts_holder->increaseNumBrokenParts();
+    try
+    {
+        if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
+            restored_parts_holder->addPart(part);
+        else
+            restored_parts_holder->increaseNumBrokenParts();
+    }
+    catch (Exception & e)
+    {
+        /// Temporary workaround, see similar check in RestorerFromBackup::insertDataToTableImpl
+        /// for explanation.
+        /// TODO: Delete both in https://github.com/ClickHouse/ClickHouse/pull/77893
+        if ((e.code() == ErrorCodes::TABLE_IS_READ_ONLY) &&
+            getStorageID().table_name.starts_with(".tmp"))
+        {
+            LOG_INFO(log, "Table was dropped during RESTORE, presumably by refreshable materialized view.");
+        }
+        else
+        {
+            throw;
+        }
+    }
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const

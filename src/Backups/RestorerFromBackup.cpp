@@ -1144,6 +1144,7 @@ void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_
         /// the refresh query reads) is still empty, not restored from backup yet. So the
         /// refresh target table ends up empty until the next scheduled refresh.
         /// TODO: Delete this when a proper fix lands: https://github.com/ClickHouse/ClickHouse/pull/77893
+        ///       There's a similar check to remove in MergeTreeData::restorePartFromBackup
         if ((e.code() == ErrorCodes::TABLE_IS_READ_ONLY || e.code() == ErrorCodes::ABORTED) &&
             storage->getStorageID().table_name.starts_with(".tmp"))
         {
