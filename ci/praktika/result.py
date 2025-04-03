@@ -222,11 +222,10 @@ class Result(MetaClasses.Serializable):
                 self.set_info(f"Failed: {failed_tcs}")
 
         # Suggest local command to rerun
-        if with_local_run_command:
-            command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
-            if with_test_in_run_command and failed:
-                command_info += f" --test {failed[0]}"
-            self.set_info(command_info)
+        command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
+        if with_test_in_run_command and failed:
+            command_info += f" --test {failed[0]}"
+        self.set_info(command_info)
 
         return self
 
