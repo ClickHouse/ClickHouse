@@ -33,7 +33,7 @@ class CustomMetricLogViewTransform : public IInflatingTransform
     Names column_names;
 public:
     static constexpr size_t SECONDS_IN_HOUR = 3600;
-    String getName() const override { return "MetricLogCustomTransform"; }
+    String getName() const override { return "CustomMetricLogViewTransform"; }
 
     IColumnFilter filter;
 
