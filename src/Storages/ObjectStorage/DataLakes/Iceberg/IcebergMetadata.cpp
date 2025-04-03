@@ -558,7 +558,7 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
 }
 
 
-std::vector<IcebergHistory> IcebergMetadata::getHistory() const
+IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
 {
     auto configuration_ptr = configuration.lock();
 
@@ -571,7 +571,7 @@ std::vector<IcebergHistory> IcebergMetadata::getHistory() const
     chassert(format_version == metadata_object->getValue<int>(FORMAT_VERSION_FIELD));
 
     /// History
-    std::vector<IcebergHistory> history_items;
+    std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
 
     auto snapshots = metadata_object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
     auto snapshot_logs = metadata_object->get("snapshot-log").extract<Poco::JSON::Array::Ptr>();
@@ -601,40 +601,40 @@ std::vector<IcebergHistory> IcebergMetadata::getHistory() const
 
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
-        IcebergHistory history_item;
+        IcebergHistoryRecord history_record;
 
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-        history_item.snapshot_id = snapshot->getValue<Int64>("snapshot-id");
+        history_record.snapshot_id = snapshot->getValue<Int64>("snapshot-id");
 
         if (snapshot->has("parent-snapshot-id") && !snapshot->isNull("parent-snapshot-id"))
-            history_item.parent_id = snapshot->getValue<Int64>("parent-snapshot-id");
+            history_record.parent_id = snapshot->getValue<Int64>("parent-snapshot-id");
         else
-            history_item.parent_id = 0;
+            history_record.parent_id = 0;
 
         for (size_t j = 0; j < snapshot_logs->size(); ++j)
         {
             const auto snapshot_log = snapshot_logs->getObject(static_cast<UInt32>(j));
-            if (snapshot_log->getValue<Int64>("snapshot-id") == history_item.snapshot_id)
+            if (snapshot_log->getValue<Int64>("snapshot-id") == history_record.snapshot_id)
             {
                 auto value = snapshot_log->getValue<std::string>("timestamp-ms");
                 ReadBufferFromString in(value);
                 DateTime64 time = 0;
                 readDateTime64Text(time, 6, in);
 
-                history_item.made_current_at = time;
-               break;
+                history_record.made_current_at = time;
+                break;
             }
         }
 
-        if (std::find(ancestors.begin(), ancestors.end(), history_item.snapshot_id) != ancestors.end())
-            history_item.is_current_ancestor = true;
+        if (std::find(ancestors.begin(), ancestors.end(), history_record.snapshot_id) != ancestors.end())
+            history_record.is_current_ancestor = true;
         else
-            history_item.is_current_ancestor = false;
+            history_record.is_current_ancestor = false;
 
-        history_items.push_back(history_item);
+        iceberg_history.push_back(history_record);
     }
 
-    return history_items;
+    return iceberg_history;
 }
 
 Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const

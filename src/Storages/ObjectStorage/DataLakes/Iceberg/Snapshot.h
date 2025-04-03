@@ -3,7 +3,7 @@
 
 #if USE_AVRO
 
-#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
 namespace Iceberg
@@ -20,7 +20,7 @@ struct IcebergSnapshot
     std::optional<size_t> total_bytes;
 };
 
-struct IcebergHistory
+struct IcebergHistoryRecord
 {
     Int64 snapshot_id;
     DB::DateTime64 made_current_at;

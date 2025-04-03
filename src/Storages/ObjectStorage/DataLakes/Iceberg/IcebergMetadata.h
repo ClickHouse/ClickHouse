@@ -28,7 +28,7 @@ class IcebergMetadata : public IDataLakeMetadata, private WithContext
 public:
     using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
+    using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
 
     static constexpr auto name = "Iceberg";
 
@@ -90,7 +90,7 @@ public:
 
     bool supportsPartitionPruning() override { return true; }
 
-    std::vector<Iceberg::IcebergHistory> getHistory() const;
+    IcebergHistory getHistory() const;
 
     std::optional<size_t> totalRows() const override;
     std::optional<size_t> totalBytes() const override;

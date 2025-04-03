@@ -42,10 +42,10 @@ ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
     {
         {"database_name",std::make_shared<DataTypeString>(),"Database name"},
         {"table_name",std::make_shared<DataTypeString>(),"Table name."},
-        {"made_current_at",std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)),"made current date time"},
-        {"snapshot_id",std::make_shared<DataTypeUInt64>(),"snapshot id."},
-        {"parent_id",std::make_shared<DataTypeUInt64>(),"parent id."},
-        {"is_current_ancestor",std::make_shared<DataTypeUInt8>(),"Flag that indicates if its current ancestor."}
+        {"made_current_at",std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)),"date & time when this snapshot was made current snapshot"},
+        {"snapshot_id",std::make_shared<DataTypeUInt64>(),"snapshot id which is used to identify a snapshot."},
+        {"parent_id",std::make_shared<DataTypeUInt64>(),"parent id of this snapshot."},
+        {"is_current_ancestor",std::make_shared<DataTypeUInt8>(),"Flag that indicates if this snapshot is an ancestor of the current snapshot."}
     };
 }
 
@@ -54,7 +54,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
 #if USE_AVRO
     const auto access = context->getAccess();
 
-    auto add_row = [&](const DatabaseTablesIteratorPtr &it, StorageObjectStorage *object_storage)
+    auto add_history_record = [&](const DatabaseTablesIteratorPtr & it, StorageObjectStorage * object_storage)
     {
         if (!access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
         {
@@ -68,8 +68,8 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
             if (!current_metadata)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "External dynamic metadata not found for table {} in database {} ", it->name(), it->databaseName());
 
-            auto *iceberg_metadata = dynamic_cast<IcebergMetadata *>(current_metadata);
-            std::vector<Iceberg::IcebergHistory> iceberg_history_items = iceberg_metadata->getHistory();
+            auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(current_metadata);
+            IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory();
 
             for (auto & iceberg_history_item : iceberg_history_items)
             {
@@ -102,7 +102,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
 
                 if (auto *object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get()))
                 {
-                    add_row(iterator, object_storage_table);
+                    add_history_record(iterator, object_storage_table);
                 }
             }
         }
