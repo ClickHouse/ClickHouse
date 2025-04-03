@@ -379,7 +379,6 @@ std::string getConfig()
     </logger>
 
     <distributed_query>
-        <streaming_exchange_port>9223</streaming_exchange_port>
         <temporary_files_storage>
             <type>local</type>
             <path>./local_object_storage/</path>
@@ -398,6 +397,7 @@ std::string getConfig()
 
 }
 
+void registerPlanSteps();
 
 class DistributedQueryTest : public ::testing::Test
 {
@@ -426,10 +426,10 @@ public:
         config = config_processor.loadConfig(false);
         context_holder.context->setConfig(config.configuration);
 
-
         auto & factory = ObjectStorageFactory::instance();
         registerS3ObjectStorage(factory);
         registerLocalObjectStorage(factory);
+        registerPlanSteps();
     }
 
     void TearDown() override
@@ -480,17 +480,15 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node
 }
 }
 
-TEST_F(DistributedQueryTest, ShuffleHashJoin)
+void executeTestWithExchangeKind(const String & exchangeKind)
 try
 {
-    registerPlanSteps();
-
     DistributedQueryPlan distributed_query_plan;
 
     const char * env_val = std::getenv("DISTRIBUTED_PLAN_SINGLE_STAGE"); // NOLINT(concurrency-mt-unsafe)
     bool distributed_plan_singe_stage = env_val && std::string(env_val) != "0";
 
-    getContext().context->setSetting("force_exchange_kind", String("Persisted"));
+    getContext().context->setSetting("force_exchange_kind", exchangeKind);
 
     {
         /// Create JOIN query plan
@@ -529,4 +527,10 @@ catch (Exception & e)
 {
     std::cout << e.getStackTraceString() << std::endl;
     throw;
+}
+
+TEST_F(DistributedQueryTest, ShuffleHashJoin)
+{
+    executeTestWithExchangeKind("Persisted");
+    executeTestWithExchangeKind("Streaming");
 }
