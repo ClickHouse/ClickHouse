@@ -84,7 +84,7 @@ void NativeReader::resetParser()
     use_index = false;
 }
 
-static void readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, const std::optional<FormatSettings> & format_settings, size_t rows, double avg_value_size_hint)
+void NativeReader::readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, const std::optional<FormatSettings> & format_settings, size_t rows, double avg_value_size_hint)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };

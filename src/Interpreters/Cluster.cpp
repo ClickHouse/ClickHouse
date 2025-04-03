@@ -498,6 +498,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
             info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[Setting::load_balancing]);
             info.per_replica_pools = {std::move(pool)};
+            info.default_database = address.default_database;
 
             if (weight)
                 slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
@@ -682,7 +683,8 @@ void Cluster::addShard(
         std::move(shard_local_addresses),
         std::move(shard_pool),
         std::move(all_replicas_pools),
-        internal_replication
+        internal_replication,
+        addresses.at(0).default_database
     });
 }
 
@@ -821,6 +823,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
                 info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[Setting::load_balancing]);
                 info.per_replica_pools = {std::move(pool)};
+                info.default_database = address.default_database;
 
                 addresses_with_failover.emplace_back(Addresses{address});
 

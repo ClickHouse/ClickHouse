@@ -117,6 +117,8 @@ public:
         const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
 
+    void sendQueryPlan(const QueryPlan & query_plan) override;
+
     void sendCancel() override;
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
@@ -223,6 +225,7 @@ private:
     UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
     UInt64 server_parallel_replicas_protocol_version = 0;
+    UInt64 server_query_plan_serialization_version = 0;
     String server_timezone;
     String server_display_name;
     SettingsChanges settings_from_server;

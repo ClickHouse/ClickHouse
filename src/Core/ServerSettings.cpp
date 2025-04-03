@@ -1035,6 +1035,16 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
     ```
     )", 0) \
+    DECLARE(Bool, process_query_plan_packet, false, R"(
+    This setting allows reading QueryPlan packet. This packet is sent for distributed queries when serialize_query_plan is enables.
+    Disabled by default to avoid possible security issues which can be caused by bugs in query plan binary deserialization.
+
+    **Example**
+
+    ```xml
+    <process_query_plan_packet>true</process_query_plan_packet>
+    ```
+    )", 0) \
     DECLARE(Bool, storage_shared_set_join_use_inner_uuid, true, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0)
 
 

@@ -61,7 +61,7 @@ class CI:
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 BuildNames.PACKAGE_AARCH64,
-                JobNames.INTEGRATION_TEST_AARCH64,
+                JobNames.INTEGRATION_TEST_AARCH64_DISTRIBUTED_PLAN,
             ]
         ),
         Tags.CI_SET_REQUIRED: LabelConfig(
@@ -286,7 +286,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_AARCH64],
             runner_type=Runners.STYLE_CHECKER_AARCH64,
         ),
-        JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
+        JobNames.STATELESS_TEST_ASAN_DISTRIBUTED_PLAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
         ),
         JobNames.STATELESS_TEST_AARCH64_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
@@ -322,7 +322,7 @@ class CI:
         JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=1
         ),
-        JobNames.STATELESS_TEST_S3_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
+        JobNames.STATELESS_TEST_S3_DEBUG_DISTRIBUTED_PLAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
@@ -389,7 +389,7 @@ class CI:
             num_batches=6,
             timeout=9000,  # the job timed out with default value (7200)
         ),
-        JobNames.INTEGRATION_TEST_AARCH64: CommonJobConfigs.INTEGRATION_TEST.with_properties(
+        JobNames.INTEGRATION_TEST_AARCH64_DISTRIBUTED_PLAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=6,
             runner_type=Runners.FUNC_TESTER_AARCH64,
