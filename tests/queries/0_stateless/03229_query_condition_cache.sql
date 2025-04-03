@@ -13,7 +13,7 @@ INSERT INTO tab SELECT number, number FROM numbers(1000000);
 
 SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['QueryConditionCacheHits'],
     ProfileEvents['QueryConditionCacheMisses'],
@@ -28,7 +28,7 @@ ORDER BY
 
 SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['QueryConditionCacheHits'],
     ProfileEvents['QueryConditionCacheMisses'],
@@ -47,7 +47,7 @@ SYSTEM DROP QUERY CONDITION CACHE;
 
 SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['QueryConditionCacheHits'],
     ProfileEvents['QueryConditionCacheMisses'],
@@ -62,7 +62,7 @@ ORDER BY
 
 SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['QueryConditionCacheHits'],
     ProfileEvents['QueryConditionCacheMisses'],

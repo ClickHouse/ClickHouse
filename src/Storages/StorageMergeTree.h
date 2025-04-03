@@ -64,9 +64,9 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    std::optional<UInt64> totalRows(const Settings &) const override;
+    std::optional<UInt64> totalRows(ContextPtr) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr) const override;
-    std::optional<UInt64> totalBytes(const Settings &) const override;
+    std::optional<UInt64> totalBytes(ContextPtr) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
 
     UInt64 getNumberOnFlyDataMutations() const override;
@@ -327,6 +327,93 @@ private:
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
         NameSet getAllUpdatedColumns() const override;
     };
+
+    class PartMutationBackoffPolicy
+    {
+        struct PartMutationInfo
+        {
+            size_t retry_count;
+            size_t latest_fail_time_us;
+            size_t max_postpone_time_ms;
+            size_t max_postpone_power;
+
+            explicit PartMutationInfo(size_t max_postpone_time_ms_)
+                            : retry_count(0ull)
+                            , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
+                            , max_postpone_time_ms(max_postpone_time_ms_)
+                            , max_postpone_power((max_postpone_time_ms_) ? (static_cast<size_t>(std::log2(max_postpone_time_ms_))) : (0ull))
+            {}
+
+
+            size_t getNextMinExecutionTimeUsResolution() const
+            {
+                if (max_postpone_time_ms == 0)
+                    return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+                size_t current_backoff_interval_us = (1 << retry_count) * 1000ul;
+                return latest_fail_time_us + current_backoff_interval_us;
+            }
+
+            void addPartFailure()
+            {
+                if (max_postpone_time_ms == 0)
+                    return;
+                retry_count = std::min(max_postpone_power, retry_count + 1);
+                latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+            }
+
+            bool partCanBeMutated() const
+            {
+                if (max_postpone_time_ms == 0)
+                    return true;
+
+                auto current_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+                return current_time_us >= getNextMinExecutionTimeUsResolution();
+            }
+        };
+
+        using DataPartsWithRetryInfo = std::unordered_map<String, PartMutationInfo>;
+        DataPartsWithRetryInfo failed_mutation_parts;
+        mutable std::mutex parts_info_lock;
+
+    public:
+
+        void resetMutationFailures()
+        {
+            std::unique_lock _lock(parts_info_lock);
+            failed_mutation_parts.clear();
+        }
+
+        void removePartFromFailed(const String & part_name)
+        {
+            std::unique_lock _lock(parts_info_lock);
+            failed_mutation_parts.erase(part_name);
+        }
+
+        void addPartMutationFailure (const String& part_name, size_t max_postpone_time_ms_)
+        {
+            std::unique_lock _lock(parts_info_lock);
+            auto part_info_it = failed_mutation_parts.find(part_name);
+            if (part_info_it == failed_mutation_parts.end())
+            {
+                auto [it, success] = failed_mutation_parts.emplace(part_name, PartMutationInfo(max_postpone_time_ms_));
+                std::swap(it, part_info_it);
+            }
+            auto& part_info = part_info_it->second;
+            part_info.addPartFailure();
+        }
+
+        bool partCanBeMutated(const String& part_name)
+        {
+
+            std::unique_lock _lock(parts_info_lock);
+            auto iter = failed_mutation_parts.find(part_name);
+            if (iter == failed_mutation_parts.end())
+                return true;
+            return iter->second.partCanBeMutated();
+        }
+    };
+    /// Controls postponing logic for failed mutations.
+    PartMutationBackoffPolicy mutation_backoff_policy;
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
 };

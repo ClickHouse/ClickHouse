@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
-from .s3 import S3
+from .s3 import S3, StorageUsage
 from .settings import Settings
 from .utils import ContextManager, MetaClasses, Shell, Utils
 
@@ -196,60 +196,46 @@ class Result(MetaClasses.Serializable):
     def add_job_summary_to_info(
         self, with_local_run_command=False, with_test_in_run_command=False
     ):
-        if not self.is_ok():
-            failed = [r for r in self.results if not r.is_ok()]
-            if failed:
-                if (
-                    len(failed) == 1
-                    and failed[0].name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
-                    and failed[0].info
-                ):
-                    summary_info = failed[0].info
-                else:
-                    failed_str = ",".join([f.name for f in failed])
-                    summary_info = (
-                        f"Failed: {failed_str}"
-                        if len(failed_str) < 80
-                        else f"Failed: {len(failed)} tests"
-                    )
-            else:
-                summary_info = "Failed"
-        else:
-            summary_info = next(
-                (
-                    r.info
-                    for r in self.results
-                    if r.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS and r.info
-                ),
-                "ok",
-            )
+        subresult_with_tests = self
 
-        self.set_info(summary_info)
+        # Use a specific sub-result if configured
+        job_config = _Environment.get().JOB_CONFIG or {}
+        result_name_for_cidb = job_config.get("result_name_for_cidb", "")
+        if result_name_for_cidb:
+            for r in self.results:
+                if r.name == result_name_for_cidb:
+                    subresult_with_tests = r
+                    if subresult_with_tests.info:
+                        self.set_info(subresult_with_tests.info)
+                    break
 
-        if with_local_run_command and not self.is_ok():
+        # If no failures, nothing more to do
+        if self.is_ok():
+            return self
+
+        # Collect failed test case names
+        failed = [r.name for r in subresult_with_tests.results if not r.is_ok()]
+
+        if failed:
+            if len(failed) < 10:
+                failed_tcs = "\n".join(failed)
+                self.set_info(f"Failed:\n{failed_tcs}")
+
+        # Suggest local command to rerun
+        if with_local_run_command:
             command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
-            first_failed_test = next((r for r in self.results if not r.is_ok()), None)
-            if (
-                first_failed_test
-                and first_failed_test.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
-            ):
-                first_failed_test = next(
-                    (
-                        r
-                        for r in first_failed_test.results
-                        if "fail" in r.status.lower()
-                    ),
-                    None,
-                )
-            if with_test_in_run_command and first_failed_test:
-                command_info += f" --test {first_failed_test.name}"
+            if with_test_in_run_command and failed:
+                command_info += f" --test {failed[0]}"
             self.set_info(command_info)
 
         return self
 
     @classmethod
     def file_name_static(cls, name):
-        return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
+        if not name:
+            return cls.experimental_file_name_static()
+        else:
+            return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
 
     @classmethod
     def experimental_file_name_static(cls):
@@ -367,12 +353,21 @@ class Result(MetaClasses.Serializable):
         )
 
     @classmethod
-    def from_gtest_run(cls, name, unit_tests_path, with_log=False):
+    def from_gtest_run(cls, unit_tests_path, name="", with_log=False):
+        """
+        Runs gtest and generates praktika Result
+        :param unit_tests_path:
+        :param name: Should be set if executed as a job subtask with name @name.
+        If it's a job itself job.name will be taken as name by default
+        :param with_log:
+        :return:
+        """
         Shell.check(f"rm {ResultTranslator.GTEST_RESULT_FILE}")
         result = Result.from_commands_run(
             name=name,
             command=[
-                f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
+                f"chmod +x {unit_tests_path}",
+                f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'",
             ],
             with_log=with_log,
         )
@@ -625,7 +620,9 @@ class _ResultS3:
         return result
 
     @classmethod
-    def update_workflow_results(cls, workflow_name, new_info="", new_sub_results=None):
+    def update_workflow_results(
+        cls, workflow_name, new_info="", new_sub_results=None, storage_usage=None
+    ):
         assert new_info or new_sub_results
 
         attempt = 1
@@ -647,6 +644,12 @@ class _ResultS3:
                     workflow_result.update_sub_result(
                         result_, drop_nested_results=True
                     ).dump()
+            if storage_usage:
+                workflow_storage_usage = StorageUsage.from_dict(
+                    workflow_result.ext.get("storage_usage", {})
+                ).merge_with(storage_usage)
+                workflow_result.ext["storage_usage"] = workflow_storage_usage
+
             new_status = workflow_result.status
             if cls.copy_result_to_s3_with_version(workflow_result, version=version + 1):
                 done = True
@@ -665,7 +668,7 @@ class _ResultS3:
 
 
 class ResultTranslator:
-    GTEST_RESULT_FILE = "./tmp_ci/gtest.json"
+    GTEST_RESULT_FILE = "./ci/tmp/gtest.json"
 
     @classmethod
     def from_gtest(cls):

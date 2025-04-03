@@ -50,6 +50,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -303,7 +304,7 @@ static void checkSuspiciousIndices(const ASTFunction * index_function)
     std::unordered_set<UInt64> unique_index_expression_hashes;
     for (const auto & child : index_function->arguments->children)
     {
-        const IAST::Hash hash = child->getTreeHash(/*ignore_aliases=*/ true);
+        const IASTHash hash = child->getTreeHash(/*ignore_aliases=*/ true);
         const auto & first_half_of_hash = hash.low64;
 
         if (!unique_index_expression_hashes.emplace(first_half_of_hash).second)
@@ -2483,20 +2484,39 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
     /// is called first and all tasks stopped before local variables are being destroyed.
     ThreadPoolCallbackRunnerLocal<void> runner(pool, "PrewarmCaches");
 
+    auto enough_space = [&](const auto & cache, double ratio_to_prewarm)
+    {
+        return cache->sizeInBytes() < cache->maxSizeInBytes() * ratio_to_prewarm;
+    };
+
     for (const auto & part : data_parts)
     {
         bool added_task = false;
 
-        if (index_cache && !part->isIndexLoaded() && index_cache->sizeInBytes() < index_cache->maxSizeInBytes() * index_ratio_to_prewarm)
+        if (index_cache && !part->isIndexLoaded() && enough_space(index_cache, index_ratio_to_prewarm))
         {
+            runner([&]
+            {
+                /// Check again, because another task may have filled the cache while this task was waiting in the queue.
+                /// The cache still may be filled slightly more than `index_ratio_to_prewarm`, but it's ok.
+                if (enough_space(index_cache, index_ratio_to_prewarm))
+                    part->loadIndexToCache(*index_cache);
+            });
+
             added_task = true;
-            runner([&] { part->loadIndexToCache(*index_cache); });
         }
 
-        if (mark_cache && mark_cache->sizeInBytes() < mark_cache->maxSizeInBytes() * marks_ratio_to_prewarm)
+        if (mark_cache && enough_space(mark_cache, marks_ratio_to_prewarm))
         {
+            runner([&]
+            {
+                /// Check again, because another task may have filled the cache while this task was waiting in the queue.
+                /// The cache still may be filled slightly more than `marks_ratio_to_prewarm`, but it's ok.
+                if (enough_space(mark_cache, marks_ratio_to_prewarm))
+                    part->loadMarksToCache(columns_to_prewarm_marks, mark_cache.get());
+            });
+
             added_task = true;
-            runner([&] { part->loadMarksToCache(columns_to_prewarm_marks, mark_cache.get()); });
         }
 
         if (!added_task)
@@ -6802,6 +6822,20 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
 
         LOG_DEBUG(log, "{} of them are active", active_parts.size());
 
+        /// Take care to process parts in the correct order. This is needed for Replacing and other special MergeTree variants.
+        std::erase_if(detached_parts, [&](const auto & part_info)
+        {
+            String containing_part = active_parts.getContainingPart(part_info.dir_name);
+            return containing_part.empty();
+        });
+
+        std::sort(detached_parts.begin(), detached_parts.end(), [&](const auto & a, const auto & b)
+        {
+            MergeTreePartInfo info_a = MergeTreePartInfo::fromPartName(active_parts.getContainingPart(a), format_version);
+            MergeTreePartInfo info_b = MergeTreePartInfo::fromPartName(active_parts.getContainingPart(b), format_version);
+            return info_a < info_b;
+        });
+
         /// Inactive parts are renamed so they can not be attached in case of repeated ATTACH.
         for (const auto & part_info : detached_parts)
         {
@@ -6818,7 +6852,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
                 renamed_parts.addPart(part_info.dir_name, "attaching_" + part_info.dir_name, part_info.disk);
         }
     }
-
 
     /// Try to rename all parts before attaching to prevent race with DROP DETACHED and another ATTACH.
     renamed_parts.tryRenameAll();

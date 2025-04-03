@@ -17,7 +17,7 @@ from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .result import Result, ResultInfo
 from .runtime import RunConfig
-from .s3 import S3
+from .s3 import S3, StorageUsage
 from .settings import Settings
 from .utils import Shell, TeePopen, Utils
 
@@ -35,7 +35,7 @@ class Runner:
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
             REPOSITORY="",
-            BRANCH=branch or Settings.MAIN_BRANCH if not pr else "",
+            BRANCH="branch_name",
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
             PR_NUMBER=pr or -1,
             EVENT_TYPE="",
@@ -98,6 +98,7 @@ class Runner:
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
+        env.JOB_CONFIG = job
         env.dump()
         print(env)
 
@@ -281,17 +282,18 @@ class Runner:
                         print(
                             f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
                         )
-                        result.set_status(Result.Status.ERROR).set_info(
-                            ResultInfo.TIMEOUT
-                        )
+                        info = ResultInfo.TIMEOUT
                     elif result.is_running():
-                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]"
+                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]."
                         print(info)
-                        result.set_status(Result.Status.ERROR).set_info(info)
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
-                        result.set_status(Result.Status.ERROR).set_info(info)
+                    result.set_status(Result.Status.ERROR)
+                    result.set_info(info)
+                    result.set_info("---").set_info(
+                        process.get_latest_log(max_lines=20)
+                    ).set_info("---")
             result.dump()
 
         return exit_code
@@ -352,10 +354,24 @@ class Runner:
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
-        result.update_duration().dump()
-
+        result.update_duration()
         # if result.is_error():
         result.set_files([Settings.RUN_LOG])
+
+        if job.post_hooks:
+            sw_ = Utils.Stopwatch()
+            results_ = []
+            for check in job.post_hooks:
+                if callable(check):
+                    name = check.__name__
+                else:
+                    name = str(check)
+                results_.append(
+                    Result.from_commands_run(name=name, command=check, with_info=True)
+                )
+            result.results.append(
+                Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+            )
 
         if run_exit_code == 0:
             providing_artifacts = []
@@ -406,22 +422,25 @@ class Runner:
                     )
                     result.set_link(link)
 
+        ci_db = None
         if workflow.enable_cidb:
             print("Insert results to CIDB")
             try:
-                CIDB(
+                ci_db = CIDB(
                     url=workflow.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
                     user=workflow.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
                     passwd=workflow.get_secret(
                         Settings.SECRET_CI_DB_PASSWORD
                     ).get_value(),
-                ).insert(result)
+                ).insert(result, result_name_for_cidb=job.result_name_for_cidb)
             except Exception as ex:
                 traceback.print_exc()
                 error = f"ERROR: Failed to insert data into CI DB, exception [{ex}]"
                 print(error)
                 info_errors.append(error)
 
+        if env.TRACEBACKS:
+            result.set_info("Stored Tracebacks:\n" + "\n".join(env.TRACEBACKS))
         result.dump()
 
         # always in the end
@@ -434,16 +453,28 @@ class Runner:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
 
+        if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
+            # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
+            workflow_result = Result.from_fs(workflow.name)
+            workflow_storage_usage = StorageUsage.from_dict(
+                workflow_result.ext.get("storage_usage", {})
+            )
+            if workflow_storage_usage:
+                print(
+                    "NOTE: storage_usage is found in workflow Result - insert into CIDB"
+                )
+                ci_db.insert_storage_usage(workflow_storage_usage)
+
         report_url = Info().get_job_report_url(latest=False)
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
             if Settings.USE_CUSTOM_GH_AUTH:
-                from praktika.gh_auth_deprecated import GHAuth
+                from .gh_auth import GHAuth
 
                 pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
                 app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-                GHAuth.auth(app_key=pem, app_id=app_id)
+                GHAuth.auth(app_id=app_id, app_key=pem)
             if not GH.post_commit_status(
                 name=job.name,
                 status=result.status,
@@ -511,8 +542,8 @@ class Runner:
             print(f"=== Pre run finished ===\n\n")
 
         if res:
-            res = False
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
+            run_code = None
             try:
                 run_code = self._run(
                     workflow,
@@ -528,11 +559,23 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Run script failed with exception [{e}]")
                 traceback.print_exc()
+                res = False
+
+            result = Result.from_fs(job.name)
+            if not res and result.is_ok():
+                # TODO: It happens due to invalid timeout handling (forceful termination by timeout does not work) - fix
+                result.set_status(Result.Status.ERROR).set_info(
+                    f"Job got terminated with an error, exit code [{run_code}]"
+                ).dump()
+
             print(f"=== Run script finished ===\n\n")
 
         if not local_run:
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
-            self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
+            post_res = self._post_run(
+                workflow, job, setup_env_code, prerun_code, run_code
+            )
+            res = res and post_res
             print(f"=== Post run script finished ===")
 
         if not res:

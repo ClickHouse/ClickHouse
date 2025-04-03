@@ -88,7 +88,7 @@ String BoolType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
 
 String IntType::typeName(const bool) const
 {
-    return fmt::format("{}Int{}", is_unsigned ? "U" : "", std::to_string(size));
+    return fmt::format("{}Int{}", is_unsigned ? "U" : "", size);
 }
 
 String IntType::MySQLtypeName(RandomGenerator &, const bool) const
@@ -178,7 +178,7 @@ String IntType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &)
 
 String FloatType::typeName(const bool) const
 {
-    return fmt::format("{}Float{}", size == 16 ? "B" : "", std::to_string(size));
+    return fmt::format("{}Float{}", size == 16 ? "B" : "", size);
 }
 
 String FloatType::MySQLtypeName(RandomGenerator &, const bool) const
@@ -375,7 +375,7 @@ String StringType::typeName(const bool) const
 {
     if (precision.has_value())
     {
-        return fmt::format("FixedString({})", std::to_string(precision.value()));
+        return fmt::format("FixedString({})", precision.value());
     }
     else
     {
@@ -387,7 +387,7 @@ String StringType::MySQLtypeName(RandomGenerator & rg, const bool) const
 {
     if (precision.has_value())
     {
-        return fmt::format("{}{}({})", rg.nextBool() ? "VAR" : "", rg.nextBool() ? "CHAR" : "BINARY", std::to_string(precision.value()));
+        return fmt::format("{}{}({})", rg.nextBool() ? "VAR" : "", rg.nextBool() ? "CHAR" : "BINARY", precision.value());
     }
     else
     {
@@ -399,7 +399,7 @@ String StringType::PostgreSQLtypeName(RandomGenerator & rg, const bool) const
 {
     if (precision.has_value())
     {
-        return fmt::format("{}CHAR({})", rg.nextBool() ? "VAR" : "", std::to_string(precision.value()));
+        return fmt::format("{}CHAR({})", rg.nextBool() ? "VAR" : "", precision.value());
     }
     else
     {
@@ -638,7 +638,7 @@ String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerato
     const uint32_t type_mask_backup = gen.next_type_mask;
 
     gen.next_type_mask = gen.fc.type_mask & ~(allow_dynamic | allow_nested);
-    SQLType * next = gen.randomNextType(rg, gen.next_type_mask, col_counter, nullptr);
+    auto next = std::unique_ptr<SQLType>(gen.randomNextType(rg, gen.next_type_mask, col_counter, nullptr));
     gen.next_type_mask = type_mask_backup;
     String ret = next->appendRandomRawValue(rg, gen);
 
@@ -647,7 +647,6 @@ String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerato
         ret += "::";
         ret += next->typeName(false);
     }
-    delete next;
     return ret;
 }
 
@@ -1294,7 +1293,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     const uint32_t date_type = 15 * static_cast<uint32_t>((allowed_types & allow_dates) != 0);
     const uint32_t datetime_type = 15 * static_cast<uint32_t>((allowed_types & allow_datetimes) != 0);
     const uint32_t string_type = 30 * static_cast<uint32_t>((allowed_types & allow_strings) != 0);
-    const uint32_t decimal_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_decimals) != 0);
+    const uint32_t decimal_type = 20 * static_cast<uint32_t>((allowed_types & allow_decimals) != 0);
     const uint32_t bool_type = 20 * static_cast<uint32_t>((allowed_types & allow_bool) != 0);
     const uint32_t enum_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_enum) != 0);
     const uint32_t uuid_type = 10 * static_cast<uint32_t>((allowed_types & allow_uuid) != 0);
@@ -1347,7 +1346,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     {
         std::optional<uint32_t> swidth;
 
-        if (rg.nextBool())
+        if (!(allowed_types & allow_fixed_strings) || rg.nextBool())
         {
             if (tp)
             {
