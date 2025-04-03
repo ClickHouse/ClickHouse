@@ -10,6 +10,7 @@ def only_docs(changed_files):
         if (
             file.startswith("docs/")
             or file.startswith("docker/docs")
+            or file.endswith(".md")
             or "aspell-dict.txt" in file
         ):
             continue
@@ -25,6 +26,13 @@ ONLY_DOCS_JOBS = [
     JobNames.Docs,
 ]
 
+PRELIMINARY_JOBS = [
+    JobNames.STYLE_CHECK,
+    JobNames.FAST_TEST,
+    "Build (amd_tidy)",
+    "Build (arm_tidy)",
+]
+
 _info_cache = None
 
 
@@ -32,6 +40,7 @@ def should_skip_job(job_name):
     global _info_cache
     if _info_cache is None:
         _info_cache = Info()
+
     changed_files = _info_cache.get_custom_data("changed_files")
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
@@ -41,7 +50,10 @@ def should_skip_job(job_name):
         return True, "Docs only update"
 
     if Labels.DO_NOT_TEST in _info_cache.pr_labels and job_name not in ONLY_DOCS_JOBS:
-        return True, "Skipped, labeled with 'do not test'"
+        return True, f"Skipped, labeled with '{Labels.DO_NOT_TEST}'"
+
+    if Labels.NO_FAST_TESTS in _info_cache.pr_labels and job_name in PRELIMINARY_JOBS:
+        return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
 
     if Labels.CI_PERFORMANCE in _info_cache.pr_labels and (
         "performance" not in job_name.lower()
@@ -60,9 +72,10 @@ def should_skip_job(job_name):
 
     # skip ARM perf tests for non-performance update
     if (
-        Labels.PR_PERFORMANCE not in _info_cache.pr_labels
+        # Labels.PR_PERFORMANCE not in _info_cache.pr_labels
+        "- Performance Improvement" not in _info_cache.pr_body
         and JobNames.PERFORMANCE in job_name
-        and "aarch64" in job_name
+        and "arm" in job_name
     ):
         return True, "Skipped, not labeled with 'pr-performance'"
 

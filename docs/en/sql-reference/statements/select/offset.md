@@ -1,12 +1,13 @@
 ---
+description: 'Documentation for Offset'
+sidebar_label: 'OFFSET'
 slug: /sql-reference/statements/select/offset
-sidebar_label: OFFSET
-title: "OFFSET FETCH Clause"
+title: 'OFFSET FETCH Clause'
 ---
 
 `OFFSET` and `FETCH` allow you to retrieve data by portions. They specify a row block which you want to get by a single query.
 
-``` sql
+```sql
 OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
 ```
 
@@ -18,13 +19,13 @@ The `FETCH` specifies the maximum number of rows that can be in the result of a 
 
 The `ONLY` option is used to return rows that immediately follow the rows omitted by the `OFFSET`. In this case the `FETCH` is an alternative to the [LIMIT](../../../sql-reference/statements/select/limit.md) clause. For example, the following query
 
-``` sql
+```sql
 SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS ONLY;
 ```
 
 is identical to the query
 
-``` sql
+```sql
 SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
 ```
 
@@ -42,7 +43,7 @@ The real offset can also depend on the [offset](../../../operations/settings/set
 
 Input table:
 
-``` text
+```text
 ┌─a─┬─b─┐
 │ 1 │ 1 │
 │ 2 │ 1 │
@@ -56,13 +57,13 @@ Input table:
 
 Usage of the `ONLY` option:
 
-``` sql
+```sql
 SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY;
 ```
 
 Result:
 
-``` text
+```text
 ┌─a─┬─b─┐
 │ 2 │ 1 │
 │ 3 │ 4 │
@@ -72,13 +73,13 @@ Result:
 
 Usage of the `WITH TIES` option:
 
-``` sql
+```sql
 SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES;
 ```
 
 Result:
 
-``` text
+```text
 ┌─a─┬─b─┐
 │ 2 │ 1 │
 │ 3 │ 4 │

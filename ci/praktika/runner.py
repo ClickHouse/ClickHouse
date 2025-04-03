@@ -17,7 +17,7 @@ from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .result import Result, ResultInfo
 from .runtime import RunConfig
-from .s3 import S3
+from .s3 import S3, StorageUsage
 from .settings import Settings
 from .utils import Shell, TeePopen, Utils
 
@@ -35,7 +35,7 @@ class Runner:
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
             REPOSITORY="",
-            BRANCH=branch or Settings.MAIN_BRANCH if not pr else "",
+            BRANCH="branch_name",
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
             PR_NUMBER=pr or -1,
             EVENT_TYPE="",
@@ -98,6 +98,7 @@ class Runner:
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
+        env.JOB_CONFIG = job
         env.dump()
         print(env)
 
@@ -122,7 +123,7 @@ class Runner:
 
         if job.requires and job.name not in (
             Settings.CI_CONFIG_JOB_NAME,
-            Settings.DOCKER_BUILD_JOB_NAME,
+            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
             Settings.FINISH_WORKFLOW_JOB_NAME,
         ):
             print("Download required artifacts")
@@ -146,7 +147,7 @@ class Runner:
                             if job.name
                             not in (
                                 Settings.CI_CONFIG_JOB_NAME,
-                                Settings.DOCKER_BUILD_JOB_NAME,
+                                Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
                                 Settings.FINISH_WORKFLOW_JOB_NAME,
                             )
                         ]
@@ -212,9 +213,7 @@ class Runner:
         if job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_fs(workflow.name).custom_data.get(
-                        "digest_dockers", "latest"
-                    )
+                    RunConfig.from_fs(workflow.name).digest_dockers
                 )
             except Exception as e:
                 traceback.print_exc()
@@ -260,7 +259,21 @@ class Runner:
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(cmd, timeout=job.timeout) as process:
+            start_time = Utils.timestamp()
+            if Path((Result.experimental_file_name_static())).exists():
+                # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
+                Path(Result.experimental_file_name_static()).unlink()
+
             exit_code = process.wait()
+
+            if Path(Result.experimental_file_name_static()).exists():
+                result = Result.experimental_from_fs(job.name)
+                if not result.start_time:
+                    print(
+                        "WARNING: no start_time set by the job - set job start_time/duration"
+                    )
+                    result.start_time = start_time
+                    result.dump()
 
             result = Result.from_fs(job.name)
             if exit_code != 0:
@@ -269,17 +282,18 @@ class Runner:
                         print(
                             f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
                         )
-                        result.set_status(Result.Status.ERROR).set_info(
-                            ResultInfo.TIMEOUT
-                        )
+                        info = ResultInfo.TIMEOUT
                     elif result.is_running():
-                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]"
+                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]."
                         print(info)
-                        result.set_status(Result.Status.ERROR).set_info(info)
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
-                        result.set_status(Result.Status.ERROR).set_info(info)
+                    result.set_status(Result.Status.ERROR)
+                    result.set_info(info)
+                    result.set_info("---").set_info(
+                        process.get_latest_log(max_lines=20)
+                    ).set_info("---")
             result.dump()
 
         return exit_code
@@ -290,6 +304,7 @@ class Runner:
         info_errors = []
         env = _Environment.get()
         result_exist = Result.exist(job.name)
+        is_ok = True
 
         if setup_env_exit_code != 0:
             info = f"ERROR: {ResultInfo.SETUP_ENV_JOB_FAILED}"
@@ -328,6 +343,7 @@ class Runner:
             result = Result.from_fs(job.name)
         except Exception as e:  # json.decoder.JSONDecodeError
             print(f"ERROR: Failed to read Result json from fs, ex: [{e}]")
+            traceback.print_exc()
             result = Result.create_from(
                 status=Result.Status.ERROR,
                 info=f"Failed to read Result json, ex: [{e}]",
@@ -338,10 +354,24 @@ class Runner:
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
-        result.update_duration().dump()
-
+        result.update_duration()
         # if result.is_error():
         result.set_files([Settings.RUN_LOG])
+
+        if job.post_hooks:
+            sw_ = Utils.Stopwatch()
+            results_ = []
+            for check in job.post_hooks:
+                if callable(check):
+                    name = check.__name__
+                else:
+                    name = str(check)
+                results_.append(
+                    Result.from_commands_run(name=name, command=check, with_info=True)
+                )
+            result.results.append(
+                Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+            )
 
         if run_exit_code == 0:
             providing_artifacts = []
@@ -378,6 +408,7 @@ class Runner:
                             print(error)
                             info_errors.append(error)
                             result.set_status(Result.Status.ERROR)
+                            is_ok = False
                 if Settings.ENABLE_ARTIFACTS_REPORT and artifact_links:
                     artifact_report = {"build_urls": artifact_links}
                     print(
@@ -391,16 +422,17 @@ class Runner:
                     )
                     result.set_link(link)
 
+        ci_db = None
         if workflow.enable_cidb:
             print("Insert results to CIDB")
             try:
-                CIDB(
+                ci_db = CIDB(
                     url=workflow.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
                     user=workflow.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
                     passwd=workflow.get_secret(
                         Settings.SECRET_CI_DB_PASSWORD
                     ).get_value(),
-                ).insert(result)
+                ).insert(result, result_name_for_cidb=job.result_name_for_cidb)
             except Exception as ex:
                 traceback.print_exc()
                 error = f"ERROR: Failed to insert data into CI DB, exception [{ex}]"
@@ -419,20 +451,32 @@ class Runner:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
 
+        if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
+            # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
+            workflow_result = Result.from_fs(workflow.name)
+            workflow_storage_usage = StorageUsage.from_dict(
+                workflow_result.ext.get("storage_usage", {})
+            )
+            if workflow_storage_usage:
+                print(
+                    "NOTE: storage_usage is found in workflow Result - insert into CIDB"
+                )
+                ci_db.insert_storage_usage(workflow_storage_usage)
+
         report_url = Info().get_job_report_url(latest=False)
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
             if Settings.USE_CUSTOM_GH_AUTH:
-                from praktika.gh_auth_deprecated import GHAuth
+                from .gh_auth import GHAuth
 
                 pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
                 app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-                GHAuth.auth(app_key=pem, app_id=app_id)
+                GHAuth.auth(app_id=app_id, app_key=pem)
             if not GH.post_commit_status(
                 name=job.name,
                 status=result.status,
-                description=result.info[0:70],
+                description=result.info.splitlines()[0] if result.info else "",
                 url=report_url,
             ):
                 print(f"ERROR: Failed to post failed commit status for the job")
@@ -441,7 +485,7 @@ class Runner:
             # to make it visible in GH Actions annotations
             print(f"::notice ::Job report: {report_url}")
 
-        return True
+        return is_ok
 
     def run(
         self,
@@ -496,8 +540,8 @@ class Runner:
             print(f"=== Pre run finished ===\n\n")
 
         if res:
-            res = False
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
+            run_code = None
             try:
                 run_code = self._run(
                     workflow,
@@ -513,11 +557,23 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Run script failed with exception [{e}]")
                 traceback.print_exc()
+                res = False
+
+            result = Result.from_fs(job.name)
+            if not res and result.is_ok():
+                # TODO: It happens due to invalid timeout handling (forceful termination by timeout does not work) - fix
+                result.set_status(Result.Status.ERROR).set_info(
+                    f"Job got terminated with an error, exit code [{run_code}]"
+                ).dump()
+
             print(f"=== Run script finished ===\n\n")
 
         if not local_run:
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
-            self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
+            post_res = self._post_run(
+                workflow, job, setup_env_code, prerun_code, run_code
+            )
+            res = res and post_res
             print(f"=== Post run script finished ===")
 
         if not res:

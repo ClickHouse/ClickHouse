@@ -1,3 +1,5 @@
+#include <Databases/DatabaseMemory.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/registerInterpreters.h>
@@ -35,12 +37,22 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions(false);
+    registerTableFunctions();
     registerDatabases();
-    registerStorages(false);
-    registerDictionaries(false);
+    registerStorages();
+    registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
+
+    /// Initialize default database
+    {
+        const std::string default_database = "default";
+        DatabasePtr database = std::make_shared<DatabaseMemory>(default_database, context);
+        if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)
+            DatabaseCatalog::instance().addUUIDMapping(uuid);
+        DatabaseCatalog::instance().attachDatabase(default_database, database);
+        context->setCurrentDatabase(default_database);
+    }
 
     return 0;
 }

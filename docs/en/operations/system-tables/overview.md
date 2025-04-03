@@ -1,13 +1,13 @@
 ---
-description: "Overview of what system tables are and why they are useful."
-slug: /operations/system-tables/overview
+description: 'Overview of what system tables are and why they are useful.'
+keywords: ['system tables', 'overview']
+sidebar_label: 'Overview'
 sidebar_position: 52
-sidebar_label: Overview
-title: "System Tables Overview"
-keywords: ["system tables", "overview"]
+slug: /operations/system-tables/overview
+title: 'System Tables Overview'
 ---
 
-## Introduction {#system-tables-introduction}
+## System tables overview {#system-tables-introduction}
 
 System tables provide information about:
 

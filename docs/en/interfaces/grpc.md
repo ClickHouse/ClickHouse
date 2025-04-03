@@ -1,7 +1,9 @@
 ---
+description: 'Documentation for the gRPC interface in ClickHouse'
+sidebar_label: 'gRPC Interface'
+sidebar_position: 25
 slug: /interfaces/grpc
-sidebar_position: 19
-sidebar_label: gRPC Interface
+title: 'gRPC Interface'
 ---
 
 # gRPC Interface
@@ -82,7 +84,7 @@ In a batch mode query data can be passed via `stdin`.
 
 In the following example a table is created and loaded with data from a CSV file. Then the content of the table is queried.
 
-``` bash
+```bash
 ./clickhouse-grpc-client.py -q "CREATE TABLE grpc_example_table (id UInt32, text String) ENGINE = MergeTree() ORDER BY id;"
 echo -e "0,Input data for\n1,gRPC protocol example" > a.csv
 cat a.csv | ./clickhouse-grpc-client.py -q "INSERT INTO grpc_example_table FORMAT CSV"
@@ -92,7 +94,7 @@ cat a.csv | ./clickhouse-grpc-client.py -q "INSERT INTO grpc_example_table FORMA
 
 Result:
 
-``` text
+```text
 ┌─id─┬─text──────────────────┐
 │  0 │ Input data for        │
 │  1 │ gRPC protocol example │

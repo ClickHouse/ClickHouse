@@ -1,23 +1,26 @@
 ---
-description: "System table containing information about and status of replicated tables residing on the local server. Useful for monitoring."
+description: 'System table containing information about and status of replicated tables
+  residing on the local server. Useful for monitoring.'
+keywords: ['system table', 'replicas']
 slug: /operations/system-tables/replicas
-title: "system.replicas"
-keywords: ["system table", "replicas"]
+title: 'system.replicas'
 ---
+
+# system.replicas
 
 Contains information and status for replicated tables residing on the local server.
 This table can be used for monitoring. The table contains a row for every Replicated\* table.
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.replicas
 WHERE table = 'test_table'
 FORMAT Vertical
 ```
 
-``` text
+```text
 Query id: dc6dcbcb-dc28-4df9-ae27-4354f5b3b13e
 
 Row 1:
@@ -103,7 +106,7 @@ If you do not request the last 4 columns (log_max_index, log_pointer, total_repl
 
 For example, you can check that everything is working correctly like this:
 
-``` sql
+```sql
 SELECT
     database,
     table,

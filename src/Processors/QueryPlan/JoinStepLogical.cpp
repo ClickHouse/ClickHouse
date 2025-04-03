@@ -1,6 +1,9 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
@@ -28,6 +31,7 @@
 #include <Functions/IsOperation.h>
 #include <Functions/tuple.h>
 
+
 namespace DB
 {
 
@@ -45,6 +49,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int INCORRECT_DATA;
 }
 
 std::string operatorToFunctionName(PredicateOperator op)
@@ -488,7 +493,6 @@ JoinActionRef buildSingleActionForJoinExpression(const JoinExpression & join_exp
     return concatConditionsWithFunction(all_conditions, expression_actions.post_join_actions, or_function);
 }
 
-void JoinStepLogical::setHashTableCacheKey(IQueryTreeNode::HashState hash_table_key_hash_) { hash_table_key_hash = std::move(hash_table_key_hash_); }
 void JoinStepLogical::setPreparedJoinStorage(PreparedJoinStorage storage) { prepared_join_storage = std::move(storage); }
 
 static Block blockWithColumns(ColumnsWithTypeAndName columns)
@@ -510,6 +514,31 @@ static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolve
         if (type_to_check->canBeInsideNullable())
             output_node = &dag.addFunction(to_nullable_function, {output_node}, output_node->result_name);
     }
+}
+
+void JoinStepLogical::appendRequiredOutputsToActions(JoinActionRef & post_filter)
+{
+    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
+    addRequiredInputToOutput(expression_actions.left_pre_join_actions, required_output_columns_set);
+    addRequiredInputToOutput(expression_actions.right_pre_join_actions, required_output_columns_set);
+    addRequiredInputToOutput(expression_actions.post_join_actions, required_output_columns_set);
+
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+    for (const auto * output : expression_actions.post_join_actions->getOutputs())
+    {
+        if (required_output_columns_set.contains(output->result_name))
+            new_outputs.push_back(output);
+    }
+
+    if (new_outputs.empty())
+    {
+        new_outputs = getAnyColumn(expression_actions.post_join_actions->getOutputs());
+    }
+
+    if (post_filter)
+        new_outputs.push_back(post_filter.getNode());
+    expression_actions.post_join_actions->getOutputs() = std::move(new_outputs);
+    expression_actions.post_join_actions->removeUnusedActions();
 }
 
 JoinPtr JoinStepLogical::convertToPhysical(
@@ -692,27 +721,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
         mixed_join_expression = std::make_shared<ExpressionActions>(std::move(dag), actions_settings);
     }
 
-    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
-    addRequiredInputToOutput(expression_actions.left_pre_join_actions, required_output_columns_set);
-    addRequiredInputToOutput(expression_actions.right_pre_join_actions, required_output_columns_set);
-    addRequiredInputToOutput(expression_actions.post_join_actions, required_output_columns_set);
-
-    ActionsDAG::NodeRawConstPtrs new_outputs;
-    for (const auto * output : expression_actions.post_join_actions->getOutputs())
-    {
-        if (required_output_columns_set.contains(output->result_name))
-            new_outputs.push_back(output);
-    }
-
-    if (new_outputs.empty())
-    {
-        new_outputs = getAnyColumn(expression_actions.post_join_actions->getOutputs());
-    }
-
-    if (post_filter)
-        new_outputs.push_back(post_filter.getNode());
-    expression_actions.post_join_actions->getOutputs() = std::move(new_outputs);
-    expression_actions.post_join_actions->removeUnusedActions();
+    appendRequiredOutputsToActions(post_filter);
 
     table_join->setInputColumns(
         expression_actions.left_pre_join_actions->getNamesAndTypesList(),
@@ -727,6 +736,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
     {
         table_join->swapSides();
         std::swap(left_sample_block, right_sample_block);
+        std::swap(hash_table_key_hash_left, hash_table_key_hash_right);
     }
 
     JoinAlgorithmSettings algo_settings(
@@ -737,12 +747,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
         lock_acquire_timeout);
 
     auto join_algorithm_ptr = chooseJoinAlgorithm(
-        table_join,
-        prepared_join_storage,
-        left_sample_block,
-        right_sample_block,
-        algo_settings,
-        hash_table_key_hash);
+        table_join, prepared_join_storage, left_sample_block, right_sample_block, algo_settings, hash_table_key_hash_right.value_or(0));
     runtime_info_description.emplace_back("Algorithm", join_algorithm_ptr->getName());
     return join_algorithm_ptr;
 }
@@ -783,6 +788,102 @@ std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, 
     }
 
     return {};
+}
+
+void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings) const
+{
+    join_settings.updatePlanSettings(settings);
+    sorting_settings.updatePlanSettings(settings);
+}
+
+void JoinStepLogical::serialize(Serialization & ctx) const
+{
+    if (prepared_join_storage)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of JoinStepLogical with prepared storage is not implemented");
+
+    if (swap_inputs)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of JoinStepLogical with swapped inputs is not implemented");
+
+    UInt8 flags = 0;
+    if (use_nulls)
+        flags |= 1;
+
+    writeIntBinary(flags, ctx.out);
+
+    JoinActionRef::ActionsDAGRawPtrs dags = {
+        expression_actions.left_pre_join_actions.get(),
+        expression_actions.right_pre_join_actions.get(),
+        expression_actions.post_join_actions.get()};
+
+    writeVarUInt(dags.size(), ctx.out);
+    for (const auto * dag : dags)
+        dag->serialize(ctx.out, ctx.registry);
+
+    join_info.serialize(ctx.out, dags);
+
+    writeVarUInt(required_output_columns.size(), ctx.out);
+    for (const auto & name : required_output_columns)
+        writeStringBinary(name, ctx.out);
+}
+
+std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 2)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical must have two input streams");
+
+    UInt8 flags;
+    readIntBinary(flags, ctx.in);
+
+    bool use_nulls = flags & 1;
+
+    std::vector<ActionsDAGPtr> dag_ptrs;
+    {
+        UInt64 num_dags;
+        readVarUInt(num_dags, ctx.in);
+
+        if (num_dags != 3)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical deserialization expect 3 DAGs, got {}", num_dags);
+
+        dag_ptrs.reserve(num_dags);
+        for (size_t i = 0; i < num_dags; ++i)
+            dag_ptrs.emplace_back(std::make_unique<ActionsDAG>(ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context)));
+    }
+
+    JoinExpressionActions expression_actions(std::move(dag_ptrs[0]), std::move(dag_ptrs[1]), std::move(dag_ptrs[2]));
+
+    JoinActionRef::ActionsDAGRawPtrs dags = {
+        expression_actions.left_pre_join_actions.get(),
+        expression_actions.right_pre_join_actions.get(),
+        expression_actions.post_join_actions.get()};
+
+    auto join_info = JoinInfo::deserialize(ctx.in, dags);
+
+    Names required_output_columns;
+    {
+        UInt64 num_output_columns;
+        readVarUInt(num_output_columns, ctx.in);
+
+        required_output_columns.resize(num_output_columns);
+        for (auto & name : required_output_columns)
+            readStringBinary(name, ctx.in);
+    }
+
+    SortingStep::Settings sort_settings(ctx.settings);
+    JoinSettings join_settings(ctx.settings);
+
+    return std::make_unique<JoinStepLogical>(
+        ctx.input_headers.front(), ctx.input_headers.back(),
+        std::move(join_info),
+        std::move(expression_actions),
+        std::move(required_output_columns),
+        use_nulls,
+        std::move(join_settings),
+        std::move(sort_settings));
+}
+
+void registerJoinStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("Join", JoinStepLogical::deserialize);
 }
 
 }

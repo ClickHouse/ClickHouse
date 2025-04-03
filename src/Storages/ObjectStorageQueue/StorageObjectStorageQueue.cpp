@@ -11,7 +11,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/formatAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
@@ -265,9 +264,18 @@ void StorageObjectStorageQueue::startup()
     /// Register the metadata in startup(), unregister in shutdown.
     /// (If startup is never called, shutdown also won't be called.)
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(temp_metadata), getStorageID());
-
-    if (task)
-        task->activateAndSchedule();
+    try
+    {
+        files_metadata->startup();
+        if (task)
+            task->activateAndSchedule();
+    }
+    catch (...)
+    {
+        files_metadata->shutdown();
+        throw;
+    }
+    startup_finished = true;
 }
 
 void StorageObjectStorageQueue::shutdown(bool is_drop)
@@ -628,7 +636,7 @@ bool StorageObjectStorageQueue::streamToViews()
         }
         catch (...)
         {
-            commit(/* insert_succeeded */false, rows, sources, getCurrentExceptionMessage(true));
+            commit(/* insert_succeeded */false, rows, sources, getCurrentExceptionMessage(true), getCurrentExceptionCode());
             file_iterator->releaseFinishedBuckets();
             throw;
         }
@@ -646,14 +654,15 @@ void StorageObjectStorageQueue::commit(
     bool insert_succeeded,
     size_t inserted_rows,
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-    const std::string & exception_message) const
+    const std::string & exception_message,
+    int error_code) const
 {
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedRows, inserted_rows);
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
     for (auto & source : sources)
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
+        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message, error_code);
 
     if (requests.empty())
     {
@@ -743,7 +752,7 @@ void checkNormalizedSetting(const std::string & name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting is not normalized: {}", name);
 }
 
-static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
+bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
 {
     checkNormalizedSetting(name);
 
@@ -960,7 +969,7 @@ void StorageObjectStorageQueue::alter(
             changed_settings.push_back(setting);
         }
 
-        LOG_TEST(log, "New settings: {}", serializeAST(*new_metadata.settings_changes));
+        LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
 
         /// Alter settings which are stored in keeper.
         files_metadata->alterSettings(changed_settings, local_context);
@@ -1002,6 +1011,13 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
+const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetadata() const
+{
+    if (!files_metadata)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Files metadata is empty");
+    return files_metadata->getTableMetadata();
+}
+
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
@@ -1038,6 +1054,10 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
+    /// If startup() for a table was not called, just use the default queue settings
+    if (!startup_finished)
+        return settings;
+
     const auto & table_metadata = getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;

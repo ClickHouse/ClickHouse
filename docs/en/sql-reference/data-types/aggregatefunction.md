@@ -1,7 +1,10 @@
 ---
-slug: /sql-reference/data-types/aggregatefunction
+description: 'Documentation for the AggregateFunction data type in ClickHouse, which
+  stores intermediate states of aggregate functions'
+sidebar_label: 'AggregateFunction'
 sidebar_position: 46
-sidebar_label: AggregateFunction
+slug: /sql-reference/data-types/aggregatefunction
+title: 'AggregateFunction'
 ---
 
 # AggregateFunction
@@ -20,7 +23,7 @@ To get the final result of aggregation in the future, you must use the same aggr
 
 **Example**
 
-``` sql
+```sql
 CREATE TABLE t
 (
     column1 AggregateFunction(uniq, UInt64),
@@ -39,7 +42,7 @@ To insert data, use `INSERT SELECT` with aggregate `-State`- functions.
 
 **Function examples**
 
-``` sql
+```sql
 uniqState(UserID)
 quantilesState(0.5, 0.9)(SendTiming)
 ```
@@ -56,7 +59,7 @@ An aggregate function with `-Merge` suffix takes a set of states, combines them,
 
 For example, the following two queries return the same result:
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM table
 
 SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)

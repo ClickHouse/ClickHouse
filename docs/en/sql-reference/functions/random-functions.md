@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/random-functions
+description: 'Documentation for Functions for Generating Random Numbers'
+sidebar_label: 'Random Numbers'
 sidebar_position: 145
-sidebar_label: Random Numbers
+slug: /sql-reference/functions/random-functions
+title: 'Functions for Generating Random Numbers'
 ---
 
 # Functions for Generating Random Numbers
@@ -194,13 +196,13 @@ Returns a random Float64 drawn from a [normal distribution](https://en.wikipedia
 **Syntax**
 
 ```sql
-randNormal(mean, variance)
+randNormal(mean, stddev)
 ```
 
 **Arguments**
 
 - `mean` - `Float64` - mean value of distribution,
-- `variance` - `Float64` - [variance](https://en.wikipedia.org/wiki/Variance) of the distribution.
+- `stddev` - `Float64` - [standard deviation](https://en.wikipedia.org/wiki/Standard_deviation) of the distribution.
 
 **Returned value**
 
@@ -231,13 +233,13 @@ Returns a random Float64 drawn from a [log-normal distribution](https://en.wikip
 **Syntax**
 
 ```sql
-randLogNormal(mean, variance)
+randLogNormal(mean, stddev)
 ```
 
 **Arguments**
 
 - `mean` - `Float64` - mean value of distribution,
-- `variance` - `Float64` - [variance](https://en.wikipedia.org/wiki/Variance) of the distribution.
+- `stddev` - `Float64` - [standard deviation](https://en.wikipedia.org/wiki/Standard_deviation) of the distribution.
 
 **Returned value**
 
