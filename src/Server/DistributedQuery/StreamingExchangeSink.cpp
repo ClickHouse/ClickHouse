@@ -1,12 +1,11 @@
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Formats/NativeWriter.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
-
-/// TODO: use separate protocol for streaming exchange
-#include <Core/Protocol.h>
+#include <sys/epoll.h>
 
 namespace DB
 {
@@ -41,8 +40,8 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
     LOG_TEST(log, "Writing chunk with {} rows to exchange stream {}", chunk.getNumRows(), stream_name);
 
-    /// TODO: write packet type
-    writeVarUInt(Protocol::Client::Data, *out); /// TODO: use separate protocol for streaming exchange
+    /// Write packet type
+    writeVarUInt(StreamingExchangeProtocol::PacketType::Data, *out);
 
     writeVarUInt(chunk.getNumRows(), *out);
 
@@ -61,14 +60,11 @@ void StreamingExchangeSink::consume(Chunk chunk)
     /// TODO: what is the proper way to finish a packet?
     out->finishChunk();
     out->next();
-
-    /// TODO: finalize out buffer when last (empty) chunk is consumed?
 }
 
 void StreamingExchangeSink::onFinish()
 {
     /// Send empty chunk to indicate end of data
-    /// TODO: is it correct?
     consume({});
 
     out->finalize();
@@ -84,13 +80,14 @@ void StreamingExchangeSink::connect()
     socket = std::make_unique<Poco::Net::StreamSocket>();
     Poco::Net::SocketAddress address(host, port);
     socket->connect(address);
+    socket->setSendBufferSize(1 * 1024 * 1024);
     in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
     out = std::make_shared<WriteBufferFromPocoSocketChunked>(*socket);
 }
 
 void StreamingExchangeSink::sendHello()
 {
-    writeVarUInt(Protocol::Client::Hello, *out); /// TODO: use separate protocol for streaming exchange
+    writeVarUInt(StreamingExchangeProtocol::PacketType::SinkHello, *out);
     writeStringBinary(query_id, *out);
     writeStringBinary(stream_name, *out);
     out->next();
@@ -99,8 +96,8 @@ void StreamingExchangeSink::sendHello()
 void StreamingExchangeSink::receiveHello()
 {
     UInt64 packet_type = 0;
-    readVarUInt(packet_type, *in); /// TODO: use separate protocol for streaming exchange
-    if (packet_type != Protocol::Server::Hello)
+    readVarUInt(packet_type, *in);
+    if (packet_type != StreamingExchangeProtocol::PacketType::SourceHello)
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", packet_type);
 }
 

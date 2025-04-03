@@ -1,10 +1,10 @@
 #include <Server/DistributedQuery/ExchangeServer.h>
 #include <Server/DistributedQuery/ExchangeConnections.h>
-#include <Common/Logger.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/ReadHelpers.h>
-#include "base/types.h"
 
 namespace DB
 {
@@ -94,7 +94,7 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
 
     UInt64 packet_type = 0;
     readVarUInt(packet_type, in);
-    if (packet_type != Protocol::Client::Hello)
+    if (packet_type != StreamingExchangeProtocol::PacketType::SinkHello)
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", packet_type);
 
     String query_id;
@@ -106,7 +106,7 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
 
     /// Send Hello back to finish handshake
     WriteBufferFromPocoSocketChunked out(socket);
-    writeVarUInt(Protocol::Client::Hello, out);
+    writeVarUInt(StreamingExchangeProtocol::PacketType::SourceHello, out);
     out.next();
     out.cancel();
 

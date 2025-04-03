@@ -1,8 +1,8 @@
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
-#include <Core/Protocol.h>
 #include <IO/ReadHelpers.h>
 #include <Common/logger_useful.h>
 #include "base/types.h"
@@ -55,8 +55,8 @@ Chunk StreamingExchangeSource::generate()
     LOG_TEST(log, "Reading from exchange stream {}", stream_name);
 
     UInt64 packet_type = 0;
-    readVarUInt(packet_type, in); /// TODO: use separate protocol for streaming exchange
-    if (packet_type != Protocol::Client::Data)
+    readVarUInt(packet_type, in);
+    if (packet_type != StreamingExchangeProtocol::PacketType::Data)
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", packet_type);
 
     UInt64 num_rows = 0;
