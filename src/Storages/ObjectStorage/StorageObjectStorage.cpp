@@ -496,7 +496,7 @@ SinkToStoragePtr StorageObjectStorage::write(
             local_context,
             configuration->format,
             configuration->partition_strategy,
-            configuration->write_partition_columns_into_files);
+            configuration->hive_partition_strategy_write_partition_columns_into_files);
         return std::make_shared<PartitionedStorageObjectStorageSink>(
             partition_strategy, object_storage, configuration, format_settings, sample_block, local_context);
     }

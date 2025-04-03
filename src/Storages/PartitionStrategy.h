@@ -59,7 +59,7 @@ struct PartitionStrategyFactory
         ContextPtr context,
         const std::string & file_format,
         const std::string & partition_strategy = "",
-        bool write_partition_columns_into_files = false);
+        bool hive_partition_strategy_write_partition_columns_into_files = false);
 };
 
 struct StringifiedPartitionStrategy : PartitionStrategy
@@ -77,7 +77,7 @@ struct HiveStylePartitionStrategy : PartitionStrategy
         const Block & sample_block_,
         ContextPtr context_,
         const std::string & file_format_,
-        bool write_partition_columns_into_files_);
+        bool hive_partition_strategy_write_partition_columns_into_files_);
 
     PartitionExpressionActionsAndColumnName getExpression() override;
     std::string getPath(const std::string & prefix, const std::string & partition_key) override;
@@ -86,7 +86,7 @@ struct HiveStylePartitionStrategy : PartitionStrategy
 
 private:
     std::string file_format;
-    bool write_partition_columns_into_files;
+    bool hive_partition_strategy_write_partition_columns_into_files;
     Names partition_expression_required_columns;
     std::unordered_set<std::string> partition_expression_required_columns_set;
     PartitionExpressionActionsAndColumnName actions_with_column_name;

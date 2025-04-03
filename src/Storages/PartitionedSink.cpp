@@ -59,9 +59,9 @@ void PartitionedSink::consume(Chunk & input_chunk)
     const auto * partition_by_result_column = block_with_partition_by_expr.getByName(partition_by_column_name).column.get();
 
     /*
-     * `write_partition_columns_into_files`
+     * `hive_partition_strategy_write_partition_columns_into_files`
      */
-    const auto chunk = getPartitionStrategy()->getChunkWithoutPartitionColumnsIfNeeded(input_chunk);
+    const auto chunk = partition_strategy->getChunkWithoutPartitionColumnsIfNeeded(input_chunk);
     const auto & columns_to_consume = chunk.getColumns();
 
     size_t chunk_rows = chunk.getNumRows();

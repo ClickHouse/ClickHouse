@@ -98,7 +98,7 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partitio
                                                                  ContextPtr context,
                                                                  const std::string & file_format,
                                                                  const std::string & partition_strategy,
-                                                                 bool write_partition_columns_into_files)
+                                                                 bool hive_partition_strategy_write_partition_columns_into_files)
 {
     if (partition_strategy == "hive")
     {
@@ -112,7 +112,7 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partitio
             sample_block,
             context,
             file_format,
-            write_partition_columns_into_files);
+            hive_partition_strategy_write_partition_columns_into_files);
     }
 
     return std::make_shared<StringifiedPartitionStrategy>(partition_by, sample_block, context);
@@ -148,10 +148,10 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     const Block & sample_block_,
     ContextPtr context_,
     const std::string & file_format_,
-    bool write_partition_columns_into_files_)
+    bool hive_partition_strategy_write_partition_columns_into_files_)
     : PartitionStrategy(partition_by_, sample_block_, context_),
     file_format(file_format_),
-    write_partition_columns_into_files(write_partition_columns_into_files_),
+    hive_partition_strategy_write_partition_columns_into_files(hive_partition_strategy_write_partition_columns_into_files_),
     partition_expression_required_columns(extractPartitionRequiredColumns(partition_by, sample_block, context)),
     partition_expression_required_columns_set(partition_expression_required_columns.begin(), partition_expression_required_columns.end())
 {
@@ -189,7 +189,7 @@ Chunk HiveStylePartitionStrategy::getChunkWithoutPartitionColumnsIfNeeded(const 
 {
     Chunk result;
 
-    if (write_partition_columns_into_files)
+    if (hive_partition_strategy_write_partition_columns_into_files)
     {
         for (const auto & column : chunk.getColumns())
         {
@@ -214,7 +214,7 @@ Chunk HiveStylePartitionStrategy::getChunkWithoutPartitionColumnsIfNeeded(const 
 
 Block HiveStylePartitionStrategy::getBlockWithoutPartitionColumnsIfNeeded()
 {
-    if (write_partition_columns_into_files)
+    if (hive_partition_strategy_write_partition_columns_into_files)
     {
         return sample_block;
     }

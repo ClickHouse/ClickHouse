@@ -132,7 +132,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "expiration_window_seconds",
     "no_sign_request",
     "partition_strategy",
-    "write_partition_columns_into_files"
+    "hive_partition_strategy_write_partition_columns_into_files"
 };
 
 String StorageS3Configuration::getDataSourceDescription() const
@@ -231,7 +231,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
         url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
 
     partition_strategy = collection.getOrDefault<String>("partition_strategy", "auto");
-    write_partition_columns_into_files = collection.getOrDefault<bool>("write_partition_columns_into_files", false);
+    hive_partition_strategy_write_partition_columns_into_files = collection.getOrDefault<bool>("hive_partition_strategy_write_partition_columns_into_files", false);
 
     auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
     auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
@@ -254,7 +254,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     partition_strategy = extractNamedArgumentAndRemoveFromList<std::string>(args, "partition_strategy").value_or("auto");
-    write_partition_columns_into_files = extractNamedArgumentAndRemoveFromList<bool>(args, "write_partition_columns_into_files").value_or(false);
+    hive_partition_strategy_write_partition_columns_into_files = extractNamedArgumentAndRemoveFromList<bool>(args, "hive_partition_strategy_write_partition_columns_into_files").value_or(false);
 
     size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
 
