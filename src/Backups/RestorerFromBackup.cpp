@@ -53,6 +53,8 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int CANNOT_RESTORE_DATABASE;
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_IS_READ_ONLY;
+    extern const int ABORTED;
 }
 
 
@@ -1128,8 +1130,30 @@ void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_
     }
     catch (Exception & e)
     {
-        e.addMessage("While restoring data of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
-        throw;
+        /// Temporary hack to work around a race condition:
+        ///  1. RESTORE creates a refreshable materialized view and its target table.
+        ///  2. The view does a refresh and exchanges+drops the target table.
+        ///  3. RESTORE tries to restore target table's data from backup and fails because the table
+        ///     is dropped.
+        ///
+        /// (This can also happen without refreshable materialized view if the user just drops a
+        ///  table during RESTORE.)
+        ///
+        /// For refreshable MV, this doesn't fully solve the problem. The initial refresh that
+        /// replaces the table usually happens early enough that the *source* table (from which
+        /// the refresh query reads) is still empty, not restored from backup yet. So the
+        /// refresh target table ends up empty until the next scheduled refresh.
+        /// TODO: Delete this when a proper fix lands: https://github.com/ClickHouse/ClickHouse/pull/77893
+        if ((e.code() == ErrorCodes::TABLE_IS_READ_ONLY || e.code() == ErrorCodes::ABORTED) &&
+            storage->getStorageID().table_name.starts_with(".tmp"))
+        {
+            LOG_INFO(log, "Table was dropped during RESTORE, presumably by refreshable materialized view.");
+        }
+        else
+        {
+            e.addMessage("While restoring data of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
+            throw;
+        }
     }
 }
 

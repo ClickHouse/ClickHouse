@@ -295,7 +295,6 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
-    extern const int TABLE_IS_READ_ONLY;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -6118,40 +6117,10 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         reservation->update(reservation->getSize() - file_size);
     }
 
-    try
-    {
-        if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
-            restored_parts_holder->addPart(part);
-        else
-            restored_parts_holder->increaseNumBrokenParts();
-    }
-    catch (Exception & e)
-    {
-        /// Temporary hack to work around a race condition:
-        ///  1. RESTORE creates a refreshable materialized view and its target table.
-        ///  2. The view does a refresh and exchanges+drops the target table.
-        ///  3. RESTORE tries to restore target table's data from backup and fails because the table
-        ///     is dropped.
-        ///
-        /// (This can also happen without refreshable materialized view if the user just drops a
-        ///  table during RESTORE, so it may make sense to always ignore this error. But that
-        ///  feels sketchy as it may hide a bug.)
-        ///
-        /// For refreshable MV, this doesn't fully solve the problem. The initial refresh that
-        /// replaces the table usually happens early enough that the *source* table (from which
-        /// the refresh query reads) is still empty, not restored from backup yet. So the
-        /// refresh target table ends up empty until the next scheduled refresh.
-        /// TODO: Delete this when a proper fix lands: https://github.com/ClickHouse/ClickHouse/pull/77893
-        if ((e.code() == ErrorCodes::TABLE_IS_READ_ONLY || e.code() == ErrorCodes::ABORTED) &&
-            getStorageID().table_name.starts_with(".tmp"))
-        {
-            LOG_INFO(log, "Table was dropped during RESTORE, presumably by refreshable materialized view.");
-        }
-        else
-        {
-            throw;
-        }
-    }
+    if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
+        restored_parts_holder->addPart(part);
+    else
+        restored_parts_holder->increaseNumBrokenParts();
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const
