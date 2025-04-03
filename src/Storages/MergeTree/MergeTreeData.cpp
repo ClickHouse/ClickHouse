@@ -1200,9 +1200,9 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
 
     if (mode == MergingParams::Summing)
     {
-        auto columns_to_sum_copy = columns_to_sum;
-        std::sort(columns_to_sum_copy.begin(), columns_to_sum_copy.end());
-        if (const auto it = std::adjacent_find(columns_to_sum_copy.begin(), columns_to_sum_copy.end()); it != columns_to_sum_copy.end())
+        auto columns_to_sum_sorted = columns_to_sum;
+        std::sort(columns_to_sum_sorted.begin(), columns_to_sum_sorted.end());
+        if (const auto it = std::adjacent_find(columns_to_sum_sorted.begin(), columns_to_sum_sorted.end()); it != columns_to_sum_sorted.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} is listed multiple times in the list of columns to sum", *it);
 
         /// If columns_to_sum are set, then check that such columns exist.
@@ -1225,9 +1225,10 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
         if (!allow_summing_columns_in_partition_or_order_key && metadata.isPartitionKeyDefined())
         {
             auto partition_key_columns = metadata.getPartitionKey().expression->getRequiredColumns();
+            std::sort(partition_key_columns.begin(), partition_key_columns.end());
 
             Names names_intersection;
-            std::set_intersection(columns_to_sum.begin(), columns_to_sum.end(),
+            std::set_intersection(columns_to_sum_sorted.begin(), columns_to_sum_sorted.end(),
                                   partition_key_columns.begin(), partition_key_columns.end(),
                                   std::back_inserter(names_intersection));
 
@@ -1240,9 +1241,10 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
         if (!allow_summing_columns_in_partition_or_order_key && metadata.isSortingKeyDefined())
         {
             auto sorting_key_columns = metadata.getSortingKey().expression->getRequiredColumns();
+            std::sort(sorting_key_columns.begin(), sorting_key_columns.end());
 
             Names names_intersection;
-            std::set_intersection(columns_to_sum.begin(), columns_to_sum.end(),
+            std::set_intersection(columns_to_sum_sorted.begin(), columns_to_sum_sorted.end(),
                                   sorting_key_columns.begin(), sorting_key_columns.end(),
                                   std::back_inserter(names_intersection));
 
