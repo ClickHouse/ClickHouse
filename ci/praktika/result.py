@@ -193,10 +193,9 @@ class Result(MetaClasses.Serializable):
         self.dump()
         return self
 
-    def add_job_summary_to_info(
-        self, with_local_run_command=False, with_test_in_run_command=False
-    ):
+    def _add_job_summary_to_info(self):
         subresult_with_tests = self
+        with_test_in_run_command = False
 
         # Use a specific sub-result if configured
         job_config = _Environment.get().JOB_CONFIG or {}
@@ -205,6 +204,7 @@ class Result(MetaClasses.Serializable):
             for r in self.results:
                 if r.name == result_name_for_cidb:
                     subresult_with_tests = r
+                    with_test_in_run_command = True
                     if subresult_with_tests.info:
                         self.set_info(subresult_with_tests.info)
                     break
@@ -218,8 +218,8 @@ class Result(MetaClasses.Serializable):
 
         if failed:
             if len(failed) < 10:
-                failed_tcs = "\n".join(failed)
-                self.set_info(f"Failed:\n{failed_tcs}")
+                failed_tcs = ", ".join(failed)
+                self.set_info(f"Failed: {failed_tcs}")
 
         # Suggest local command to rerun
         if with_local_run_command:
@@ -454,7 +454,9 @@ class Result(MetaClasses.Serializable):
             files=[log_file] if with_log else None,
         )
 
-    def complete_job(self):
+    def complete_job(self, with_job_summary_in_info=True):
+        if with_job_summary_in_info:
+            self._add_job_summary_to_info()
         self.dump()
         if not self.is_ok():
             print("ERROR: Job Failed")
