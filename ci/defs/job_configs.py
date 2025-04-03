@@ -55,11 +55,15 @@ class JobConfigs:
                 "./rust",
             ],
         ),
+        result_name_for_cidb="Tests",
     )
     tidy_build_jobs = Job.Config(
         name=JobNames.BUILD,
-        runs_on=["..."],
-        command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
+        runs_on=["...from params..."],
+        requires=[],
+        command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
+        run_in_docker="clickhouse/binary-builder+--network=host",
+        timeout=3600 * 4,
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./src",
@@ -69,10 +73,8 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./docker/packager",
                 "./rust",
-                "./tests/ci/build_check.py",
-                "./tests/performance",
+                "./ci/jobs/build_clickhouse.py",
             ],
             with_git_submodules=True,
         ),
@@ -88,7 +90,10 @@ class JobConfigs:
     build_jobs = Job.Config(
         name=JobNames.BUILD,
         runs_on=["...from params..."],
-        command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
+        requires=[],
+        command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
+        run_in_docker="clickhouse/binary-builder+--network=host",
+        timeout=3600 * 2,
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./src",
@@ -98,14 +103,12 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./docker/packager",
                 "./rust",
-                "./tests/ci/build_check.py",
-                "./tests/performance",
-                "./ci/docker/binary-builder",
+                "./ci/jobs/build_clickhouse.py",
             ],
             with_git_submodules=True,
         ),
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/build_post_hook.py"],
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,
@@ -128,7 +131,6 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.RPM_AMD_RELEASE,
                 ArtifactNames.TGZ_AMD_RELEASE,
-                ArtifactNames.PERFORMANCE_PACKAGE_AMD,
             ],
             [
                 ArtifactNames.CH_AMD_ASAN,
@@ -152,14 +154,12 @@ class JobConfigs:
             ],
             [
                 ArtifactNames.CH_AMD_BINARY,
-                ArtifactNames.UNITTEST_AMD_BINARY,
             ],
             [
                 ArtifactNames.CH_ARM_RELEASE,
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
-                ArtifactNames.PERFORMANCE_PACKAGE_ARM,
             ],
             [
                 ArtifactNames.CH_ARM_ASAN,
@@ -181,7 +181,10 @@ class JobConfigs:
     special_build_jobs = Job.Config(
         name=JobNames.BUILD,
         runs_on=["...from params..."],
-        command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
+        requires=[],
+        command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
+        run_in_docker="clickhouse/binary-builder+--network=host",
+        timeout=3600 * 2,
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./src",
@@ -191,14 +194,12 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./docker/packager",
                 "./rust",
-                "./tests/ci/build_check.py",
-                "./tests/performance",
-                "./ci/docker/binary-builder",
+                "./ci/jobs/build_clickhouse.py",
             ],
             with_git_submodules=True,
         ),
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/build_post_hook.py"],
     ).parametrize(
         parameter=[
             BuildTypes.AMD_COVERAGE,
@@ -464,31 +465,29 @@ class JobConfigs:
     unittest_jobs = Job.Config(
         name=JobNames.UNITTEST,
         runs_on=["..params.."],
-        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command=f"python3 ./ci/jobs/unit_tests_job.py",
+        run_in_docker="clickhouse/fasttest",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./tests/ci/unit_tests_check.py", "./docker"],
+            include_paths=["./ci/jobs/unit_tests_job.py"],
         ),
     ).parametrize(
         parameter=[
-            "binary",
             "asan",
             "tsan",
             "msan",
             "ubsan",
         ],
         runs_on=[
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
         ],
         requires=[
-            ["Build (amd_binary)"],
-            ["Build (amd_asan)"],
-            ["Build (amd_tsan)"],
-            ["Build (amd_msan)"],
-            ["Build (amd_ubsan)"],
+            [ArtifactNames.UNITTEST_AMD_ASAN],
+            [ArtifactNames.UNITTEST_AMD_TSAN],
+            [ArtifactNames.UNITTEST_AMD_MSAN],
+            [ArtifactNames.UNITTEST_AMD_UBSAN],
         ],
     )
     stress_test_jobs = Job.Config(
@@ -696,7 +695,6 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/ci/compatibility_check.py",
-                "./docker/test/compatibility",
             ],
         ),
     ).parametrize(
@@ -751,80 +749,91 @@ class JobConfigs:
             ["Build (amd_ubsan)"],
         ],
     )
-    performance_comparison_amd_jobs = Job.Config(
+    performance_comparison_with_prev_release_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
-        runs_on=["..params.."],
-        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        runs_on=["#from param"],
+        command="python3 ./ci/jobs/performance_tests.py --test-options {PARAMETER}",
+        # TODO: switch to stateless-test image
+        run_in_docker="clickhouse/performance-comparison",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./tests/ci/performance_comparison_check.py",
                 "./tests/performance/",
+                "./ci/jobs/scripts/perf/",
+                "./ci/jobs/performance_tests.py",
             ],
         ),
-        allow_merge_on_failure=True,
-        enable_commit_status=True,
+        timeout=2 * 3600,
     ).parametrize(
         parameter=[
-            "release, 1/3",
-            "release, 2/3",
-            "release, 3/3",
+            "amd_release,prev_release,1/3",
+            "amd_release,prev_release,2/3",
+            "amd_release,prev_release,3/3",
         ],
-        runs_on=[
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-        ],
-        requires=[
-            ["Build (amd_release)"],
-            ["Build (amd_release)"],
-            ["Build (amd_release)"],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(3)],
+        requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(3)],
+        provides=[
+            [ArtifactNames.PERF_REPORTS_AMD_1_WITH_RELEASE],
+            [ArtifactNames.PERF_REPORTS_AMD_2_WITH_RELEASE],
+            [ArtifactNames.PERF_REPORTS_AMD_3_WITH_RELEASE],
         ],
     )
-    performance_comparison_arm_jobs = Job.Config(
+    performance_comparison_with_master_head_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
-        runs_on=["..params.."],
-        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        runs_on=["#from param"],
+        command="python3 ./ci/jobs/performance_tests.py --test-options {PARAMETER}",
+        # TODO: switch to stateless-test image
+        run_in_docker="clickhouse/performance-comparison",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./tests/ci/performance_comparison_check.py",
                 "./tests/performance/",
+                "./ci/jobs/scripts/perf/",
+                "./ci/jobs/performance_tests.py",
             ],
         ),
-        allow_merge_on_failure=True,
+        timeout=2 * 3600,
+        result_name_for_cidb="Tests",
     ).parametrize(
         parameter=[
-            "aarch64, 1/3",
-            "aarch64, 2/3",
-            "aarch64, 3/3",
+            "amd_release,master_head,1/3",
+            "amd_release,master_head,2/3",
+            "amd_release,master_head,3/3",
+            "arm_release,master_head,1/3",
+            "arm_release,master_head,2/3",
+            "arm_release,master_head,3/3",
         ],
-        runs_on=[
-            RunnerLabels.FUNC_TESTER_ARM,
-            RunnerLabels.FUNC_TESTER_ARM,
-            RunnerLabels.FUNC_TESTER_ARM,
-        ],
-        requires=[
-            ["Build (arm_release)"],
-            ["Build (arm_release)"],
-            ["Build (arm_release)"],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(3)]
+        + [RunnerLabels.FUNC_TESTER_ARM for _ in range(3)],
+        requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(3)]
+        + [[ArtifactNames.CH_ARM_RELEASE] for _ in range(3)],
+        provides=[
+            [ArtifactNames.PERF_REPORTS_AMD_1],
+            [ArtifactNames.PERF_REPORTS_AMD_2],
+            [ArtifactNames.PERF_REPORTS_AMD_3],
+            [ArtifactNames.PERF_REPORTS_ARM_1],
+            [ArtifactNames.PERF_REPORTS_ARM_2],
+            [ArtifactNames.PERF_REPORTS_ARM_3],
         ],
     )
     clickbench_master_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
-        runs_on=["..params.."],
-        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        command="python3 ./ci/jobs/clickbench.py",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./tests/ci/clickbench.py", "./docker"],
+            include_paths=["./ci/jobs/clickbench.py", "./ci/jobs/scripts/clickbench/"],
         ),
-        allow_merge_on_failure=True,
+        run_in_docker="clickhouse/stateless-test+--shm-size=16g",
     ).parametrize(
         parameter=[
-            "release",
-            "aarch64",
+            BuildTypes.AMD_RELEASE,
+            BuildTypes.ARM_RELEASE,
         ],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD, RunnerLabels.FUNC_TESTER_ARM],
+        runs_on=[
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_ARM,
+        ],
         requires=[
-            ["Build (amd_release)"],
-            ["Build (arm_release)"],
+            [ArtifactNames.CH_AMD_RELEASE],
+            [ArtifactNames.CH_ARM_RELEASE],
         ],
     )
     docs_job = Job.Config(
@@ -889,12 +898,16 @@ class JobConfigs:
     )
     sqltest_master_job = Job.Config(
         name=JobNames.SQL_TEST,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command="python3 ./ci/jobs/sqltest_job.py",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./tests/ci/sqltest.py"],
+            include_paths=[
+                "./ci/jobs/sqltest_job.py",
+            ],
         ),
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-        requires=["Build (amd_release)"],
+        requires=[ArtifactNames.CH_ARM_RELEASE],
+        run_in_docker="clickhouse/stateless-test",
+        timeout=10800,
     )
     # TODO: run by labels Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX
     bugfix_validation = Job.Config(
