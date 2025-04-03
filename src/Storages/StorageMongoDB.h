@@ -16,7 +16,7 @@
 namespace DB
 {
 
-inline mongocxx::instance inst{};
+// inline mongocxx::instance inst{};
 
 struct MongoDBConfiguration
 {

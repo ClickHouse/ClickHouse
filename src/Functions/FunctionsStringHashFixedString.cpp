@@ -1,3 +1,4 @@
+#include <functional>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -126,13 +127,17 @@ struct SHA224Impl
         length = SHA224_DIGEST_LENGTH
     };
 
-    static void apply(EVP_MD_CTX_ptr & ctx, const char* begin, size_t size, unsigned char* out_char_data)
+    static void apply(EVP_MD_CTX_ptr & ctx_template, const char* begin, size_t size, unsigned char* out_char_data)
     {
+        if (!ctx_template)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No context provided");
+
+        EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
         if (!ctx)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
 
-        if (EVP_DigestInit_ex(ctx.get(), EVP_sha224(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha224) failed");
+        if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed");
 
         if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
@@ -329,10 +334,40 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
 #if USE_SSL
+        bool openssl_context_required = true;
+
+        std::function<const EVP_MD*()> evp_md_provider;
+        static const std::unordered_map<std::string_view, std::function<const EVP_MD*()>> evp_map = {
+            { MD4Impl::name,         [] { return EVP_md4(); } },
+            { MD5Impl::name,         [] { return EVP_md5(); } },
+            { SHA1Impl::name,        [] { return EVP_sha1(); } },
+            { SHA224Impl::name,      [] { return EVP_sha224(); } },
+            { SHA256Impl::name,      [] { return EVP_sha256(); } },
+            { SHA384Impl::name,      [] { return EVP_sha384(); } },
+            { SHA512Impl::name,      [] { return EVP_sha512(); } },
+            { SHA512Impl256::name,   [] { return EVP_sha512_256(); } },
+            { RIPEMD160Impl::name,   [] { return EVP_ripemd160(); } },
+        };
+        auto it = evp_map.find(name);
+        if (it != evp_map.end())
+        {
+            evp_md_provider = it->second;
+        }
+        else
+        {
+            openssl_context_required = false;
+        }
+
         EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
 
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
+        if (openssl_context_required)
+        {
+            if (!ctx)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
+
+            if (EVP_DigestInit_ex(ctx.get(), evp_md_provider(), nullptr) != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha224) failed");
+        }
 #else
         void * ctx = nullptr;
 #endif
