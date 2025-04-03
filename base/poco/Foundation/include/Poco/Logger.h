@@ -937,7 +937,7 @@ public:
 
 protected:
     Logger(const std::string & name, Channel * pChannel, int level);
-    ~Logger() override;
+    ~Logger();
 
     void log(const std::string & text, Message::Priority prio);
     void log(const std::string & text, Message::Priority prio, const char * file, int line);

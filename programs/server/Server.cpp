@@ -1457,7 +1457,7 @@ try
         {
             LOG_DEBUG(log, "Will remap executable in memory.");
             size_t size = remapExecutable();
-            DB::startQuillBackend();
+            DB::startQuillBackend(&config());
             LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
         }
 

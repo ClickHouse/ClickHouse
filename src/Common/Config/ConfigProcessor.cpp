@@ -67,7 +67,6 @@ bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 ConfigProcessor::ConfigProcessor(
     const std::string & path_,
     bool throw_on_bad_incl_,
-    bool /*log_to_console*/,
     const Substitutions & substitutions_)
     : path(path_)
     , throw_on_bad_incl(throw_on_bad_incl_)

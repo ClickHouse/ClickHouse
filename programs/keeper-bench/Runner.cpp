@@ -66,7 +66,7 @@ Runner::Runner(
         , info(std::make_shared<Stats>())
 {
 
-    DB::ConfigProcessor config_processor(config_path, true, false);
+    DB::ConfigProcessor config_processor(config_path, true);
     DB::ConfigurationPtr config = nullptr;
 
     if (!config_path.empty())

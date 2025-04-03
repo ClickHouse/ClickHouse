@@ -39,6 +39,7 @@ private:
     std::shared_ptr<DB::RotatingFileSink> error_log_file;
     std::shared_ptr<DB::ConsoleSink> console_sink;
 
+    bool initialized = false;
 
     Poco::AutoPtr<Poco::Channel> syslog_channel;
 

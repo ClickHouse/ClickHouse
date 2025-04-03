@@ -119,7 +119,7 @@ void BaseDaemon::reloadConfiguration()
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
     config_path = config().getString("config-file", getDefaultConfigFileName());
-    ConfigProcessor config_processor(config_path, false, true);
+    ConfigProcessor config_processor(config_path, false);
     ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
@@ -466,11 +466,14 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    LOG_INFO(getRootLogger(), fmt::runtime("Starting " + std::string{VERSION_FULL}
-        + " (revision: " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", git hash: " + std::string(GIT_HASH)
-        + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
-        + ", PID " + std::to_string(getpid())));
+    LOG_INFO(
+        getRootLogger(),
+        "Starting {} (revision: {}, git hash: {}, build id: {}), PID {}",
+        VERSION_FULL,
+        ClickHouseRevision::getVersionRevision(),
+        GIT_HASH,
+        build_id.empty() ? "<unknown>" : build_id,
+        getpid());
 }
 
 void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
@@ -626,7 +629,7 @@ void BaseDaemon::setupWatchdog()
         }
 
         buildLoggers(config(), /*cmd_name=*/"", /*allow_console_only=*/true);
-        DB::startQuillBackend();
+        DB::startQuillBackend(&config());
 
         auto root_logger = getRootLogger();
         LOG_INFO(root_logger, "Will watch for the process with pid {}", pid);

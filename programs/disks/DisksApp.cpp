@@ -476,7 +476,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         String config_path = config().getString("config-file", getDefaultConfigFileName());
         try
         {
-            ConfigProcessor config_processor(config_path, false, false);
+            ConfigProcessor config_processor(config_path, false);
             ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
             auto loaded_config = config_processor.loadConfig();
             config().add(loaded_config.configuration.duplicate(), false, false);
@@ -496,7 +496,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     config().keys(keys);
     initializeHistoryFile();
 
-    DB::startQuillBackend();
+    DB::startQuillBackend(&config());
     if (config().has("save-logs"))
     {
         auto log_level = config().getString("log-level", "trace");

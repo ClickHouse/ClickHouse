@@ -92,7 +92,7 @@ void TextLogSink::log(const ExtendedLogMessage & msg, [[maybe_unused]] bool send
         }
     #endif
     }
-        /// It is better to catch the errors here in order to avoid
+    /// It is better to catch the errors here in order to avoid
     /// breaking some functionality because of unexpected "File not
     /// found" (or similar) error.
     ///

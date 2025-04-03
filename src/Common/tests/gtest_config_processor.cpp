@@ -33,7 +33,7 @@ TEST(Common, ConfigProcessorManyElements)
 
     Poco::Timestamp load_start;
 
-    DB::ConfigProcessor processor(config_file->path(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+    DB::ConfigProcessor processor(config_file->path(), /* throw_on_bad_incl = */ false);
     bool has_zk_includes;
     DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
     DB::ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));

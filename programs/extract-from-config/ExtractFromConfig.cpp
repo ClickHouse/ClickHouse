@@ -92,7 +92,7 @@ static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::Configurati
 
 static DB::ConfigurationPtr get_configuration(const std::string & config_path, bool process_zk_includes)
 {
-    DB::ConfigProcessor processor(config_path, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+    DB::ConfigProcessor processor(config_path, /* throw_on_bad_incl = */ false);
     bool has_zk_includes;
     DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
     if (has_zk_includes && process_zk_includes)

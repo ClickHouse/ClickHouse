@@ -4,6 +4,7 @@
 #include <Columns/IColumn.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
+#include <Common/Logger.h>
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/SensitiveDataMasker.h>
@@ -18,6 +19,9 @@ namespace DB
 
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
+    if (!isLoggingEnabled())
+        return;
+
 #ifndef WITHOUT_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
@@ -34,6 +38,7 @@ void OwnSplitChannel::log(const Poco::Message & msg)
             tryLogSplit({msg, message_text}); // we will continue with the copy of original message with text modified
             return;
         }
+
     }
 
     tryLogSplit(msg);

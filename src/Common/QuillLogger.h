@@ -13,8 +13,15 @@
 #include <deque>
 #include <filesystem>
 #include <future>
+#include <optional>
+#include <string_view>
 
 using FreeThreadPool = ThreadPoolImpl<std::thread>;
+
+namespace Poco::Util
+{
+class AbstractConfiguration;
+}
 
 namespace DB
 {
@@ -55,7 +62,7 @@ struct QuillFrontendOptions
 using QuillLogger = quill::LoggerImpl<QuillFrontendOptions>;
 using QuillLoggerPtr = QuillLogger *;
 
-void startQuillBackend();
+void startQuillBackend(const Poco::Util::AbstractConfiguration * config = nullptr);
 
 quill::LogLevel parseQuillLogLevel(std::string_view level);
 
@@ -83,7 +90,7 @@ public:
 
     ~ConsoleSink() override = default;
 
-    QUILL_ATTRIBUTE_HOT void write_log(
+    void write_log(
         quill::MacroMetadata const * log_metadata,
         uint64_t log_timestamp,
         std::string_view thread_id,
@@ -98,8 +105,6 @@ public:
         std::string_view log_statement) override;
 
 private:
-    std::string_view getLogLevelColor(std::string_view log_level_short_code);
-
     bool enable_colors = false;
 };
 
@@ -118,9 +123,9 @@ class RotatingFileSink : public quill::FileSink
     using Base = quill::FileSink;
 
 public:
-    RotatingFileSink(const std::filesystem::path & filename, RotatingSinkConfiguration config_);
+    RotatingFileSink(const std::filesystem::path & filename, const RotatingSinkConfiguration & config_);
 
-    QUILL_ATTRIBUTE_HOT void write_log(
+    void write_log(
         quill::MacroMetadata const * log_metadata,
         uint64_t log_timestamp,
         std::string_view thread_id,
@@ -134,7 +139,7 @@ public:
         std::string_view log_message,
         std::string_view log_statement) override;
 
-    QUILL_ATTRIBUTE_HOT void flush_sink() override;
+    void flush_sink() override;
 
     void closeFile();
 
@@ -142,10 +147,6 @@ private:
     void recoverFiles();
 
     void rotateFiles();
-
-    static std::filesystem::path appendIndexToFilename(const std::filesystem::path & filename, size_t index);
-
-    static std::filesystem::path getFilename(std::filesystem::path base_filename, size_t index);
 
     struct FileInfo
     {

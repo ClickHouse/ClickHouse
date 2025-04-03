@@ -669,7 +669,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         {
             fmt::print("Config file {} already exists, will keep it and extract path info from it.\n", main_config_file.string());
 
-            ConfigProcessor processor(main_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+            ConfigProcessor processor(main_config_file.string(), /* throw_on_bad_incl = */ false);
             ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
 
             if (configuration->has("path"))
@@ -706,7 +706,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             fmt::print("Users config file {} already exists, will keep it and extract users info from it.\n", users_config_file.string());
 
             /// Check if password for the default user already specified.
-            ConfigProcessor processor(users_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+            ConfigProcessor processor(users_config_file.string(), /* throw_on_bad_incl = */ false);
             ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
 
             if (!configuration->getString("users.default.password", "").empty()
@@ -1046,7 +1046,7 @@ namespace
             fs::path log_path;
 
             {
-                ConfigProcessor processor(config.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+                ConfigProcessor processor(config.string(), /* throw_on_bad_incl = */ false);
                 ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
 
                 if (configuration->has("logger.log"))

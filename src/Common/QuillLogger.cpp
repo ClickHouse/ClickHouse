@@ -1,9 +1,9 @@
-#include "Common/LoggingFormatStringHelpers.h"
 #include <Common/QuillLogger.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <quill/core/Common.h>
 #include <quill/Backend.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #define POCO_UNBUNDLED_ZLIB 1
 #include <Poco/DeflatingStream.h>
@@ -34,20 +34,79 @@ extern const Metric LogCompressionScheduledThreads;
 namespace DB
 {
 
+namespace
+{
+
+std::string_view getLogLevelColor(std::string_view log_level_short_code)
+{
+    if (log_level_short_code == "C")
+        return "\033[1;41m";
+
+    if (log_level_short_code == "E")
+        return "\033[1;31m";
+
+    if (log_level_short_code == "W")
+        return "\033[0;31m";
+
+    if (log_level_short_code == "I")
+        return "\033[1m";
+
+    if (log_level_short_code == "D")
+        return "";
+
+    if (log_level_short_code == "T1")
+        return "\033[2m";
+
+    return "";
+}
+
+std::filesystem::path appendIndexToFilename(const std::filesystem::path & filename, size_t index)
+{
+    if (index == 0)
+        return filename;
+
+    const auto stem = (filename.parent_path() / filename.stem()).string();
+    const auto ext = filename.extension().string();
+    return std::filesystem::path{stem + "." + std::to_string(index - 1) + ext};
+}
+
+std::filesystem::path getFilename(std::filesystem::path base_filename, size_t index)
+{
+    if (index > 0)
+        return appendIndexToFilename(base_filename, index);
+    return base_filename;
+}
+
+
+template <typename T>
+T getConfig(const Poco::Util::AbstractConfiguration * config, const std::string & config_name, const T & default_value)
+{
+    if (!config)
+        return default_value;
+
+    static_assert(std::is_unsigned<T>(), "Unsupported data type");
+    return config->getUInt64(config_name, default_value);
+};
+
+}
+
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
-void startQuillBackend()
+void startQuillBackend(const Poco::Util::AbstractConfiguration * config)
 {
     quill::BackendOptions backend_options;
     backend_options.error_notifier = [](const std::string & /* error_message */) {};
-    backend_options.transit_events_hard_limit = 128_KiB;
-    backend_options.transit_events_soft_limit = 4_KiB;
-    backend_options.transit_event_buffer_initial_capacity = 128;
-    backend_options.transit_event_decay_period = std::chrono::seconds{5};
+
+    backend_options.transit_events_hard_limit = getConfig<uint64_t>(config, "logger.transit_events_hard_limit", 128 * 1024);
+    backend_options.transit_events_soft_limit = getConfig<uint64_t>(config, "logger.transit_events_soft_limit", 4 * 1024);
+    backend_options.transit_event_buffer_initial_capacity
+        = getConfig<uint64_t>(config, "logger.transit_event_buffer_initial_capacity", 128);
+    backend_options.transit_event_decay_period
+        = std::chrono::milliseconds{getConfig<uint64_t>(config, "logger.transit_event_decay_period_milliseconds", 5000)};
     quill::Backend::start(backend_options);
 }
 
@@ -240,29 +299,6 @@ void ConsoleSink::write_log(
         colored_log);
 }
 
-std::string_view ConsoleSink::getLogLevelColor(std::string_view log_level_short_code)
-{
-    if (log_level_short_code == "C")
-        return "\033[1;41m";
-
-    if (log_level_short_code == "E")
-        return "\033[1;31m";
-
-    if (log_level_short_code == "W")
-        return "\033[0;31m";
-
-    if (log_level_short_code == "I")
-        return "\033[1m";
-
-    if (log_level_short_code == "D")
-        return "";
-
-    if (log_level_short_code == "T1")
-        return "\033[2m";
-
-    return "";
-}
-
 namespace
 {
 bool renameFile(const std::filesystem::path & previous_file, const std::filesystem::path & new_file) noexcept
@@ -307,7 +343,7 @@ bool compressLog(const std::string & path, const std::string & compressed_path)
 }
 
 }
-RotatingFileSink::RotatingFileSink(const std::filesystem::path & filename, RotatingSinkConfiguration config_)
+RotatingFileSink::RotatingFileSink(const std::filesystem::path & filename, const RotatingSinkConfiguration & config_)
     : Base(filename, static_cast<const quill::FileSinkConfig &>(config_), quill::FileEventNotifier{}, /*do_fopen=*/false)
     , config(config_)
 {
@@ -533,22 +569,6 @@ void RotatingFileSink::rotateFiles()
     // Open file for logging
     this->open_file(this->_filename, "w");
     current_log_size = 0;
-}
-
-std::filesystem::path RotatingFileSink::appendIndexToFilename(const std::filesystem::path & filename, size_t index)
-{
-    if (index == 0)
-        return filename;
-
-    auto const [stem, ext] = Base::extract_stem_and_extension(filename);
-    return std::filesystem::path{stem + "." + std::to_string(index - 1) + ext};
-}
-
-std::filesystem::path RotatingFileSink::getFilename(std::filesystem::path base_filename, size_t index)
-{
-    if (index > 0)
-        return appendIndexToFilename(base_filename, index);
-    return base_filename;
 }
 
 }

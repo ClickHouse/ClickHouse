@@ -60,15 +60,18 @@ const std::string & componentToString(LoggerComponent component)
     using enum LoggerComponent;
     switch (component)
     {
-        case Root: {
+        case Root:
+        {
             return root_logger_name;
         }
         case RaftInstance: [[fallthrough]];
-        case ZooKeeperClient: {
+        case ZooKeeperClient:
+        {
             static const std::string component_string{component_names[std::to_underlying(component)]};
             return component_string;
         }
-        case Max: {
+        case Max:
+        {
             chassert(false, "Invalid componment requested");
             static const std::string component_string;
             return component_string;

@@ -20,7 +20,7 @@ using namespace DB;
 
 static ConfigProcessor::LoadedConfig loadConfiguration(const std::string & config_path)
 {
-    ConfigProcessor config_processor(config_path, true, true);
+    ConfigProcessor config_processor(config_path, true);
     ConfigProcessor::LoadedConfig config = config_processor.loadConfig(false);
     return config;
 }
