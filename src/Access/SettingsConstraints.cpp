@@ -1,15 +1,16 @@
-#include <string_view>
-#include <unordered_map>
 #include <Access/SettingsConstraints.h>
+#include <Access/SettingsProfileElement.h>
 #include <Access/resolveSetting.h>
 #include <Access/AccessControl.h>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/SettingSource.h>
 #include <IO/WriteHelpers.h>
-#include <Poco/Util/AbstractConfiguration.h>
+
+#include <string_view>
+#include <unordered_map>
 
 namespace DB
 {
@@ -324,10 +325,10 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
     auto less_or_cannot_compare = [=](const Field & left, const Field & right)
     {
         if (reaction == THROW_ON_VIOLATION)
-            return applyVisitor(FieldVisitorAccurateLess{}, left, right);
+            return accurateLess(left, right);
         try
         {
-            return applyVisitor(FieldVisitorAccurateLess{}, left, right);
+            return accurateLess(left, right);
         }
         catch (...)
         {

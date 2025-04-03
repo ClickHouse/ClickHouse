@@ -28,9 +28,6 @@ target_link_libraries (radix_sort PRIVATE clickhouse_common_io clickhouse_common
 clickhouse_add_executable (arena_with_free_lists arena_with_free_lists.cpp)
 target_link_libraries (arena_with_free_lists PRIVATE dbms)
 
-clickhouse_add_executable (lru_hash_map_perf lru_hash_map_perf.cpp)
-target_link_libraries (lru_hash_map_perf PRIVATE dbms)
-
 if (OS_LINUX)
     clickhouse_add_executable (thread_creation_latency thread_creation_latency.cpp)
     target_link_libraries (thread_creation_latency PRIVATE dbms clickhouse_common_io clickhouse_common_config)
@@ -75,7 +72,7 @@ clickhouse_add_executable (shell_command_inout shell_command_inout.cpp)
 target_link_libraries (shell_command_inout PRIVATE clickhouse_common_io clickhouse_common_config)
 
 clickhouse_add_executable (executable_udf executable_udf.cpp)
-target_link_libraries (executable_udf PRIVATE dbms)
+target_link_libraries (executable_udf PRIVATE clickhouse_common_io clickhouse_common_config)
 
 if (ENABLE_HIVE)
     clickhouse_add_executable (hive_metastore_client hive_metastore_client.cpp)
@@ -83,7 +80,7 @@ if (ENABLE_HIVE)
 endif()
 
 clickhouse_add_executable (interval_tree interval_tree.cpp)
-target_link_libraries (interval_tree PRIVATE dbms)
+target_link_libraries (interval_tree PRIVATE clickhouse_common_io clickhouse_common_config)
 
 if (ENABLE_SSL)
     clickhouse_add_executable (encrypt_decrypt encrypt_decrypt.cpp)

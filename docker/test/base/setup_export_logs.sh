@@ -201,9 +201,11 @@ function setup_logs_replication
         echo "Creating materialized view system.${table}_watcher" >&2
 
         clickhouse-client --query "
-            CREATE MATERIALIZED VIEW system.${table}_watcher TO system.${table}_sender AS
-            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
-            FROM system.${table}
+            CREATE MATERIALIZED VIEW system.${table}_watcher
+            TO system.${table}_sender
+            DEFINER = ci_logs_sender
+            AS
+            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, * FROM system.${table}
         " || continue
     done
 )
@@ -214,6 +216,6 @@ function stop_logs_replication
     clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
         tee /dev/stderr
     } | {
-        timeout --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -r -i clickhouse-client --query "drop table {}"
+        timeout --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -P10 -r -i clickhouse-client --query "drop table {}"
     }
 }

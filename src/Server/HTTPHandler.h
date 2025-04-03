@@ -35,7 +35,7 @@ using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
 struct HTTPHandlerConnectionConfig
 {
-    std::optional<BasicCredentials> credentials;
+    std::optional<AlwaysAllowCredentials> credentials;
 
     /// TODO:
     /// String quota;
@@ -66,7 +66,7 @@ private:
         /* Raw data
          * ↓
          * CascadeWriteBuffer out_maybe_delayed_and_compressed (optional)
-         * ↓ (forwards data if an overflow is occur or explicitly via pushDelayedResults)
+         * ↓ (forwards data if an overflow occurs or explicitly via pushDelayedResults)
          * CompressedWriteBuffer out_maybe_compressed (optional)
          * ↓
          * WriteBufferFromHTTPServerResponse out
@@ -183,6 +183,8 @@ private:
         HTTPServerRequest & request,
         HTTPServerResponse & response,
         Output & used_output);
+
+    void releaseOrCloseSession(const String & session_id, bool close_session);
 
     static void pushDelayedResults(Output & used_output);
 

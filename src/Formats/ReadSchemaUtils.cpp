@@ -440,7 +440,6 @@ try
             Names names_order; /// Try to save original columns order;
             std::unordered_map<String, DataTypePtr> names_to_types;
 
-
             for (const auto & [schema, file_name] : schemas_for_union_mode)
             {
                 for (const auto & [name, type] : schema)

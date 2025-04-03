@@ -261,7 +261,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
             /// To serialize value stored in shared data we should first deserialize it from binary format.
             auto tmp_dynamic_column = ColumnDynamic::create();
             tmp_dynamic_column->reserve(1);
-            column_object.deserializeValueFromSharedData(shared_data_values, index_in_shared_data_values++, *tmp_dynamic_column);
+            ColumnObject::deserializeValueFromSharedData(shared_data_values, index_in_shared_data_values++, *tmp_dynamic_column);
 
             if (pretty)
                 dynamic_serialization->serializeTextJSONPretty(*tmp_dynamic_column, 0, ostr, settings, indent + current_prefix.size() + 1);

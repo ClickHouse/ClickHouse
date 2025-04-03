@@ -8,7 +8,6 @@
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>

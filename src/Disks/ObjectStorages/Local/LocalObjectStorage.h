@@ -73,6 +73,8 @@ public:
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
+    bool areObjectKeysRandom() const override { return true; }
+
     bool isRemote() const override { return false; }
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;

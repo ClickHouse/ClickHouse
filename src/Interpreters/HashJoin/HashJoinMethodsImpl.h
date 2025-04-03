@@ -1,8 +1,10 @@
 #pragma once
-#include <type_traits>
+#include <Columns/IColumn.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
-#include "Columns/IColumn.h"
-#include "Interpreters/HashJoin/ScatteredBlock.h"
+#include <Interpreters/HashJoin/ScatteredBlock.h>
+
+#include <type_traits>
 
 namespace DB
 {
@@ -12,7 +14,7 @@ extern const int UNSUPPORTED_JOIN_KEYS;
 extern const int LOGICAL_ERROR;
 }
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
+void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
     HashJoin & join,
     HashJoin::Type type,
     MapsTemplate & maps,
@@ -32,16 +34,16 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
         case HashJoin::Type::CROSS:
             /// Do nothing. We will only save block, and it is enough
             is_inserted = true;
-            return 0;
+            break;
 
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
         if (selector.isContinuousRange()) \
-            return insertFromBlockImplTypeCase< \
+            insertFromBlockImplTypeCase< \
                 typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
                 join, *maps.TYPE, key_columns, key_sizes, stored_block, selector.getRange(), null_map, join_mask, pool, is_inserted); \
         else \
-            return insertFromBlockImplTypeCase< \
+            insertFromBlockImplTypeCase< \
                 typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
                 join, *maps.TYPE, key_columns, key_sizes, stored_block, selector.getIndexes(), null_map, join_mask, pool, is_inserted); \
         break;
@@ -193,7 +195,9 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         block.getSourceBlock().setColumns(columns);
         block = ScatteredBlock(std::move(block).getSourceBlock());
     }
+
     block.getSourceBlock().erase(block_columns_to_erase);
+
     return remaining_block;
 }
 
@@ -215,7 +219,7 @@ KeyGetter HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::createKeyGetter(const
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename KeyGetter, typename HashMap, typename Selector>
-size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCase(
+void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCase(
     HashJoin & join,
     HashMap & map,
     const ColumnRawPtrs & key_columns,
@@ -274,7 +278,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeC
         else
             Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block, ind, pool);
     }
-    return map.getBufferSizeInCells();
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>

@@ -2,6 +2,7 @@
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnNullable.h>
@@ -20,21 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
-}
-
-DataTypePtr SerializationNullable::SubcolumnCreator::create(const DataTypePtr & prev) const
-{
-    return std::make_shared<DataTypeNullable>(prev);
-}
-
-SerializationPtr SerializationNullable::SubcolumnCreator::create(const SerializationPtr & prev) const
-{
-    return std::make_shared<SerializationNullable>(prev);
-}
-
-ColumnPtr SerializationNullable::SubcolumnCreator::create(const ColumnPtr & prev) const
-{
-    return ColumnNullable::create(prev, null_map);
 }
 
 void SerializationNullable::enumerateStreams(
@@ -59,7 +45,8 @@ void SerializationNullable::enumerateStreams(
     callback(settings.path);
 
     settings.path.back() = Substream::NullableElements;
-    settings.path.back().creator = std::make_shared<SubcolumnCreator>(null_map_data.column);
+    if (type_nullable && type_nullable->getNestedType()->canBeInsideNullable())
+        settings.path.back().creator = std::make_shared<NullableSubcolumnCreator>(null_map_data.column);
     settings.path.back().data = data;
 
     auto next_data = SubstreamData(nested)
@@ -128,6 +115,7 @@ void SerializationNullable::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -143,12 +131,12 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     }
     else if (auto * stream = settings.getter(settings.path))
     {
-        SerializationNumber<UInt8>().deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
+        SerializationNumber<UInt8>().deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
         addToSubstreamsCache(cache, settings.path, col.getNullMapColumnPtr());
     }
 
     settings.path.back() = Substream::NullableElements;
-    nested->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumnPtr(), limit, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumnPtr(), rows_offset, limit, settings, state, cache);
     settings.path.pop_back();
 }
 

@@ -49,6 +49,7 @@ void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerExtremesStep(QueryPlanStepRegistry & registry);
 void registerObjectFilterStep(QueryPlanStepRegistry & registry);
+void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void QueryPlanStepRegistry::registerPlanSteps()
 {
@@ -67,6 +68,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerTotalsHavingStep(registry);
     registerExtremesStep(registry);
     registerObjectFilterStep(registry);
+    registerJoinStep(registry);
 }
 
 }

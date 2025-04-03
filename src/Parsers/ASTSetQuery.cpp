@@ -6,6 +6,9 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Databases/DataLake/DataLakeConstants.h>
+#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
+#include <Storages/NATS/NATS_fwd.h>
 
 
 namespace DB
@@ -66,7 +69,7 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
     }
 }
 
-void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked state) const
 {
     if (is_standalone)
         ostr << (format.hilite ? hilite_keyword : "") << "SET " << (format.hilite ? hilite_none : "");
@@ -81,10 +84,45 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
             first = false;
 
         formatSettingName(change.name, ostr);
-        CustomType custom;
-        if (!format.show_secrets && change.value.tryGet<CustomType>(custom) && custom.isSecret())
-            ostr << " = " << custom.toString(false);
-        else
+
+        auto format_if_secret = [&]() -> bool
+        {
+            CustomType custom;
+            if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
+            {
+                ostr << " = " << custom.toString(/* show_secrets */false);
+                return true;
+            }
+
+            if (DataLake::DATABASE_ENGINE_NAME == state.create_engine_name)
+            {
+                if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
+                {
+                    ostr << " = " << DataLake::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                    return true;
+                }
+            }
+            if (RabbitMQ::TABLE_ENGINE_NAME == state.create_engine_name)
+            {
+                if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
+                {
+                    ostr << " = " << RabbitMQ::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                    return true;
+                }
+            }
+            if (NATS::TABLE_ENGINE_NAME == state.create_engine_name)
+            {
+                if (NATS::SETTINGS_TO_HIDE.contains(change.name))
+                {
+                    ostr << " = " << NATS::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        if (format.show_secrets || !format_if_secret())
             ostr << " = " << applyVisitor(FieldVisitorToSetting(), change.value);
     }
 
@@ -113,12 +151,26 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
 
 void ASTSetQuery::appendColumnName(WriteBuffer & ostr) const
 {
-    Hash hash = getTreeHash(/*ignore_aliases=*/ true);
+    IASTHash hash = getTreeHash(/*ignore_aliases=*/ true);
 
     writeCString("__settings_", ostr);
     writeText(hash.low64, ostr);
     ostr.write('_');
     writeText(hash.high64, ostr);
+}
+
+bool ASTSetQuery::hasSecretParts() const
+{
+    for (const auto & change : changes)
+    {
+        if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
+            return true;
+        if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
+            return true;
+        if (NATS::SETTINGS_TO_HIDE.contains(change.name))
+            return true;
+    }
+    return false;
 }
 
 }

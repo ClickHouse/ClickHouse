@@ -450,7 +450,7 @@ The function returns a value of type String.
                 {"with specified number of columns", "SELECT generateRandomStructure(3)", "c1 String, c2 Array(Int32), c3 LowCardinality(String)"},
                 {"with specified seed", "SELECT generateRandomStructure(1, 42)", "c1 UInt128"},
             },
-            .categories{"Random"}
+            .category{"Random Numbers"}
         });
 }
 

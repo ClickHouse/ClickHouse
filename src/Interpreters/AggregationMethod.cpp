@@ -1,4 +1,5 @@
 #include <Interpreters/AggregationMethod.h>
+#include <Interpreters/AggregatedData.h>
 
 namespace DB
 {

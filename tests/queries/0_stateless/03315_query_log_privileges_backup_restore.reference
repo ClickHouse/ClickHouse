@@ -1,0 +1,6 @@
+[]	['BACKUP ON default.d_03315_query_log']
+[]	[]
+['BACKUP ON default.d_03315_query_log']	[]
+[]	['INSERT, CREATE TABLE ON default.d_03315_query_log']
+[]	[]
+['TABLE ENGINE ON MergeTree']	[]

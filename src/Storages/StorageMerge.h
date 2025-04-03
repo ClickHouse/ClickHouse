@@ -81,11 +81,15 @@ public:
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
+
+    /// Returns a unified column structure among multiple tables.
+    /// Takes a function that invokes a callback for every table. NOTE: This is quite inconvenient.
+    static ColumnsDescription unifyColumnsDescription(std::function<void(std::function<void(const StoragePtr &)>)> for_each_table);
 
 private:
     /// (Database, Table, Lock, TableName)
@@ -123,7 +127,7 @@ private:
 
     ColumnSizeByName getColumnSizes() const override;
 
-    ColumnsDescription getColumnsDescriptionFromSourceTables() const;
+    ColumnsDescription getColumnsDescriptionFromSourceTables(size_t max_tables_to_look) const;
 
     static VirtualColumnsDescription createVirtuals();
 
@@ -258,7 +262,7 @@ private:
         QueryProcessingStage::Enum processed_stage,
         UInt64 max_block_size,
         const StorageWithLockAndName & storage_with_lock,
-        Names && real_column_names,
+        const Names & real_column_names_read_from_the_source_table,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextMutablePtr modified_context,
         size_t streams_num) const;

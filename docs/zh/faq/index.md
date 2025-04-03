@@ -32,7 +32,7 @@ sidebar_position: 76
     -   [如何从 ClickHouse 导出数据到一个文件?](../faq/integration/file-export.md)
     -   [如果我用ODBC链接Oracle数据库出现编码问题该怎么办?](../faq/integration/oracle-odbc.md)
 
-{## TODO
+## TODO
 Question candidates:
 - How to choose a primary key?
 - How to add a column in ClickHouse?
@@ -44,6 +44,3 @@ Question candidates:
 - How to remove the default ClickHouse user through users.d?
 - Importing MySQL dump to ClickHouse
 - Window function workarounds (row_number, lag/lead, running diff/sum/average)
-##}
-
-{## [原始文档](https://clickhouse.com/docs/en/faq) ##}

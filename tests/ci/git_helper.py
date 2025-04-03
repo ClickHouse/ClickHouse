@@ -7,7 +7,14 @@ import os.path as p
 import re
 import subprocess
 import tempfile
+from contextlib import contextmanager
+from multiprocessing import Pool, cpu_count
+from time import sleep
 from typing import Any, List, Literal, Optional
+
+import __main__
+
+from ci_utils import Shell
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +117,80 @@ git_runner = Runner(set_cwd_to_git_root=True)
 
 def is_shallow() -> bool:
     return git_runner.run("git rev-parse --is-shallow-repository") == "true"
+
+
+def unshallow(thin: bool = True) -> None:
+    filter_arg = "--filter=tree:0" if thin else ""
+    Shell.check(
+        f"git fetch --unshallow --prune --no-recurse-submodules {filter_arg}  origin",
+        cwd=git_runner.cwd,
+    )
+
+
+def checkout_submodule(name: str, retry: int = 3) -> None:
+    """checkout the single submodule by its name"""
+    start_sleep = 5
+    for n in range(retry):
+        if Shell.check(
+            f"git submodule update --depth=1 --single-branch {name}", cwd=git_runner.cwd
+        ):
+            return
+        if n < retry - 1:
+            # progressive sleep before retry
+            sleep(start_sleep * (n + 1))
+
+    raise subprocess.SubprocessError(f"Unable to retreive submodule {name}")
+
+
+def checkout_submodules() -> None:
+    """Parallel checkout of submodules. Argument `--jobs` does not really parallelize"""
+    jobs = min([cpu_count(), 20])
+    Shell.check("git submodule sync", cwd=git_runner.cwd)
+    Shell.check("git submodule init", cwd=git_runner.cwd)
+    # Get all submodule path
+    submodules = {
+        s.split("\n", maxsplit=1)[1]
+        for s in git_runner(
+            "git config --file .gitmodules --null --get-regexp '^submodule[.].+[.]path$'"
+        ).split("\0")
+        if "\n" in s
+    }
+
+    with Pool(jobs) as pool:
+        pool.map(checkout_submodule, submodules)
+
+
+@contextmanager
+def clear_repo():
+    def ref():
+        return git_runner("git branch --show-current") or git_runner(
+            "git rev-parse HEAD"
+        )
+
+    orig_ref = ref()
+    try:
+        yield
+    finally:
+        current_ref = ref()
+        if orig_ref != current_ref:
+            git_runner(f"git checkout -f {orig_ref}")
+
+
+@contextmanager
+def stash():
+    # diff.ignoreSubmodules=all don't show changed submodules
+    need_stash = bool(git_runner("git -c diff.ignoreSubmodules=all diff HEAD"))
+    if need_stash:
+        script = (
+            __main__.__file__ if hasattr(__main__, "__file__") else "unknown script"
+        )
+        git_runner(f"git stash push --no-keep-index -m 'running {script}'")
+    try:
+        with clear_repo():
+            yield
+    finally:
+        if need_stash:
+            git_runner("git stash pop")
 
 
 def get_tags() -> List[str]:

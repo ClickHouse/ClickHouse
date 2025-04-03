@@ -1,5 +1,7 @@
+#include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/FileLog/FileLogConsumer.h>
 #include <Storages/FileLog/FileLogSource.h>

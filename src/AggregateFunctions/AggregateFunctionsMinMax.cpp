@@ -139,7 +139,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).insertResultInto(to);
+        this->data(place).insertResultInto(to, this->result_type);
     }
 
 #if USE_EMBEDDED_COMPILER

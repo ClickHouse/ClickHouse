@@ -2,7 +2,6 @@
 
 #include <memory>
 
-#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
@@ -74,6 +73,10 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
     }
 
+    virtual std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_,
+        const Block & left_sample_block_,
+        const Block & right_sample_block_) const { return clone(table_join_, left_sample_block_, right_sample_block_); }
+
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.
     virtual bool addBlockToJoin(const Block & block, bool check_limits = true) = 0; /// NOLINT
@@ -127,6 +130,9 @@ public:
 
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
+
+    /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
+    virtual void onBuildPhaseFinish() { }
 
 private:
     Block totals;

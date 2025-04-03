@@ -6,6 +6,7 @@
 #include <Databases/IDatabase.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/interpretSubquery.h>
@@ -179,7 +180,7 @@ public:
                 std::unique_ptr<QueryPlan> source = std::make_unique<QueryPlan>();
                 interpreter->buildQueryPlan(*source);
 
-                auto future_set = prepared_sets->addFromSubquery(set_key, std::move(source), std::move(external_storage), nullptr, getContext()->getSettingsRef());
+                auto future_set = prepared_sets->addFromSubquery(set_key, ast, std::move(source), std::move(external_storage), nullptr, getContext()->getSettingsRef());
                 external_storage_holder->future_set = std::move(future_set);
             }
             else

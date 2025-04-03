@@ -14,7 +14,7 @@
 #include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/LockGuard.h>
+#include <Common/UniqueLock.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -42,7 +42,6 @@ class QueryStatus;
 class ThreadStatus;
 class ProcessListEntry;
 
-
 enum CancelReason
 {
     UNDEFINED,
@@ -60,6 +59,7 @@ enum CancelReason
 struct QueryStatusInfo
 {
     String query;
+    UInt64 normalized_query_hash;
     IAST::QueryKind query_kind{};
     UInt64 elapsed_microseconds;
     size_t read_rows;
@@ -95,6 +95,7 @@ protected:
     friend struct ::GlobalOvercommitTracker;
 
     String query;
+    UInt64 normalized_query_hash;
     ClientInfo client_info;
 
     /// Info about all threads involved in query execution
@@ -189,6 +190,7 @@ public:
     QueryStatus(
         ContextPtr context_,
         const String & query_,
+        UInt64 normalized_query_hash_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
         ThreadGroupPtr && thread_group_,
@@ -228,7 +230,7 @@ public:
         progress_in.incrementPiecewiseAtomically(value);
 
         if (priority_handle)
-            priority_handle->waitIfNeed(std::chrono::seconds(1));        /// NOTE Could make timeout customizable.
+            priority_handle->waitIfNeed();
 
         return !is_killed.load(std::memory_order_relaxed);
     }
@@ -243,7 +245,7 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns = 0);
+    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_ms, const UInt64 & elapsed_ns);
 
     /// Cancels the current query.
     /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
@@ -372,7 +374,7 @@ public:
 
     using Mutex = std::mutex;
     using Lock = std::unique_lock<Mutex>;
-    using LockAndBlocker = LockAndOverCommitTrackerBlocker<LockGuard, Mutex>;
+    using LockAndBlocker = LockAndOverCommitTrackerBlocker<UniqueLock, Mutex>;
 
 protected:
     friend class ProcessListEntry;
@@ -414,6 +416,9 @@ protected:
     /// limit for select. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     size_t max_select_queries_amount = 0;
 
+    /// timeout in millisecond for low priority query to wait
+    size_t low_priority_query_wait_time_ms = 0;
+
     /// amount of queries by query kind.
     QueryKindAmounts query_kind_amounts;
 
@@ -440,7 +445,7 @@ public:
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries or async insert flush queries
       */
-    EntryPtr insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
+    EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
 
     /// Number of currently executing queries.
     size_t size() const { return processes.size(); }
@@ -481,6 +486,18 @@ public:
     {
         Lock lock(mutex);
         return max_insert_queries_amount;
+    }
+
+    void setLowPriorityQueryWaitTimeMs(size_t low_priority_query_wait_time_ms_)
+    {
+        Lock lock(mutex);
+        low_priority_query_wait_time_ms = low_priority_query_wait_time_ms_;
+    }
+
+    size_t getLowPriorityQueryWaitTimeMs() const
+    {
+        Lock lock(mutex);
+        return low_priority_query_wait_time_ms;
     }
 
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)

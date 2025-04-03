@@ -63,6 +63,15 @@ Positions: 2
                      FUNCTION bitAnd(__table1.number : 2, 3_UInt8 :: 1) -> bitAnd(__table1.number, 3_UInt8) UInt64 : 0
             Positions: 0 2
               ReadFromSystemNumbers
+Union
+  Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+    Filter ((WHERE + Change column names to column identifiers))
+      ReadFromSystemNumbers
+  Expression ((Project names + (Projection + Change column names to column identifiers)))
+    ReadFromRemote (Read from remote replica)
+      Expression ((Project names + Projection))
+        Filter ((WHERE + Change column names to column identifiers))
+          ReadFromSystemNumbers
 Expression ((Project names + Projection))
 Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
          INPUT :: 1 -> bitAnd(__table1.number, 3_UInt8) UInt64 : 1

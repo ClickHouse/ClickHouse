@@ -1,22 +1,19 @@
 #include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
 
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Core/Settings.h>
 
 #include <Functions/FunctionFactory.h>
 
-#include <Interpreters/Context.h>
-
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
+
 
 namespace DB
 {

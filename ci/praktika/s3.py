@@ -1,12 +1,85 @@
 import dataclasses
 import json
+import os
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 from urllib.parse import quote
 
 from ._environment import _Environment
 from .settings import Settings
-from .utils import Shell
+from .utils import MetaClasses, Shell, Utils
+
+
+@dataclasses.dataclass
+class StorageUsage(MetaClasses.SerializableSingleton):
+    downloaded: int = 0
+    uploaded: int = 0
+    downloaded_details: Dict[str, int] = dataclasses.field(default_factory=dict)
+    uploaded_details: Dict[str, int] = dataclasses.field(default_factory=dict)
+    ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
+
+    def merge_with(self, storage_usage: "StorageUsage"):
+        self.downloaded += storage_usage.downloaded
+        self.uploaded += storage_usage.uploaded
+        for k, v in storage_usage.downloaded_details.items():
+            if k in self.downloaded_details:
+                self.downloaded_details[k] += v
+            else:
+                self.downloaded_details[k] = v
+        for k, v in storage_usage.uploaded_details.items():
+            if k in self.uploaded_details:
+                self.uploaded_details[k] += v
+            else:
+                self.uploaded_details[k] = v
+        return self
+
+    @classmethod
+    def file_name_static(cls):
+        return f"{Settings.TEMP_DIR}/storage_usage.json"
+
+    @classmethod
+    def _init(cls):
+        if not StorageUsage.exist():
+            print("NOTE: UsageStorage data will be initialized")
+            StorageUsage(
+                downloaded=0, uploaded=0, downloaded_details={}, uploaded_details={}
+            ).dump()
+
+    @classmethod
+    def add_downloaded(cls, file_path):
+        cls._init()
+        if not Path(file_path).exists():
+            return
+        file_name = str(file_path).split("/")[-1]
+        usage = cls.from_fs()
+        file_zize = cls.get_size_bytes(file_path)
+        usage.downloaded += file_zize
+        if file_name in usage.downloaded_details:
+            print(f"WARNING: Duplicated download for filename [{file_name}]")
+            usage.downloaded_details[file_name] += file_zize
+        else:
+            usage.downloaded_details[file_name] = file_zize
+        usage.dump()
+
+    @classmethod
+    def add_uploaded(cls, file_path):
+        cls._init()
+        if not Path(file_path).exists():
+            return
+        file_name = str(file_path).split("/")[-1]
+        usage = cls.from_fs()
+        file_zize = cls.get_size_bytes(file_path)
+        usage.uploaded += file_zize
+        if file_name in usage.uploaded_details:
+            print(f"WARNING: Duplicated upload for filename [{file_name}]")
+            usage.uploaded_details[file_name] += file_zize
+        else:
+            usage.uploaded_details[file_name] = file_zize
+        usage.dump()
+
+    @classmethod
+    def get_size_bytes(cls, file_path):
+        return os.path.getsize(file_path)
 
 
 class S3:
@@ -30,14 +103,16 @@ class S3:
             return True
 
     @classmethod
-    def clean_s3_directory(cls, s3_path):
+    def clean_s3_directory(cls, s3_path, include=""):
         assert len(s3_path.split("/")) > 2, "check to not delete too much"
         cmd = f"aws s3 rm s3://{s3_path} --recursive"
+        if include:
+            cmd += f' --exclude "*" --include "{include}"'
         cls.run_command_with_retries(cmd, retries=1)
         return
 
     @classmethod
-    def copy_file_to_s3(cls, s3_path, local_path, text=False):
+    def copy_file_to_s3(cls, s3_path, local_path, text=False, with_rename=False):
         assert Path(local_path).exists(), f"Path [{local_path}] does not exist"
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         assert Path(
@@ -45,7 +120,7 @@ class S3:
         ).is_file(), f"Path [{local_path}] is not file. Only files are supported"
         file_name = Path(local_path).name
         s3_full_path = s3_path
-        if not s3_full_path.endswith(file_name):
+        if not s3_full_path.endswith(file_name) and not with_rename:
             s3_full_path = f"{s3_path}/{Path(local_path).name}"
         cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
         if text:
@@ -53,6 +128,7 @@ class S3:
         res = cls.run_command_with_retries(cmd)
         if not res:
             raise RuntimeError()
+        StorageUsage.add_uploaded(local_path)
         bucket = s3_path.split("/")[0]
         endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
         assert endpoint
@@ -81,10 +157,11 @@ class S3:
             for k, v in metadata.items():
                 command += f" --metadata {k}={v}"
 
-        cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
         if text:
-            cmd += " --content-type text/plain"
+            command += " --content-type text/plain"
         res = cls.run_command_with_retries(command)
+        if res:
+            StorageUsage.add_uploaded(local_path)
         return res
 
     @classmethod
@@ -119,7 +196,12 @@ class S3:
 
     @classmethod
     def copy_file_from_s3(
-        cls, s3_path, local_path, recursive=False, include_pattern=""
+        cls,
+        s3_path,
+        local_path,
+        recursive=False,
+        include_pattern="",
+        _skip_download_counter=False,
     ):
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         if Path(local_path).is_dir():
@@ -132,8 +214,19 @@ class S3:
         if recursive:
             cmd += " --recursive"
         if include_pattern:
-            cmd += f" --include {include_pattern}"
+            cmd += f' --exclude "*" --include "{include_pattern}"'
         res = cls.run_command_with_retries(cmd)
+        if res and not _skip_download_counter:
+            if not recursive:
+                if Path(local_path).is_dir():
+                    path = Path(local_path) / Path(s3_path).name
+                else:
+                    path = local_path
+                StorageUsage.add_downloaded(path)
+            else:
+                print(
+                    "TODO: support StorageUsage.add_downloaded with recursive download"
+                )
         return res
 
     @classmethod
@@ -147,6 +240,10 @@ class S3:
         assert s3_path.endswith("/"), f"s3 path is invalid [{s3_path}]"
         cmd = f'aws s3 cp s3://{s3_path}  {local_path} --exclude "{exclude}" --include "{include}" --recursive'
         res = cls.run_command_with_retries(cmd)
+        if res:
+            print(
+                "TODO: support StorageUsage.add_downloaded with matching pattern download"
+            )
         return res
 
     @classmethod
@@ -179,8 +276,32 @@ class S3:
             if s3_subprefix:
                 s3_subprefix.removeprefix("/").removesuffix("/")
                 s3_path += f"/{s3_subprefix}"
+            if text and Settings.COMPRESS_THRESHOLD_MB > 0:
+                file_size_mb = os.path.getsize(local_file_path) / (1024 * 1024)
+                if file_size_mb > Settings.COMPRESS_THRESHOLD_MB:
+                    print(
+                        f"NOTE: File [{local_file_path}] exceeds threshold [Settings.COMPRESS_THRESHOLD_MB:{Settings.COMPRESS_THRESHOLD_MB}] - compress"
+                    )
+                    text = False
+                    local_file_path = Utils.compress_file(local_file_path)
             html_link = S3.copy_file_to_s3(
                 s3_path=s3_path, local_path=local_file_path, text=text
             )
             return html_link
         return f"file://{Path(local_file_path).absolute()}"
+
+    @classmethod
+    def _dump_urls(cls, s3_path):
+        # TODO: add support for path with '*'
+        bucket, name = s3_path.split("/")[0], s3_path.split("/")[-1]
+        endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
+
+        with open(Settings.ARTIFACT_URLS_FILE, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    name: quote(
+                        f"https://{s3_path}".replace(bucket, endpoint), safe=":/?&="
+                    )
+                },
+                f,
+            )

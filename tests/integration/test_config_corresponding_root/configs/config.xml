@@ -133,7 +133,7 @@
     <mlock_executable>false</mlock_executable>
 
     <!-- Configuration of clusters that could be used in Distributed tables.
-         https://clickhouse.com/docs/en/table_engines/distributed/
+         https://clickhouse.com/docs/table_engines/distributed/
       -->
     <remote_servers incl="clickhouse_remote_servers" >
         <test_shard_localhost>
@@ -155,14 +155,14 @@
     <!-- ZooKeeper is used to store metadata about replicas, when using Replicated tables.
          Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.com/docs/en/table_engines/replication/
+         See https://clickhouse.com/docs/table_engines/replication/
       -->
     <zookeeper incl="zookeeper-servers" optional="true" />
 
     <!-- Substitutions for parameters of replicated tables.
           Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.com/docs/en/table_engines/replication/#creating-replicated-tables
+         See https://clickhouse.com/docs/table_engines/replication/#creating-replicated-tables
       -->
     <macros incl="macros" optional="true" />
 
@@ -222,7 +222,7 @@
         <database>system</database>
         <table>query_log</table>
         <!--
-            PARTITION BY expr https://clickhouse.com/docs/en/table_engines/custom_partitioning_key/
+            PARTITION BY expr https://clickhouse.com/docs/table_engines/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)
@@ -253,7 +253,7 @@
     </part_log>
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
-         See https://clickhouse.com/docs/en/dicts/internal_dicts/
+         See https://clickhouse.com/docs/dicts/internal_dicts/
     -->
 
     <!-- Path to file with region hierarchy. -->
@@ -264,7 +264,7 @@
 
 
     <!-- Configuration of external dictionaries. See:
-         https://clickhouse.com/docs/en/dicts/external_dicts/
+         https://clickhouse.com/docs/dicts/external_dicts/
     -->
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
 

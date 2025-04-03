@@ -7,6 +7,8 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
+#include <fmt/ranges.h>
+
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
@@ -88,6 +90,7 @@ void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
     std::unordered_set<std::string_view> command_errors{
         "serverError",
         "clientError",
+        "error",
     };
 
     for (Token token = comment_lexer.nextToken(); !token.isEnd(); token = comment_lexer.nextToken())
@@ -173,9 +176,18 @@ void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
             }
 
             if (item == "serverError")
+            {
                 server_errors = error_codes;
-            else
+            }
+            else if (item == "clientError")
+            {
                 client_errors = error_codes;
+            }
+            else
+            {
+                server_errors = error_codes;
+                client_errors = error_codes;
+            }
             break;
         }
     }

@@ -9,10 +9,9 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/ParallelReadBuffer.h>
-#include <IO/ReadBuffer.h>
+#include <IO/S3/ReadBufferFromGetObjectResult.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/WithFileName.h>
 
 #include <aws/s3/model/GetObjectResult.h>
 
@@ -36,8 +35,7 @@ private:
     std::atomic<off_t> offset = 0;
     std::atomic<off_t> read_until_position = 0;
 
-    std::optional<Aws::S3::Model::GetObjectResult> read_result;
-    std::unique_ptr<ReadBuffer> impl;
+    std::unique_ptr<S3::ReadBufferFromGetObjectResult> impl;
 
     LoggerPtr log = getLogger("ReadBufferFromS3");
 
@@ -79,7 +77,7 @@ public:
     bool supportsReadAt() override { return true; }
 
 private:
-    std::unique_ptr<ReadBuffer> initialize(size_t attempt);
+    std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
 
     /// If true, if we destroy impl now, no work was wasted. Just for metrics.
     bool atEndOfRequestedRangeGuess();

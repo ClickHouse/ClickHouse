@@ -5,7 +5,6 @@ import shutil
 from enum import Enum
 
 from minio import Minio
-from pyhdfs import HdfsClient
 
 
 class CloudUploader:
@@ -62,23 +61,6 @@ class LocalUploader(CloudUploader):
                 ]
             )
         self.clickhouse_node.copy_file_to_container(local_path, remote_blob_path)
-
-
-class HDFSUploader(CloudUploader):
-
-    def __init__(self, started_cluster):
-        self.started_cluster = started_cluster
-
-    def upload_file(self, local_path, remote_blob_path):
-        dir_path = os.path.dirname(remote_blob_path)
-        fs = HdfsClient(hosts=self.started_cluster.hdfs_ip)
-
-        exists = fs.exists(dir_path)
-        if not exists:
-            fs.mkdirs(dir_path)
-
-        hdfs_api = self.started_cluster.hdfs_api
-        hdfs_api.write_file(remote_blob_path, local_path)
 
 
 class AzureUploader(CloudUploader):

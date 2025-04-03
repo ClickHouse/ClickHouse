@@ -2,6 +2,7 @@ import logging
 import random
 import string
 import time
+import uuid
 from multiprocessing.dummy import Pool
 
 import pytest
@@ -236,29 +237,19 @@ def check(
             f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection_name = 'proj1'"
         )
     else:
-        query_id = node.query(
-            f"SELECT queryID() FROM (SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection_name = 'proj1')"
+        query_id = uuid.uuid4().hex
+        node.query(
+            f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection_name = 'proj1'",
+            query_id=query_id,
         ).strip()
-        for _ in range(10):
-            node.query("SYSTEM FLUSH LOGS")
-            res = node.query(
-                f"""
-            SELECT query, splitByChar('.', arrayJoin(projections))[-1]
-            FROM system.query_log
-            WHERE query_id='{query_id}' AND type='QueryFinish'
-            """
-            )
-            if res != "":
-                break
-        if res == "":
-            res = node.query(
-                """
-                SELECT query_id, query, splitByChar('.', arrayJoin(projections))[-1]
-                FROM system.query_log ORDER BY query_start_time_microseconds DESC
-            """
-            )
-            print(f"Looked for query id {query_id}, but to no avail: {res}")
-            assert False
+        node.query("SYSTEM FLUSH LOGS")
+        res = node.query(
+            f"""
+        SELECT splitByChar('.', arrayJoin(projections))[-1]
+        FROM system.query_log
+        WHERE query_id='{query_id}' AND type='QueryFinish'
+        """
+        )
         assert "proj1" in res
 
     if expect_broken_part == "proj2":
@@ -266,29 +257,19 @@ def check(
             f"SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection_name = 'proj2'"
         )
     else:
-        query_id = node.query(
-            f"SELECT queryID() FROM (SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection_name = 'proj2')"
+        query_id = uuid.uuid4().hex
+        node.query(
+            f"SELECT queryID() FROM (SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection_name = 'proj2')",
+            query_id=query_id,
         ).strip()
-        for _ in range(10):
-            node.query("SYSTEM FLUSH LOGS")
-            res = node.query(
-                f"""
-            SELECT query, splitByChar('.', arrayJoin(projections))[-1]
-            FROM system.query_log
-            WHERE query_id='{query_id}' AND type='QueryFinish'
-            """
-            )
-            if res != "":
-                break
-        if res == "":
-            res = node.query(
-                """
-                SELECT query_id, query, splitByChar('.', arrayJoin(projections))[-1]
-                FROM system.query_log ORDER BY query_start_time_microseconds DESC
-            """
-            )
-            print(f"Looked for query id {query_id}, but to no avail: {res}")
-            assert False
+        node.query("SYSTEM FLUSH LOGS")
+        res = node.query(
+            f"""
+        SELECT splitByChar('.', arrayJoin(projections))[-1]
+        FROM system.query_log
+        WHERE query_id='{query_id}' AND type='QueryFinish'
+        """
+        )
         assert "proj2" in res
 
     if do_check_command:

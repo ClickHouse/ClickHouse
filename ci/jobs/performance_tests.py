@@ -6,10 +6,18 @@ import time
 import traceback
 from pathlib import Path
 
-from praktika.result import Result
-from praktika.utils import MetaClasses, Shell, Utils
-
 from ci.jobs.scripts.clickhouse_version import CHVersion
+from ci.praktika.info import Info
+from ci.praktika.result import Result
+from ci.praktika.utils import MetaClasses, Shell, Utils
+
+temp_dir = f"{Utils.cwd()}/ci/tmp/"
+perf_wd = f"{temp_dir}/perf_wd"
+db_path = f"{perf_wd}/db0/"
+perf_right = f"{perf_wd}/right/"
+perf_left = f"{perf_wd}/left/"
+perf_right_config = f"{perf_right}/config"
+perf_left_config = f"{perf_left}/config"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -18,7 +26,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
     DOWNLOAD_DATASETS = "download"
     CONFIGURE = "configure"
     RESTART = "restart"
-    TEST = "test"
+    TEST = "queries"
     REPORT = "report"
     # TODO: stage implement code from the old script as is - refactor and remove
     CHECK_RESULTS = "check_results"
@@ -42,17 +50,17 @@ class CHServer:
             keeper_port = self.LEFT_SERVER_KEEPER_PORT
             raft_port = self.LEFT_SERVER_KEEPER_RAFT_PORT
             inter_server_port = self.LEFT_SERVER_INTERSERVER_PORT
-            serever_path = "/tmp/praktika/perf_wd/left"
+            serever_path = f"{temp_dir}/perf_wd/left"
             log_file = f"{serever_path}/server.log"
         else:
             server_port = self.RIGHT_SERVER_PORT
             keeper_port = self.RIGHT_SERVER_KEEPER_PORT
             raft_port = self.RIGHT_SERVER_KEEPER_RAFT_PORT
             inter_server_port = self.RIGHT_SERVER_INTERSERVER_PORT
-            serever_path = "/tmp/praktika/perf_wd/right"
+            serever_path = f"{temp_dir}/perf_wd/right"
             log_file = f"{serever_path}/server.log"
 
-        self.preconfig_start_cmd = f"{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml -- --path /tmp/praktika/db0 --user_files_path /tmp/praktika/db0/user_files --top_level_domains_path /tmp/praktika/perf_wd/top_level_domains --keeper_server.storage_path /tmp/praktika/coordination0 --tcp_port {server_port}"
+        self.preconfig_start_cmd = f"{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml -- --path {db_path} --user_files_path {db_path}/user_files --top_level_domains_path {perf_wd}/top_level_domains --keeper_server.storage_path {temp_dir}/coordination0 --tcp_port {server_port}"
         self.log_fd = None
         self.log_file = log_file
         self.port = server_port
@@ -94,7 +102,10 @@ class CHServer:
             f"clickhouse-client --port {self.port} --query 'create database IF NOT EXISTS test'",
             verbose=True,
         )
-        # res = res and Shell.check(f"clickhouse-client --port {self.port} --query 'rename table datasets.hits_v1 to test.hits'", verbose=True)
+        res = res and Shell.check(
+            f"clickhouse-client --port {self.port} --query 'rename table datasets.hits_v1 to test.hits'",
+            verbose=True,
+        )
         return res
 
     def start(self):
@@ -147,7 +158,7 @@ class CHServer:
 
     @classmethod
     def run_test(
-        cls, test_file, runs=7, max_queries=0, results_path="/tmp/praktika/perf_wd/"
+        cls, test_file, runs=7, max_queries=0, results_path=f"{temp_dir}/perf_wd/"
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
@@ -192,9 +203,7 @@ class CHServer:
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Performance Tests Job")
-    parser.add_argument(
-        "--ch-path", help="Path to clickhouse binary", default=f"/tmp/praktika/input"
-    )
+    parser.add_argument("--ch-path", help="Path to clickhouse binary", default=temp_dir)
     parser.add_argument(
         "--test-options",
         help="Comma separated option(s) BATCH_NUM/BTATCH_TOT|?",
@@ -203,6 +212,17 @@ def parse_args():
     parser.add_argument("--param", help="Optional job start stage", default=None)
     parser.add_argument("--test", help="Optional test name pattern", default="")
     return parser.parse_args()
+
+
+def find_prev_build(info, build_type):
+    commits = info.get_custom_data("previous_commits_sha") or []
+
+    for sha in commits:
+        link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
+        if Shell.check(f"curl -sfI {link} > /dev/null"):
+            return link
+
+    return None
 
 
 def main():
@@ -215,7 +235,7 @@ def main():
     for test_option in test_options:
         if "/" in test_option:
             batch_num, total_batches = map(int, test_option.split("/"))
-        if test_option == "head_master":
+        if test_option == "master_head":
             compare_against_master = True
         elif test_option == "prev_release":
             compare_against_release = True
@@ -227,20 +247,33 @@ def main():
         compare_against_master or compare_against_release
     ), "test option: head_master or prev_release must be selected"
 
-    left_major, left_minor, left_sha = CHVersion.get_latest_release_major_minor_sha()
+    release_version = CHVersion.get_release_version_as_dict()
+    info = Info()
 
     if Utils.is_arm():
         if compare_against_master:
-            link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+            if info.git_branch == "master":
+                link_for_ref_ch = find_prev_build(info, "build_arm_release")
+                assert link_for_ref_ch, "previous clickhouse build has not been found"
+            else:
+                link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
         elif compare_against_release:
-            link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{left_major}.{left_minor-1}/{left_sha}/package_aarch64/clickhouse"
+            # TODO:
+            # link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{release_version['major']}.{release_version['minor']-1}/{release_version['githash']}/build_arm_release/clickhouse"
+            assert False
         else:
             assert False
     elif Utils.is_amd():
         if compare_against_master:
-            link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
+            if info.git_branch == "master":
+                link_for_ref_ch = find_prev_build(info, "build_amd_release")
+                assert link_for_ref_ch, "previous clickhouse build has not been found"
+            else:
+                link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
         elif compare_against_release:
-            link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{left_major}.{left_minor-1}/{left_sha}/package_release/clickhouse"
+            # TODO:
+            # link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{release_version['major']}.{release_version['minor']-1}/{release_version['githash']}/build_amd_release/clickhouse"
+            assert False
         else:
             assert False
     else:
@@ -252,15 +285,15 @@ def main():
     assert (
         Path(ch_path + "/clickhouse").is_file()
         or Path(ch_path + "/clickhouse").is_symlink()
-    ), f"clickhouse binary not found under [{ch_path}]"
+    ), f"clickhouse binary not found in [{ch_path}]"
 
     stop_watch = Utils.Stopwatch()
     stages = list(JobStages)
 
     logs_to_attach = []
     report_files = [
-        "/tmp/praktika/perf_wd/report.html",
-        "/tmp/praktika/perf_wd/all-queries.html",
+        f"{temp_dir}/perf_wd/report.html",
+        f"{temp_dir}/perf_wd/all-queries.html",
     ]
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
@@ -272,18 +305,10 @@ def main():
         stages.insert(0, stage)
 
     res = True
-    perf_wd = "/tmp/praktika/perf_wd"
-    perf_right = f"{perf_wd}/right/"
-    perf_left = f"{perf_wd}/left/"
-    perf_right_config = f"{perf_right}/config"
-    perf_left_config = f"{perf_left}/config"
     results = []
-
-    # Shell.check(f"rm -rf {perf_wd} && mkdir -p {perf_wd}")
 
     # add right CH location to PATH
     Utils.add_to_PATH(perf_right)
-    results_path = "/tmp/praktika/perf_wd/"
     # TODO:
     # Set python output encoding so that we can print queries with non-ASCII letters.
     # export PYTHONIOENCODING=utf-8
@@ -319,16 +344,11 @@ def main():
     if res and JobStages.INSTALL_CLICKHOUSE_REFERENCE in stages:
         print("Install Reference")
         if not Path(f"{perf_left}/.done").is_file():
-            # TODO: use config from the same sha as reference CH binary
-            # git checkout left_sha
-            # rm -rf /tmp/praktika/left && mkdir -p /tmp/praktika/left
-            # cp -r ./tests/config /tmp/praktika/left/config
-            # git checkout -
             commands = [
                 f"mkdir -p {perf_left_config}",
                 f"wget -nv -P {perf_left}/ {link_for_ref_ch}",
                 f"chmod +x {perf_left}/clickhouse",
-                f"cp -r ./tests/performance /tmp/praktika/left/",
+                f"cp -r ./tests/performance {perf_left}/",
                 f"ln -sf {perf_left}/clickhouse {perf_left}/clickhouse-local",
                 f"ln -sf {perf_left}/clickhouse {perf_left}/clickhouse-client",
                 f"ln -sf {perf_left}/clickhouse {perf_left}/clickhouse-server",
@@ -344,7 +364,6 @@ def main():
 
     if res and JobStages.DOWNLOAD_DATASETS in stages:
         print("Download datasets")
-        db_path = "/tmp/praktika/db0/"
 
         if not Path(f"{db_path}/.done").is_file():
             Shell.check(f"mkdir -p {db_path}", verbose=True)
@@ -379,8 +398,8 @@ def main():
             res_ = leftCH.start_preconfig()
             leftCH.terminate()
             # wait for termination
-            time.sleep(2)
-            Shell.check("ps -ef | grep clickhouse")
+            time.sleep(5)
+            Shell.check("ps -ef | grep clickhouse", verbose=True)
             return res_
 
         commands = [
@@ -404,8 +423,8 @@ def main():
             f"rm -rf {db_path}/status",
             f"cp -al {db_path} {perf_left}/db",
             f"cp -al {db_path} {perf_right}/db",
-            f"cp -R /tmp/praktika/coordination0 {perf_left}/coordination",
-            f"cp -R /tmp/praktika/coordination0 {perf_right}/coordination",
+            f"cp -R {temp_dir}/coordination0 {perf_left}/coordination",
+            f"cp -R {temp_dir}/coordination0 {perf_right}/coordination",
         ]
         results.append(
             Result.from_commands_run(name="Configure", command=commands, with_log=True)
@@ -458,6 +477,8 @@ def main():
         test_files = [
             file for file in os.listdir("./tests/performance/") if file.endswith(".xml")
         ]
+        # TODO: in PRs filter test files against changed files list if only tests has been changed
+        # changed_files = info.get_custom_data("changed_files")
         if test_keyword:
             test_files = [file for file in test_files if test_keyword in file]
         else:
@@ -467,12 +488,12 @@ def main():
         assert test_files
 
         def run_tests():
-            for test in test_files[batch_num::total_batches]:
+            for test in test_files:
                 CHServer.run_test(
                     "./tests/performance/" + test,
                     runs=7,
                     max_queries=10,
-                    results_path=results_path,
+                    results_path=perf_wd,
                 )
             return True
 
@@ -489,13 +510,8 @@ def main():
             "readlink -f ./ci/jobs/scripts/perf/compare.sh", strict=True
         )
 
-        left_major, left_minor, left_sha = (
-            CHVersion.get_latest_release_major_minor_sha()
-        )
-        Shell.check(
-            f"/tmp/praktika/perf_wd/left/clickhouse --version  > {results_path}/left-commit.txt"
-        )
-        Shell.check(f"git log -1 HEAD > {results_path}/right-commit.txt")
+        Shell.check(f"{perf_left}/clickhouse --version  > {perf_wd}/left-commit.txt")
+        Shell.check(f"git log -1 HEAD > {perf_wd}/right-commit.txt")
 
         commands = [
             f"stage=get_profiles {script_path}",
@@ -505,12 +521,13 @@ def main():
                 name="Report",
                 command=commands,
                 with_log=True,
-                workdir=results_path,
+                workdir=perf_wd,
             )
         )
         res = results[-1].is_ok()
 
     # TODO: code to fetch status was taken from old script as is - status is to be correctly set in Test stage and this stage is to be removed!
+    message = ""
     if res and JobStages.CHECK_RESULTS in stages:
 
         def too_many_slow(msg):
@@ -523,11 +540,8 @@ def main():
         # Try to fetch status from the report.
         sw = Utils.Stopwatch()
         status = ""
-        message = ""
         try:
-            with open(
-                "/tmp/praktika/perf_wd/report.html", "r", encoding="utf-8"
-            ) as report_fd:
+            with open(f"{perf_wd}/report.html", "r", encoding="utf-8") as report_fd:
                 report_text = report_fd.read()
                 status_match = re.search("<!--[ ]*status:(.*)-->", report_text)
                 message_match = re.search("<!--[ ]*message:(.*)-->", report_text)
@@ -557,17 +571,6 @@ def main():
             )
         )
 
-    # Shell.check("find /tmp/praktika -type f")
-
-    # Stop the servers to free memory. Normally they are restarted before getting
-    # the profile info, so they shouldn't use much, but if the comparison script
-    # fails in the middle, this might not be the case.
-    # for _ in {1..30}
-    # do
-    # pkill clickhouse || break
-    # sleep 1
-    # done
-
     # dmesg -T > dmesg.log
     #
     # ls -lath
@@ -589,17 +592,17 @@ def main():
             files_to_attach.append(report)
 
     # attach all logs with errors
-    Shell.check("rm -f /tmp/praktika/perf_wd/logs.zip")
+    Shell.check(f"rm -f {perf_wd}/logs.tar.zst")
     Shell.check(
-        'find /tmp/praktika/perf_wd -type f \( -name "*err*.log" -o -name "*err*.tsv" \) -exec zip /tmp/praktika/perf_wd/logs.zip {} +',
+        f'cd {perf_wd} && find . -type f \( -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" \) ! -path "*/db/*" !  -path "*/db0/*" -print0 | tar --null -T - -cf - | zstd -o ./logs.tar.zst',
         verbose=True,
     )
-    if Path("/tmp/praktika/perf_wd/logs.zip").is_file():
-        files_to_attach.append("/tmp/praktika/perf_wd/logs.zip")
+    if Path(f"{perf_wd}/logs.tar.zst").is_file():
+        files_to_attach.append(f"{perf_wd}/logs.tar.zst")
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=files_to_attach
-    ).complete_job()
+        results=results, stopwatch=stop_watch, files=files_to_attach, info=message
+    ).add_job_summary_to_info(with_local_run_command=True).complete_job()
 
 
 if __name__ == "__main__":
