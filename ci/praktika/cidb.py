@@ -46,18 +46,18 @@ class CIDB:
         }
 
     @classmethod
-    def _get_sub_result_with_test_cases(cls, result: Result) -> Result:
-        if len(result.results) > 20:
+    def _get_sub_result_with_test_cases(
+        cls, result: Result, result_name_for_cidb
+    ) -> Optional[Result]:
+        if not result_name_for_cidb:
             return result
-        for sub_result in result.results:
-            if sub_result.name.lower() in [
-                n.lower() for n in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
-            ]:
-                return sub_result
-        return result
+        for r in result.results:
+            if r.name == result_name_for_cidb:
+                return r
+        return None
 
     @classmethod
-    def json_data_generator(cls, result: Result):
+    def json_data_generator(cls, result: Result, result_name_for_cidb):
         """Generates JSON data records for the result and its test cases."""
         env = _Environment.get()
 
@@ -88,21 +88,24 @@ class CIDB:
         )
         yield json.dumps(dataclasses.asdict(base_record))
 
-        test_cases_result = cls._get_sub_result_with_test_cases(result)
-        for result_ in test_cases_result.results:
-            record = copy.copy(base_record)
-            record.test_name = result_.name
-            record.report_url = (
-                record.report_url
-                + f"&name_1={urllib.parse.quote(result.name, safe='')}"
-            )
-            if result_.start_time:
-                record.check_start_time = Utils.timestamp_to_str(result_.start_time)
-            record.test_status = result_.status
-            if result_.duration:
-                record.test_duration_ms = int(result_.duration * 1000)
-            record.test_context_raw = result_.info
-            yield json.dumps(dataclasses.asdict(record))
+        test_cases_result = cls._get_sub_result_with_test_cases(
+            result, result_name_for_cidb
+        )
+        if test_cases_result:
+            for result_ in test_cases_result.results:
+                record = copy.copy(base_record)
+                record.test_name = result_.name
+                record.report_url = (
+                    record.report_url
+                    + f"&name_1={urllib.parse.quote(result.name, safe='')}"
+                )
+                if result_.start_time:
+                    record.check_start_time = Utils.timestamp_to_str(result_.start_time)
+                record.test_status = result_.status
+                if result_.duration:
+                    record.test_duration_ms = int(result_.duration * 1000)
+                record.test_context_raw = result_.info
+                yield json.dumps(dataclasses.asdict(record))
 
     def insert_rows(self, jsons, retries=3):
         params = {
@@ -135,9 +138,9 @@ class CIDB:
                 if retry == retries - 1:
                     raise ex
 
-    def insert(self, result: Result):
+    def insert(self, result: Result, result_name_for_cidb=""):
         jsons = []
-        for json_str in self.json_data_generator(result):
+        for json_str in self.json_data_generator(result, result_name_for_cidb):
             jsons.append(json_str)
         self.insert_rows(jsons)
         return self
