@@ -1454,13 +1454,14 @@ if(ENABLE_OPENSSL_DYNAMIC)
     set_target_properties(ssl PROPERTIES VERSION "${LIB_VERSION}" SOVERSION "${LIB_SOVERSION}")
     set_target_properties(ssl PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/programs)
 else()
+    # Enable legacy crypto support for OpenSSL 3.+
+    # to avoid `dlopen(legacy.so)`.
+    add_definitions(-DSTATIC_LEGACY)
+
     add_library(crypto ${CRYPTO_SRC})
     add_library(ssl ${SSL_SRC})
 endif()
 
-# Enable legacy crypto support for OpenSSL 3.+
-# to avoid `dlopen(legacy.so)`.
-add_definitions(-DSTATIC_LEGACY)
 
 target_include_directories(crypto
     SYSTEM PUBLIC "${PLATFORM_DIRECTORY}/include"
