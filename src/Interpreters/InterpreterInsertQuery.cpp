@@ -747,7 +747,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 }
 
 
-std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
+std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(const ASTInsertQuery & query)
 {
     auto context_ptr = getContext();
     const Settings & settings = context_ptr->getSettingsRef();
@@ -776,38 +776,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
         "Building distributed insert select pipeline with parallel replicas: table={}",
         query.getTable());
 
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context_ptr, no_destination, allow_materialized);
-
-    ContextPtr select_context = context_ptr;
-    {
-        /** When doing trivial INSERT INTO ... SELECT ... FROM table,
-            * don't need to process SELECT with more than max_insert_threads
-            * and it's reasonable to set block size for SELECT to the desired block size for INSERT
-            * to avoid unnecessary squashing.
-            */
-
-        Settings new_settings = select_context->getSettingsCopy();
-
-        new_settings[Setting::max_threads] = std::max<UInt64>(1, settings[Setting::max_insert_threads]);
-
-        if (table->prefersLargeBlocks())
-        {
-            if (settings[Setting::min_insert_block_size_rows])
-                new_settings[Setting::max_block_size] = settings[Setting::min_insert_block_size_rows];
-            if (settings[Setting::min_insert_block_size_bytes])
-                new_settings[Setting::preferred_block_size_bytes] = settings[Setting::min_insert_block_size_bytes];
-        }
-        new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
-
-        auto context_for_trivial_select = Context::createCopy(context);
-        context_for_trivial_select->setSettings(new_settings);
-        context_for_trivial_select->setInsertionTable(getContext()->getInsertionTable(), getContext()->getInsertionTableColumnNames());
-
-        select_context = context_for_trivial_select;
-    }
-
-    return ClusterProxy::executeInsertSelectWithParallelReplicas(query, select_context);
+    return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context_ptr);
 }
 
 
@@ -889,6 +858,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 BlockIO InterpreterInsertQuery::execute()
 {
     auto context = getContext();
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "canUseTaskBasedParallelReplicas()={}", context->canUseTaskBasedParallelReplicas());
+
     const Settings & settings = context->getSettingsRef();
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
@@ -936,7 +907,7 @@ BlockIO InterpreterInsertQuery::execute()
             }
             if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
             {
-                auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
+                auto pipeline = buildInsertSelectPipelineParallelReplicas(query);
                 if (pipeline)
                     res.pipeline = std::move(*pipeline);
             }

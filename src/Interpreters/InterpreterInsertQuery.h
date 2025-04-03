@@ -92,7 +92,7 @@ private:
 
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
-    std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
+    std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(const ASTInsertQuery & query);
 
     Chain buildSink(
         const StoragePtr & table,
