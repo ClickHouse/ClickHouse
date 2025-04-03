@@ -373,7 +373,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     {
         cv->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
     }
-    this->staged_views[tname] = next;
+    this->staged_views[tname] = std::move(next);
 }
 
 void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)

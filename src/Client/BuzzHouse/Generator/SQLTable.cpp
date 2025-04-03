@@ -2010,7 +2010,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     {
         cd->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
     }
-    this->staged_dictionaries[tname] = next;
+    this->staged_dictionaries[tname] = std::move(next);
 }
 
 }
