@@ -37,6 +37,10 @@ class Info:
         return self.env.WORKFLOW_NAME
 
     @property
+    def job_config(self):
+        return self.env.JOB_CONFIG
+
+    @property
     def job_name(self):
         return self.env.JOB_NAME
 

@@ -55,6 +55,7 @@ class JobConfigs:
                 "./rust",
             ],
         ),
+        result_name_for_cidb="Tests",
     )
     tidy_build_jobs = Job.Config(
         name=JobNames.BUILD,
@@ -827,6 +828,7 @@ class JobConfigs:
             ],
         ),
         timeout=2 * 3600,
+        result_name_for_cidb="Tests",
     ).parametrize(
         parameter=[
             "amd_release,master_head,1/3",
