@@ -63,7 +63,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
 
         if (object_storage->hasExternalDynamicMetadata())
         {
-            auto current_metadata = object_storage->getExternalDynamicMetadata();
+            auto * current_metadata = object_storage->getExternalDynamicMetadata();
 
             if (!current_metadata)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "External dynamic metadata not found for table {} in database {} ", it->name(), it->databaseName());
