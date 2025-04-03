@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/ext-dict-functions
+description: 'Documentation for Functions for Working with Dictionaries'
+sidebar_label: 'Dictionaries'
 sidebar_position: 50
-sidebar_label: Dictionaries
+slug: /sql-reference/functions/ext-dict-functions
+title: 'Functions for Working with Dictionaries'
 ---
 
 # Functions for Working with Dictionaries
@@ -16,7 +18,7 @@ For information on connecting and configuring dictionaries, see [Dictionaries](.
 
 Retrieves values from a dictionary.
 
-``` sql
+```sql
 dictGet('dict_name', attr_names, id_expr)
 dictGetOrDefault('dict_name', attr_names, id_expr, default_value_expr)
 dictGetOrNull('dict_name', attr_name, id_expr)
@@ -45,7 +47,7 @@ ClickHouse throws an exception if it cannot parse the value of the attribute or 
 
 Create a text file `ext-dict-test.csv` containing the following:
 
-``` text
+```text
 1,1
 2,2
 ```
@@ -54,7 +56,7 @@ The first column is `id`, the second column is `c1`.
 
 Configure the dictionary:
 
-``` xml
+```xml
 <clickhouse>
     <dictionary>
         <name>ext-dict-test</name>
@@ -84,7 +86,7 @@ Configure the dictionary:
 
 Perform the query:
 
-``` sql
+```sql
 SELECT
     dictGetOrDefault('ext-dict-test', 'c1', number + 1, toUInt32(number * 10)) AS val,
     toTypeName(val) AS type
@@ -92,7 +94,7 @@ FROM system.numbers
 LIMIT 3;
 ```
 
-``` text
+```text
 ┌─val─┬─type───┐
 │   1 │ UInt32 │
 │   2 │ UInt32 │
@@ -104,7 +106,7 @@ LIMIT 3;
 
 Create a text file `ext-dict-mult.csv` containing the following:
 
-``` text
+```text
 1,1,'1'
 2,2,'2'
 3,3,'3'
@@ -114,7 +116,7 @@ The first column is `id`, the second is `c1`, the third is `c2`.
 
 Configure the dictionary:
 
-``` xml
+```xml
 <clickhouse>
     <dictionary>
         <name>ext-dict-mult</name>
@@ -149,7 +151,7 @@ Configure the dictionary:
 
 Perform the query:
 
-``` sql
+```sql
 SELECT
     dictGet('ext-dict-mult', ('c1','c2'), number + 1) AS val,
     toTypeName(val) AS type
@@ -157,7 +159,7 @@ FROM system.numbers
 LIMIT 3;
 ```
 
-``` text
+```text
 ┌─val─────┬─type──────────────────┐
 │ (1,'1') │ Tuple(UInt8, String)  │
 │ (2,'2') │ Tuple(UInt8, String)  │
@@ -205,7 +207,7 @@ RANGE(MIN start_date MAX end_date);
 
 Perform the query:
 
-``` sql
+```sql
 SELECT
     (number, toDate('2019-05-20')),
     dictHas('range_key_dictionary', number, toDate('2019-05-20')),
@@ -216,7 +218,7 @@ FROM system.numbers LIMIT 5 FORMAT TabSeparated;
 ```
 Result:
 
-``` text
+```text
 (0,'2019-05-20')        0       \N      \N      (NULL,NULL)
 (1,'2019-05-20')        1       First   First   ('First','First')
 (2,'2019-05-20')        1       Second  \N      ('Second',NULL)
@@ -232,7 +234,7 @@ Result:
 
 Checks whether a key is present in a dictionary.
 
-``` sql
+```sql
 dictHas('dict_name', id_expr)
 ```
 
@@ -252,7 +254,7 @@ Creates an array, containing all the parents of a key in the [hierarchical dicti
 
 **Syntax**
 
-``` sql
+```sql
 dictGetHierarchy('dict_name', key)
 ```
 
@@ -269,7 +271,7 @@ dictGetHierarchy('dict_name', key)
 
 Checks the ancestor of a key through the whole hierarchical chain in the dictionary.
 
-``` sql
+```sql
 dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 ```
 
@@ -290,7 +292,7 @@ Returns first-level children as an array of indexes. It is the inverse transform
 
 **Syntax**
 
-``` sql
+```sql
 dictGetChildren(dict_name, key)
 ```
 
@@ -307,7 +309,7 @@ dictGetChildren(dict_name, key)
 
 Consider the hierarchic dictionary:
 
-``` text
+```text
 ┌─id─┬─parent_id─┐
 │  1 │         0 │
 │  2 │         1 │
@@ -318,11 +320,11 @@ Consider the hierarchic dictionary:
 
 First-level children:
 
-``` sql
+```sql
 SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
 ```
 
-``` text
+```text
 ┌─dictGetChildren('hierarchy_flat_dictionary', number)─┐
 │ [1]                                                  │
 │ [2,3]                                                │
@@ -337,7 +339,7 @@ Returns all descendants as if [dictGetChildren](#dictgetchildren) function was a
 
 **Syntax**
 
-``` sql
+```sql
 dictGetDescendants(dict_name, key, level)
 ```
 
@@ -355,7 +357,7 @@ dictGetDescendants(dict_name, key, level)
 
 Consider the hierarchic dictionary:
 
-``` text
+```text
 ┌─id─┬─parent_id─┐
 │  1 │         0 │
 │  2 │         1 │
@@ -365,11 +367,11 @@ Consider the hierarchic dictionary:
 ```
 All descendants:
 
-``` sql
+```sql
 SELECT dictGetDescendants('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
 ```
 
-``` text
+```text
 ┌─dictGetDescendants('hierarchy_flat_dictionary', number)─┐
 │ [1,2,3,4]                                               │
 │ [2,3,4]                                                 │
@@ -380,11 +382,11 @@ SELECT dictGetDescendants('hierarchy_flat_dictionary', number) FROM system.numbe
 
 First-level descendants:
 
-``` sql
+```sql
 SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.numbers LIMIT 4;
 ```
 
-``` text
+```text
 ┌─dictGetDescendants('hierarchy_flat_dictionary', number, 1)─┐
 │ [1]                                                        │
 │ [2,3]                                                      │
@@ -402,7 +404,7 @@ Besides returning values of type `Array(T)` instead of `T`, this function behave
 
 **Syntax**
 
-``` sql
+```sql
 dictGetAll('dict_name', attr_names, id_expr[, limit])
 ```
 
@@ -490,7 +492,7 @@ All these functions have the `OrDefault` modification. For example, `dictGetDate
 
 Syntax:
 
-``` sql
+```sql
 dictGet[Type]('dict_name', 'attr_name', id_expr)
 dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 ```

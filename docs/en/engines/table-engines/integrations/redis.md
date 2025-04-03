@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/integrations/redis
+description: 'This engine allows integrating ClickHouse with Redis.'
+sidebar_label: 'Redis'
 sidebar_position: 175
-sidebar_label: Redis
-title: "Redis"
-description: "This engine allows integrating ClickHouse with Redis."
+slug: /engines/table-engines/integrations/redis
+title: 'Redis'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -16,7 +16,7 @@ This engine allows integrating ClickHouse with [Redis](https://redis.io/). For R
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
 (
     name1 [type1],
@@ -49,7 +49,7 @@ Queries with `key equals` or `in filtering` will be optimized to multi keys look
 
 Create a table in ClickHouse using `Redis` engine with plain arguments:
 
-``` sql
+```sql
 CREATE TABLE redis_table
 (
     `key` String,
@@ -93,17 +93,17 @@ INSERT INTO redis_table Values('1', 1, '1', 1.0), ('2', 2, '2', 2.0);
 
 Query:
 
-``` sql
+```sql
 SELECT COUNT(*) FROM redis_table;
 ```
 
-``` text
+```text
 ┌─count()─┐
 │       2 │
 └─────────┘
 ```
 
-``` sql
+```sql
 SELECT * FROM redis_table WHERE key='1';
 ```
 
@@ -113,7 +113,7 @@ SELECT * FROM redis_table WHERE key='1';
 └─────┴────┴────┴────┘
 ```
 
-``` sql
+```sql
 SELECT * FROM redis_table WHERE v1=2;
 ```
 

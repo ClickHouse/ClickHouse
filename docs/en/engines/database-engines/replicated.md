@@ -1,9 +1,11 @@
 ---
-slug: /engines/database-engines/replicated
+description: 'The engine is based on the Atomic engine. It supports replication of
+  metadata via DDL log being written to ZooKeeper and executed on all of the replicas
+  for a given database.'
+sidebar_label: 'Replicated'
 sidebar_position: 30
-sidebar_label: Replicated
-title: "Replicated"
-description: "The engine is based on the Atomic engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database."
+slug: /engines/database-engines/replicated
+title: 'Replicated'
 ---
 
 # Replicated
@@ -13,7 +15,7 @@ The engine is based on the [Atomic](../../engines/database-engines/atomic.md) en
 One ClickHouse server can have multiple replicated databases running and updating at the same time. But there can't be multiple replicas of the same replicated database.
 
 ## Creating a Database {#creating-a-database}
-``` sql
+```sql
 CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name') [SETTINGS ...]
 ```
 
@@ -45,7 +47,7 @@ In case you need only configure a cluster without maintaining table replication,
 
 Creating a cluster with three hosts:
 
-``` sql
+```sql
 node1 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','shard1','replica1');
 node2 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','shard1','other_replica');
 node3 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','{replica}');
@@ -53,11 +55,11 @@ node3 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','{repli
 
 Running the DDL-query:
 
-``` sql
+```sql
 CREATE TABLE r.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;
 ```
 
-``` text
+```text
 ┌─────hosts────────────┬──status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
 │ shard1|replica1      │    0    │       │          2          │        0         │
 │ shard1|other_replica │    0    │       │          1          │        0         │
@@ -67,12 +69,12 @@ CREATE TABLE r.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;
 
 Showing the system table:
 
-``` sql
+```sql
 SELECT cluster, shard_num, replica_num, host_name, host_address, port, is_local
 FROM system.clusters WHERE cluster='r';
 ```
 
-``` text
+```text
 ┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
 │ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
 │ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
@@ -82,13 +84,13 @@ FROM system.clusters WHERE cluster='r';
 
 Creating a distributed table and inserting the data:
 
-``` sql
+```sql
 node2 :) CREATE TABLE r.d (n UInt64) ENGINE=Distributed('r','r','rmt', n % 2);
 node3 :) INSERT INTO r.d SELECT * FROM numbers(10);
 node1 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY host;
 ```
 
-``` text
+```text
 ┌─hosts─┬─groupArray(n)─┐
 │ node3 │  [1,3,5,7,9]  │
 │ node2 │  [0,2,4,6,8]  │
@@ -97,13 +99,13 @@ node1 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 
 Adding replica on the one more host:
 
-``` sql
+```sql
 node4 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','r2');
 ```
 
 The cluster configuration will look like this:
 
-``` text
+```text
 ┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
 │ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
 │ r       │     1     │      2      │   node4   │  127.0.0.1   │ 9003 │     0    │

@@ -5,28 +5,28 @@
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
             </s3>
             <unstable_s3>
                 <type>s3</type>
                 <endpoint>http://resolver:8081/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_read_retries>10</s3_max_single_read_retries>
             </unstable_s3>
             <no_delete_objects_s3>
                 <type>s3</type>
                 <endpoint>http://resolver:8082/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_read_retries>10</s3_max_single_read_retries>
             </no_delete_objects_s3>
             <broken_s3>
                 <type>s3</type>
                 <endpoint>http://resolver:8083/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <skip_access_check>true</skip_access_check>
                 <retry_attempts>0</retry_attempts>
                 <connect_timeout_ms>20000</connect_timeout_ms>
@@ -37,7 +37,7 @@
                 <type>s3</type>
                 <endpoint>http://resolver:8083/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <skip_access_check>true</skip_access_check>
                 <retry_attempts>0</retry_attempts>
                 <connect_timeout_ms>20000</connect_timeout_ms>
@@ -70,7 +70,7 @@
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
             </s3_r>
             <s3_cache_r>

@@ -1,8 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/mysql
+description: 'Documentation for MySQL Table Engine'
+sidebar_label: 'MySQL'
 sidebar_position: 138
-sidebar_label: MySQL
-title: "The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server."
+slug: /engines/table-engines/integrations/mysql
+title: 'The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data
+  that is stored on a remote MySQL server.'
 ---
 
 # MySQL Table Engine
@@ -11,7 +13,7 @@ The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data tha
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -68,7 +70,7 @@ CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) EN
 
 Create table in MySQL:
 
-``` text
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -91,7 +93,7 @@ mysql> select * from test;
 
 Create table in ClickHouse using plain arguments:
 
-``` sql
+```sql
 CREATE TABLE mysql_table
 (
     `float_nullable` Nullable(Float32),
@@ -119,11 +121,11 @@ ENGINE = MySQL(creds, table='test')
 
 Retrieving data from MySQL table:
 
-``` sql
+```sql
 SELECT * FROM mysql_table
 ```
 
-``` text
+```text
 ┌─float_nullable─┬─int_id─┐
 │           ᴺᵁᴸᴸ │      1 │
 └────────────────┴────────┘

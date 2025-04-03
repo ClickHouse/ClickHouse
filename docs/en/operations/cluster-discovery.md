@@ -1,7 +1,10 @@
 ---
+description: 'Documentation for cluster discovery in ClickHouse'
+sidebar_label: 'Cluster Discovery'
 slug: /operations/cluster-discovery
-sidebar_label: Cluster Discovery
+title: 'Cluster Discovery'
 ---
+
 # Cluster Discovery
 
 ## Overview {#overview}

@@ -1,10 +1,13 @@
 ---
-description: "Analyzing Stack Overflow data with ClickHouse"
-slug: /getting-started/example-datasets/stackoverflow
-sidebar_label: Stack Overflow
+description: 'Analyzing Stack Overflow data with ClickHouse'
+sidebar_label: 'Stack Overflow'
 sidebar_position: 1
-title: "Analyzing Stack Overflow data with ClickHouse"
+slug: /getting-started/example-datasets/stackoverflow
+title: 'Analyzing Stack Overflow data with ClickHouse'
 ---
+
+import Image from '@theme/IdealImage';
+import stackoverflow from './images/stackoverflow.png'
 
 This dataset contains every `Posts`, `Users`, `Votes`, `Comments`, `Badges`, `PostHistory`, and `PostLinks` that has occurred on Stack Overflow.
 
@@ -12,7 +15,7 @@ Users can either download pre-prepared Parquet versions of the data, containing 
 
 The following diagram shows the schema for the available tables assuming Parquet format.
 
-![Stack Overflow schema](./images/stackoverflow.png)
+<Image img={stackoverflow} alt="Stack Overflow schema" size="md"/>
 
 A description of the schema of this data can be found [here](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede).
 

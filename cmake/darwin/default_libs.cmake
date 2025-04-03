@@ -17,8 +17,3 @@ find_package(Threads REQUIRED)
 
 include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)
-link_libraries(global-group)
-
-target_link_libraries(global-group INTERFACE
-    $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>
-)

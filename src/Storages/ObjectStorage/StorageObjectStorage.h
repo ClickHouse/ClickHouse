@@ -70,6 +70,7 @@ public:
         LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
+        bool is_table_function_ = false,
         bool lazy_init = false);
 
     String getName() const override;
@@ -139,6 +140,8 @@ public:
 
     void updateExternalDynamicMetadata(ContextPtr) override;
 
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 protected:
     String getPathSample(ContextPtr context);
 
@@ -154,6 +157,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const ASTPtr partition_by;
     const bool distributed_processing;
+    bool update_configuration_on_read;
 
     LoggerPtr log;
 };
@@ -222,6 +226,9 @@ public:
 
     virtual void implementPartitionPruning(const ActionsDAG &) { }
 
+    virtual std::optional<size_t> totalRows() { return {}; }
+    virtual std::optional<size_t> totalBytes() { return {}; }
+
     virtual bool hasExternalDynamicMetadata() { return false; }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String&) const { return {}; }
@@ -243,7 +250,7 @@ public:
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
     virtual bool supportsFileIterator() const { return false; }
-    virtual ObjectIterator iterate()
+    virtual ObjectIterator iterate(std::function<void(FileProgress)> /* callback */, size_t /* list_batch_size */)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
