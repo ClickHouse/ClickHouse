@@ -472,7 +472,7 @@ private:
             if (delayed_bucket != -1)
             {
                 auto chunk = get_bucket_if_ready(delayed_bucket);
-                if (chunk)
+                if (chunk && chunk.hasRows())
                 {
                     delayed_bucket = -1;
                     encodeDelayedBucketId(chunk, delayed_buckets);
