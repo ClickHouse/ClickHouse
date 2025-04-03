@@ -1,4 +1,3 @@
-#include <functional>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -70,8 +69,8 @@ public:
         if (!ctx_template)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No context provided");
 
-        thread_local EVP_MD_CTX* ctx = [] {
-            EVP_MD_CTX* c = EVP_MD_CTX_new();
+        thread_local EVP_MD_CTX * ctx = [] {
+            EVP_MD_CTX * c = EVP_MD_CTX_new();
             if (!c)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed: {}", getOpenSSLErrors());
             return c;
@@ -94,7 +93,7 @@ private:
 struct MD4Impl
 {
     static constexpr auto name = "MD4";
-    static constexpr const EVP_MD* (*provider)() = &EVP_md4;
+    static constexpr const EVP_MD * (*provider)() = &EVP_md4;
     enum
     {
         length = MD4_DIGEST_LENGTH
@@ -104,7 +103,7 @@ struct MD4Impl
 struct MD5Impl
 {
     static constexpr auto name = "MD5";
-    static constexpr const EVP_MD* (*provider)() = &EVP_md5;
+    static constexpr const EVP_MD * (*provider)() = &EVP_md5;
     enum
     {
         length = MD5_DIGEST_LENGTH
@@ -114,7 +113,7 @@ struct MD5Impl
 struct SHA1Impl
 {
     static constexpr auto name = "SHA1";
-    static constexpr const EVP_MD* (*provider)() = &EVP_sha1;
+    static constexpr const EVP_MD * (*provider)() = &EVP_sha1;
     enum
     {
         length = SHA_DIGEST_LENGTH
@@ -124,7 +123,7 @@ struct SHA1Impl
 struct SHA224Impl
 {
     static constexpr auto name = "SHA224";
-    static constexpr const EVP_MD* (*provider)() = &EVP_sha224;
+    static constexpr const EVP_MD * (*provider)() = &EVP_sha224;
     enum
     {
         length = SHA224_DIGEST_LENGTH
@@ -135,7 +134,7 @@ struct SHA224Impl
 struct SHA256Impl
 {
     static constexpr auto name = "SHA256";
-    static constexpr const EVP_MD* (*provider)() = &EVP_sha256;
+    static constexpr const EVP_MD * (*provider)() = &EVP_sha256;
     enum
     {
         length = SHA256_DIGEST_LENGTH
@@ -145,7 +144,7 @@ struct SHA256Impl
 struct SHA384Impl
 {
     static constexpr auto name = "SHA384";
-    static constexpr const EVP_MD* (*provider)() = &EVP_sha384;
+    static constexpr const EVP_MD * (*provider)() = &EVP_sha384;
     enum
     {
         length = SHA384_DIGEST_LENGTH
@@ -155,7 +154,7 @@ struct SHA384Impl
 struct SHA512Impl
 {
     static constexpr auto name = "SHA512";
-    static constexpr const EVP_MD* (*provider)() = &EVP_sha512;
+    static constexpr const EVP_MD * (*provider)() = &EVP_sha512;
     enum
     {
         length = SHA512_DIGEST_LENGTH
@@ -165,7 +164,7 @@ struct SHA512Impl
 struct SHA512Impl256
 {
     static constexpr auto name = "SHA512_256";
-    static constexpr const EVP_MD* (*provider)() = &EVP_sha512_256;
+    static constexpr const EVP_MD * (*provider)() = &EVP_sha512_256;
     enum
     {
         length = SHA256_DIGEST_LENGTH
@@ -175,7 +174,7 @@ struct SHA512Impl256
 struct RIPEMD160Impl
 {
     static constexpr auto name = "RIPEMD160";
-    static constexpr const EVP_MD* (*provider)() = &EVP_ripemd160;
+    static constexpr const EVP_MD * (*provider)() = &EVP_ripemd160;
     enum
     {
         length = RIPEMD160_DIGEST_LENGTH
@@ -205,7 +204,7 @@ struct ImplBLAKE3
         length = 32
     };
 
-    static void apply(const char* begin, size_t size, unsigned char* out_char_data)
+    static void apply(const char * begin, size_t size, unsigned char * out_char_data)
     {
         static_assert(LLVM_BLAKE3_OUT_LEN == ImplBLAKE3::length);
         auto & result = *reinterpret_cast<std::array<uint8_t, LLVM_BLAKE3_OUT_LEN> *>(out_char_data);
@@ -228,7 +227,7 @@ struct Keccak256Impl
         length = 32
     };
 
-    static void apply(const char* begin, size_t size, unsigned char* out_char_data)
+    static void apply(const char * begin, size_t size, unsigned char * out_char_data)
     {
         sha3_HashBuffer(256, SHA3_FLAGS_KECCAK, begin, size, out_char_data, Keccak256Impl::length);
     }
