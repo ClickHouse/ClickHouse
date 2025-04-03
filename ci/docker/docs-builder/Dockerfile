@@ -1,6 +1,4 @@
 # docker build -t clickhouse/docs-builder .
-FROM golang:alpine
-
 FROM node:20-bookworm-slim
 
 RUN apt-get update && \
