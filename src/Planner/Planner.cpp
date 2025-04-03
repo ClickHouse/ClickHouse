@@ -532,8 +532,6 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             aggregate_description.argument_names.clear();
     }
 
-    auto limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
-
     const auto& order_by_nodes = query_node.getOrderBy().getNodes();
     const auto& group_by_nodes = query_node.getGroupBy().getNodes();
     auto optimization_indexes = FindOptimizationSublistIndexes(group_by_nodes, order_by_nodes);
