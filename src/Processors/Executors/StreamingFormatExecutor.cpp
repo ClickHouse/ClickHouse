@@ -58,7 +58,7 @@ void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const C
 
     try_preallocate = false; /// do it once
 
-    if (total_bytes && num_bytes && total_chunks > 2)
+    if (total_bytes && num_bytes && total_chunks > 1)
     {
         const auto & reference_columns = chunk.getColumns();
         size_t factor = static_cast<size_t>(std::ceil(static_cast<double>(total_bytes) / num_bytes));
