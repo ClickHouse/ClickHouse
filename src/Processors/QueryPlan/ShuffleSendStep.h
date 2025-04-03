@@ -6,6 +6,7 @@
 namespace DB
 {
 
+/// Send part of ShuffleExchangeStep
 class ShuffleSendStep final : public IQueryPlanStep
 {
 public:

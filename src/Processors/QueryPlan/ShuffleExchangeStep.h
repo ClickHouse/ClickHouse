@@ -5,6 +5,7 @@
 namespace DB
 {
 
+/// Repartitions the data from M logical streams into N logical streams.
 class ShuffleExchangeStep final : public LogicalExchangeStep
 {
 public:

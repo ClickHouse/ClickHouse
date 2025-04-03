@@ -28,10 +28,10 @@ namespace QueryPlanOptimizations
 ///
 ///   GatherExchange
 ///     LogicalJoin
-///       ShuffleExchange
+///       ShuffleExchange by hash(join_key)
 ///         Expression: compute join key for right source
 ///         ...
-///       ShuffleExchange
+///       ShuffleExchange by hash(join_key)
 ///         Expression: compute join key for left source
 ///         ...
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
@@ -213,8 +213,10 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 }
 
 
-/// Moves exchanges where possible to parallelize more work.
-/// Removes unnecessary exchanges.
+/// 1. Moves exchanges where possible to parallelize more work. Example: if there is a Filter step on top of an GatherExchange step
+/// then filter step can be moved below the exchange step to allow parallel processing.
+/// 2. Removes unnecessary exchanges. Example: if there is a ShuffleExchange step on top of another exchange step then child
+/// exchange step can be removed.
 void optimizeExchanges(QueryPlan::Node & root)
 {
     Stack stack;

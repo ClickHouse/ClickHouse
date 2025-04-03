@@ -74,6 +74,7 @@ private:
 };
 
 
+/// Creates read and write buffers for temporary files in object storage using just logical name of the file.
 class TemporaryFilesInObjectStorage : public ITemporaryFileLookup
 {
 public:
@@ -187,7 +188,7 @@ private:
 using InMemoryExchangePtr = std::shared_ptr<InMemoryExchange>;
 
 
-/// A map of in-memory exchanges addressed by theit logical names
+/// A map of in-memory exchanges addressed by their logical names
 class InMemoryExchanges : boost::noncopyable
 {
 public:
@@ -284,7 +285,7 @@ private:
 };
 
 
-/// A wrapper that looks up exchanges by their kind and delegates to the corresponding exchange lookup: Perssitent or Streaming
+/// A wrapper that looks up exchanges by their kind and delegates to the corresponding exchange lookup: Persistent or Streaming
 class AllKindsExchangeLookup : public IExchangeLookup
 {
 public:

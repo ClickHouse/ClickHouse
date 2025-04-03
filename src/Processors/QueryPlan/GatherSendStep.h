@@ -6,6 +6,7 @@
 namespace DB
 {
 
+/// Send part of GatherExchangeStep
 class GatherSendStep final : public IQueryPlanStep
 {
 public:

@@ -5,6 +5,7 @@
 namespace DB
 {
 
+/// Receive part of GatherExchangeStep
 class GatherReceiveStep : public ISourceStep
 {
 public:

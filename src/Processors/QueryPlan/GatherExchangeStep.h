@@ -5,6 +5,7 @@
 namespace DB
 {
 
+/// Collects multiple logical streams of data with the same schema into one stream.
 class GatherExchangeStep final : public LogicalExchangeStep
 {
 public:

@@ -9,8 +9,9 @@
 namespace DB
 {
 
-/// Accepts connections and reads first packet from them. This packet contains distributed query id and exchange stream id.
-/// Then the connection is stored in a map and can be rertrieved by distributed query task to create ExchangeStreamingSource
+/// Accepts connections for streaming exchanges used by distributed queries.
+//  Reads first packet from the connections that contains distributed query id and exchange stream id.
+/// Then the connection is stored in a map and can be retrieved by distributed query task to create ExchangeStreamingSource
 class ExchangeServer : public Poco::Runnable
 {
 public:
