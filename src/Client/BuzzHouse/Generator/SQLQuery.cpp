@@ -116,7 +116,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
 
     for (uint32_t i = 0; i < nclauses; i++)
     {
-        const String cname = "c" + std::to_string(this->levels[this->current_level].aliases_counter++);
+        const String ncname = getNextAlias();
         ExprColAlias * eca = i == 0 ? aj->mutable_constraint() : aj->add_other_constraints();
         Expr * expr = eca->mutable_expr();
 
@@ -128,8 +128,8 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
         {
             generateExpression(rg, expr);
         }
-        rel.cols.emplace_back(SQLRelationCol("", {cname}));
-        eca->mutable_col_alias()->set_column(cname);
+        rel.cols.emplace_back(SQLRelationCol("", {ncname}));
+        eca->mutable_col_alias()->set_column(ncname);
     }
     this->levels[this->current_level].rels.emplace_back(rel);
 }
@@ -1239,8 +1239,7 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
     /// For Qualify clause, use projections
     for (const auto & entry : this->levels[this->current_level].projections)
     {
-        const String cname = "c" + std::to_string(entry);
-        available_cols.emplace_back(GroupCol(SQLRelationCol("", {cname}), nullptr));
+        available_cols.emplace_back(GroupCol(SQLRelationCol("", {entry}), nullptr));
     }
 
     this->depth++;
@@ -1518,8 +1517,7 @@ void StatementGenerator::generateOrderBy(
         {
             for (const auto & entry : this->levels[this->current_level].projections)
             {
-                const String cname = "c" + std::to_string(entry);
-                available_cols.emplace_back(GroupCol(SQLRelationCol("", {cname}), nullptr));
+                available_cols.emplace_back(GroupCol(SQLRelationCol("", {entry}), nullptr));
             }
         }
         else if (this->levels[this->current_level].gcols.empty() && !this->levels[this->current_level].global_aggregate)
@@ -1610,21 +1608,19 @@ void StatementGenerator::generateOrderBy(
             }
         }
         this->width -= nclauses;
-        if (has_fill && !this->levels[this->current_level].projections.empty() && rg.nextSmallNumber() < 4)
+
+        auto & projs = this->levels[this->current_level].projections;
+        if (has_fill && !projs.empty() && rg.nextSmallNumber() < 4)
         {
-            std::vector<uint32_t> nids;
-            const uint32_t nprojs = std::min<uint32_t>(
-                UINT32_C(3), (rg.nextRandomUInt32() % static_cast<uint32_t>(this->levels[this->current_level].projections.size())) + 1);
+            const uint32_t nprojs = std::min<uint32_t>(UINT32_C(3), (rg.nextRandomUInt32() % static_cast<uint32_t>(projs.size())) + 1);
             const uint32_t iclauses = std::min<uint32_t>(this->fc.max_width - this->width, nprojs);
 
-            nids.insert(
-                nids.end(), this->levels[this->current_level].projections.begin(), this->levels[this->current_level].projections.end());
-            std::shuffle(nids.begin(), nids.end(), rg.generator);
+            std::shuffle(projs.begin(), projs.end(), rg.generator);
             for (uint32_t i = 0; i < iclauses; i++)
             {
                 InterpolateExpr * ie = olist->add_interpolate();
 
-                ie->mutable_col()->set_column("c" + std::to_string(nids[i]));
+                ie->mutable_col()->set_column(projs[i]);
                 generateExpression(rg, ie->mutable_expr());
                 this->width++;
             }
@@ -1717,12 +1713,12 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
         {
             /// Use CTE expression
             CTEexpr * expr = scte->mutable_cte_expr();
-            const String name = fmt::format("c{}", this->levels[this->current_level].aliases_counter++);
+            const String ncname = getNextAlias();
             SQLRelation rel("");
 
             generateExpression(rg, expr->mutable_expr());
-            expr->mutable_col_alias()->set_column(name);
-            rel.cols.emplace_back(SQLRelationCol("", {name}));
+            expr->mutable_col_alias()->set_column(ncname);
+            rel.cols.emplace_back(SQLRelationCol("", {ncname}));
             this->levels[this->current_level].rels.emplace_back(rel);
         }
         this->width++;
@@ -1877,14 +1873,13 @@ void StatementGenerator::generateSelect(
             generateExpression(rg, eca->mutable_expr());
             if (!top)
             {
-                const uint32_t cname = this->levels[this->current_level].aliases_counter++;
-                const String cname_str = "c" + std::to_string(cname);
+                const String ncname = getNextAlias();
 
                 SQLRelation rel("");
-                rel.cols.emplace_back(SQLRelationCol("", {cname_str}));
+                rel.cols.emplace_back(SQLRelationCol("", {ncname}));
                 this->levels[this->current_level].rels.emplace_back(rel);
-                eca->mutable_col_alias()->set_column(cname_str);
-                this->levels[this->current_level].projections.emplace_back(cname);
+                eca->mutable_col_alias()->set_column(ncname);
+                this->levels[this->current_level].projections.emplace_back(ncname);
             }
         }
         this->depth--;

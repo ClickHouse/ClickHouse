@@ -72,7 +72,7 @@ public:
     uint32_t level, cte_counter = 0, aliases_counter = 0, window_counter = 0;
     std::vector<GroupCol> gcols;
     std::vector<SQLRelation> rels;
-    std::vector<uint32_t> projections;
+    std::vector<String> projections;
 
     QueryLevel() = default;
 
@@ -277,6 +277,7 @@ public:
     }
 
 private:
+    String getNextAlias() { return "a" + std::to_string(this->levels[this->current_level].aliases_counter++); }
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);

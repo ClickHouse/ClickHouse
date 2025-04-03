@@ -1128,13 +1128,12 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     if (eca && this->allow_in_expression_alias && !this->inside_projection && rg.nextSmallNumber() < 4)
     {
         SQLRelation rel("");
-        const uint32_t cname = this->levels[this->current_level].aliases_counter++;
-        const String cname_str = "c" + std::to_string(cname);
+        const String ncname = this->getNextAlias();
 
-        rel.cols.emplace_back(SQLRelationCol("", {cname_str}));
+        rel.cols.emplace_back(SQLRelationCol("", {ncname}));
         this->levels[this->current_level].rels.emplace_back(rel);
-        eca->mutable_col_alias()->set_column(cname_str);
-        this->levels[this->current_level].projections.emplace_back(cname);
+        eca->mutable_col_alias()->set_column(ncname);
+        this->levels[this->current_level].projections.emplace_back(ncname);
     }
 }
 
