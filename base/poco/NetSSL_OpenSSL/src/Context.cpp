@@ -16,7 +16,7 @@
 #include "Poco/Net/SSLManager.h"
 #include "Poco/Net/SSLException.h"
 #include "Poco/Net/Utility.h"
-#include "Poco/Crypto/OpenSSLInitializer.h"
+// #include "Poco/Crypto/OpenSSLInitializer.h"
 #include "Poco/File.h"
 #include "Poco/Path.h"
 #include "Poco/DirectoryIterator.h"
@@ -114,7 +114,7 @@ Context::~Context()
 	try
 	{
 		SSL_CTX_free(_pSSLContext);
-		Poco::Crypto::OpenSSLInitializer::uninitialize();
+		// Poco::Crypto::OpenSSLInitializer::uninitialize();
 	}
 	catch (...)
 	{
@@ -233,7 +233,7 @@ static int poco_ssl_probe_and_set_default_ca_location(SSL_CTX *ctx, Context::CAP
 
 void Context::init(const Params& params)
 {
-	Poco::Crypto::OpenSSLInitializer::initialize();
+	// Poco::Crypto::OpenSSLInitializer::initialize();
 
 	createSSLContext();
 
@@ -336,58 +336,58 @@ void Context::init(const Params& params)
 }
 
 
-void Context::useCertificate(const Poco::Crypto::X509Certificate& certificate)
-{
-	int errCode = SSL_CTX_use_certificate(_pSSLContext, const_cast<X509*>(certificate.certificate()));
-	if (errCode != 1)
-	{
-		std::string msg = Utility::getLastError();
-		throw SSLContextException("Cannot set certificate for Context", msg);
-	}
-}
+// void Context::useCertificate(const Poco::Crypto::X509Certificate& certificate)
+// {
+// 	int errCode = SSL_CTX_use_certificate(_pSSLContext, const_cast<X509*>(certificate.certificate()));
+// 	if (errCode != 1)
+// 	{
+// 		std::string msg = Utility::getLastError();
+// 		throw SSLContextException("Cannot set certificate for Context", msg);
+// 	}
+// }
 
 
-void Context::addChainCertificate(const Poco::Crypto::X509Certificate& certificate)
-{
-	X509* pCert = certificate.dup();
-	int errCode = SSL_CTX_add_extra_chain_cert(_pSSLContext, pCert);
-	if (errCode != 1)
-	{
-		X509_free(pCert);
-		std::string msg = Utility::getLastError();
-		throw SSLContextException("Cannot add chain certificate to Context", msg);
-	}
-}
-
-
-void Context::addCertificateAuthority(const Crypto::X509Certificate &certificate)
-{
-	if (X509_STORE* store = SSL_CTX_get_cert_store(_pSSLContext))
-	{
-		int errCode = X509_STORE_add_cert(store, const_cast<X509*>(certificate.certificate()));
-		if (errCode != 1)
-		{
-			std::string msg = Utility::getLastError();
-			throw SSLContextException("Cannot add certificate authority to Context", msg);
-		}
-	}
-	else
-	{
-		std::string msg = Utility::getLastError();
-		throw SSLContextException("Cannot add certificate authority to Context", msg);
-	}
-}
-
-
-void Context::usePrivateKey(const Poco::Crypto::RSAKey& key)
-{
-	int errCode = SSL_CTX_use_RSAPrivateKey(_pSSLContext, key.impl()->getRSA());
-	if (errCode != 1)
-	{
-		std::string msg = Utility::getLastError();
-		throw SSLContextException("Cannot set private key for Context", msg);
-	}
-}
+// void Context::addChainCertificate(const Poco::Crypto::X509Certificate& certificate)
+// {
+// 	X509* pCert = certificate.dup();
+// 	int errCode = SSL_CTX_add_extra_chain_cert(_pSSLContext, pCert);
+// 	if (errCode != 1)
+// 	{
+// 		X509_free(pCert);
+// 		std::string msg = Utility::getLastError();
+// 		throw SSLContextException("Cannot add chain certificate to Context", msg);
+// 	}
+// }
+//
+//
+// void Context::addCertificateAuthority(const Crypto::X509Certificate &certificate)
+// {
+// 	if (X509_STORE* store = SSL_CTX_get_cert_store(_pSSLContext))
+// 	{
+// 		int errCode = X509_STORE_add_cert(store, const_cast<X509*>(certificate.certificate()));
+// 		if (errCode != 1)
+// 		{
+// 			std::string msg = Utility::getLastError();
+// 			throw SSLContextException("Cannot add certificate authority to Context", msg);
+// 		}
+// 	}
+// 	else
+// 	{
+// 		std::string msg = Utility::getLastError();
+// 		throw SSLContextException("Cannot add certificate authority to Context", msg);
+// 	}
+// }
+//
+//
+// void Context::usePrivateKey(const Poco::Crypto::RSAKey& key)
+// {
+// 	int errCode = SSL_CTX_use_RSAPrivateKey(_pSSLContext, key.impl()->getRSA());
+// 	if (errCode != 1)
+// 	{
+// 		std::string msg = Utility::getLastError();
+// 		throw SSLContextException("Cannot set private key for Context", msg);
+// 	}
+// }
 
 
 void Context::enableSessionCache(bool flag)
