@@ -551,6 +551,8 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
         std::function<void(const QueryTreeNodePtr &)> get_columns = [&](const QueryTreeNodePtr & node) -> void
         {
+            if (!is_injective)
+                return;
             if (const auto * func = node->as<FunctionNode>())
             {
                 auto function = func->getFunctionOrThrow();
