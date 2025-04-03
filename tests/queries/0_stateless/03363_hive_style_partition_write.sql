@@ -54,7 +54,7 @@ select distinct on (counter) replaceRegexpAll(_path, '/[0-9]+\\.parquet', '/<sno
 -- should output 1 because partition columns are not written down to the file by default when hive style is being used
 select num_columns from s3(s3_conn, filename='t_03363_function/**.parquet', format=ParquetMetadata) limit 1;
 
-INSERT INTO FUNCTION s3(s3_conn, filename='t_03363_function_write_down_partition_columns', format=Parquet, partition_strategy='hive', write_partition_columns_into_files=1) PARTITION BY (year, country) SELECT country, year, counter FROM t_03363_parquet_read;
+INSERT INTO FUNCTION s3(s3_conn, filename='t_03363_function_write_down_partition_columns', format=Parquet, partition_strategy='hive', hive_partition_strategy_write_partition_columns_into_files=1) PARTITION BY (year, country) SELECT country, year, counter FROM t_03363_parquet_read;
 select num_columns from s3(s3_conn, filename='t_03363_function_write_down_partition_columns/**.parquet', format=ParquetMetadata) limit 1;
 select * from s3(s3_conn, filename='t_03363_function_write_down_partition_columns/**.parquet', format=Parquet) order by counter limit 1 SETTINGS use_hive_partitioning=0;
 
