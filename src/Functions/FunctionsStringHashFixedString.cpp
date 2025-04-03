@@ -20,6 +20,7 @@
 #    include <openssl/sha.h>
 #    include <openssl/md4.h>
 #    include <openssl/md5.h>
+#    include <Common/OpenSSLHelpers.h>
 #endif
 
 #if USE_SHA3IUF
@@ -47,226 +48,152 @@ namespace ErrorCodes
 #if USE_SSL
 using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
 
+template <typename ProviderImpl>
+class OpenSSLProvider
+{
+public:
+    static constexpr auto name = ProviderImpl::name;
+    static constexpr auto length = ProviderImpl::length;
+
+    OpenSSLProvider() : ctx_template(EVP_MD_CTX_new(), &EVP_MD_CTX_free)
+    {
+        if (!ctx_template)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed: {}", getOpenSSLErrors());
+
+        if (EVP_DigestInit_ex(ctx_template.get(), ProviderImpl::provider(), nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+    }
+
+    void apply(const char * begin, size_t size, unsigned char * out_char_data)
+    {
+        if (!ctx_template)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No context provided");
+
+        thread_local EVP_MD_CTX* ctx = [] {
+            EVP_MD_CTX* c = EVP_MD_CTX_new();
+            if (!c)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed: {}", getOpenSSLErrors());
+            return c;
+        }();
+
+        if (EVP_MD_CTX_copy_ex(ctx, ctx_template.get()) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
+
+        if (EVP_DigestUpdate(ctx, begin, size) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
+
+        if (EVP_DigestFinal_ex(ctx, out_char_data, nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
+    }
+
+private:
+    EVP_MD_CTX_ptr ctx_template;
+};
+
 struct MD4Impl
 {
     static constexpr auto name = "MD4";
+    static constexpr const EVP_MD* (*provider)() = &EVP_md4;
     enum
     {
         length = MD4_DIGEST_LENGTH
     };
-
-    static void apply(EVP_MD_CTX_ptr & ctx, const char* begin, size_t size, unsigned char* out_char_data)
-    {
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
-
-        if (EVP_DigestInit_ex(ctx.get(), EVP_md4(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_md4) failed");
-
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
-
-        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
-    }
 };
 
 struct MD5Impl
 {
     static constexpr auto name = "MD5";
+    static constexpr const EVP_MD* (*provider)() = &EVP_md5;
     enum
     {
         length = MD5_DIGEST_LENGTH
     };
-
-    static void apply(EVP_MD_CTX_ptr & ctx, const char* begin, size_t size, unsigned char* out_char_data)
-    {
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
-
-        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_md5) failed");
-
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
-
-        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
-    }
 };
 
 struct SHA1Impl
 {
     static constexpr auto name = "SHA1";
+    static constexpr const EVP_MD* (*provider)() = &EVP_sha1;
     enum
     {
         length = SHA_DIGEST_LENGTH
     };
-
-    static void apply(EVP_MD_CTX_ptr & ctx, const char* begin, size_t size, unsigned char* out_char_data)
-    {
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
-
-        if (EVP_DigestInit_ex(ctx.get(), EVP_sha1(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha1) failed");
-
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
-
-        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
-    }
 };
 
 struct SHA224Impl
 {
     static constexpr auto name = "SHA224";
+    static constexpr const EVP_MD* (*provider)() = &EVP_sha224;
     enum
     {
         length = SHA224_DIGEST_LENGTH
     };
 
-    static void apply(EVP_MD_CTX_ptr & ctx_template, const char* begin, size_t size, unsigned char* out_char_data)
-    {
-        if (!ctx_template)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No context provided");
-
-        EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
-
-        if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed");
-
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
-
-        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
-    }
 };
 
 struct SHA256Impl
 {
     static constexpr auto name = "SHA256";
+    static constexpr const EVP_MD* (*provider)() = &EVP_sha256;
     enum
     {
         length = SHA256_DIGEST_LENGTH
     };
-
-    static void apply(EVP_MD_CTX_ptr & ctx, const char* begin, size_t size, unsigned char* out_char_data)
-    {
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
-
-        if (EVP_DigestInit_ex(ctx.get(), EVP_sha256(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha256) failed");
-
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
-
-        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
-    }
 };
 
 struct SHA384Impl
 {
     static constexpr auto name = "SHA384";
+    static constexpr const EVP_MD* (*provider)() = &EVP_sha384;
     enum
     {
         length = SHA384_DIGEST_LENGTH
     };
-
-    static void apply(EVP_MD_CTX_ptr & ctx, const char* begin, size_t size, unsigned char* out_char_data)
-    {
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
-
-        if (EVP_DigestInit_ex(ctx.get(), EVP_sha384(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha384) failed");
-
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
-
-        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
-    }
 };
 
 struct SHA512Impl
 {
     static constexpr auto name = "SHA512";
+    static constexpr const EVP_MD* (*provider)() = &EVP_sha512;
     enum
     {
-        length = 64
+        length = SHA512_DIGEST_LENGTH
     };
-
-    static void apply(EVP_MD_CTX_ptr & ctx, const char* begin, size_t size, unsigned char* out_char_data)
-    {
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
-
-        if (EVP_DigestInit_ex(ctx.get(), EVP_sha512(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha512) failed");
-
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
-
-        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
-    }
 };
 
 struct SHA512Impl256
 {
     static constexpr auto name = "SHA512_256";
+    static constexpr const EVP_MD* (*provider)() = &EVP_sha512_256;
     enum
     {
-        length = 32
+        length = SHA256_DIGEST_LENGTH
     };
-
-    static void apply(EVP_MD_CTX_ptr & ctx, const char* begin, size_t size, unsigned char* out_char_data)
-    {
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
-
-        if (EVP_DigestInit_ex(ctx.get(), EVP_sha512_256(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha512_256) failed");
-
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
-
-        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
-    }
 };
 
 struct RIPEMD160Impl
 {
     static constexpr auto name = "RIPEMD160";
+    static constexpr const EVP_MD* (*provider)() = &EVP_ripemd160;
     enum
     {
         length = RIPEMD160_DIGEST_LENGTH
     };
-
-    static void apply(EVP_MD_CTX_ptr & ctx, const char* begin, size_t size, unsigned char* out_char_data)
-    {
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
-
-        if (EVP_DigestInit_ex(ctx.get(), EVP_ripemd160(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_ripemd160) failed");
-
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
-
-        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
-    }
 };
 #endif
+
+template <typename Impl>
+class GenericProvider
+{
+public:
+    static constexpr auto name = Impl::name;
+    static constexpr auto length = Impl::length;
+
+    void apply(const char* begin, size_t size, unsigned char* out_char_data)
+    {
+        Impl::apply(begin, size, out_char_data);
+    }
+};
 
 #if USE_BLAKE3
 struct ImplBLAKE3
@@ -277,7 +204,7 @@ struct ImplBLAKE3
         length = 32
     };
 
-    static void apply(EVP_MD_CTX_ptr &, const char* begin, size_t size, unsigned char* out_char_data)
+    static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
         static_assert(LLVM_BLAKE3_OUT_LEN == ImplBLAKE3::length);
         auto & result = *reinterpret_cast<std::array<uint8_t, LLVM_BLAKE3_OUT_LEN> *>(out_char_data);
@@ -300,7 +227,7 @@ struct Keccak256Impl
         length = 32
     };
 
-    static void apply(EVP_MD_CTX_ptr &, const char* begin, size_t size, unsigned char* out_char_data)
+    static void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
         sha3_HashBuffer(256, SHA3_FLAGS_KECCAK, begin, size, out_char_data, Keccak256Impl::length);
     }
@@ -333,44 +260,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-#if USE_SSL
-        bool openssl_context_required = true;
-
-        std::function<const EVP_MD*()> evp_md_provider;
-        static const std::unordered_map<std::string_view, std::function<const EVP_MD*()>> evp_map = {
-            { MD4Impl::name,         [] { return EVP_md4(); } },
-            { MD5Impl::name,         [] { return EVP_md5(); } },
-            { SHA1Impl::name,        [] { return EVP_sha1(); } },
-            { SHA224Impl::name,      [] { return EVP_sha224(); } },
-            { SHA256Impl::name,      [] { return EVP_sha256(); } },
-            { SHA384Impl::name,      [] { return EVP_sha384(); } },
-            { SHA512Impl::name,      [] { return EVP_sha512(); } },
-            { SHA512Impl256::name,   [] { return EVP_sha512_256(); } },
-            { RIPEMD160Impl::name,   [] { return EVP_ripemd160(); } },
-        };
-        auto it = evp_map.find(name);
-        if (it != evp_map.end())
-        {
-            evp_md_provider = it->second;
-        }
-        else
-        {
-            openssl_context_required = false;
-        }
-
-        EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
-
-        if (openssl_context_required)
-        {
-            if (!ctx)
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed");
-
-            if (EVP_DigestInit_ex(ctx.get(), evp_md_provider(), nullptr) != 1)
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex(EVP_sha224) failed");
-        }
-#else
-        void * ctx = nullptr;
-#endif
+        auto hasher = Impl();
 
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
         {
@@ -385,8 +275,7 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Impl::apply(
-                    ctx,
+                hasher.apply(
                     reinterpret_cast<const char *>(&data[current_offset]),
                     offsets[i] - current_offset - 1,
                     reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
@@ -406,8 +295,7 @@ public:
             chars_to.resize(input_rows_count * Impl::length);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Impl::apply(
-                    ctx,
+                hasher.apply(
                     reinterpret_cast<const char *>(&data[i * length]),
                     length,
                     reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length])
@@ -425,8 +313,7 @@ public:
             chars_to.resize(input_rows_count * Impl::length);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Impl::apply(
-                    ctx,
+                hasher.apply(
                     reinterpret_cast<const char *>(&data[i]),
                     length,
                     reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length])
@@ -443,15 +330,15 @@ public:
 REGISTER_FUNCTION(HashFixedStrings)
 {
 #    if USE_SSL
-    using FunctionMD4 = FunctionStringHashFixedString<MD4Impl>;
-    using FunctionMD5 = FunctionStringHashFixedString<MD5Impl>;
-    using FunctionSHA1 = FunctionStringHashFixedString<SHA1Impl>;
-    using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
-    using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
-    using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
-    using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
-    using FunctionSHA512_256 = FunctionStringHashFixedString<SHA512Impl256>;
-    using FunctionRIPEMD160 = FunctionStringHashFixedString<RIPEMD160Impl>;
+    using FunctionMD4 = FunctionStringHashFixedString<OpenSSLProvider<MD4Impl>>;
+    using FunctionMD5 = FunctionStringHashFixedString<OpenSSLProvider<MD5Impl>>;
+    using FunctionSHA1 = FunctionStringHashFixedString<OpenSSLProvider<SHA1Impl>>;
+    using FunctionSHA224 = FunctionStringHashFixedString<OpenSSLProvider<SHA224Impl>>;
+    using FunctionSHA256 = FunctionStringHashFixedString<OpenSSLProvider<SHA256Impl>>;
+    using FunctionSHA384 = FunctionStringHashFixedString<OpenSSLProvider<SHA384Impl>>;
+    using FunctionSHA512 = FunctionStringHashFixedString<OpenSSLProvider<SHA512Impl>>;
+    using FunctionSHA512_256 = FunctionStringHashFixedString<OpenSSLProvider<SHA512Impl256>>;
+    using FunctionRIPEMD160 = FunctionStringHashFixedString<OpenSSLProvider<RIPEMD160Impl>>;
 
     factory.registerFunction<FunctionRIPEMD160>(FunctionDocumentation{
         .description = R"(Calculates the RIPEMD-160 hash of the given string.)",
@@ -584,7 +471,7 @@ REGISTER_FUNCTION(HashFixedStrings)
 #    endif
 
 #    if USE_BLAKE3
-    using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
+    using FunctionBLAKE3 = FunctionStringHashFixedString<GenericProvider<ImplBLAKE3>>;
     factory.registerFunction<FunctionBLAKE3>(FunctionDocumentation{
         .description = R"(
     Calculates BLAKE3 hash string and returns the resulting set of bytes as FixedString.
@@ -597,7 +484,7 @@ REGISTER_FUNCTION(HashFixedStrings)
 #    endif
 
 #   if USE_SHA3IUF
-    using FunctionKeccak256 = FunctionStringHashFixedString<Keccak256Impl>;
+    using FunctionKeccak256 = FunctionStringHashFixedString<GenericProvider<Keccak256Impl>>;
     factory.registerFunction<FunctionKeccak256>(FunctionDocumentation{
         .description = R"(Calculates the Keccak-256 cryptographic hash of the given string.
         This hash function is widely used in blockchain applications, particularly Ethereum.)",
