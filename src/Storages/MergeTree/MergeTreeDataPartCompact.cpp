@@ -178,7 +178,7 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         /*save_marks_in_cache=*/ true,
         read_settings,
         load_marks_threadpool,
-        columns.size());
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size());
 
     loader.loadMarks();
 }
