@@ -1171,6 +1171,7 @@ if(NOT ENABLE_OPENSSL_DYNAMIC)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         ${OPENSSL_SOURCE_DIR}/providers/fips/fips_entry.c
         ${OPENSSL_SOURCE_DIR}/providers/fips/fipsprov.c
+        ${OPENSSL_SOURCE_DIR}/providers/legacyprov.c
     )
 endif()
 
@@ -1456,6 +1457,10 @@ else()
     add_library(crypto ${CRYPTO_SRC})
     add_library(ssl ${SSL_SRC})
 endif()
+
+# Enable legacy crypto support for OpenSSL 3.+
+# to avoid `dlopen(legacy.so)`.
+add_definitions(-DSTATIC_LEGACY)
 
 target_include_directories(crypto
     SYSTEM PUBLIC "${PLATFORM_DIRECTORY}/include"
