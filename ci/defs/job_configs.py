@@ -839,7 +839,7 @@ class JobConfigs:
     docs_job = Job.Config(
         name=JobNames.Docs,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
-        command="./ci/jobs/docs_job.sh",
+        command="./ci/jobs/docs_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "**/*.md",
@@ -847,6 +847,7 @@ class JobConfigs:
                 "./ci/jobs/docs_job.sh",
             ],
         ),
+        run_in_docker="clickhouse/docs-builder",
         requires=[JobNames.STYLE_CHECK],
     )
     docker_sever = Job.Config(
