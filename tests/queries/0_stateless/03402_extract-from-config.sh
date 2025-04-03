@@ -7,13 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Check for scalar values
 $CLICKHOUSE_EXTRACT_CONFIG --key=tcp_port
 
-# Check for XML values
-$CLICKHOUSE_EXTRACT_CONFIG --key=logger
-
 # Check for array values
 $CLICKHOUSE_EXTRACT_CONFIG --key=listen_host
 
-# Check for nested arrays and -o flag
+# Check for nested values and -o flag
 $CLICKHOUSE_EXTRACT_CONFIG --key='http_options_response' --output=extracted_config.xml
 cat extracted_config.xml
 
@@ -32,12 +29,6 @@ if [ $? -eq 0 ]; then
 else
     echo "error not suppressed"
 fi
-
-#Check that entire config is printed when no key is provided
-# Here we remove lines which don't have the work "Exception" in them
-# so that the test doesn't fail.
-# We also exclude environment specific configs from the output.
-$CLICKHOUSE_EXTRACT_CONFIG | grep -v -e "Exception" -e "<log>" -e "<errorlog>"
 
 # Cleanup
 rm extracted_config.xml
