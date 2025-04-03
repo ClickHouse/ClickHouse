@@ -7,7 +7,8 @@
 namespace DB
 {
 
-/// Wraps distributed executor
+/// Wraps distributed plan execution.
+/// It is used in pipeline on distributed query initiator.
 class ReadFromDistributedPlanSource final : public ISource
 {
 public:

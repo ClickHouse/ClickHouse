@@ -142,6 +142,8 @@ private:
     TemporaryFileLookupPtr temporary_files;
 };
 
+/// Simple implementation of streaming exchange for local execution.
+/// It just holds a queue of chunks in memory.
 class InMemoryExchange : boost::noncopyable
 {
 public:
@@ -184,6 +186,8 @@ private:
 
 using InMemoryExchangePtr = std::shared_ptr<InMemoryExchange>;
 
+
+/// A map of in-memory exchanges addressed by theit logical names
 class InMemoryExchanges : boost::noncopyable
 {
 public:
@@ -196,15 +200,18 @@ public:
         return element;
     }
 
+    static std::shared_ptr<InMemoryExchanges> instance()
+    {
+        static std::shared_ptr<InMemoryExchanges> self = std::make_shared<InMemoryExchanges>();
+        return self;
+    }
+
 private:
     using InMemoryExchangeMap = std::unordered_map<String, InMemoryExchangePtr>;
 
     std::unordered_map<String, InMemoryExchangeMap> exchanges_by_query_id TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
-
-InMemoryExchanges in_memory_exchanges;
-
 
 class ExchangeViaChunks : public IExchangeLookup
 {
@@ -217,14 +224,14 @@ public:
     std::shared_ptr<ISink> createSink(const Header & input_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
     {
         auto file_name = streamNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
-        auto exchange = in_memory_exchanges.getExchange(query_id, file_name);
+        auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
         return std::make_shared<SinkFromInMemoryExchange>(input_header, exchange);
     }
 
     std::shared_ptr<ISource> createSource(const Header & output_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
     {
         auto file_name = streamNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
-        auto exchange = in_memory_exchanges.getExchange(query_id, file_name);
+        auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
         return std::make_shared<SourceFromInMemoryExchange>(output_header, exchange);
     }
 
@@ -278,10 +285,10 @@ private:
 
 
 /// A wrapper that looks up exchanges by their kind and delegates to the corresponding exchange lookup: Perssitent or Streaming
-class AllKinkdsExchangeLookup : public IExchangeLookup
+class AllKindsExchangeLookup : public IExchangeLookup
 {
 public:
-    AllKinkdsExchangeLookup(
+    AllKindsExchangeLookup(
         const std::unordered_map<String, ExchangeDescription> & exchanges_,
         ExchangeLookupPtr persistent_exchange_lookup_,
         ExchangeLookupPtr streaming_exchange_lookup_)
@@ -439,7 +446,7 @@ ExchangeLookupPtr createExchangeLookup(
         createStreamingExchangeLookup(query_id, ExchangeConnections::instance(), exchange_stream_destinations, streaming_exchange_port) :
         std::make_shared<ExchangeViaChunks>(query_id);
 
-    return std::make_shared<AllKinkdsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
+    return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 }
 
 
