@@ -162,7 +162,7 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
-        run_shell("clang-tidy without cache for Aggregator.cpp", f"clang-tidy-19 -p {build_dir} src/Interpreters/Aggregator.cpp")
+        run_shell("clang-tidy without cache for Aggregator.cpp", f"clang-tidy-19 -p {build_dir} {current_directory}/src/Interpreters/Aggregator.cpp")
         run_shell("sccache stats", "sccache --show-stats")
         run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
         if build_type in BUILD_TYPE_TO_DEB_PACKAGE_TYPE:
