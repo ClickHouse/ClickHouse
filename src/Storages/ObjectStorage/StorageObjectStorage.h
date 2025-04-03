@@ -141,11 +141,7 @@ public:
 
     void updateExternalDynamicMetadata(ContextPtr) override;
 
-    ConfigurationPtr getConfiguration() const { return configuration; }
-
     IDataLakeMetadata * getExternalDynamicMetadata() const;
-
-    ObjectStoragePtr getObjectStorage() const { return object_storage; }
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
