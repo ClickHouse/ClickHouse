@@ -375,7 +375,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo(std::unique_lo
     if (!copied)
         return;
 
-    LOG_TRACE(
+    LOG_WARNING(
         getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"),
         "Removing file '{}' that was copied from '{}",
         path_to,
