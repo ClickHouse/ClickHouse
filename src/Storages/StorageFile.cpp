@@ -1982,8 +1982,9 @@ SinkToStoragePtr StorageFile::write(
     if (context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
         flags |= O_TRUNC;
 
+    bool has_wildcards = path_for_partitioned_write.contains(PartitionedSink::PARTITION_ID_WILDCARD);
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
-    bool is_partitioned_implementation = insert_query && insert_query->partition_by;
+    bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
 
     if (is_partitioned_implementation)
     {
