@@ -27,7 +27,7 @@ namespace
 {
 /// Transpose structure with metrics/events as rows to
 /// to columnar view.
-class CustomFilterTransform : public IInflatingTransform
+class CustomMetricLogViewTransform : public IInflatingTransform
 {
     HashMap<StringRef, size_t> mapping;
     Names column_names;
@@ -51,7 +51,7 @@ public:
     bool need_hostname = false;
     bool need_date = false;
 
-    CustomFilterTransform(Block input_header, Block output_header)
+    CustomMetricLogViewTransform(Block input_header, Block output_header)
         : IInflatingTransform(input_header, output_header)
     {
         size_t counter = 0;
@@ -310,7 +310,7 @@ CustomMetricLogViewStep::CustomMetricLogViewStep(
 void CustomMetricLogViewStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.resize(1);
-    pipeline.addTransform(std::make_shared<CustomFilterTransform>(input_headers[0], *output_header));
+    pipeline.addTransform(std::make_shared<CustomMetricLogViewTransform>(input_headers[0], *output_header));
 }
 
 const SortDescription & CustomMetricLogViewStep::getSortDescription() const
