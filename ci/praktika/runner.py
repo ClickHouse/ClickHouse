@@ -98,6 +98,7 @@ class Runner:
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
+        env.JOB_CONFIG = job
         env.dump()
         print(env)
 
@@ -288,7 +289,7 @@ class Runner:
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
-                        result.set_status(Result.Status.ERROR)
+                    result.set_status(Result.Status.ERROR)
                     result.set_info(info)
                     result.set_info("---").set_info(
                         process.get_latest_log(max_lines=20)
@@ -431,7 +432,7 @@ class Runner:
                     passwd=workflow.get_secret(
                         Settings.SECRET_CI_DB_PASSWORD
                     ).get_value(),
-                ).insert(result)
+                ).insert(result, result_name_for_cidb=job.result_name_for_cidb)
             except Exception as ex:
                 traceback.print_exc()
                 error = f"ERROR: Failed to insert data into CI DB, exception [{ex}]"
