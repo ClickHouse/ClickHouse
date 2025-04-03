@@ -1,14 +1,15 @@
 #pragma once
+#include <QueryPipeline/DistributedPlanExecutor.h>
+#include <IO/Progress.h>
+#include <Common/ThreadPool.h>
+#include <base/types.h>
+#include <base/defines.h>
 
 #include <atomic>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
-#include <base/types.h>
-#include <base/defines.h>
-#include <IO/Progress.h>
-#include "QueryPipeline/DistributedPlanExecutor.h"
 
 namespace DB
 {
@@ -17,7 +18,7 @@ namespace DB
 class StatelessTaskExecutor
 {
 public:
-    StatelessTaskExecutor() = default;
+    StatelessTaskExecutor();
     virtual ~StatelessTaskExecutor() = default;
 
     enum Result
@@ -57,6 +58,8 @@ private:
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;
+
+    ThreadPool thread_pool;
 
     std::unordered_map<String, TaskStatePtr> tasks TSA_GUARDED_BY(tasks_mutex);
     std::mutex tasks_mutex;

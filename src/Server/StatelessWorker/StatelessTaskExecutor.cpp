@@ -12,12 +12,27 @@
 #include <exception>
 #include <mutex>
 
+namespace CurrentMetrics
+{
+    extern const Metric StatelessWorkerThreads;
+    extern const Metric StatelessWorkerThreadsActive;
+    extern const Metric StatelessWorkerThreadsScheduled;
+}
+
 namespace DB
 {
 
 /// TODO: move
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context);
 
+StatelessTaskExecutor::StatelessTaskExecutor()
+    : thread_pool(
+        CurrentMetrics::StatelessWorkerThreads,
+        CurrentMetrics::StatelessWorkerThreadsActive,
+        CurrentMetrics::StatelessWorkerThreadsScheduled,
+        1000, 100, 3000)
+{
+}
 
 StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path)
 {
@@ -82,8 +97,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         }
     };
 
-    // TODO: use special pool
-    Context::getGlobalContextInstance()->getPrefetchThreadpool().scheduleOrThrow(std::move(task_function));
+    thread_pool.scheduleOrThrow(std::move(task_function));
 
     return Result::Ok;
 }
