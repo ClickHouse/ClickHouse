@@ -839,13 +839,12 @@ class JobConfigs:
     docs_job = Job.Config(
         name=JobNames.Docs,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="./ci/jobs/docs_job.sh",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "**/*.md",
                 "./docs",
-                "tests/ci/docs_check.py",
-                "./docker/docs",
+                "./ci/jobs/docs_job.sh",
             ],
         ),
         requires=[JobNames.STYLE_CHECK],
