@@ -34,7 +34,7 @@ public:
     }
 private:
     MongoDBInstanceHolder() = default;
-    static mongocxx::instance inst;
+    mongocxx::instance inst;
 };
 
 struct MongoDBConfiguration
