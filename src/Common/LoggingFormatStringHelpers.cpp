@@ -150,6 +150,14 @@ LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, tim
     ++total_count;
 }
 
+LogSeriesLimiter * LogSeriesLimiter::getChannel()
+{
+    if (!accepted)
+        return nullptr;
+
+    return this;
+}
+
 void LogSeriesLimiter::log(Poco::Message & message)
 {
     std::string_view pattern = message.getFormatString();
