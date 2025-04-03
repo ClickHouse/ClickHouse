@@ -25,7 +25,7 @@ try
         return 3;
     }
 
-    ConfigProcessor processor(argv[1], false, true);
+    ConfigProcessor processor(argv[1], false);
     auto config = processor.loadConfig().configuration;
     String zookeeper_path = argv[2];
 
