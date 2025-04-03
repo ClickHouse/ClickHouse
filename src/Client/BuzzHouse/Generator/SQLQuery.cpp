@@ -189,7 +189,7 @@ void StatementGenerator::generateDerivedTable(
     }
     if (rel.cols.empty())
     {
-        rel.cols.emplace_back(SQLRelationCol(rel.name, {"c0"}));
+        rel.cols.emplace_back(SQLRelationCol(rel.name, {"a0"}));
     }
 }
 
