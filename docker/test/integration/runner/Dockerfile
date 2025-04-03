@@ -1,5 +1,6 @@
 # docker build -t clickhouse/integration-tests-runner .
-FROM ubuntu:22.04
+ARG FROM_TAG=latest
+FROM clickhouse/test-base:$FROM_TAG
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
