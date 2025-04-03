@@ -167,7 +167,12 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
     if (node.children.size() < 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have at least 2 children, but has {}", node.children.size());
 
-    node = std::move(*join_step->optimizeToPhysicalPlan(node.children, nodes, optimization_settings));
+    auto * optimized_node = join_step->optimizeToPhysicalPlan(node.children, nodes, optimization_settings);
+
+    if (!keep_logical)
+    {
+        node = std::move(*optimized_node);
+    }
 
     return true;
 }

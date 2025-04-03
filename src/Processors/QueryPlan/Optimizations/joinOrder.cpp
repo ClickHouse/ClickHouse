@@ -24,7 +24,7 @@ struct JoinEdge
 {
     BaseRelsSet left_rels;
     BaseRelsSet right_rels;
-    JoinOperator * join_operator;
+    const JoinOperator * join_operator;
 
     double selectivity = 1.0;
 };
@@ -43,7 +43,7 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
             DPJoinEntryPtr rhs,
             double cost_,
             size_t cardinality_,
-            JoinOperator * join_operator_,
+            const JoinOperator * join_operator_,
             JoinMethod join_method_)
     : relations(lhs->relations | rhs->relations)
     , left(std::move(lhs))
@@ -60,7 +60,7 @@ bool DPJoinEntry::isLeaf() const { return !left && !right; }
 class JoinOrderOptimizer
 {
 public:
-    explicit JoinOrderOptimizer(JoinStepLogical & join_step);
+    explicit JoinOrderOptimizer(const JoinStepLogical & join_step);
 
     std::shared_ptr<DPJoinEntry> solve();
 
@@ -74,7 +74,7 @@ private:
 
     constexpr static auto APPLY_DP_THRESHOLD = 10;
 
-    JoinStepLogical & original_join_step;
+    const JoinStepLogical & original_join_step;
     std::vector<RelationStats> relation_stats;
     std::vector<JoinEdge> join_edges;
 
@@ -140,7 +140,7 @@ std::pair<BaseRelsSet, BaseRelsSet> extractRelations(const JoinOperator & join_o
     return {left_rels, right_rels};
 }
 
-JoinOrderOptimizer::JoinOrderOptimizer(JoinStepLogical& join_step)
+JoinOrderOptimizer::JoinOrderOptimizer(const JoinStepLogical & join_step)
     : original_join_step(join_step)
 {
     // Initialize relation statistics
@@ -162,7 +162,7 @@ void JoinOrderOptimizer::buildQueryGraph()
     auto & join_operators = original_join_step.getJoinOperators();
 
     for (size_t i = 0; i < join_operators.size(); ++i) {
-        auto & join_op = join_operators[i];
+        const auto & join_op = join_operators[i];
 
         JoinEdge edge;
 
@@ -326,10 +326,10 @@ bool JoinOrderOptimizer::isValidJoinOrder(const BaseRelsSet & lhs, const BaseRel
     return true;
 }
 
-DPJoinEntryPtr optimizeJoinOrder(JoinStepLogical & join_step)
+DPJoinEntryPtr optimizeJoinOrder(const JoinStepLogical & join_step)
 {
     if (join_step.getNumberOfTables() <= 1)
-        return {};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have at least 2 tables");
 
     JoinOrderOptimizer reorderer(join_step);
     auto best_dp = reorderer.solve();
@@ -337,6 +337,23 @@ DPJoinEntryPtr optimizeJoinOrder(JoinStepLogical & join_step)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
 
     return best_dp;
+}
+
+DPJoinEntryPtr reconstructTrivialTree(const JoinStepLogical & join_step)
+{
+    size_t num_tables = join_step.getNumberOfTables();
+    if (num_tables < 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have at least 2 tables");
+
+    const auto & join_operators = join_step.getJoinOperators();
+
+    auto lhs = std::make_shared<DPJoinEntry>(0, 0);
+    for (size_t i = 1; i < num_tables; ++i)
+    {
+        auto rhs = std::make_shared<DPJoinEntry>(i, 0);
+        lhs = std::make_shared<DPJoinEntry>(lhs, rhs, 0.0, 0, &join_operators.at(i - 1));
+    }
+    return lhs;
 }
 
 }

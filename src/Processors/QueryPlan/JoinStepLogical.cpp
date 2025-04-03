@@ -138,10 +138,12 @@ String formatJoinCondition(const JoinCondition & join_condition)
     return buf.str();
 }
 
-// static auto bitsetToPositions(BaseRelsSet s)
-// {
-//     return std::views::iota(0u, s.size()) | std::views::filter([=](size_t i) { return s.test(i); });
-// }
+[[ maybe_unused ]]
+static auto bitsetToPositions(BaseRelsSet s)
+{
+    return std::views::iota(0u, s.size()) | std::views::filter([=](size_t i) { return s.test(i); });
+}
+
 
 JoinStepLogical::JoinStepLogical(
     const Block & left_header, bool use_nulls_, JoinSettings join_settings_, SortingStep::Settings sorting_settings_)
@@ -177,11 +179,21 @@ public:
     {
     }
 
-    void add(String key, String value) { settings.out << prefix << key << ": " << value << "\n"; }
+    template <typename T>
+    void add(String key, T value) { settings.out << prefix << key << ": " << fmt::format("{}", value) << "\n"; }
+
     void add(String key, ExpressionActions value)
     {
         settings.out << prefix << key << ":\n";
         value.describeActions(settings.out, prefix);
+    }
+
+    ActionsDescrtiptionBuilder<IQueryPlanStep::FormatSettings> add(String key)
+    {
+        auto new_settings = settings;
+        new_settings.offset += settings.indent;
+        new_settings.out << prefix << key << ":\n";
+        return ActionsDescrtiptionBuilder<IQueryPlanStep::FormatSettings>(new_settings);
     }
 
     class NestedLevel
@@ -221,8 +233,18 @@ public:
     {
     }
 
-    void add(String key, String value) { map.add(key, value); }
+    template <typename T>
+    void add(String key, T value) { map.add(key, fmt::format("{}", value)); }
+
     void add(String key, ExpressionActions value) { map.add(key, value.toTree()); }
+
+    ActionsDescrtiptionBuilder<JSONBuilder::JSONMap> add(String key)
+    {
+        auto next = std::make_unique<JSONBuilder::JSONMap>();
+        ActionsDescrtiptionBuilder<JSONBuilder::JSONMap> result(*next);
+        map.add(key, std::move(next));
+        return result;
+    }
 
     class NestedLevel
     {
@@ -255,47 +277,54 @@ public:
 };
 
 template <typename ResultType>
+void describeJoinNode(ActionsDescrtiptionBuilder<ResultType> builder, const DPJoinEntryPtr & node)
+{
+    if (node->relation_id >= 0)
+    {
+        builder.add("NodeType", fmt::format("Read({}) rows={}", node->relation_id, node->estimated_rows));
+    }
+    if (node->join_operator)
+    {
+        builder.add("NodeType", fmt::format("{} rows={} cost={}", node->join_method, node->estimated_rows, node->cost));
+        const auto & join_info = *node->join_operator;
+
+        builder.add("Type", fmt::format("{} {}", toString(join_info.strictness), toString(join_info.kind)));
+        if (join_info.locality != JoinLocality::Unspecified)
+            builder.add("Locality", toString(join_info.locality));
+
+        WriteBufferFromOwnString join_expression_str;
+        join_expression_str << (join_info.expression.is_using ? "USING" : "ON") << " ";
+        formatJoinCondition(join_info.expression.condition, join_expression_str);
+        for (const auto & condition : join_info.expression.disjunctive_conditions)
+        {
+            join_expression_str << " | ";
+            formatJoinCondition(condition, join_expression_str);
+        }
+        builder.add("Expression", join_expression_str.str());
+    }
+
+    if (node->left || node->right)
+    {
+        auto plans = builder.push("Plans");
+        if (node->left)
+            describeJoinNode(plans.next(), node->left);
+        if (node->right)
+            describeJoinNode(plans.next(), node->right);
+    }
+}
+
+template <typename ResultType>
 void JoinStepLogical::describeJoinActionsImpl(ResultType & result) const
 {
     ActionsDescrtiptionBuilder<ResultType> root_description(result);
 
+    auto join_tree_description = root_description.add("JoinTree");
+    if (optimized_plan)
+        describeJoinNode(join_tree_description, optimized_plan);
+    else if (auto original_plan = reconstructTrivialTree(*this))
+        describeJoinNode(join_tree_description, original_plan);
 
-    auto join_description = root_description.push("JoinOperators");
-    // Display information for all join operators
-    for (size_t join_num = 0; join_num < join_operators.size(); ++join_num)
-    {
-        auto description = join_description.next();
-
-        const auto & join_info = join_operators[join_num];
-
-        description.add("Type", toString(join_info.kind));
-        description.add("Strictness", toString(join_info.strictness));
-        description.add("Locality", toString(join_info.locality));
-
-        {
-            WriteBufferFromOwnString join_expression_str;
-            join_expression_str << (join_info.expression.is_using ? "USING" : "ON") << " ";
-            formatJoinCondition(join_info.expression.condition, join_expression_str);
-            for (const auto & condition : join_info.expression.disjunctive_conditions)
-            {
-                join_expression_str << " | ";
-                formatJoinCondition(condition, join_expression_str);
-            }
-            description.add("Expression", join_expression_str.str());
-        }
-
-        // auto sorted_actions = join_info.expression_actions.actions
-        //     | std::views::transform([](const auto & p) { return std::make_pair(p.first, p.second.get()); })
-        //     | std::ranges::to<std::vector>();
-        // std::ranges::sort(sorted_actions, [](const auto & lhs, const auto & rhs) { return lhs.first.to_ullong() < rhs.first.to_ullong(); });
-        // for (const auto & [inputs, actions] : sorted_actions)
-        // {
-        //     if (!actions)
-        //         continue;
-        //     description.add(fmt::format("Actions[{}]", fmt::join(bitsetToPositions(inputs), ", ")), ExpressionActions(actions->clone()));
-        // }
-    }
-
+    root_description.add("Expressions", ExpressionActions(expression_actions->clone()));
     root_description.add("Required Output", fmt::format("[{}]", fmt::join(required_output_columns, ", ")));
 }
 
@@ -679,24 +708,24 @@ bool addJoinPredicateToTableJoin(
 
 struct ActionsTriple
 {
-    ActionsDAGPtr left_pre_join_actions = nullptr;
-    ActionsDAGPtr right_pre_join_actions = nullptr;
-    ActionsDAGPtr post_join_actions = nullptr;
+    ActionsDAG * left_pre_join_actions = nullptr;
+    ActionsDAG * right_pre_join_actions = nullptr;
+    ActionsDAG * post_join_actions = nullptr;
 };
 
 JoinActionRef buildSingleActionForJoinCondition(JoinCondition & join_condition, const ActionsTriple & dags)
 {
     std::vector<JoinActionRef> all_conditions;
 
-    auto * result_dag = dags.post_join_actions.get();
-    if (auto condition = concatMergeConditions(join_condition.restrict_conditions, dags.left_pre_join_actions.get()))
+    auto * result_dag = dags.post_join_actions;
+    if (auto condition = concatMergeConditions(join_condition.restrict_conditions, dags.left_pre_join_actions))
     {
         const auto & node = findOrAddInput(result_dag, condition.getColumn());
         result_dag->addOrReplaceInOutputs(node);
         all_conditions.emplace_back(&node, result_dag);
     }
 
-    if (auto condition = concatMergeConditions(join_condition.restrict_conditions, dags.right_pre_join_actions.get()))
+    if (auto condition = concatMergeConditions(join_condition.restrict_conditions, dags.right_pre_join_actions))
     {
         const auto & node = findOrAddInput(result_dag, condition.getColumn());
         result_dag->addOrReplaceInOutputs(node);
@@ -765,14 +794,14 @@ static void addToNullableActions(ActionsDAG * dag, const FunctionOverloadResolve
     }
 }
 
-void appendRequiredOutputsToActions(JoinActionRef & post_filter, const ActionsTriple & actions, const NameSet & required_output_columns)
+void appendRequiredOutputsToActions(JoinActionRef & post_filter, const ActionsTriple & dags, const NameSet & required_output_columns)
 {
-    addRequiredInputToOutput(actions.left_pre_join_actions.get(), required_output_columns);
-    addRequiredInputToOutput(actions.right_pre_join_actions.get(), required_output_columns);
-    addRequiredInputToOutput(actions.post_join_actions.get(), required_output_columns);
+    addRequiredInputToOutput(dags.left_pre_join_actions, required_output_columns);
+    addRequiredInputToOutput(dags.right_pre_join_actions, required_output_columns);
+    addRequiredInputToOutput(dags.post_join_actions, required_output_columns);
 
     ActionsDAG::NodeRawConstPtrs new_outputs;
-    for (const auto * output : actions.post_join_actions->getOutputs())
+    for (const auto * output : dags.post_join_actions->getOutputs())
     {
         if (required_output_columns.contains(output->result_name))
             new_outputs.push_back(output);
@@ -780,13 +809,13 @@ void appendRequiredOutputsToActions(JoinActionRef & post_filter, const ActionsTr
 
     if (new_outputs.empty())
     {
-        new_outputs = getAnyColumn(actions.post_join_actions->getOutputs());
+        new_outputs = getAnyColumn(dags.post_join_actions->getOutputs());
     }
 
     if (post_filter)
         new_outputs.push_back(post_filter.getNode());
-    actions.post_join_actions->getOutputs() = std::move(new_outputs);
-    actions.post_join_actions->removeUnusedActions();
+    dags.post_join_actions->getOutputs() = std::move(new_outputs);
+    dags.post_join_actions->removeUnusedActions();
 }
 
 template <typename F>
@@ -813,20 +842,48 @@ void forEachJoinAction(JoinExpression & join_expression, F && f)
         forEachJoinAction(join_condition, f);
 }
 
-ActionsDAGPtr cloneExpressionActions(const std::vector<JoinActionRef *> & actions)
+void projectMissingInpus(ActionsDAG & actions_dag)
+{
+    auto & outputs = actions_dag.getOutputs();
+    auto output_set = std::ranges::to<std::unordered_set>(outputs);
+    for (auto * node : actions_dag.getInputs())
+    {
+        if (output_set.insert(node).second)
+            outputs.push_back(node);
+    }
+}
+
+
+void cloneExpressionActions(const std::vector<JoinActionRef *> & actions, ActionsDAG * actions_dag)
 {
     auto out_nodes_set = std::ranges::to<std::unordered_set>(actions | std::views::transform([](const auto & action) { return action->getNode(); }));
     ActionsDAG::NodeRawConstPtrs out_nodes(out_nodes_set.begin(), out_nodes_set.end());
-    auto actions_dag = std::make_unique<ActionsDAG>(ActionsDAG::cloneSubDAG(out_nodes, true));
+
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: dag>\n{}", __FILE__, __LINE__, actions_dag->dumpDAG());
+    auto second_dag = ActionsDAG::cloneSubDAG(out_nodes, true);
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: dag+\n{}", __FILE__, __LINE__, second_dag.dumpDAG());
+
+    // *actions_dag = ActionsDAG::merge(std::move(*actions_dag), std::move(second_dag));
+    actions_dag->mergeInplace(std::move(second_dag));
+    actions_dag->removeUnusedActions(false);
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: dag={}\n{}", __FILE__, __LINE__,
+        fmt::join(actions_dag->getInputs() | std::views::transform([](const auto & x) { return fmt::ptr(x); }), ", "),
+        actions_dag->dumpDAG());
+
+    projectMissingInpus(*actions_dag);
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: dag==\n{}", __FILE__, __LINE__, actions_dag->dumpDAG());
+
     for (auto & action : actions)
-        action->setActions(actions_dag.get());
-    return actions_dag;
+        action->setActions(actions_dag);
 }
 
-ActionsTriple splitExpressionActions(
+void splitExpressionActions(
     JoinExpression & join_expression,
     BaseRelsSet left,
-    BaseRelsSet right)
+    BaseRelsSet right,
+    ActionsDAG * left_pre_join_actions,
+    ActionsDAG * right_pre_join_actions,
+    ActionsDAG * post_join_actions)
 {
     std::vector<JoinActionRef *> left_actions;
     std::vector<JoinActionRef *> right_actions;
@@ -843,11 +900,9 @@ ActionsTriple splitExpressionActions(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot determine actions for JoinActionRef {}", action.getColumnName());
     });
 
-    return {
-        .left_pre_join_actions = cloneExpressionActions(left_actions),
-        .right_pre_join_actions = cloneExpressionActions(right_actions),
-        .post_join_actions = cloneExpressionActions(residual_actions),
-    };
+    cloneExpressionActions(left_actions, left_pre_join_actions);
+    cloneExpressionActions(right_actions, right_pre_join_actions);
+    cloneExpressionActions(residual_actions, post_join_actions);
 }
 
 
@@ -882,10 +937,19 @@ void JoinStepLogical::buildPhysicalJoinNode(
             join_context.hash_table_key_hash = hash_table_key_hashes.at(pos);
     }
 
-    ActionsTriple actions = splitExpressionActions(join_info.expression, left_rels, right_rels);
-    ActionsDAG * post_join_actions = actions.post_join_actions.get();
-    ActionsDAG * left_pre_join_actions = actions.left_pre_join_actions.get();
-    ActionsDAG * right_pre_join_actions = actions.right_pre_join_actions.get();
+    ActionsDAG * post_join_actions = result_node.post_join_actions.get();
+    ActionsDAG * left_pre_join_actions = result_node.left_pre_join_actions.get();
+    ActionsDAG * right_pre_join_actions = result_node.right_pre_join_actions.get();
+
+    splitExpressionActions(join_info.expression, left_rels, right_rels, left_pre_join_actions, right_pre_join_actions, post_join_actions);
+    ActionsTriple actions{
+        .left_pre_join_actions = left_pre_join_actions,
+        .right_pre_join_actions = right_pre_join_actions,
+        .post_join_actions = post_join_actions,
+    };
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: post_join_actions:\n {}", __FILE__, __LINE__, actions.post_join_actions->dumpDAG());
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: left_pre_join_actions:\n {}", __FILE__, __LINE__, actions.left_pre_join_actions->dumpDAG());
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: right_pre_join_actions:\n {}", __FILE__, __LINE__, actions.right_pre_join_actions->dumpDAG());
 
     auto & join_expression = join_info.expression;
 
@@ -1227,6 +1291,9 @@ QueryPlan::Node * JoinStepLogical::buildPhysicalPlan(
                 auto * join_right_node = nodeStack.top();
                 nodeStack.pop();
 
+                if (flip_join)
+                    std::swap(join_left_node, join_right_node);
+
                 if (physical_node.left_pre_join_actions)
                     join_left_node = makeExpressionNodeOnTopOf(join_left_node, std::move(*physical_node.left_pre_join_actions), physical_node.left_pre_filter_condition.getColumnName(), nodes);
                 if (physical_node.right_pre_join_actions)
@@ -1315,18 +1382,20 @@ QueryPlan::Node * JoinStepLogical::optimizeToPhysicalPlan(
     QueryPlan::Nodes & query_plan_nodes,
     const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (input_steps.size() != getNumberOfTables())
+    if (input_steps.size() != getNumberOfTables() || getNumberOfTables() < 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                      "JoinStepLogical expected {} inputs, but got {}",
-                      getNumberOfTables(), input_steps.size());
+            "JoinStepLogical must have at least two input streams and same number of tables, got {} and {}",
+            input_steps.size(), getNumberOfTables());
 
     /// Find optimal join order
-    auto optimal_plan = optimizeJoinOrder(*this);
-
-    if (!optimal_plan && getNumberOfTables() > 1)
+    if (optimization_settings.optimize_join_order)
+        optimized_plan = optimizeJoinOrder(*this);
+    if (!optimized_plan)
+        optimized_plan = reconstructTrivialTree(*this);
+    if (!optimized_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to generate join order");
 
-    auto join_order_nodes = createJoinSequence(optimal_plan);
+    auto join_order_nodes = createJoinSequence(optimized_plan);
 
     /// Construct query plan steps and embed it into full query plan
     return buildPhysicalPlan(join_order_nodes, input_steps, query_plan_nodes, optimization_settings);

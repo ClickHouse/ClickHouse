@@ -186,6 +186,7 @@ std::unordered_map<String, CHSetting> performanceSettings
             },
             {"'false'", "'true'", "'auto'"},
             false)},
+       {"query_plan_optimize_join_order", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"read_in_order_two_level_merge_threshold",
         CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 100)); }, {"0", "1", "10", "100"}, false)},
        {"read_in_order_use_buffering", CHSetting(trueOrFalse, {"0", "1"}, false)},

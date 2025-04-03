@@ -12,6 +12,7 @@ using DPJoinEntryPtr = std::shared_ptr<DPJoinEntry>;
 
 enum class JoinMethod : UInt8
 {
+    None,
     Hash,
     Merge,
 };
@@ -23,12 +24,12 @@ struct DPJoinEntry
     DPJoinEntryPtr left;
     DPJoinEntryPtr right;
 
-    double cost;
-    size_t estimated_rows;
+    double cost = 0.0;
+    size_t estimated_rows = 0;
 
     /// For join nodes
-    JoinOperator * join_operator;
-    JoinMethod join_method;
+    const JoinOperator * join_operator = nullptr;
+    JoinMethod join_method = JoinMethod::None;
 
     /// For leaf nodes
     int relation_id = -1;
@@ -41,7 +42,7 @@ struct DPJoinEntry
                 DPJoinEntryPtr rhs,
                 double cost_,
                 size_t cardinality_,
-                JoinOperator * join_operator_,
+                const JoinOperator * join_operator_,
                 JoinMethod join_method_ = JoinMethod::Hash);
 
     bool isLeaf() const;
@@ -49,6 +50,8 @@ struct DPJoinEntry
 
 class JoinStepLogical;
 
-DPJoinEntryPtr optimizeJoinOrder(JoinStepLogical & join_step);
+DPJoinEntryPtr optimizeJoinOrder(const JoinStepLogical & join_step);
+DPJoinEntryPtr reconstructTrivialTree(const JoinStepLogical & join_step);
+
 
 }

@@ -37,6 +37,7 @@ struct PreparedJoinStorage
 };
 
 struct QueryPlanOptimizationSettings;
+
 /** JoinStepLogical is a logical step for JOIN operation.
   * Doesn't contain any specific join algorithm or other execution details.
   * It's place holder for join operation with it's description that can be serialized.
@@ -95,7 +96,7 @@ public:
     JoinOperator & getJoinOperator(size_t index = 0) { return join_operators.at(index); }
     const JoinOperator & getJoinOperator(size_t index = 0) const { return join_operators.at(index); }
 
-    std::vector<JoinOperator> & getJoinOperators() { return join_operators; }
+    const std::vector<JoinOperator> & getJoinOperators() const { return join_operators; }
 
     const JoinSettings & getJoinSettings() const { return join_settings; }
 
@@ -142,23 +143,19 @@ private:
         QueryPlan::Nodes & nodes,
         const QueryPlanOptimizationSettings & optimization_settings);
 
-
-
 protected:
     void updateOutputHeader() override;
 
     template <typename ResultType>
     void describeJoinActionsImpl(ResultType & result) const;
 
+    DPJoinEntryPtr optimized_plan = nullptr;
     std::vector<JoinOperator> join_operators;
     ActionsDAGPtr expression_actions;
 
     std::vector<RelationStats> relation_stats;
 
     std::vector<UInt64> hash_table_key_hashes;
-
-    std::optional<UInt64> hash_table_key_hash_left;
-    std::optional<UInt64> hash_table_key_hash_right;
 
     bool use_nulls;
     NameSet required_output_columns;
@@ -170,9 +167,6 @@ protected:
 
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;
-
-    /// Add some information from convertToPhysical to description in explain output.
-    std::vector<std::pair<String, String>> runtime_info_description;
 
     std::vector<Names> using_columns_mapping;
 
