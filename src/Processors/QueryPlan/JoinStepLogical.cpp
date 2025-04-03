@@ -288,7 +288,11 @@ void describeJoinNode(ActionsDescrtiptionBuilder<ResultType> builder, const DPJo
         builder.add("NodeType", fmt::format("{} rows={} cost={}", node->join_method, node->estimated_rows, node->cost));
         const auto & join_info = *node->join_operator;
 
-        builder.add("Type", fmt::format("{} {}", toString(join_info.strictness), toString(join_info.kind)));
+        if (join_info.strictness != JoinStrictness::All)
+            builder.add("Type", fmt::format("{} {}", toString(join_info.strictness), toString(join_info.kind)));
+        else
+            builder.add("Type", toString(join_info.kind));
+
         if (join_info.locality != JoinLocality::Unspecified)
             builder.add("Locality", toString(join_info.locality));
 
@@ -313,16 +317,128 @@ void describeJoinNode(ActionsDescrtiptionBuilder<ResultType> builder, const DPJo
     }
 }
 
+
+std::string_view joinTypePretty(const JoinOperator & join_operator)
+{
+    // Inner Join: ⋈ (Unicode U+22C8)
+    // Left Outer Join: ⟕ (Unicode U+27D5)
+    // Right Outer Join: ⟖ (Unicode U+27D6)
+    // Full Outer Join: ⟗ (Unicode U+27D7)
+    // Semi Join: ⋉ (Unicode U+22C9)
+    // Right Semi Join: ⋊ (Unicode U+22CA)
+    // Anti Join: ⋉̸ (Unicode U+22C9 U+0338)
+    // Right Anti Join: ⋊̸ (Unicode U+22CA U+0338)
+    // Cross Join: × (Unicode U+00D7)
+
+    if (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any)
+    {
+        switch (join_operator.kind)
+        {
+            case JoinKind::Inner:
+                return " \u22C8 ";
+            case JoinKind::Left:
+                return " \u27D5 ";
+            case JoinKind::Right:
+                return " \u27D6 ";
+            case JoinKind::Full:
+                return " \u27D7 ";
+            case JoinKind::Cross:
+                return " \u00D7 ";
+            case JoinKind::Comma:
+                return " , ";
+            default:
+                break;
+        }
+    }
+    if (join_operator.strictness == JoinStrictness::Semi)
+    {
+        switch (join_operator.kind)
+        {
+            case JoinKind::Left:
+                return " \u22C9 ";
+            case JoinKind::Right:
+                return " \u22CA ";
+            default:
+                break;
+        }
+    }
+    if (join_operator.strictness == JoinStrictness::Anti)
+    {
+        switch (join_operator.kind)
+        {
+            case JoinKind::Left:
+                return " \u22C9\u0338 ";
+            case JoinKind::Right:
+                return " \u22CA\u0338 ";
+            default:
+                break;
+        }
+    }
+
+    return " \u22C8 ";
+}
+
+std::string treeToInfix(DPJoinEntry * root)
+{
+    std::string result;
+
+    if (!root)
+        return result;
+
+    /// Stack to store nodes and their visit state
+    /// 0 - on enter, 1 - after left child, 2 - after right child
+    std::stack<std::pair<DPJoinEntry *, int>> stack;
+    stack.push({root, 0});
+
+    while (!stack.empty())
+    {
+        // Get the top node and its state
+        auto [node, state] = stack.top();
+        stack.pop();
+
+        if (node->isLeaf())
+        {
+            result += fmt::format("{}", node->relation_id);
+            continue;
+        }
+        else if (state == 0)
+        {
+            result += "(";
+            stack.push({node, 1});
+            stack.push({node->left.get(), 0});
+        }
+        else if (state == 1)
+        {
+
+            result += joinTypePretty(*node->join_operator);
+            stack.push({node, 2});
+            stack.push({node->right.get(), 0});
+        }
+        else if (state == 2)
+        {
+            result += ")";
+        }
+    }
+
+    return result;
+}
+
+
 template <typename ResultType>
 void JoinStepLogical::describeJoinActionsImpl(ResultType & result) const
 {
     ActionsDescrtiptionBuilder<ResultType> root_description(result);
 
-    auto join_tree_description = root_description.add("JoinTree");
-    if (optimized_plan)
-        describeJoinNode(join_tree_description, optimized_plan);
-    else if (auto original_plan = reconstructTrivialTree(*this))
-        describeJoinNode(join_tree_description, original_plan);
+    auto join_tree_description = root_description.add("JoinTreePlan");
+    auto plan_node = optimized_plan;
+    if (!plan_node)
+        plan_node = reconstructTrivialTree(*this);
+
+    if (plan_node)
+    {
+        describeJoinNode(join_tree_description, plan_node);
+        root_description.add("JoinTree", treeToInfix(plan_node.get()));
+    }
 
     root_description.add("Expressions", ExpressionActions(expression_actions->clone()));
     root_description.add("Required Output", fmt::format("[{}]", fmt::join(required_output_columns, ", ")));
