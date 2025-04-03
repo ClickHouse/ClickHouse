@@ -6,11 +6,11 @@ drop table if exists rhs;
 create table lhs(a UInt64, b UInt64) Engine = MergeTree order by tuple();
 create table rhs(a UInt64, b UInt64) Engine = MergeTree order by tuple();
 
-insert into lhs select number, number from numbers_mt(1e5);
+insert into lhs select number, number from numbers_mt(2e5);
 -- rhs should be bigger to trigger tables swap (see `query_plan_join_swap_table`)
 insert into rhs select number, number from numbers_mt(1e6);
 
-set max_threads = 8, query_plan_join_swap_table = 1, join_algorithm = 'parallel_hash', enable_analyzer = 1;
+set max_threads = 8, query_plan_join_swap_table = 1, join_algorithm = 'parallel_hash', enable_analyzer = 1, parallel_hash_join_threshold = 0;
 
 -- First populate the cache of hash table sizes
 select * from lhs as t1 join rhs as t2 on t1.a = t2.a format Null;
