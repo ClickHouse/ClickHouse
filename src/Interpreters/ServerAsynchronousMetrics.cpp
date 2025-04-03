@@ -473,12 +473,15 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
                         // Check if the pending mutation is over the setting max_threshold_to_warn_for_pending_mutations
                         // The aim here is to warn the user about mutations that are pending for a very long time (default is 24 hours)
                         {
-                            if (mutation_status.parts_to_do_names.size() > 0)
+                            if (!mutation_status.parts_to_do_names.empty())
                             {
                                 auto mutation_create_time = std::chrono::system_clock::from_time_t(mutation_status.create_time);
                                 auto current_time = std::chrono::system_clock::now();
+
                                 const auto time_elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(current_time - mutation_create_time).count();
-                                if (time_elapsed_sec > getContext()->getMaxThresholdForMutationsToWarn())
+                                auto max_threshold_seconds_to_warn =  static_cast<std::chrono::seconds::rep>(getContext()->getMaxThresholdForMutationsToWarn());
+
+                                if (time_elapsed_sec > max_threshold_seconds_to_warn)
                                     ++current_mutation_stats.pending_mutations_over_threshold;
                             }
                         }

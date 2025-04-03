@@ -1011,7 +1011,7 @@ public:
     void setMaxPartNumToWarn(size_t max_part_to_warn);
     // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
-    void setMaxThresholdForMutationsToWarn(size_t max_pending_mutations_to_warn);
+    void setMaxThresholdForMutationsToWarn(size_t max_threshold_to_warn_for_pending_mutations);
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
