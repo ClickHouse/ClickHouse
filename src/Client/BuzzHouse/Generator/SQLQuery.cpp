@@ -1620,7 +1620,7 @@ void StatementGenerator::generateOrderBy(
             {
                 InterpolateExpr * ie = olist->add_interpolate();
 
-                ie->mutable_col()->set_column(projs[i]);
+                ie->mutable_col()->set_column(this->levels[this->current_level].projections[i]);
                 generateExpression(rg, ie->mutable_expr());
                 this->width++;
             }

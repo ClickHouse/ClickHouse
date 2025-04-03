@@ -1932,7 +1932,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     {
         det->mutable_cluster()->set_cluster(cluster.value());
     }
-    det->set_permanently(!detach_database && rg.nextSmallNumber() < 4);
+    det->set_permanently(det->sobject() != SQLObject::DATABASE && rg.nextSmallNumber() < 4);
     det->set_sync(rg.nextSmallNumber() < 4);
     if (rg.nextSmallNumber() < 3)
     {
