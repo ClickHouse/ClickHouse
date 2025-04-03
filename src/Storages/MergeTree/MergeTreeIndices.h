@@ -172,6 +172,8 @@ struct IMergeTreeIndex
     String getFileName() const { return INDEX_FILE_PREFIX + index.name; }
     size_t getGranularity() const { return index.granularity; }
 
+    virtual bool haveCommonState() const { return false; }
+
     virtual bool isMergeable() const { return false; }
 
     /// Returns extension for serialization.

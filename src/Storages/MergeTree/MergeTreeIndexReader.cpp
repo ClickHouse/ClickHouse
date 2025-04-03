@@ -89,8 +89,11 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     stream->adjustRightMark(getLastMark(all_mark_ranges));
     stream->seekToStart();
 
-    aggregator = index->createIndexAggregator({});
-    should_deserialize_aggregator = aggregator != nullptr;
+    if (index->haveCommonState())
+    {
+        aggregator = index->createIndexAggregator({});
+        should_deserialize_aggregator = aggregator != nullptr;
+    }
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexReader::read(size_t mark)
@@ -100,11 +103,11 @@ MergeTreeIndexGranulePtr MergeTreeIndexReader::read(size_t mark)
         if (stream_mark != mark)
             stream->seekToMark(mark);
 
-        if (should_deserialize_aggregator)
+        if (index->haveCommonState() && should_deserialize_aggregator)
             aggregator->deserializeCommonState(*stream->getDataBuffer());
 
         should_deserialize_aggregator = false;
-        auto granule = aggregator ? aggregator->getGranuleAndReset() : index->createIndexGranule();
+        auto granule = index->haveCommonState() ? aggregator->getGranuleAndReset() : index->createIndexGranule();
         granule->deserializeBinary(*stream->getDataBuffer(), version);
         stream_mark = mark + 1;
         return granule;
