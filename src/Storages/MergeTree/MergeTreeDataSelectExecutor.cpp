@@ -87,6 +87,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
+    extern const SettingsBool use_skip_indexes_if_final;
 }
 
 namespace MergeTreeSetting
@@ -730,7 +731,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
 
-                ranges.ranges = filterMarksUsingIndex(
+		std::tie(ranges.ranges, ranges.part_offsets) = filterMarksUsingIndex(
                     index_and_condition.index,
                     index_and_condition.condition,
                     part,
@@ -1476,7 +1477,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 }
 
 
-MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
+std::pair<MarkRanges, PartOffsets> MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexPtr index_helper,
     MergeTreeIndexConditionPtr condition,
     MergeTreeData::DataPartPtr part,
@@ -1492,7 +1493,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
             (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
-        return ranges;
+        return std::make_pair(ranges, std::nullopt);
     }
 
     auto index_granularity = index_helper->index.granularity;
@@ -1525,6 +1526,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         reader_settings);
 
     MarkRanges res;
+    PartOffsets part_offsets;
 
     /// Some granules can cover two or more ranges,
     /// this variable is stored to avoid reading the same granule twice.
@@ -1565,6 +1567,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                     else
                         res.back().end = data_range.end;
                 }
+                if (index_granularity > part->index_granularity->getMarksCountWithoutFinal() && !settings[Setting::use_skip_indexes_if_final]) /// TODO
+                    part_offsets = rows;
             }
             else
             {
@@ -1592,7 +1596,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         last_index_mark = index_range.end - 1;
     }
 
-    return res;
+    return std::make_pair(res, part_offsets);
 }
 
 MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(

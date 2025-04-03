@@ -73,6 +73,9 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     new_readers.main = create_reader(read_info->task_columns.columns, false);
 
+    if (read_info->part_offsets.has_value())
+        new_readers.main->data_part_info_for_read->setPartOffsets(read_info->part_offsets);
+
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
         new_readers.prewhere.push_back(create_reader(pre_columns_per_step, true));
 

@@ -81,6 +81,8 @@ struct MergeTreeReadTaskInfo
     size_t approx_size_of_mark = 0;
     /// Cache of the columns prefixes for this part.
     DeserializationPrefixesCachePtr deserialization_prefixes_cache{};
+    /// exact rows from the part - for vector similarity index and other point index-types
+    PartOffsets part_offsets;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;

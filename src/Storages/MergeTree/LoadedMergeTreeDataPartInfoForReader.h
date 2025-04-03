@@ -61,9 +61,14 @@ public:
 
     MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
 
+    void setPartOffsets(const PartOffsets & part_offsets_) override { part_offsets = part_offsets_; }
+
+    PartOffsets getPartOffsets() const override { return part_offsets; }
+
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;
+    PartOffsets part_offsets;
 };
 
 }

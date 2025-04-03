@@ -154,6 +154,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 
         read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
         read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, storage_snapshot->metadata, getContext());
+	read_task_info.part_offsets = std::move(part_with_ranges.part_offsets);
 
         LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
 

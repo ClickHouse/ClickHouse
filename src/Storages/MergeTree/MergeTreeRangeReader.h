@@ -348,6 +348,8 @@ private:
 
     void updatePerformanceCounters(size_t num_rows_read);
 
+    FilterWithCachedCount createPartOffsetsFilter(const ReadResult & result) const;
+
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     const PrewhereExprStep * prewhere_info;
@@ -356,6 +358,8 @@ private:
 
     Block read_sample_block;    /// Block with columns that are actually read from disk + non-const virtual columns that are filled at this step.
     Block result_sample_block;  /// Block with columns that are returned by this step.
+
+    ColumnPtr part_offsets_auto_column; /// Used for exact row filtering in vector similarity search
 
     ReadStepPerformanceCountersPtr performance_counters;
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps

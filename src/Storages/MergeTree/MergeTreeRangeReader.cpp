@@ -1035,6 +1035,11 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     /// Column _block_offset is the same as _part_offset if it's not persisted in part.
     if (read_sample_block.has(BlockOffsetColumn::name))
         add_offset_column(BlockOffsetColumn::name);
+
+    if (merge_tree_reader->data_part_info_for_read->getPartOffsets().has_value())
+    {
+        part_offsets_auto_column = createPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
+    }
 }
 
 ColumnPtr MergeTreeRangeReader::createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
@@ -1313,6 +1318,46 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
+FilterWithCachedCount MergeTreeRangeReader::createPartOffsetsFilter(const ReadResult & result) const
+{
+    auto filter_data = ColumnUInt8::create(result.num_rows, UInt8(0));
+    IColumn::Filter & filter = filter_data->getData();
+
+    std::set<size_t> selected;
+    auto part_offsets = merge_tree_reader->data_part_info_for_read->getPartOffsets().value();
+    std::sort(part_offsets.begin(), part_offsets.end());
+
+    /// LOG_TRACE(log, "Need to search {}", part_offsets.size());
+#if 0
+    for (auto v : part_offsets)
+    {
+        selected.insert(v);
+    }
+#endif
+    const auto & offsets  = typeid_cast<const ColumnUInt64&>(*part_offsets_auto_column).getData();
+    size_t j = 0;
+    for (size_t i = 0; i < result.num_rows;i++)
+    {
+	while (j < part_offsets.size() && offsets[i] > part_offsets[j]) j++;
+
+        if (j >= part_offsets.size())
+		break;
+#if 0
+        if (selected.find(offsets[i]) != selected.end())
+            filter[i] = true;
+        else
+            filter[i] = false;
+#endif
+        if (offsets[i] == part_offsets[j])
+        {
+            filter[i] = true; j++;
+	    /// LOG_TRACE(log, "Match found {}", offsets[i]);
+	}
+    }
+
+    return FilterWithCachedCount(filter_data->getPtr());
+}
+
 void MergeTreeRangeReader::executeActionsBeforePrewhere(ReadResult & result, Columns & read_columns, const Block & previous_header, size_t num_read_rows) const
 {
     merge_tree_reader->fillVirtualColumns(read_columns, num_read_rows);
@@ -1355,6 +1400,15 @@ void MergeTreeRangeReader::executeActionsBeforePrewhere(ReadResult & result, Col
 void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const
 {
     result.checkInternalConsistency();
+
+    if (merge_tree_reader->data_part_info_for_read->getPartOffsets().has_value())
+    {
+        auto before = result.num_rows;
+        auto part_offsets_filter = createPartOffsetsFilter(result);
+	result.applyFilter(part_offsets_filter);
+        auto after = result.num_rows;
+        LOG_TRACE(log, "Used similarity index to shortlist rows, before {} , after {}", before, after);
+    }
 
     if (!prewhere_info)
         return;

@@ -40,12 +40,15 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
     void merge(const RangesInDataPartsDescription & other);
 };
 
+using PartOffsets = std::optional<std::vector<UInt64>>;
+
 struct RangesInDataPart
 {
     DataPartPtr data_part;
     size_t part_index_in_query;
     MarkRanges ranges;
     MarkRanges exact_ranges;
+    PartOffsets part_offsets;
 
     RangesInDataPart() = default;
 

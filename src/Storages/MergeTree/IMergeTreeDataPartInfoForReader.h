@@ -1,6 +1,7 @@
 #pragma once
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/ColumnsDescription.h>
 #include <Core/NamesAndTypes.h>
 
@@ -68,6 +69,10 @@ public:
     virtual String getTableName() const = 0;
 
     virtual void reportBroken() = 0;
+
+    virtual void setPartOffsets(const PartOffsets &) = 0;
+
+    virtual PartOffsets getPartOffsets() const = 0;
 };
 
 using MergeTreeDataPartInfoForReaderPtr = std::shared_ptr<IMergeTreeDataPartInfoForReader>;
