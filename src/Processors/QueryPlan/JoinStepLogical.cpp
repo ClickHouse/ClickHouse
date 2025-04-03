@@ -330,57 +330,38 @@ std::string_view joinTypePretty(const JoinOperator & join_operator)
     // Right Anti Join: ⋊̸ (Unicode U+22CA U+0338)
     // Cross Join: × (Unicode U+00D7)
 
-    if (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any)
-    {
-        switch (join_operator.kind)
-        {
-            case JoinKind::Inner:
-                return " \u22C8 ";
-            case JoinKind::Left:
-                return " \u27D5 ";
-            case JoinKind::Right:
-                return " \u27D6 ";
-            case JoinKind::Full:
-                return " \u27D7 ";
-            case JoinKind::Cross:
-                return " \u00D7 ";
-            case JoinKind::Comma:
-                return " , ";
-            default:
-                break;
-        }
-    }
-    if (join_operator.strictness == JoinStrictness::Semi)
-    {
-        switch (join_operator.kind)
-        {
-            case JoinKind::Left:
-                return " \u22C9 ";
-            case JoinKind::Right:
-                return " \u22CA ";
-            default:
-                break;
-        }
-    }
-    if (join_operator.strictness == JoinStrictness::Anti)
-    {
-        switch (join_operator.kind)
-        {
-            case JoinKind::Left:
-                return " \u22C9\u0338 ";
-            case JoinKind::Right:
-                return " \u22CA\u0338 ";
-            default:
-                break;
-        }
-    }
+    auto symbols = std::array{
+        //          Inner     Left            Right           Full      Cross     Comma
+        std::array{"\u22C8", "\u27D5",       "\u27D6",       "\u27D7", "\u00D7", ","     },  // All/Any
+        std::array{"\u22C8", "\u22C9",       "\u22CA",       "\u22C8", "\u22C8", "\u22C8"},  // Semi
+        std::array{"\u22C8", "\u22C9\u0338", "\u22CA\u0338", "\u22C8", "\u22C8", "\u22C8"},  // Anti
+    };
 
-    return " \u22C8 ";
+    size_t row = 0;
+    switch (join_operator.strictness)
+    {
+        case JoinStrictness::Semi: row = 1; break;
+        case JoinStrictness::Anti: row = 2; break;
+        default: break;
+    }
+    size_t col = 0;
+    switch (join_operator.kind)
+    {
+        case JoinKind::Inner: col = 0; break;
+        case JoinKind::Left: col = 1; break;
+        case JoinKind::Right: col = 2; break;
+        case JoinKind::Full: col = 3; break;
+        case JoinKind::Cross: col = 4; break;
+        case JoinKind::Comma: col = 5; break;
+        default: break;
+    }
+    return symbols[row][col];
 }
 
 std::string treeToInfix(DPJoinEntry * root)
 {
     std::string result;
+    result.reserve(1024);
 
     if (!root)
         return result;
@@ -398,7 +379,7 @@ std::string treeToInfix(DPJoinEntry * root)
 
         if (node->isLeaf())
         {
-            result += fmt::format("{}", node->relation_id);
+            result += fmt::format("R{}", node->relation_id);
             continue;
         }
         else if (state == 0)
@@ -409,8 +390,9 @@ std::string treeToInfix(DPJoinEntry * root)
         }
         else if (state == 1)
         {
-
+            result += " ";
             result += joinTypePretty(*node->join_operator);
+            result += " ";
             stack.push({node, 2});
             stack.push({node->right.get(), 0});
         }
@@ -422,7 +404,6 @@ std::string treeToInfix(DPJoinEntry * root)
 
     return result;
 }
-
 
 template <typename ResultType>
 void JoinStepLogical::describeJoinActionsImpl(ResultType & result) const
@@ -436,8 +417,8 @@ void JoinStepLogical::describeJoinActionsImpl(ResultType & result) const
 
     if (plan_node)
     {
-        describeJoinNode(join_tree_description, plan_node);
         root_description.add("JoinTree", treeToInfix(plan_node.get()));
+        describeJoinNode(join_tree_description, plan_node);
     }
 
     root_description.add("Expressions", ExpressionActions(expression_actions->clone()));
