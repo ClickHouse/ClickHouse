@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from ._environment import _Environment
 from .settings import Settings
-from .utils import MetaClasses, Shell
+from .utils import MetaClasses, Shell, Utils
 
 
 @dataclasses.dataclass
@@ -112,7 +112,7 @@ class S3:
         return
 
     @classmethod
-    def copy_file_to_s3(cls, s3_path, local_path, text=False):
+    def copy_file_to_s3(cls, s3_path, local_path, text=False, with_rename=False):
         assert Path(local_path).exists(), f"Path [{local_path}] does not exist"
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         assert Path(
@@ -120,7 +120,7 @@ class S3:
         ).is_file(), f"Path [{local_path}] is not file. Only files are supported"
         file_name = Path(local_path).name
         s3_full_path = s3_path
-        if not s3_full_path.endswith(file_name):
+        if not s3_full_path.endswith(file_name) and not with_rename:
             s3_full_path = f"{s3_path}/{Path(local_path).name}"
         cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
         if text:
@@ -196,7 +196,12 @@ class S3:
 
     @classmethod
     def copy_file_from_s3(
-        cls, s3_path, local_path, recursive=False, include_pattern=""
+        cls,
+        s3_path,
+        local_path,
+        recursive=False,
+        include_pattern="",
+        _skip_download_counter=False,
     ):
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         if Path(local_path).is_dir():
@@ -211,11 +216,17 @@ class S3:
         if include_pattern:
             cmd += f' --exclude "*" --include "{include_pattern}"'
         res = cls.run_command_with_retries(cmd)
-        if res:
-            if not Path(local_path).parent.is_dir():
-                StorageUsage.add_downloaded(local_path)
+        if res and not _skip_download_counter:
+            if not recursive:
+                if Path(local_path).is_dir():
+                    path = Path(local_path) / Path(s3_path).name
+                else:
+                    path = local_path
+                StorageUsage.add_downloaded(path)
             else:
-                print("TODO: implement for multiple files")
+                print(
+                    "TODO: support StorageUsage.add_downloaded with recursive download"
+                )
         return res
 
     @classmethod
@@ -230,10 +241,9 @@ class S3:
         cmd = f'aws s3 cp s3://{s3_path}  {local_path} --exclude "{exclude}" --include "{include}" --recursive'
         res = cls.run_command_with_retries(cmd)
         if res:
-            if not Path(local_path).parent.is_dir():
-                StorageUsage.add_downloaded(local_path)
-            else:
-                print("TODO: implement for multiple files")
+            print(
+                "TODO: support StorageUsage.add_downloaded with matching pattern download"
+            )
         return res
 
     @classmethod
@@ -257,25 +267,6 @@ class S3:
         )
 
     @classmethod
-    def compress_file(cls, path):
-        if Shell.check("which zstd"):
-            path_out = f"{path}.zst"
-            Shell.check(f"zstd < {path} > {path_out}", verbose=True, strict=True)
-        elif Shell.check("which pigz"):
-            path_out = f"{path}.gz"
-            Shell.check(f"pigz < {path} > {path_out}", verbose=True, strict=True)
-        elif Shell.check("which gzip"):
-            path_out = f"{path}.gz"
-            Shell.check(f"gzip < {path} > {path_out}", verbose=True, strict=True)
-        else:
-            print(f"ERROR: Failed to compress file [{path}] no zstd or gz installed")
-            _Environment.get().add_info(
-                f"Failed to compress file [{path}] no zstd or gz installed"
-            )
-            path_out = path
-        return path_out
-
-    @classmethod
     def _upload_file_to_s3(
         cls, local_file_path, upload_to_s3: bool, text: bool = False, s3_subprefix=""
     ) -> str:
@@ -292,7 +283,7 @@ class S3:
                         f"NOTE: File [{local_file_path}] exceeds threshold [Settings.COMPRESS_THRESHOLD_MB:{Settings.COMPRESS_THRESHOLD_MB}] - compress"
                     )
                     text = False
-                    local_file_path = cls.compress_file(local_file_path)
+                    local_file_path = Utils.compress_file(local_file_path)
             html_link = S3.copy_file_to_s3(
                 s3_path=s3_path, local_path=local_file_path, text=text
             )
