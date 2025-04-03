@@ -83,6 +83,7 @@ namespace Setting
 {
     extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
     extern const SettingsBool cast_string_to_dynamic_use_inference;
+    extern const SettingsBool cast_string_to_variant_use_inference;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
@@ -5170,7 +5171,7 @@ private:
 
         auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(removeNullableOrLowCardinalityNullable(from_type)->getName());
         /// Cast String to Variant through parsing if it's not Variant(String).
-        if (isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
+        if (context && context->getSettingsRef()[Setting::cast_string_to_variant_use_inference] && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
             return createStringToVariantWrapper();
 
         if (!variant_discr_opt)
