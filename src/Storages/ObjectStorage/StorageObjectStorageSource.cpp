@@ -172,7 +172,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else if (configuration->supportsFileIterator())
     {
-        return configuration->iterate();
+        return configuration->iterate(file_progress_callback, query_settings.list_object_keys_size);
     }
     else
     {
