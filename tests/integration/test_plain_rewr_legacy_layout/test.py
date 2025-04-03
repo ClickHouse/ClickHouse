@@ -70,11 +70,12 @@ def test(storage_policy):
 
     insert_values = gen_insert_values(random.randint(1, MAX_ROWS))
 
-    create_insert(cluster.instances["source"], insert_values)
+    source = cluster.instances["source"]
+    create_insert(source, insert_values)
 
-    def copy_to_legacy_layout(node_from, node_to):
+    def copy_to_legacy_layout(source, dest):
         metadata_it = cluster.minio_client.list_objects(
-            cluster.minio_bucket, f"{key_prefix}{node_from}/__meta/", recursive=True
+            cluster.minio_bucket, f"{key_prefix}{source}/__meta/", recursive=True
         )
         remote_to_local = {}
         for obj in metadata_it:
@@ -88,7 +89,7 @@ def test(storage_policy):
             remote_to_local[remote_dir] = local_path
 
         data_it = cluster.minio_client.list_objects(
-            cluster.minio_bucket, f"{key_prefix}{node_from}/", recursive=True
+            cluster.minio_bucket, f"{key_prefix}{source}/", recursive=True
         )
 
         for obj in data_it:
@@ -98,7 +99,7 @@ def test(storage_policy):
             filename = os.path.basename(remote_path)
 
             destination_key = (
-                f"{key_prefix}{node_to}/{remote_to_local[remote_dir]}{filename}"
+                f"{key_prefix}{dest}/{remote_to_local[remote_dir]}{filename}"
             )
 
             cluster.minio_client.copy_object(
@@ -121,3 +122,7 @@ def test(storage_policy):
         )
         > 0
     )
+
+    for name in ("source", "dest"):
+        node = cluster.instances[name]
+        node.query("DROP TABLE test")
