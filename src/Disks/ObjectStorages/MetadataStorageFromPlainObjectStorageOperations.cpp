@@ -354,9 +354,8 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute(std::unique
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"), "Copying file from '{}' to '{}'", path_from, path_to);
 
-    const auto directory_from = path_from.parent_path();
-    if (!path_map.existsLocalPath(directory_from))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the source directory path '{}' does not exist", path_from);
+    if (!path_map.existsFile(path_from))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the source path '{}' does not exist", path_from);
 
     const auto directory_to = path_to.parent_path();
     if (!path_map.existsLocalPath(directory_to))
