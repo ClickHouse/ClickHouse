@@ -253,6 +253,11 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
+    /*
+     * Calls to `extractNamedArgumentAndRemoveFromList` need to happen before count is determined:
+     * `size_t count = StorageURL::evalArgsAndCollectHeaders`
+     * This is because extractNamedArgumentAndRemoveFromList alters the list of arguments
+     * */
     partition_strategy = extractNamedArgumentAndRemoveFromList<std::string>(args, "partition_strategy").value_or("auto");
     hive_partition_strategy_write_partition_columns_into_files = extractNamedArgumentAndRemoveFromList<bool>(args, "hive_partition_strategy_write_partition_columns_into_files").value_or(false);
 

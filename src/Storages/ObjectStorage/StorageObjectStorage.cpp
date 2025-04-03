@@ -171,6 +171,9 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
+    // this function needs to be called in the constructor so we can validate table definition at creation time
+    // it is also being called during `write` because this code is also used by table functions and, unfortunately,
+    // at creation time the partition by is not available (maybe this needs to be fixed)
     sanityCheckPartitioningConfiguration(partition_by, nullptr, configuration->partition_strategy, configuration->withPartitionWildcard());
 
     bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
