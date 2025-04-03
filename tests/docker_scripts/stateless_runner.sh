@@ -414,7 +414,7 @@ clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_
 # Because it's the simplest way to read it when server has crashed.
 # Increase timeout to 10 minutes (max-tries * 2 seconds) to give gdb time to collect stack traces
 # (if safeExit breakpoint is hit after the server's internal shutdown timeout is reached).
-sudo clickhouse stop --max-tries 300 ||:
+sudo clickhouse stop --max-tries 600 ||:
 
 
 if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
