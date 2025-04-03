@@ -59,7 +59,7 @@ int main(int argc, char ** argv)
         std::string codec_name = argv[3];
         std::string value = argv[4];
 
-        DB::ConfigProcessor processor(argv[1], false, true);
+        DB::ConfigProcessor processor(argv[1], false);
         bool has_zk_includes;
         DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
         if (has_zk_includes)
