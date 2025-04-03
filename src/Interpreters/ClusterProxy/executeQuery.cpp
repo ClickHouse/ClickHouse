@@ -489,6 +489,7 @@ bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & con
 
     InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
     auto & plan = interpreter.getQueryPlan();
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", dumpQueryPlan(plan));
 
     auto is_reading_with_parallel_replicas = [](const QueryPlan::Node * node) -> bool
     {
@@ -534,11 +535,8 @@ bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & con
 
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(const ASTInsertQuery & query_ast, ContextPtr context)
 {
-    if (!isSuitableForParallelReplicas(query_ast.select, context))
-        return {};
-
     auto logger = getLogger("executeInsertSelectWithParallelReplicas");
-    LOG_DEBUG(logger, "Executing query {} with parallel replicas", query_ast.formatForLogging());
+    LOG_DEBUG(logger, "Executing query with parallel replicas: {}", query_ast.select->formatForLogging());
 
     const auto & settings = context->getSettingsRef();
 

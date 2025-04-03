@@ -768,6 +768,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!isTrivialSelect(selects.front()))
         return {};
 
+    if (!ClusterProxy::isSuitableForParallelReplicas(selects.front(), context_ptr))
+        return {};
+
     LOG_TRACE(
         getLogger("InterpreterInsertQuery"),
         "Building distributed insert select pipeline with parallel replicas: table={}",
