@@ -23,12 +23,8 @@ namespace
 {
     Names extractPartitionRequiredColumns(ASTPtr & partition_by, const Block & sample_block, ContextPtr context)
     {
-        auto pby_clone = partition_by->clone();
-        // sample_block columns might be out of order, and we need to respect the partition by expression order
-        auto key_description = KeyDescription::getKeyFromAST(pby_clone, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context);
-        auto syntax_result = TreeRewriter(context).analyze(pby_clone, key_description.sample_block.getNamesAndTypesList());
-        auto exp_analyzer = ExpressionAnalyzer(pby_clone, syntax_result, context).getActions(false);
-        return exp_analyzer->getRequiredColumns();
+        auto key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context);
+        return key_description.sample_block.getNames();
     }
 
     HiveStylePartitionStrategy::PartitionExpressionActionsAndColumnName buildExpressionHive(
