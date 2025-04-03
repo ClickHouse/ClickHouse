@@ -1,10 +1,11 @@
 ---
-title : JSONColumnsWithMetadata
-slug: /interfaces/formats/JSONColumnsWithMetadata
-keywords : [JSONColumnsWithMetadata]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the JSONColumnsWithMetadata format'
+input_format: true
+keywords: ['JSONColumnsWithMetadata']
+output_format: true
+slug: /interfaces/formats/JSONColumnsWithMetadata
+title: 'JSONColumnsWithMetadata'
 ---
 
 | Input | Output | Alias |
@@ -62,7 +63,7 @@ Example:
 }
 ```
 
-For the `JSONColumnsWithMetadata` input format, if setting [`input_format_json_validate_types_from_metadata`](/docs/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to `1`,
+For the `JSONColumnsWithMetadata` input format, if setting [`input_format_json_validate_types_from_metadata`](/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to `1`,
 the types from metadata in input data will be compared with the types of the corresponding columns from the table.
 
 ## Format Settings {#format-settings}

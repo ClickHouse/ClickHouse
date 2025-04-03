@@ -8,6 +8,7 @@
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
+#include <Formats/FormatSettings.h>
 
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
@@ -62,7 +63,8 @@ public:
         const String & cluster_secret_,
         const String & client_name_,
         Protocol::Compression compression_,
-        Protocol::Secure secure_);
+        Protocol::Secure secure_,
+        const String & bind_host_);
 
     ~Connection() override;
 
@@ -233,6 +235,7 @@ private:
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.
     Protocol::Secure secure;             /// Enable data encryption for communication.
+    String bind_host;
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
     CompressionCodecPtr compression_codec;

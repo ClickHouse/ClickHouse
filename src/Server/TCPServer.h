@@ -25,8 +25,11 @@ public:
         if (!is_open)
             return;
 
+        // FIXME: On darwin calling shutdown(SHUT_RD) on the socket blocked in accept() leads to ENOTCONN
+#ifndef OS_DARWIN
         // Shutdown the listen socket before stopping tcp server to avoid 2.5second delay
         socket.shutdownReceive();
+#endif
 
         Poco::Net::TCPServer::stop();
         // This notifies already established connections that they should stop serving

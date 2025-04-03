@@ -1,7 +1,9 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Common/Exception.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -56,7 +58,10 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
-        return read_info->data_part->getReader(
+        auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(read_info->data_part, read_info->alter_conversions);
+
+        return createMergeTreeReader(
+            part_info,
             columns_to_read,
             extras.storage_snapshot,
             ranges,
@@ -64,7 +69,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.uncompressed_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
-            read_info->alter_conversions,
             extras.reader_settings,
             extras.value_size_map,
             extras.profile_callback);
@@ -203,11 +207,17 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 
     BlockAndProgress res = {
         .block = std::move(block),
+        .read_mark_ranges = read_result.read_mark_ranges,
         .row_count = read_result.num_rows,
         .num_read_rows = num_read_rows,
         .num_read_bytes = num_read_bytes };
 
     return res;
+}
+
+void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_)
+{
+    prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }
 
 }

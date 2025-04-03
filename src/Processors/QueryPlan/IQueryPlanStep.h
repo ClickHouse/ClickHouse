@@ -6,8 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
-#include <fmt/core.h>
-
 namespace DB
 {
 
@@ -64,6 +62,8 @@ public:
 
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
+    virtual bool isSerializable() const { return false; }
+
     virtual const SortDescription & getSortDescription() const;
 
     struct FormatSettings
@@ -97,7 +97,7 @@ public:
 
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
-    String getUniqID() const { return fmt::format("{}_{}", getName(), step_index); }
+    String getUniqID() const;
 
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(Headers input_headers_);

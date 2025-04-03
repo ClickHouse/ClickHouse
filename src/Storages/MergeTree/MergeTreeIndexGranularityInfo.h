@@ -3,7 +3,6 @@
 #include <optional>
 #include <base/types.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
-#include <Disks/IDisk.h>
 
 namespace DB
 {

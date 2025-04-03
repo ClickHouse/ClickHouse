@@ -175,14 +175,14 @@ setup_logs_replication
 attach_gdb_to_clickhouse
 
 # create tables for minio log webhooks
-clickhouse-client --allow_experimental_json_type=1 --query "CREATE TABLE minio_audit_logs
+clickhouse-client --enable_json_type=1 --query "CREATE TABLE minio_audit_logs
 (
     log JSON(time DateTime64(9))
 )
 ENGINE = MergeTree
 ORDER BY tuple()"
 
-clickhouse-client --allow_experimental_json_type=1 --query "CREATE TABLE minio_server_logs
+clickhouse-client --enable_json_type=1 --query "CREATE TABLE minio_server_logs
 (
     log JSON(time DateTime64(9))
 )
@@ -351,7 +351,6 @@ function run_tests()
         --testname
         --check-zookeeper-session
         --hung-check
-        --print-time
         --capture-client-stacktrace
         --queries "/repo/tests/queries"
         --test-runs "$NUM_TRIES"
@@ -383,35 +382,22 @@ echo "Files in root directory"
 ls -la /
 
 clickhouse-client -q "system flush logs" ||:
+if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    clickhouse-client --port 19000 -q "system flush logs" ||:
+    clickhouse-client --port 29000 -q "system flush logs" ||:
+fi
+if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+    clickhouse-client --port 19000 -q "system flush logs" ||:
+fi
 
 # stop logs replication to make it possible to dump logs tables via clickhouse-local
 stop_logs_replication
 
+# Remove all limits to avoid TOO_MANY_ROWS_OR_BYTES while gathering system.*_log tables
+rm /etc/clickhouse-server/users.d/limits.yaml
+clickhouse-client -q "system reload config" ||:
+
 logs_saver_client_options="--max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0"
-
-# Try to get logs while server is running
-failed_to_save_logs=0
-for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log latency_log
-do
-    if ! clickhouse-client ${logs_saver_client_options} -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes"; then
-        failed_to_save_logs=1
-    fi
-    if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        if ! clickhouse-client ${logs_saver_client_options} --port 19000 -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst' format TSVWithNamesAndTypes"; then
-            failed_to_save_logs=1
-        fi
-        if ! clickhouse-client ${logs_saver_client_options} --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
-            failed_to_save_logs=1
-        fi
-    fi
-
-    if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-        if ! clickhouse-client ${logs_saver_client_options} --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
-            failed_to_save_logs=1
-        fi
-    fi
-done
-
 
 # collect minio audit and server logs
 # wait for minio to flush its batch if it has any
@@ -428,7 +414,7 @@ clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_
 # Because it's the simplest way to read it when server has crashed.
 # Increase timeout to 10 minutes (max-tries * 2 seconds) to give gdb time to collect stack traces
 # (if safeExit breakpoint is hit after the server's internal shutdown timeout is reached).
-sudo clickhouse stop --max-tries 300 ||:
+sudo clickhouse stop --max-tries 600 ||:
 
 
 if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
@@ -449,49 +435,48 @@ zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_outp
 
 data_path_config="--path=/var/lib/clickhouse/"
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
-    # We need s3 storage configuration (but it's more likely that clickhouse-local will fail for some reason)
+    # We need s3 storage configuration
     data_path_config="--config-file=/etc/clickhouse-server/config.xml"
 fi
 
 
-# If server crashed dump system logs with clickhouse-local
-if [ $failed_to_save_logs -ne 0 ]; then
-    # Compress tables.
-    #
-    # NOTE:
-    # - that due to tests with s3 storage we cannot use /var/lib/clickhouse/data
-    #   directly
-    # - even though ci auto-compress some files (but not *.tsv) it does this only
-    #   for files >64MB, we want this files to be compressed explicitly
-    for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log latency_log
-    do
-        clickhouse-local ${logs_saver_client_options} "$data_path_config" --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
+# Save system.*_log as artifacts
+#
+# NOTE:
+# - that due to tests with s3 storage we cannot use /var/lib/clickhouse/data
+#   directly
+# - even though ci auto-compress some files (but not *.tsv) it does this only
+#   for files >64MB, we want this files to be compressed explicitly
+function clickhouse_local_system()
+{
+    local args=(
+        ${logs_saver_client_options}
+        "$@"
+        --only-system-tables
+        --stacktrace
+        --
+        # FIXME: Hack for s3_with_keeper (note, that we don't need the disk,
+        # the problem is that whenever we need disks all disks will be
+        # initialized [1])
+        #
+        #   [1]: https://github.com/ClickHouse/ClickHouse/issues/77320
+        --zookeeper.implementation=testkeeper
+    )
+    clickhouse-local "${args[@]}"
+}
 
-        if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-            clickhouse-local ${logs_saver_client_options} --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
-            clickhouse-local ${logs_saver_client_options} --path /var/lib/clickhouse2/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
-        fi
-
-        if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-            clickhouse-local ${logs_saver_client_options} --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
-        fi
-    done
-fi
-
-# Also export trace log in flamegraph-friendly format.
-for trace_type in CPU Memory Real
+for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log latency_log
 do
-    clickhouse-local "$data_path_config" --only-system-tables -q "
-            select
-                arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
-                count(*) AS samples
-            from system.trace_log
-            where trace_type = '$trace_type'
-            group by trace
-            order by samples desc
-            settings allow_introspection_functions = 1
-            format TabSeparated" \
-        | zstd --threads=0 > "/test_output/trace-log-$trace_type-flamegraph.tsv.zst" ||:
+    clickhouse_local_system "$data_path_config" -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes" || echo -e "Scraping $table\tFAIL" > extra_test_results.tsv
+
+    if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+        clickhouse_local_system --path /var/lib/clickhouse1/ -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst' format TSVWithNamesAndTypes" || echo -e "Scraping $table.1\tFAIL" > extra_test_results.tsv
+        clickhouse_local_system --path /var/lib/clickhouse2/ -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes" || echo -e "Scraping $table.2\tFAIL" > extra_test_results.tsv
+    fi
+
+    if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+        clickhouse_local_system --path /var/lib/clickhouse1/ -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes" || echo -e "Scraping $table (SC)\tFAIL" > extra_test_results.tsv
+    fi
 done
 
 # Grep logs for sanitizer asserts, crashes and other critical errors
@@ -499,6 +484,11 @@ check_logs_for_critical_errors
 
 # Check test_result.txt with test results and test_results.tsv generated by grepping logs before
 /repo/tests/docker_scripts/process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+
+# Append extra failures to the report
+if [ -s extra_test_results.tsv ]; then
+    cat extra_test_results.tsv >> /test_output/test_results.tsv
+fi
 
 
 # Compressed (FIXME: remove once only github actions will be left)

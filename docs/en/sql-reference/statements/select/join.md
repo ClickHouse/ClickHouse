@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for JOIN Clause'
+sidebar_label: 'Joining Tables'
 slug: /sql-reference/statements/select/join
-sidebar_label: Joining Tables
+title: 'JOIN Clause'
 ---
 
 # JOIN Clause
@@ -9,7 +11,7 @@ Join produces a new table by combining columns from one or multiple tables by us
 
 **Syntax**
 
-``` sql
+```sql
 SELECT <expr_list>
 FROM <left_table>
 [GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ALL|ASOF] JOIN <right_table>
@@ -61,7 +63,6 @@ The behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_
 - [join_algorithm](../../../operations/settings/settings.md#join_algorithm)
 - [join_any_take_last_row](../../../operations/settings/settings.md#join_any_take_last_row)
 - [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
-- [partial_merge_join_optimizations](../../../operations/settings/settings.md#partial_merge_join_optimizations)
 - [partial_merge_join_rows_in_right_blocks](../../../operations/settings/settings.md#partial_merge_join_rows_in_right_blocks)
 - [join_on_disk_max_files_to_merge](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
 - [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
@@ -94,7 +95,7 @@ Consider `table_1` and `table_2`:
 
 Query with one join key condition and an additional condition for `table_2`:
 
-``` sql
+```sql
 SELECT name, text FROM table_1 LEFT OUTER JOIN table_2
     ON table_1.Id = table_2.Id AND startsWith(table_2.text, 'Text');
 ```
@@ -111,7 +112,7 @@ Note that the result contains the row with the name `C` and the empty text colum
 
 Query with `INNER` type of a join and multiple conditions:
 
-``` sql
+```sql
 SELECT name, text, scores FROM table_1 INNER JOIN table_2
     ON table_1.Id = table_2.Id AND table_2.scores > 10 AND startsWith(table_2.text, 'Text');
 ```
@@ -125,7 +126,7 @@ Result:
 ```
 Query with `INNER` type of a join and condition with `OR`:
 
-``` sql
+```sql
 CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree() ORDER BY a;
 
 CREATE TABLE t2 (`key` Int32, `val` Int64) ENGINE = MergeTree() ORDER BY key;
@@ -159,7 +160,7 @@ However, you can try experimental support for conditions like `t1.a = t2.key AND
 
 :::
 
-``` sql
+```sql
 SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.val > 3;
 ```
 
@@ -211,16 +212,16 @@ SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDE
 ```
 
 ```response
-key1	a	1	1	2	key1	B	2	1	2
-key1	a	1	1	2	key1	C	3	4	5
-key1	a	1	1	2	key1	D	4	1	6
-key1	b	2	3	2	key1	C	3	4	5
-key1	b	2	3	2	key1	D	4	1	6
-key1	c	3	2	1	key1	D	4	1	6
-key1	d	4	7	2			0	0	\N
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
+key1    a    1    1    2    key1    B    2    1    2
+key1    a    1    1    2    key1    C    3    4    5
+key1    a    1    1    2    key1    D    4    1    6
+key1    b    2    3    2    key1    C    3    4    5
+key1    b    2    3    2    key1    D    4    1    6
+key1    c    3    2    1    key1    D    4    1    6
+key1    d    4    7    2            0    0    \N
+key1    e    5    5    5            0    0    \N
+key2    a2    1    1    1            0    0    \N
+key4    f    2    3    4            0    0    \N
 ```
 
 
@@ -290,7 +291,7 @@ Algorithm requires the special column in tables. This column:
 
 Syntax `ASOF JOIN ... ON`:
 
-``` sql
+```sql
 SELECT expressions_list
 FROM table_1
 ASOF LEFT JOIN table_2
@@ -303,7 +304,7 @@ Conditions supported for the closest match: `>`, `>=`, `<`, `<=`.
 
 Syntax `ASOF JOIN ... USING`:
 
-``` sql
+```sql
 SELECT expressions_list
 FROM table_1
 ASOF JOIN table_2
@@ -392,7 +393,7 @@ There are two ways to execute join involving distributed tables:
 - When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
 - When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
 
-Be careful when using `GLOBAL`. For more information, see the [Distributed subqueries](../../../sql-reference/operators/in.md#select-distributed-subqueries) section.
+Be careful when using `GLOBAL`. For more information, see the [Distributed subqueries](/sql-reference/operators/in#distributed-subqueries) section.
 
 ## Implicit Type Conversion {#implicit-type-conversion}
 
@@ -436,7 +437,7 @@ returns the set:
 
 While joining tables, the empty cells may appear. The setting [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) define how ClickHouse fills these cells.
 
-If the `JOIN` keys are [Nullable](../../../sql-reference/data-types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](../../../sql-reference/syntax.md#null-literal) are not joined.
+If the `JOIN` keys are [Nullable](../../../sql-reference/data-types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](/sql-reference/syntax#null) are not joined.
 
 ### Syntax {#syntax}
 
@@ -472,16 +473,17 @@ By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_j
 
 If you need to restrict `JOIN` operation memory consumption use the following settings:
 
-- [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
-- [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
+- [max_rows_in_join](/operations/settings/settings#max_rows_in_join) — Limits number of rows in the hash table.
+- [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join) — Limits size of the hash table.
 
-When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) setting instructs.
+When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) 
+setting instructs.
 
 ## Examples {#examples}
 
 Example:
 
-``` sql
+```sql
 SELECT
     CounterID,
     hits,
@@ -505,7 +507,7 @@ ORDER BY hits DESC
 LIMIT 10
 ```
 
-``` text
+```text
 ┌─CounterID─┬───hits─┬─visits─┐
 │   1143050 │ 523264 │  13665 │
 │    731962 │ 475698 │ 102716 │

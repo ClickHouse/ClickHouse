@@ -211,6 +211,24 @@ protected:
         result.replacement = std::move(uri);
     }
 
+    void findRedisSecretArguments()
+    {
+        /// Redis does not have URL/address argument,
+        /// only 'host:port' and separate "password" argument.
+
+        if (isNamedCollectionName(0))
+        {
+            if (findSecretNamedArgument("password", 1))
+                return;
+        }
+        else
+        {
+            // Redis('host:port', 'db_index', 'password', 'pool_size')
+            markSecretArgument(2, false);
+            return;
+        }
+    }
+
     /// Returns the number of arguments excluding "headers" and "extra_credentials" (which should
     /// always be at the end). Marks "headers" as secret, if found.
     size_t excludeS3OrURLNestedMaps()
@@ -383,6 +401,17 @@ protected:
             {
                 chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
                 result.start = function->arguments->getRealIndex(url_arg_idx);
+                result.are_named = argument_is_named;
+                result.count = 1;
+                result.replacement = url_arg;
+                return true;
+            }
+
+            static re2::RE2 sas_signature_pattern = "SharedAccessSignature=.*?(;|$)";
+            if (RE2::Replace(&url_arg, sas_signature_pattern, "SharedAccessSignature=[HIDDEN]\\1"))
+            {
+                chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
+                result.start = url_arg_idx;
                 result.are_named = argument_is_named;
                 result.count = 1;
                 result.replacement = url_arg;
@@ -563,9 +592,13 @@ protected:
         {
             findURLSecretArguments();
         }
-        else if ((engine_name == "AzureBlobStorage") || (engine_name == "IcebergAzure"))
+        else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue" || engine_name == "IcebergAzure")
         {
             findAzureBlobStorageTableEngineSecretArguments();
+        }
+        else if (engine_name == "Redis")
+        {
+            findRedisSecretArguments();
         }
     }
 
@@ -721,7 +754,7 @@ protected:
             /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key])
             markSecretArgument(2);
         }
-        else if (engine_name == "AzureBlobStorage")
+        else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
         {
             findAzureBlobStorageTableEngineSecretArguments();
         }

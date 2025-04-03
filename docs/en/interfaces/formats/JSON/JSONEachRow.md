@@ -1,7 +1,8 @@
 ---
-title : JSONEachRow
+description: 'Documentation for the JSONEachRow format'
+keywords: ['JSONEachRow']
 slug: /interfaces/formats/JSONEachRow
-keywords : [JSONEachRow]
+title: 'JSONEachRow'
 ---
 
 ## Description {#description}
@@ -18,6 +19,6 @@ Example:
 {"num":44,"str":"hello","arr":[0,1,2,3]}
 ```
 
-While importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
+While importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 
 ## Format Settings {#format-settings}

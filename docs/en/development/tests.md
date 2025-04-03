@@ -1,10 +1,12 @@
 ---
-slug: /development/tests
+description: 'Guide to testing ClickHouse and running the test suite'
+sidebar_label: 'Testing'
 sidebar_position: 40
-sidebar_label: Testing
+slug: /development/tests
+title: 'Testing ClickHouse'
 ---
 
-# Testing
+# Testing ClickHouse
 
 ## Functional Tests {#functional-tests}
 
@@ -269,7 +271,7 @@ Look for logs at `/etc/clickhouse-server/clickhouse-server.log`.
 
 When ClickHouse is already installed on your system, you can build a new `clickhouse` binary and replace the existing binary:
 
-``` bash
+```bash
 $ sudo clickhouse stop
 $ sudo cp ./clickhouse /usr/bin/
 $ sudo clickhouse start
@@ -277,14 +279,14 @@ $ sudo clickhouse start
 
 Also you can stop system clickhouse-server and run your own with the same configuration but with logging to terminal:
 
-``` bash
+```bash
 $ sudo clickhouse stop
 $ sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
 Example with gdb:
 
-``` bash
+```bash
 $ sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
@@ -327,13 +329,12 @@ We also test some cases automatically with integrational tests:
 
 ## Help from the Compiler {#help-from-the-compiler}
 
-Main ClickHouse code (that is located in `dbms` directory) is built with `-Wall -Wextra -Werror` and with some additional enabled warnings.
+Main ClickHouse code (that is located in `src` directory) is built with `-Wall -Wextra -Werror` and with some additional enabled warnings.
 Although these options are not enabled for third-party libraries.
 
 Clang has even more useful warnings - you can look for them with `-Weverything` and pick something to default build.
 
-For production builds, clang is used, but we also test make gcc builds.
-For development, clang is usually more convenient to use.
+We always use clang to build ClickHouse, both for development and production.
 You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis.
 When building with clang in debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
 

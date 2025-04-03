@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/uniqtheta-functions
+description: 'Documentation for uniqTheta Functions'
+sidebar_label: 'uniqTheta'
 sidebar_position: 210
-sidebar_label: uniqTheta
+slug: /sql-reference/functions/uniqtheta-functions
+title: 'uniqTheta Functions'
 ---
 
 # uniqTheta Functions
@@ -17,7 +19,7 @@ For more information on RoaringBitmap, see: [Theta Sketch Framework](https://dat
 
 Two uniqThetaSketch objects to do union calculation(set operation ∪), the result is a new uniqThetaSketch.
 
-``` sql
+```sql
 uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)
 ```
 
@@ -27,13 +29,13 @@ uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)
 
 **Example**
 
-``` sql
+```sql
 select finalizeAggregation(uniqThetaUnion(a, b)) as a_union_b, finalizeAggregation(a) as a_cardinality, finalizeAggregation(b) as b_cardinality
 from
 (select arrayReduce('uniqThetaState',[1,2]) as a, arrayReduce('uniqThetaState',[2,3,4]) as b );
 ```
 
-``` text
+```text
 ┌─a_union_b─┬─a_cardinality─┬─b_cardinality─┐
 │         4 │             2 │             3 │
 └───────────┴───────────────┴───────────────┘
@@ -43,7 +45,7 @@ from
 
 Two uniqThetaSketch objects to do intersect calculation(set operation ∩), the result is a new uniqThetaSketch.
 
-``` sql
+```sql
 uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)
 ```
 
@@ -53,13 +55,13 @@ uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)
 
 **Example**
 
-``` sql
+```sql
 select finalizeAggregation(uniqThetaIntersect(a, b)) as a_intersect_b, finalizeAggregation(a) as a_cardinality, finalizeAggregation(b) as b_cardinality
 from
 (select arrayReduce('uniqThetaState',[1,2]) as a, arrayReduce('uniqThetaState',[2,3,4]) as b );
 ```
 
-``` text
+```text
 ┌─a_intersect_b─┬─a_cardinality─┬─b_cardinality─┐
 │             1 │             2 │             3 │
 └───────────────┴───────────────┴───────────────┘
@@ -69,7 +71,7 @@ from
 
 Two uniqThetaSketch objects to do a_not_b calculation(set operation ×), the result is a new uniqThetaSketch.
 
-``` sql
+```sql
 uniqThetaNot(uniqThetaSketch,uniqThetaSketch)
 ```
 
@@ -79,13 +81,13 @@ uniqThetaNot(uniqThetaSketch,uniqThetaSketch)
 
 **Example**
 
-``` sql
+```sql
 select finalizeAggregation(uniqThetaNot(a, b)) as a_not_b, finalizeAggregation(a) as a_cardinality, finalizeAggregation(b) as b_cardinality
 from
 (select arrayReduce('uniqThetaState',[2,3,4]) as a, arrayReduce('uniqThetaState',[1,2]) as b );
 ```
 
-``` text
+```text
 ┌─a_not_b─┬─a_cardinality─┬─b_cardinality─┐
 │       2 │             3 │             2 │
 └─────────┴───────────────┴───────────────┘
@@ -93,4 +95,4 @@ from
 
 **See Also**
 
-- [uniqThetaSketch](../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)
+- [uniqThetaSketch](/sql-reference/aggregate-functions/reference/uniqthetasketch)

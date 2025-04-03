@@ -1,9 +1,11 @@
 ---
-slug: /sql-reference/statements/create/
+description: 'Documentation for CREATE Queries'
+sidebar_label: 'CREATE'
 sidebar_position: 34
-sidebar_label: CREATE
+slug: /sql-reference/statements/create/
+title: 'CREATE Queries'
 ---
 
 # CREATE Queries
 
-CREATE queries create (for example) new [databases](/docs/sql-reference/statements/create/database.md), [tables](/docs/sql-reference/statements/create/table.md) and [views](/docs/sql-reference/statements/create/view.md).
+CREATE queries create (for example) new [databases](/sql-reference/statements/create/database.md), [tables](/sql-reference/statements/create/table.md) and [views](/sql-reference/statements/create/view.md).

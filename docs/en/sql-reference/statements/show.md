@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/show
+description: 'Documentation for Show'
+sidebar_label: 'SHOW'
 sidebar_position: 37
-sidebar_label: SHOW
-title: SHOW Statements
+slug: /sql-reference/statements/show
+title: 'SHOW Statements'
 ---
 
 :::note
@@ -104,7 +105,7 @@ SHOW DATABASES LIMIT 2
 
 ### See also {#see-also}
 
-- [`CREATE DATABASE`](create/database.md/#query-language-create-database)
+- [`CREATE DATABASE`](/sql-reference/statements/create/database)
 
 ## SHOW TABLES {#show-tables}
 
@@ -181,7 +182,7 @@ SHOW TABLES FROM system LIMIT 2
 
 ### See also {#see-also-1}
 
-- [`Create Tables`](../../tutorial.md/#create-tables)
+- [`Create Tables`](/sql-reference/statements/create/table)
 - [`SHOW CREATE TABLE`](#show-create-table--dictionary--view--database)
 
 ## SHOW COLUMNS {#show_columns}
@@ -334,7 +335,7 @@ SHOW INDEX FROM 'tbl'
 
 ## SHOW PROCESSLIST {#show-processlist}
 
-Outputs the content of the [`system.processes`](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that are being processed at the moment, excluding `SHOW PROCESSLIST` queries.
+Outputs the content of the [`system.processes`](/operations/system-tables/processes) table, that contains a list of queries that are being processed at the moment, excluding `SHOW PROCESSLIST` queries.
 
 ### Syntax {#syntax-6}
 
@@ -421,7 +422,7 @@ SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 ## SHOW USERS {#show-users}
 
 The `SHOW USERS` statement returns a list of [user account](../../guides/sre/user-management/index.md#user-account-management) names. 
-To view user accounts parameters, see the system table [`system.users`](../../operations/system-tables/users.md#system_tables-users).
+To view user accounts parameters, see the system table [`system.users`](/operations/system-tables/users).
 
 ### Syntax {#syntax-13}
 
@@ -433,7 +434,7 @@ SHOW USERS
 
 The `SHOW ROLES` statement returns a list of [roles](../../guides/sre/user-management/index.md#role-management). 
 To view other parameters, 
-see system tables [`system.roles`](../../operations/system-tables/roles.md#system_tables-roles) and [`system.role_grants`](../../operations/system-tables/role-grants.md#system_tables-role_grants).
+see system tables [`system.roles`](/operations/system-tables/roles) and [`system.role_grants`](/operations/system-tables/role-grants).
 
 ### Syntax {#syntax-14}
 
@@ -443,7 +444,7 @@ SHOW [CURRENT|ENABLED] ROLES
 ## SHOW PROFILES {#show-profiles}
 
 The `SHOW PROFILES` statement returns a list of [setting profiles](../../guides/sre/user-management/index.md#settings-profiles-management). 
-To view user accounts parameters, see system table [`settings_profiles`](../../operations/system-tables/settings_profiles.md#system_tables-settings_profiles).
+To view user accounts parameters, see system table [`settings_profiles`](/operations/system-tables/settings_profiles).
 
 ### Syntax {#syntax-15}
 
@@ -454,7 +455,7 @@ SHOW [SETTINGS] PROFILES
 ## SHOW POLICIES {#show-policies}
 
 The `SHOW POLICIES` statement returns a list of [row policies](../../guides/sre/user-management/index.md#row-policy-management) for the specified table. 
-To view user accounts parameters, see system table [`system.row_policies`](../../operations/system-tables/row_policies.md#system_tables-row_policies).
+To view user accounts parameters, see system table [`system.row_policies`](/operations/system-tables/row_policies).
 
 ### Syntax {#syntax-16}
 
@@ -465,7 +466,7 @@ SHOW [ROW] POLICIES [ON [db.]table]
 ## SHOW QUOTAS {#show-quotas}
 
 The `SHOW QUOTAS` statement returns a list of [quotas](../../guides/sre/user-management/index.md#quotas-management). 
-To view quotas parameters, see the system table [`system.quotas`](../../operations/system-tables/quotas.md#system_tables-quotas).
+To view quotas parameters, see the system table [`system.quotas`](/operations/system-tables/quotas).
 
 ### Syntax {#syntax-17}
 
@@ -476,7 +477,7 @@ SHOW QUOTAS
 ## SHOW QUOTA {#show-quota}
 
 The `SHOW QUOTA` statement returns a [quota](../../operations/quotas.md) consumption for all users or for current user. 
-To view other parameters, see system tables [`system.quotas_usage`](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) and [`system.quota_usage`](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).
+To view other parameters, see system tables [`system.quotas_usage`](/operations/system-tables/quotas_usage) and [`system.quota_usage`](/operations/system-tables/quota_usage).
 
 ### Syntax {#syntax-18}
 
