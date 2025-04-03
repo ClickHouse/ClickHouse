@@ -19,7 +19,7 @@ class Docker:
 
     @classmethod
     def build(cls, config: "Docker.Config", digests, amd_only, arm_only, with_log):
-        from praktika.result import Result
+        from .result import Result
 
         sw = Utils.Stopwatch()
         tag = digests[config.name]
@@ -75,7 +75,7 @@ class Docker:
         cls, config: "Docker.Config", digests, add_latest, with_log=False
     ):
 
-        from praktika.result import Result
+        from .result import Result
 
         tags = [digests[config.name]]
 
