@@ -185,36 +185,29 @@ void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, Refre
 
 static void matchQueryAliases(const SQLView & v, Select * osel, Select * nsel)
 {
-    if (v.has_with_cols)
-    {
-        /// Make sure aliases match
-        uint32_t i = 0;
-        SelectStatementCore * ssc = nsel->mutable_select_core();
+    /// Make sure aliases match
+    uint32_t i = 0;
+    SelectStatementCore * ssc = nsel->mutable_select_core();
 
-        for (const auto & entry : v.cols)
-        {
-            ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
-
-            eca->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(
-                "c" + std::to_string(i));
-            eca->mutable_col_alias()->set_column("c" + std::to_string(entry));
-            i++;
-        }
-        ssc->mutable_from()
-            ->mutable_tos()
-            ->mutable_join_clause()
-            ->mutable_tos()
-            ->mutable_joined_table()
-            ->mutable_tof()
-            ->mutable_select()
-            ->mutable_inner_query()
-            ->mutable_select()
-            ->set_allocated_sel(osel);
-    }
-    else
+    for (const auto & entry : v.cols)
     {
-        nsel->CopyFrom(*osel);
+        ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+
+        eca->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(
+            "a" + std::to_string(i));
+        eca->mutable_col_alias()->set_column("c" + std::to_string(entry));
+        i++;
     }
+    ssc->mutable_from()
+        ->mutable_tos()
+        ->mutable_join_clause()
+        ->mutable_tos()
+        ->mutable_joined_table()
+        ->mutable_tof()
+        ->mutable_select()
+        ->mutable_inner_query()
+        ->mutable_select()
+        ->set_allocated_sel(osel);
 }
 
 void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView * cv)
