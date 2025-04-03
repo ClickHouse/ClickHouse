@@ -85,6 +85,38 @@ namespace
 
         return result;
     }
+
+    void sanityCheckPartitioningConfiguration(
+            const std::string & partition_strategy,
+            bool has_partition_wildcard)
+    {
+        static std::unordered_map<std::string, bool> partition_strategy_to_wildcard_acceptance =
+        {
+            {"auto", true},
+            {"hive", false}
+        };
+
+        if (!partition_strategy_to_wildcard_acceptance.contains(partition_strategy))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Unknown partitioning style '{}'",
+                            partition_strategy);
+        }
+
+        if (has_partition_wildcard && !partition_strategy_to_wildcard_acceptance.at(partition_strategy))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The {} wildcard can't be used with {} partitioning style",
+                            PartitionedSink::PARTITION_ID_WILDCARD, partition_strategy);
+        }
+
+        if (!has_partition_wildcard && partition_strategy_to_wildcard_acceptance.at(partition_strategy))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Partitioning style '{}' requires {} wildcard",
+                            partition_strategy,
+                            PartitionedSink::PARTITION_ID_WILDCARD);
+        }
+    }
 }
 
 PartitionStrategy::PartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_)
@@ -97,9 +129,12 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partitio
                                                                  const Block & sample_block,
                                                                  ContextPtr context,
                                                                  const std::string & file_format,
+                                                                 bool has_partition_wildcard,
                                                                  const std::string & partition_strategy,
                                                                  bool hive_partition_strategy_write_partition_columns_into_files)
 {
+    sanityCheckPartitioningConfiguration(partition_strategy, has_partition_wildcard);
+
     if (partition_strategy == "hive")
     {
         if (file_format.empty())

@@ -19,6 +19,7 @@ class SchemaCache;
 class NamedCollection;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
+struct PartitionStrategy;
 
 namespace ErrorCodes
 {
@@ -156,6 +157,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const ASTPtr partition_by;
     const bool distributed_processing;
+    std::shared_ptr<PartitionStrategy> partition_strategy;
 
     LoggerPtr log;
 };

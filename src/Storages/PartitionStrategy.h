@@ -58,6 +58,7 @@ struct PartitionStrategyFactory
         const Block & sample_block,
         ContextPtr context,
         const std::string & file_format,
+        bool has_partition_wildcard,
         const std::string & partition_strategy = "",
         bool hive_partition_strategy_write_partition_columns_into_files = false);
 };

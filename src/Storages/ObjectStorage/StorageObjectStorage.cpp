@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+<<<<<<< HEAD
 namespace
 {
     void sanityCheckPartitioningConfiguration(
@@ -239,6 +240,21 @@ StorageObjectStorage::StorageObjectStorage(
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
     setInMemoryMetadata(metadata);
+
+    // perhaps it is worth adding some extra safeguards for cases like
+    // create table s3_table engine=s3('{_partition_id}'); -- partition id wildcard set, but no partition expression
+    // create table s3_table engine=s3(partition_strategy='hive'); -- partition strategy set, but no partition expression
+    if (partition_by)
+    {
+        partition_strategy = PartitionStrategyFactory::get(
+                partition_by,
+                metadata.getSampleBlock(),
+                context,
+                configuration->format,
+                configuration->withPartitionWildcard(),
+                configuration->partition_strategy,
+                configuration->hive_partition_strategy_write_partition_columns_into_files);
+    }
 }
 
 String StorageObjectStorage::getName() const
@@ -468,7 +484,7 @@ void StorageObjectStorage::read(
 }
 
 SinkToStoragePtr StorageObjectStorage::write(
-    const ASTPtr & query,
+    const ASTPtr &,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr local_context,
     bool /* async_insert */)
@@ -491,15 +507,8 @@ SinkToStoragePtr StorageObjectStorage::write(
                         configuration->getPath());
     }
 
-    if (ASTPtr partition_by_ast = getPartitionByAst(partition_by, query, configuration))
+    if (partition_strategy)
     {
-        auto partition_strategy = PartitionStrategyFactory::get(
-            partition_by_ast,
-            sample_block,
-            local_context,
-            configuration->format,
-            configuration->partition_strategy,
-            configuration->hive_partition_strategy_write_partition_columns_into_files);
         return std::make_shared<PartitionedStorageObjectStorageSink>(
             partition_strategy, object_storage, configuration, format_settings, sample_block, local_context);
     }

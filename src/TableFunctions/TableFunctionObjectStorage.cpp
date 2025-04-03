@@ -16,6 +16,8 @@
 
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
+#include <Parsers/ASTInsertQuery.h>
+
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -177,6 +179,40 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         /* mode */ LoadingStrictnessLevel::CREATE,
         /* distributed_processing */ is_secondary_query,
         /* partition_by */ nullptr);
+
+    storage->startup();
+    return storage;
+}
+
+template <typename Definition, typename Configuration>
+StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
+        const ASTPtr & /* ast_function */,
+        ContextPtr context,
+        const std::string & table_name,
+        ColumnsDescription cached_columns,
+        ASTInsertQuery * insert_query) const
+{
+    ColumnsDescription columns;
+    chassert(configuration);
+    if (configuration->structure != "auto")
+        columns = parseColumnsListFromString(configuration->structure, context);
+    else if (!structure_hint.empty())
+        columns = structure_hint;
+    else if (!cached_columns.empty())
+        columns = cached_columns;
+
+    StoragePtr storage = std::make_shared<StorageObjectStorage>(
+            configuration,
+            getObjectStorage(context, !insert_query),
+            context,
+            StorageID(getDatabaseName(), table_name),
+            columns,
+            ConstraintsDescription{},
+            String{},
+            /* format_settings */ std::nullopt,
+            /* mode */ LoadingStrictnessLevel::CREATE,
+            /* distributed_processing */ false,
+            insert_query ? insert_query->partition_by : nullptr);
 
     storage->startup();
     return storage;
