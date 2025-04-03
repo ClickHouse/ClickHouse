@@ -1,7 +1,5 @@
 #include <base/defines.h>
 
-#ifndef NDEBUG
-
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -23,5 +21,3 @@ TEST(TestBadVector, Simple)
         },
         ".*assert.*");
 }
-
-#endif
