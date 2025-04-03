@@ -94,8 +94,12 @@ class Docker:
         commands.append(f"docker manifest push {config.name}:{digests[config.name]}")
 
         if add_latest:
-            commands.append(f"docker tag {config.name}:{tags[0]} {config.name}:latest")
-            commands.append(f"docker push {config.name}:latest")
+            tags[0] = "latest"
+            commands += [
+                "docker manifest create --amend "
+                + " ".join(f"{config.name}:{t}" for t in tags)
+            ]
+            commands.append(f"docker manifest push {config.name}:latest")
 
         return Result.from_commands_run(
             name=f"merge: {config.name}:{digests[config.name]} (latest={add_latest})",
