@@ -18,6 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -131,18 +132,14 @@ std::pair<String, StoragePtr> createTableFromAST(
         }
     }
 
-    return
-    {
-        ast_create_query.getTable(),
-        StorageFactory::instance().get(
-            ast_create_query,
-            table_data_path_relative,
-            context,
-            context->getGlobalContext(),
-            columns,
-            constraints,
-            mode)
-    };
+    /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
+    /// to allow settings to take effect.
+    std::shared_ptr<ASTCreateQuery> ast = std::make_shared<ASTCreateQuery>(ast_create_query);
+    InterpreterSetQuery::applySettingsFromQuery(ast, context);
+
+    return {
+        ast->getTable(),
+        StorageFactory::instance().get(*ast, table_data_path_relative, context, context->getGlobalContext(), columns, constraints, mode)};
 }
 
 
