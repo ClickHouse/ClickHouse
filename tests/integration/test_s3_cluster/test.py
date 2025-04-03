@@ -514,20 +514,20 @@ def test_cluster_default_expression(started_cluster):
 def test_remote_hedged(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     pure_s3 = node.query(
-        """
+        f"""
     SELECT * from s3(
-        'http://minio1:9001/root/data/{clickhouse,database}/*',
-        'minio', 'minio123', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     ORDER BY (name, value, polygon)
     LIMIT 1
         """
     )
     s3_distributed = node.query(
-        """
+        f"""
     SELECT * from remote('s0_0_1', s3Cluster(
         'cluster_simple',
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'))
     ORDER BY (name, value, polygon)
     LIMIT 1
@@ -541,20 +541,20 @@ def test_remote_hedged(started_cluster):
 def test_remote_no_hedged(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     pure_s3 = node.query(
-        """
+        f"""
     SELECT * from s3(
-        'http://minio1:9001/root/data/{clickhouse,database}/*',
-        'minio', 'minio123', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     ORDER BY (name, value, polygon)
     LIMIT 1
         """
     )
     s3_distributed = node.query(
-        """
+        f"""
     SELECT * from remote('s0_0_1', s3Cluster(
         'cluster_simple',
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'))
     ORDER BY (name, value, polygon)
     LIMIT 1
