@@ -24,6 +24,10 @@ def gen_insert_values(size):
     )
 
 
+def randomize_table_name(table_name, suffix_length=10):
+    return f"{table_name}{''.join(random.choice(string.ascii_letters) for _ in range(suffix_length))}"
+
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     node_names = ["source", "dest"]
@@ -52,26 +56,25 @@ def start_cluster():
     ],
 )
 def test(storage_policy):
-    def create_insert(node, insert_values):
+    def create_insert(node, table_name, insert_values):
         node.query(
             """
-            CREATE TABLE test (
+            CREATE TABLE {} (
                 id Int64,
                 data String
             ) ENGINE=MergeTree()
             ORDER BY id
             SETTINGS storage_policy='{}'
-            """.format(
-                storage_policy
-            )
+            """.format(table_name, storage_policy)
         )
         if insert_values:
-            node.query("INSERT INTO test VALUES {}".format(insert_values))
+            node.query("INSERT INTO {} VALUES {}".format(table_name, insert_values))
 
     insert_values = gen_insert_values(random.randint(1, MAX_ROWS))
 
     source = cluster.instances["source"]
-    create_insert(source, insert_values)
+    table_name = randomize_table_name("test")
+    create_insert(source, table_name, insert_values)
 
     def copy_to_legacy_layout(source, dest):
         metadata_it = cluster.minio_client.list_objects(
@@ -113,7 +116,6 @@ def test(storage_policy):
     dest = cluster.instances["dest"]
     dest.restart_clickhouse()
 
-    create_insert(dest, [])
     assert (
         int(
             dest.query(
@@ -123,6 +125,4 @@ def test(storage_policy):
         > 0
     )
 
-    for name in ("source", "dest"):
-        node = cluster.instances[name]
-        node.query("DROP TABLE test")
+    source.query(f"DROP TABLE {table_name}")
