@@ -26,6 +26,7 @@ public:
         InputFormatPtr format_,
         ErrorCallback on_error_ = [](const MutableColumns &, const ColumnCheckpoints, Exception & e) -> size_t { throw std::move(e); },
         size_t total_bytes_ = 0,
+        size_t total_chunks_ = 0,
         SimpleTransformPtr adding_defaults_transform_ = nullptr);
 
     /// Returns numbers of new read rows.
@@ -56,6 +57,7 @@ private:
     ColumnCheckpoints checkpoints;
 
     size_t total_bytes;
+    size_t total_chunks;
     bool try_preallocate = true;
 };
 

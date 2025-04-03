@@ -1073,6 +1073,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         format,
         std::move(on_error),
         data->size_in_bytes,
+        data->entries.size(),
         std::move(adding_defaults_transform));
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
 

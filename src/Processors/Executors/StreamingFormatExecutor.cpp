@@ -19,6 +19,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     InputFormatPtr format_,
     ErrorCallback on_error_,
     size_t total_bytes_,
+    size_t total_chunks_,
     SimpleTransformPtr adding_defaults_transform_)
     : header(header_)
     , format(std::move(format_))
@@ -28,6 +29,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     , result_columns(header.cloneEmptyColumns())
     , checkpoints(result_columns.size())
     , total_bytes(total_bytes_)
+    , total_chunks(total_chunks_)
 {
     connect(format->getPort(), port);
 
@@ -56,25 +58,20 @@ void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const C
 
     try_preallocate = false; /// do it once
 
-    if (total_bytes && num_bytes)
+    if (total_bytes && num_bytes && total_chunks > 2)
     {
-        size_t factor = total_bytes / num_bytes;
+        const auto & reference_columns = chunk.getColumns();
+        size_t factor = static_cast<size_t>(std::ceil(static_cast<double>(total_bytes) / num_bytes));
 
-        const size_t min_factor_to_preallocate = 5; /// we expect many chunks - preallocation makes sense
-        if (factor >= min_factor_to_preallocate)
+        /// assuming that all chunks have the same nature, specifically
+        /// similar raw data size/number of rows ratio,
+        ///  use first one to predict
+        for (size_t i = 0; i < result_columns.size(); ++i)
         {
-            const auto & reference_columns = chunk.getColumns();
-
-            ++factor; /// a bit more space just in case
-
-            /// assuming that all chunks have same nature, specifically
-            /// similar raw data size/number of rows ratio
-            ///  use first one to predict
-            for (size_t i = 0; i < result_columns.size(); ++i)
-            {
-                /// prepareForSquashing is used to reserve space, we don actually do squashing
-                result_columns[i]->prepareForSquashing({reference_columns[i]}, factor);
-            }
+            /// prepareForSquashing is used to reserve space
+            ///   for complex objects (string, array) we care about internal storages
+            /// we don actually do squashing
+            result_columns[i]->prepareForSquashing({reference_columns[i]}, factor);
         }
     }
 }
