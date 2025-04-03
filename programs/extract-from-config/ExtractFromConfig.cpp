@@ -5,7 +5,7 @@
 #include <memory>
 #include <queue>
 #include <sstream>
-#include <fstream> 
+#include <fstream>
 
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
@@ -53,7 +53,7 @@ static std::string getXMLSubTreeAsString(DB::XMLDocumentPtr config_xml, const st
     writer.setNewLine("\n");
     writer.setIndent("    ");
     writer.setOptions(Poco::XML::XMLWriter::PRETTY_PRINT);
-    
+
     std::ostringstream oss;
 
     Poco::XML::Node * node = DB::XMLUtils::getRootNode(config_xml.get())->getNodeByPath(key);
@@ -207,7 +207,7 @@ static std::vector<std::string> extractFromConfig(const std::string & config_pat
     Poco::Util::XMLConfiguration::Keys keys;
     configuration->keys(key, keys);
     if (!keys.empty()) {
-        // Non-scalar object, Output XML node 
+        // Non-scalar object, Output XML node
         return {getXMLSubTreeAsString(configuration_xml, key)};
     }
 
@@ -284,7 +284,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
 
         std::ostream* output_stream = &std::cout;
         std::unique_ptr<std::ofstream> file_stream;
-        
+
         // If output file is provided, use it as the output stream
         if (!output_file.empty())
         {
