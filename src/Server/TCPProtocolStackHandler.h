@@ -5,6 +5,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Server/IServer.h>
 #include <Server/TCPProtocolStackData.h>
+#include <Common/Logger.h>
 #include <Common/QuillLogger.h>
 
 
@@ -41,7 +42,7 @@ public:
                 socket() = stack_data.socket;
         }
 
-        DB::QuillFrontend::shrink_thread_local_queue(QuillFrontendOptions::initial_queue_capacity);
+        resetLoggerThreadContext();
     }
 };
 

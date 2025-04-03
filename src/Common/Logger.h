@@ -83,6 +83,7 @@ void disableLogging();
 
 bool isLoggingEnabled();
 
+void resetLoggerThreadContext();
 
 /// This wrapper helps to avoid too frequent and noisy log messages.
 /// For each pair (logger_name, format_string) it remembers when such a message was logged the last time.

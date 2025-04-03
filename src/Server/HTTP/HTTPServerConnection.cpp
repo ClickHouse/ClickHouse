@@ -124,7 +124,7 @@ void HTTPServerConnection::run()
         }
     }
 
-    DB::QuillFrontend::shrink_thread_local_queue(QuillFrontendOptions::initial_queue_capacity);
+    resetLoggerThreadContext();
 }
 
 // static

@@ -751,7 +751,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     removeSelfFromPoolNoPoolLock(); // Detach and remove itself from the pool
 
                 ALLOW_ALLOCATIONS_IN_SCOPE;
-                DB::QuillFrontend::shrink_thread_local_queue(DB::QuillFrontendOptions::initial_queue_capacity);
+                resetLoggerThreadContext();
                 return;
             }
 
@@ -773,7 +773,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     job_data.reset();
                 }
 
-                DB::QuillFrontend::shrink_thread_local_queue(DB::QuillFrontendOptions::initial_queue_capacity);
+                resetLoggerThreadContext();
                 job_is_done = true;
                 continue;
             }
@@ -852,7 +852,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         }
 
         DB::Exception::clearThreadFramePointers();
-        DB::QuillFrontend::shrink_thread_local_queue(DB::QuillFrontendOptions::initial_queue_capacity);
+        resetLoggerThreadContext();
         job_is_done = true;
     }
 }

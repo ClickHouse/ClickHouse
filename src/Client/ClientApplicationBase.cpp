@@ -67,6 +67,7 @@ ClientApplicationBase::~ClientApplicationBase()
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
         HandledSignals::instance().reset();
+        disableLogging();
     }
     catch (...)
     {

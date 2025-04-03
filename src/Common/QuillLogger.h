@@ -34,7 +34,7 @@ struct QuillFrontendOptions
    * Initial capacity of the queue. Used for UnboundedBlocking, UnboundedDropping, and
    * UnboundedUnlimited. Also serves as the capacity for BoundedBlocking and BoundedDropping.
    */
-    static inline uint32_t initial_queue_capacity = 1024u;
+    static inline uint32_t initial_queue_capacity = 4 * 1024u;
 
     /**
    * Interval for retrying when using BoundedBlocking or UnboundedBlocking.
@@ -46,7 +46,7 @@ struct QuillFrontendOptions
    * Maximum capacity for unbounded queues (UnboundedBlocking, UnboundedDropping).
    * This defines the maximum size to which the queue can grow before blocking or dropping messages.
    */
-    static inline size_t unbounded_queue_max_capacity = 8 * 1024u * 1024u; // 8 MiB
+    static inline size_t unbounded_queue_max_capacity = 4 * 1024u * 1024u; // 8 MiB
 
     /**
    * Enables huge pages on the frontend queues to reduce TLB misses. Available only for Linux.
@@ -56,7 +56,12 @@ struct QuillFrontendOptions
     /**
    * Define allocator for frontend queue.
    */
+#ifdef SANITIZER
+    static constexpr quill::AllocationPolicy allocation_policy = quill::AllocationPolicy::Mmap;
+#else
     static constexpr quill::AllocationPolicy allocation_policy = quill::AllocationPolicy::Global;
+#endif
+
 };
 
 using QuillLogger = quill::LoggerImpl<QuillFrontendOptions>;

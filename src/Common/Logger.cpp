@@ -266,6 +266,13 @@ void disableLogging()
     allow_logging = false;
 }
 
+void resetLoggerThreadContext()
+{
+    if (!allow_logging)
+        return;
+    DB::QuillFrontend::shrink_thread_local_queue(DB::QuillFrontendOptions::initial_queue_capacity);
+}
+
 
 std::unordered_map<UInt64, std::pair<time_t, size_t>> LogFrequencyLimiterImpl::logged_messages;
 time_t LogFrequencyLimiterImpl::last_cleanup = 0;

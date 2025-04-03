@@ -47,7 +47,11 @@ public:
     /// Thus we cannot override it in any way.
     void setupSignalHandler() override {}
 
-    ~ClientEmbedded() override { cleanup(); }
+    ~ClientEmbedded() override
+    {
+        cleanup();
+        disableLogging();
+    }
 
 protected:
     void connect() override;
