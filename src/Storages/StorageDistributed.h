@@ -4,6 +4,7 @@
 #include <Storages/IStorageCluster.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include <Columns/IColumn.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
@@ -108,7 +109,7 @@ public:
         size_t /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
-    std::optional<UInt64> totalBytes(const Settings &) const override;
+    std::optional<UInt64> totalBytes(ContextPtr) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 

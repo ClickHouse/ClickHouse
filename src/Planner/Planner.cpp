@@ -133,6 +133,9 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ServerSetting
@@ -147,7 +150,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -707,7 +709,7 @@ void addSortingStep(QueryPlan & query_plan,
 {
     const auto & sort_description = query_analysis_result.sort_description;
     const auto & query_context = planner_context->getQueryContext();
-    SortingStep::Settings sort_settings(*query_context);
+    SortingStep::Settings sort_settings(query_context->getSettingsRef());
 
     auto sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentHeader(),
@@ -743,15 +745,17 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const PlannerContextPtr & planner_context,
     const QueryNode & query_node)
 {
-    const auto & sort_description = query_analysis_result.sort_description;
-
     NameSet column_names_with_fill;
     SortDescription fill_description;
 
-    for (const auto & description : sort_description)
+    const auto & header = query_plan.getCurrentHeader();
+
+    for (const auto & description : query_analysis_result.sort_description)
     {
         if (description.with_fill)
         {
+            if (!header.findByName(description.column_name))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Filling column {} is not present in the block {}", description.column_name, header.dumpNames());
             fill_description.push_back(description);
             column_names_with_fill.insert(description.column_name);
         }
@@ -765,7 +769,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     if (query_node.hasInterpolate())
     {
         ActionsDAG interpolate_actions_dag;
-        auto query_plan_columns = query_plan.getCurrentHeader().getColumnsWithTypeAndName();
+        auto query_plan_columns = header.getColumnsWithTypeAndName();
         for (auto & query_plan_column : query_plan_columns)
         {
             /// INTERPOLATE actions dag input columns must be non constant
@@ -831,9 +835,15 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 /// To fix this, we prepend a rename : 'Hello'_String -> s
                 if (const auto * /*constant_node*/ _ = interpolate_node_typed.getExpression()->as<const ConstantNode>())
                 {
+                    const auto & name = interpolate_node_typed.getExpressionName();
                     const auto * node = &rename_dag.addInput(alias_node->result_name, alias_node->result_type);
-                    node = &rename_dag.addAlias(*node, interpolate_node_typed.getExpressionName());
+                    node = &rename_dag.addAlias(*node, name);
                     rename_dag.getOutputs().push_back(node);
+
+                    /// Interpolate DAG should contain INPUT with same name to ensure a proper merging
+                    const auto & inputs = interpolate_actions_dag.getInputs();
+                    if (std::ranges::find_if(inputs, [&name](const auto & input){ return input->result_name == name; }) == inputs.end())
+                        interpolate_actions_dag.addInput(name, interpolate_node_typed.getExpression()->getResultType());
                 }
             }
 
@@ -850,8 +860,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
     auto filling_step = std::make_unique<FillingStep>(
-        query_plan.getCurrentHeader(),
-        sort_description,
+        header,
+        query_analysis_result.sort_description,
         std::move(fill_description),
         interpolate_description,
         settings[Setting::use_with_fill_by_sorting_prefix]);
@@ -1036,7 +1046,7 @@ void addWindowSteps(QueryPlan & query_plan,
         }
         if (need_sort)
         {
-            SortingStep::Settings sort_settings(*query_context);
+            SortingStep::Settings sort_settings(query_context->getSettingsRef());
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
@@ -1165,11 +1175,16 @@ void addBuildSubqueriesForSetsStepIfNeeded(
 
     if (!subqueries.empty())
     {
+        const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+        SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+        auto prepared_sets_cache = planner_context->getQueryContext()->getPreparedSetsCache();
+
         auto step = std::make_unique<DelayedCreatingSetsStep>(
             query_plan.getCurrentHeader(),
             std::move(subqueries),
-            planner_context->getQueryContext());
-
+            network_transfer_limits,
+            prepared_sets_cache);
+        step->setStepDescription("DelayedCreatingSetsStep");
         query_plan.addStep(std::move(step));
     }
 }
@@ -1295,20 +1310,10 @@ void Planner::buildQueryPlanIfNeeded()
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
 
-    try
-    {
-        if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
-            buildPlanForUnionNode();
-        else
-            buildPlanForQueryNode();
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK && query_plan.isInitialized())
-            e.addMessage("while building query plan:\n{}", dumpQueryPlan(query_plan));
-        throw;
-    }
-
+    if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
+        buildPlanForUnionNode();
+    else
+        buildPlanForQueryNode();
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 

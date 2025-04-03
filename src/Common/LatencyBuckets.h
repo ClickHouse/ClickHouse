@@ -3,6 +3,8 @@
 #include <base/types.h>
 #include <base/strong_typedef.h>
 
+#include <atomic>
+
 namespace LatencyBuckets
 {
     using Event = StrongTypedef<size_t, struct LatencyEventTag>;

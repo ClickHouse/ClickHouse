@@ -7,9 +7,10 @@ insert into adaptive_spill_03277_1 select cast(rand() as String) as k, cast(rand
 insert into adaptive_spill_03277_2 select cast(rand() as String) as k, cast(rand() as String) as x from numbers(1000000);
 insert into adaptive_spill_03277_3 select cast(rand() as String) as k, cast(rand() as String) as x from numbers(1000000);
 
-set max_threads=4;
+set max_threads=1;
 set join_algorithm='grace_hash';
 set max_memory_usage=314572800;
+set collect_hash_table_stats_during_joins=0;
 -- don't limit the memory usage for join
 set max_bytes_in_join=0;
 

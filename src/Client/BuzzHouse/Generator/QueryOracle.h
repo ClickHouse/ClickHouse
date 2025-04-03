@@ -15,7 +15,7 @@ private:
 
     MD5Impl md5_hash1, md5_hash2;
     Poco::DigestEngine::Digest first_digest, second_digest;
-    uint64_t query_duration_ms1 = 0, memory_usage1 = 0, query_duration_ms2 = 0, memory_usage2 = 0;
+    PerformanceResult res1, res2;
 
     PeerQuery peer_query = PeerQuery::AllPeers;
     bool first_success = true, other_steps_sucess = true, can_test_query_success, measure_performance;
@@ -24,6 +24,9 @@ private:
     DB::Strings nsettings;
 
     void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
+    void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, uint32_t ncols, SelectStatementCore * ssc) const;
+    void
+    insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool remote, TableOrFunction * tof) const;
 
 public:
     explicit QueryOracle(const FuzzConfig & ffc)
@@ -48,9 +51,10 @@ public:
 
     /// Dump and read table oracle
     void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1);
-    void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2);
+    void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
     void generateClearQuery(const SQLTable & t, SQLQuery & sq3);
-    void generateImportQuery(StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4);
+    void
+    generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
 
     /// Run query with different settings oracle
     void generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
@@ -63,7 +67,5 @@ public:
     void replaceQueryWithTablePeers(
         RandomGenerator & rg, const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2);
 };
-
-void loadFuzzerOracleSettings(const FuzzConfig & fc);
 
 }

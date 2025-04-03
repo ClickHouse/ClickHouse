@@ -2,6 +2,7 @@
 
 #include <string>
 #include <IO/Progress.h>
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/Stopwatch.h>
@@ -9,6 +10,7 @@
 namespace DB
 {
 
+class Block;
 class WriteBuffer;
 
 /** Output format have three inputs and no outputs. It writes data from WriteBuffer.
@@ -66,19 +68,8 @@ public:
 
     virtual bool expectMaterializedColumns() const { return true; }
 
-    void setTotals(const Block & totals)
-    {
-        std::lock_guard lock(writing_mutex);
-        writeSuffixIfNeeded();
-        consumeTotals(Chunk(totals.getColumns(), totals.rows()));
-        are_totals_written = true;
-    }
-    void setExtremes(const Block & extremes)
-    {
-        std::lock_guard lock(writing_mutex);
-        writeSuffixIfNeeded();
-        consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
-    }
+    void setTotals(const Block & totals);
+    void setExtremes(const Block & extremes);
 
     virtual bool supportsWritingException() const { return false; }
     virtual void setException(const String & /*exception_message*/) {}

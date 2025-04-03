@@ -1,5 +1,6 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -22,6 +23,11 @@ IMergingTransformBase::IMergingTransformBase(
     , limit_hint(limit_hint_)
     , always_read_till_end(always_read_till_end_)
 {
+}
+
+OutputPort & IMergingTransformBase::getOutputPort()
+{
+    return outputs.front();
 }
 
 static InputPorts createPorts(const Blocks & blocks)

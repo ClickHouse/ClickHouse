@@ -1,10 +1,12 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
+
+#include <Core/Block.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Common/formatReadable.h>
 #include <Columns/ColumnSparse.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Port.h>
 
 namespace ProfileEvents
 {

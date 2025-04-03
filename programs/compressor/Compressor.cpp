@@ -17,7 +17,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
+#include <Parsers/IAST.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/TerminalSize.h>
@@ -58,7 +58,7 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
         if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
             throw DB::Exception(DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed. Most likely corrupted data.");
 
-        DB::writeText(queryToString(codec->getFullCodecDesc()), out);
+        DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), out);
         DB::writeChar('\t', out);
         DB::writeText(size_decompressed, out);
         DB::writeChar('\t', out);
@@ -88,6 +88,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             ("block-size,b", po::value<size_t>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
             ("hc", "use LZ4HC instead of LZ4")
             ("zstd", "use ZSTD instead of LZ4")
+            ("deflate_qpl", "use deflate_qpl instead of LZ4")
             ("codec", po::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
             ("level", po::value<int>(), "compression level for codecs specified via flags")
             ("threads", po::value<size_t>()->default_value(1), "number of threads for parallel compression")
@@ -116,6 +117,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         bool decompress = options.count("decompress");
         bool use_lz4hc = options.count("hc");
         bool use_zstd = options.count("zstd");
+        bool use_deflate_qpl = options.count("deflate_qpl");
         bool stat_mode = options.count("stat");
         bool use_none = options.count("none");
         print_stacktrace = options.count("stacktrace");
@@ -125,7 +127,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         if (options.count("codec"))
             codecs = options["codec"].as<std::vector<std::string>>();
 
-        if ((use_lz4hc || use_zstd || use_none) && !codecs.empty())
+        if ((use_lz4hc || use_zstd || use_deflate_qpl || use_none) && !codecs.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong options, codec flags like --zstd and --codec options are mutually exclusive");
 
         if (num_threads < 1)
@@ -143,6 +145,8 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             method_family = "LZ4HC";
         else if (use_zstd)
             method_family = "ZSTD";
+        else if (use_deflate_qpl)
+            method_family = "DEFLATE_QPL";
         else if (use_none)
             method_family = "NONE";
 

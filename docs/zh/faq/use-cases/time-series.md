@@ -15,7 +15,7 @@ ClickHouse是一个通用的数据存储解决方案[OLAP](../../faq/general/ola
 
 
 
-其次，时间序列查询通常只访问最近的数据，比如一天或一周以前的数据。使用具有快速nVME/SSD驱动器和高容量HDD驱动器的服务器是有意义的。ClickHouse [TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)特性允许配置在快速硬盘上保持新鲜的热数据，并随着数据的老化逐渐移动到较慢的硬盘上。如果您的需求需要，也可以汇总或删除更旧的数据。
+其次，时间序列查询通常只访问最近的数据，比如一天或一周以前的数据。使用具有快速nVME/SSD驱动器和高容量HDD驱动器的服务器是有意义的。ClickHouse [TTL](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)特性允许配置在快速硬盘上保持新鲜的热数据，并随着数据的老化逐渐移动到较慢的硬盘上。如果您的需求需要，也可以汇总或删除更旧的数据。
 
 
 

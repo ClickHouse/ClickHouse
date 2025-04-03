@@ -585,10 +585,7 @@ unset IFS
 # --memsuspend:
 #
 #   If the available memory falls below 2 * size, GNU parallel will suspend some of the running jobs.
-
-#TODO: check why parallel hangs locally
 parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
-#bash analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
@@ -1149,7 +1146,7 @@ do
         # "socket.timeout: timed out".
         rg --no-filename --max-count=2 -i '\(Exception\|Error\):[^:]' "$log" \
             || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
-            || head -2 "$log"
+            || head -10 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
 done
 }
@@ -1318,7 +1315,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             insert into query_metrics_v2
             select
                 toDate(event_time) event_date,
-                toDateTime('$(cd right/ch && git show -s --format=%ci "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
+                toDateTime('$(git -C right/ch log -1 --format=%cd --date=iso "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
                 $PR_TO_TEST pr_number,
                 '$REF_SHA' old_sha,
                 '$SHA_TO_TEST' new_sha,

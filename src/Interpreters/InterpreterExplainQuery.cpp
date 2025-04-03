@@ -15,7 +15,6 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -520,6 +519,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             {
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.keep_logical_steps = settings.keep_logical_steps;
+                optimization_settings.is_explain = true;
                 plan.optimize(optimization_settings);
             }
 

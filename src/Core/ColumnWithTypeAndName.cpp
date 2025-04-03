@@ -1,11 +1,15 @@
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
 
 namespace DB
 {
+
+ColumnWithTypeAndName::ColumnWithTypeAndName(const DataTypePtr & type_, const String & name_)
+    : column(type_->createColumn()), type(type_), name(name_) {}
 
 ColumnWithTypeAndName ColumnWithTypeAndName::cloneEmpty() const
 {

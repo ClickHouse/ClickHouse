@@ -11,6 +11,7 @@
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/Connection.h>
 
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -24,11 +25,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/formatAST.h>
 
 #include <Interpreters/applyTableOverride.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
 
 #include <Storages/StorageFactory.h>
@@ -332,39 +334,24 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
     /// getName() for decimal returns 'Decimal(precision, scale)', will get an error with it
     if (which.isDecimal())
     {
-        auto make_decimal_expression = [&](std::string type_name)
-        {
-            auto ast_expression = std::make_shared<ASTDataType>();
-
-            ast_expression->name = type_name;
-            ast_expression->arguments = std::make_shared<ASTExpressionList>();
-            ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
-
-            return ast_expression;
-        };
-
         if (which.isDecimal32())
-            return make_decimal_expression("Decimal32");
+            return makeASTDataType("Decimal32", std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
 
         if (which.isDecimal64())
-            return make_decimal_expression("Decimal64");
+            return makeASTDataType("Decimal64", std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
 
         if (which.isDecimal128())
-            return make_decimal_expression("Decimal128");
+            return makeASTDataType("Decimal128", std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
 
         if (which.isDecimal256())
-            return make_decimal_expression("Decimal256");
+            return makeASTDataType("Decimal256", std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
     }
 
     if (which.isDateTime64())
-    {
-        auto ast_expression = std::make_shared<ASTDataType>();
+        return makeASTDataType("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
 
-        ast_expression->name = "DateTime64";
-        ast_expression->arguments = std::make_shared<ASTExpressionList>();
-        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
-        return ast_expression;
-    }
+    if (which.isFixedString())
+        return makeASTDataType("FixedString", std::make_shared<ASTLiteral>(assert_cast<const DataTypeFixedString &>(*data_type).getN()));
 
     return makeASTDataType(data_type->getName());
 }

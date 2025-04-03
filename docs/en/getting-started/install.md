@@ -1,8 +1,9 @@
 ---
-sidebar_label: Install
-keywords: [clickhouse, install, getting started, quick start]
-description: Install ClickHouse
-slug: /en/install
+description: 'Install ClickHouse'
+keywords: ['clickhouse', 'install', 'getting started', 'quick start']
+sidebar_label: 'Install'
+slug: /install
+title: 'Install ClickHouse'
 ---
 
 import Tabs from '@theme/Tabs';
@@ -18,11 +19,11 @@ You have four options for getting up and running with ClickHouse:
 - **[Production Deployments](#available-installation-options):** ClickHouse can run on any Linux, FreeBSD, or macOS with x86-64, modern ARM (ARMv8.2-A up), or PowerPC64LE CPU architecture
 - **[Docker Image](https://hub.docker.com/_/clickhouse):** use the official Docker image in Docker Hub
 
-## ClickHouse Cloud
+## ClickHouse Cloud {#clickhouse-cloud}
 
 The quickest and easiest way to get up and running with ClickHouse is to create a new service in [ClickHouse Cloud](https://clickhouse.cloud/).
 
-## Quick Install
+## Quick Install {#quick-install}
 
 :::tip
 For production installs of a specific release version see the [installation options](#available-installation-options) down below.
@@ -39,7 +40,7 @@ On Linux, macOS and FreeBSD:
    ```
 
    :::note
-   For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](https://clickhouse.com/docs/knowledgebase/fix-developer-verification-error-in-macos).
+   For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](/knowledgebase/fix-developer-verification-error-in-macos).
    :::
 
 2. Run the following command to start [clickhouse-local](../operations/utilities/clickhouse-local.md):
@@ -81,7 +82,7 @@ On Linux, macOS and FreeBSD:
    You are ready to start sending SQL commands to ClickHouse!
 
 :::tip
-The [Quick Start](/docs/en/quick-start.mdx) walks through the steps for creating tables and inserting data.
+The [Quick Start](/quick-start.mdx) walks through the steps for creating tables and inserting data.
 :::
 
 ## Production Deployments {#available-installation-options}
@@ -92,8 +93,8 @@ For production deployments of ClickHouse, choose from one of the following insta
 
 It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu. Run these commands to install packages:
 
-#### Setup the Debian repository
-``` bash
+#### Setup the Debian repository {#setup-the-debian-repository}
+```bash
 sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
 curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' | sudo gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
 
@@ -102,12 +103,12 @@ echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg arch=${ARCH}] ht
 sudo apt-get update
 ```
 
-#### Install ClickHouse server and client
+#### Install ClickHouse server and client {#install-clickhouse-server-and-client}
 ```bash
 sudo apt-get install -y clickhouse-server clickhouse-client
 ```
 
-#### Start ClickHouse server
+#### Start ClickHouse server {#start-clickhouse-server}
 
 ```bash
 sudo service clickhouse-server start
@@ -136,10 +137,10 @@ You can replace `stable` with `lts` to use different [release kinds](/knowledgeb
 
 You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/main/c/).
 
-#### Install standalone ClickHouse Keeper
+#### Install standalone ClickHouse Keeper {#install-standalone-clickhouse-keeper}
 
 :::tip
-In production environment we [strongly recommend](/docs/en/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
+In production environment we strongly recommend running ClickHouse Keeper on dedicated nodes.
 In test environments, if you decide to run ClickHouse Server and ClickHouse Keeper on the same server,  you do not need to install ClickHouse Keeper as it is included with ClickHouse server.
 This command is only needed on standalone ClickHouse Keeper servers.
 :::
@@ -148,7 +149,7 @@ This command is only needed on standalone ClickHouse Keeper servers.
 sudo apt-get install -y clickhouse-keeper
 ```
 
-#### Enable and start ClickHouse Keeper
+#### Enable and start ClickHouse Keeper {#enable-and-start-clickhouse-keeper}
 
 ```bash
 sudo systemctl enable clickhouse-keeper
@@ -173,30 +174,30 @@ If you need to install specific version of ClickHouse you have to install all pa
 
 It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat, and all other rpm-based Linux distributions.
 
-#### Setup the RPM repository
+#### Setup the RPM repository {#setup-the-rpm-repository}
 First, you need to add the official repository:
 
-``` bash
+```bash
 sudo yum install -y yum-utils
 sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
 ```
 
 For systems with `zypper` package manager (openSUSE, SLES):
 
-``` bash
+```bash
 sudo zypper addrepo -r https://packages.clickhouse.com/rpm/clickhouse.repo -g
 sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
 ```
 
 Later any `yum install` can be replaced by `zypper install`. To specify a particular version, add `-$VERSION` to the end of the package name, e.g. `clickhouse-client-22.2.2.22`.
 
-#### Install ClickHouse server and client
+#### Install ClickHouse server and client {#install-clickhouse-server-and-client-1}
 
 ```bash
 sudo yum install -y clickhouse-server clickhouse-client
 ```
 
-#### Start ClickHouse server
+#### Start ClickHouse server {#start-clickhouse-server-1}
 
 ```bash
 sudo systemctl enable clickhouse-server
@@ -205,10 +206,10 @@ sudo systemctl status clickhouse-server
 clickhouse-client # or "clickhouse-client --password" if you set up a password.
 ```
 
-#### Install standalone ClickHouse Keeper
+#### Install standalone ClickHouse Keeper {#install-standalone-clickhouse-keeper-1}
 
 :::tip
-In production environment we [strongly recommend](/docs/en/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
+In production environment we strongly recommend running ClickHouse Keeper on dedicated nodes.
 In test environments, if you decide to run ClickHouse Server and ClickHouse Keeper on the same server,  you do not need to install ClickHouse Keeper as it is included with ClickHouse server.
 This command is only needed on standalone ClickHouse Keeper servers.
 :::
@@ -217,7 +218,7 @@ This command is only needed on standalone ClickHouse Keeper servers.
 sudo yum install -y clickhouse-keeper
 ```
 
-#### Enable and start ClickHouse Keeper
+#### Enable and start ClickHouse Keeper {#enable-and-start-clickhouse-keeper-1}
 
 ```bash
 sudo systemctl enable clickhouse-keeper
@@ -229,7 +230,7 @@ You can replace `stable` with `lts` to use different [release kinds](/knowledgeb
 
 Then run these commands to install packages:
 
-``` bash
+```bash
 sudo yum install clickhouse-server clickhouse-client
 ```
 
@@ -242,7 +243,7 @@ It is recommended to use official pre-compiled `tgz` archives for all Linux dist
 The required version can be downloaded with `curl` or `wget` from repository https://packages.clickhouse.com/tgz/.
 After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest stable version:
 
-``` bash
+```bash
 LATEST_VERSION=$(curl -s https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv | \
     grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
 export LATEST_VERSION
@@ -283,29 +284,29 @@ For production environments, it's recommended to use the latest `stable`-version
 
 To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/). Those images use official `deb` packages inside.
 
-## Non-Production Deployments (Advanced)
+## Non-Production Deployments (Advanced) {#non-production-deployments-advanced}
 
 ### Compile From Source {#from-sources}
 
-To manually compile ClickHouse, follow the instructions for [Linux](/docs/en/development/build.md) or [macOS](/docs/en/development/build-osx.md).
+To manually compile ClickHouse, follow the instructions for [Linux](/development/build.md) or [macOS](/development/build-osx.md).
 
 You can compile packages and install them or use programs without installing packages.
 
-```
+```xml
 Client: <build_directory>/programs/clickhouse-client
 Server: <build_directory>/programs/clickhouse-server
 ```
 
 You'll need to create data and metadata folders manually and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
-```
+```bash
 /var/lib/clickhouse/data/default/
 /var/lib/clickhouse/metadata/default/
 ```
 
 On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
 
-### Install a CI-generated Binary
+### Install a CI-generated Binary {#install-a-ci-generated-binary}
 
 ClickHouse's continuous integration (CI) infrastructure produces specialized builds for each commit in the [ClickHouse
 repository](https://github.com/clickhouse/clickhouse/), e.g. [sanitized](https://github.com/google/sanitizers) builds, unoptimized (Debug)
@@ -326,37 +327,37 @@ For example, to download a aarch64 binary for ClickHouse v23.4, follow these ste
 - Find the rows with compiler = "clang-*-aarch64" - there are multiple rows.
 - Download the artifacts for these builds.
 
-### macOS-only: Install with Homebrew
+### macOS-only: Install with Homebrew {#macos-only-install-with-homebrew}
 
 To install ClickHouse on macOS using [homebrew](https://brew.sh/), please see the ClickHouse [community homebrew formula](https://formulae.brew.sh/cask/clickhouse).
 
 :::note
-For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](https://clickhouse.com/docs/knowledgebase/fix-developer-verification-error-in-macos).
+For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](/knowledgebase/fix-developer-verification-error-in-macos).
 :::
 
 ## Launch {#launch}
 
 To start the server as a daemon, run:
 
-``` bash
+```bash
 $ clickhouse start
 ```
 
 There are also other ways to run ClickHouse:
 
-``` bash
+```bash
 $ sudo service clickhouse-server start
 ```
 
 If you do not have `service` command, run as
 
-``` bash
+```bash
 $ sudo /etc/init.d/clickhouse-server start
 ```
 
 If you have `systemctl` command, run as
 
-``` bash
+```bash
 $ sudo systemctl start clickhouse-server.service
 ```
 
@@ -366,7 +367,7 @@ If the server does not start, check the configurations in the file `/etc/clickho
 
 You can also manually launch the server from the console:
 
-``` bash
+```bash
 $ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 ```
 
@@ -375,22 +376,22 @@ If the configuration file is in the current directory, you do not need to specif
 
 ClickHouse supports access restriction settings. They are located in the `users.xml` file (next to `config.xml`).
 By default, access is allowed from anywhere for the `default` user, without a password. See `user/default/networks`.
-For more information, see the section ["Configuration Files"](/docs/en/operations/configuration-files.md).
+For more information, see the section ["Configuration Files"](/operations/configuration-files.md).
 
 After launching server, you can use the command-line client to connect to it:
 
-``` bash
+```bash
 $ clickhouse-client
 ```
 
 By default, it connects to `localhost:9000` on behalf of the user `default` without a password. It can also be used to connect to a remote server using `--host` argument.
 
 The terminal must use UTF-8 encoding.
-For more information, see the section ["Command-line client"](/docs/en/interfaces/cli.md).
+For more information, see the section ["Command-line client"](/interfaces/cli.md).
 
 Example:
 
-```
+```bash
 $ ./clickhouse-client
 ClickHouse client version 0.0.18749.
 Connecting to localhost:9000.
@@ -411,9 +412,9 @@ SELECT 1
 
 **Congratulations, the system works!**
 
-To continue experimenting, you can download one of the test data sets or go through [tutorial](/docs/en/tutorial.md).
+To continue experimenting, you can download one of the test data sets or go through [tutorial](/tutorial.md).
 
-## Recommendations for Self-Managed ClickHouse
+## Recommendations for Self-Managed ClickHouse {#recommendations-for-self-managed-clickhouse}
 
 ClickHouse can run on any Linux, FreeBSD, or macOS with x86-64, ARM, or PowerPC64LE CPU architecture.
 
@@ -428,9 +429,9 @@ The required volume of RAM generally depends on:
 - The complexity of queries.
 - The amount of data that is processed in queries.
 
-To calculate the required volume of RAM, you may estimate the size of temporary data for [GROUP BY](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](/docs/en/sql-reference/statements/select/distinct.md#select-distinct), [JOIN](/docs/en/sql-reference/statements/select/join.md#select-join) and other operations you use.
+To calculate the required volume of RAM, you may estimate the size of temporary data for [GROUP BY](/sql-reference/statements/select/group-by), [DISTINCT](/sql-reference/statements/select/distinct), [JOIN](/sql-reference/statements/select/join) and other operations you use.
 
-To reduce memory consumption, ClickHouse can swap temporary data to external storage. See [GROUP BY in External Memory](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) for details.
+To reduce memory consumption, ClickHouse can swap temporary data to external storage. See [GROUP BY in External Memory](/sql-reference/statements/select/group-by#group-by-in-external-memory) for details.
 
 We recommend to disable the operating system's swap file in production environments.
 

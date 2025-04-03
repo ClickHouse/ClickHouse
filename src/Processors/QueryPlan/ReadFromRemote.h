@@ -1,4 +1,6 @@
 #pragma once
+
+#include <stack>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
@@ -96,6 +98,8 @@ public:
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
+
+    StorageID getStorageID() const { return storage_id; }
 
 private:
     Pipes addPipes(ASTPtr ast, const Header & out_header);

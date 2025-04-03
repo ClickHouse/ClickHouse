@@ -1,3 +1,4 @@
+#include "Common/Scheduler/IResourceManager.h"
 #include <Common/Scheduler/createResourceManager.h>
 #include <Common/Scheduler/Nodes/CustomResourceManager.h>
 #include <Common/Scheduler/Nodes/IOResourceManager.h>
@@ -22,6 +23,11 @@ private:
     class Classifier : public IClassifier
     {
     public:
+        explicit Classifier(const ClassifierSettings & settings_)
+            : settings(settings_)
+        {
+        }
+
         void addClassifier(const ClassifierPtr & classifier)
         {
             classifiers.push_back(classifier);
@@ -44,9 +50,14 @@ private:
                 if (classifier->has(resource_name))
                     return classifier->get(resource_name);
             }
-            throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Access denied to resource '{}'", resource_name);
+            if (settings.throw_on_unknown_workload)
+                throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Could not access resource '{}'. Please check `throw_on_unknown_workload` setting", resource_name);
+            else
+                return ResourceLink{};
         }
+
     private:
+        const ClassifierSettings settings;
         std::vector<ClassifierPtr> classifiers; // should be constant after initialization to avoid races
     };
 
@@ -72,11 +83,11 @@ public:
         return false;
     }
 
-    ClassifierPtr acquire(const String & workload_name) override
+    ClassifierPtr acquire(const String & workload_name, const ClassifierSettings & settings) override
     {
-        auto classifier = std::make_shared<Classifier>();
+        auto classifier = std::make_shared<Classifier>(settings);
         for (const auto & manager : managers)
-            classifier->addClassifier(manager->acquire(workload_name));
+            classifier->addClassifier(manager->acquire(workload_name, settings));
         return classifier;
     }
 

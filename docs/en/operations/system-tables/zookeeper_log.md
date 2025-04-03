@@ -1,7 +1,12 @@
 ---
-slug: /en/operations/system-tables/zookeeper_log
+description: 'System table containing information about the parameters of the request
+  to the ZooKeeper server and the response from it.'
+keywords: ['system table', 'zookeeper_log']
+slug: /operations/system-tables/zookeeper_log
+title: 'system.zookeeper_log'
 ---
-# zookeeper_log
+
+# system.zookeeper_log
 
 This table contains information about the parameters of the request to the ZooKeeper server and the response from it.
 
@@ -37,7 +42,7 @@ Columns with request response parameters:
     - `ZOK` — The request was executed successfully.
     - `ZCONNECTIONLOSS` — The connection was lost.
     - `ZOPERATIONTIMEOUT` — The request execution timeout has expired.
-	- `ZSESSIONEXPIRED` — The session has expired.
+    - `ZSESSIONEXPIRED` — The session has expired.
     - `NULL` — The request is completed.
 - `watch_type` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — The type of the `watch` event (for responses with `op_num` = `Watch`), for the remaining responses: `NULL`.
 - `watch_state` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — The status of the `watch` event (for responses with `op_num` = `Watch`), for the remaining responses: `NULL`.
@@ -55,13 +60,13 @@ Columns with request response parameters:
 
 Query:
 
-``` sql
+```sql
 SELECT * FROM system.zookeeper_log WHERE (session_id = '106662742089334927') AND (xid = '10858') FORMAT Vertical;
 ```
 
 Result:
 
-``` text
+```text
 Row 1:
 ──────
 hostname:         clickhouse.eu-central1.internal

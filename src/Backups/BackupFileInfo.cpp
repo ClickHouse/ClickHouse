@@ -9,8 +9,6 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ProcessList.h>
 
-#include <base/hex.h>
-
 
 namespace ProfileEvents
 {
@@ -154,7 +152,8 @@ BackupFileInfo buildFileInfoForBackupEntry(
             info.checksum = checksums.full_checksum;
 
             /// We have prefix of this file in backup with the same checksum.
-            /// In ClickHouse this can happen for StorageLog for example.
+            /// In ClickHouse this can happen for StorageLog for example,
+            /// or for .sql files that store DDL if only last part of the query was changed.
             if (checksums.prefix_checksum == base_backup_file_info->second)
             {
                 LOG_TRACE(log, "Found prefix of file {} in the base backup, will write rest of the file to current backup", adjusted_path);
