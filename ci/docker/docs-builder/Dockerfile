@@ -1,10 +1,5 @@
 # docker build -t clickhouse/docs-builder .
-FROM golang:alpine AS htmltest-builder
-
-ARG HTMLTEST_VERSION=0.17.0
-
-RUN CGO_ENABLED=0 go install github.com/wjdp/htmltest@v${HTMLTEST_VERSION} \
-    && mv "${GOPATH}/bin/htmltest" /usr/bin/htmltest
+FROM golang:alpine
 
 FROM node:20-bookworm-slim
 
@@ -30,5 +25,3 @@ ENV HOME=/opt/clickhouse-docs
 RUN mkdir /output_path \
   && chmod -R a+w . /output_path \
   && git config --global --add safe.directory /opt/clickhouse-docs
-
-COPY --from=htmltest-builder /usr/bin/htmltest /usr/bin/htmltest
