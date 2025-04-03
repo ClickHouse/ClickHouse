@@ -38,7 +38,7 @@ private:
 
     struct MutationStats
     {
-        size_t stuck_mutations;
+        size_t pending_mutations_over_threshold;
         size_t pending_mutations;
     };
 
