@@ -83,8 +83,7 @@ class JoinActionRef
 {
 public:
     explicit JoinActionRef(std::nullptr_t);
-    explicit JoinActionRef(const ActionsDAG::Node * node_, BaseRelsSet src_rels_);
-    explicit JoinActionRef(const ActionsDAG::Node * node_, ActionsDAG * actions_dag_);
+    explicit JoinActionRef(const ActionsDAG::Node * node_, ActionsDAG * actions_dag_, BaseRelsSet src_rels_ = {});
 
     const ActionsDAG::Node * getNode() const;
     ActionsDAG * getActions() const;
@@ -95,12 +94,16 @@ public:
     DataTypePtr getType() const;
 
     operator bool() const { return !column_name.empty(); } /// NOLINT
-    bool canBeCalculated(BaseRelsSet rels) const;
 
     using ActionsDAGRawPtrs = std::vector<const ActionsDAG *>;
 
     void serialize(WriteBuffer & out, const ActionsDAGRawPtrs & dags) const;
     static JoinActionRef deserialize(ReadBuffer & in, const ActionsDAGRawPtrs & dags);
+
+    BaseRelsSet getSourceRels() const
+    {
+        return src_rels;
+    }
 
 private:
     String column_name;
@@ -108,6 +111,11 @@ private:
 
     ActionsDAG * actions_dag = nullptr;
 };
+
+inline bool isSubsetOf(const BaseRelsSet & subset, const BaseRelsSet & superset)
+{
+    return (subset & superset) == subset;
+}
 
 /// JoinPredicate represents a single join qualifier
 /// that that apply to the combination of two tables.
@@ -152,19 +160,6 @@ struct JoinExpression
     static JoinExpression deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
 };
 
-struct JoinExpressionActions
-{
-    JoinExpressionActions() = default;
-    JoinExpressionActions(const JoinExpressionActions &) = delete;
-    JoinExpressionActions & operator=(const JoinExpressionActions &) = delete;
-    JoinExpressionActions(JoinExpressionActions &&) = default;
-    JoinExpressionActions & operator=(JoinExpressionActions &&) = default;
-
-    ActionsDAGPtr & getActions(BaseRelsSet sources, const std::vector<ColumnsWithTypeAndName> & tables);
-
-    std::unordered_map<BaseRelsSet, ActionsDAGPtr> actions;
-};
-
 struct JoinOperator
 {
     /// The type of join (e.g., INNER, LEFT, RIGHT, FULL)
@@ -179,14 +174,6 @@ struct JoinOperator
     /// An expression in ON/USING clause of a JOIN statement
     JoinExpression expression = {};
 
-    JoinExpressionActions expression_actions = {};
-
-    JoinOperator() = default;
-    JoinOperator(JoinOperator &&) = default;
-    JoinOperator & operator=(JoinOperator &&) = default;
-    JoinOperator(const JoinOperator &) = delete;
-    JoinOperator & operator=(const JoinOperator &) = delete;
-
     JoinOperator(JoinKind kind_, JoinStrictness strictness_, JoinLocality locality_)
         : kind(kind_), strictness(strictness_), locality(locality_) {}
 
@@ -194,7 +181,6 @@ struct JoinOperator
 
     static JoinOperator deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
 };
-
 
 std::string_view toString(PredicateOperator op);
 String toString(const JoinActionRef & node);

@@ -82,21 +82,14 @@ UInt64 calculateHashFromStep(const JoinStepLogical & join_step, size_t input_num
         {
             if (pred.op != PredicateOperator::Equals && pred.op != PredicateOperator::NullSafeEquals)
                 continue;
-            if (pred.left_node.canBeCalculated(input_mask))
+            if (isSubsetOf(pred.left_node.getSourceRels(), input_mask))
                 hash.update(pred.left_node.getColumnName());
-            if (pred.right_node.canBeCalculated(input_mask))
+            if (isSubsetOf(pred.right_node.getSourceRels(), input_mask))
                 hash.update(pred.right_node.getColumnName());
         }
     };
 
     hash.update(join_step.getSerializationName());
-    for (const auto & [mask, pre_join_actions] : join_operator.expression_actions.actions)
-    {
-        if (mask != input_mask)
-            continue;
-        chassert(pre_join_actions);
-        pre_join_actions->updateHash(hash);
-    }
 
     serialize_join_condition(join_operator.expression.condition);
     for (const auto & condition : join_operator.expression.disjunctive_conditions)
@@ -170,6 +163,8 @@ void calculateHashTableCacheKeys(QueryPlan::Node & root)
                         if (frame.hash)
                             frame.hash->update(children_hash);
                     }
+
+                    join_step->getExpressionActions().updateHash(*frame.hash);
 
                     stack.pop_back();
                 }

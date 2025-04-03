@@ -168,15 +168,10 @@ struct JoinFlattenContext
         return tables.size() - 1;
     }
 
-    ActionsDAGPtr & getActions(BaseRelsSet sources)
-    {
-        return join_operator.expression_actions.getActions(sources, tables);
-    }
-
     JoinActionRef addExpression(const QueryTreeNodePtr & node, BaseRelsSet sources)
     {
-        ActionsDAG * actions_dag_ptr = getActions(sources).get();
-        return JoinActionRef(appendExpression(*actions_dag_ptr, node, planner_context), sources);
+        ActionsDAG & actions_dag = join_step.getExpressionActions();
+        return JoinActionRef(appendExpression(actions_dag, node, planner_context), &actions_dag, sources);
     }
 
     JoinStepLogical & join_step;
@@ -191,10 +186,6 @@ struct JoinFlattenContext
     const PlannerContextPtr & planner_context;
 };
 
-static bool isSubsetOf(const BaseRelsSet & lhs, const BaseRelsSet & rhs)
-{
-    return (lhs & rhs) == lhs;
-}
 
 bool tryGetJoinPredicate(const FunctionNode * function_node, JoinFlattenContext & join_flatten, JoinCondition & join_condition)
 {
@@ -594,7 +585,9 @@ JoinTreeQueryPlan buildJoinStepLogical(
     {
         if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO");
 
+        /*
         auto left_mask = join_flatten.getLeftMask();
         auto right_mask = join_flatten.getRightMask();
         auto & left_actions = join_flatten.getActions(left_mask);
@@ -622,10 +615,11 @@ JoinTreeQueryPlan buildJoinStepLogical(
             PredicateOperator::Equals};
 
         join_flatten.join_operator.expression.condition.predicates.push_back(std::move(predicate));
+        */
     }
 
-    for (const auto & dag : join_flatten.join_operator.expression_actions.actions | std::views::values)
-        appendSetsFromActionsDAG(*dag, left_plan.useful_sets);
+    /// FIXME: add only newly created actions
+    appendSetsFromActionsDAG(join_step->getExpressionActions(), left_plan.useful_sets);
 
     return mergeJoinTreePlans(std::move(left_plan), std::move(right_plan));
 }

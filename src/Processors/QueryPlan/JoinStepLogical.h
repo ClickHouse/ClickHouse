@@ -1,10 +1,13 @@
 #pragma once
 
 #include <Interpreters/JoinOperator.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/Optimizations/joinCost.h>
 #include <Common/SafePtr.h>
 
 namespace DB
@@ -33,6 +36,7 @@ struct PreparedJoinStorage
     }
 };
 
+struct QueryPlanOptimizationSettings;
 /** JoinStepLogical is a logical step for JOIN operation.
   * Doesn't contain any specific join algorithm or other execution details.
   * It's place holder for join operation with it's description that can be serialized.
@@ -60,44 +64,19 @@ public:
     bool canFlatten() const;
     bool hasPreparedJoinStorage() const;
     void setPreparedJoinStorage(PreparedJoinStorage storage);
-    const SortingStep::Settings & getSortingSettings() const { return sorting_settings; }
-    const JoinSettings & getJoinSettings() const { return join_settings; }
 
-    const Names & getRequiredOutputColumns() const { return required_output_columns; }
+    const NameSet & getRequiredOutputColumns() const { return required_output_columns; }
 
     JoinOperator & addInput(JoinOperator join_operator, const Header & header);
 
     std::optional<ActionsDAG> getFilterActions(JoinTableSide side, String & filter_column_name);
 
-    void setSwapInputs() { swap_inputs = true; }
-    bool areInputsSwapped() const { return swap_inputs; }
+    QueryPlan::Node * optimizeToPhysicalPlan(
+        std::vector<QueryPlan::Node *> input_steps,
+        QueryPlan::Nodes & query_plan_nodes,
+        const QueryPlanOptimizationSettings & optimization_settings);
 
-    struct PhysicalJoinNode
-    {
-        ActionsDAGPtr actions{nullptr};
-        JoinActionRef filter{nullptr};
-
-        JoinPtr join_strategy = nullptr;
-        int input_idx = -1;
-
-        BaseRelsSet left_child;
-        BaseRelsSet right_child;
-    };
-
-    std::vector<JoinStepLogical::PhysicalJoinNode>
-    convertToPhysical(
-        bool is_explain_logical,
-        UInt64 max_threads,
-        UInt64 max_entries_for_hash_table_stats,
-        String initial_query_id,
-        std::chrono::milliseconds lock_acquire_timeout,
-        const ExpressionActionsSettings & actions_settings);
-
-
-    const JoinSettings & getSettings() const { return join_settings; }
     bool useNulls() const { return use_nulls; }
-
-    void appendRequiredOutputsToActions(JoinActionRef & post_filter);
 
     void setHashTableCacheKey(UInt64 hash_table_key_hash_, size_t idx);
 
@@ -116,6 +95,55 @@ public:
     JoinOperator & getJoinOperator(size_t index = 0) { return join_operators.at(index); }
     const JoinOperator & getJoinOperator(size_t index = 0) const { return join_operators.at(index); }
 
+    std::vector<JoinOperator> & getJoinOperators() { return join_operators; }
+
+    const JoinSettings & getJoinSettings() const { return join_settings; }
+
+    ActionsDAG & getExpressionActions()
+    {
+        if (!expression_actions)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression actions are not initialized");
+        return *expression_actions;
+    }
+
+    ActionsDAG cloneExpressionActions(size_t input_num)
+    {
+        if (!expression_actions)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression actions are not initialized");
+        UNUSED(input_num);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cloning of expression actions is not implemented");
+    }
+
+private:
+    struct PhysicalJoinNode
+    {
+        ActionsDAGPtr left_pre_join_actions{nullptr};
+        JoinActionRef left_pre_filter_condition{nullptr};
+
+        ActionsDAGPtr right_pre_join_actions{nullptr};
+        JoinActionRef right_pre_filter_condition{nullptr};
+
+        ActionsDAGPtr post_join_actions{nullptr};
+        JoinActionRef residual_filter_condition{nullptr};
+
+        JoinPtr join_strategy{nullptr};
+    };
+
+    void buildPhysicalJoinNode(
+        BaseRelsSet left_rels,
+        BaseRelsSet right_rels,
+        PhysicalJoinNode & result_node,
+        JoinOperator join_info,
+        const QueryPlanOptimizationSettings & optimization_settings);
+
+    QueryPlan::Node * buildPhysicalPlan(
+        std::vector<const DPJoinEntry *> join_order,
+        std::vector<QueryPlan::Node *> inputs,
+        QueryPlan::Nodes & nodes,
+        const QueryPlanOptimizationSettings & optimization_settings);
+
+
+
 protected:
     void updateOutputHeader() override;
 
@@ -123,6 +151,9 @@ protected:
     void describeJoinActionsImpl(ResultType & result) const;
 
     std::vector<JoinOperator> join_operators;
+    ActionsDAGPtr expression_actions;
+
+    std::vector<RelationStats> relation_stats;
 
     std::vector<UInt64> hash_table_key_hashes;
 
@@ -130,7 +161,6 @@ protected:
     std::optional<UInt64> hash_table_key_hash_right;
 
     bool use_nulls;
-    bool swap_inputs = false;
     NameSet required_output_columns;
 
     PreparedJoinStorage prepared_join_storage;
@@ -145,6 +175,8 @@ protected:
     std::vector<std::pair<String, String>> runtime_info_description;
 
     std::vector<Names> using_columns_mapping;
+
+    LoggerPtr log = getLogger("JoinStepLogical");
 };
 
 }

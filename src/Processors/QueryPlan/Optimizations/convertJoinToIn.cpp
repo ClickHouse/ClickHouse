@@ -127,7 +127,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH))
         return 0;
 
-    const auto & join_info = join->getJoinOperator();
+    auto & join_info = join->getJoinOperator();
 
     /// Let's allow Strictness::All with a wrong result for now.
     if (join_info.strictness != JoinStrictness::Any && join_info.strictness != JoinStrictness::All)
@@ -146,7 +146,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         if (join_info.expression.condition.predicates.empty())
             return 0;
 
-        if (!join_info.expression.condition.residual_conditions.empty())
+        if (!join_info.expression.condition.restrict_conditions.empty())
             return 0;
 
         auto isJoinConstant = [](const std::string & name)
@@ -165,10 +165,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         }
     }
 
-    const auto & required_output_columns = join->getRequiredOutputColumns();
-    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
-
-    const auto & join_expression_actions = join->getExpressionActions();
+    const auto & required_output_columns_set = join->getRequiredOutputColumns();
 
     const auto & left_input_header = join->getInputHeaders().front();
     const auto & right_input_header = join->getInputHeaders().back();
@@ -177,7 +174,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// Check output columns come from one side.
     {
-        auto hasAnyInSet = [](const Header & header, NameSet & set)
+        auto hasAnyInSet = [](const Header & header, const NameSet & set)
         {
             for (const auto & column : header)
                 if (set.contains(column.name))
@@ -208,8 +205,8 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         }
     }
 
-    JoinActionRef unused_post_filter(nullptr);
-    join->appendRequiredOutputsToActions(unused_post_filter);
+    // JoinActionRef unused_post_filter(nullptr);
+    // join->appendRequiredOutputsToActions(unused_post_filter);
 
     // {
     //     WriteBufferFromOwnString buf;
@@ -218,8 +215,11 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     //     std::cerr << buf.stringView() << std::endl;
     // }
 
-    QueryPlan::Node * lhs_in_node = makeExpressionNodeOnTopOf(parent_node->children.at(0), std::move(*join_expression_actions.left_pre_join_actions), {}, nodes);
-    QueryPlan::Node * rhs_in_node = makeExpressionNodeOnTopOf(parent_node->children.at(1), std::move(*join_expression_actions.right_pre_join_actions), {}, nodes);
+    std::vector<ColumnsWithTypeAndName> input_headers = {left_input_header.getColumnsWithTypeAndName(), right_input_header.getColumnsWithTypeAndName()};
+    auto left_pre_join_actions = join->cloneExpressionActions(0);
+    auto right_pre_join_actions = join->cloneExpressionActions(1);
+    QueryPlan::Node * lhs_in_node = makeExpressionNodeOnTopOf(parent_node->children.at(0), std::move(left_pre_join_actions), {}, nodes);
+    QueryPlan::Node * rhs_in_node = makeExpressionNodeOnTopOf(parent_node->children.at(1), std::move(right_pre_join_actions), {}, nodes);
 
     if (build_set_from_left_part)
         std::swap(lhs_in_node, rhs_in_node);
@@ -253,7 +253,8 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         lhs_in_node = &nodes.emplace_back(QueryPlan::Node{std::move(step), {lhs_in_node}});
     }
 
-    lhs_in_node = makeExpressionNodeOnTopOf(lhs_in_node, std::move(*join_expression_actions.post_join_actions), {}, nodes);
+    auto & post_join_actions = join->getExpressionActions();
+    lhs_in_node = makeExpressionNodeOnTopOf(lhs_in_node, std::move(post_join_actions), {}, nodes);
 
     auto creating_sets_step = std::make_unique<DelayedCreatingSetsStep>(
         lhs_in_node->step->getOutputHeader(),

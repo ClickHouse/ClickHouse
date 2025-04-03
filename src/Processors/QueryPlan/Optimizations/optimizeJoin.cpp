@@ -15,10 +15,8 @@
 
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Interpreters/FullSortingMergeJoin.h>
 
 #include <Interpreters/TableJoin.h>
-#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 
 #include <Common/logger_useful.h>
 #include <Core/Joins.h>
@@ -157,173 +155,20 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     return true;
 }
 
-void addSortingForMergeJoin(
-    const FullSortingMergeJoin * join_ptr,
-    QueryPlan::Node *& left_node,
-    QueryPlan::Node *& right_node,
-    QueryPlan::Nodes & nodes,
-    const SortingStep::Settings & sort_settings,
-    const JoinSettings & join_settings,
-    const TableJoin & table_join)
-{
-    auto join_kind = table_join.kind();
-    auto join_strictness = table_join.strictness();
-    auto add_sorting = [&] (QueryPlan::Node *& node, const Names & key_names, JoinTableSide join_table_side)
-    {
-        SortDescription sort_description;
-        sort_description.reserve(key_names.size());
-        for (const auto & key_name : key_names)
-            sort_description.emplace_back(key_name);
-
-        auto sorting_step = std::make_unique<SortingStep>(
-            node->step->getOutputHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);
-        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side));
-        node = &nodes.emplace_back(QueryPlan::Node{std::move(sorting_step), {node}});
-    };
-
-    auto crosswise_connection = CreateSetAndFilterOnTheFlyStep::createCrossConnection();
-    auto add_create_set = [&](QueryPlan::Node *& node, const Names & key_names, JoinTableSide join_table_side)
-    {
-        auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
-            node->step->getOutputHeader(), key_names, join_settings.max_rows_in_set_to_optimize_join, crosswise_connection, join_table_side);
-        creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_table_side));
-
-        auto * step_raw_ptr = creating_set_step.get();
-        node = &nodes.emplace_back(QueryPlan::Node{std::move(creating_set_step), {node}});
-        return step_raw_ptr;
-    };
-
-    const auto & join_clause = join_ptr->getTableJoin().getOnlyClause();
-
-    bool join_type_allows_filtering = (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Any)
-                                    && (isInner(join_kind) || isLeft(join_kind) || isRight(join_kind));
-
-
-    auto has_non_const = [](const Block & block, const auto & keys)
-    {
-        for (const auto & key : keys)
-        {
-            const auto & column = block.getByName(key).column;
-            if (column && !isColumnConst(*column))
-                return true;
-        }
-        return false;
-    };
-
-    /// This optimization relies on the sorting that should buffer data from both streams before emitting any rows.
-    /// Sorting on a stream with const keys can start returning rows immediately and pipeline may stuck.
-    /// Note: it's also doesn't work with the read-in-order optimization.
-    /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
-    bool has_non_const_keys = has_non_const(left_node->step->getOutputHeader(), join_clause.key_names_left)
-        && has_non_const(right_node->step->getOutputHeader() , join_clause.key_names_right);
-
-    if (join_settings.max_rows_in_set_to_optimize_join > 0 && join_type_allows_filtering && has_non_const_keys)
-    {
-        auto * left_set = add_create_set(left_node, join_clause.key_names_left, JoinTableSide::Left);
-        auto * right_set = add_create_set(right_node, join_clause.key_names_right, JoinTableSide::Right);
-
-        if (isInnerOrLeft(join_kind))
-            right_set->setFiltering(left_set->getSet());
-
-        if (isInnerOrRight(join_kind))
-            left_set->setFiltering(right_set->getSet());
-    }
-
-    add_sorting(left_node, join_clause.key_names_left, JoinTableSide::Left);
-    add_sorting(right_node, join_clause.key_names_right, JoinTableSide::Right);
-}
-
 bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     bool keep_logical = optimization_settings.keep_logical_steps;
+    UNUSED(keep_logical); /// FIXME
+
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step)
         return false;
 
-    if (node.children.size() <= 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have more than 2 children, but has {}", node.children.size());
+    if (node.children.size() < 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have at least 2 children, but has {}", node.children.size());
 
-    auto join_order = join_step->convertToPhysical(
-        keep_logical,
-        optimization_settings.max_threads,
-        optimization_settings.max_entries_for_hash_table_stats,
-        optimization_settings.initial_query_id,
-        optimization_settings.lock_acquire_timeout,
-        optimization_settings.actions_settings);
+    node = std::move(*join_step->optimizeToPhysicalPlan(node.children, nodes, optimization_settings));
 
-
-    Header output_header = join_step->getOutputHeader();
-    const auto & settings = join_step->getSettings();
-
-    const auto & inputs = node.children;
-    std::stack<QueryPlan::Node *> nodeStack;
-    for (const auto & physical_node : join_order)
-    {
-        if (physical_node.input_idx >= 0)
-        {
-            auto * input_node = inputs.at(physical_node.input_idx);
-            if (physical_node.actions)
-                input_node = makeExpressionNodeOnTopOf(input_node, std::move(*physical_node.actions), physical_node.filter.getColumnName(), nodes);
-            nodeStack.push(input_node);
-        }
-        else if (physical_node.join_strategy)
-        {
-            auto join_ptr = physical_node.join_strategy;
-            auto * new_join_node = &nodes.emplace_back();
-
-            if (!join_ptr->isFilled())
-            {
-                if (nodeStack.size() < 2)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough nodes on stack for join");
-
-                auto join_left_node = nodeStack.top();
-                nodeStack.pop();
-                auto join_right_node = nodeStack.top();
-                nodeStack.pop();
-
-                if (const auto * fsmjoin = dynamic_cast<const FullSortingMergeJoin *>(join_ptr.get()))
-                    addSortingForMergeJoin(fsmjoin, join_left_node, join_right_node, nodes,
-                        join_step->getSortingSettings(), join_step->getJoinSettings(), fsmjoin->getTableJoin());
-
-                auto required_output_from_join = physical_node.actions->getRequiredColumnsNames();
-                new_join_node->step = std::make_unique<JoinStep>(
-                    join_left_node->step->getOutputHeader(),
-                    join_right_node->step->getOutputHeader(),
-                    join_ptr,
-                    settings.max_block_size,
-                    settings.min_joined_block_size_bytes,
-                    optimization_settings.max_threads,
-                    NameSet(required_output_from_join.begin(), required_output_from_join.end()),
-                    false /*optimize_read_in_order*/,
-                    true /*use_new_analyzer*/);
-                new_join_node->children = {join_left_node, join_right_node};
-            }
-            else
-            {
-                if (nodeStack.empty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough nodes on stack for join");
-                auto new_left_node = nodeStack.top();
-                nodeStack.pop();
-                new_join_node->step = std::make_unique<FilledJoinStep>(
-                    new_left_node->step->getOutputHeader(),
-                    join_ptr,
-                    settings.max_block_size);
-                new_join_node->children = {new_left_node};
-            }
-
-            new_join_node = makeExpressionNodeOnTopOf(new_join_node, std::move(*physical_node.actions), physical_node.filter.getColumnName(), nodes);
-            nodeStack.push(new_join_node);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have either input or join_strategy");
-        }
-    }
-
-    if (nodeStack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough nodes on stack for join");
-
-    node = std::move(*nodeStack.top());
     return true;
 }
 
@@ -368,8 +213,6 @@ bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
     const auto & join_info = join_step->getJoinOperator();
     if (join_info.expression.is_using || join_info.strictness != JoinStrictness::All)
         return true;
-
-    join_step->setSwapInputs();
 
     return true;
 }

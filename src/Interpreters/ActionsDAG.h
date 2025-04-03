@@ -166,7 +166,7 @@ public:
 
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
-    void addOrReplaceInOutputs(const Node & node);
+    bool addOrReplaceInOutputs(const Node & node);
 
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);

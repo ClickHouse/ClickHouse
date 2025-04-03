@@ -122,6 +122,8 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     join_to_sort_minimum_perkey_rows = query_settings[Setting::join_to_sort_minimum_perkey_rows];
     join_to_sort_maximum_table_rows = query_settings[Setting::join_to_sort_maximum_table_rows];
     allow_experimental_join_right_table_sorting = query_settings[Setting::allow_experimental_join_right_table_sorting];
+
+
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
@@ -257,24 +259,12 @@ JoinActionRef::JoinActionRef(std::nullptr_t)
 {
 }
 
-JoinActionRef::JoinActionRef(const ActionsDAG::Node * node_, BaseRelsSet src_rels_)
+JoinActionRef::JoinActionRef(const ActionsDAG::Node * node_, ActionsDAG * actions_dag_, BaseRelsSet src_rels_)
     : column_name(node_->result_name)
     , src_rels(src_rels_)
-{
-}
-
-JoinActionRef::JoinActionRef(const ActionsDAG::Node * node_, ActionsDAG * actions_dag_)
-    : column_name(node_->result_name)
     , actions_dag(actions_dag_)
 {
     chassert(checkNodeInOutputs(node_, actions_dag));
-}
-
-bool JoinActionRef::canBeCalculated(BaseRelsSet rels) const
-{
-    if (src_rels == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function {} called on uninitialized actions", __PRETTY_FUNCTION__);
-    return (rels & src_rels) == src_rels;
 }
 
 ActionsDAG * JoinActionRef::getActions() const
@@ -508,23 +498,6 @@ JoinOperator JoinOperator::deserialize(ReadBuffer & in, const JoinActionRef::Act
     res.expression = JoinExpression::deserialize(in, dags);
 
     return res;
-}
-
-ActionsDAGPtr & JoinExpressionActions::getActions(BaseRelsSet sources, const std::vector<ColumnsWithTypeAndName> & tables)
-{
-    auto it = actions.find(sources);
-    if (it == actions.end())
-    {
-        ColumnsWithTypeAndName inputs;
-        for (size_t i = 0; i < tables.size(); ++i)
-        {
-            if (sources.test(i))
-                inputs.append_range(tables.at(i));
-        }
-        auto actions_dag = std::make_unique<ActionsDAG>(inputs);
-        it = actions.emplace(sources, std::move(actions_dag)).first;
-    }
-    return it->second;
 }
 
 }
