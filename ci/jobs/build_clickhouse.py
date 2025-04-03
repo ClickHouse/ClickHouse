@@ -156,6 +156,7 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
+        Shell.check(f"echo 'PMO: clang-tidy without cache' && env CTCACHE_DISABLE=1 clang-tidy-cache clang-tidy-19 -p {build_dir} src/Interpreters/Aggregator.cpp")
         Shell.check("sccache --show-stats")
         if build_type in BUILD_TYPE_TO_DEB_PACKAGE_TYPE:
             targets = "clickhouse-bundle"
