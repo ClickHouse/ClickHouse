@@ -58,7 +58,7 @@ public:
     OpenSSLProvider() : ctx_template(EVP_MD_CTX_new(), &EVP_MD_CTX_free)
     {
         if (!ctx_template)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed: {}", getOpenSSLErrors());
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
 
         if (EVP_DigestInit_ex(ctx_template.get(), ProviderImpl::provider(), nullptr) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
@@ -69,20 +69,14 @@ public:
         if (!ctx_template)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No context provided");
 
-        thread_local EVP_MD_CTX * ctx = [] {
-            EVP_MD_CTX * c = EVP_MD_CTX_new();
-            if (!c)
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new() failed: {}", getOpenSSLErrors());
-            return c;
-        }();
-
-        if (EVP_MD_CTX_copy_ex(ctx, ctx_template.get()) != 1)
+        thread_local EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+        if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
 
-        if (EVP_DigestUpdate(ctx, begin, size) != 1)
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
 
-        if (EVP_DigestFinal_ex(ctx, out_char_data, nullptr) != 1)
+        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
     }
 
