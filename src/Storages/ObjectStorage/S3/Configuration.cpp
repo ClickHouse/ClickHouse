@@ -56,10 +56,10 @@ namespace ErrorCodes
 
 namespace
 {
-    template <typename T>
-    std::optional<T> extractNamedArgument(ASTs & arguments, const std::string & argument_name, ASTs::iterator & argument_position)
+
+    ASTs::const_iterator getValueForNamedArgument(const ASTs & arguments, const std::string & argument_name, Field & value)
     {
-        for (auto * arg_it = arguments.begin(); arg_it != arguments.end(); ++arg_it)
+        for (const auto * arg_it = arguments.begin(); arg_it != arguments.end(); ++arg_it)
         {
             auto argument = *arg_it;
             const auto * type_ast_function = argument->as<ASTFunction>();
@@ -69,13 +69,13 @@ namespace
                 continue;
             }
 
-            auto * name = type_ast_function->arguments->children[0]->as<ASTIdentifier>();
+            const auto * name = type_ast_function->arguments->children[0]->as<ASTIdentifier>();
 
             if (name && name->name() == argument_name)
             {
-                auto * value = type_ast_function->arguments->children[1]->as<ASTLiteral>();
+                const auto * ast_literal = type_ast_function->arguments->children[1]->as<ASTLiteral>();
 
-                if (!value)
+                if (!ast_literal)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -83,27 +83,29 @@ namespace
                         name->name());
                 }
 
-                argument_position = arg_it;
+                value = ast_literal->value;
 
-                return value->value.safeGet<T>();
+                return arg_it;
             }
         }
 
-        return std::nullopt;
+        return arguments.end();
     }
 
     template <typename T>
     std::optional<T> extractNamedArgumentAndRemoveFromList(ASTs & arguments, const std::string & argument_name)
     {
-        ASTs::iterator iterator;
-        auto named_arg_opt = extractNamedArgument<T>(arguments, argument_name, iterator);
+        Field value;
+        const auto * p = getValueForNamedArgument(arguments, argument_name, value);
 
-        if (named_arg_opt)
+        if (p == arguments.end())
         {
-            arguments.erase(iterator);
+            return std::nullopt;
         }
 
-        return named_arg_opt;
+        arguments.erase(p);
+
+        return value.safeGet<T>();
     }
 }
 
