@@ -58,6 +58,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitInRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -2101,6 +2102,39 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 executeLimitBy(query_plan);
             }
 
+            if (expressions.hasLimitInrangeFrom() || expressions.hasLimitInrangeTo())
+            {
+                if (expressions.before_limit_inrange_from && expressions.before_limit_inrange_to)
+                {
+                    ActionsAndProjectInputsFlagPtr first_flag = std::make_shared<ActionsAndProjectInputsFlag>();
+                    first_flag->dag = expressions.before_limit_inrange_from->dag.clone();
+                    ActionsAndProjectInputsFlagPtr second_flag = std::make_shared<ActionsAndProjectInputsFlag>();
+                    second_flag->dag = expressions.before_limit_inrange_to->dag.clone();
+
+                    first_flag->dag.mergeNodes(std::move(second_flag->dag));
+                    auto last_node_name = expressions.before_limit_inrange_to->dag.getNodes().back().result_name;
+                    for (const auto & node : first_flag->dag.getNodes())
+                        if (last_node_name == node.result_name)
+                            first_flag->dag.addOrReplaceInOutputs(node);
+
+                    // TODO case when there are same expressions in FROM and TO sections:
+                    // SELECT * FROM my_first_table LIMIT INRANGE FROM metric > 2 TO metric > 2
+                    // dag.addNode method?
+
+                    executeExpression(query_plan, first_flag, "LIMIT INRANGE FROM expr TO expr");
+                }
+                else if (expressions.before_limit_inrange_from)
+                {
+                    executeExpression(query_plan, expressions.before_limit_inrange_from, "LIMIT INRANGE FROM expr");
+                }
+                else if (expressions.before_limit_inrange_to)
+                {
+                    executeExpression(query_plan, expressions.before_limit_inrange_to, "LIMIT INRANGE TO expr");
+                }
+
+                executeLimitInRange(query_plan, expressions.remove_inrange_filter);
+            }
+
             executeWithFill(query_plan);
 
             /// If we have 'WITH TIES', we need execute limit before projection,
@@ -3215,6 +3249,27 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     }
 }
 
+void InterpreterSelectQuery::executeLimitInRange(QueryPlan & query_plan, bool remove_filter_column)
+{
+    auto & query = getSelectQuery();
+    if (!query.limitInRangeFrom() && !query.limitInRangeTo())
+        return;
+
+    UInt64 limit_inrange_window = (query.limitInRangeWindow() ? getLimitUIntValue(query.limitInRangeWindow(), context, "INRANGE WINDOW") : 0);
+    const Settings & settings = context->getSettingsRef();
+    limit_inrange_window = std::min<UInt64>(limit_inrange_window, settings[Setting::max_block_size]);
+
+    remove_filter_column = true;
+    auto limit_inrange_step = std::make_unique<LimitInRangeStep>(
+        query_plan.getCurrentHeader(),
+        getSelectQuery().limitInRangeFrom() ? getSelectQuery().limitInRangeFrom()->getColumnName() : "",
+        getSelectQuery().limitInRangeTo() ? getSelectQuery().limitInRangeTo()->getColumnName() : "",
+        limit_inrange_window,
+        remove_filter_column);
+
+    limit_inrange_step->setStepDescription("LIMIT INRANGE");
+    query_plan.addStep(std::move(limit_inrange_step));
+}
 
 void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
 {

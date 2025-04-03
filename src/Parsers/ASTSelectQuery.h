@@ -34,6 +34,9 @@ public:
         LIMIT_BY,
         LIMIT_OFFSET,
         LIMIT_LENGTH,
+        LIMIT_INRANGE_FROM,
+        LIMIT_INRANGE_TO,
+        LIMIT_INRANGE_WINDOW,
         SETTINGS,
         INTERPOLATE
     };
@@ -76,6 +79,12 @@ public:
                 return "LIMIT OFFSET";
             case Expression::LIMIT_LENGTH:
                 return "LIMIT LENGTH";
+            case Expression::LIMIT_INRANGE_FROM:
+                return "LIMIT INRANGE FROM";
+            case Expression::LIMIT_INRANGE_TO:
+                return "LIMIT INRANGE TO";
+            case Expression::LIMIT_INRANGE_WINDOW:
+                return "LIMIT INRANGE WINDOW";
             case Expression::SETTINGS:
                 return "SETTINGS";
             case Expression::INTERPOLATE:
@@ -119,13 +128,16 @@ public:
     ASTPtr groupBy()        const { return getExpression(Expression::GROUP_BY); }
     ASTPtr having()         const { return getExpression(Expression::HAVING); }
     ASTPtr window()         const { return getExpression(Expression::WINDOW); }
-    ASTPtr qualify()         const { return getExpression(Expression::QUALIFY); }
+    ASTPtr qualify()        const { return getExpression(Expression::QUALIFY); }
     ASTPtr orderBy()        const { return getExpression(Expression::ORDER_BY); }
     ASTPtr limitByOffset()  const { return getExpression(Expression::LIMIT_BY_OFFSET); }
     ASTPtr limitByLength()  const { return getExpression(Expression::LIMIT_BY_LENGTH); }
     ASTPtr limitBy()        const { return getExpression(Expression::LIMIT_BY); }
     ASTPtr limitOffset()    const { return getExpression(Expression::LIMIT_OFFSET); }
     ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
+    ASTPtr limitInRangeFrom()      const { return getExpression(Expression::LIMIT_INRANGE_FROM); }
+    ASTPtr limitInRangeTo()        const { return getExpression(Expression::LIMIT_INRANGE_TO); }
+    ASTPtr limitInRangeWindow()    const { return getExpression(Expression::LIMIT_INRANGE_WINDOW); }
     ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
     ASTPtr interpolate()    const { return getExpression(Expression::INTERPOLATE); }
 
