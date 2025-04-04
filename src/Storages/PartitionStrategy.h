@@ -59,7 +59,7 @@ struct PartitionStrategyFactory
         ContextPtr context,
         const std::string & file_format,
         bool has_partition_wildcard,
-        const std::string & partition_strategy = "",
+        const std::string & partition_strategy = "auto",
         bool hive_partition_strategy_write_partition_columns_into_files = false);
 };
 
