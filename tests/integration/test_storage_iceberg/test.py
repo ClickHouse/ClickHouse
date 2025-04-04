@@ -2189,12 +2189,14 @@ def test_schema_evolution_with_time_travel(
         allow_dynamic_metadata_for_data_lakes=True,
     )
 
-    table_select_expression = table_creation_expression
+    table_select_expression =  table_creation_expression
 
     check_schema_and_data(
         instance,
         table_select_expression,
-        [["a", "Int32"]],
+        [
+            ["a", "Int32"]
+        ],
         [],
     )
 
@@ -2217,12 +2219,9 @@ def test_schema_evolution_with_time_travel(
         [["4"]],
     )
 
-    error_message = instance.query_and_get_error(
-        f"SELECT * FROM {table_select_expression} ORDER BY ALL SETTINGS iceberg_timestamp_ms = {first_timestamp_ms}"
-    )
-    assert (
-        "No snapshot found in snapshot log before requested timestamp" in error_message
-    )
+    error_message = instance.query_and_get_error(f"SELECT * FROM {table_select_expression} ORDER BY ALL SETTINGS iceberg_timestamp_ms = {first_timestamp_ms}")
+    assert "No snapshot found in snapshot log before requested timestamp" in error_message
+
 
     second_timestamp_ms = int(datetime.now().timestamp() * 1000)
 
@@ -2239,7 +2238,10 @@ def test_schema_evolution_with_time_travel(
     check_schema_and_data(
         instance,
         table_select_expression,
-        [["a", "Int32"], ["b", "Nullable(Float64)"]],
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float64)"]
+        ],
         [["4", "\\N"]],
     )
 
@@ -2257,6 +2259,7 @@ def test_schema_evolution_with_time_travel(
 
     time.sleep(0.5)
 
+
     execute_spark_query(
         f"""
             INSERT INTO {TABLE_NAME} VALUES (7, 5.0);
@@ -2266,7 +2269,10 @@ def test_schema_evolution_with_time_travel(
     check_schema_and_data(
         instance,
         table_select_expression,
-        [["a", "Int32"], ["b", "Nullable(Float64)"]],
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float64)"]
+        ],
         [["4", "\\N"], ["7", "5"]],
     )
 
@@ -2284,8 +2290,7 @@ def test_schema_evolution_with_time_travel(
         instance,
         table_select_expression,
         [
-            ["a", "Int32"],
-        ],
+            ["a", "Int32"],        ],
         [["4"]],
         timestamp_ms=third_timestamp_ms,
     )
@@ -2304,7 +2309,10 @@ def test_schema_evolution_with_time_travel(
     check_schema_and_data(
         instance,
         table_select_expression,
-        [["a", "Int32"], ["b", "Nullable(Float64)"]],
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float64)"]
+        ],
         [["4", "\\N"], ["7", "5"]],
         timestamp_ms=fourth_timestamp_ms,
     )
@@ -2312,10 +2320,13 @@ def test_schema_evolution_with_time_travel(
     check_schema_and_data(
         instance,
         table_select_expression,
-        [["a", "Int32"], ["b", "Nullable(Float64)"], ["c", "Nullable(Float64)"]],
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float64)"],
+            ["c", "Nullable(Float64)"]
+        ],
         [["4", "\\N", "\\N"], ["7", "5", "\\N"]],
     )
-
 
 def get_last_snapshot(path_to_table):
     import json
@@ -2325,17 +2336,17 @@ def get_last_snapshot(path_to_table):
     last_timestamp = 0
     last_snapshot_id = -1
     for filename in os.listdir(metadata_dir):
-        if filename.endswith(".json"):
+        if filename.endswith('.json'):
             filepath = os.path.join(metadata_dir, filename)
-            with open(filepath, "r") as f:
+            with open(filepath, 'r') as f:
                 data = json.load(f)
                 print(data)
-                timestamp = data.get("last-updated-ms")
-                if timestamp > last_timestamp:
+                timestamp = data.get('last-updated-ms')
+                if (timestamp > last_timestamp):
                     last_timestamp = timestamp
-                    last_snapshot_id = data.get("current-snapshot-id")
+                    last_snapshot_id = data.get('current-snapshot-id')
     return last_snapshot_id
-
+    
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -2427,6 +2438,7 @@ def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
         == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
     )
 
+
     assert (
         instance.query(
             f"""
@@ -2445,6 +2457,7 @@ def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
         == instance.query("SELECT number, toString(number + 1) FROM numbers(200)")
     )
 
+
     assert (
         instance.query(
             f"""SELECT * FROM {TABLE_NAME} ORDER BY 1
@@ -2461,7 +2474,6 @@ def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
         )
         == instance.query("SELECT number, toString(number + 1) FROM numbers(300)")
     )
-
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_minmax_pruning(started_cluster, storage_type):
@@ -2536,11 +2548,7 @@ def test_minmax_pruning(started_cluster, storage_type):
         data1 = instance.query(
             select_expression,
             query_id=query_id1,
-            settings={
-                "use_iceberg_partition_pruning": 0,
-                "input_format_parquet_bloom_filter_push_down": 0,
-                "input_format_parquet_filter_push_down": 0,
-            },
+            settings={"use_iceberg_partition_pruning": 0, "input_format_parquet_bloom_filter_push_down": 0, "input_format_parquet_filter_push_down": 0},
         )
         data1 = list(
             map(
@@ -2552,11 +2560,7 @@ def test_minmax_pruning(started_cluster, storage_type):
         data2 = instance.query(
             select_expression,
             query_id=query_id2,
-            settings={
-                "use_iceberg_partition_pruning": 1,
-                "input_format_parquet_bloom_filter_push_down": 0,
-                "input_format_parquet_filter_push_down": 0,
-            },
+            settings={"use_iceberg_partition_pruning": 1, "input_format_parquet_bloom_filter_push_down": 0, "input_format_parquet_filter_push_down": 0},
         )
         data2 = list(
             map(
@@ -2703,6 +2707,7 @@ def test_minmax_pruning(started_cluster, storage_type):
     execute_spark_query(
         f"INSERT INTO {TABLE_NAME} VALUES (1, DATE '2024-01-20', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-03-15', 'b', TIMESTAMP '2024-02-20 10:00:00'), 'kek', 10, decimal(-8888.999))"
     )
+
 
     assert (
         check_validity_and_get_prunned_files(

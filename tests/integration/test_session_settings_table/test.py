@@ -57,12 +57,15 @@ def started_cluster():
 
 def test_upgrade_with_query_setting_in_create(started_cluster):
     node = started_cluster.instances["old_node"]
-    create_table = node.query(
+    node.query(
         f"""CREATE TABLE b Engine = S3('http://minio1:9001/root/data/clickhouse/part1.csv', 'minio', '{minio_secret_key}') SETTINGS s3_create_new_file_on_insert = 1;"""
     )
 
-    show_query = "SHOW CREATE TABLE b"
-    table = node.query(show_query)
+    try:
+        show_query = "SHOW CREATE TABLE b"
+        node.query(show_query)
 
-    node.restart_with_latest_version()
-    table = node.query(show_query)
+        node.restart_with_latest_version()
+        node.query(show_query)
+    finally:
+        node.query("DROP TABLE b")
