@@ -10,10 +10,10 @@ CHECK WITH query_log
 QueryFinish	S3CreateMultipartUpload	1	S3UploadPart	1	S3CompleteMultipartUpload	1	S3PutObject	0
 CREATE
 INSERT
- [ 0 ] FileOpen: 9
+ [ 0 ] FileOpen: 9 
 READ
 INSERT and READ INSERT
- [ 0 ] FileOpen: 9
+ [ 0 ] FileOpen: 9 
  [ 0 ] FileOpen: 9 
 DROP
 CHECK with query_log
