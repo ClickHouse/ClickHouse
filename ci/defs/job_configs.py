@@ -847,7 +847,7 @@ class JobConfigs:
                 "./ci/jobs/docs_job.py",
             ],
         ),
-        run_in_docker="clickhouse/docs-builder",
+        run_in_docker="docs-builder:latest+root",
         requires=[JobNames.STYLE_CHECK],
     )
     docker_sever = Job.Config(

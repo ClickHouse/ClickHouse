@@ -2,24 +2,21 @@
 FROM node:20-bookworm-slim
 
 RUN apt-get update && \
-    apt install -y --no-install-recommends git openssh-server bash ca-certificates curl python3 python3-venv rsync && \
-    rm -rf /var/lib/apt/lists/*:
+    apt-get install -y --no-install-recommends \
+    git \
+    openssh-client \
+    python3 \
+    ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
-# At this point we want to really update /opt/clickhouse-docs directory
 # So we reset the cache
 ARG CACHE_INVALIDATOR=0
+
+RUN git config --global url."https://github.com/".insteadOf git@github.com:
 
 RUN git clone https://github.com/ClickHouse/clickhouse-docs.git \
     --depth=1 --branch=main /opt/clickhouse-docs
 
-WORKDIR /opt/clickhouse-docs
-
 RUN yarn config set registry https://registry.npmjs.org \
     && yarn install \
     && yarn cache clean
-
-ENV HOME=/opt/clickhouse-docs
-
-RUN mkdir /output_path \
-  && chmod -R a+w . /output_path \
-  && git config --global --add safe.directory /opt/clickhouse-docs

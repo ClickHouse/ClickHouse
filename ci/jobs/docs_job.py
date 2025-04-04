@@ -6,8 +6,8 @@ def fetch_latest_docs_repo_changes():
     git_branch = Shell.check("git branch --show-current", verbose=True, strict=True)
 
     if  git_branch != "main":
-        Shell.run(f"git fetch origin main")
-        Shell.run(f"git checkout -f main")
+        Shell.run("git branch")
+        Shell.run("git checkout main")
     else:
         # Update docs repo
         Shell.run("git pull")
@@ -15,7 +15,7 @@ def fetch_latest_docs_repo_changes():
 # Install packages and copy the ClickHouse/ClickHouse docs
 def run_docs_repo_setup():
     Shell.run("yarn install")
-    Shell.run("copy-clickhouse-repo-docs -l docs")
+    Shell.run("yarn copy-clickhouse-repo-docs -l docs")
 
 def build_docusaurus():
     res, out, err = Shell.get_res_stdout_stderr(
