@@ -48,7 +48,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-<<<<<<< HEAD
 namespace
 {
     void sanityCheckPartitioningConfiguration(
