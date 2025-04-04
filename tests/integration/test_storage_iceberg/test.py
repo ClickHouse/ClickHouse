@@ -1102,6 +1102,36 @@ def test_evolved_schema_simple(
         ],
     )
 
+    # Do a single check to verify that restarting CH maintains the setting (ATTACH)
+    # We are just interested on the setting working after restart, so no need to run it on all combinations
+    if format_version == "1" and storage_type == "s3" and not is_table_function:
+
+        instance.restart_clickhouse()
+
+        execute_spark_query(
+            f"""
+                ALTER TABLE {TABLE_NAME} RENAME COLUMN e TO z;
+            """
+        )
+
+        check_schema_and_data(
+            instance,
+            table_select_expression,
+            [
+                ["b", "Nullable(Float64)"],
+                ["f", "Nullable(Int64)"],
+                ["c", "Decimal(12, 2)"],
+                ["z", "Nullable(String)"],
+            ],
+            [
+                ["3", "-30", "7.12", "AAA"],
+                ["3", "12", "-9.13", "BBB"],
+                ["3.4", "\\N", "-9.13", "\\N"],
+                ["5", "7", "18.1", "\\N"],
+                ["\\N", "4", "7.12", "\\N"],
+            ],
+        )
+
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])

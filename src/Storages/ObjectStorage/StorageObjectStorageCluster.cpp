@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -116,6 +117,18 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
             configuration->getEngineName());
     }
 
+    ASTPtr settings_temporary_storage = nullptr;
+    for (auto * it = args.begin(); it != args.end(); ++it)
+    {
+        ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
+        if (settings_ast)
+        {
+            settings_temporary_storage = std::move(*it);
+            args.erase(it);
+            break;
+        }
+    }
+
     if (!endsWith(table_function->name, "Cluster"))
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
     else
@@ -124,6 +137,10 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         args.erase(args.begin());
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
         args.insert(args.begin(), cluster_name_arg);
+    }
+    if (settings_temporary_storage)
+    {
+        args.insert(args.end(), std::move(settings_temporary_storage));
     }
 }
 

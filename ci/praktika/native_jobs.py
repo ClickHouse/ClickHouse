@@ -165,7 +165,7 @@ def _build_dockers(workflow, job_name):
                     config=docker,
                     digests=docker_digests,
                     with_log=True,
-                    add_latest=False,
+                    add_latest=workflow.set_latest_in_dockers_build,
                 )
             )
 
