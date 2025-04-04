@@ -136,6 +136,7 @@ bool RefreshTask::canCreateOrDropOtherTables() const
 
 void RefreshTask::startup()
 {
+    chassert(view, "It feels that shutdown() method was called on this object and it is no longer valid");
     if (view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
     auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
@@ -170,7 +171,6 @@ void RefreshTask::shutdown()
     /// (Also, RefreshSet holds a shared_ptr to us.)
     std::lock_guard guard(mutex);
     set_handle.reset();
-
     view = nullptr;
 }
 
@@ -205,6 +205,7 @@ void RefreshTask::rename(StorageID new_id, StorageID new_inner_table_id)
 
 void RefreshTask::checkAlterIsPossible(const DB::ASTRefreshStrategy & new_strategy)
 {
+    chassert(view, "It feels that shutdown() method was called on this object and it is no longer valid");
     RefreshSettings s;
     if (new_strategy.settings)
         s.applyChanges(new_strategy.settings->changes);
@@ -216,6 +217,7 @@ void RefreshTask::checkAlterIsPossible(const DB::ASTRefreshStrategy & new_strate
 
 void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy)
 {
+    chassert(view, "It feels that shutdown() method was called on this object and it is no longer valid");
     {
         std::lock_guard guard(mutex);
 
