@@ -576,9 +576,11 @@ SYSTEM REFRESH VIEW [db.]name
 
 Wait for the currently running refresh to complete. If the refresh fails, throws an exception. If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
 
-### STOP VIEW, STOP VIEWS {#stop-view-stop-views}
+### STOP [REPLICATED] VIEW, STOP VIEWS {#stop-view-stop-views}
 
-Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too. If the view is in a Replicated or Shared database, this only affects the current replica.
+Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too.
+
+If the view is in a Replicated or Shared database, `STOP VIEW` only affects the current replica, while `STOP REPLICATED VIEW` affects all replicas.
 
 ```sql
 SYSTEM STOP VIEW [db.]name
@@ -587,9 +589,11 @@ SYSTEM STOP VIEW [db.]name
 SYSTEM STOP VIEWS
 ```
 
-### START VIEW, START VIEWS {#start-view-start-views}
+### START [REPLICATED] VIEW, START VIEWS {#start-view-start-views}
 
 Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered.
+
+If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`.
 
 ```sql
 SYSTEM START VIEW [db.]name
