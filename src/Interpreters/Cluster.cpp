@@ -118,6 +118,7 @@ Cluster::Address::Address(
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    bind_host = config.getString(config_prefix + ".bind_host", "");
     priority = Priority{config.getInt(config_prefix + ".priority", 1)};
 
     proto_send_chunked = config.getString(config_prefix + ".proto_caps.send", "notchunked");
@@ -131,6 +132,12 @@ Cluster::Address::Address(
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
 
     is_local = isLocal(config.getInt(port_type, 0));
+
+    /// if bind_host is set, then force is_local to false for easier testing
+    if (!bind_host.empty())
+    {
+        is_local = false;
+    }
 
     /// By default compression is disabled if address looks like localhost.
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.
@@ -173,6 +180,7 @@ Cluster::Address::Address(
     database_replica_name = info.replica_name;
     port = parsed_host_port.second;
     secure = params.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    bind_host = params.bind_host;
     priority = params.priority;
     is_local = can_be_local && isLocal(params.clickhouse_port);
     shard_index = shard_index_;
@@ -485,6 +493,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 "server",
                 address.compression,
                 address.secure,
+                address.bind_host,
                 address.priority);
 
             info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[Setting::load_balancing]);
@@ -649,6 +658,7 @@ void Cluster::addShard(
             "server",
             replica.compression,
             replica.secure,
+            replica.bind_host,
             replica.priority);
 
         all_replicas_pools.emplace_back(replica_pool);
@@ -806,6 +816,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                     "server",
                     address.compression,
                     address.secure,
+                    address.bind_host,
                     address.priority);
 
                 info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[Setting::load_balancing]);
