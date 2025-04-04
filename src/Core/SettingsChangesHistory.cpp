@@ -76,6 +76,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"low_priority_query_wait_time_ms", 1000, 1000, "New setting."},
             {"allow_experimental_shared_set_join", 0, 1, "A setting for ClickHouse Cloud to enable SharedSet and SharedJoin"},
             {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
+            {"query_condition_cache_store_conditions_as_plaintext", false, false, "New setting"},
             {"min_os_cpu_wait_time_ratio_to_throw", 0, 2, "New setting"},
             {"max_os_cpu_wait_time_ratio_to_throw", 0, 6, "New setting"},
         });

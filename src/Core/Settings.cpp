@@ -4830,6 +4830,16 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, query_condition_cache_store_conditions_as_plaintext, false, R"(
+Stores the filter condition for the [query condition cache](/operations/query-condition-cache) in plaintext.
+If enabled, system.query_condition_cache shows the verbatim filter condition which makes it easier to debug issues with the cache.
+Disabled by default because plaintext filter conditions may expose sensitive information.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0) \
