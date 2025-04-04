@@ -473,6 +473,7 @@ class ArtifactConfigs:
         name="...",
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/src/unit_tests_dbms",
+        compress_zst=True,
     ).parametrize(
         names=[
             ArtifactNames.UNITTEST_AMD_ASAN,

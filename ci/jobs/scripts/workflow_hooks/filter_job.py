@@ -1,7 +1,6 @@
-from ci.praktika.info import Info
-
 from ci.defs.defs import JobNames
 from ci.jobs.scripts.workflow_hooks.pr_description import Labels
+from ci.praktika.info import Info
 
 
 def only_docs(changed_files):
