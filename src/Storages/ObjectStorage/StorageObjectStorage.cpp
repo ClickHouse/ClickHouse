@@ -96,27 +96,6 @@ namespace
                 PartitionedSink::PARTITION_ID_WILDCARD);
         }
     }
-
-    ASTPtr getPartitionByAst(const ASTPtr & table_level_partition_by, const ASTPtr & query, const StorageObjectStorage::ConfigurationPtr & configuration)
-    {
-        ASTPtr query_partition_by = nullptr;
-        if (const auto insert_query = query->as<ASTInsertQuery>())
-        {
-            if (insert_query->partition_by)
-            {
-                query_partition_by = insert_query->partition_by;
-            }
-        }
-
-        sanityCheckPartitioningConfiguration(table_level_partition_by, query_partition_by, configuration->partition_strategy, configuration->withPartitionWildcard());
-
-        if (table_level_partition_by)
-        {
-            return table_level_partition_by;
-        }
-
-        return query_partition_by;
-    }
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)

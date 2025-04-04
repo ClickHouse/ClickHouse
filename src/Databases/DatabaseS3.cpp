@@ -19,6 +19,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Parsers/ASTInsertQuery.h>
 
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
@@ -138,7 +139,8 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
         return nullptr;
 
     /// TableFunctionS3 throws exceptions, if table cannot be created.
-    auto table_storage = table_function->execute(function, context_, name, /*cached_columns_=*/{}, /*use_global_context=*/false, /*is_insert_query=*/true);
+    ASTInsertQuery empty_insert_query;
+    auto table_storage = table_function->execute(function, context_, name, /*cached_columns_=*/{}, /*use_global_context=*/false, &empty_insert_query);
     if (table_storage)
         addTable(name, table_storage);
 
