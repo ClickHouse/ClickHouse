@@ -12,8 +12,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
-#include <Poco/Timestamp.h>
 #include <Storages/PartitionCommands.h>
+#include <Poco/Timestamp.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
