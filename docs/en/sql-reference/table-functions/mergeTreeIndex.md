@@ -12,18 +12,19 @@ title: 'mergeTreeIndex'
 Represents the contents of index and marks files of MergeTree tables. It can be used for introspection.
 
 ```sql
-mergeTreeIndex(database, table, [with_marks = true])
+mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 ```
 
 **Arguments**
 
-- `database`- The database name to read index and marks from.
-- `table`- The table name to read index and marks from.
+- `database`- The database name to read primary index and marks from.
+- `table`- The table name to read primary index and marks from.
 - `with_marks` - Whether include columns with marks to the result.
+- `with_minmax` - Whether include min-max index to the result.
 
 **Returned Value**
 
-A table object with columns with values of primary index of source table, columns with values of marks (if enabled) for all possible files in data parts of source table and virtual columns:
+A table object with columns with values of primary index and min-max index (if enabled) of source table, columns with values of marks (if enabled) for all possible files in data parts of source table and virtual columns:
 
 - `part_name` - The name of data part.
 - `mark_number` - The number of current mark in data part.
