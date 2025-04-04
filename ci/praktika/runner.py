@@ -439,6 +439,8 @@ class Runner:
                 print(error)
                 info_errors.append(error)
 
+        if env.TRACEBACKS:
+            result.set_info("Stored Tracebacks:\n" + "\n".join(env.TRACEBACKS))
         result.dump()
 
         # always in the end
