@@ -200,12 +200,26 @@ def get_creation_expression(
     format="Parquet",
     table_function=False,
     allow_dynamic_metadata_for_data_lakes=False,
+    iceberg_enable_version_hint=False,
     run_on_cluster=False,
     **kwargs,
 ):
-    allow_dynamic_metadata_for_datalakes_suffix = (
-        " SETTINGS allow_dynamic_metadata_for_data_lakes = 1"
-        if allow_dynamic_metadata_for_data_lakes
+    settings = ",".join(filter(None, [
+        (
+            "allow_dynamic_metadata_for_data_lakes = 1"
+            if allow_dynamic_metadata_for_data_lakes
+            else ""
+        ),
+        (
+            "iceberg_enable_version_hint = 1"
+            if iceberg_enable_version_hint
+            else ""
+        )
+    ]))
+
+    settings_suffix = (
+        "SETTINGS " + settings 
+        if len(settings) > 0
         else ""
     )
 
@@ -227,7 +241,7 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
-                    + allow_dynamic_metadata_for_datalakes_suffix
+                    + settings_suffix
                 )
 
     elif storage_type == "azure":
@@ -247,7 +261,7 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
-                    + allow_dynamic_metadata_for_datalakes_suffix
+                    + settings_suffix
                 )
 
     elif storage_type == "local":
@@ -263,7 +277,7 @@ def get_creation_expression(
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {table_name}
                 ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})"""
-                + allow_dynamic_metadata_for_datalakes_suffix
+                + settings_suffix
             )
 
     else:
@@ -1739,7 +1753,6 @@ def test_metadata_file_selection(started_cluster, format_version, storage_type):
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 500
 
-
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_metadata_file_format_with_uuid(started_cluster, format_version, storage_type):
@@ -1779,6 +1792,60 @@ def test_metadata_file_format_with_uuid(started_cluster, format_version, storage
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 500
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_metadata_file_selection_from_version_hint(started_cluster, format_version, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_metadata_file_selection_from_version_hint_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
+    )
+
+    for i in range(10):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10)"
+        )
+        
+    # test the case where version_hint.text file contains just the version number
+    with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "w") as f:
+        f.write('5')
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, iceberg_enable_version_hint=True)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 40
+
+    # test the case where version_hint.text file contains the whole metadata file name
+    with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "w") as f:
+        f.write('v3.metadata.json')
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, iceberg_enable_version_hint=True)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 20
 
 
 def test_restart_broken_s3(started_cluster):
