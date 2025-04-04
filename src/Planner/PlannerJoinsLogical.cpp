@@ -112,7 +112,7 @@ struct JoinInfoBuildContext
                     column_node.getColumnType());
 
                 const auto column_right = column_node_sources.getNodes().at(1);
-                if (!column_left->as<ColumnNode>())
+                if (!column_right->as<ColumnNode>())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "JOIN USING clause expected column identifier. Actual {}",
                         column_right->formatASTForErrorMessage());
