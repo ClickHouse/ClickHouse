@@ -315,7 +315,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto model_name_input_argument_type = WhichDataType(arguments[0].type);
+        const auto model_name_input_argument_type = WhichDataType(arguments[0].type);
         if (!model_name_input_argument_type.isStringOrFixedString())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -323,7 +323,7 @@ public:
                 getName(),
                 arguments[0].type->getName());
 
-        auto input_string_input_argument_type = WhichDataType(arguments[1].type);
+        const auto input_string_input_argument_type = WhichDataType(arguments[1].type);
         if (!input_string_input_argument_type.isStringOrFixedString())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -336,12 +336,33 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        [[maybe_unused]] const auto * model_name_column = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         const auto * input_string_column = checkAndGetColumn<ColumnString>(arguments[1].column.get());
 
         auto result_column = ColumnString::create();
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            String model_name = "";
+            if (const auto * model_name_col_const = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
+            {
+                model_name = model_name_col_const->getValue<String>();
+            }
+            else
+            {
+                const auto * model_name_col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
+                model_name = model_name_col->getDataAt(i).toString();
+            }
+
+            if (models.find(model_name) == models.end())
+            {
+                String available_models;
+                for (const auto & model : models)
+                    available_models += model.first + ", ";
+
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Model {} not found. Available models: {}", model_name, available_models);
+            }
+
+            const auto & model = models.at(model_name);
             String input_string = input_string_column->getDataAt(i).toString();
             String predicted_class = model.classify(input_string);
             result_column->insertData(predicted_class.data(), predicted_class.size());
