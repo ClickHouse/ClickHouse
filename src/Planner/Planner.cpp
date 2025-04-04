@@ -1844,6 +1844,7 @@ void Planner::buildPlanForQueryNode()
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
 
+    // TODO(nickitat): add comment
     if (select_query_options.to_stage != QueryProcessingStage::Complete && !select_query_options.is_subquery
         && planner_context->getQueryContext()->getClientInfo().distributed_depth <= 1
         && planner_context->getQueryContext()->getInitialQueryId() != planner_context->getQueryContext()->getCurrentQueryId())

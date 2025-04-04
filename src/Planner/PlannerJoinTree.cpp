@@ -1240,7 +1240,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     else
     {
         SelectQueryOptions analyze_query_options = SelectQueryOptions(from_stage).analyze();
-        analyze_query_options.analysis_depth = select_query_options.analysis_depth + 1;
         Planner planner(select_query_info.query_tree,
             analyze_query_options,
             select_query_info.planner_context);

@@ -881,8 +881,7 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
 
-    pipes.emplace_back(
-        createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
+    pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
     addConvertingActions(pipes.back(), out_header);
 }
 
