@@ -222,8 +222,11 @@ bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & lo
             path += "/";
             switch (object_type)
             {
-                case UserDefinedSQLObjectType::Function:
+                case UserDefinedSQLObjectType::SQLFunction:
                     path += "functions";
+                    break;
+                case UserDefinedSQLObjectType::DriverFunction:
+                    path += "driver_functions";
                     break;
             }
 
