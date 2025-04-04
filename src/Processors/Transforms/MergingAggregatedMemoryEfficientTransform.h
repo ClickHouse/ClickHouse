@@ -119,6 +119,7 @@ protected:
 private:
     AggregatingTransformParamsPtr params;
     const SortDescription required_sort_description;
+    ThreadPool thread_pool;
 };
 
 /// Has several inputs and single output.

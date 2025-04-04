@@ -263,7 +263,7 @@ public:
     /// Precondition: for all blocks block.info.is_overflows flag must be the same.
     /// (either all blocks are from overflow data or none blocks are).
     /// The resulting block has the same value of is_overflows flag.
-    Block mergeBlocks(BlocksList & blocks, bool final, std::atomic<bool> & is_cancelled);
+    Block mergeBlocks(BlocksList & blocks, bool final, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled);
 
     /** Split block with partially-aggregated data to many blocks, as if two-level method of aggregation was used.
       * This is needed to simplify merging of that data with other results, that are already two-level.
@@ -330,8 +330,6 @@ private:
 #endif
 
     std::vector<bool> is_aggregate_function_compiled;
-
-    mutable ThreadPool thread_pool;
 
     /** Try to compile aggregate functions.
       */
@@ -435,9 +433,7 @@ private:
 
     /// Merge data from hash table `src` into `dst`.
     template <typename Method, typename Table>
-    void mergeDataImpl(
-        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, std::atomic<bool> & is_cancelled)
-        const;
+    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
@@ -514,13 +510,17 @@ private:
         std::atomic<bool> & is_cancelled) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
-    BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
+    BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const;
 
     template <bool return_single_block>
     ConvertToBlockRes<return_single_block> prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
 
     template <typename Method>
-    BlocksList prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants & data_variants, Method & method, bool final) const;
+    BlocksList prepareBlocksAndFillTwoLevelImpl(
+        AggregatedDataVariants & data_variants,
+        Method & method,
+        bool final,
+        ThreadPool * thread_pool) const;
 
     template <typename State, typename Table>
     void mergeStreamsImplCase(
@@ -532,6 +532,7 @@ private:
         size_t row_begin,
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
+        ThreadPool & thread_pool,
         std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys) const;
 
@@ -546,6 +547,7 @@ private:
         AggregateDataPtr overflow_row,
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
+        ThreadPool & thread_pool,
         std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys = nullptr) const;
 
@@ -561,6 +563,7 @@ private:
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
         const ColumnRawPtrs & key_columns,
+        ThreadPool & thread_pool,
         std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys) const;
 
