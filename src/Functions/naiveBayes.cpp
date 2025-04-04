@@ -31,6 +31,10 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int FILE_DOESNT_EXIST;
+extern const int NO_ELEMENTS_IN_CONFIG;
+extern const int LOGICAL_ERROR;
+extern const int ILLEGAL_COLUMN;
+extern const int RECEIVED_EMPTY_DATA;
 }
 
 namespace
@@ -69,11 +73,18 @@ private:
     }
 
 public:
-    // Loads the model from file. The file is expected to have lines like:
+    // Loads the model from file and the provided prior probability for each class. The file is expected to have lines like:
     // <ngram> <class_label> <count>
-    void loadModelFromFile(const String & file_path)
+    void loadModel(const String & file_path, std::map<String, double> priors)
     {
+        if (!std::filesystem::exists(file_path))
+        {
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", file_path);
+        }
+
         DB::ReadBufferFromFile in(file_path);
+
+        in.ignore();
 
         while (!in.eof())
         {
@@ -83,7 +94,6 @@ public:
             DB::readStringUntilWhitespace(ngram, in);
             in.ignore();
 
-            // If ngram is empty, then break out
             if (ngram.empty())
                 break;
 
@@ -102,16 +112,75 @@ public:
             class_totals[class_label_ref] += count;
         }
 
-        double total_class_count = 0.0;
-        for (const auto & class_entry : class_totals)
-            total_class_count += class_entry.getMapped();
-
-        for (const auto & class_entry : class_totals)
+        if (ngram_counts.empty())
         {
-            double prior_ratio = static_cast<double>(class_entry.getMapped()) / total_class_count;
-            class_priors[class_entry.getKey()] = prior_ratio;
+            throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "No ngrams found in the model file {}", file_path);
         }
 
+        // Make sure that the classes provided in priors are present in the model
+        for (const auto & prior : priors)
+        {
+            String class_name = prior.first;
+            if (class_totals.find(class_name) == class_totals.end()) // Class present in config's <priors> not found in model
+            {
+                String available_classes = "";
+                for (const auto & class_entry : class_totals)
+                {
+                    available_classes += class_entry.getKey().toString() + ", ";
+                }
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Class {} from <priors> not found in the model at {}. Available classes: {}",
+                    class_name,
+                    file_path,
+                    available_classes);
+            }
+        }
+
+        // The following handles the case where the user provides priors for some classes but not all.
+        // After assigning the provided priors, we distribute the remaining probability equally among the classes
+        // that were not provided in the priors map (i.e., the classes that are present in the model but not in the
+        // config's <priors>)
+        double provided_total_prior_prob = 0.0;
+        for (const auto & prior : priors)
+        {
+            const double class_prior_prob = prior.second;
+            provided_total_prior_prob += class_prior_prob;
+        }
+
+        // Sanity check: the sum of provided priors should not exceed 1.0
+        if (provided_total_prior_prob - 1.0 > 1e-6)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Sum of provided priors probability exceeds 1.0. Sum: {}", provided_total_prior_prob);
+        }
+
+        size_t missing_count = 0;
+        for (const auto & class_entry : class_totals)
+        {
+            String class_name = class_entry.getKey().toString();
+            if (priors.find(class_name) == priors.end())
+                ++missing_count;
+        }
+
+        const double remaining_probability = 1.0 - provided_total_prior_prob;
+
+        // Precompute the class priors
+        for (const auto & class_entry : class_totals)
+        {
+            String class_name = class_entry.getKey().toString();
+            if (priors.find(class_name) != priors.end()) // Class from model present in config's <priors>
+            {
+                class_priors[class_entry.getKey()] = priors.at(class_name);
+            }
+            else
+            {
+                double equal_share = missing_count > 0 ? remaining_probability / missing_count : 0.0;
+                class_priors[class_entry.getKey()] = equal_share;
+            }
+        }
+
+        // Vocabulary size is the number of distinct tokens
         vocabulary_size = ngram_counts.size();
 
         // Mark the model as loaded
@@ -122,10 +191,9 @@ public:
     // and computes a log-probability for each class using Laplace smoothing
     String classify(const String & input) const
     {
-        std::ofstream debug_out("/dev/tty");
         if (!model_loaded)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Model not loaded");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Model not loaded. Load the model using loadModel() before classifying.");
         }
 
 
@@ -171,7 +239,7 @@ public:
             }
         }
 
-        return best_class.empty() ? "unknown" : best_class.toString();
+        return best_class.toString();
     }
 };
 
