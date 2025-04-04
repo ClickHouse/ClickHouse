@@ -99,7 +99,9 @@ class GitCommit:
         local_path = Path(cls.file_name())
         file_name = local_path.name
         s3_path = f"{cls.get_s3_path()}/{file_name}"
-        if not S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path):
+        if not S3.copy_file_from_s3(
+            s3_path=s3_path, local_path=local_path, no_strict=True
+        ):
             print(f"WARNING: failed to cp file [{s3_path}] from s3")
             return []
         return cls.from_json(local_path)
@@ -111,7 +113,9 @@ class GitCommit:
         local_path = Path(cls.file_name())
         file_name = local_path.name
         s3_path = f"{cls.get_s3_path()}/{file_name}"
-        if not S3.copy_file_to_s3(s3_path=s3_path, local_path=local_path, text=True):
+        if not S3.copy_file_to_s3(
+            s3_path=s3_path, local_path=local_path, text=True, no_strict=True
+        ):
             print(f"WARNING: failed to cp file [{local_path}] to s3")
 
     @classmethod
@@ -156,11 +160,11 @@ class HtmlRunnerHooks:
         print(f"CI Status page url [{report_url_current_sha}]")
 
         if Settings.USE_CUSTOM_GH_AUTH:
-            from praktika.gh_auth_deprecated import GHAuth
+            from .gh_auth import GHAuth
 
             pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
             app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-            GHAuth.auth(app_key=pem, app_id=app_id)
+            GHAuth.auth(app_id=app_id, app_key=pem)
 
         res2 = not bool(env.PR_NUMBER) or GH.post_pr_comment(
             comment_body=f"Workflow [[{_workflow.name}]({report_url_latest_sha})], commit [{_Environment.get().SHA[:8]}]",
@@ -295,11 +299,11 @@ class HtmlRunnerHooks:
 
         if updated_status:
             if Settings.USE_CUSTOM_GH_AUTH:
-                from praktika.gh_auth_deprecated import GHAuth
+                from .gh_auth import GHAuth
 
                 pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
                 app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-                GHAuth.auth(app_key=pem, app_id=app_id)
+                GHAuth.auth(app_id=app_id, app_key=pem)
 
             print(f"Update GH commit status [{result.name}]: [{updated_status}]")
             GH.post_commit_status(

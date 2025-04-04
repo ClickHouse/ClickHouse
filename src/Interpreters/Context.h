@@ -116,6 +116,7 @@ class PartLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
+class TransposedMetricLog;
 class LatencyLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
@@ -866,7 +867,7 @@ public:
     /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
-    StoragePtr buildParametrizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
+    StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -1256,6 +1257,7 @@ public:
     std::shared_ptr<TraceLog> getTraceLog() const;
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
+    std::shared_ptr<TransposedMetricLog> getTransposedMetricLog() const;
     std::shared_ptr<LatencyLog> getLatencyLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;

@@ -9,6 +9,7 @@
 #include <Common/Logger.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include "KernelPointerWrapper.h"
 #include "KernelHelper.h"
 #include <boost/noncopyable.hpp>
@@ -29,6 +30,7 @@ public:
     explicit TableSnapshot(
         KernelHelperPtr helper_,
         DB::ObjectStoragePtr object_storage_,
+        bool read_schema_same_as_table_schema_,
         LoggerPtr log_);
 
     /// Get snapshot version.
@@ -38,18 +40,21 @@ public:
     bool update();
 
     /// Iterate over DeltaLake data files.
-    DB::ObjectIterator iterate();
+    DB::ObjectIterator iterate(
+        const DB::ActionsDAG * filter_dag,
+        DB::IDataLakeMetadata::FileProgressCallback callback,
+        size_t list_batch_size);
 
     /// Get schema from DeltaLake table metadata.
-    const DB::NamesAndTypesList & getTableSchema();
+    const DB::NamesAndTypesList & getTableSchema() const;
     /// Get read schema derived from data files.
     /// (In most cases it would be the same as table schema).
-    const DB::NamesAndTypesList & getReadSchema();
+    const DB::NamesAndTypesList & getReadSchema() const;
     /// DeltaLake stores partition columns values not in the data files,
     /// but in data file path directory names.
     /// Therefore "table schema" would contain partition columns,
     /// but "read schema" would not.
-    const DB::Names & getPartitionColumns();
+    const DB::Names & getPartitionColumns() const;
 
 private:
     class Iterator;
@@ -59,6 +64,7 @@ private:
 
     const KernelHelperPtr helper;
     const DB::ObjectStoragePtr object_storage;
+    const bool read_schema_same_as_table_schema;
     const LoggerPtr log;
 
     mutable KernelExternEngine engine;
@@ -66,16 +72,16 @@ private:
     mutable KernelScan scan;
     mutable size_t snapshot_version;
 
-    std::optional<DB::NamesAndTypesList> table_schema;
-    std::optional<DB::NamesAndTypesList> read_schema;
-    std::optional<DB::Names> partition_columns;
+    mutable std::optional<DB::NamesAndTypesList> table_schema;
+    mutable std::optional<DB::NamesAndTypesList> read_schema;
+    mutable std::optional<DB::Names> partition_columns;
 
     void initSnapshot() const;
     void initSnapshotImpl() const;
     /// Both read schema and partition columns are loaded with the same data scan object,
     /// therefore we load them together.
-    void loadReadSchemaAndPartitionColumns();
-    ffi::SharedSnapshot * getSnapshot();
+    void loadReadSchemaAndPartitionColumns() const;
+    ffi::SharedSnapshot * getSnapshot() const;
 };
 
 /// TODO; Enable event tracing in DeltaKernel.
