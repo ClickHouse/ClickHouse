@@ -73,6 +73,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -348,7 +349,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                    "first_failed_task_name={}, current_tasks_size={}, "
                    "last_current_task={}, "
                    "last_skipped_entry_name={}",
-                   initialized, size_before_filtering, queue_nodes.size(),
+                   initialized.load(), size_before_filtering, queue_nodes.size(),
                    queue_nodes.empty() ? "none" : queue_nodes.front(), queue_nodes.empty() ? "none" : queue_nodes.back(),
                    first_failed_task_name ? *first_failed_task_name : "none", current_tasks.size(),
                    current_tasks.empty() ? "none" : current_tasks.back()->entry_name,
@@ -535,6 +536,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
                                  e.code() != ErrorCodes::TABLE_IS_READ_ONLY &&
                                  e.code() != ErrorCodes::CANNOT_ASSIGN_ALTER &&
                                  e.code() != ErrorCodes::CANNOT_ALLOCATE_MEMORY &&
+                                 e.code() != ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES &&
                                  e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED;
         return no_sense_to_retry;
     }
@@ -1243,7 +1245,7 @@ void DDLWorker::runMainThread()
                 last_unexpected_error = message;
             }
 
-            LOG_ERROR(log, "Unexpected error ({} times in a row), will try to restart main thread: {}", subsequent_errors_count, message);
+            LOG_ERROR(log, "Unexpected error ({} times in a row), will try to restart main thread: {}", subsequent_errors_count.load(), message);
 
             /// Sleep before retrying
             sleepForSeconds(5);

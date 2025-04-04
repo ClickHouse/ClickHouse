@@ -156,7 +156,7 @@ void FileCacheSettings::dumpToSystemSettingsColumns(
     res_columns[i++]->insert(cache->getFileSegmentsNum());
 }
 
-void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, bool allow_empty_path)
 {
     if (!config.has(config_prefix))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}' in configuration file.", config_prefix);
@@ -176,7 +176,7 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
     boost::to_upper(cache_policy);
     (*this)[FileCacheSetting::cache_policy] = cache_policy;
 
-    validate();
+    validate(allow_empty_path);
 }
 
 void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
@@ -193,10 +193,10 @@ void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
     validate();
 }
 
-void FileCacheSettings::validate()
+void FileCacheSettings::validate(bool allow_empty_path)
 {
     auto settings = *this;
-    if (!settings[FileCacheSetting::path].changed)
+    if (!allow_empty_path && !settings[FileCacheSetting::path].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`path` is required parameter of cache configuration");
     if (!settings[FileCacheSetting::max_size].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size` is required parameter of cache configuration");

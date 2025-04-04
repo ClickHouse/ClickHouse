@@ -41,7 +41,7 @@ public:
         layered_configuration->addWriteable(configuration, 0);
     }
 
-    int run(const NameToNameMap & envVars, const String & first_query);
+    [[ nodiscard ]] int run(const NameToNameMap & envVars, const String & first_query);
 
     /// NOP. The embedded client runs inside the server process which has its own signal handlers.
     /// Thus we cannot override it in any way.
@@ -65,6 +65,7 @@ protected:
                         const std::vector<Arguments> &,
                         const std::vector<Arguments> &) override {}
     void processConfig() override {}
+    bool isEmbeeddedClient() const override;
 
 private:
     void cleanup();

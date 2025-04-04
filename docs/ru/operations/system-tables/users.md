@@ -24,7 +24,7 @@ slug: /ru/operations/system-tables/users
 
 -    `host_names_like` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Имена хостов, которым разрешено подключаться к серверу ClickHouse, заданные с помощью предиката LIKE.
 
--    `default_roles_all` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Показывает, что все предоставленные роли установлены для пользователя по умолчанию.
+-    `default_roles_all` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Показывает, что все предоставленные роли установлены для пользователя по умолчанию.
 
 -    `default_roles_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Список предоставленных ролей по умолчанию.
 
@@ -32,4 +32,4 @@ slug: /ru/operations/system-tables/users
 
 ## Смотрите также {#see-also}
 
--   [SHOW USERS](../../sql-reference/statements/show.md#show-users-statement)
+-   [SHOW USERS](/sql-reference/statements/show#show-users)

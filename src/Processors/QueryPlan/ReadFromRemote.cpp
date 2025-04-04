@@ -11,10 +11,11 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/formatAST.h>
+#include <Parsers/ASTLiteral.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -242,7 +243,10 @@ static ASTPtr tryBuildAdditionalFilterAST(
         if (node->column && isColumnConst(*node->column))
         {
             auto literal = std::make_shared<ASTLiteral>((*node->column)[0]);
-            node_to_ast[node] = std::move(literal);
+            /// Need to enforce type of the literal, because some type is not comparable to its native type
+            /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
+            auto casted_literal = makeASTFunction("_CAST", literal, std::make_shared<ASTLiteral>(node->result_type->getName()));
+            node_to_ast[node] = std::move(casted_literal);
             stack.pop();
             continue;
         }
@@ -333,7 +337,8 @@ static ASTPtr tryBuildAdditionalFilterAST(
             if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
             {
                 auto future_set = col_set->getData();
-                if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
+                    set_from_subquery && set_from_subquery->getSourceAST())
                 {
                     const auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
 

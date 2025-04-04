@@ -15,7 +15,7 @@ hdfs(URI, format, structure)
 **Входные параметры**
 
 -   `URI` — URI файла в HDFS.
--   `format` — [формат](../../interfaces/formats.md#formats) файла.
+-   `format` — [формат](/sql-reference/formats) файла.
 -   `structure` — структура таблицы. Формат `'column1_name column1_type, column2_name column2_type, ...'`.
 
 **Возвращаемое значение**

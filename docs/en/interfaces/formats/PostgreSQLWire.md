@@ -1,11 +1,12 @@
 ---
-title : PostgreSQLWire
-slug : /en/interfaces/formats/PostgreSQLWire
-keywords : [PostgreSQLWire]
+description: 'Documentation for the PostgreSQLWire format'
+keywords: ['PostgreSQLWire']
+slug: /interfaces/formats/PostgreSQLWire
+title: 'PostgreSQLWire'
 ---
 
-## Description
+## Description {#description}
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}

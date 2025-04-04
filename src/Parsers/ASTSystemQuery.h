@@ -5,8 +5,6 @@
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
 
-#include "config.h"
-
 
 namespace DB
 {
@@ -30,11 +28,14 @@ public:
         DROP_UNCOMPRESSED_CACHE,
         DROP_INDEX_MARK_CACHE,
         DROP_INDEX_UNCOMPRESSED_CACHE,
-        DROP_SKIPPING_INDEX_CACHE,
+        DROP_VECTOR_SIMILARITY_INDEX_CACHE,
         DROP_MMAP_CACHE,
+        DROP_QUERY_CONDITION_CACHE,
         DROP_QUERY_CACHE,
         DROP_COMPILED_EXPRESSION_CACHE,
         DROP_FILESYSTEM_CACHE,
+        DROP_DISTRIBUTED_CACHE,
+        DROP_DISTRIBUTED_CACHE_CONNECTIONS,
         DROP_DISK_METADATA_CACHE,
         DROP_PAGE_CACHE,
         DROP_SCHEMA_CACHE,
@@ -48,6 +49,7 @@ public:
         WAIT_LOADING_PARTS,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
+        DROP_CATALOG_REPLICA,
         JEMALLOC_PURGE,
         JEMALLOC_ENABLE_PROFILE,
         JEMALLOC_DISABLE_PROFILE,
@@ -81,6 +83,8 @@ public:
         START_REPLICATED_SENDS,
         STOP_REPLICATION_QUEUES,
         START_REPLICATION_QUEUES,
+        STOP_REPLICATED_DDL_QUERIES,
+        START_REPLICATED_DDL_QUERIES,
         FLUSH_LOGS,
         FLUSH_DISTRIBUTED,
         FLUSH_ASYNC_INSERT_QUEUE,
@@ -108,6 +112,11 @@ public:
         TEST_VIEW,
         LOAD_PRIMARY_KEY,
         UNLOAD_PRIMARY_KEY,
+        STOP_VIRTUAL_PARTS_UPDATE,
+        START_VIRTUAL_PARTS_UPDATE,
+        STOP_REDUCE_BLOCKING_PARTS,
+        START_REDUCE_BLOCKING_PARTS,
+        UNLOCK_SNAPSHOT,
         END
     };
 
@@ -136,13 +145,17 @@ public:
     String disk;
     UInt64 seconds{};
 
-    std::optional<String> query_cache_tag;
+    std::optional<String> query_result_cache_tag;
 
     String filesystem_cache_name;
+    String distributed_cache_servive_id;
+    bool distributed_cache_drop_connections = false;
+
     std::string key_to_drop;
     std::optional<size_t> offset_to_drop;
 
     String backup_name;
+    ASTPtr backup_source; /// SYSTEM UNFREEZE SNAPSHOT `backup_name` FROM `backup_source`
 
     String schema_cache_storage;
 

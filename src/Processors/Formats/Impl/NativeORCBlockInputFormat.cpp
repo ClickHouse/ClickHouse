@@ -1,6 +1,7 @@
 #include "NativeORCBlockInputFormat.h"
 
 #if USE_ORC
+#    include <base/MemorySanitizer.h>
 #    include <Columns/ColumnDecimal.h>
 #    include <Columns/ColumnFixedString.h>
 #    include <Columns/ColumnMap.h>
@@ -10,6 +11,7 @@
 #    include <Columns/ColumnsCommon.h>
 #    include <Columns/ColumnsDateTime.h>
 #    include <Columns/ColumnsNumber.h>
+#    include <Common/DateLUTImpl.h>
 #    include <DataTypes/DataTypeArray.h>
 #    include <DataTypes/DataTypeDate32.h>
 #    include <DataTypes/DataTypeDateTime64.h>
@@ -35,11 +37,9 @@
 #    include <Interpreters/castColumn.h>
 #    include <Storages/MergeTree/KeyCondition.h>
 #    include <orc/MemoryPool.hh>
-#    include <Common/Allocator.h>
-#    include <Common/FieldVisitorsAccurateComparison.h>
-#    include <Common/MemorySanitizer.h>
-#    include <Common/quoteString.h>
 #    include <orc/Vector.hh>
+#    include <Common/Allocator.h>
+#    include <Common/quoteString.h>
 
 #    include "ArrowBufferedStreams.h"
 
@@ -1782,16 +1782,19 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             const auto * orc_struct_column = dynamic_cast<const orc::StructVectorBatch *>(orc_column);
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
             {
-                const auto & field_name = orc_type->getFieldName(i);
+                auto field_name = orc_type->getFieldName(i);
 
                 DataTypePtr nested_type_hint;
                 if (tuple_type_hint)
                 {
                     if (tuple_type_hint->haveExplicitNames())
                     {
-                        auto pos = tuple_type_hint->tryGetPositionByName(field_name);
+                        auto pos = tuple_type_hint->tryGetPositionByName(field_name, case_insensitive_matching);
                         if (pos)
+                        {
                             nested_type_hint = tuple_type_hint->getElement(*pos);
+                            field_name = tuple_type_hint->getNameByPosition(*pos + 1);
+                        }
                     }
                     else if (i < tuple_type_hint->getElements().size())
                         nested_type_hint = tuple_type_hint->getElement(i);

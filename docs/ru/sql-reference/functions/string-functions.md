@@ -18,7 +18,7 @@ empty(x)
 
 Строка считается непустой, если содержит хотя бы один байт, пусть даже это пробел или нулевой байт.
 
-Функция также поддерживает работу с типами [Array](array-functions.md#function-empty) и [UUID](uuid-functions.md#empty).
+Функция также поддерживает работу с типами [Array](/sql-reference/functions/array-functions#empty) и [UUID](uuid-functions.md#empty).
 
 **Параметры**
 
@@ -58,7 +58,7 @@ notEmpty(x)
 
 Строка считается непустой, если содержит хотя бы один байт, пусть даже это пробел или нулевой байт.
 
-Функция также поддерживает работу с типами [Array](array-functions.md#function-notempty) и [UUID](uuid-functions.md#notempty).
+Функция также поддерживает работу с типами [Array](/sql-reference/functions/array-functions#notempty) и [UUID](uuid-functions.md#notempty).
 
 **Параметры**
 
@@ -817,7 +817,7 @@ normalizedQueryHash(x)
 
 -   Хэш-сумма.
 
-Тип: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+Тип: [UInt64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Пример**
 

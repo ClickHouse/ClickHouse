@@ -23,7 +23,7 @@ sidebar_label: "\u7CFB\u7EDF\u8868"
 
 大多数系统表将其数据存储在RAM中。 一个ClickHouse服务在刚启动时便会创建此类系统表。
 
-不同于其他系统表，系统日志表 [metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log), [query_log](../../operations/system-tables/query_log.md#system_tables-query_log), [query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log), [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log), [part_log](../../operations/system-tables/part_log.md#system.part_log), crash_log and text_log 默认采用[MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) 引擎并将其数据存储在文件系统中。 如果人为的从文件系统中删除表，ClickHouse服务器会在下一次进行数据写入时再次创建空表。 如果系统表结构在新版本中发生更改，那么ClickHouse会重命名当前表并创建一个新表。
+不同于其他系统表，系统日志表 [metric_log](/operations/system-tables/metric_log), [query_log](/operations/system-tables/query_log), [query_thread_log](/operations/system-tables/query_thread_log), [trace_log](/operations/system-tables/trace_log), [part_log](../../operations/system-tables/part_log.md#system.part_log), crash_log and text_log 默认采用[MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) 引擎并将其数据存储在文件系统中。 如果人为的从文件系统中删除表，ClickHouse服务器会在下一次进行数据写入时再次创建空表。 如果系统表结构在新版本中发生更改，那么ClickHouse会重命名当前表并创建一个新表。
 
 用户可以通过在`/etc/clickhouse-server/config.d/`下创建与系统表同名的配置文件, 或者在`/etc/clickhouse-server/config.xml`中设置相应配置项，来自定义系统日志表的结构。可供自定义的配置项如下:
 

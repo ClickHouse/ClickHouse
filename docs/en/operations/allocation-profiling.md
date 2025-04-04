@@ -1,7 +1,8 @@
 ---
-slug: /en/operations/allocation-profiling
-sidebar_label: "Allocation profiling"
-title: "Allocation profiling"
+description: 'Page detailing allocation profiling in ClickHouse'
+sidebar_label: 'Allocation profiling'
+slug: /operations/allocation-profiling
+title: 'Allocation profiling'
 ---
 
 import Tabs from '@theme/Tabs';
@@ -12,7 +13,7 @@ import TabItem from '@theme/TabItem';
 ClickHouse uses [jemalloc](https://github.com/jemalloc/jemalloc) as its global allocator that comes with some tools for allocation sampling and profiling.  
 To make allocation profiling more convenient, `SYSTEM` commands are provided along 4LW commands in Keeper.
 
-## Sampling allocations and flushing heap profiles
+## Sampling allocations and flushing heap profiles {#sampling-allocations-and-flushing-heap-profiles}
 
 If we want to sample and profile allocations in `jemalloc`, we need to start ClickHouse/Keeper with profiling enabled using environment variable `MALLOC_CONF`.
 
@@ -47,7 +48,7 @@ MALLOC_CONF=background_thread:true,prof:true,prof_prefix:/data/my_current_profil
 ```
 Generated file will append to prefix PID and sequence number.
 
-## Analyzing heap profiles
+## Analyzing heap profiles {#analyzing-heap-profiles}
 
 After we generated heap profiles, we need to analyze them.  
 For that, we need to use `jemalloc`'s tool called [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in) which can be installed in multiple ways:
@@ -95,7 +96,7 @@ jeprof path/to/binary path/to/heap/profile --text > result.txt
 jeprof path/to/binary path/to/heap/profile --pdf > result.pdf
 ```
 
-### Generating flame graph
+### Generating flame graph {#generating-flame-graph}
 
 `jeprof` allows us to generate collapsed stacks for building flame graphs.
 
@@ -115,7 +116,7 @@ cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Al
 
 Another interesting tool is [speedscope](https://www.speedscope.app/) that allows you to analyze collected stacks in a more interactive way.
 
-## Controlling allocation profiler during runtime
+## Controlling allocation profiler during runtime {#controlling-allocation-profiler-during-runtime}
 
 If ClickHouse/Keeper were started with enabled profiler, they support additional commands for disabling/enabling allocation profiling during runtime.
 Using those commands, it's easier to profile only specific intervals.
@@ -158,7 +159,7 @@ MALLOC_CONF=background_thread:true,prof:true,prof_active:false
 
 and enable profiler at a later point.
 
-## Additional options for profiler
+## Additional options for profiler {#additional-options-for-profiler}
 
 `jemalloc` has many different options available related to profiler which can be controlled by modifying `MALLOC_CONF` environment variable.
 For example, interval between allocation samples can be controlled with `lg_prof_sample`.  
@@ -166,7 +167,7 @@ If you want to dump heap profile every N bytes you can enable it using `lg_prof_
 
 We recommend to check `jemalloc`s [reference page](https://jemalloc.net/jemalloc.3.html) for such options.
 
-## Other resources
+## Other resources {#other-resources}
 
 ClickHouse/Keeper expose `jemalloc` related metrics in many different ways.
 
@@ -174,7 +175,7 @@ ClickHouse/Keeper expose `jemalloc` related metrics in many different ways.
 It's important to be aware that none of these metrics are synchronized with each other and values may drift.
 :::
 
-### System table `asynchronous_metrics`
+### System table `asynchronous_metrics` {#system-table-asynchronous_metrics}
 
 ```sql
 SELECT *
@@ -183,21 +184,21 @@ WHERE metric ILIKE '%jemalloc%'
 FORMAT Vertical
 ```
 
-[Reference](/en/operations/system-tables/asynchronous_metrics)
+[Reference](/operations/system-tables/asynchronous_metrics)
 
-### System table `jemalloc_bins`
+### System table `jemalloc_bins` {#system-table-jemalloc_bins}
 
 Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas.
 
-[Reference](/en/operations/system-tables/jemalloc_bins)
+[Reference](/operations/system-tables/jemalloc_bins)
 
-### Prometheus
+### Prometheus {#prometheus}
 
 All `jemalloc` related metrics from `asynchronous_metrics` are also exposed using Prometheus endpoint in both ClickHouse and Keeper.
 
-[Reference](/en/operations/server-configuration-parameters/settings#prometheus)
+[Reference](/operations/server-configuration-parameters/settings#prometheus)
 
-### `jmst` 4LW command in Keeper
+### `jmst` 4LW command in Keeper {#jmst-4lw-command-in-keeper}
 
 Keeper supports `jmst` 4LW command which returns [basic allocator statistics](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics).
 

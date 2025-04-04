@@ -6,7 +6,7 @@ sidebar_label: "\u6570\u636E\u5907\u4EFD"
 
 # 数据备份 {#data-backup}
 
-尽管 [副本](../engines/table-engines/mergetree-family/replication.md) 可以提供针对硬件的错误防护, 但是它不能预防人为操作失误: 数据的意外删除, 错误表的删除或者错误集群上表的删除, 以及导致错误数据处理或者数据损坏的软件bug. 在很多案例中，这类意外可能会影响所有的副本. ClickHouse 有内置的保护措施可以预防一些错误 — 例如, 默认情况下 [不能人工删除使用带有MergeTree引擎且包含超过50Gb数据的表](server-configuration-parameters/settings.md#max-table-size-to-drop). 但是，这些保护措施不能覆盖所有可能情况，并且这些措施可以被绕过。
+尽管 [副本](../engines/table-engines/mergetree-family/replication.md) 可以提供针对硬件的错误防护, 但是它不能预防人为操作失误: 数据的意外删除, 错误表的删除或者错误集群上表的删除, 以及导致错误数据处理或者数据损坏的软件bug. 在很多案例中，这类意外可能会影响所有的副本. ClickHouse 有内置的保护措施可以预防一些错误 — 例如, 默认情况下 [不能人工删除使用带有MergeTree引擎且包含超过50Gb数据的表](/operations/settings/settings#max_table_size_to_drop). 但是，这些保护措施不能覆盖所有可能情况，并且这些措施可以被绕过。
 
 为了有效地减少可能的人为错误，您应该 **提前** 仔细的准备备份和数据还原的策略.
 
@@ -30,6 +30,6 @@ ClickHouse允许使用 `ALTER TABLE ... FREEZE PARTITION ...` 查询以创建表
 
 数据可以使用 `ALTER TABLE ... ATTACH PARTITION ...` 从备份中恢复。
 
-有关与分区操作相关的查询的详细信息，请参阅 [更改文档](../sql-reference/statements/alter.md#alter_manipulations-with-partitions).
+有关与分区操作相关的查询的详细信息，请参阅 [更改文档](/sql-reference/statements/alter/partition).
 
 第三方工具可用于自动化此方法: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
