@@ -2782,9 +2782,6 @@ static Aggregator::Params getAggregatorParams(
         context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
 
-    const std::shared_ptr<const Context> context_ptr(&context, [](const Context*) {});
-    auto limit = getLimitUIntValue(query_ptr, context_ptr, "LIMIT");
-
     return Aggregator::Params
     {
         keys,

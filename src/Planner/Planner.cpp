@@ -585,8 +585,6 @@ void addAggregationStep(QueryPlan & query_plan,
 {
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
 
-    auto limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
-
     auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result, select_query_info, query_node);
 
     SortDescription sort_description_for_merging;
