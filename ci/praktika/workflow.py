@@ -44,6 +44,7 @@ class Workflow:
         # If the Docker images specified in .dockers are intended to be built in a different workflow,
         #   their build process in this workflow can be disabled by setting this to True.
         disable_dockers_build: bool = False
+        set_latest_in_dockers_build: bool = False
 
         def is_event_pull_request(self):
             return self.event == Workflow.Event.PULL_REQUEST
