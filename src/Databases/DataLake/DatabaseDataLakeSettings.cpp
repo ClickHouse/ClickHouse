@@ -26,6 +26,7 @@ namespace ErrorCodes
     DECLARE(String, aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0)           \
     DECLARE(String, region, "", "Region for Glue catalog", 0)           \
     DECLARE(String, storage_endpoint, "", "Object storage endpoint", 0) \
+    DECLARE(String, hms_catalog_storage_type, "s3", "Storage type for HMS catalog", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS)
