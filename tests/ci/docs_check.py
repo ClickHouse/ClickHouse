@@ -69,7 +69,7 @@ def main():
     elif args.force:
         logging.info("Check the docs because of force flag")
 
-    docker_image = get_docker_image("clickhouse/docs-builder --platform linux/amd64")
+    docker_image = get_docker_image("clickhouse/docs-builder")
     if args.pull_image:
         docker_image = pull_image(docker_image)
 
