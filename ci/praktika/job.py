@@ -3,8 +3,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
-from praktika import Artifact
-from praktika.utils import Utils
+from . import Artifact
+from .utils import Utils
 
 
 class Job:

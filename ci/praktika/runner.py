@@ -6,8 +6,6 @@ import sys
 import traceback
 from pathlib import Path
 
-from praktika.info import Info
-
 from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
@@ -15,6 +13,7 @@ from .digest import Digest
 from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
+from .info import Info
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3, StorageUsage
@@ -24,7 +23,7 @@ from .utils import Shell, TeePopen, Utils
 
 class Runner:
     @staticmethod
-    def generate_local_run_environment(workflow, job, pr=None, branch=None, sha=None):
+    def generate_local_run_environment(workflow, job, pr=None, sha=None):
         print("WARNING: Generate dummy env for local test")
         Shell.check(
             f"mkdir -p {Settings.TEMP_DIR} {Settings.INPUT_DIR} {Settings.OUTPUT_DIR}"
@@ -176,7 +175,7 @@ class Runner:
                 prefixes = [env.get_s3_prefix()] * len(required_artifacts)
             for artifact, prefix in zip(required_artifacts, prefixes):
                 if artifact.compress_zst:
-                    archive_name = f"{artifact.name}.zst"
+                    archive_name = f"{Path(artifact.path).name}.zst"
                     s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{archive_name}"
                     if not S3.copy_file_from_s3(
                         s3_path=s3_path,
