@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDateTime.h>
 
@@ -134,6 +135,7 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
 {
     return {{"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
             {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+            {"_tags", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
             {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
             {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
             {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
