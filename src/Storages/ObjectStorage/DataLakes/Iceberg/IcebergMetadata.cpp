@@ -272,11 +272,25 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(const 
     std::pair<Int32, String> result;
     if (!explicit_metadata_path.empty())
     {
-        LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
-        auto prefix_storage_path = configuration.getPath();
-        if (!explicit_metadata_path.starts_with(prefix_storage_path))
-            explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
-        result = getMetadataFileAndVersion(explicit_metadata_path);
+        try
+        {
+            LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
+            std::filesystem::path p(explicit_metadata_path);
+            auto it = p.begin();
+            if (it != p.end())
+            {
+                if (*it == "." || *it == "..")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative paths are not allowed");
+            }
+            auto prefix_storage_path = configuration.getPath();
+            if (!explicit_metadata_path.starts_with(prefix_storage_path))
+                explicit_metadata_path = prefix_storage_path + explicit_metadata_path;
+            result = getMetadataFileAndVersion(explicit_metadata_path);
+        }
+        catch (const std::exception & ex)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid path {} specified for iceberg_metadata_file_path: '{}'", explicit_metadata_path, ex.what());
+        }
     }
     else
     {
