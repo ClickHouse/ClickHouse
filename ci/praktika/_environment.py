@@ -39,6 +39,7 @@ class _Environment(MetaClasses.Serializable):
     PR_LABELS: List[str] = dataclasses.field(default_factory=list)
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
     JOB_CONFIG: Optional[Job.Config] = None
+    TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
     name = "environment"
 
     @classmethod

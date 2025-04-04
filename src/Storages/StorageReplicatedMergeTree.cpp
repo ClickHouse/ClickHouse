@@ -8030,7 +8030,6 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
         Int64 block_number = pair.second;
         getContext()->getMergeList().cancelPartMutations(getStorageID(), partition_id, block_number);
     }
-    mutation_backoff_policy.resetMutationFailures();
     return CancellationCode::CancelSent;
 }
 
@@ -9276,6 +9275,10 @@ bool StorageReplicatedMergeTree::dropPartImpl(
     {
         if (shutdown_called || partial_shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "Cannot drop part because shutdown called");
+
+        /// Ensure that the merge predicate will use the most recent state of the queue
+        /// (in particular the list of virtual parts).
+        queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);
 
         auto merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{part_info.partition_id});
 

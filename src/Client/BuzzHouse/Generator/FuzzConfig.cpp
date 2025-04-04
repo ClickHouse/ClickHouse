@@ -3,6 +3,7 @@
 #include <ranges>
 #include <IO/copyData.h>
 #include <Common/Exception.h>
+#include <Common/formatReadable.h>
 
 namespace DB
 {
