@@ -251,7 +251,7 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/docs-builder",
         path="./docker/docs/builder",
-        platforms=[Docker.Platforms.AMD],
+        platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
@@ -473,6 +473,7 @@ class ArtifactConfigs:
         name="...",
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/src/unit_tests_dbms",
+        compress_zst=True,
     ).parametrize(
         names=[
             ArtifactNames.UNITTEST_AMD_ASAN,
