@@ -870,7 +870,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             if (commit_settings.max_processed_files_before_commit)
             {
-                std::lock_guard lock(progress->processed_files_mutex);
                 if (progress->processed_files.load(std::memory_order_relaxed) >= commit_settings.max_processed_files_before_commit)
                 {
                     LOG_TRACE(log, "Number of max processed files before commit reached "
