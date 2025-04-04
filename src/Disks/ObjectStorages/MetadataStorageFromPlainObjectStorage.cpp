@@ -4,6 +4,7 @@
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
 #include <Disks/ObjectStorages/StoredObject.h>
+#include <Storages/PartitionCommands.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -107,6 +108,11 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainObjectStorage::getLastMod
     if (existsFileOrDirectory(path))
         return Poco::Timestamp{};
     return std::nullopt;
+}
+
+bool MetadataStorageFromPlainObjectStorage::supportsPartitionCommand(const PartitionCommand & /*command*/) const
+{
+    return false;
 }
 
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const

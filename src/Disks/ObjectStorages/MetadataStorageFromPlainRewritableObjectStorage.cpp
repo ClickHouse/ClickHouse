@@ -13,6 +13,7 @@
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
 #include <Poco/Timestamp.h>
+#include <Storages/PartitionCommands.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
@@ -258,6 +259,17 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(cons
         return true;
 
     return getObjectMetadataEntryWithCache(path) != nullptr;
+}
+
+bool MetadataStorageFromPlainRewritableObjectStorage::supportsPartitionCommand(const PartitionCommand & command) const
+{
+    constexpr std::array supported_types
+        = {PartitionCommand::DROP_PARTITION,
+           PartitionCommand::DROP_DETACHED_PARTITION,
+           PartitionCommand::ATTACH_PARTITION,
+           PartitionCommand::MOVE_PARTITION,
+           PartitionCommand::REPLACE_PARTITION};
+    return std::find(supported_types.begin(), supported_types.end(), command.type) != supported_types.end();
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
