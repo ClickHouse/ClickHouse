@@ -10,7 +10,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Common/HashTable/HashSet.h>
 
-#include <Common/OpenTelemetryTraceContext.h>
 
 namespace DB
 {
@@ -77,7 +76,7 @@ private:
     AggregatingTransformParamsPtr params;
 
     std::vector<Int32> last_bucket_number; /// Last bucket read from each input.
-    std::vector<std::array<Int32, 2>> delayed_bucket_number; /// Delayed bucket ids for each input.
+    std::vector<Int32> delayed_bucket_number; /// Delayed bucket ids for each input.
 
     std::unordered_set<Int32> delayed_buckets;
 

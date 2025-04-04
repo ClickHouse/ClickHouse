@@ -7,9 +7,7 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/Pipe.h>
-
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
+#include "base/defines.h"
 
 namespace DB
 {
@@ -23,7 +21,7 @@ GroupingAggregatedTransform::GroupingAggregatedTransform(const Block & header_, 
     , num_inputs(num_inputs_)
     , params(std::move(params_))
     , last_bucket_number(num_inputs, -1)
-    , delayed_bucket_number(num_inputs, {-1, -1})
+    , delayed_bucket_number(num_inputs, -1)
 {
 }
 
@@ -73,16 +71,8 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
         {
             /// The bucket is no longer delayed for all inputs. Either we received it from all sources (where it was not empty),
             /// or we received buckets with higher id-s and no delayed bucket information.
-            bool ok = true;
-            for (size_t input = 0; input < num_inputs; ++input)
-            {
-                if (delayed_bucket_number[input][0] == delayed_bucket || delayed_bucket_number[input][1] == delayed_bucket)
-                {
-                    ok = false;
-                    break;
-                }
-            }
-            if (ok && std::ranges::all_of(last_bucket_number, [delayed_bucket](auto last_bucket) { return last_bucket > delayed_bucket; }))
+            if (!std::ranges::contains(delayed_bucket_number, delayed_bucket)
+                && std::ranges::all_of(last_bucket_number, [delayed_bucket](auto last_bucket) { return last_bucket > delayed_bucket; }))
             {
                 if (try_push_by_iter(chunks_map.find(delayed_bucket)))
                 {
@@ -295,14 +285,11 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
     if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
     {
         Int32 bucket = agg_info->bucket_num;
-        Int32 delayed[2] = {-1, -1};
+        Int32 delayed_bucket = -1;
         if (bucket != -1)
         {
-            const UInt32 bucket_num = bucket;
-            constexpr UInt32 low_mask = 0x00FF0000;
-            delayed[0] = (bucket_num & low_mask) != low_mask ? (bucket_num & low_mask) >> 16 : -1;
-            constexpr UInt32 high_mask = 0xFF000000;
-            delayed[1] = (bucket_num & high_mask) != high_mask ? (bucket_num & high_mask) >> 24 : -1;
+            constexpr Int32 upper_mask = 0xFFFF0000;
+            delayed_bucket = (bucket & upper_mask) != upper_mask ? (bucket >> 16) : -1;
             bucket &= 0xFFFF;
             agg_info->bucket_num = bucket;
         }
@@ -317,12 +304,9 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             chunks_map[bucket].emplace_back(std::move(chunk));
             has_two_level = true;
             last_bucket_number[input] = bucket;
-            delayed_bucket_number[input][0] = delayed[0];
-            delayed_bucket_number[input][1] = delayed[1];
-            if (delayed[0] != -1)
-                delayed_buckets.insert(delayed[0]);
-            if (delayed[1] != -1)
-                delayed_buckets.insert(delayed[1]);
+            delayed_bucket_number[input] = delayed_bucket;
+            if (delayed_bucket != -1)
+                delayed_buckets.insert(delayed_bucket);
         }
     }
     else if (chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
