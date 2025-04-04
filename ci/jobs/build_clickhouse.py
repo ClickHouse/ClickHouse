@@ -213,9 +213,7 @@ def main():
         )
         res = results[-1].is_ok()
 
-    Result.create_from(results=results, stopwatch=stop_watch).add_job_summary_to_info(
-        with_local_run_command=True
-    ).complete_job()
+    Result.create_from(results=results, stopwatch=stop_watch).complete_job()
 
 
 if __name__ == "__main__":
