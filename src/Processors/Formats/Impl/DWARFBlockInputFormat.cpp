@@ -151,7 +151,7 @@ DWARFBlockInputFormat::DWARFBlockInputFormat(ReadBuffer & in_, Block header_, co
     for (uint32_t tag = 1; tag <= UINT16_MAX; ++tag)
     {
         auto name = removePrefix(llvm::dwarf::TagString(tag), DW_TAG_.size());
-        if (name.size() == 0)
+        if (name.empty())
         {
             /// ColumnUnique requires values to be unique, even unused ones.
             append(tag_names, "unknown: " + std::to_string(tag));
@@ -169,7 +169,7 @@ DWARFBlockInputFormat::DWARFBlockInputFormat(ReadBuffer & in_, Block header_, co
     for (uint32_t attr = 1; attr <= UINT16_MAX; ++attr)
     {
         auto name = removePrefix(llvm::dwarf::AttributeString(attr), DW_AT_.size());
-        if (name.size() == 0)
+        if (name.empty())
             append(attr_names, "unknown: " + std::to_string(attr));
         else
             append(attr_names, name);
@@ -182,7 +182,7 @@ DWARFBlockInputFormat::DWARFBlockInputFormat(ReadBuffer & in_, Block header_, co
     for (uint32_t form = 1; form <= UINT16_MAX; ++form)
     {
         auto name = removePrefix(llvm::dwarf::FormEncodingString(form), DW_FORM_.size());
-        if (name.size() == 0)
+        if (name.empty())
             append(attr_forms, "unknown: " + std::to_string(form));
         else
             append(attr_forms, name);
