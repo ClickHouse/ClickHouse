@@ -49,6 +49,7 @@ namespace Setting
 {
 extern const SettingsInt64 iceberg_timestamp_ms;
 extern const SettingsInt64 iceberg_snapshot_id;
+extern const SettingsBool use_iceberg_partition_pruning;
 }
 
 
@@ -557,18 +558,23 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
     return manifest_list_ptr;
 }
 
-Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
+Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
 {
     if (!relevant_snapshot)
         return {};
 
-    if (!filter_dag && cached_unprunned_files_for_last_processed_snapshot.has_value())
+    bool use_partition_pruning = filter_dag && getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning];
+
+    if (!use_partition_pruning && cached_unprunned_files_for_last_processed_snapshot.has_value())
         return cached_unprunned_files_for_last_processed_snapshot.value();
 
     Strings data_files;
     for (const auto & manifest_file_ptr : *(relevant_snapshot->manifest_list))
     {
-        ManifestFilesPruner pruner(schema_processor, relevant_snapshot_schema_id, filter_dag, *manifest_file_ptr, getContext());
+        ManifestFilesPruner pruner(
+            schema_processor, relevant_snapshot_schema_id,
+            use_partition_pruning ? filter_dag : nullptr,
+            *manifest_file_ptr, getContext());
         const auto & data_files_in_manifest = manifest_file_ptr->getFiles();
         for (const auto & manifest_file_entry : data_files_in_manifest)
         {
@@ -583,23 +589,13 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
         }
     }
 
-    if (!filter_dag)
+    if (!use_partition_pruning)
     {
         cached_unprunned_files_for_last_processed_snapshot = data_files;
         return cached_unprunned_files_for_last_processed_snapshot.value();
     }
 
     return data_files;
-}
-
-Strings IcebergMetadata::makePartitionPruning(const ActionsDAG & filter_dag)
-{
-    auto configuration_ptr = configuration.lock();
-    if (!configuration_ptr)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
-    }
-    return getDataFilesImpl(&filter_dag);
 }
 
 std::optional<size_t> IcebergMetadata::totalRows() const

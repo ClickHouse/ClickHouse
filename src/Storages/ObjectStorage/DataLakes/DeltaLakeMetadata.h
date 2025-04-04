@@ -41,8 +41,6 @@ public:
 
     DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
 
-    Strings getDataFiles() const override { return data_files; }
-
     NamesAndTypesList getTableSchema() const override { return schema; }
 
     DeltaLakePartitionColumns getPartitionColumns() const { return partition_columns; }
@@ -79,6 +77,9 @@ public:
     static DataTypePtr getSimpleTypeByName(const String & type_name);
     static DataTypePtr getFieldValue(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static Field getFieldValue(const String & value, DataTypePtr data_type);
+
+protected:
+    Strings getDataFiles(const ActionsDAG *) const override { return data_files; }
 
 private:
     mutable Strings data_files;

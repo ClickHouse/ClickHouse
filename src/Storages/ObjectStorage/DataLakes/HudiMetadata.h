@@ -19,8 +19,6 @@ public:
 
     HudiMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
 
-    Strings getDataFiles() const override;
-
     NamesAndTypesList getTableSchema() const override { return {}; }
 
     bool operator ==(const IDataLakeMetadata & other) const override
@@ -38,6 +36,9 @@ public:
     {
         return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
     }
+
+protected:
+    Strings getDataFiles(const ActionsDAG * filter_dag) const override;
 
 private:
     const ObjectStoragePtr object_storage;
