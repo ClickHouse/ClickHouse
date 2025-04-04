@@ -64,6 +64,8 @@ public:
 
     ~ObjectStorageQueueMetadata();
 
+    /// Startup background threads.
+    void startup();
     /// Shutdown background threads.
     void shutdown();
 
@@ -174,6 +176,7 @@ private:
     LoggerPtr log;
 
     std::atomic_bool shutdown_called = false;
+    std::atomic_bool startup_called = false;
     BackgroundSchedulePoolTaskHolder task;
 
     class LocalFileStatuses;

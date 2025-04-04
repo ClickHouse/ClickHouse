@@ -1,7 +1,10 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/
-toc_folder_title: Reference
+description: 'Landing page for aggregate functions with complete list of aggregate
+  functions'
 sidebar_position: 36
+slug: /sql-reference/aggregate-functions/reference/
+title: 'Aggregate Functions'
+toc_folder_title: 'Reference'
 toc_hidden: true
 ---
 

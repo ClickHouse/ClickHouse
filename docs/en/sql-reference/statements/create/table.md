@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/statements/create/table
+description: 'Documentation for Table'
+keywords: ['compression', 'codec', 'schema', 'DDL']
+sidebar_label: 'TABLE'
 sidebar_position: 36
-sidebar_label: TABLE
-title: "CREATE TABLE"
-keywords: [compression, codec, schema, DDL]
+slug: /sql-reference/statements/create/table
+title: 'CREATE TABLE'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -18,7 +19,7 @@ By default, tables are created only on the current server. Distributed DDL queri
 
 ### With Explicit Schema {#with-explicit-schema}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [COMMENT 'comment for column'] [compression_codec] [TTL expr1],
@@ -41,7 +42,7 @@ Comments can be added for columns and for the table.
 
 ### With a Schema Similar to Other Table {#with-a-schema-similar-to-other-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 ```
 
@@ -49,20 +50,20 @@ Creates a table with the same structure as another table. You can specify a diff
 
 ### With a Schema and Data Cloned from Another Table {#with-a-schema-and-data-cloned-from-another-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name CLONE AS [db2.]name2 [ENGINE = engine]
 ```
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table. After the new table is created, all partitions from `db2.name2` are attached to it. In other words, the data of `db2.name2` is cloned into `db.table_name` upon creation. This query is equivalent to the following:
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine];
 ALTER TABLE [db.]table_name ATTACH PARTITION ALL FROM [db2].name2;
 ```
 
 ### From a Table Function {#from-a-table-function}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
@@ -70,7 +71,7 @@ Creates a table with the same result as that of the [table function](/sql-refere
 
 ### From SELECT query {#from-select-query}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
 ```
 
@@ -88,7 +89,7 @@ In ClickHouse Cloud please split this into two steps:
   CREATE TABLE t1
   ENGINE = MergeTree
   ORDER BY ...
-  # highlight-next-line
+  -- highlight-next-line
   EMPTY AS
   SELECT ...
   ```
@@ -106,7 +107,7 @@ In ClickHouse Cloud please split this into two steps:
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
 SELECT x, toTypeName(x) FROM t1;
 ```
@@ -282,7 +283,7 @@ You can define a [primary key](../../../engines/table-engines/mergetree-family/m
 
 - Inside the column list
 
-``` sql
+```sql
 CREATE TABLE db.table_name
 (
     name1 type1, name2 type2, ...,
@@ -293,7 +294,7 @@ ENGINE = engine;
 
 - Outside the column list
 
-``` sql
+```sql
 CREATE TABLE db.table_name
 (
     name1 type1, name2 type2, ...
@@ -312,7 +313,7 @@ Along with columns descriptions constraints could be defined:
 
 ### CONSTRAINT {#constraint}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
@@ -362,7 +363,7 @@ For `MergeTree`-engine family you can change the default compression method in t
 
 You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
-``` sql
+```sql
 CREATE TABLE codec_example
 (
     dt Date CODEC(ZSTD),
@@ -380,7 +381,7 @@ Example: `value UInt64 CODEC(Default)` — the same as lack of codec specificati
 
 Also you can remove current CODEC from the column and use default compression from config.xml:
 
-``` sql
+```sql
 ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 ```
 
@@ -470,7 +471,7 @@ These codecs are designed to make compression more effective by exploiting speci
 
 `DoubleDelta` and `Gorilla` codecs are used in Gorilla TSDB as the components of its compressing algorithm. Gorilla approach is effective in scenarios when there is a sequence of slowly changing values with their timestamps. Timestamps are effectively compressed by the `DoubleDelta` codec, and values are effectively compressed by the `Gorilla` codec. For example, to get an effectively stored table, you can create it in the following configuration:
 
-``` sql
+```sql
 CREATE TABLE codec_example
 (
     timestamp DateTime CODEC(DoubleDelta),
@@ -546,7 +547,7 @@ ClickHouse supports temporary tables which have the following characteristics:
 
 To create a temporary table, use the following syntax:
 
-``` sql
+```sql
 CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -598,7 +599,7 @@ WHERE CounterID <12345;
 
 ### Syntax {#syntax}
 
-``` sql
+```sql
 {CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
 ```
 
@@ -689,7 +690,7 @@ INSERT INTO base.t1 VALUES (1, 'test');
 
 SELECT * FROM base.t1;
 
-1	test
+1    test
 ```
 
 We can use the `REPLACE` statement to clear all the data:
@@ -707,7 +708,7 @@ INSERT INTO base.t1 VALUES (2, null);
 
 SELECT * FROM base.t1;
 
-2	
+2    
 ```
 
 Or we can use the `REPLACE` statement to change the table structure:
@@ -732,7 +733,7 @@ You can add a comment to the table when creating it.
 
 **Syntax**
 
-``` sql
+```sql
 CREATE TABLE db.table_name
 (
     name1 type1, name2 type2, ...
@@ -745,7 +746,7 @@ COMMENT 'Comment'
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
 SELECT name, comment FROM system.tables WHERE name = 't1';
 ```

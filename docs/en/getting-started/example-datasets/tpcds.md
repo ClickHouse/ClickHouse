@@ -1,8 +1,8 @@
 ---
+description: 'The TPC-DS benchmark data set and queries.'
+sidebar_label: 'TPC-DS'
 slug: /getting-started/example-datasets/tpcds
-sidebar_label: TPC-DS
-description:  "The TPC-DS benchmark data set and queries."
-title: "TPC-DS (2012)"
+title: 'TPC-DS (2012)'
 ---
 
 Similar to the [Star Schema Benchmark (SSB)](star-schema.md), TPC-DS is based on [TPC-H](tpch.md), but it took the opposite route, i.e. it expanded the number of joins needed by storing the data in a complex snowflake schema (24 instead of 8 tables).
@@ -14,7 +14,7 @@ References
 
 First, checkout the TPC-DS repository and compile the data generator:
 
-``` bash
+```bash
 git clone https://github.com/gregrahn/tpcds-kit.git
 cd tpcds-kit/tools
 make
@@ -22,7 +22,7 @@ make
 
 Then, generate the data. Parameter `-scale` specifies the scale factor.
 
-``` bash
+```bash
 ./dsdgen -scale 1
 ```
 
@@ -560,7 +560,7 @@ CREATE TABLE web_site (
 
 The data can be imported as follows:
 
-``` bash
+```bash
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO call_center FORMAT CSV" < call_center.tbl
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO catalog_page FORMAT CSV" < catalog_page.tbl
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO catalog_returns FORMAT CSV" < catalog_returns.tbl

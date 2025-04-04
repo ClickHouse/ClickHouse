@@ -34,12 +34,12 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     const auto context = args.getLocalContext();
-    auto queue_settings = std::make_unique<StorageObjectStorageSettings>();
+    auto storage_settings = std::make_shared<StorageObjectStorageSettings>();
 
     if (args.storage_def->settings)
-        queue_settings->loadFromQuery(*args.storage_def->settings);
+        storage_settings->loadFromQuery(*args.storage_def->settings);
 
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, queue_settings.get());
+    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, storage_settings);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current

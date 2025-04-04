@@ -10,13 +10,13 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Common/logger_useful.h>
 #include "Storages/ColumnsDescription.h"
 
 #include <memory>
 #include <string>
-#include <unordered_map>
 
 #include <Common/ErrorCodes.h>
 
@@ -30,6 +30,12 @@ namespace ErrorCodes
 {
 extern const int FORMAT_VERSION_TOO_OLD;
 }
+
+namespace StorageObjectStorageSetting
+{
+extern const StorageObjectStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
+}
+
 
 template <typename T>
 concept StorageConfiguration = std::derived_from<T, StorageObjectStorage::Configuration>;
@@ -82,6 +88,15 @@ public:
         BaseStorageConfiguration::setPaths(current_metadata->makePartitionPruning(filter_dag));
     }
 
+
+    std::optional<size_t> totalRows() override
+    {
+        if (!current_metadata)
+            return {};
+
+        return current_metadata->totalRows();
+    }
+
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
     {
         if (!current_metadata)
@@ -98,7 +113,8 @@ public:
 
     bool hasExternalDynamicMetadata() override
     {
-        return StorageObjectStorage::Configuration::allow_dynamic_metadata_for_data_lakes && current_metadata
+        return BaseStorageConfiguration::getSettingsRef()[StorageObjectStorageSetting::allow_dynamic_metadata_for_data_lakes]
+            && current_metadata
             && current_metadata->supportsExternalMetadataChange();
     }
 
@@ -122,10 +138,13 @@ public:
         return current_metadata->supportsFileIterator();
     }
 
-    ObjectIterator iterate() override
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        IDataLakeMetadata::FileProgressCallback callback,
+        size_t list_batch_size) override
     {
         chassert(current_metadata);
-        return current_metadata->iterate();
+        return current_metadata->iterate(filter_dag, callback, list_batch_size);
     }
 
     /// This is an awful temporary crutch,
@@ -160,7 +179,7 @@ private:
             current_metadata = DataLakeMetadata::create(
                 object_storage,
                 weak_from_this(),
-                local_context, BaseStorageConfiguration::allow_experimental_delta_kernel_rs);
+                local_context);
         }
         auto read_schema = current_metadata->getReadSchema();
         if (!read_schema.empty())
@@ -219,8 +238,7 @@ private:
             current_metadata = DataLakeMetadata::create(
                 object_storage,
                 weak_from_this(),
-                context,
-                BaseStorageConfiguration::allow_experimental_delta_kernel_rs);
+                context);
             return true;
         }
 
@@ -232,8 +250,7 @@ private:
         auto new_metadata = DataLakeMetadata::create(
             object_storage,
             weak_from_this(),
-            context,
-            BaseStorageConfiguration::allow_experimental_delta_kernel_rs);
+            context);
 
         if (*current_metadata != *new_metadata)
         {
@@ -266,6 +283,10 @@ using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfi
 
 #if USE_PARQUET && USE_AWS_S3
 using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
+#endif
+
+#if USE_PARQUET
+using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadata>;
 #endif
 
 #if USE_AWS_S3

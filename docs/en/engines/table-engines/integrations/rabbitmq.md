@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/integrations/rabbitmq
+description: 'This engine allows integrating ClickHouse with RabbitMQ.'
+sidebar_label: 'RabbitMQ'
 sidebar_position: 170
-sidebar_label: RabbitMQ
-title: "RabbitMQ Engine"
-description: "This engine allows integrating ClickHouse with RabbitMQ."
+slug: /engines/table-engines/integrations/rabbitmq
+title: 'RabbitMQ Engine'
 ---
 
 # RabbitMQ Engine
@@ -17,7 +17,7 @@ This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.c
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1],
@@ -93,7 +93,7 @@ Also format settings can be added along with rabbitmq-related settings.
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64,
@@ -109,7 +109,7 @@ The RabbitMQ server configuration should be added using the ClickHouse config fi
 
 Required configuration:
 
-``` xml
+```xml
  <rabbitmq>
     <username>root</username>
     <password>clickhouse</password>
@@ -118,7 +118,7 @@ Required configuration:
 
 Additional configuration:
 
-``` xml
+```xml
  <rabbitmq>
     <vhost>clickhouse</vhost>
  </rabbitmq>
@@ -165,7 +165,7 @@ Do not use the same table for inserts and materialized views.
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64

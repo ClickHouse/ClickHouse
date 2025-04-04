@@ -267,8 +267,7 @@ bool DataTypeTuple::equals(const IDataType & rhs) const
 
 size_t DataTypeTuple::getPositionByName(const String & name, bool case_insensitive) const
 {
-    size_t size = elems.size();
-    for (size_t i = 0; i < size; ++i)
+    for (size_t i = 0; i < elems.size(); ++i)
     {
         if (case_insensitive)
         {
@@ -286,8 +285,7 @@ size_t DataTypeTuple::getPositionByName(const String & name, bool case_insensiti
 
 std::optional<size_t> DataTypeTuple::tryGetPositionByName(const String & name, bool case_insensitive) const
 {
-    size_t size = elems.size();
-    for (size_t i = 0; i < size; ++i)
+    for (size_t i = 0; i < elems.size(); ++i)
     {
         if (case_insensitive)
         {

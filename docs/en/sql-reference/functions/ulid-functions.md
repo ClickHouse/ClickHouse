@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/ulid-functions
+description: 'Documentation for Functions for Working with ULID'
+sidebar_label: 'ULID'
 sidebar_position: 190
-sidebar_label: ULID
+slug: /sql-reference/functions/ulid-functions
+title: 'Functions for Working with ULID'
 ---
 
 # Functions for Working with ULID
@@ -12,7 +14,7 @@ Generates the [ULID](https://github.com/ulid/spec).
 
 **Syntax**
 
-``` sql
+```sql
 generateULID([x])
 ```
 
@@ -26,11 +28,11 @@ The [FixedString](../data-types/fixedstring.md) type value.
 
 **Usage example**
 
-``` sql
+```sql
 SELECT generateULID()
 ```
 
-``` text
+```text
 ┌─generateULID()─────────────┐
 │ 01GNB2S2FGN2P93QPXDNB4EN2R │
 └────────────────────────────┘
@@ -42,7 +44,7 @@ SELECT generateULID()
 SELECT generateULID(1), generateULID(2)
 ```
 
-``` text
+```text
 ┌─generateULID(1)────────────┬─generateULID(2)────────────┐
 │ 01GNB2SGG4RHKVNT9ZGA4FFMNP │ 01GNB2SGG4V0HMQVH4VBVPSSRB │
 └────────────────────────────┴────────────────────────────┘
@@ -54,7 +56,7 @@ This function extracts the timestamp from a ULID.
 
 **Syntax**
 
-``` sql
+```sql
 ULIDStringToDateTime(ulid[, timezone])
 ```
 
@@ -69,11 +71,11 @@ ULIDStringToDateTime(ulid[, timezone])
 
 **Usage example**
 
-``` sql
+```sql
 SELECT ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R')
 ```
 
-``` text
+```text
 ┌─ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R')─┐
 │                            2022-12-28 00:40:37.616 │
 └────────────────────────────────────────────────────┘

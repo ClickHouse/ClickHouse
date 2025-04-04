@@ -1,9 +1,9 @@
 ---
+description: 'Parses data from arguments according to specified input format. If structure argument is not specified, it''s extracted from the data.'
 slug: /sql-reference/table-functions/format
 sidebar_position: 65
-sidebar_label: format
-title: "format"
-description: "Parses data from arguments according to specified input format. If structure argument is not specified, it's extracted from the data."
+sidebar_label: 'format'
+title: 'format'
 ---
 
 # format Table Function
@@ -12,7 +12,7 @@ Parses data from arguments according to specified input format. If structure arg
 
 **Syntax**
 
-``` sql
+```sql
 format(format_name, [structure], data)
 ```
 
@@ -31,7 +31,7 @@ A table with data parsed from `data` argument according to specified format and 
 Without `structure` argument:
 
 **Query:**
-``` sql
+```sql
 SELECT * FROM format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}

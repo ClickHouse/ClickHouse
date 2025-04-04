@@ -1,7 +1,10 @@
 ---
-slug: /sql-reference/data-types/enum
+description: 'Documentation for the Enum data type in ClickHouse, which represents
+  a set of named constant values'
+sidebar_label: 'Enum'
 sidebar_position: 20
-sidebar_label: Enum
+slug: /sql-reference/data-types/enum
+title: 'Enum'
 ---
 
 # Enum
@@ -21,7 +24,7 @@ ClickHouse automatically chooses the type of `Enum` when data is inserted. You c
 
 Here we create a table with an `Enum8('hello' = 1, 'world' = 2)` type column:
 
-``` sql
+```sql
 CREATE TABLE t_enum
 (
     x Enum('hello' = 1, 'world' = 2)
@@ -31,7 +34,7 @@ ENGINE = TinyLog
 
 Similarly, you could omit numbers. ClickHouse will assign consecutive numbers automatically. Numbers are assigned starting from 1 by default.
 
-``` sql
+```sql
 CREATE TABLE t_enum
 (
     x Enum('hello', 'world')
@@ -41,7 +44,7 @@ ENGINE = TinyLog
 
 You can also specify legal starting number for the first name.
 
-``` sql
+```sql
 CREATE TABLE t_enum
 (
     x Enum('hello' = 1, 'world')
@@ -49,7 +52,7 @@ CREATE TABLE t_enum
 ENGINE = TinyLog
 ```
 
-``` sql
+```sql
 CREATE TABLE t_enum
 (
     x Enum8('hello' = -129, 'world')
@@ -57,37 +60,37 @@ CREATE TABLE t_enum
 ENGINE = TinyLog
 ```
 
-``` text
+```text
 Exception on server:
 Code: 69. DB::Exception: Value -129 for element 'hello' exceeds range of Enum8.
 ```
 
 Column `x` can only store values that are listed in the type definition: `'hello'` or `'world'`. If you try to save any other value, ClickHouse will raise an exception. 8-bit size for this `Enum` is chosen automatically.
 
-``` sql
+```sql
 INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')
 ```
 
-``` text
+```text
 Ok.
 ```
 
-``` sql
+```sql
 INSERT INTO t_enum values('a')
 ```
 
-``` text
+```text
 Exception on client:
 Code: 49. DB::Exception: Unknown element 'a' for type Enum('hello' = 1, 'world' = 2)
 ```
 
 When you query data from the table, ClickHouse outputs the string values from `Enum`.
 
-``` sql
+```sql
 SELECT * FROM t_enum
 ```
 
-``` text
+```text
 ┌─x─────┐
 │ hello │
 │ world │
@@ -97,11 +100,11 @@ SELECT * FROM t_enum
 
 If you need to see the numeric equivalents of the rows, you must cast the `Enum` value to integer type.
 
-``` sql
+```sql
 SELECT CAST(x, 'Int8') FROM t_enum
 ```
 
-``` text
+```text
 ┌─CAST(x, 'Int8')─┐
 │               1 │
 │               2 │
@@ -111,11 +114,11 @@ SELECT CAST(x, 'Int8') FROM t_enum
 
 To create an Enum value in a query, you also need to use `CAST`.
 
-``` sql
+```sql
 SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
 ```
 
-``` text
+```text
 ┌─toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))─┐
 │ Enum8('a' = 1, 'b' = 2)                             │
 └─────────────────────────────────────────────────────┘
@@ -129,7 +132,7 @@ Neither the string nor the numeric value in an `Enum` can be [NULL](../../sql-re
 
 An `Enum` can be contained in [Nullable](../../sql-reference/data-types/nullable.md) type. So if you create a table using the query
 
-``` sql
+```sql
 CREATE TABLE t_enum_nullable
 (
     x Nullable( Enum8('hello' = 1, 'world' = 2) )
@@ -139,7 +142,7 @@ ENGINE = TinyLog
 
 it can store not only `'hello'` and `'world'`, but `NULL`, as well.
 
-``` sql
+```sql
 INSERT INTO t_enum_nullable Values('hello'),('world'),(NULL)
 ```
 

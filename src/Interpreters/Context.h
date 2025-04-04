@@ -97,7 +97,7 @@ class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
-class SkippingIndexCache;
+class VectorSimilarityIndexCache;
 class ProcessList;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -116,6 +116,7 @@ class PartLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
+class TransposedMetricLog;
 class LatencyLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
@@ -601,8 +602,47 @@ public:
     // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
 
-    /// A list of warnings about server configuration to place in `system.warnings` table.
-    Strings getWarnings() const;
+    /// Different kinds of warnings available for use with the `system.warnings` table.
+    /// More can be added as necessary. These are used to track if a warning is already
+    /// present to be able to add, remove or update warnings from the table
+    enum class WarningType
+    {
+        AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
+        AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
+        AVAILABLE_MEMORY_TOO_LOW,
+        DELAY_ACCOUNTING_DISABLED,
+        DB_ORDINARY_DEPRECATED,
+        ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
+        LINUX_MAX_PID_TOO_LOW,
+        LINUX_MEMORY_OVERCOMMIT_DISABLED,
+        LINUX_FAST_CLOCK_SOURCE_NOT_USED,
+        LINUX_MAX_THREADS_COUNT_TOO_LOW,
+        LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
+        MAX_ATTACHED_TABLES,
+        MAX_ATTACHED_VIEWS,
+        MAX_ATTACHED_DICTIONARIES,
+        MAX_ATTACHED_DATABASES,
+        MAX_ACTIVE_PARTS,
+        MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
+        MAX_NUM_THREADS_LOWER_THAN_LIMIT,
+        OBSOLETE_SETTINGS,
+        PROCESS_USER_MATCHES_DATA_OWNER,
+        RABBITMQ_UNSUPPORTED_COLUMNS,
+        REPLICATED_DB_WITH_ALL_GROUPS_CLUSTER_PREFIX,
+        SERVER_LOGGING_LEVEL_TEST,
+        SERVER_RUN_UNDER_DEBUGGER,
+        SERVER_BUILT_IN_DEBUG_MODE,
+        SERVER_BUILT_WITH_SANITIZERS,
+        SERVER_BUILT_WITH_COVERAGE,
+        SETTING_ZERO_COPY_REPLICATION_ENABLED,
+        SKIPPING_CONDITION_QUERY,
+        THREAD_FUZZER_IS_ENABLED
+    };
+
+    std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
+    void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
+    void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
+    void removeWarningMessage(WarningType warning) const;
 
     VolumePtr getGlobalTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
 
@@ -618,9 +658,6 @@ public:
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
-
-    void addWarningMessage(const String & msg) const;
-    void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
@@ -830,7 +867,7 @@ public:
     /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
-    StoragePtr buildParametrizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
+    StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -933,8 +970,8 @@ public:
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
                                   const std::optional<FormatSettings> & format_settings = std::nullopt, std::optional<size_t> max_parsing_threads = std::nullopt) const;
 
-    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
-    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
+    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     InterserverIOHandler & getInterserverIOHandler();
     const InterserverIOHandler & getInterserverIOHandler() const;
@@ -959,11 +996,21 @@ public:
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
+    size_t getMaxTableNumToWarn() const;
+    size_t getMaxViewNumToWarn() const;
+    size_t getMaxDictionaryNumToWarn() const;
+    size_t getMaxDatabaseNumToWarn() const;
+    size_t getMaxPartNumToWarn() const;
+    size_t getMaxPendingMutationsToWarn() const;
+
     void setMaxTableNumToWarn(size_t max_table_to_warn);
     void setMaxViewNumToWarn(size_t max_view_to_warn);
     void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
     void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
     void setMaxPartNumToWarn(size_t max_part_to_warn);
+    // Based on asynchronous metrics
+    void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
+
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
@@ -1093,7 +1140,8 @@ public:
     void setPageCache(
         size_t default_block_size, size_t default_lookahead_blocks,
         std::chrono::milliseconds history_window, const String & cache_policy, double size_ratio,
-        size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio);
+        size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio,
+        size_t num_shards);
     std::shared_ptr<PageCache> getPageCache() const;
     void clearPageCache() const;
 
@@ -1118,10 +1166,10 @@ public:
     std::shared_ptr<MarkCache> getIndexMarkCache() const;
     void clearIndexMarkCache() const;
 
-    void setSkippingIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
-    void updateSkippingIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<SkippingIndexCache> getSkippingIndexCache() const;
-    void clearSkippingIndexCache() const;
+    void setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<VectorSimilarityIndexCache> getVectorSimilarityIndexCache() const;
+    void clearVectorSimilarityIndexCache() const;
 
     void setMMappedFileCache(size_t max_cache_size_in_num_entries);
     void updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1209,6 +1257,7 @@ public:
     std::shared_ptr<TraceLog> getTraceLog() const;
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
+    std::shared_ptr<TransposedMetricLog> getTransposedMetricLog() const;
     std::shared_ptr<LatencyLog> getLatencyLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
@@ -1301,7 +1350,6 @@ public:
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
         CLIENT,         /// clickhouse-client
-        EMBEDDED_CLIENT,/// clickhouse-client being run over SSH tunnel
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
         DISKS,          /// clickhouse-disks
