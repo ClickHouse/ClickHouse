@@ -22,6 +22,7 @@
 #include <Common/StringUtils.h>
 #include <Common/TerminalSize.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/formatReadable.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
