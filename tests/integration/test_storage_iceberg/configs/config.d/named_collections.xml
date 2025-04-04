@@ -11,5 +11,19 @@
     </azure>
     <local>
     </local>
+    <s3_with_type>
+        <url>http://minio1:9001/root/</url>
+        <access_key_id>minio</access_key_id>
+        <secret_access_key>minio123</secret_access_key>
+        <storage_type>s3</storage_type>
+    </s3_with_type>
+    <azure_with_type>
+        <account_name>devstoreaccount1</account_name>
+        <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+        <storage_type>azure</storage_type>
+    </azure_with_type>
+    <local_with_type>
+        <storage_type>local</storage_type>
+    </local_with_type>
   </named_collections>
 </clickhouse>

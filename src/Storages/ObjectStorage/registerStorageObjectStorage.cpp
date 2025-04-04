@@ -39,7 +39,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     if (args.storage_def->settings)
         storage_settings->loadFromQuery(*args.storage_def->settings);
 
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, storage_settings);
+    configuration->initialize(args.engine_args, context, false, storage_settings);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -172,21 +172,21 @@ void registerStorageObjectStorage(StorageFactory & factory)
 
 void registerStorageIceberg(StorageFactory & factory)
 {
-#if USE_AWS_S3
     factory.registerStorage(
         "Iceberg",
         [&](const StorageFactory::Arguments & args)
         {
-            auto configuration = std::make_shared<StorageS3IcebergConfiguration>();
+            auto configuration = std::make_shared<StorageIcebergConfiguration>();
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessType::S3,
+            .source_access_type = AccessType::NONE,
             .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 
+#    if USE_AWS_S3
     factory.registerStorage(
         "IcebergS3",
         [&](const StorageFactory::Arguments & args)

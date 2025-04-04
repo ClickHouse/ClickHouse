@@ -54,10 +54,13 @@ public:
     {
     public:
         explicit ArgumentsAST(const ASTs * arguments_) : arguments(arguments_) {}
-        size_t size() const override { return arguments ? arguments->size() : 0; }
+        size_t size() const override
+        { /// size withous skipped indexes
+            return arguments ? arguments->size() - skippedSize() : 0;
+        }
         std::unique_ptr<Argument> at(size_t n) const override
-        {
-            return std::make_unique<ArgumentAST>(arguments->at(n).get());
+        { /// n is relative index, some can be skipped
+            return std::make_unique<ArgumentAST>(arguments->at(getRealIndex(n)).get());
         }
     private:
         const ASTs * arguments = nullptr;

@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-MetadataStorageType metadataTypeFromString(const String & type)
+MetadataStorageType metadataTypeFromString(const std::string & type)
 {
     auto check_type = Poco::toLower(type);
     if (check_type == "local")
@@ -53,23 +53,47 @@ std::string DataSourceDescription::toString() const
         case DataSourceType::RAM:
             return "memory";
         case DataSourceType::ObjectStorage:
-        {
-            switch (object_storage_type)
-            {
-                case ObjectStorageType::S3:
-                    return "s3";
-                case ObjectStorageType::HDFS:
-                    return "hdfs";
-                case ObjectStorageType::Azure:
-                    return "azure_blob_storage";
-                case ObjectStorageType::Local:
-                    return "local_blob_storage";
-                case ObjectStorageType::Web:
-                    return "web";
-                case ObjectStorageType::None:
-                    return "none";
-            }
-        }
+            return DB::toString(object_storage_type);
     }
 }
+
+ObjectStorageType objectStorageTypeFromString(const std::string & type)
+{
+    auto check_type = Poco::toLower(type);
+    if (check_type == "s3")
+        return ObjectStorageType::S3;
+    if (check_type == "hdfs")
+        return ObjectStorageType::HDFS;
+    if (check_type == "azure_blob_storage" || check_type == "azure")
+        return ObjectStorageType::Azure;
+    if (check_type == "local_blob_storage" || check_type == "local")
+        return ObjectStorageType::Local;
+    if (check_type == "web")
+        return ObjectStorageType::Web;
+    if (check_type == "none")
+        return ObjectStorageType::None;
+
+    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+        "Unknown object storage type: {}", type);
+}
+
+std::string toString(ObjectStorageType type)
+{
+    switch (type)
+    {
+        case ObjectStorageType::S3:
+            return "s3";
+        case ObjectStorageType::HDFS:
+            return "hdfs";
+        case ObjectStorageType::Azure:
+            return "azure_blob_storage";
+        case ObjectStorageType::Local:
+            return "local_blob_storage";
+        case ObjectStorageType::Web:
+            return "web";
+        case ObjectStorageType::None:
+            return "none";
+    }
+}
+
 }
