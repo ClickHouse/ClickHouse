@@ -242,7 +242,7 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
             break;
         }
 
-        if (delayed_buckets.contains(current_bucket))
+        if (delayed_buckets.contains(next_bucket_to_push))
             continue;
 
         if (need_data)
@@ -293,10 +293,9 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
     {
         Int32 bucket = agg_info->bucket_num;
         Int32 delayed_bucket = -1;
-        if (bucket != -1)
+        if (bucket >= (1 << 16))
         {
-            constexpr Int32 upper_mask = 0xFFFF0000;
-            delayed_bucket = (bucket & upper_mask) != upper_mask ? (bucket >> 16) : -1;
+            delayed_bucket = bucket >> 16;
             bucket &= 0xFFFF;
             agg_info->bucket_num = bucket;
         }
@@ -312,8 +311,7 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             has_two_level = true;
             last_bucket_number[input] = bucket;
             delayed_bucket_number[input] = delayed_bucket;
-            if (delayed_bucket != -1)
-                delayed_buckets.insert(delayed_bucket);
+            delayed_buckets.insert(delayed_bucket);
         }
     }
     else if (chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
