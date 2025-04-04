@@ -1613,11 +1613,8 @@ static const std::vector<TableEngineValues> likeEngs
        TableEngineValues::Log,
        TableEngineValues::TinyLog,
        TableEngineValues::EmbeddedRocksDB,
-       TableEngineValues::Merge};
-
-static const auto replaceTableLambda = [](const SQLTable & t) { return t.isAttached() && !t.hasDatabasePeer(); };
-
-static const auto tableLikeLambda = [](const SQLTable & t) { return t.isAttached() && !t.is_temp; };
+       TableEngineValues::Merge,
+       TableEngineValues::GenerateRandom};
 
 void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTable * ct)
 {
@@ -1625,7 +1622,6 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
     uint32_t tname = 0;
     bool added_pkey = false;
     TableEngine * te = ct->mutable_engine();
-    const bool replace = collectionCount<SQLTable>(replaceTableLambda) > 3 && rg.nextMediumNumber() < 16;
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
@@ -1634,6 +1630,12 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
     this->enforce_final = next.is_deterministic;
     next.is_temp = rg.nextMediumNumber() < 11;
     ct->set_is_temp(next.is_temp);
+
+    const auto tableLikeLambda
+        = [&next](const SQLTable & t) { return t.isAttached() && !t.is_temp && (t.is_deterministic || !next.is_deterministic); };
+    const auto replaceTableLambda
+        = [&next](const SQLTable & t) { return t.isAttached() && !t.hasDatabasePeer() && (t.is_deterministic || !next.is_deterministic); };
+    const bool replace = collectionCount<SQLTable>(replaceTableLambda) > 3 && rg.nextMediumNumber() < 16;
     if (replace)
     {
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(replaceTableLambda));
@@ -1844,7 +1846,6 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     SQLDictionary next;
     uint32_t tname = 0;
     uint32_t col_counter = 0;
-    const bool replace = collectionCount<SQLDictionary>(attached_dictionaries) > 3 && rg.nextMediumNumber() < 16;
     const DictionaryLayouts & dl = rg.pickRandomly(allDictionaryLayoutSettings);
     const bool isRange = dl == COMPLEX_KEY_RANGE_HASHED || dl == RANGE_HASHED;
     /// Range requires 2 cols for min and max
@@ -1859,9 +1860,12 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     SQLBase::setDeterministic(rg, next);
     this->allow_not_deterministic = !next.is_deterministic;
     this->enforce_final = next.is_deterministic;
+    const auto replaceDictionaryLambda
+        = [&next](const SQLDictionary & d) { return d.isAttached() && (d.is_deterministic || !next.is_deterministic); };
+    const bool replace = collectionCount<SQLDictionary>(replaceDictionaryLambda) > 3 && rg.nextMediumNumber() < 16;
     if (replace)
     {
-        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(replaceDictionaryLambda));
 
         next.db = d.db;
         tname = next.tname = d.tname;

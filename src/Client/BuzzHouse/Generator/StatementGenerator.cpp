@@ -2,7 +2,7 @@
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
-#include "SQLCatalog.h"
+
 
 namespace BuzzHouse
 {
@@ -211,7 +211,6 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
 {
     SQLView next;
     uint32_t tname = 0;
-    const bool replace = collectionCount<SQLView>(attached_views) > 3 && rg.nextMediumNumber() < 16;
     const uint32_t view_ncols = (rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1);
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
@@ -219,9 +218,11 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     SQLBase::setDeterministic(rg, next);
     this->allow_not_deterministic = !next.is_deterministic;
     this->enforce_final = next.is_deterministic;
+    const auto replaceViewLambda = [&next](const SQLView & v) { return v.isAttached() && (v.is_deterministic || !next.is_deterministic); };
+    const bool replace = collectionCount<SQLView>(replaceViewLambda) > 3 && rg.nextMediumNumber() < 16;
     if (replace)
     {
-        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
+        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(replaceViewLambda));
 
         next.db = v.db;
         tname = next.tname = v.tname;
