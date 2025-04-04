@@ -1,14 +1,12 @@
 #pragma once
 
-#include "Common/Priority.h"
-#include "Common/threadPoolCallbackRunner.h"
+#include <exception>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 
-#include <future>
 
 namespace DB
 {
@@ -130,7 +128,7 @@ public:
 
                     auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled, thread_group = CurrentThread::getGroup()]()
                     {
-                        // ThreadGroupSwitcher switcher(thread_group, "UniqExactMerger");
+                        ThreadGroupSwitcher switcher(thread_group, "UniqExactMerger");
 
                         while (true)
                         {
@@ -144,13 +142,9 @@ public:
                         }
                     };
 
-                    const auto tasks = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
-                    std::vector<std::future<void>> futures;
-                    futures.reserve(tasks);
-                    auto schedule = threadPoolCallbackRunnerUnsafe<void>(*thread_pool, "UniqExactMerger");
-                    for (size_t i = 0; i < tasks; ++i)
-                        futures.emplace_back(schedule([thread_func]() { thread_func(); }, Priority{}));
-                    std::ranges::for_each(futures, [](auto & future) { future.wait(); });
+                    for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
+                        thread_pool->scheduleOrThrowOnError(thread_func);
+                    thread_pool->wait();
                 }
                 catch (...)
                 {
