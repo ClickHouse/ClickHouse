@@ -2279,12 +2279,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     {
         for (const auto & ranges_in_data_part : result.parts_with_ranges)
         {
-            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
-                ranges_in_data_part.data_part,
-                mutations_snapshot,
-                storage_snapshot->metadata,
-                getContext());
-
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges_in_data_part.data_part, mutations_snapshot, getContext());
             auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges_in_data_part.data_part, std::move(alter_conversions));
             lazily_read_info->data_part_infos->emplace(ranges_in_data_part.part_index_in_query, std::move(part_info));
         }

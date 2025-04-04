@@ -453,7 +453,7 @@ public:
 
     /// A snapshot of pending mutations that weren't applied to some of the parts yet
     /// and should be applied on the fly (i.e. when reading from the part).
-    /// Mutations not supported by AlterConversions (supportsMutationCommandType()) can be omitted.
+    /// Mutations not supported by AlterConversions (isSupported*Mutation) can be omitted.
     struct IMutationsSnapshot
     {
         /// Contains info that doesn't depend on state of mutations.
@@ -462,31 +462,39 @@ public:
             Int64 metadata_version = -1;
             Int64 min_part_metadata_version = -1;
             bool need_data_mutations = false;
+            bool need_alter_mutations = false;
         };
 
-        /// Contains info that depends on state of mutations.
-        struct Info
-        {
-            Int64 num_data_mutations = 0;
-            Int64 num_metadata_mutations = 0;
-        };
-
-        Params params;
-        Info info;
-
-        IMutationsSnapshot() = default;
-        IMutationsSnapshot(Params params_, Info info_): params(std::move(params_)), info(std::move(info_)) {}
+        virtual ~IMutationsSnapshot() = default;
 
         /// Returns mutation commands that are required to be applied to the `part`.
-        /// @return list of mutation commands, in *reverse* order (newest to oldest)
+        /// @return list of mutation commands in order: oldest to newest.
         virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
         virtual NameSet getAllUpdatedColumns() const = 0;
 
-        bool hasDataMutations() const { return params.need_data_mutations && info.num_data_mutations > 0; }
-        bool hasMetadataMutations() const { return info.num_metadata_mutations > 0; }
+        virtual bool hasDataMutations() const = 0;
+        virtual bool hasAlterMutations() const = 0;
+        virtual bool hasMetadataMutations() const = 0;
+    };
 
-        virtual ~IMutationsSnapshot() = default;
+    struct MutationsSnapshotBase : public IMutationsSnapshot
+    {
+    public:
+        Params params;
+        MutationCounters counters;
+
+        MutationsSnapshotBase() = default;
+        MutationsSnapshotBase(Params params_, MutationCounters counters_);
+
+        bool hasDataMutations() const final { return params.need_data_mutations && counters.num_data > 0; }
+        bool hasAlterMutations() const final { return params.need_alter_mutations && counters.num_alter > 0; }
+        bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
+
+        bool hasSupportedCommands(const MutationCommands & commands) const;
+
+    protected:
+        void addSupportedCommands(const MutationCommands & commands, MutationCommands & result_commands) const;
     };
 
     using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
@@ -554,11 +562,8 @@ public:
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
 
-    /// Returns the number of data mutations (UPDATEs and DELETEs) suitable for applying on the fly.
-    virtual UInt64 getNumberOnFlyDataMutations() const = 0;
-
-    /// Returns the number of metadata mutations (RENAMEs) suitable for applying on the fly.
-    virtual UInt64 getNumberOnFlyMetadataMutations() const = 0;
+    /// Returns the number of data mutations suitable for applying on the fly.
+    virtual MutationCounters getMutationCounters() const = 0;
 
     /// Same as above but only returns projection parts
     ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
@@ -1014,7 +1019,6 @@ public:
     static AlterConversionsPtr getAlterConversionsForPart(
         const MergeTreeDataPartPtr & part,
         const MutationsSnapshotPtr & mutations,
-        const StorageMetadataPtr & metadata,
         const ContextPtr & query_context);
 
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
@@ -1747,14 +1751,7 @@ struct CurrentlySubmergingEmergingTagger
 };
 
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
-void incrementMutationsCounters(
-    Int64 & num_data_mutations_to_apply,
-    Int64 & num_metadata_mutations_to_apply,
-    const MutationCommands & commands);
-
-void decrementMutationsCounters(
-    Int64 & num_data_mutations_to_apply,
-    Int64 & num_metadata_mutations_to_apply,
-    const MutationCommands & commands);
+void incrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
+void decrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
 
 }
