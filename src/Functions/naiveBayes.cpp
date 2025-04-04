@@ -40,22 +40,22 @@ using ProbabilityMap = HashMap<StringRef, double, StringRefHash>;
 class NaiveBayesModel
 {
 private:
-    // Laplace smoothing parameter
+    /// Laplace smoothing parameter
     const double alpha = 1.0;
 
     NGramMap ngram_counts;
     ClassCountMap class_totals;
 
-    // Precomputed prior ratios for each class
+    /// Precomputed prior ratios for each class
     ProbabilityMap class_priors;
 
-    // Vocabulary size is the number of distinct tokens in the model across all classes
+    /// Vocabulary size is the number of distinct tokens in the model across all classes
     size_t vocabulary_size = 0;
 
-    // Useful to detect if the model has been loaded before classifying
+    /// Useful to detect if the model has been loaded before classifying
     bool model_loaded = false;
 
-    // Arena to own all the key strings
+    /// Arena to own all the key strings
     Arena pool;
 
     inline StringRef allocateString(const String & s)
@@ -66,8 +66,8 @@ private:
     }
 
 public:
-    // Loads the model from file and the provided prior probability for each class. The file is expected to have lines like:
-    // <ngram> <class_label> <count>
+    /// Loads the model from file and the provided prior probability for each class. The file is expected to have lines like:
+    /// <ngram> <class_label> <count>
     void loadModel(const String & file_path, std::map<String, double> priors)
     {
         if (!std::filesystem::exists(file_path))
@@ -110,11 +110,11 @@ public:
             throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "No ngrams found in the model file {}", file_path);
         }
 
-        // Make sure that the classes provided in priors are present in the model
+        /// Make sure that the classes provided in priors are present in the model
         for (const auto & prior : priors)
         {
             String class_name = prior.first;
-            if (class_totals.find(class_name) == class_totals.end()) // Class present in config's <priors> not found in model
+            if (class_totals.find(class_name) == class_totals.end()) /// Class present in config's <priors> not found in model
             {
                 String available_classes = "";
                 for (const auto & class_entry : class_totals)
@@ -130,10 +130,10 @@ public:
             }
         }
 
-        // The following handles the case where the user provides priors for some classes but not all.
-        // After assigning the provided priors, we distribute the remaining probability equally among the classes
-        // that were not provided in the priors map (i.e., the classes that are present in the model but not in the
-        // config's <priors>)
+        /// The following handles the case where the user provides priors for some classes but not all.
+        /// After assigning the provided priors, we distribute the remaining probability equally among the classes
+        /// that were not provided in the priors map (i.e., the classes that are present in the model but not in the
+        /// config's <priors>)
         double provided_total_prior_prob = 0.0;
         for (const auto & prior : priors)
         {
@@ -141,7 +141,7 @@ public:
             provided_total_prior_prob += class_prior_prob;
         }
 
-        // Sanity check: the sum of provided priors should not exceed 1.0
+        /// Sanity check: the sum of provided priors should not exceed 1.0
         if (provided_total_prior_prob - 1.0 > 1e-6)
         {
             throw Exception(
@@ -158,11 +158,11 @@ public:
 
         const double remaining_probability = 1.0 - provided_total_prior_prob;
 
-        // Precompute the class priors
+        /// Precompute the class priors
         for (const auto & class_entry : class_totals)
         {
             String class_name = class_entry.getKey().toString();
-            if (priors.find(class_name) != priors.end()) // Class from model present in config's <priors>
+            if (priors.find(class_name) != priors.end()) /// Class from model present in config's <priors>
             {
                 class_priors[class_entry.getKey()] = priors.at(class_name);
             }
@@ -173,15 +173,15 @@ public:
             }
         }
 
-        // Vocabulary size is the number of distinct tokens
+        /// Vocabulary size is the number of distinct tokens
         vocabulary_size = ngram_counts.size();
 
-        // Mark the model as loaded
+        /// Mark the model as loaded
         model_loaded = true;
     }
 
-    // Classify an input string. The function splits the input into tokens (by space)
-    // and computes a log-probability for each class using Laplace smoothing
+    /// Classify an input string. The function splits the input into tokens (by space)
+    /// and computes a log-probability for each class using Laplace smoothing
     String classify(const String & input) const
     {
         if (!model_loaded)
@@ -220,7 +220,7 @@ public:
             }
         }
 
-        // Find the class with the highest log probability
+        /// Find the class with the highest log probability
         StringRef best_class;
         double max_log_prob = -std::numeric_limits<double>::infinity();
         for (const auto & entry : class_log_probabilities)
@@ -255,7 +255,7 @@ public:
             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing 'nb_models' key in config.");
         }
 
-        // Iterate over each <model> element in <nb_models>
+        /// Iterate over each <model> element in <nb_models>
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys("nb_models", keys);
         for (const auto & key : keys)
@@ -268,7 +268,7 @@ public:
                 const String model_name = config.getString(model_name_path);
                 const String model_data = config.getString(model_data_path);
 
-                // Extract the priors from the config if they exist
+                /// Extract the priors from the config if they exist
                 std::map<String, double> priors;
                 Poco::Util::AbstractConfiguration::Keys prior_keys;
 
