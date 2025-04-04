@@ -5,6 +5,8 @@
 #include <IO/HTTPCommon.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
+#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents
@@ -800,6 +802,37 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     }
 
     return res;
+}
+
+ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTPBasicCredentials & credentials_)
+{
+    ProxyConfiguration proxy_configuration;
+
+    if (!bypass_proxy)
+    {
+        auto proxy_protocol = ProxyConfiguration::protocolFromString(uri.getScheme());
+        proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
+    }
+
+    // todo it could be a problem if ReadWriteBufferFromHTTP throws
+    std::unique_ptr<ReadWriteBufferFromHTTP> ptr(new ReadWriteBufferFromHTTP(
+        connection_group,
+        uri,
+        method,
+        proxy_configuration,
+        read_settings,
+        timeouts,
+        credentials_,
+        remote_host_filter,
+        buffer_size,
+        max_redirects,
+        out_stream_callback,
+        use_external_buffer,
+        http_skip_not_found_url,
+        http_header_entries,
+        delay_initialization,
+        /*file_info_=*/ std::nullopt));
+    return ptr;
 }
 
 }
