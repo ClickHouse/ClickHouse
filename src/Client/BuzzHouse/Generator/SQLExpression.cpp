@@ -823,7 +823,7 @@ void StatementGenerator::generateWindowDefinition(RandomGenerator & rg, WindowDe
     }
     if (!this->allow_not_deterministic || (this->width < this->fc.max_width && rg.nextSmallNumber() < 4))
     {
-        generateOrderBy(rg, 0, true, false, wdef->mutable_order_by());
+        generateOrderBy(rg, 0, true, true, wdef->mutable_order_by());
     }
     if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
     {

@@ -1501,15 +1501,15 @@ bool StatementGenerator::generateGroupBy(
 }
 
 void StatementGenerator::generateOrderBy(
-    RandomGenerator & rg, const uint32_t ncols, const bool allow_settings, const bool allow_all, OrderByStatement * ob)
+    RandomGenerator & rg, const uint32_t ncols, const bool allow_settings, const bool is_window, OrderByStatement * ob)
 {
-    if (allow_settings && allow_all && rg.nextSmallNumber() < 3)
+    if (allow_settings && !is_window && rg.nextSmallNumber() < 3)
     {
         ob->set_oall(true);
     }
     else
     {
-        bool has_fill = false;
+        bool can_interpolate = false;
         std::vector<GroupCol> available_cols;
         OrderByList * olist = ob->mutable_olist();
 
@@ -1587,7 +1587,7 @@ void StatementGenerator::generateOrderBy(
                     const uint32_t nopt = rg.nextSmallNumber();
                     ExprOrderingWithFill * eowf = eot->mutable_fill();
 
-                    has_fill = true;
+                    can_interpolate |= !is_window && i == (nclauses - 1);
                     if (nopt < 4)
                     {
                         generateExpression(rg, eowf->mutable_from_expr());
@@ -1610,7 +1610,7 @@ void StatementGenerator::generateOrderBy(
         this->width -= nclauses;
 
         auto & projs = this->levels[this->current_level].projections;
-        if (has_fill && !projs.empty() && rg.nextSmallNumber() < 4)
+        if (can_interpolate && !projs.empty() && rg.nextSmallNumber() < 4)
         {
             const uint32_t nprojs = std::min<uint32_t>(UINT32_C(3), (rg.nextRandomUInt32() % static_cast<uint32_t>(projs.size())) + 1);
             const uint32_t iclauses = std::min<uint32_t>(this->fc.max_width - this->width, nprojs);
@@ -1893,7 +1893,7 @@ void StatementGenerator::generateSelect(
             && (force_order_by || rg.nextSmallNumber() < 4))
         {
             this->depth++;
-            generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), true, ssc->mutable_orderby());
+            generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), false, ssc->mutable_orderby());
             this->depth--;
         }
         if ((allowed_clauses & allow_limit) && rg.nextSmallNumber() < 4)
