@@ -1845,7 +1845,7 @@ void Planner::buildPlanForQueryNode()
     }
 
     if (select_query_options.to_stage != QueryProcessingStage::Complete && !select_query_options.is_subquery
-        && !planner_context->getQueryContext()->getClientInfo().distributed_depth
+        && planner_context->getQueryContext()->getClientInfo().distributed_depth <= 1
         && planner_context->getQueryContext()->getInitialQueryId() != planner_context->getQueryContext()->getCurrentQueryId())
         query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 

@@ -36,8 +36,8 @@ public:
 
     void transform(Chunk & chunk) override
     {
-        auto info = std::make_shared<ChunkSequenceNumber>(++chunk_sequence_number);
-        chunk.getChunkInfos().add(std::move(info));
+        chunk.getChunkInfos().extract<ChunkSequenceNumber>();
+        chunk.getChunkInfos().add(std::make_shared<ChunkSequenceNumber>(++chunk_sequence_number));
     }
 
 private:

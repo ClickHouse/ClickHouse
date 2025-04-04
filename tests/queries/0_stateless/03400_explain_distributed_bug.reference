@@ -8,6 +8,7 @@ Expression (Project names)
               Expression ((Before GROUP BY + Change column names to column identifiers))
                 ReadFromSystemNumbers
             ReadFromRemote (Read from remote replica)
-              Aggregating
-                Expression ((Before GROUP BY + Change column names to column identifiers))
-                  ReadFromSystemNumbers
+              BlocksMarshalling
+                Aggregating
+                  Expression ((Before GROUP BY + Change column names to column identifiers))
+                    ReadFromSystemNumbers

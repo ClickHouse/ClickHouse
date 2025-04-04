@@ -263,7 +263,7 @@ struct TurnOffBoolSettingTemporary
 
 Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
 {
-    if (!block || !codec || client_revision < DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
+    if (!block || !codec || client_revision < DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING)
         return block;
 
     Block res;
