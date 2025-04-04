@@ -17,7 +17,7 @@ namespace DB
 template <typename Definition, typename Configuration>
 StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration>::executeImpl(
     const ASTPtr & /*function*/, ContextPtr context,
-    const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const
+    const std::string & table_name, ColumnsDescription cached_columns, const ASTPtr & insert_query) const
 {
     auto configuration = Base::getConfiguration();
 

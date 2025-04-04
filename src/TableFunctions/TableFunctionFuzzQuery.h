@@ -30,7 +30,7 @@ private:
         ContextPtr context,
         const std::string & table_name,
         ColumnsDescription cached_columns,
-        ASTInsertQuery * insert_query) const override;
+        const ASTPtr & insert_query) const override;
 
     const char * getStorageTypeName() const override { return "fuzzQuery"; }
 

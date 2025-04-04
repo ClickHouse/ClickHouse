@@ -36,9 +36,9 @@ StoragePtr TableFunctionFuzzJSON::executeImpl(
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription /*cached_columns*/,
-    ASTInsertQuery * insert_query) const
+    const ASTPtr & insert_query) const
 {
-    ColumnsDescription columns = getActualTableStructure(context, insert_query);
+    ColumnsDescription columns = getActualTableStructure(context, insert_query != nullptr);
     auto res = std::make_shared<StorageFuzzJSON>(
         StorageID(getDatabaseName(), table_name),
         columns,

@@ -48,7 +48,7 @@ public:
     bool hasStaticStructure() const override { return true; }
 
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, const ASTPtr & insert_query) const override;
 
     const char * getStorageTypeName() const override { return "Executable"; }
 
@@ -163,7 +163,7 @@ ColumnsDescription TableFunctionExecutable::getActualTableStructure(ContextPtr c
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, ASTInsertQuery * insert_query) const
+StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, const ASTPtr & insert_query) const
 {
     auto storage_id = StorageID(getDatabaseName(), table_name);
     auto global_context = context->getGlobalContext();
@@ -178,7 +178,7 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
         format,
         settings,
         input_queries,
-        getActualTableStructure(context, insert_query),
+        getActualTableStructure(context, insert_query != nullptr),
         ConstraintsDescription{},
         /* comment = */ "");
     storage->startup();

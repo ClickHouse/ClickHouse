@@ -154,7 +154,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         }
 
         return table_function_ptr->execute(query.table_function, current_context, table_function_ptr->getName(),
-                                           /* cached_columns */ {}, /* use_global_context */ false, &query);
+                                           /* cached_columns */ {}, /* use_global_context */ false, query.clone());
     }
 
     if (query.table_id)

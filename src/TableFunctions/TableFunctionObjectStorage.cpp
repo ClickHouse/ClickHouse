@@ -129,7 +129,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         ContextPtr context,
         const std::string & table_name,
         ColumnsDescription cached_columns,
-        ASTInsertQuery * insert_query) const
+        const ASTPtr & insert_query) const
 {
     ColumnsDescription columns;
     chassert(configuration);
@@ -151,7 +151,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
             /* format_settings */ std::nullopt,
             /* mode */ LoadingStrictnessLevel::CREATE,
             /* distributed_processing */ false,
-            insert_query ? insert_query->partition_by : nullptr);
+            insert_query ? insert_query->as<ASTInsertQuery>()->partition_by : nullptr);
 
     storage->startup();
     return storage;
