@@ -224,6 +224,7 @@ def main():
         res = results[-1].is_ok()
 
     CH = ClickHouseProc(fast_test=True)
+    attach_debug = False
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
@@ -234,11 +235,7 @@ def main():
             Result.create_from(name=step_name, status=res, stopwatch=stop_watch_)
         )
         if not results[-1].is_ok():
-            attach_files.append(f"{temp_dir}/build/programs/clickhouse")
-            attach_files += [
-                f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
-                f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
-            ]
+            attach_debug = True
 
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
@@ -258,18 +255,19 @@ def main():
                 )
             )
         if not results[-1].is_ok():
-            attach_files.append(f"{temp_dir}/build/programs/clickhouse")
-            attach_files += [
-                f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
-                f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
-            ]
+            attach_debug = True
+
+    if attach_debug:
+        attach_files += [
+            Utils.compress_file(f"{temp_dir}/build/programs/clickhouse-stripped"),
+            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
+            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
+        ]
 
     CH.terminate()
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=list(set(attach_files))
-    ).add_job_summary_to_info(
-        with_local_run_command=True, with_test_in_run_command=True
+        results=results, stopwatch=stop_watch, files=attach_files
     ).complete_job()
 
 

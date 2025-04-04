@@ -471,7 +471,7 @@ class Utils:
     @staticmethod
     def raise_with_error(error_message, stdout="", stderr="", ex=None):
         Utils.print_formatted_error(error_message, stdout, stderr)
-        raise ex or RuntimeError()
+        raise ex or RuntimeError(error_message)
 
     @staticmethod
     def timestamp():
@@ -604,6 +604,36 @@ class Utils:
         return res
 
     @classmethod
+    def compress_file(cls, path):
+        if Shell.check("which zstd"):
+            path_out = f"{path}.zst"
+            Shell.check(
+                f"rm -f {path_out} && zstd < {path} > {path_out}",
+                verbose=True,
+                strict=True,
+            )
+        elif Shell.check("which pigz"):
+            path_out = f"{path}.gz"
+            Shell.check(
+                f"rm -f {path_out} && pigz < {path} > {path_out}",
+                verbose=True,
+                strict=True,
+            )
+        elif Shell.check("which gzip"):
+            path_out = f"{path}.gz"
+            Shell.check(
+                f"rm -f {path_out} && gzip < {path} > {path_out}",
+                verbose=True,
+                strict=True,
+            )
+        else:
+            path_out = path
+            Utils.raise_with_error(
+                f"Failed to compress file [{path}] no zstd or gz installed"
+            )
+        return path_out
+
+    @classmethod
     def add_to_PATH(cls, path):
         path_cur = os.getenv("PATH", "")
         if path_cur:
@@ -703,8 +733,16 @@ class TeePopen:
     def send_signal(self, signal_num):
         os.killpg(self.process.pid, signal_num)
 
-    def get_latest_log(self, max_lies=20):
-        return "\n".join(self.log_rolling_buffer[-max_lies:])
+    def get_latest_log(self, max_lines=20):
+        buffer = list(self.log_rolling_buffer)
+
+        # Search backwards for "Traceback"
+        for i in range(len(buffer) - 1, -1, -1):
+            if "Traceback" in buffer[i]:
+                return "\n".join(buffer[i:])
+
+        # Fallback: return last max_lines
+        return "\n".join(buffer[-max_lines:])
 
 
 if __name__ == "__main__":

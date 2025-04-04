@@ -65,7 +65,19 @@ public:
         const zkutil::EventPtr & zk_changed_event = nullptr,
         bool is_config_changed = true);
 
-    XMLDocumentPtr parseConfig(const std::string & config_path);
+    static void processIncludes(
+        XMLDocumentPtr & config,
+        const Substitutions & substitutions,
+        const std::string & include_from_path,
+        bool throw_on_bad_incl,
+        Poco::XML::DOMParser & dom_parser,
+        const LoggerPtr & log,
+        std::unordered_set<std::string> * contributing_zk_paths = {},
+        std::vector<std::string> * contributing_files = {},
+        zkutil::ZooKeeperNodeCache * zk_node_cache = {},
+        const zkutil::EventPtr & zk_changed_event = {});
+
+    static XMLDocumentPtr parseConfig(const std::string & config_path, Poco::XML::DOMParser & dom_parser);
 
     /// These configurations will be used if there is no configuration file.
     static void registerEmbeddedConfig(std::string name, std::string_view content);
@@ -161,19 +173,23 @@ private:
     void hideRecursive(Poco::XML::Node * config_root);
     XMLDocumentPtr hideElements(const XMLDocumentPtr & xml_tree);
 
-    void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
+    static void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
 
     /// If config root node name is not 'clickhouse' and merging config's root node names doesn't match, bypasses merging and returns false.
     /// For compatibility root node 'yandex' considered equal to 'clickhouse'.
     bool merge(XMLDocumentPtr config, XMLDocumentPtr with);
 
-    void doIncludesRecursive(
+    static void doIncludesRecursive(
             XMLDocumentPtr config,
             XMLDocumentPtr include_from,
+            const Substitutions & substitutions,
+            bool throw_on_bad_incl,
+            Poco::XML::DOMParser & dom_parser,
+            const LoggerPtr & log,
             Poco::XML::Node * node,
             zkutil::ZooKeeperNodeCache * zk_node_cache,
             const zkutil::EventPtr & zk_changed_event,
-            std::unordered_set<std::string> & contributing_zk_paths);
+            std::unordered_set<std::string> * contributing_zk_paths);
 };
 
 }

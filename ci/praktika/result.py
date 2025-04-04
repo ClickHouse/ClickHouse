@@ -193,68 +193,39 @@ class Result(MetaClasses.Serializable):
         self.dump()
         return self
 
-    def add_job_summary_to_info(
-        self, with_local_run_command=False, with_test_in_run_command=False
-    ):
-        if not self.is_ok():
-            failed = [r for r in self.results if not r.is_ok()]
-            if failed:
-                if (
-                    len(failed) == 1
-                    and failed[0].name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
-                    and failed[0].info
-                ):
-                    summary_info = failed[0].info
-                else:
-                    failed_str = ",".join([f.name for f in failed])
-                    summary_info = (
-                        f"Failed: {failed_str}"
-                        if len(failed_str) < 80
-                        else f"Failed: {len(failed)} tests"
-                    )
-            else:
-                summary_info = "Failed"
-        else:
-            summary_info = next(
-                (
-                    r.info
-                    for r in self.results
-                    if r.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS and r.info
-                ),
-                "ok",
-            )
+    def _add_job_summary_to_info(self):
+        subresult_with_tests = self
+        with_test_in_run_command = False
 
-        self.set_info(summary_info)
+        # Use a specific sub-result if configured
+        job_config = _Environment.get().JOB_CONFIG or {}
+        result_name_for_cidb = job_config.get("result_name_for_cidb", "")
+        if result_name_for_cidb:
+            for r in self.results:
+                if r.name == result_name_for_cidb:
+                    subresult_with_tests = r
+                    with_test_in_run_command = True
+                    if subresult_with_tests.info:
+                        self.set_info(subresult_with_tests.info)
+                    break
 
-        if with_local_run_command and not self.is_ok():
-            command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
-            if with_test_in_run_command:
-                first_failed_test = None
-                first_failed_task_result = next(
-                    (r for r in self.results if not r.is_ok()), None
-                )
-                if (
-                    first_failed_task_result.name
-                    in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
-                ):
-                    # case: test cases are nested inside subtask
-                    first_failed_test = next(
-                        (
-                            r
-                            for r in first_failed_task_result.results
-                            if "fail" in r.status.lower()
-                        ),
-                        None,
-                    )
-                elif not any(
-                    r.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
-                    for r in self.results
-                ):
-                    # case: test cases are on the first level in job's Result
-                    first_failed_test = first_failed_task_result
-                if first_failed_test:
-                    command_info += f" --test {first_failed_test.name}"
-            self.set_info(command_info)
+        # If no failures, nothing more to do
+        if self.is_ok():
+            return self
+
+        # Collect failed test case names
+        failed = [r.name for r in subresult_with_tests.results if not r.is_ok()]
+
+        if failed:
+            if len(failed) < 10:
+                failed_tcs = ", ".join(failed)
+                self.set_info(f"Failed: {failed_tcs}")
+
+        # Suggest local command to rerun
+        command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
+        if with_test_in_run_command and failed:
+            command_info += f" --test {failed[0]}"
+        self.set_info(command_info)
 
         return self
 
@@ -381,7 +352,15 @@ class Result(MetaClasses.Serializable):
         )
 
     @classmethod
-    def from_gtest_run(cls, name, unit_tests_path, with_log=False):
+    def from_gtest_run(cls, unit_tests_path, name="", with_log=False):
+        """
+        Runs gtest and generates praktika Result
+        :param unit_tests_path:
+        :param name: Should be set if executed as a job subtask with name @name.
+        If it's a job itself job.name will be taken as name by default
+        :param with_log:
+        :return:
+        """
         Shell.check(f"rm {ResultTranslator.GTEST_RESULT_FILE}")
         result = Result.from_commands_run(
             name=name,
@@ -474,7 +453,9 @@ class Result(MetaClasses.Serializable):
             files=[log_file] if with_log else None,
         )
 
-    def complete_job(self):
+    def complete_job(self, with_job_summary_in_info=True):
+        if with_job_summary_in_info:
+            self._add_job_summary_to_info()
         self.dump()
         if not self.is_ok():
             print("ERROR: Job Failed")

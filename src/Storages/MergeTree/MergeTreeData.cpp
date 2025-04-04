@@ -2483,20 +2483,39 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
     /// is called first and all tasks stopped before local variables are being destroyed.
     ThreadPoolCallbackRunnerLocal<void> runner(pool, "PrewarmCaches");
 
+    auto enough_space = [&](const auto & cache, double ratio_to_prewarm)
+    {
+        return cache->sizeInBytes() < cache->maxSizeInBytes() * ratio_to_prewarm;
+    };
+
     for (const auto & part : data_parts)
     {
         bool added_task = false;
 
-        if (index_cache && !part->isIndexLoaded() && index_cache->sizeInBytes() < index_cache->maxSizeInBytes() * index_ratio_to_prewarm)
+        if (index_cache && !part->isIndexLoaded() && enough_space(index_cache, index_ratio_to_prewarm))
         {
+            runner([&]
+            {
+                /// Check again, because another task may have filled the cache while this task was waiting in the queue.
+                /// The cache still may be filled slightly more than `index_ratio_to_prewarm`, but it's ok.
+                if (enough_space(index_cache, index_ratio_to_prewarm))
+                    part->loadIndexToCache(*index_cache);
+            });
+
             added_task = true;
-            runner([&] { part->loadIndexToCache(*index_cache); });
         }
 
-        if (mark_cache && mark_cache->sizeInBytes() < mark_cache->maxSizeInBytes() * marks_ratio_to_prewarm)
+        if (mark_cache && enough_space(mark_cache, marks_ratio_to_prewarm))
         {
+            runner([&]
+            {
+                /// Check again, because another task may have filled the cache while this task was waiting in the queue.
+                /// The cache still may be filled slightly more than `marks_ratio_to_prewarm`, but it's ok.
+                if (enough_space(mark_cache, marks_ratio_to_prewarm))
+                    part->loadMarksToCache(columns_to_prewarm_marks, mark_cache.get());
+            });
+
             added_task = true;
-            runner([&] { part->loadMarksToCache(columns_to_prewarm_marks, mark_cache.get()); });
         }
 
         if (!added_task)
