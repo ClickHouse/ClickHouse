@@ -553,6 +553,7 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Setup env script failed with exception [{e}]")
                 traceback.print_exc()
+                Info().store_traceback()
             print(f"=== Setup env finished ===\n\n")
         else:
             self.generate_local_run_environment(
@@ -570,6 +571,7 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Pre-run script failed with exception [{e}]")
                 traceback.print_exc()
+                Info().store_traceback()
             print(f"=== Pre run finished ===\n\n")
 
         if res:
@@ -590,6 +592,7 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Run script failed with exception [{e}]")
                 traceback.print_exc()
+                Info().store_traceback()
                 res = False
 
             result = Result.from_fs(job.name)
