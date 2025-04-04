@@ -263,13 +263,9 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(cons
 
 bool MetadataStorageFromPlainRewritableObjectStorage::supportsPartitionCommand(const PartitionCommand & command) const
 {
-    constexpr std::array supported_types
-        = {PartitionCommand::DROP_PARTITION,
-           PartitionCommand::DROP_DETACHED_PARTITION,
-           PartitionCommand::ATTACH_PARTITION,
-           PartitionCommand::MOVE_PARTITION,
-           PartitionCommand::REPLACE_PARTITION};
-    return std::find(supported_types.begin(), supported_types.end(), command.type) != supported_types.end();
+    return command.type == PartitionCommand::DROP_PARTITION || command.type == PartitionCommand::DROP_DETACHED_PARTITION
+        || command.type == PartitionCommand::ATTACH_PARTITION || command.type == PartitionCommand::MOVE_PARTITION
+        || command.type == PartitionCommand::REPLACE_PARTITION;
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
