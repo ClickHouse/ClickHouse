@@ -709,7 +709,7 @@ namespace
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         String query_text;
         ASTPtr ast;
-        ASTInsertQuery * insert_query = nullptr;
+        ASTInsertQuery * insert_query;
         String input_format;
         String input_data_delimiter;
         CompressionMethod input_compression_method = CompressionMethod::None;
