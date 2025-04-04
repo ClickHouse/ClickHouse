@@ -247,7 +247,7 @@ class FunctionNaiveBayesClassifier : public IFunction
 {
 private:
     ContextPtr context;
-    NaiveBayesModel model;
+    std::map<String, NaiveBayesModel> models;
 
 public:
     static constexpr auto name = "naiveBayesClassifier";
@@ -255,8 +255,52 @@ public:
     explicit FunctionNaiveBayesClassifier(ContextPtr context_)
         : context(context_)
     {
-        String model_path = "/etc/clickhouse-server/config.d/naive_bayes_test.txt";
-        model.loadModelFromFile(model_path);
+        const auto & config = context->getConfigRef();
+
+        if (!config.has("nb_models"))
+        {
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing 'nb_models' key in config.");
+        }
+
+        // Iterate over each <model> element in <nb_models>
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys("nb_models", keys);
+        for (const auto & key : keys)
+        {
+            const String model_name_path = "nb_models." + key + ".name";
+            const String model_data_path = "nb_models." + key + ".path";
+            const String model_priors_path = "nb_models." + key + ".priors";
+            if (config.has(model_name_path) and config.has(model_data_path))
+            {
+                const String model_name = config.getString(model_name_path);
+                const String model_data = config.getString(model_data_path);
+
+                // Extract the priors from the config if they exist
+                std::map<String, double> priors;
+                Poco::Util::AbstractConfiguration::Keys prior_keys;
+
+                config.keys(model_priors_path, prior_keys);
+                for (const auto & prior_key : prior_keys)
+                {
+                    const String model_prior_path = model_priors_path + "." + prior_key;
+                    if (!config.has(model_prior_path + ".class") or !config.has(model_prior_path + ".value"))
+                    {
+                        throw Exception(
+                            ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing 'class' or 'value' key in <priors> for model {}", model_name);
+                    }
+                    const String class_name = config.getString(model_prior_path + ".class");
+                    const double prior = config.getDouble(model_prior_path + ".value");
+                    priors[class_name] = prior;
+                }
+
+                models[model_name].loadModel(model_data, priors);
+            }
+        }
+
+        if (models.empty())
+        {
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No models found under <nb_models> in config.");
+        }
     }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionNaiveBayesClassifier>(context); }
