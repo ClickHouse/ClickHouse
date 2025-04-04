@@ -12,8 +12,6 @@
 #include <sys/epoll.h>
 #endif
 
-#include <mutex>
-
 
 namespace DB
 {
