@@ -80,6 +80,11 @@ struct QueryPlanOptimizationSettings
     bool optimize_use_implicit_projections;
     bool force_use_projection;
     String force_projection_name;
+
+    /// If lazy materialization optimisation is enabled
+    bool optimize_lazy_materialization = false;
+    size_t max_limit_for_lazy_materialization = 0;
+
     size_t max_limit_for_ann_queries;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
