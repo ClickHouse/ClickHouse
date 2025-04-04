@@ -22,22 +22,7 @@ namespace DB
 
 using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw)
-{
-    assert(global_context == global_context->getGlobalContext());
-    TableLoadingDependenciesVisitor::Data data;
-    data.default_database = global_context->getCurrentDatabase();
-    data.create_query = ast;
-    data.global_context = global_context;
-    data.table_name = table;
-    data.can_throw = can_throw;
-    TableLoadingDependenciesVisitor visitor{data};
-    visitor.visit(ast);
-    data.dependencies.erase(table);
-    return data.dependencies;
-}
-
-TableNamesSet getLoadingDependenciesFromAlterQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw)
+TableNamesSet getLoadingDependenciesQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw)
 {
     assert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;

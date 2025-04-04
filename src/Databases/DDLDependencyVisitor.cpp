@@ -123,8 +123,10 @@ namespace
                 skip_asts.insert(create.select);
         }
 
-        void visitAlterQuery(const ASTAlterQuery & alter) {
-            for (const auto& command : alter.children) {
+        void visitAlterQuery(const ASTAlterQuery & alter)
+        {
+            for (const auto& command : alter.children)
+            {
                 visit(command);
             }
         }

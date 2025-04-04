@@ -70,7 +70,7 @@ void addTableDependencies(const ASTAlterQuery & create, const ASTPtr & query_ptr
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
     auto ref_dependencies = getDependenciesFromAlterQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromAlterQuery(context->getGlobalContext(), qualified_name, query_ptr);
+    auto loading_dependencies = getLoadingDependenciesQuery(context->getGlobalContext(), qualified_name, query_ptr);
     DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies, loading_dependencies);
 }
 
@@ -78,7 +78,7 @@ void checkTableCanBeAlteredWithNoCyclicDependencies(const ASTAlterQuery & alter,
 {
     QualifiedTableName qualified_name{alter.getDatabase(), alter.getTable()};
     auto ref_dependencies = getDependenciesFromAlterQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
-    auto loading_dependencies = getLoadingDependenciesFromAlterQuery(context->getGlobalContext(), qualified_name, query_ptr, /*can_throw*/ true);
+    auto loading_dependencies = getLoadingDependenciesQuery(context->getGlobalContext(), qualified_name, query_ptr, /*can_throw*/ true);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies, loading_dependencies);
 }
 
