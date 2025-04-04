@@ -4158,45 +4158,73 @@ CONV_FN(TopSelect, top)
     }
 }
 
+static void SystemCommandOnCluster(String & ret, const String & desc, const SystemCommand & cmd, const ExprSchemaTable & est)
+{
+    ret += desc;
+    if (cmd.has_cluster())
+    {
+        ClusterToString(ret, cmd.cluster());
+    }
+    ret += " ";
+    ExprSchemaTableToString(ret, est);
+}
+
 CONV_FN(SystemCommand, cmd)
 {
+    bool can_set_cluster = false;
+
     ret += "SYSTEM ";
     using CmdType = SystemCommand::SystemCmdOneofCase;
     switch (cmd.system_cmd_oneof_case())
     {
         case CmdType::kReloadEmbeddedDictionaries:
             ret += "RELOAD EMBEDDED DICTIONARIES";
+            can_set_cluster = true;
             break;
         case CmdType::kReloadDictionaries:
             ret += "RELOAD DICTIONARIES";
+            can_set_cluster = true;
             break;
         case CmdType::kReloadModels:
             ret += "RELOAD MODELS";
+            can_set_cluster = true;
             break;
         case CmdType::kReloadFunctions:
             ret += "RELOAD FUNCTIONS";
+            can_set_cluster = true;
             break;
         case CmdType::kReloadFunction:
-            ret += "RELOAD FUNCTION ";
+            ret += "RELOAD FUNCTION";
+            if (cmd.has_cluster())
+            {
+                ClusterToString(ret, cmd.cluster());
+            }
+            ret += " ";
             FunctionToString(ret, cmd.reload_function());
             break;
         case CmdType::kReloadAsynchronousMetrics:
             ret += "RELOAD ASYNCHRONOUS METRICS";
+            can_set_cluster = true;
             break;
         case CmdType::kDropDnsCache:
             ret += "DROP DNS CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kDropMarkCache:
             ret += "DROP MARK CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kDropUncompressedCache:
             ret += "DROP UNCOMPRESSED CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kDropCompiledExpressionCache:
             ret += "DROP COMPILED EXPRESSION CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kDropQueryCache:
             ret += "DROP QUERY CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kDropFormatSchemaCache:
             ret += "DROP FORMAT SCHEMA CACHE";
@@ -4207,113 +4235,106 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kFlushLogs:
             ret += "FLUSH LOGS";
+            can_set_cluster = true;
             break;
         case CmdType::kReloadConfig:
             ret += "RELOAD CONFIG";
+            can_set_cluster = true;
             break;
         case CmdType::kReloadUsers:
             ret += "RELOAD USERS";
+            can_set_cluster = true;
             break;
         case CmdType::kStopMerges:
-            ret += "STOP MERGES ";
-            ExprSchemaTableToString(ret, cmd.stop_merges());
+            SystemCommandOnCluster(ret, "STOP MERGES", cmd, cmd.stop_merges());
             break;
         case CmdType::kStartMerges:
-            ret += "START MERGES ";
-            ExprSchemaTableToString(ret, cmd.start_merges());
+            SystemCommandOnCluster(ret, "START MERGES", cmd, cmd.start_merges());
             break;
         case CmdType::kStopTtlMerges:
-            ret += "STOP TTL MERGES ";
-            ExprSchemaTableToString(ret, cmd.stop_ttl_merges());
+            SystemCommandOnCluster(ret, "STOP TTL MERGES", cmd, cmd.stop_ttl_merges());
             break;
         case CmdType::kStartTtlMerges:
-            ret += "START TTL MERGES ";
-            ExprSchemaTableToString(ret, cmd.start_ttl_merges());
+            SystemCommandOnCluster(ret, "START TTL MERGES", cmd, cmd.start_ttl_merges());
             break;
         case CmdType::kStopMoves:
-            ret += "STOP MOVES ";
-            ExprSchemaTableToString(ret, cmd.stop_moves());
+            SystemCommandOnCluster(ret, "STOP MOVES", cmd, cmd.stop_moves());
             break;
         case CmdType::kStartMoves:
-            ret += "START MOVES ";
-            ExprSchemaTableToString(ret, cmd.start_moves());
+            SystemCommandOnCluster(ret, "START MOVES", cmd, cmd.start_moves());
             break;
         case CmdType::kWaitLoadingParts:
-            ret += "WAIT LOADING PARTS ";
-            ExprSchemaTableToString(ret, cmd.wait_loading_parts());
+            SystemCommandOnCluster(ret, "WAIT LOADING PARTS", cmd, cmd.wait_loading_parts());
             break;
         case CmdType::kStopFetches:
-            ret += "STOP FETCHES ";
-            ExprSchemaTableToString(ret, cmd.stop_fetches());
+            SystemCommandOnCluster(ret, "STOP FETCHES", cmd, cmd.stop_fetches());
             break;
         case CmdType::kStartFetches:
-            ret += "START FETCHES ";
-            ExprSchemaTableToString(ret, cmd.start_fetches());
+            SystemCommandOnCluster(ret, "START FETCHES", cmd, cmd.start_fetches());
             break;
         case CmdType::kStopReplicatedSends:
-            ret += "STOP REPLICATED SENDS ";
-            ExprSchemaTableToString(ret, cmd.stop_replicated_sends());
+            SystemCommandOnCluster(ret, "STOP REPLICATED SENDS", cmd, cmd.stop_replicated_sends());
             break;
         case CmdType::kStartReplicatedSends:
-            ret += "START REPLICATED SENDS ";
-            ExprSchemaTableToString(ret, cmd.start_replicated_sends());
+            SystemCommandOnCluster(ret, "START REPLICATED SENDS", cmd, cmd.start_replicated_sends());
             break;
         case CmdType::kStopReplicationQueues:
-            ret += "STOP REPLICATION QUEUES ";
-            ExprSchemaTableToString(ret, cmd.stop_replication_queues());
+            SystemCommandOnCluster(ret, "STOP REPLICATION QUEUES", cmd, cmd.stop_replication_queues());
             break;
         case CmdType::kStartReplicationQueues:
-            ret += "START REPLICATION QUEUES ";
-            ExprSchemaTableToString(ret, cmd.start_replication_queues());
+            SystemCommandOnCluster(ret, "START REPLICATION QUEUES", cmd, cmd.start_replication_queues());
             break;
         case CmdType::kStopPullingReplicationLog:
-            ret += "STOP PULLING REPLICATION LOG ";
-            ExprSchemaTableToString(ret, cmd.stop_pulling_replication_log());
+            SystemCommandOnCluster(ret, "STOP PULLING REPLICATION LOG", cmd, cmd.stop_pulling_replication_log());
             break;
         case CmdType::kStartPullingReplicationLog:
-            ret += "START PULLING REPLICATION LOG ";
-            ExprSchemaTableToString(ret, cmd.start_pulling_replication_log());
+            SystemCommandOnCluster(ret, "START PULLING REPLICATION LOG", cmd, cmd.start_pulling_replication_log());
             break;
         case CmdType::kSyncReplica:
-            ret += "SYNC REPLICA ";
-            ExprSchemaTableToString(ret, cmd.sync_replica().est());
+            SystemCommandOnCluster(ret, "SYNC REPLICA", cmd, cmd.sync_replica().est());
             ret += " ";
             ret += SyncReplica_SyncPolicy_Name(cmd.sync_replica().policy());
             break;
         case CmdType::kSyncReplicatedDatabase:
-            ret += "SYNC DATABASE REPLICA ";
+            ret += "SYNC DATABASE REPLICA";
+            if (cmd.has_cluster())
+            {
+                ClusterToString(ret, cmd.cluster());
+            }
+            ret += " ";
             DatabaseToString(ret, cmd.sync_replicated_database());
             break;
         case CmdType::kRestartReplica:
-            ret += "SYNC RESTART REPLICA ";
-            ExprSchemaTableToString(ret, cmd.restart_replica());
+            SystemCommandOnCluster(ret, "RESTART REPLICA", cmd, cmd.restart_replica());
             break;
         case CmdType::kRestoreReplica:
-            ret += "SYNC RESTORE REPLICA ";
-            ExprSchemaTableToString(ret, cmd.restore_replica());
+            SystemCommandOnCluster(ret, "RESTORE REPLICA", cmd, cmd.restore_replica());
             break;
         case CmdType::kRestartReplicas:
             ret += "RESTART REPLICAS";
+            can_set_cluster = true;
             break;
         case CmdType::kDropFilesystemCache:
             ret += "DROP FILESYSTEM CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kSyncFileCache:
             ret += "SYNC FILE CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kLoadPks:
             ret += "LOAD PRIMARY KEY";
+            can_set_cluster = true;
             break;
         case CmdType::kLoadPk:
-            ret += "LOAD PRIMARY KEY ";
-            ExprSchemaTableToString(ret, cmd.load_pk());
+            SystemCommandOnCluster(ret, "LOAD PRIMARY KEY", cmd, cmd.load_pk());
             break;
         case CmdType::kUnloadPks:
             ret += "UNLOAD PRIMARY KEY";
+            can_set_cluster = true;
             break;
         case CmdType::kUnloadPk:
-            ret += "UNLOAD PRIMARY KEY ";
-            ExprSchemaTableToString(ret, cmd.unload_pk());
+            SystemCommandOnCluster(ret, "UNLOAD PRIMARY KEY", cmd, cmd.unload_pk());
             break;
         case CmdType::kRefreshViews:
             ret += "REFRESH VIEW";
@@ -4345,51 +4366,77 @@ CONV_FN(SystemCommand, cmd)
             ExprSchemaTableToString(ret, cmd.wait_view());
             break;
         case CmdType::kPrewarmCache:
-            ret += "PREWARM MARK CACHE ";
-            ExprSchemaTableToString(ret, cmd.prewarm_cache());
+            SystemCommandOnCluster(ret, "PREWARM MARK CACHE", cmd, cmd.prewarm_cache());
             break;
         case CmdType::kPrewarmPrimaryIndexCache:
-            ret += "PREWARM PRIMARY INDEX CACHE ";
-            ExprSchemaTableToString(ret, cmd.prewarm_primary_index_cache());
+            SystemCommandOnCluster(ret, "PREWARM PRIMARY INDEX CACHE", cmd, cmd.prewarm_primary_index_cache());
             break;
         case CmdType::kDropConnectionsCache:
             ret += "DROP CONNECTIONS CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kDropPrimaryIndexCache:
             ret += "DROP PRIMARY INDEX CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kDropIndexMarkCache:
             ret += "DROP INDEX MARK CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kDropIndexUncompressedCache:
             ret += "DROP INDEX UNCOMPRESSED CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kDropMmapCache:
             ret += "DROP MMAP CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kDropPageCache:
             ret += "DROP PAGE CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kDropSchemaCache:
             ret += "DROP SCHEMA CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kDropS3ClientCache:
             ret += "DROP S3 CLIENT CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kFlushAsyncInsertQueue:
             ret += "FLUSH ASYNC INSERT QUEUE";
+            can_set_cluster = true;
             break;
         case CmdType::kSyncFilesystemCache:
             ret += "SYNC FILESYSTEM CACHE";
-            break;
-        case CmdType::kDropCache:
-            ret += "DROP CACHE";
+            can_set_cluster = true;
             break;
         case CmdType::kDropSkipIndexCache:
             ret += "DROP SKIPPING INDEX CACHE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kReloadDictionary:
+            SystemCommandOnCluster(ret, "RELOAD DICTIONARY", cmd, cmd.reload_dictionary());
+            break;
+        case CmdType::kFlushDistributed:
+            SystemCommandOnCluster(ret, "FLUSH DISTRIBUTED", cmd, cmd.flush_distributed());
+            break;
+        case CmdType::kStopDistributedSends:
+            SystemCommandOnCluster(ret, "STOP DISTRIBUTED SENDS", cmd, cmd.stop_distributed_sends());
+            break;
+        case CmdType::kStartDistributedSends:
+            SystemCommandOnCluster(ret, "START DISTRIBUTED SENDS", cmd, cmd.start_distributed_sends());
+            break;
+        case CmdType::kDropQueryConditionCache:
+            ret += "DROP QUERY CONDITION CACHE";
+            can_set_cluster = true;
             break;
         default:
             ret += "REFRESH VIEW";
+    }
+    if (can_set_cluster && cmd.has_cluster())
+    {
+        ClusterToString(ret, cmd.cluster());
     }
 }
 

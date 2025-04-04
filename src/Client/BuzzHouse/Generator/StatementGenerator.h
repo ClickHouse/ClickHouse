@@ -251,11 +251,12 @@ private:
     }
 
     template <typename T>
-    void setTableSystemStatement(RandomGenerator & rg, const std::function<bool(const T &)> & f, ExprSchemaTable * est)
+    std::optional<String> setTableSystemStatement(RandomGenerator & rg, const std::function<bool(const T &)> & f, ExprSchemaTable * est)
     {
         const T & t = rg.pickRandomly(filterCollection<T>(f));
 
         t.setName(est, false);
+        return t.getCluster();
     }
 
 public:
