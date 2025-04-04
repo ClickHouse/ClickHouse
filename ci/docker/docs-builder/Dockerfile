@@ -6,6 +6,9 @@ RUN apt-get update && \
     git \
     openssh-client \
     python3 \
+    python3-venv \
+    rsync \
+    curl \
     ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
