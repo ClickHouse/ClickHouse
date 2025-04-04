@@ -16,7 +16,7 @@ Contains information and status for recent asynchronous jobs (e.g. for tables lo
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.asynchronous_loader
 LIMIT 1

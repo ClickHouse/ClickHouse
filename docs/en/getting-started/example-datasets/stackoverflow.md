@@ -6,13 +6,16 @@ slug: /getting-started/example-datasets/stackoverflow
 title: 'Analyzing Stack Overflow data with ClickHouse'
 ---
 
+import Image from '@theme/IdealImage';
+import stackoverflow from './images/stackoverflow.png'
+
 This dataset contains every `Posts`, `Users`, `Votes`, `Comments`, `Badges`, `PostHistory`, and `PostLinks` that has occurred on Stack Overflow.
 
 Users can either download pre-prepared Parquet versions of the data, containing every post up to April 2024, or download the latest data in XML format and load this. Stack Overflow provide updates to this data periodically - historically every 3 months.
 
 The following diagram shows the schema for the available tables assuming Parquet format.
 
-![Stack Overflow schema](./images/stackoverflow.png)
+<Image img={stackoverflow} alt="Stack Overflow schema" size="md"/>
 
 A description of the schema of this data can be found [here](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede).
 

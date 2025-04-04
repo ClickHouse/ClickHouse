@@ -111,6 +111,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
+    extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
 }
 
 namespace ErrorCodes
@@ -486,7 +487,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             infos.add(part_infos);
         }
 
-        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->metadata_snapshot, global_ctx->context));
+        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context));
     }
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
@@ -954,21 +955,13 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 
     ctx->it_name_and_type = global_ctx->gathering_columns.cbegin();
 
-    const auto & settings = global_ctx->context->getSettingsRef();
+    const auto & storage_settings = *global_ctx->data->getSettings();
 
-    size_t max_delayed_streams = 0;
     if (global_ctx->new_data_part->getDataPartStorage().supportParallelWrite())
-    {
-        if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
-            max_delayed_streams = settings[Setting::max_insert_delayed_streams_for_parallel_write];
-        else
-            max_delayed_streams = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
-    }
-
-    ctx->max_delayed_streams = max_delayed_streams;
+        ctx->max_delayed_streams = storage_settings[MergeTreeSetting::max_merge_delayed_streams_for_parallel_write];
 
     bool all_parts_on_remote_disks = std::ranges::all_of(global_ctx->future_part->parts, [](const auto & part) { return part->isStoredOnRemoteDisk(); });
-    ctx->use_prefetch = all_parts_on_remote_disks && (*global_ctx->data->getSettings())[MergeTreeSetting::vertical_merge_remote_filesystem_prefetch];
+    ctx->use_prefetch = all_parts_on_remote_disks && storage_settings[MergeTreeSetting::vertical_merge_remote_filesystem_prefetch];
 
     if (ctx->use_prefetch && ctx->it_name_and_type != global_ctx->gathering_columns.end())
         ctx->prepared_pipeline = createPipelineForReadingOneColumn(ctx->it_name_and_type->name);
@@ -1155,7 +1148,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     ctx->column_parts_pipeline.setProgressCallback(MergeProgressCallback(
         global_ctx->merge_list_element_ptr,
         global_ctx->watch_prev_elapsed,
-        *global_ctx->column_progress));
+        *global_ctx->column_progress,
+        [&my_ctx = *global_ctx]() { my_ctx.checkOperationIsNotCanceled(); }));
 
     /// Is calculated inside MergeProgressCallback.
     ctx->column_parts_pipeline.disableProfileEventUpdate();
@@ -1916,7 +1910,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     }
 
     /// Dereference unique_ptr and pass horizontal_stage_progress by reference
-    global_ctx->merged_pipeline.setProgressCallback(MergeProgressCallback(global_ctx->merge_list_element_ptr, global_ctx->watch_prev_elapsed, *global_ctx->horizontal_stage_progress));
+    global_ctx->merged_pipeline.setProgressCallback(MergeProgressCallback(
+        global_ctx->merge_list_element_ptr,
+        global_ctx->watch_prev_elapsed,
+        *global_ctx->horizontal_stage_progress,
+        [&my_ctx = *global_ctx]() { my_ctx.checkOperationIsNotCanceled(); }));
     /// Is calculated inside MergeProgressCallback.
     global_ctx->merged_pipeline.disableProfileEventUpdate();
 

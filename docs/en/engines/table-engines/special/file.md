@@ -23,7 +23,7 @@ This engine is not currently available in ClickHouse Cloud, please [use the S3 t
 
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
-``` sql
+```sql
 File(Format)
 ```
 
@@ -46,7 +46,7 @@ Be careful with this functionality, because ClickHouse does not keep track of ex
 
 **1.** Set up the `file_engine_table` table:
 
-``` sql
+```sql
 CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSeparated)
 ```
 
@@ -54,7 +54,7 @@ By default ClickHouse will create folder `/var/lib/clickhouse/data/default/file_
 
 **2.** Manually create `/var/lib/clickhouse/data/default/file_engine_table/data.TabSeparated` containing:
 
-``` bash
+```bash
 $ cat data.TabSeparated
 one 1
 two 2
@@ -62,11 +62,11 @@ two 2
 
 **3.** Query the data:
 
-``` sql
+```sql
 SELECT * FROM file_engine_table
 ```
 
-``` text
+```text
 ┌─name─┬─value─┐
 │ one  │     1 │
 │ two  │     2 │
@@ -79,7 +79,7 @@ In [clickhouse-local](../../../operations/utilities/clickhouse-local.md) File en
 
 **Example:**
 
-``` bash
+```bash
 $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
 ```
 

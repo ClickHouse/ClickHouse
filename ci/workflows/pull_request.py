@@ -1,6 +1,6 @@
 from praktika import Workflow
 
-from ci.defs.defs import BASE_BRANCH, SECRETS, ArtifactConfigs, JobNames
+from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, JobNames
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
@@ -15,8 +15,6 @@ workflow = Workflow.Config(
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     jobs=[
-        JobConfigs.docker_build_arm,
-        JobConfigs.docker_build_amd,
         JobConfigs.style_check,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
@@ -55,22 +53,19 @@ workflow = Workflow.Config(
         *JobConfigs.upgrade_test_jobs,
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
-        *JobConfigs.performance_comparison_amd_jobs,
-        *JobConfigs.performance_comparison_arm_jobs,
+        *JobConfigs.performance_comparison_with_master_head_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
-        ArtifactConfigs.fast_test,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
-        *ArtifactConfigs.performance_packages,
         *ArtifactConfigs.performance_reports,
     ],
-    # dockers=DOCKERS,
+    dockers=DOCKERS,
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,
@@ -82,6 +77,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/quick_sync.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[

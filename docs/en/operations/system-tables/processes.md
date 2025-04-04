@@ -21,7 +21,7 @@ Columns:
 - `read_rows` (UInt64) – The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 - `read_bytes` (UInt64) – The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 - `total_rows_approx` (UInt64) – The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
-- `memory_usage` (Int64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage) setting.
+- `memory_usage` (Int64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max_memory_usage](/operations/settings/settings#max_memory_usage) setting.
 - `query` (String) – The query text. For `INSERT`, it does not include the data to insert.
 - `query_id` (String) – Query ID, if defined.
 - `is_cancelled` (UInt8) – Was query cancelled.
