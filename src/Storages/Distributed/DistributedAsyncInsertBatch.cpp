@@ -7,6 +7,7 @@
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <base/defines.h>
 #include <IO/Operators.h>

@@ -34,7 +34,7 @@ The points in the vector space are stored in a column `vectors` of array type, e
 The reference vector is a constant array and given as a common table expression.
 `<DistanceFunction>` computes the distance between the reference point and all stored points.
 Any of the available [distance function](/sql-reference/functions/distance-functions) can be used for that.
-`N` specifies how many neighbors should be returned.
+`<N>` specifies how many neighbors should be returned.
 
 ## Exact Nearest Neighbor Search {#exact-nearest-neighbor-search}
 
@@ -44,7 +44,7 @@ Also, since ClickHouse performs a brute-force scan of all vectors, the runtime d
 
 One common approach to speed up exact nearest neighbor search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).
 For example, if the vectors are stored as `Array(BFloat16)` instead of `Array(Float32)`, then the data size is cut in half, and the query runtimes are expected to go down by half as well.
-This method is know as quantization and it might reduce the result accuracy despite the exhaustive scan of all vectors.
+This method is know as quantization and it might reduce the result accuracy despite an exhaustive scan of all vectors.
 If the precision loss is acceptable depends on the use case and typically requires experimentation.
 
 ## Example {#exact-nearest-neighbor-search-example}
@@ -90,7 +90,7 @@ CREATE TABLE table
 (
   [...],
   vectors Array(Float*),
-  INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>) [GRANULARITY <N>]
+  INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>]
 )
 ENGINE = MergeTree
 ORDER BY [...]
@@ -99,7 +99,7 @@ ORDER BY [...]
 Alternatively, to add a vector similarity index to an existing table:
 
 ```sql
-ALTER TABLE table ADD INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>) [GRANULARITY N];
+ALTER TABLE table ADD INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>];
 ```
 
 Vector similarity indexes are special kinds of skipping indexes (see [here](mergetree.md#table_engine-mergetree-data_skipping-indexes) and [here](../../../optimize/skipping-indexes)).
@@ -116,9 +116,12 @@ Function `<distance_function>` must be either
 
 For normalized data, `L2Distance` is usually the best choice, otherwise `cosineDistance` is recommended to compensate for scale.
 
-The GRANULARITY parameter `<N>` refers to the size of the index granules (see [here](../../../optimize/skipping-indexes)).
+`<dimensions>` restricts the number of elements which every array in the underlying column must have (the value must be > 0).
+If ClickHouse finds an array with a different number of elements during index creation, the index is discarded and an error is returned.
+
+The optional GRANULARITY parameter `<N>` refers to the size of the index granules (see [here](../../../optimize/skipping-indexes)).
 The default value of 100 million should work reasonably well for most use cases but it can also be tuned.
-We recommend tuning only for advanced users who understand the implications of what they are doing (see below).
+We recommend tuning only for advanced users who understand the implications of what they are doing (see [below](#differences-to-regular-skipping-indexes)).
 
 Vector similarity indexes are generic in the sense that they can accommodate different approximate search method.
 The actually used method is specified by parameter `<type>`.
@@ -130,26 +133,26 @@ CREATE TABLE table
 (
   [...],
   vectors Array(Float*),
-  INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) [GRANULARITY N]
+  INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, <quantization>, <hnsw_max_connections_per_layer>, <hnsw_candidate_list_size_for_construction>]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY [...]
 ```
 
 These HNSW-specific parameters are available:
-- `quantization` controls the quantization of the vectors in the proximity graph. Possible values are `f64`, `f32`, `f16`, `bf16`, or `i8`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
-- `hnsw_max_connections_per_layer` controls the number of neighbors per graph node, also known as HNSW parameter `M`. The default value is `32`. Value `0` means using the default value.
-- `hnsw_candidate_list_size_for_construction` controls the size of the dynamic candidate list during construction of the HNSW graph, also known as HNSW parameter `ef_construction`. The default value is `128`. Value `0` means using the default value.
+- `<quantization>` controls the quantization of the vectors in the proximity graph. Possible values are `f64`, `f32`, `f16`, `bf16`, or `i8`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
+- `<hnsw_max_connections_per_layer>` controls the number of neighbors per graph node, also known as HNSW parameter `M`. The default value is `32`. Value `0` means using the default value.
+- `<hnsw_candidate_list_size_for_construction>` controls the size of the dynamic candidate list during construction of the HNSW graph, also known as HNSW parameter `ef_construction`. The default value is `128`. Value `0` means using the default value.
 
-All HNSW-specific parameters have reasonable default values which work well in the majority of use cases.
-We therefore do not recommend to customize HNSW-specific parameters.
+The default values of all HNSW-specific parameters work reasonably well in the majority of use cases.
+We therefore do not recommend customizing the HNSW-specific parameters.
 
 Further restrictions apply:
 - Vector similarity indexes can only be build on columns of type [Array(Float32)](../../../sql-reference/data-types/array.md) or [Array(Float64)](../../../sql-reference/data-types/array.md). Arrays of nullable and low-cardinality floats such as `Array(Nullable(Float32))` and `Array(LowCardinality(Float32))` are not allowed.
 - Vector similarity indexes must be build on single columns.
 - Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
-- Vector similarity indexes require that all arrays in the underlying column contain the same number of elements. This is checked during index creation. To detect violations of this requirement as soon as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
-- Likewise, array values in the underlying column must not be (`[]`) or have a default value (also `[]`).
+- Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements - this is checked during index creation. To detect violations of this requirement as soon as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
+- Likewise, array values in the underlying column must not be empty (`[]`) or have a default value (also `[]`).
 
 ## Using a Vector Similarity Index {#using-a-vector-similarity-index}
 
@@ -171,12 +174,12 @@ LIMIT <N>
 ClickHouse's query optimizer tries to match above query template and make use of available vector similarity indexes.
 A query can only use a vector similarity index if the distance function in the SELECT query is the same as the distance function in the index definition.
 
-Advanced users may provide a custom value for setting `hnsw_candidate_list_size_for_search` (also know as HNSW parameter `ef_search`) to tune the size of the candidate list during search (e.g.  `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
+Advanced users may provide a custom value for setting [hnsw_candidate_list_size_for_search](../../../operations/settings/settings.md#hnsw_candidate_list_size_for_search) (also know as HNSW parameter `ef_search`) to tune the size of the candidate list during search (e.g.  `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
 The default value of the setting 256 works well in the majority of use cases.
 Higher setting values mean better accuracy at the cost of slower performance.
 
 If the query can use a vector similarity index, ClickHouse checks that the LIMIT `<N>` provided in SELECT queries is within reasonable bounds.
-More specifically, an error is returned if `<N>` is bigger than the value of setting `max_limit_for_ann_queries` with default value 100.
+More specifically, an error is returned if `<N>` is bigger than the value of setting [max_limit_for_ann_queries](../../../operations/settings/settings.md#max_limit_for_ann_queries) with default value 100.
 Too large LIMITs can slow down searches and usually indicate a usage error.
 
 To check if a SELECT query uses a vector similarity index, you can prefix the query with `EXPLAIN indexes = 1`.
@@ -222,7 +225,7 @@ The more granules can be dropped, the more effective index usage becomes.
 To enforce index usage, you can run the SELECT query with setting [force_data_skipping_indexes](../../../operations/settings/settings#force_data_skipping_indices) (provide the index name as setting value).
 :::
 
-** Post-filtering and Pre-filtering**
+**Post-filtering and Pre-filtering**
 
 Users may optionally specify a `WHERE` clause with additional filter conditions in SELECT queries.
 Depending on these filter conditions, ClickHouse will utilize post-filtering or pre-filtering.
@@ -276,6 +279,17 @@ Example output:
 
 ## Performance Tuning {#performance-tuning}
 
+**Tuning Compression**
+
+In virtually all use cases, the vectors in the underlying column are dense and do not compress well.
+As a result, [compression](/sql-reference/statements/create/table.md#column_compression_codec) slows down inserts and reads into/from the vector column.
+We therefore recommend to disable compression.
+To do that, specify `CODEC(NONE)` for the vector column like this:
+
+```sql
+CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
+```
+
 **Tuning Index Creation**
 
 The life cycle of vector similarity indexes is tied to the life cycle of parts.
@@ -290,7 +304,7 @@ First, index creation can be parallelized.
 The maximum number of index creation threads can be configured using server setting [max_build_vector_similarity_index_thread_pool_size](/operations/server-configuration-parameters/settings#max_build_vector_similarity_index_thread_pool_size).
 For optimal performance, the setting value should be configured to the number of CPU cores.
 
-Second, to speed up INSERT statements, users may disable the creation of skipping indexes on newly inserted parts using session setting [materialize_skip_indexes_on_insert](../../../operations/settings/settings.md).
+Second, to speed up INSERT statements, users may disable the creation of skipping indexes on newly inserted parts using session setting [materialize_skip_indexes_on_insert](../../../operations/settings/settings.md#materialize_skip_indexes_on_insert).
 SELECT queries on such parts will fall back to exact search.
 Since inserted parts tend to be small compared to the total table size, the performance impact of that is expected to be negligible.
 
@@ -306,7 +320,7 @@ The bigger this cache is, the fewer unnecessary loads will happen.
 The maximum cache size can be configured using server setting [vector_similarity_index_cache_size](../../../operations/server-configuration-parameters/settings.md#vector_similarity_index_cache_size).
 By default, the cache can grow up to 5 GB in size.
 
-The current cache size is shown in [system.metrics](../../../operations/system-tables/metrics.md):
+The current size of the vector similarity index cache is shown in [system.metrics](../../../operations/system-tables/metrics.md):
 
 ```sql
 SELECT metric, value
@@ -355,7 +369,7 @@ If no `GRANULARITY` was specified for vector similarity indexes, the default val
 ## Example {#approximate-nearest-neighbor-search-example}
 
 ```sql
-CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
 

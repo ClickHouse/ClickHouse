@@ -1,5 +1,6 @@
 import json
 import os
+import traceback
 import urllib
 from pathlib import Path
 from typing import Optional
@@ -35,6 +36,14 @@ class Info:
     @property
     def workflow_name(self):
         return self.env.WORKFLOW_NAME
+
+    @property
+    def job_config(self):
+        return self.env.JOB_CONFIG
+
+    @property
+    def job_name(self):
+        return self.env.JOB_NAME
 
     @property
     def pr_body(self):
@@ -95,6 +104,14 @@ class Info:
     @property
     def instance_type(self):
         return self.env.INSTANCE_TYPE
+
+    @property
+    def is_merge_queue_event(self):
+        return self.env.EVENT_TYPE == "merge_group"
+
+    @property
+    def is_push_event(self):
+        return self.env.EVENT_TYPE == "push"
 
     @property
     def instance_lifecycle(self):
@@ -174,6 +191,10 @@ class Info:
         if key:
             return custom_data.get(key, None)
         return custom_data
+
+    def store_exception_traceback(self):
+        self.env.TRACEBACKS.append(traceback.format_exc())
+        self.env.dump()
 
     def is_workflow_ok(self):
         """

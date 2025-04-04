@@ -42,6 +42,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -2276,17 +2277,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (lazily_read_info)
     {
-        chassert(lazily_read_info->data_parts_info);
-        for (auto & ranges_in_data_part : result.parts_with_ranges)
+        for (const auto & ranges_in_data_part : result.parts_with_ranges)
         {
-            lazily_read_info->data_parts_info->emplace(
-                ranges_in_data_part.part_index_in_query,
-                DataPartInfo
-                {
-                    .data_part = ranges_in_data_part.data_part,
-                    .alter_conversions = MergeTreeData::getAlterConversionsForPart(
-                        ranges_in_data_part.data_part, mutations_snapshot, storage_snapshot->metadata, getContext())
-                });
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges_in_data_part.data_part, mutations_snapshot, getContext());
+            auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges_in_data_part.data_part, std::move(alter_conversions));
+            lazily_read_info->data_part_infos->emplace(ranges_in_data_part.part_index_in_query, std::move(part_info));
         }
     }
 
