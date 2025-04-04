@@ -18,7 +18,6 @@ public:
         , port(port_)
         , query_id(std::move(query_id_))
         , stream_name(std::move(stream_name_))
-        , rows_written(0)
     {
     }
 
@@ -45,7 +44,15 @@ private:
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
     std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
-    size_t rows_written;
+    size_t rows_written = 0;
+
+    /// Keep track of out->count() when the last call to out->next() was made
+    /// and not call out->next() if the difference is not big enough to avoid doing send() for small chaunks
+    size_t bytes_sent_to_socket = 0;
+    const size_t bytes_sent_to_socket_threshold = 128 * 1024;
+    /// After calling out->next() we will return Async from prepare() to epoll for out socket becoming ready
+    bool wait_for_out_socket_ready = true;
+
     LoggerPtr log = getLogger("StreamingExchangeSink");
 };
 

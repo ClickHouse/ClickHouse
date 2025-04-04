@@ -40,6 +40,10 @@ IProcessor::Status StreamingExchangeSource::prepare()
         getPort().finish();
         return Status::Finished;
     }
+
+    if (in.hasBufferedData())
+        return Status::Ready;
+
     return Status::Async;
 }
 

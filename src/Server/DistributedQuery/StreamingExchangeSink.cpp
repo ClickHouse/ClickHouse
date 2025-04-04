@@ -28,6 +28,38 @@ void StreamingExchangeSink::onStart()
     receiveHello();
 }
 
+ISink::Status StreamingExchangeSink::prepare()
+{
+    if (!was_on_start_called)
+        return Status::Ready;
+
+    if (has_input)
+        return wait_for_out_socket_ready ? Status::Async : Status::Ready;
+
+    if (input.isFinished())
+    {
+        if (!was_on_finish_called)
+            return Status::Ready;
+
+        return Status::Finished;
+    }
+
+    input.setNeeded();
+    if (!input.hasData())
+        return Status::NeedData;
+
+    current_chunk = input.pull(true);
+    has_input = true;
+    return wait_for_out_socket_ready ? Status::Async : Status::Ready;
+}
+
+std::pair<int, uint32_t> StreamingExchangeSink::scheduleForEvent()
+{
+    LOG_TEST(log, "Schedule exchange stream sink {}, fd: {}", stream_name, socket->sockfd());
+
+    return {socket->sockfd(), EPOLL_EVENTS::EPOLLOUT | EPOLL_EVENTS::EPOLLERR};
+}
+
 void StreamingExchangeSink::consume(Chunk chunk)
 {
     rows_written += chunk.getNumRows();
@@ -57,9 +89,15 @@ void StreamingExchangeSink::consume(Chunk chunk)
         compressed_buf->finalize();
     }
 
-    /// TODO: what is the proper way to finish a packet?
     out->finishChunk();
-    out->next();
+
+    /// Check if we buffered enough data to send to socket
+    if (out->count() > bytes_sent_to_socket + bytes_sent_to_socket_threshold)
+    {
+        out->next();
+        bytes_sent_to_socket = out->count();
+        wait_for_out_socket_ready = true;
+    }
 }
 
 void StreamingExchangeSink::onFinish()
