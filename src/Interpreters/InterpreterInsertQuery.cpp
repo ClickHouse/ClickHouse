@@ -858,8 +858,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 BlockIO InterpreterInsertQuery::execute()
 {
     auto context = getContext();
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "canUseTaskBasedParallelReplicas()={}", context->canUseTaskBasedParallelReplicas());
-
     const Settings & settings = context->getSettingsRef();
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
