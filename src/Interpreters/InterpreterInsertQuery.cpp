@@ -21,8 +21,11 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -823,8 +826,13 @@ BlockIO InterpreterInsertQuery::execute()
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
     if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
-        && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
+        && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
+        && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    {
+        LOG_ERROR(getLogger("InterpreterInsertQuery"), "Insert queries are prohibited, current database: {}",
+            query.table_id.database_name);
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
+    }
 
     StoragePtr table = getTable(query);
     checkStorageSupportsTransactionsIfNeeded(table, getContext());

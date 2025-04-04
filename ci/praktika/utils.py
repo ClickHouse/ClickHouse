@@ -12,6 +12,7 @@ import sys
 import time
 import traceback
 from abc import ABC, abstractmethod
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import datetime
@@ -74,6 +75,53 @@ class MetaClasses:
         @classmethod
         def exist(cls, name):
             return Path(cls.file_name_static(name)).is_file()
+
+        def to_json(self, pretty=False):
+            return json.dumps(dataclasses.asdict(self), indent=4 if pretty else None)
+
+    @dataclasses.dataclass
+    class SerializableSingleton(ABC):
+        @classmethod
+        def to_dict(cls, obj):
+            if dataclasses.is_dataclass(obj):
+                return {k: cls.to_dict(v) for k, v in dataclasses.asdict(obj).items()}
+            elif isinstance(obj, SimpleNamespace):
+                return {k: cls.to_dict(v) for k, v in vars(obj).items()}
+            elif isinstance(obj, list):
+                return [cls.to_dict(i) for i in obj]
+            elif isinstance(obj, dict):
+                return {k: cls.to_dict(v) for k, v in obj.items()}
+            else:
+                return obj
+
+        @classmethod
+        def from_dict(cls: Type[T], obj: Dict[str, Any]) -> T:
+            return cls(**obj)
+
+        @classmethod
+        @abstractmethod
+        def file_name_static(cls):
+            pass
+
+        @classmethod
+        def from_fs(cls: Type[T]) -> T:
+            with open(cls.file_name_static(), "r", encoding="utf8") as f:
+                try:
+                    return cls.from_dict(json.load(f))
+                except json.decoder.JSONDecodeError as ex:
+                    print(f"ERROR: failed to parse json, ex [{ex}]")
+                    print(f"JSON content [{cls.file_name_static()}]")
+                    Shell.check(f"cat {cls.file_name_static()}")
+                    raise ex
+
+        def dump(self):
+            with open(self.file_name_static(), "w", encoding="utf8") as f:
+                json.dump(self.to_dict(self), f, indent=4)
+            return self
+
+        @classmethod
+        def exist(cls):
+            return Path(cls.file_name_static()).is_file()
 
         def to_json(self, pretty=False):
             return json.dumps(dataclasses.asdict(self), indent=4 if pretty else None)
@@ -380,10 +428,15 @@ class Utils:
 
     @staticmethod
     def terminate_process_group(pid, force=False):
-        if not force:
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
-        else:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
+        try:
+            if not force:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            else:
+                os.killpg(os.getpgid(pid), signal.SIGKILL)
+        except Exception as e:
+            print(
+                f"ERROR: Exception while terminating process [{pid}]: [{e}], (force={force})"
+            )
 
     @staticmethod
     def set_env(key, val):
@@ -418,7 +471,7 @@ class Utils:
     @staticmethod
     def raise_with_error(error_message, stdout="", stderr="", ex=None):
         Utils.print_formatted_error(error_message, stdout, stderr)
-        raise ex or RuntimeError()
+        raise ex or RuntimeError(error_message)
 
     @staticmethod
     def timestamp():
@@ -551,6 +604,36 @@ class Utils:
         return res
 
     @classmethod
+    def compress_file(cls, path):
+        if Shell.check("which zstd"):
+            path_out = f"{path}.zst"
+            Shell.check(
+                f"rm -f {path_out} && zstd < {path} > {path_out}",
+                verbose=True,
+                strict=True,
+            )
+        elif Shell.check("which pigz"):
+            path_out = f"{path}.gz"
+            Shell.check(
+                f"rm -f {path_out} && pigz < {path} > {path_out}",
+                verbose=True,
+                strict=True,
+            )
+        elif Shell.check("which gzip"):
+            path_out = f"{path}.gz"
+            Shell.check(
+                f"rm -f {path_out} && gzip < {path} > {path_out}",
+                verbose=True,
+                strict=True,
+            )
+        else:
+            path_out = path
+            Utils.raise_with_error(
+                f"Failed to compress file [{path}] no zstd or gz installed"
+            )
+        return path_out
+
+    @classmethod
     def add_to_PATH(cls, path):
         path_cur = os.getenv("PATH", "")
         if path_cur:
@@ -583,6 +666,7 @@ class TeePopen:
         self.timeout_exceeded = False
         self.terminated_by_sigterm = False
         self.terminated_by_sigkill = False
+        self.log_rolling_buffer = deque(maxlen=100)
 
     def _check_timeout(self) -> None:
         if self.timeout is None:
@@ -637,9 +721,10 @@ class TeePopen:
         if self.process.stdout is not None:
             for line in self.process.stdout:
                 sys.stdout.write(line)
+
                 if self.log_file:
                     self.log_file.write(line)
-
+                self.log_rolling_buffer.append(line)
         return self.process.wait()
 
     def poll(self):
@@ -647,6 +732,17 @@ class TeePopen:
 
     def send_signal(self, signal_num):
         os.killpg(self.process.pid, signal_num)
+
+    def get_latest_log(self, max_lines=20):
+        buffer = list(self.log_rolling_buffer)
+
+        # Search backwards for "Traceback"
+        for i in range(len(buffer) - 1, -1, -1):
+            if "Traceback" in buffer[i]:
+                return "\n".join(buffer[i:])
+
+        # Fallback: return last max_lines
+        return "\n".join(buffer[-max_lines:])
 
 
 if __name__ == "__main__":
