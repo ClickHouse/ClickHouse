@@ -602,7 +602,7 @@ def main():
 
     Result.create_from(
         results=results, stopwatch=stop_watch, files=files_to_attach, info=message
-    ).add_job_summary_to_info(with_local_run_command=True).complete_job()
+    ).complete_job()
 
 
 if __name__ == "__main__":

@@ -26,9 +26,11 @@
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = 20lu;
+constexpr UInt64 default_distributed_cache_read_request_max_tries = 20lu;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
+constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
 #endif
 
 namespace DB
@@ -5738,6 +5740,9 @@ Only has an effect in ClickHouse Cloud. Fetch metrics only from current availabi
 )", 0) \
     DECLARE(UInt64, distributed_cache_connect_max_tries, default_distributed_cache_connect_max_tries, R"(
 Only has an effect in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful
+)", 0) \
+    DECLARE(UInt64, distributed_cache_read_request_max_tries, default_distributed_cache_read_request_max_tries, R"(
+Only has an effect in ClickHouse Cloud. Number of tries to do distributed cache request if unsuccessful
 )", 0) \
     DECLARE(UInt64, distributed_cache_receive_response_wait_milliseconds, 60000, R"(
 Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive data for request from distributed cache
