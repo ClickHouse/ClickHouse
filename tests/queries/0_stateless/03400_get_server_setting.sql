@@ -12,8 +12,13 @@ FROM
 
 SELECT ('TEST INVALID ARGUMENTS');
 
+SELECT getServerSetting(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
 SELECT getServerSetting(10); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT getServerSetting('allow_use_jemalloc_memory')(10); -- { serverError FUNCTION_CANNOT_HAVE_PARAMETERS }
 
-SELECT getServerSetting('marks_compression_codec') -- { serverError UNKNOWN_SETTING }
+SELECT getServerSetting('marks_compression_codec'); -- { serverError UNKNOWN_SETTING }
+
+SELECT getServerSetting('allow_use_jemalloc_memory',
+                        'background_merges_mutations_scheduling_policy'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

@@ -12,8 +12,12 @@ FROM
 
 SELECT ('TEST INVALID ARGUMENTS');
 
+SELECT getMergeTreeSetting(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
 SELECT getMergeTreeSetting(10); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT getMergeTreeSetting('index_granularity')(4096); -- { serverError FUNCTION_CANNOT_HAVE_PARAMETERS }
 
 SELECT getMergeTreeSetting('keeper_multiread_batch_size'); -- { serverError UNKNOWN_SETTING }
+
+SELECT getMergeTreeSetting('index_granularity', 'marks_compression_codec'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
