@@ -187,6 +187,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 data_part->storage.getStorageID().uuid,
                                 data_part->name,
                                 outputs->getHash(),
+                                prewhere_info->prewhere_actions.dumpDAG(),
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part->index_granularity->getMarksCount(),
                                 data_part->index_granularity->hasFinalMark());

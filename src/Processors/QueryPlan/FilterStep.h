@@ -26,7 +26,7 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
-    void setQueryConditionHash(size_t condition_hash_);
+    void setQueryConditionHashAndCondition(size_t condition_hash_, const String & condition_);
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -43,6 +43,7 @@ private:
     bool remove_filter_column;
 
     std::optional<size_t> condition_hash;
+    std::optional<String> condition;
 };
 
 }

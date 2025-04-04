@@ -47,7 +47,8 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
             size_t condition_hash = filter_actions_dag->getOutputs().front()->getHash();
-            filter_step->setQueryConditionHash(condition_hash);
+            String condition = filter_actions_dag->dumpDAG();
+            filter_step->setQueryConditionHashAndCondition(condition_hash, condition);
             return;
         }
     }

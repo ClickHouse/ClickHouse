@@ -67,7 +67,8 @@ FilterTransform::FilterTransform(
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    std::optional<size_t> condition_hash_)
+    std::optional<size_t> condition_hash_,
+    std::optional<String> condition_)
     : ISimpleTransform(
             header_,
             transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
@@ -78,6 +79,7 @@ FilterTransform::FilterTransform(
     , on_totals(on_totals_)
     , rows_filtered(rows_filtered_)
     , condition_hash(condition_hash_)
+    , condition(condition_)
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
@@ -88,7 +90,7 @@ FilterTransform::FilterTransform(
     if (column)
         constant_filter_description = ConstantFilterDescription(*column);
 
-    if (condition_hash.has_value())
+    if (condition_hash.has_value() && condition.has_value())
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 }
 
@@ -271,6 +273,7 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
             buffered_mark_ranges_info->table_uuid,
             buffered_mark_ranges_info->part_name,
             *condition_hash,
+            *condition,
             buffered_mark_ranges_info->mark_ranges,
             buffered_mark_ranges_info->marks_count,
             buffered_mark_ranges_info->has_final_mark);
@@ -295,6 +298,7 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
                 buffered_mark_ranges_info->table_uuid,
                 buffered_mark_ranges_info->part_name,
                 *condition_hash,
+                *condition,
                 buffered_mark_ranges_info->mark_ranges,
                 buffered_mark_ranges_info->marks_count,
                 buffered_mark_ranges_info->has_final_mark);
