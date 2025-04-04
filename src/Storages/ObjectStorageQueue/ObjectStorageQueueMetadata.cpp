@@ -156,9 +156,8 @@ ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
 
 void ObjectStorageQueueMetadata::startup()
 {
-    if (startup_called)
-        return;
-    startup_called = true;
+    if (startup_called.exchange(true))
+         return;
 
     if (!task
         && mode == ObjectStorageQueueMode::UNORDERED
