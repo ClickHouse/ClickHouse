@@ -367,7 +367,8 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute(std::unique
     object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
 
     copied = true;
-    chassert(path_map.addFile(path_to));
+    bool added = path_map.addFile(path_to);
+    chassert(added);
 }
 
 void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo(std::unique_lock<SharedMutex> & /*metadata_lock*/)
