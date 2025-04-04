@@ -2,13 +2,10 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/Priority.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
-
-#include <future>
 
 namespace DB
 {
@@ -124,7 +121,7 @@ public:
             }
             else
             {
-                std::vector<std::future<void>> futures;
+                ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, "UniqExactMerger");
                 try
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
@@ -143,17 +140,13 @@ public:
                         }
                     };
 
-                    const auto tasks = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
-                    futures.reserve(tasks);
-                    auto schedule = threadPoolCallbackRunnerUnsafe<void>(*thread_pool, "UniqExactMerger");
-                    for (size_t i = 0; i < tasks; ++i)
-                        futures.emplace_back(schedule([thread_func]() { thread_func(); }, Priority{}));
-                    std::ranges::for_each(futures, [](auto & future) { future.wait(); });
+                    for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
+                        runner(thread_func, Priority{});
+                    runner.waitForAllToFinishAndRethrowFirstError();
                 }
                 catch (...)
                 {
-                    std::ranges::for_each(futures, [](auto & future) { future.wait(); });
-                    throw;
+                    runner.waitForAllToFinishAndRethrowFirstError();
                 }
             }
         }

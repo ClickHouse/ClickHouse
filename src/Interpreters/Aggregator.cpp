@@ -2339,10 +2339,10 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
             data_variants.aggregates_pools.push_back(std::make_shared<Arena>());
 
     std::atomic<UInt32> next_bucket_to_merge = 0;
+    std::vector<BlocksList> res(max_threads);
 
     auto converter = [&](size_t thread_id)
     {
-        BlocksList blocks;
         while (true)
         {
             UInt32 bucket = next_bucket_to_merge.fetch_add(1);
@@ -2355,48 +2355,38 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
 
             /// Select Arena to avoid race conditions
             Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
-            blocks.emplace_back(convertOneBucketToBlock(data_variants, method, arena, final, bucket));
+            try
+            {
+                res.at(thread_id).emplace_back(convertOneBucketToBlock(data_variants, method, arena, final, bucket));
+            }
+            catch (...)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "thread_id: {}, size: {}", thread_id, res.size());
+            }
         }
-        return blocks;
     };
 
-    /// packaged_task is used to ensure that exceptions are automatically thrown into the main stream.
-    std::vector<std::packaged_task<BlocksList()>> tasks;
-    tasks.reserve(max_threads);
-    std::vector<std::future<BlocksList>> futures;
-    futures.reserve(max_threads);
-
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "Aggregator");
     try
     {
-        auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pool, "");
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
         {
-            tasks.emplace_back([thread_id, &converter] { return converter(thread_id); });
-            futures.emplace_back(tasks.back().get_future());
             if (use_thread_pool)
-                schedule([&tasks, thread_id] { tasks[thread_id](); }, Priority{});
+                runner([&converter, thread_id]() { return converter(thread_id); }, Priority{});
             else
-                tasks[thread_id]();
+                converter(thread_id);
         }
     }
     catch (...)
     {
-        /// If this is not done, then in case of an exception, tasks will be destroyed before the threads are completed, and it will be bad.
-        if (use_thread_pool)
-            std::ranges::for_each(futures, [](auto & future) { future.wait(); });
-        throw;
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
+
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     BlocksList blocks;
-
-    for (auto & future : futures)
-    {
-        if (!future.valid())
-            continue;
-
-        blocks.splice(blocks.end(), future.get());
-    }
-
+    for (auto & blocks_list : res)
+        blocks.splice(blocks.end(), std::move(blocks_list));
     return blocks;
 }
 
@@ -3139,30 +3129,21 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         if (use_thread_pool)
         {
-            std::vector<std::future<void>> futures;
+            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "Aggregator");
             try
             {
-                auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pool, "");
-                /// packaged_task is used to ensure that exceptions are automatically thrown into the main stream.
-                std::vector<std::packaged_task<void()>> tasks;
-                tasks.reserve(max_threads);
-                futures.reserve(bucket_to_blocks.size());
-
                 for (size_t i = 0; i < max_threads; ++i)
                 {
                     result.aggregates_pools.push_back(std::make_shared<Arena>());
                     Arena * aggregates_pool = result.aggregates_pools.back().get();
-                    tasks.emplace_back([&merge_bucket, aggregates_pool]() { merge_bucket(aggregates_pool); });
-                    futures.emplace_back(tasks.back().get_future());
-                    schedule([&tasks, i] { tasks[i](); }, Priority{});
+                    runner([&merge_bucket, aggregates_pool]() { merge_bucket(aggregates_pool); });
                 }
 
-                std::ranges::for_each(futures, [](auto & future) { future.wait(); });
+                runner.waitForAllToFinishAndRethrowFirstError();
             }
             catch (...)
             {
-                std::ranges::for_each(futures, [](auto & future) { future.wait(); });
-                throw;
+                runner.waitForAllToFinishAndRethrowFirstError();
             }
         }
         else
