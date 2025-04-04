@@ -911,7 +911,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         this->generateExpression(rg, inter->mutable_expr());
         this->depth--;
     }
-    else if (noption < 556)
+    else if (this->allow_not_deterministic && noption < 556)
     {
         String ret;
         const uint32_t nopt2 = rg.nextSmallNumber();
