@@ -38,6 +38,7 @@ Columns:
     - `MemoryPeak` represents collecting updates of peak memory usage.
     - `ProfileEvent` represents collecting of increments of profile events.
 - `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
+- `parent_thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Parent's thread identifier.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](/operations/system-tables/query_log) system table.
 - `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 - `size` ([Int64](../../sql-reference/data-types/int-uint.md)) - For trace types `Memory`, `MemorySample` or `MemoryPeak` is the amount of memory allocated, for other trace types is 0.
@@ -65,6 +66,7 @@ timestamp_ns:            1599762189872924510
 revision:                54440
 trace_type:              Memory
 thread_id:               564963
+parent_thread_id:        564227
 query_id:
 trace:                   [371912858,371912789,371798468,371799717,371801313,371790250,624462773,566365041,566440261,566445834,566460071,566459914,566459842,566459580,566459469,566459389,566459341,566455774,371993941,371988245,372158848,372187428,372187309,372187093,372185478,140222123165193,140222122205443]
 size:                    5244400

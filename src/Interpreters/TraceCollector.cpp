@@ -137,6 +137,9 @@ void TraceCollector::run()
             UInt64 thread_id;
             readPODBinary(thread_id, in);
 
+            UInt64 parent_thread_id;
+            readPODBinary(parent_thread_id, in);
+
             Int64 size;
             readPODBinary(size, in);
 
@@ -159,7 +162,7 @@ void TraceCollector::run()
                 UInt64 time = static_cast<UInt64>(ts.tv_sec * 1000000000LL + ts.tv_nsec);
                 UInt64 time_in_microseconds = static_cast<UInt64>((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
 
-                TraceLogElement element{symbolize, time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, query_id, std::move(trace), size, ptr, event, increment};
+                TraceLogElement element{symbolize, time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, parent_thread_id, query_id, std::move(trace), size, ptr, event, increment};
                 trace_log->add(std::move(element));
             }
         }

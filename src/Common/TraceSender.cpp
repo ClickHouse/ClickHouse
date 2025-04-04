@@ -1,9 +1,12 @@
+#include <Common/Exception.h>
 #include <Common/TraceSender.h>
 
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/WriteHelpers.h>
 #include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
+
+#include <atomic>
 
 namespace
 {
@@ -44,6 +47,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         + sizeof(StackTrace::FramePointers)  /// Collected stack trace, maximum capacity
         + sizeof(TraceType)                  /// trace type
         + sizeof(UInt64)                     /// thread_id
+        + sizeof(UInt64)                     /// parent_thread_id
         + sizeof(Int64)                      /// size
         + sizeof(void *)                     /// ptr
         + sizeof(ProfileEvents::Event)       /// event
@@ -59,6 +63,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 
     std::string_view query_id;
     UInt64 thread_id;
+    UInt64  parent_thread_id;
 
     if (CurrentThread::isInitialized())
     {
@@ -67,10 +72,12 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
             query_id.remove_suffix(query_id.size() - QUERY_ID_MAX_LEN);
 
         thread_id = CurrentThread::get().thread_id;
+        parent_thread_id = 42; //DB::Exception::parent_thread_id.load(std::memory_order_relaxed);
     }
     else
     {
         thread_id = MainThreadStatus::get()->thread_id;
+        parent_thread_id = 0;
     }
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.
@@ -86,6 +93,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 
     writePODBinary(trace_type, out);
     writePODBinary(thread_id, out);
+    writePODBinary(parent_thread_id, out);
     writePODBinary(extras.size, out);
     writePODBinary(UInt64(extras.ptr), out);
     writePODBinary(extras.event, out);
