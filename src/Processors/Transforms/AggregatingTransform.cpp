@@ -472,12 +472,15 @@ private:
             if (delayed_bucket != -1)
             {
                 auto chunk = get_bucket_if_ready(delayed_bucket);
-                if (chunk && chunk.hasRows())
+                if (chunk)
                 {
                     delayed_bucket = -1;
-                    encodeDelayedBucketId(chunk, delayed_buckets);
-                    output.push(std::move(chunk));
-                    return true;
+                    if (chunk.hasRows())
+                    {
+                        encodeDelayedBucketId(chunk, delayed_buckets);
+                        output.push(std::move(chunk));
+                        return true;
+                    }
                 }
             }
             return false;
