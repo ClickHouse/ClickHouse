@@ -25,9 +25,7 @@ class Runner:
     @staticmethod
     def generate_local_run_environment(workflow, job, pr=None, sha=None):
         print("WARNING: Generate dummy env for local test")
-        Shell.check(
-            f"mkdir -p {Settings.TEMP_DIR} {Settings.INPUT_DIR} {Settings.OUTPUT_DIR}"
-        )
+        Shell.check(f"mkdir -p {Settings.TEMP_DIR}", strict=True)
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
         _Environment(
@@ -151,6 +149,7 @@ class Runner:
                                 Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
                                 Settings.FINISH_WORKFLOW_JOB_NAME,
                             )
+                            and job.provides
                         ]
                         and Settings.ENABLE_ARTIFACTS_REPORT
                     ):
@@ -175,49 +174,36 @@ class Runner:
                 prefixes = [env.get_s3_prefix()] * len(required_artifacts)
             for artifact, prefix in zip(required_artifacts, prefixes):
                 if artifact.compress_zst:
-                    archive_name = f"{Path(artifact.path).name}.zst"
-                    s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{archive_name}"
-                    if not S3.copy_file_from_s3(
+                    assert not isinstance(
+                        artifact.path, (tuple, list)
+                    ), "Not yes supported for compressed artifacts"
+                    artifact.path = f"{Path(artifact.path).name}.zst"
+
+                if isinstance(artifact.path, (tuple, list)):
+                    artifact_paths = artifact.path
+                else:
+                    artifact_paths = [artifact.path]
+
+                for artifact_path in artifact_paths:
+                    recursive = False
+                    include_pattern = ""
+                    if "*" in artifact_path:
+                        s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
+                        recursive = True
+                        include_pattern = Path(artifact_path).name
+                        assert "*" in include_pattern
+                    else:
+                        s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
+                    S3.copy_file_from_s3(
                         s3_path=s3_path,
                         local_path=Settings.INPUT_DIR,
-                        recursive=False,
-                    ):
-                        if artifact.type != Artifact.Type.PHONY:
-                            Utils.raise_with_error(
-                                f"Failed to download artifact [{artifact.name}]"
-                            )
-                        else:
-                            if not Utils.decompress_file(
-                                Path(Settings.INPUT_DIR) / archive_name
-                            ):
-                                Utils.raise_with_error(
-                                    f"ERROR: failed to decompress artifact [{artifact.name}]"
-                                )
-                else:
-                    if isinstance(artifact.path, (tuple, list)):
-                        artifact_paths = artifact.path
-                    else:
-                        artifact_paths = [artifact.path]
-                    for artifact_path in artifact_paths:
-                        recursive = False
-                        include_pattern = ""
-                        if "*" in artifact_path:
-                            s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
-                            recursive = True
-                            include_pattern = Path(artifact_path).name
-                            assert "*" in include_pattern
-                        else:
-                            s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
-                        if not S3.copy_file_from_s3(
-                            s3_path=s3_path,
-                            local_path=Settings.INPUT_DIR,
-                            recursive=recursive,
-                            include_pattern=include_pattern,
-                        ):
-                            if artifact.type != Artifact.Type.PHONY:
-                                Utils.raise_with_error(
-                                    f"Failed to download artifact [{artifact.name}]"
-                                )
+                        recursive=recursive,
+                        include_pattern=include_pattern,
+                    )
+
+                    if artifact.compress_zst:
+                        Utils.decompress_file(Path(Settings.INPUT_DIR) / artifact_path)
+
         return 0
 
     def _run(self, workflow, job, docker="", no_docker=False, param=None, test=""):
@@ -470,7 +456,7 @@ class Runner:
                 info_errors.append(error)
 
         if env.TRACEBACKS:
-            result.set_info("Stored Tracebacks:\n" + "\n".join(env.TRACEBACKS))
+            result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
         result.dump()
 
         # always in the end
@@ -555,9 +541,7 @@ class Runner:
                 Info().store_traceback()
             print(f"=== Setup env finished ===\n\n")
         else:
-            self.generate_local_run_environment(
-                workflow, job, pr=pr, branch=branch, sha=sha
-            )
+            self.generate_local_run_environment(workflow, job, pr=pr, sha=sha)
 
         if res and (not local_run or pr or sha or branch):
             res = False

@@ -6,7 +6,6 @@ import time
 import traceback
 from pathlib import Path
 
-from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -247,7 +246,7 @@ def main():
         compare_against_master or compare_against_release
     ), "test option: head_master or prev_release must be selected"
 
-    release_version = CHVersion.get_release_version_as_dict()
+    # release_version = CHVersion.get_release_version_as_dict()
     info = Info()
 
     if Utils.is_arm():
