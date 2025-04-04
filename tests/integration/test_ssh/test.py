@@ -140,7 +140,7 @@ def test_simple_query_with_paramiko(started_cluster):
     client.close()
 
 def test_paramiko_password(started_cluster):
-    instance.query("CREATE USER mister IDENTIFIED BY 'P@$$WORD';")
+    instance.query("CREATE USER OR REPLACE mister IDENTIFIED BY 'P@$$WORD';")
 
     pkey = paramiko.Ed25519Key.from_private_key_file(f"{SCRIPT_DIR}/keys/lucy_ed25519")
     client = paramiko.SSHClient()
