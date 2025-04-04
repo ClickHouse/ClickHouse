@@ -429,7 +429,7 @@ public:
             && t.teng != TableEngineValues::GenerateRandom;
     };
     const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle
-        = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasDatabasePeer(); };
+        = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.is_deterministic; };
     const std::function<bool(const SQLTable &)> attached_tables_for_clickhouse_table_peer_oracle
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
 

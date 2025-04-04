@@ -137,22 +137,19 @@ void StatementGenerator::generateNextCreateFunction(RandomGenerator & rg, Create
 {
     SQLFunction next;
     const uint32_t fname = this->function_counter++;
+    const bool prev_enforce_final = this->enforce_final;
+    const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
     next.fname = fname;
     next.nargs = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1));
-    if ((next.is_deterministic = rg.nextBool()))
-    {
-        /// If this function is later called by an oracle, then don't call it
-        this->setAllowNotDetermistic(false);
-        this->enforceFinal(true);
-    }
+    next.is_deterministic = rg.nextBool();
+    /// If this function is later called by an oracle, then don't call it
+    this->allow_not_deterministic = !next.is_deterministic;
+    this->enforce_final = next.is_deterministic;
     generateLambdaCall(rg, next.nargs, cf->mutable_lexpr());
     this->levels.clear();
-    if (next.is_deterministic)
-    {
-        this->setAllowNotDetermistic(true);
-        this->enforceFinal(false);
-    }
+    this->enforce_final = prev_enforce_final;
+    this->allow_not_deterministic = prev_allow_not_deterministic;
     if (!fc.clusters.empty() && rg.nextSmallNumber() < 4)
     {
         next.cluster = rg.pickRandomly(fc.clusters);
@@ -216,7 +213,12 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     uint32_t tname = 0;
     const bool replace = collectionCount<SQLView>(attached_views) > 3 && rg.nextMediumNumber() < 16;
     const uint32_t view_ncols = (rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1);
+    const bool prev_enforce_final = this->enforce_final;
+    const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
+    SQLBase::setDeterministic(rg, next);
+    this->allow_not_deterministic = !next.is_deterministic;
+    this->enforce_final = next.is_deterministic;
     if (replace)
     {
         const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
@@ -248,7 +250,6 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         else
         {
-            next.is_deterministic = true;
             next.teng = TableEngineValues::MergeTree;
         }
         const auto & table_to_lambda = [&view_ncols, &next](const SQLTable & t)
@@ -277,7 +278,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             generateEngineDetails(rg, next, true, te);
             this->levels.clear();
         }
-        if (next.isMergeTreeFamily() && rg.nextMediumNumber() < 16)
+        if (next.isMergeTreeFamily() && !next.is_deterministic && rg.nextMediumNumber() < 16)
         {
             generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
         }
@@ -324,10 +325,6 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             cv->set_populate(!has_to && !replace && rg.nextSmallNumber() < 4);
         }
     }
-    else
-    {
-        next.is_deterministic = rg.nextSmallNumber() < 9;
-    }
     if (next.cols.empty())
     {
         for (uint32_t i = 0; i < view_ncols; i++)
@@ -340,11 +337,6 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     {
         cv->mutable_cluster()->set_cluster(next.cluster.value());
     }
-    if (next.is_deterministic)
-    {
-        this->setAllowNotDetermistic(false);
-        this->enforceFinal(true);
-    }
     this->levels[this->current_level] = QueryLevel(this->current_level);
     this->allow_in_expression_alias = rg.nextSmallNumber() < 3;
     generateSelect(
@@ -356,11 +348,8 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         cv->mutable_select());
     this->levels.clear();
     this->allow_in_expression_alias = true;
-    if (next.is_deterministic)
-    {
-        this->setAllowNotDetermistic(true);
-        this->enforceFinal(false);
-    }
+    this->enforce_final = prev_enforce_final;
+    this->allow_not_deterministic = prev_allow_not_deterministic;
     matchQueryAliases(next, cv->release_select(), cv->mutable_select());
     if (rg.nextSmallNumber() < 3)
     {
@@ -875,7 +864,7 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
 static const auto exchange_table_lambda = [](const SQLTable & t)
 {
     /// I would need to track the table clusters to do this correctly, ie ensure tables to be exchanged are on same cluster
-    return t.isAttached() && !t.hasDatabasePeer() && !t.getCluster();
+    return t.isAttached() && !t.is_deterministic && !t.getCluster();
 };
 
 void StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et)
@@ -912,11 +901,15 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
     const bool has_tables = collectionHas<SQLTable>(alter_table_lambda);
     const bool has_views = collectionHas<SQLView>(attached_views);
     std::optional<String> cluster;
+    const bool prev_enforce_final = this->enforce_final;
+    const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
     if (has_views && (!has_tables || rg.nextBool()))
     {
         SQLView & v = const_cast<SQLView &>(rg.pickRandomly(filterCollection<SQLView>(attached_views)).get());
 
+        this->allow_not_deterministic = !v.is_deterministic;
+        this->enforce_final = v.is_deterministic;
         cluster = v.getCluster();
         v.setName(est, false);
         for (uint32_t i = 0; i < nalters; i++)
@@ -936,12 +929,6 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 v.staged_ncols
                     = v.has_with_cols ? static_cast<uint32_t>(v.cols.size()) : ((rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1));
-
-                if (v.is_deterministic)
-                {
-                    this->setAllowNotDetermistic(false);
-                    this->enforceFinal(true);
-                }
                 this->levels[this->current_level] = QueryLevel(this->current_level);
                 this->allow_in_expression_alias = rg.nextSmallNumber() < 3;
                 generateSelect(
@@ -953,11 +940,6 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                     ati->mutable_modify_query());
                 this->levels.clear();
                 this->allow_in_expression_alias = true;
-                if (v.is_deterministic)
-                {
-                    this->setAllowNotDetermistic(true);
-                    this->enforceFinal(false);
-                }
                 matchQueryAliases(v, ati->release_modify_query(), ati->mutable_modify_query());
             }
         }
@@ -969,6 +951,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
         const String tname = "t" + std::to_string(t.tname);
         const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
 
+        this->allow_not_deterministic = !t.is_deterministic;
+        this->enforce_final = t.is_deterministic;
         cluster = t.getCluster();
         at->set_is_temp(t.is_temp);
         t.setName(est, false);
@@ -1016,8 +1000,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             const uint32_t unfreeze_partition = 7 * static_cast<uint32_t>(!t.frozen_partitions.empty());
             const uint32_t clear_index_partition = 5 * static_cast<uint32_t>(table_has_partitions && !t.idxs.empty());
             const uint32_t move_partition = 5 * static_cast<uint32_t>(table_has_partitions && !fc.disks.empty());
-            const uint32_t modify_ttl = 5 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.hasDatabasePeer());
-            const uint32_t remove_ttl = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.hasDatabasePeer());
+            const uint32_t modify_ttl = 5 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.is_deterministic);
+            const uint32_t remove_ttl = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.is_deterministic);
             const uint32_t comment_table = 2;
             const uint32_t prob_space = alter_order_by + heavy_delete + heavy_update + add_column + materialize_column + drop_column
                 + rename_column + clear_column + modify_column + comment_column + delete_mask + add_stats + mod_stats + drop_stats
@@ -1809,6 +1793,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
     {
         generateSettingValues(rg, serverSettings, at->mutable_setting_values());
     }
+    this->enforce_final = prev_enforce_final;
+    this->allow_not_deterministic = prev_allow_not_deterministic;
 }
 
 void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)

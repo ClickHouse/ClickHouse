@@ -1242,7 +1242,7 @@ void StatementGenerator::addTableColumnInternal(
         {
             generateSettingValues(rg, csettings, cd->mutable_setting_values());
         }
-        if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !t.hasDatabasePeer() && rg.nextMediumNumber() < 16)
+        if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !t.is_deterministic && rg.nextMediumNumber() < 16)
         {
             flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
             generateTTLExpression(rg, t, cd->mutable_ttl_expr());
@@ -1520,9 +1520,9 @@ void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase 
 
 void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b)
 {
+    /// Make sure `is_determistic is already set`
     const uint32_t noption = rg.nextSmallNumber();
 
-    b.is_deterministic = rg.nextSmallNumber() < 9;
     if (noption < 4)
     {
         b.teng = TableEngineValues::MergeTree;
@@ -1626,7 +1626,12 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
     bool added_pkey = false;
     TableEngine * te = ct->mutable_engine();
     const bool replace = collectionCount<SQLTable>(replaceTableLambda) > 3 && rg.nextMediumNumber() < 16;
+    const bool prev_enforce_final = this->enforce_final;
+    const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
+    SQLBase::setDeterministic(rg, next);
+    this->allow_not_deterministic = !next.is_deterministic;
+    this->enforce_final = next.is_deterministic;
     next.is_temp = rg.nextMediumNumber() < 11;
     ct->set_is_temp(next.is_temp);
     if (replace)
@@ -1771,7 +1776,6 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
 
         next.teng = val;
         te->set_engine(val);
-        next.is_deterministic = rg.nextSmallNumber() < 9;
         cta->set_clone(next.isMergeTreeFamily() && t.isMergeTreeFamily() && rg.nextBool());
         t.setName(cta->mutable_est(), false);
         for (const auto & col : t.cols)
@@ -1803,7 +1807,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         connections.createPeerTable(rg, next.peer_table, next, ct, entries);
         entries.clear();
     }
-    else if (next.isMergeTreeFamily())
+    else if (!next.is_deterministic && next.isMergeTreeFamily())
     {
         bool has_date_cols = false;
 
@@ -1829,6 +1833,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         ct->mutable_cluster()->set_cluster(next.cluster.value());
     }
 
+    this->enforce_final = prev_enforce_final;
+    this->allow_not_deterministic = prev_allow_not_deterministic;
     chassert(!next.toption.has_value() || next.isMergeTreeFamily() || next.isJoinEngine() || next.isSetEngine());
     this->staged_tables[tname] = std::move(next);
 }
@@ -1847,7 +1853,12 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     DictionarySource * source = cd->mutable_source();
     DictionaryLayout * layout = cd->mutable_layout();
     const uint32_t type_mask_backup = this->next_type_mask;
+    const bool prev_enforce_final = this->enforce_final;
+    const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
+    SQLBase::setDeterministic(rg, next);
+    this->allow_not_deterministic = !next.is_deterministic;
+    this->enforce_final = next.is_deterministic;
     if (replace)
     {
         const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
@@ -1865,7 +1876,6 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
     cd->set_create_opt(replace ? CreateReplaceOption::Replace : CreateReplaceOption::Create);
     next.setName(cd->mutable_est(), false);
-    next.is_deterministic = rg.nextSmallNumber() < 9;
 
     const auto & dictionary_table_lambda
         = [&next](const SQLTable & t) { return t.isAttached() && (t.is_deterministic || !next.is_deterministic); };
@@ -2006,6 +2016,8 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     {
         generateSettingValues(rg, serverSettings, cd->mutable_setting_values());
     }
+    this->enforce_final = prev_enforce_final;
+    this->allow_not_deterministic = prev_allow_not_deterministic;
     if (rg.nextSmallNumber() < 3)
     {
         cd->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
