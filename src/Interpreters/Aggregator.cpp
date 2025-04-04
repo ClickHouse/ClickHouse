@@ -1,6 +1,5 @@
 #include <Core/Settings.h>
 #include <Poco/Util/Application.h>
-#include "Core/Block_fwd.h"
 
 #ifdef OS_LINUX
 #    include <unistd.h>
@@ -2355,18 +2354,11 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
 
             /// Select Arena to avoid race conditions
             Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
-            try
-            {
-                res.at(thread_id).emplace_back(convertOneBucketToBlock(data_variants, method, arena, final, bucket));
-            }
-            catch (...)
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "thread_id: {}, size: {}", thread_id, res.size());
-            }
+            res.at(thread_id).emplace_back(convertOneBucketToBlock(data_variants, method, arena, final, bucket));
         }
     };
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "Aggregator");
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "AggregatorPool");
     try
     {
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
@@ -3129,7 +3121,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         if (use_thread_pool)
         {
-            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "Aggregator");
+            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "AggregatorPool");
             try
             {
                 for (size_t i = 0; i < max_threads; ++i)
