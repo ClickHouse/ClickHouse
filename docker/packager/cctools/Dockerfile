@@ -40,7 +40,7 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git \
 #     DWARF error: invalid or unhandled FORM value: 0x23
 #
 ENV LD=ld.lld-${LLVM_VERSION}
-ARG GDB_VERSION=15.1
+ARG GDB_VERSION=16.2
 RUN apt-get update \
     && apt-get install --yes \
         libgmp-dev \
@@ -58,3 +58,5 @@ RUN wget https://sourceware.org/pub/gdb/releases/gdb-$GDB_VERSION.tar.gz \
 FROM scratch
 COPY --from=builder /cctools /cctools
 COPY --from=builder /opt/gdb /opt/gdb
+
+# NOTE: this file should be kept in sync with other docker images, since they use COPY from this image
