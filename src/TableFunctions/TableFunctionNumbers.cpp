@@ -44,7 +44,7 @@ private:
         ContextPtr context,
         const std::string & table_name,
         ColumnsDescription cached_columns,
-        bool is_insert_query) const override;
+        ASTInsertQuery * insert_query = nullptr) const override;
     const char * getStorageTypeName() const override { return "SystemNumbers"; }
 
     UInt64 evaluateArgument(ContextPtr context, ASTPtr & argument) const;
@@ -65,7 +65,7 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription /*cached_columns*/,
-    bool /*is_insert_query*/) const
+    ASTInsertQuery * /* insert_query */) const
 {
     if (const auto * function = ast_function->as<ASTFunction>())
     {

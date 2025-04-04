@@ -27,7 +27,7 @@ namespace DB
             static constexpr auto name = "loop";
             std::string getName() const override { return name; }
         private:
-            StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+            StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query = nullptr) const override;
             const char * getStorageTypeName() const override { return "Loop"; }
             ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
             void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -105,7 +105,7 @@ namespace DB
             ContextPtr context,
             const std::string & table_name,
             ColumnsDescription cached_columns,
-            bool is_insert_query) const
+            ASTInsertQuery * insert_query) const
     {
         StoragePtr storage;
         if (!inner_table_function_ast)
@@ -127,7 +127,7 @@ namespace DB
                     context,
                     table_name,
                     std::move(cached_columns),
-                    is_insert_query);
+                    insert_query);
         }
         auto res = std::make_shared<StorageLoop>(
                 StorageID(getDatabaseName(), table_name),

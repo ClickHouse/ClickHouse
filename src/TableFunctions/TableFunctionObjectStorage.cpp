@@ -125,19 +125,6 @@ ColumnsDescription TableFunctionObjectStorage<
 
 template <typename Definition, typename Configuration>
 StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
-    const ASTPtr & ast_function,
-    ContextPtr context,
-    const std::string & table_name,
-    ColumnsDescription cached_columns,
-    bool is_insert_query) const
-{
-    ASTInsertQuery insert_query;
-
-    return executeImpl(ast_function, context, table_name, cached_columns, is_insert_query ? &insert_query : nullptr);
-}
-
-template <typename Definition, typename Configuration>
-StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         const ASTPtr & /* ast_function */,
         ContextPtr context,
         const std::string & table_name,
