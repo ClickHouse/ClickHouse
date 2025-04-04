@@ -1889,7 +1889,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const bool has_view = collectionHas<SQLView>(dictionary_view_lambda);
 
     const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table);
-    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!systemTables.empty());
+    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!systemTables.empty() && !next.is_deterministic);
     const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view);
     const uint32_t null_src = 2;
     const uint32_t prob_space = dict_table + dict_system_table + dict_view + null_src;
