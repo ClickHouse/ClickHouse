@@ -42,6 +42,7 @@ try
         /// Use cache to avoid reading the column with the same name twice.
         /// It may happen if there are empty array Nested in the part.
         ISerialization::SubstreamsCache cache;
+        std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
 
         /// If we need to read multiple subcolumns from a single column in storage,
         /// we will read it this column only once and then reuse to extract all subcolumns.
@@ -58,12 +59,14 @@ try
             }
 
             stream->adjustRightMark(current_task_last_mark); /// Must go before seek.
-            stream->seekToMarkAndColumn(from_mark, *column_positions[pos]);
+            /// If it's a subcolumn and we have substream marks, we will seek to the specific substream mark during deserialization later.
+            if (!columns_to_read[pos].isSubcolumn() || !have_substream_marks)
+                stream->seekToMarkAndColumn(from_mark, have_substream_marks ? columns_substreams.getFirstSubstreamPosition(*column_positions[pos]) : *column_positions[pos]);
 
             auto * cache_for_subcolumns = columns_for_offsets[pos] ? nullptr : &columns_cache_for_subcolumns;
 
-            readPrefix(pos, *stream);
-            readData(pos, res_columns[pos], rows_to_read, rows_offset, *stream, cache, cache_for_subcolumns);
+            readPrefix(pos, from_mark, *stream, &deserialize_states_caches[columns_to_read[pos].getNameInStorage()]);
+            readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, *stream, cache, cache_for_subcolumns);
         }
 
         ++from_mark;

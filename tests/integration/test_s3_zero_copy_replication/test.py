@@ -40,7 +40,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def get_large_objects_count(cluster, size=100, folder="data"):
+def get_large_objects_count(cluster, size=150, folder="data"):
     minio = cluster.minio_client
     counter = 0
     for obj in minio.list_objects(
@@ -70,7 +70,7 @@ def check_objects_not_exisis(cluster, object_list, folder="data"):
                 assert False, "Object {} should not be exists".format(obj)
 
 
-def wait_for_large_objects_count(cluster, expected, size=100, timeout=30):
+def wait_for_large_objects_count(cluster, expected, size=150, timeout=30):
     while timeout > 0:
         if get_large_objects_count(cluster, size=size) == expected:
             return
@@ -146,7 +146,7 @@ def test_s3_zero_copy_replication(started_cluster, policy):
         == "(0,'data'),(1,'data')"
     )
 
-    # Based on version 21.x - should be only 1 file with size 100+ (checksums.txt), used by both nodes
+    # Based on version 21.x - should be only 1 file with size 150+ (checksums.txt), used by both nodes
     assert get_large_objects_count(cluster) == 1
 
     node2.query("INSERT INTO s3_test VALUES (2,'data'),(3,'data')")

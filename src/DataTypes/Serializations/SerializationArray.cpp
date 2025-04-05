@@ -338,6 +338,9 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
 
     if (limit == 0 || nested_limit)
         nested->serializeBinaryBulkWithMultipleStreams(column_array.getData(), nested_offset, nested_limit, settings, state);
+    else
+        nested->serializeBinaryBulkWithMultipleStreams(column_array.getData(), column_array.getData().size(), 0, settings, state);
+
     settings.path.pop_back();
 }
 
