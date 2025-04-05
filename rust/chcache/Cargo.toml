@@ -10,6 +10,8 @@ env_logger = { version = "0.11.5", default-features = false }
 log = "0.4.22"
 serde = { version = "1.0.215", features = ["serde_derive"] }
 serde_bytes = "0.11.15"
+serde_json = "1.0.140"
+tar = "0.4.44"
 tokio = { version = "1.42.0", features = ["rt-multi-thread"] }
 toml = "0.8.19"
 xdg = "2.5.2"
