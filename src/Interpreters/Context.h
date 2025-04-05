@@ -1002,7 +1002,7 @@ public:
     size_t getMaxDatabaseNumToWarn() const;
     size_t getMaxPartNumToWarn() const;
     size_t getMaxPendingMutationsToWarn() const;
-    size_t getMaxThresholdForMutationsToWarn() const;
+    size_t getMaxPendingMutationsExecutionTimeToWarn() const;
 
     void setMaxTableNumToWarn(size_t max_table_to_warn);
     void setMaxViewNumToWarn(size_t max_view_to_warn);
@@ -1011,7 +1011,7 @@ public:
     void setMaxPartNumToWarn(size_t max_part_to_warn);
     // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
-    void setMaxThresholdForMutationsToWarn(size_t max_threshold_to_warn_for_pending_mutations);
+    void setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn);
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
