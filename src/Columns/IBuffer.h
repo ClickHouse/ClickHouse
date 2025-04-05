@@ -5,6 +5,7 @@
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
+#include <Common/PODArray.h>
 #include <Columns/BufferFWD.h>
 
 #ifndef NDEBUG
@@ -14,9 +15,9 @@
 namespace DB 
 {
 
-static constexpr size_t empty_pod_array_size = 1024;
-extern const char empty_pod_array[empty_pod_array_size];
-constexpr size_t integerRoundUp(size_t value, size_t dividend);
+static constexpr size_t empty_buffer_size = 1024;
+extern const char empty_buffer[empty_buffer_size];
+// constexpr size_t integerRoundUp(size_t value, size_t dividend);
 
 namespace BufferDetails
 {
@@ -32,16 +33,17 @@ size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, siz
 };
 
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_> // NOLINT
-class IBuffer : private TAllocator
+class IBuffer : private PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_>
 {
 protected:
+    using PODBase = PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_>;
     static constexpr size_t element_size = sizeof(T);
     /// Round padding up to an whole number of elements to simplify arithmetic.
     static constexpr size_t pad_right = integerRoundUp(pad_right_, element_size);
     /// pad_left is also rounded up to 16 bytes to maintain alignment of allocated memory.
     static constexpr size_t pad_left = integerRoundUp(integerRoundUp(pad_left_, element_size), 16);
     /// Empty array will point to this static memory as padding and begin/end.
-    static constexpr char * null = const_cast<char *>(empty_pod_array) + pad_left;
+    static constexpr char * null = const_cast<char *>(empty_buffer) + pad_left;
 
     // static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
 
@@ -49,10 +51,6 @@ protected:
     // array must be in sync with the size of this memory.
     static_assert(allocatorInitialBytes<TAllocator> == 0
                   || allocatorInitialBytes<TAllocator> == initial_bytes);
-
-    char * c_start          = null;    /// Does not include pad_left.
-    char * c_end            = null;
-    char * c_end_of_storage = null;    /// Does not include pad_right.
 
     T * t_start()                      { return reinterpret_cast<T *>(this->c_start); } /// NOLINT
     T * t_end()                        { return reinterpret_cast<T *>(this->c_end); } /// NOLINT
@@ -67,13 +65,12 @@ protected:
 
     bool isInitialized() const
     {
-        return (c_start != null) && (c_end != null) && (c_end_of_storage != null);
+        return PODBase::isInitialized();
     }
 
     bool isAllocatedFromStack() const
     {
-        static constexpr size_t stack_threshold = TAllocator::getStackThreshold();
-        return (stack_threshold > 0) && (allocated_bytes() <= stack_threshold);
+        return PODBase::isAllocatedFromStack();
     }
 
 public:
@@ -114,25 +111,25 @@ public:
         return t_start()[n];
     }
 
-    bool empty() const { return c_end == c_start; }
-    size_t size() const { return (c_end - c_start) / element_size; }
-    size_t capacity() const { return (c_end_of_storage - c_start) / element_size; }
+    bool empty() const { return PODBase::empty(); }
+    size_t size() const { return PODBase::size(); }
+    size_t capacity() const { return PODBase::capacity(); }
 
     /// This method is safe to use only for information about memory usage.
-    size_t allocated_bytes() const { return c_end_of_storage - c_start + pad_right + pad_left; } /// NOLINT
+    size_t allocated_bytes() const { return PODBase::allocated_bytes(); } /// NOLINT
 
-    void clear() { c_end = c_start; }
+    void clear() { PODBase::clear(); }
 
     virtual std::shared_ptr<PODArrayOwning<T, initial_bytes, TAllocator, pad_right_, pad_left_>> getOwningBuffer();
 
     void resize_assume_reserved(const size_t n) /// NOLINT
     {
-        c_end = c_start + BufferDetails::byte_size(n, element_size);
+        this->c_end = this->c_start + BufferDetails::byte_size(n, element_size);
     }
 
     const char * rawData() const
     {
-        return c_start;
+        return this->c_start;
     }
 
     bool operator== (const IBuffer & rhs) const

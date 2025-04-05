@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/BufferFWD.h>
 #include "config.h"
 
 #include <base/getPageSize.h>
@@ -236,6 +237,13 @@ public:
     }
 
     template <typename ... TAllocatorParams>
+    void resize_exact(size_t n, TAllocatorParams &&... allocator_params) /// NOLINT
+    {
+        reserve_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
+        resize_assume_reserved(n);
+    }
+
+    template <typename ... TAllocatorParams>
     void shrink_to_fit(TAllocatorParams &&... allocator_params)
     {
         realloc(PODArrayDetails::minimum_memory_for_elements(size(), ELEMENT_SIZE, pad_left, pad_right), std::forward<TAllocatorParams>(allocator_params)...);
@@ -349,6 +357,20 @@ public:
         {
             this->push_back(x);
         }
+    }
+
+    explicit PODArray(const PaddedBuffer<T>& buf)
+    {
+        Base::c_start = buf.c_start;
+        Base::c_end = buf.c_end;
+        Base::c_end_of_storage = buf.c_end_of_storage;
+    }
+
+    explicit PODArray(PaddedBuffer<T>& buf)
+    {
+        Base::c_start = buf.c_start;
+        Base::c_end = buf.c_end;
+        Base::c_end_of_storage = buf.c_end_of_storage;
     }
 
     PODArray(PODArray && other) noexcept

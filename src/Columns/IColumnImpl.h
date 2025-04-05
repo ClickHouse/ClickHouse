@@ -9,9 +9,7 @@
 #include <algorithm>
 #include <Columns/IColumn.h>
 #include <base/sort.h>
-// #include <Common/PODArray.h>
-#include <Columns/IBuffer.h>
-#include <Columns/PODArrayOwning.h>
+#include <Common/PODArray.h>
 #include <Common/iota.h>
 
 
@@ -102,7 +100,7 @@ using ComparatorEqualImpl = ComparatorEqualHelperImpl<ComparatorBase>;
 template <typename Compare, typename Sort, typename PartialSort>
 void IColumn::getPermutationImpl(
     size_t limit,
-    Permutation & result,
+    Permutation & res,
     Compare compare,
     Sort full_sort,
     PartialSort partial_sort) const
@@ -111,30 +109,26 @@ void IColumn::getPermutationImpl(
 
     if (data_size == 0)
         return;
-
-    auto res = result->getOwningBuffer();
-    res->resize(data_size);
+    res.resize(data_size);
 
     if (limit >= data_size)
         limit = 0;
 
-    iota(res->data(), data_size, Permutation::element_type::value_type(0));
+    iota(res.data(), data_size, Permutation::value_type(0));
 
     if (limit)
     {
-        partial_sort(res->begin(), res->begin() + limit, res->end(), compare);
+        partial_sort(res.begin(), res.begin() + limit, res.end(), compare);
         return;
     }
 
-    full_sort(res->begin(), res->end(), compare);
-
-    result = res;
+    full_sort(res.begin(), res.end(), compare);
 }
 
 template <typename Compare, typename Equals, typename Sort, typename PartialSort>
 void IColumn::updatePermutationImpl(
     size_t limit,
-    Permutation & result,
+    Permutation & res,
     EqualRanges & equal_ranges,
     Compare compare,
     Equals equals,
@@ -153,11 +147,10 @@ void IColumn::updatePermutationImpl(
     if (limit)
         --number_of_ranges;
 
-    auto res = result->getOwningBuffer();
     for (size_t i = 0; i < number_of_ranges; ++i)
     {
         const auto & [first, last] = equal_ranges[i];
-        full_sort(res->begin() + first, res->begin() + last, compare);
+        full_sort(res.begin() + first, res.begin() + last, compare);
 
         size_t new_first = first;
         for (size_t j = first + 1; j < last; ++j)
@@ -186,7 +179,7 @@ void IColumn::updatePermutationImpl(
         }
 
         /// Since then we are working inside the interval.
-        partial_sort(res->begin() + first, res->begin() + limit, res->begin() + last, compare);
+        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, compare);
 
         size_t new_first = first;
         for (size_t j = first + 1; j < limit; ++j)
@@ -214,7 +207,6 @@ void IColumn::updatePermutationImpl(
     }
 
     equal_ranges = std::move(new_ranges);
-    result = res;
 }
 
 }
