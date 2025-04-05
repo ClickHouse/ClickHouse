@@ -36,6 +36,8 @@ namespace ProfileEvents
     extern const Event KeeperReadSnapshot;
     extern const Event KeeperSaveSnapshot;
     extern const Event KeeperStorageLockWaitMicroseconds;
+    extern const Event KeeperStorageLockHeldExclusiveMicroseconds;
+    extern const Event KeeperStorageLockHeldSharedMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -199,15 +201,24 @@ struct LockGuardWithStats final
 {
     using LockType = std::conditional_t<shared, std::shared_lock<SharedMutex>, std::unique_lock<SharedMutex>>;
     LockType lock;
+    Stopwatch hold_timer;
+
     explicit LockGuardWithStats(SharedMutex & mutex)
+        : hold_timer(STOPWATCH_DEFAULT_CLOCK, 0, false)
     {
-        Stopwatch watch;
+        Stopwatch wait_timer;
         LockType l(mutex);
-        ProfileEvents::increment(ProfileEvents::KeeperStorageLockWaitMicroseconds, watch.elapsedMicroseconds());
+        hold_timer.start();
+        ProfileEvents::increment(ProfileEvents::KeeperStorageLockWaitMicroseconds, wait_timer.elapsedMicroseconds());
         lock = std::move(l);
     }
 
-    ~LockGuardWithStats() = default;
+    ~LockGuardWithStats()
+    {
+        ProfileEvents::increment(
+            shared ? ProfileEvents::KeeperStorageLockHeldSharedMicroseconds : ProfileEvents::KeeperStorageLockHeldExclusiveMicroseconds,
+            hold_timer.elapsedMicroseconds());
+    }
 };
 
 }
