@@ -16,7 +16,26 @@
 namespace DB
 {
 
-inline mongocxx::instance inst{};
+/// As per MongoDB CXX driver documentation:
+/// You must create a mongocxx::instance object before you use the C++ driver,
+/// and this object must remain alive for as long as any other MongoDB objects are in scope.
+///
+/// mongocxx::instance must not be created more than once, therefore we use a singleton.
+class MongoDBInstanceHolder final : public boost::noncopyable
+{
+public:
+    MongoDBInstanceHolder(MongoDBInstanceHolder const &) = delete;
+    void operator=(MongoDBInstanceHolder const &) = delete;
+
+    static MongoDBInstanceHolder & instance()
+    {
+        static MongoDBInstanceHolder instance;
+        return instance;
+    }
+private:
+    MongoDBInstanceHolder() = default;
+    mongocxx::instance inst;
+};
 
 struct MongoDBConfiguration
 {
@@ -68,6 +87,8 @@ public:
         size_t num_streams) override;
 
 private:
+    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
+
     template <typename OnError>
     std::optional<bsoncxx::document::value> visitWhereFunction(
         const ContextPtr & context,
