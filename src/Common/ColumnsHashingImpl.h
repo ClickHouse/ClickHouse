@@ -11,6 +11,7 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include "Interpreters/AggregatedData.h"
 #include <Interpreters/AggregationCommon.h>
+#include <Analyzer/SortNode.h>
 #include <type_traits>
 #include <typeinfo>
 
@@ -198,7 +199,7 @@ public:
     }
 
     template <typename Data>
-    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool, const std::optional<std::vector<UInt64>> & optimization_indexes, size_t limit_length)
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool, const std::optional<std::vector<std::pair<UInt64, SortDirection>>> & optimization_indexes, size_t limit_length)
     {
         if constexpr (nullable)
         {
@@ -354,7 +355,7 @@ protected:
     struct HasOstreamOperator<T, std::void_t<decltype(std::declval<std::ostream&>() << std::declval<T>())>> : std::true_type {};
 
     template <typename KeyHolder1, typename KeyHolder2>
-    bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::vector<UInt64> & optimization_indexes) {
+    bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::vector<std::pair<UInt64, SortDirection>> & optimization_indexes) {
         (void)optimization_indexes;
         const auto & lhs_key = keyHolderGetKey(lhs);
         const auto & rhs_key = keyHolderGetKey(rhs);
@@ -384,7 +385,7 @@ protected:
         KeyHolder & key_holder,
         Data & data,
         size_t limit_length,
-        const std::optional<std::vector<UInt64>> & optimization_indexes)
+        const std::optional<std::vector<std::pair<UInt64, SortDirection>>> & optimization_indexes)
     {
         if constexpr (consecutive_keys_optimization)
         {
