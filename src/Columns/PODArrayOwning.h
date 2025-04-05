@@ -8,9 +8,6 @@
   * It's not Ok for int and float.
   * Don't forget to apply std::decay when using this constexpr.
   */
-template <typename T, typename U>
-constexpr bool memcpy_can_be_used_for_assignment = std::is_same_v<T, U>
-    || (std::is_integral_v<T> && std::is_integral_v<U> && sizeof(T) == sizeof(U)); /// NOLINT(misc-redundant-expression)
 
 namespace DB
 {

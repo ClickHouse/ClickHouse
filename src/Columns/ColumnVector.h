@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/IBuffer.h>
+#include "Common/PODArray_fwd.h"
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
@@ -44,7 +45,7 @@ private:
 
 public:
     using ValueType = T;
-    using Container = PaddedBuffer<ValueType>;
+    using Container = PaddedPODArray<ValueType>;
 
 private:
     ColumnVector() = default;
@@ -298,12 +299,12 @@ public:
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()
     {
-        return data;
+        return *data;
     }
 
     const Container & getData() const
     {
-        return data;
+        return *data;
     }
 
     const T & getElement(size_t n) const

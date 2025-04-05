@@ -1,5 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include "Columns/IColumn.h"
+#include "Storages/StorageReplicatedMergeTree.h"
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>

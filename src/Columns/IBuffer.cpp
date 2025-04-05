@@ -37,11 +37,6 @@ ALWAYS_INLINE size_t minimum_memory_for_elements(size_t num_elements, size_t ele
 
 }
 
-constexpr size_t integerRoundUp(size_t value, size_t dividend)
-{
-    return ((value + dividend - 1) / dividend) * dividend;
-}
-
-const char empty_pod_array[empty_pod_array_size]{};
+const char empty_buffer[empty_buffer_size]{};
 
 }

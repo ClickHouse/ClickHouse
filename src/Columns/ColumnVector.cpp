@@ -8,8 +8,15 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/MaskOperations.h>
+#include <Columns/PODArrayOwning.h>
 #include <Columns/RadixSortHelper.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <base/bit_cast.h>
+#include <base/scope_guard.h>
+#include <base/sort.h>
+#include <base/unaligned.h>
+#include "Common/PODArray_fwd.h"
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
@@ -24,6 +31,7 @@
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
 #include <DataTypes/FieldToDataType.h>
+#include "Columns/BufferFWD.h"
 
 #include <bit>
 #include <cstring>
@@ -43,7 +51,6 @@
 #include <llvm/IR/IRBuilder.h>
 #endif
 
-
 namespace DB
 {
 
@@ -58,9 +65,9 @@ namespace ErrorCodes
 template <typename T>
 const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 {   
-    auto mutable_data = data->getOwningBuffer();
+    auto mutable_data = std::static_pointer_cast<PaddedBuffer<T>>(data)->getOwningBuffer();
     mutable_data->emplace_back(unalignedLoad<T>(pos));
-    data = mutable_data;
+    data = std::static_pointer_cast<PaddedPODArray<T>>(mutable_data);
     return pos + sizeof(T);
 }
 
@@ -215,11 +222,10 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
 
 template <typename T>
 void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                    size_t limit, int nan_direction_hint, IColumn::Permutation & result) const
+                                    size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
     size_t data_size = data->size();
-    auto res = result->getOwningBuffer();
-    res->resize_exact(data_size);
+    res.resize_exact(data_size);
 
     if (data_size == 0)
         return;
@@ -227,7 +233,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
     if (limit >= data_size)
         limit = 0;
 
-    iota(res->data(), data_size, IColumn::Permutation::element_type::value_type(0));
+    iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
     if constexpr (has_find_extreme_implementation<T> && !is_floating_point<T>)
     {
@@ -243,7 +249,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
                 index = findExtremeMaxIndex(data->data(), 0, data->size());
             if (index)
             {
-                res->data()[0] = *index;
+                res.data()[0] = *index;
                 return;
             }
         }
@@ -269,13 +275,13 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
                 bool try_sort = false;
 
                 if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-                    try_sort = trySort(res->begin(), res->end(), less(*this, nan_direction_hint));
+                    try_sort = trySort(res.begin(), res.end(), less(*this, nan_direction_hint));
                 else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-                    try_sort = trySort(res->begin(), res->end(), less_stable(*this, nan_direction_hint));
+                    try_sort = trySort(res.begin(), res.end(), less_stable(*this, nan_direction_hint));
                 else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-                    try_sort = trySort(res->begin(), res->end(), greater(*this, nan_direction_hint));
+                    try_sort = trySort(res.begin(), res.end(), greater(*this, nan_direction_hint));
                 else
-                    try_sort = trySort(res->begin(), res->end(), greater_stable(*this, nan_direction_hint));
+                    try_sort = trySort(res.begin(), res.end(), greater_stable(*this, nan_direction_hint));
 
                 if (try_sort)
                     return;
@@ -284,7 +290,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
                 for (UInt32 i = 0; i < static_cast<UInt32>(data_size); ++i)
                     pairs[i] = {(*data)[i], i};
 
-                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), data_size, reverse, res->data());
+                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), data_size, reverse, res.data());
 
                 /// Radix sort treats all positive NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
@@ -294,7 +300,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
                     for (size_t i = 0; i < data_size; ++i)
                     {
-                        if (isNaN((*data)[(*res)[reverse ? i : data_size - 1 - i]]))
+                        if (isNaN((*data)[res[reverse ? i : data_size - 1 - i]]))
                             ++nans_to_move;
                         else
                             break;
@@ -302,7 +308,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
                     if (nans_to_move)
                     {
-                        std::rotate(std::begin(*res), std::begin(*res) + (reverse ? nans_to_move : data_size - nans_to_move), std::end(*res));
+                        std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : data_size - nans_to_move), std::end(res));
                     }
                 }
 
@@ -311,16 +317,14 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
         }
     }
 
-    result = res;
-
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        this->getPermutationImpl(limit, result, less(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+        this->getPermutationImpl(limit, res, less(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        this->getPermutationImpl(limit, result, less_stable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+        this->getPermutationImpl(limit, res, less_stable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        this->getPermutationImpl(limit, result, greater(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+        this->getPermutationImpl(limit, res, greater(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
     else
-        this->getPermutationImpl(limit, result, greater_stable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+        this->getPermutationImpl(limit, res, greater_stable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
 }
 
 template <typename T>
@@ -432,32 +436,32 @@ size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permut
     bool inserted = false;
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
-        size_t permuted_i = (*permutation)[i];
+        size_t permuted_i = permutation[i];
         StringRef value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();
 }
 
-template <typename T>
-MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const // TODO: remove or remake as we dont need COW anymore
-{
-    auto res = this->create(size);
+// template <typename T>
+// MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const // TODO: remove or remake as we dont need COW anymore
+// {
+//     auto res = this->create(size);
 
-    if (size > 0)
-    {
-        auto & new_col = static_cast<Self &>(*res);
-        new_col.data.resize_exact(size);
+//     if (size > 0)
+//     {
+//         auto & new_col = static_cast<Self &>(*res);
+//         new_col.data.resize_exact(size);
 
-        size_t count = std::min(this->size(), size);
-        memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
+//         size_t count = std::min(this->size(), size);
+//         memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
-        if (size > count)
-            memset(static_cast<void *>(&new_col.data[count]), 0, (size - count) * sizeof(ValueType));
-    }
+//         if (size > count)
+//             memset(static_cast<void *>(&new_col.data[count]), 0, (size - count) * sizeof(ValueType));
+//     }
 
-    return res;
-}
+//     return res;
+// }
 
 template <typename T>
 std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n) const
@@ -506,17 +510,17 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
             bool boolean_value;
             if (x.tryGet<bool>(boolean_value))
             {
-                auto mutable_data = data->getOwningBuffer();
+                auto mutable_data = std::static_pointer_cast<PaddedBuffer<T>>(data)->getOwningBuffer();
                 mutable_data->push_back(static_cast<T>(boolean_value));
-                data = mutable_data;
+                data = std::static_pointer_cast<PaddedPODArray<T>>(mutable_data);
                 return true;
             }
         }
         return false;
     }
-    auto mutable_data = data->getOwningBuffer();
+    auto mutable_data = std::static_pointer_cast<PaddedBuffer<T>>(data)->getOwningBuffer();
     mutable_data->push_back(static_cast<T>(value));
-    data = mutable_data;
+    data = std::static_pointer_cast<PaddedPODArray<T>>(mutable_data);
     return true;
 }
 
@@ -538,10 +542,10 @@ void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_
     // TODO: make method for getting owner reallocated buffer and fix this
 
     size_t old_size = data->size();
-    auto mutable_data = data->getOwningBuffer();
+    auto mutable_data = std::static_pointer_cast<PaddedBuffer<T>>(data)->getOwningBuffer();
     mutable_data->resize(old_size + length);
     memcpy(mutable_data->data() + old_size, &(*src_vec.data)[start], length * sizeof(data[0]));
-    data = mutable_data;
+    data = std::static_pointer_cast<PaddedPODArray<T>>(mutable_data);
 }
 
 static inline UInt64 blsr(UInt64 mask)
@@ -700,19 +704,19 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 template <typename T>
 ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
-    size_t size = data.size();
+    size_t size = data->size();
     if (size != filt.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
     auto res = this->create();
-    Container & res_data = res->getData();
+    auto& res_data = res->getData(); // already owning buffer
 
     if (result_size_hint)
         res_data.reserve_exact(result_size_hint > 0 ? result_size_hint : size);
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;
-    const T * data_pos = data.data();
+    const T * data_pos = data->data();
 
     /** A slightly more optimized version.
       * Based on the assumption that often pieces of consecutive values
@@ -745,19 +749,20 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 template <typename T>
 void ColumnVector<T>::expand(const IColumn::Filter & mask, bool inverted)
 {
-    expandDataByMask<T>(data, mask, inverted);
+    expandDataByMask<T>(getData(), mask, inverted);
 }
 
 template <typename T>
 void ColumnVector<T>::applyZeroMap(const IColumn::Filter & filt, bool inverted)
 {
-    size_t size = data.size();
+    size_t size = data->size();
     if (size != filt.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;
-    T * data_pos = data.data();
+    auto owning_buffer = std::static_pointer_cast<PaddedBuffer<T>>(data)->getOwningBuffer();
+    T * data_pos = owning_buffer->data();
 
     if (inverted)
     {
@@ -771,6 +776,7 @@ void ColumnVector<T>::applyZeroMap(const IColumn::Filter & filt, bool inverted)
             if (*filt_pos)
                 *data_pos = 0;
     }
+    data = std::static_pointer_cast<PaddedPODArray<T>>(owning_buffer);
 }
 
 template <typename T>
@@ -897,7 +903,7 @@ namespace
 template <typename T>
 ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
-    const size_t size = data.size();
+    const size_t size = data->size();
     if (size != offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", offsets.size(), size);
 
@@ -919,7 +925,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     {
         const auto span_end = res->getData().begin() + offsets[i]; // NOLINT
         for (; it != span_end; ++it)
-            *it = data[i];
+            *it = (*data)[i];
     }
 
     return res;
@@ -928,7 +934,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 template <typename T>
 void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 {
-    size_t size = data.size();
+    size_t size = data->size();
 
     if (size == 0)
     {
@@ -948,7 +954,7 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     T cur_min = NaNOrZero<T>();
     T cur_max = NaNOrZero<T>();
 
-    for (const T & x : data)
+    for (const T & x : *data)
     {
         if (isNaN(x))
             continue;
@@ -974,14 +980,14 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 template <typename T>
 ColumnPtr ColumnVector<T>::compress(bool force_compression) const
 {
-    const size_t data_size = data.size();
+    const size_t data_size = data->size();
     const size_t source_size = data_size * sizeof(T);
 
     /// Don't compress small blocks.
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, force_compression);
+    auto compressed = ColumnCompressed::compressBuffer(data->data(), source_size, force_compression);
 
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());
@@ -1010,7 +1016,7 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, c
     T default_value = assert_cast<const ColumnVector<T> &>(column_with_default_value.getDataColumn()).getElement(0);
     res_data.resize_fill(total_rows, default_value);
     for (size_t i = 0; i < offsets.size(); ++i)
-        res_data[offsets[i]] = data[i + shift];
+        res_data[offsets[i]] = (*data)[i + shift];
 
     return res;
 }
