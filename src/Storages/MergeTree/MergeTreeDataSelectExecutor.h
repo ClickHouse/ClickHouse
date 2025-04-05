@@ -199,7 +199,8 @@ public:
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
-        bool find_exact_ranges);
+        bool find_exact_ranges,
+        bool is_final_query);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
