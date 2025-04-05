@@ -1,5 +1,4 @@
 #include "MetadataStorageFromPlainObjectStorageOperations.h"
-#include <Dictionaries/SSDCacheDictionaryStorage.h>
 #include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <IO/ReadSettings.h>
