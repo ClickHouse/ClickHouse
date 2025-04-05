@@ -2,9 +2,18 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
+#include "Common/HashTable/FixedHashSet.h"
+#include "Common/HashTable/HashMap.h"
+#include "Common/HashTable/HashTable.h"
+#include "Common/HashTable/StringHashMap.h"
+#include "Common/HashTable/TwoLevelStringHashMap.h"
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
-#include <Interpreters/KeysNullMap.h>
+#include "Interpreters/AggregatedData.h"
+#include <Interpreters/AggregationCommon.h>
+#include <Analyzer/SortNode.h>
+#include <type_traits>
+#include <typeinfo>
 
 namespace DB
 {
@@ -185,7 +194,12 @@ public:
     static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
 
     template <typename Data>
-    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool) {
+        return emplaceKey(data, row, pool, std::nullopt, 9223372036854775807ll);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool, const std::optional<std::vector<std::pair<UInt64, SortDirection>>> & optimization_indexes, size_t limit_length)
     {
         if constexpr (nullable)
         {
@@ -211,7 +225,7 @@ public:
         }
 
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        return emplaceImpl(key_holder, data);
+        return emplaceImpl(key_holder, data, limit_length, optimization_indexes);
     }
 
     template <typename Data>
@@ -310,8 +324,49 @@ protected:
             null_map = &checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
     }
 
+    template <typename T, typename = void>
+    struct HasBegin : std::false_type {};
+
+    template <typename T>
+    struct HasBegin<T, std::void_t<decltype(std::declval<const T&>().begin())>> : std::true_type {};
+
+    template <typename T, typename = void>
+    struct HasForEachMapped : std::false_type {};
+
+    template <typename T>
+    struct HasForEachMapped<T, std::void_t<decltype(std::declval<const T&>().forEachMapped())>> : std::true_type {};
+
+    template <typename T, typename = void>
+    struct HasKey : std::false_type {};
+
+    template <typename T>
+    struct HasKey<T, std::void_t<decltype(std::declval<const T&>().key)>> : std::true_type {};
+
+    template <typename T, typename ArgType, typename = void>
+    struct HasErase : std::false_type {};
+
+    template <typename T, typename ArgType>
+    struct HasErase<T, ArgType, std::void_t<decltype(std::declval<T>().erase(std::declval<ArgType>()))>> : std::true_type {};
+
+    template <typename KeyHolder1, typename KeyHolder2>
+    bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::vector<std::pair<UInt64, SortDirection>> & optimization_indexes) {
+        const auto & lhs_key = keyHolderGetKey(lhs);
+        const auto & rhs_key = keyHolderGetKey(rhs);
+
+        chassert(optimization_indexes.size() == 1);
+
+        if (optimization_indexes[0].second == SortDirection::ASCENDING) { // MVP. Support only numeric types (int, float)
+            return lhs_key < rhs_key;
+        }
+        return rhs_key < lhs_key;
+    }
+
     template <typename Data, typename KeyHolder>
-    ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data)
+    ALWAYS_INLINE EmplaceResult emplaceImpl(
+        KeyHolder & key_holder,
+        Data & data,
+        size_t limit_length,
+        const std::optional<std::vector<std::pair<UInt64, SortDirection>>> & optimization_indexes)
     {
         if constexpr (consecutive_keys_optimization)
         {
@@ -327,6 +382,55 @@ protected:
         typename Data::LookupResult it;
         bool inserted = false;
         data.emplace(key_holder, it, inserted);
+
+        if constexpr (!std::is_same_v<decltype(key_holder), const VoidKey>) { // TODO VoidKey doesn't work in compareKeyHolders
+            if constexpr (!std::is_same_v<KeyHolder, DB::SerializedKeyHolder>
+                       && !std::is_same_v<KeyHolder, DB::ArenaKeyHolder>
+                       && !std::is_same_v<KeyHolder, Int128>
+                       && !std::is_same_v<KeyHolder, UInt128>
+                       && !std::is_same_v<KeyHolder, Int256>
+                       && !std::is_same_v<KeyHolder, UInt256>) { // MVP. Support only basic types
+                if (optimization_indexes && data.size() >= limit_length + 1) { // TODO do == and assert <=
+                    chassert(optimization_indexes->size() == 1 && (*optimization_indexes)[0].first == 0);
+                    if constexpr (HasBegin<Data>::value) {
+                        if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>) {
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), StringRef>));
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), Int128>));
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt128>));
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), Int256>));
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt256>));
+
+                            // find the minimal element of data
+                            auto min_key_holder = key_holder;
+                            for (const auto& data_el : data) {
+                                if constexpr (HasKey<KeyHolder>::value) {
+                                    if (compareKeyHolders(data_el.getKey(), min_key_holder.key, *optimization_indexes)) {
+                                        min_key_holder.key = data_el.getKey();
+                                    }
+                                } else {
+                                    if (compareKeyHolders(data_el.getKey(), min_key_holder, *optimization_indexes)) {
+                                        min_key_holder = data_el.getKey();
+                                    }
+                                }
+                            }
+                            const auto& min_key = keyHolderGetKey(min_key_holder);
+                            // erase found element
+                            if constexpr (HasErase<Data, decltype(keyHolderGetKey(min_key_holder))>::value) {
+                                data.erase(min_key);
+                                if (min_key == keyHolderGetKey(key_holder)) {
+                                    if constexpr (!has_mapped)
+                                        return EmplaceResult(inserted);
+                                }
+                            }
+                        }
+                    } else if constexpr(HasForEachMapped<Data>::value) {
+                        // TODO implement
+                        // data.forEachMapped([](auto el) {
+                        // });
+                    }
+                }
+            }
+        }
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)

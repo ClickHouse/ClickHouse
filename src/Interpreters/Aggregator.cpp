@@ -200,7 +200,9 @@ Aggregator::Params::Params(
     bool only_merge_, // true for projections
     bool optimize_group_by_constant_keys_,
     float min_hit_rate_to_use_consecutive_keys_optimization_,
-    const StatsCollectingParams & stats_collecting_params_)
+    const StatsCollectingParams & stats_collecting_params_,
+    size_t limit_length_,
+    std::optional<std::vector<std::pair<UInt64, SortDirection>>> optimization_indexes_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -223,6 +225,8 @@ Aggregator::Params::Params(
     , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
+    , limit_length(limit_length_)
+    , optimization_indexes(std::move(optimization_indexes_))
 {
 }
 
@@ -1031,7 +1035,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
         if (all_keys_are_const)
         {
-            state.emplaceKey(method.data, 0, *aggregates_pool).setMapped(place);
+            state.emplaceKey(method.data, 0, *aggregates_pool, params.optimization_indexes, params.limit_length).setMapped(place);
         }
         else
         {
@@ -1050,7 +1054,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
                 }
 
-                state.emplaceKey(method.data, i, *aggregates_pool).setMapped(place);
+                state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_length).setMapped(place);
             }
         }
         return;
@@ -1137,7 +1141,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
             }
 
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_length);
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
             if (emplace_result.isInserted())
