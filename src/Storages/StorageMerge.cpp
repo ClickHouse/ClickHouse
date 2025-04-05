@@ -1,5 +1,6 @@
 #include <functional>
 #include <iterator>
+#include <Access/ContextAccess.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -72,6 +73,18 @@ namespace Setting
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
 }
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int SAMPLING_NOT_SUPPORTED;
+extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+extern const int STORAGE_REQUIRES_PARAMETER;
+}
+
 namespace
 {
 
@@ -109,18 +122,6 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SAMPLING_NOT_SUPPORTED;
-    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
-    extern const int STORAGE_REQUIRES_PARAMETER;
-}
-
 StorageMerge::DatabaseNameOrRegexp::DatabaseNameOrRegexp(
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
@@ -153,7 +154,7 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_.empty()
-        ? getColumnsDescriptionFromSourceTables(context_->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference])
+        ? getColumnsDescriptionFromSourceTables(context_)
         : columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
@@ -178,7 +179,7 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_.empty()
-        ? getColumnsDescriptionFromSourceTables(context_->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference])
+        ? getColumnsDescriptionFromSourceTables(context_)
         : columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
@@ -190,12 +191,44 @@ StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(Context
     return database_name_or_regexp.getDatabaseIterators(context_);
 }
 
-ColumnsDescription StorageMerge::unifyColumnsDescription(std::function<void(std::function<void(const StoragePtr &)>)> for_each_table)
+ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(
+    const ContextPtr & query_context,
+    const String & source_database_name_or_regexp,
+    bool database_is_regexp,
+    const String & source_table_regexp,
+    size_t max_tables_to_look)
 {
+    DatabaseNameOrRegexp database_name_or_regexp(source_database_name_or_regexp, database_is_regexp, source_database_name_or_regexp, source_table_regexp, {});
+    return getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, nullptr);
+}
+
+ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(const ContextPtr & query_context) const
+{
+    auto max_tables_to_look = query_context->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference];
+    auto res = getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, this);
+    if (res.empty())
+        throw Exception{DB::ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "There are no tables satisfied provided regexp, you must specify table structure manually"};
+    return res;
+}
+
+ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
+    const ContextPtr & query_context,
+    const DatabaseNameOrRegexp & database_name_or_regexp,
+    size_t max_tables_to_look,
+    const IStorage * ignore_self)
+{
+    auto access = query_context->getAccess();
+    size_t table_num = 0;
     ColumnsDescription res;
 
-    for_each_table([&res](auto && t)
+    getFirstTableImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look](auto && t)
     {
+        if (!t)
+            return false;
+
+        if (auto id = t->getStorageID(); !access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name))
+            return false;
+
         auto structure = t->getInMemoryMetadataPtr()->getColumns();
         String prev_column_name;
         for (const ColumnDescription & column : structure)
@@ -215,44 +248,31 @@ ColumnsDescription StorageMerge::unifyColumnsDescription(std::function<void(std:
             }
             prev_column_name = column.name;
         }
-    });
 
-    if (res.empty())
-        throw Exception{ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "There are no tables satisfied provided regexp, you must specify table structure manually"};
+        ++table_num;
+        return table_num >= max_tables_to_look;
+    });
 
     return res;
-}
-
-ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(size_t max_tables_to_look) const
-{
-    size_t table_num = 0;
-
-    return unifyColumnsDescription([&table_num, max_tables_to_look, this](std::function<void(const StoragePtr &)> callback)
-    {
-        getFirstTable([&table_num, &callback, max_tables_to_look](auto && t)
-        {
-            if (!t)
-                return false;
-
-            callback(t);
-
-            ++table_num;
-            return table_num >= max_tables_to_look;
-        });
-    });
 }
 
 template <typename F>
 StoragePtr StorageMerge::getFirstTable(F && predicate) const
 {
-    auto database_table_iterators = database_name_or_regexp.getDatabaseIterators(getContext());
+    return getFirstTableImpl(context.lock(), this, database_name_or_regexp, std::forward<F>(predicate));
+}
+
+template <typename F>
+StoragePtr StorageMerge::getFirstTableImpl(const ContextPtr & query_context, const IStorage * ignore_self, const DatabaseNameOrRegexp & database_name_or_regexp, F && predicate)
+{
+    auto database_table_iterators = database_name_or_regexp.getDatabaseIterators(query_context);
 
     for (auto & iterator : database_table_iterators)
     {
         while (iterator->isValid())
         {
             const auto & table = iterator->table();
-            if (table.get() != this && predicate(table))
+            if (table.get() != ignore_self && predicate(table))
                 return table;
 
             iterator->next();
@@ -395,12 +415,20 @@ VirtualColumnsDescription StorageMerge::createVirtuals()
     return desc;
 }
 
-StorageSnapshotPtr StorageMerge::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
+StorageSnapshotPtr StorageMerge::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     static const auto common_virtuals = createVirtuals();
+    const auto & access = query_context->getAccess();
 
     auto virtuals = common_virtuals;
-    if (auto first_table = getFirstTable([](auto && table) { return table; }))
+    if (auto first_table = getFirstTable([access](auto && table)
+    {
+        if (!table)
+            return false;
+
+        auto id = table->getStorageID();
+        return access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name);
+    }))
     {
         auto table_virtuals = first_table->getVirtualsPtr();
         for (const auto & column : *table_virtuals)
@@ -1290,22 +1318,40 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     StorageListWithLocks res;
     DatabaseTablesIterators database_table_iterators = assert_cast<StorageMerge &>(*storage_merge).getDatabaseIterators(query_context);
 
-    MutableColumnPtr database_name_virtual_column;
-    MutableColumnPtr table_name_virtual_column;
-    if (filter_by_database_virtual_column)
+    std::function<bool(const String&,const String&)> table_filter;
+    if (filter_actions_dag && (filter_by_database_virtual_column || filter_by_table_virtual_column))
     {
-        database_name_virtual_column = ColumnString::create();
+        Block sample_block = {
+            ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_database"),
+            ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_table")
+        };
+        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block);
+        if (table_filter_dag)
+        {
+            auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
+            auto filter_column_name = filter_expression->getActionsDAG().getOutputs().at(0)->result_name;
+            table_filter = [filter_expression, filter_column_name] (const auto& database_name, const auto& table_name)
+            {
+                MutableColumnPtr database_column = ColumnString::create();
+                MutableColumnPtr table_column = ColumnString::create();
+                database_column->insert(database_name);
+                table_column->insert(table_name);
+                Block block{
+                    ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "_database"),
+                    ColumnWithTypeAndName(std::move(table_column), std::make_shared<DataTypeString>(), "_table")
+                };
+                filter_expression->execute(block);
+                // Valid only when block has exactly one row.
+                return block.getByName(filter_column_name).column->getBool(0);
+            };
+        }
     }
 
-    if (filter_by_table_virtual_column)
-    {
-        table_name_virtual_column = ColumnString::create();
-    }
-
+    auto access = query_context->getAccess();
     for (const auto & iterator : database_table_iterators)
     {
-        if (filter_by_database_virtual_column)
-            database_name_virtual_column->insert(iterator->databaseName());
+        auto all_show = access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName());
+        auto all_select = access->isGranted(AccessType::SELECT, iterator->databaseName());
         while (iterator->isValid())
         {
             StoragePtr storage = iterator->table();
@@ -1313,46 +1359,18 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                 continue;
 
             if (storage.get() != storage_merge.get())
-            {
-                auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-                res.emplace_back(iterator->databaseName(), storage, std::move(table_lock), iterator->name());
-                if (filter_by_table_virtual_column)
-                    table_name_virtual_column->insert(iterator->name());
-            }
+                if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
+                    if (all_show || access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName(), iterator->name()))
+                    {
 
+                        if  (!all_select)
+                            access->checkAccess(AccessType::SELECT, iterator->databaseName(), iterator->name(), column_names);
+
+                        auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+                        res.emplace_back(iterator->databaseName(), storage, std::move(table_lock), iterator->name());
+                    }
             iterator->next();
         }
-    }
-
-    if (!filter_by_database_virtual_column && !filter_by_table_virtual_column)
-        return res;
-
-    if (!filter_actions_dag)
-        return res;
-
-    const auto * predicate = filter_actions_dag->getOutputs().at(0);
-
-    if (filter_by_database_virtual_column)
-    {
-        /// Filter names of selected tables if there is a condition on "_database" virtual column in WHERE clause
-        Block virtual_columns_block
-            = Block{ColumnWithTypeAndName(std::move(database_name_virtual_column), std::make_shared<DataTypeString>(), "_database")};
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, virtual_columns_block, query_context);
-        auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_database");
-
-        /// Remove unused databases from the list
-        res.remove_if([&](const auto & elem) { return values.find(std::get<0>(elem)) == values.end(); });
-    }
-
-    if (filter_by_table_virtual_column)
-    {
-        /// Filter names of selected tables if there is a condition on "_table" virtual column in WHERE clause
-        Block virtual_columns_block = Block{ColumnWithTypeAndName(std::move(table_name_virtual_column), std::make_shared<DataTypeString>(), "_table")};
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, virtual_columns_block, query_context);
-        auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
-
-        /// Remove unused tables from the list
-        res.remove_if([&](const auto & elem) { return values.find(std::get<3>(elem)) == values.end(); });
     }
 
     return res;
@@ -1709,7 +1727,7 @@ void registerStorageMerge(StorageFactory & factory)
         String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
 
         return std::make_shared<StorageMerge>(
-            args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getContext());
+            args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getLocalContext());
     },
     {
         .supports_schema_inference = true
