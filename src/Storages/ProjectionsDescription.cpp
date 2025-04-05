@@ -1,40 +1,43 @@
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Storages/ProjectionsDescription.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/StorageInMemoryMetadata.h>
 
+#include <Columns/ColumnConst.h>
+#include <Core/Defines.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-
-#include <Columns/ColumnConst.h>
-#include <Core/Defines.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <base/range.h>
+#include <Common/iota.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
-    extern const int INCORRECT_QUERY;
-    extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int ILLEGAL_PROJECTION;
-    extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int NO_SUCH_PROJECTION_IN_TABLE;
 }
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
@@ -88,6 +91,40 @@ bool ProjectionDescription::operator==(const ProjectionDescription & other) cons
     return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
 }
 
+/// Fake storage used to build projection metadata
+class StorageProjectionSource final : public IStorage
+{
+public:
+    explicit StorageProjectionSource(ColumnsDescription columns_description)
+        : IStorage({"_", "_"})
+    {
+        StorageInMemoryMetadata storage_metadata;
+        storage_metadata.setColumns(columns_description);
+        setInMemoryMetadata(storage_metadata);
+        VirtualColumnsDescription desc;
+        desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "");
+        setVirtuals(std::move(desc));
+    }
+
+    std::string getName() const override { return "ProjectionSource"; }
+
+    bool supportsSubcolumns() const override { return true; }
+
+    bool supportsDynamicSubcolumns() const override { return true; }
+
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo &,
+        ContextPtr /*context*/,
+        QueryProcessingStage::Enum /*processing_stage*/,
+        size_t /*max_block_size*/,
+        size_t /*num_streams*/) override
+    {
+        return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
+    }
+};
+
 ProjectionDescription
 ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context)
 {
@@ -109,8 +146,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
     result.query_ast = query.cloneToASTSelect();
 
-    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
-    StoragePtr storage = external_storage_holder->getTable();
+    StoragePtr storage = std::make_shared<StorageProjectionSource>(columns);
     InterpreterSelectQuery select(
         result.query_ast,
         query_context,
@@ -134,6 +170,9 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     {
         if (query.orderBy())
             throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
+
+        if (std::find(result.required_columns.begin(), result.required_columns.end(), "_part_offset") != result.required_columns.end())
+            throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, _part_offset cannot be specified");
 
         result.type = ProjectionDescription::Type::Aggregate;
         if (const auto & group_expression_list = query_select.groupBy())
@@ -226,8 +265,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.name = MINMAX_COUNT_PROJECTION_NAME;
     result.query_ast = select_query->cloneToASTSelect();
 
-    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
-    StoragePtr storage = external_storage_holder->getTable();
+    StoragePtr storage = std::make_shared<StorageProjectionSource>(columns);
     InterpreterSelectQuery select(
         result.query_ast,
         query_context,
@@ -289,7 +327,7 @@ void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription &
     *this = getProjectionFromAST(definition_ast, new_columns, query_context);
 }
 
-Block ProjectionDescription::calculate(const Block & block, ContextPtr context) const
+Block ProjectionDescription::calculate(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr) const
 {
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
@@ -311,10 +349,30 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
             makeASTFunction("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
     }
 
+    Block source_block = block;
+    if (sample_block.has("_part_offset"))
+    {
+        auto uint64 = std::make_shared<DataTypeUInt64>();
+        auto column = uint64->createColumn();
+        auto & offset = assert_cast<ColumnUInt64 &>(*column).getData();
+        offset.resize_exact(block.rows());
+        if (perm_ptr)
+        {
+            for (size_t i = 0; i < block.rows(); ++i)
+                offset[(*perm_ptr)[i]] = i;
+        }
+        else
+        {
+            iota(offset.data(), offset.size(), UInt64(0));
+        }
+
+        source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
+    }
+
     auto builder = InterpreterSelectQuery(
                        query_ast_copy ? query_ast_copy : query_ast,
                        mut_context,
-                       Pipe(std::make_shared<SourceFromSingleChunk>(block)),
+                       Pipe(std::make_shared<SourceFromSingleChunk>(std::move(source_block))),
                        SelectQueryOptions{
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState}
@@ -378,8 +436,11 @@ const ProjectionDescription & ProjectionsDescription::get(const String & project
     auto it = map.find(projection_name);
     if (it == map.end())
     {
-        throw Exception(ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE, "There is no projection {} in table{}",
-                        projection_name, getHintsMessage(projection_name));
+        throw Exception(
+            ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+            "There is no projection {} in table{}",
+            projection_name,
+            getHintsMessage(projection_name));
     }
 
     return *(it->second);
@@ -422,8 +483,11 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
         if (if_exists)
             return;
 
-        throw Exception(ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE, "There is no projection {} in table{}",
-                        projection_name, getHintsMessage(projection_name));
+        throw Exception(
+            ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+            "There is no projection {} in table{}",
+            projection_name,
+            getHintsMessage(projection_name));
     }
 
     projections.erase(it->second);
