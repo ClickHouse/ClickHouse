@@ -15,6 +15,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 
+#include <Analyzer/SortNode.h>
+
 #include <Core/Defines.h>
 #include <memory>
 #include <cassert>
@@ -212,7 +214,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(
-        Data & data, size_t row_, Arena & pool, const std::optional<std::vector<UInt64>> &, size_t) {
+        Data & data, size_t row_, Arena & pool, const std::optional<std::vector<std::pair<UInt64, SortDirection>>> &, size_t) {
         return emplaceKey(data, row_, pool);
     }
 
