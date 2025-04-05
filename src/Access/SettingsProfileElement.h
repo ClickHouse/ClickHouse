@@ -28,9 +28,10 @@ struct SettingsProfileElement
     std::optional<Field> value;
     std::optional<Field> min_value;
     std::optional<Field> max_value;
+    std::vector<Field> disallowed_values;
     std::optional<SettingConstraintWritability> writability;
 
-    auto toTuple() const { return std::tie(parent_profile, setting_name, value, min_value, max_value, writability); }
+    auto toTuple() const { return std::tie(parent_profile, setting_name, value, min_value, max_value, disallowed_values, writability); }
     friend bool operator==(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return lhs.toTuple() == rhs.toTuple(); }
     friend bool operator!=(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return !(lhs == rhs); }
     friend bool operator <(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return lhs.toTuple() < rhs.toTuple(); }
@@ -46,7 +47,7 @@ struct SettingsProfileElement
     std::shared_ptr<ASTSettingsProfileElement> toAST() const;
     std::shared_ptr<ASTSettingsProfileElement> toASTWithNames(const AccessControl & access_control) const;
 
-    bool empty() const { return !parent_profile && (setting_name.empty() || (!value && !min_value && !max_value && !writability)); }
+    bool empty() const { return !parent_profile && (setting_name.empty() || (!value && !min_value && !max_value && disallowed_values.empty() && !writability)); }
 
     bool isConstraint() const;
 
