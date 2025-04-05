@@ -69,6 +69,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ObjectFilterStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -190,6 +191,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsBool use_hive_partitioning;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -1969,6 +1971,22 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
         if (expressions.second_stage || from_aggregation_stage)
         {
+            if (settings[Setting::use_hive_partitioning]
+                && !expressions.first_stage
+                && expressions.hasWhere())
+            {
+                if (typeid_cast<ReadFromCluster *>(query_plan.getRootNode()->step.get()))
+                {
+                    auto object_filter_step = std::make_unique<ObjectFilterStep>(
+                        query_plan.getCurrentHeader(),
+                        expressions.before_where->dag.clone(),
+                        getSelectQuery().where()->getColumnName());
+
+                    object_filter_step->setStepDescription("WHERE");
+                    query_plan.addStep(std::move(object_filter_step));
+                }
+            }
+
             if (from_aggregation_stage)
             {
                 /// No need to aggregate anything, since this was done on remote shards.
