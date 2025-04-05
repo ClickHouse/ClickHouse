@@ -87,3 +87,7 @@ def test_settings_from_server(started_cluster):
     assert quoted_pos != -1, "first query should return quoted number"
     assert unquoted_pos != -1, "second query should return unquoted number"
     assert quoted_pos < unquoted_pos, "should be quoted for first query, unquoted for second"
+
+def test_async_insert(started_cluster):
+    node.query("create table a (k Int64) engine MergeTree order by k")
+    node.query("insert into a values (1)", user="async_insert_user")
