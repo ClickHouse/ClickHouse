@@ -19,6 +19,7 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTDeduceQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -213,6 +214,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTOptimizeQuery>())
     {
         interpreter_name = "InterpreterOptimizeQuery";
+    }
+    else if (query->as<ASTDeduceQuery>())
+    {
+        interpreter_name = "InterpreterDeduceQuery";
     }
     else if (query->as<ASTExistsDatabaseQuery>() || query->as<ASTExistsTableQuery>() || query->as<ASTExistsViewQuery>() || query->as<ASTExistsDictionaryQuery>())
     {
