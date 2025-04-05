@@ -42,6 +42,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsString default_replica_name;
     extern const ServerSettingsString default_replica_path;
+    extern const ServerSettingsBool disable_insertion_and_mutation;
 }
 
 namespace RefreshSetting
@@ -87,6 +88,10 @@ RefreshTask::RefreshTask(
 
         auto zookeeper = context->getZooKeeper();
         String replica_path = coordination.path + "/replicas/" + coordination.replica_name;
+
+        if (server_settings[ServerSetting::disable_insertion_and_mutation])
+            coordination.read_only = true;
+
         if (attach)
         {
             /// Check that this replica is registered in keeper.
