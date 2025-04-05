@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-#include <Common/Scheduler/SchedulingSettings.h>
+#include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/SchedulerRoot.h>
 #include <Common/Scheduler/ResourceGuard.h>
@@ -133,12 +133,12 @@ public:
         ResourceTestBase::add<TClass>(&event_queue, root_node, path, std::forward<Args>(args)...);
     }
 
-    UnifiedSchedulerNodePtr createUnifiedNode(const String & basename, const SchedulingSettings & settings = {})
+    UnifiedSchedulerNodePtr createUnifiedNode(const String & basename, const WorkloadSettings & settings = {})
     {
         return createUnifiedNode(basename, {}, settings);
     }
 
-    UnifiedSchedulerNodePtr createUnifiedNode(const String & basename, const UnifiedSchedulerNodePtr & parent, const SchedulingSettings & settings = {})
+    UnifiedSchedulerNodePtr createUnifiedNode(const String & basename, const UnifiedSchedulerNodePtr & parent, const WorkloadSettings & settings = {})
     {
         auto node = std::make_shared<UnifiedSchedulerNode>(&event_queue, settings);
         node->basename = basename;
@@ -156,9 +156,9 @@ public:
 
     // Updates the parent and/or scheduling settings for a specidfied `node`.
     // Unit test implementation must make sure that all needed queues and constraints are not going to be destroyed.
-    // Normally it is the responsibility of IOResourceManager, but we do not use it here, so manual version control is required.
-    // (see IOResourceManager::Resource::updateCurrentVersion() fo details)
-    void updateUnifiedNode(const UnifiedSchedulerNodePtr & node, const UnifiedSchedulerNodePtr & old_parent, const UnifiedSchedulerNodePtr & new_parent, const SchedulingSettings & new_settings)
+    // Normally it is the responsibility of WorkloadResourceManager, but we do not use it here, so manual version control is required.
+    // (see WorkloadResourceManager::Resource::updateCurrentVersion() fo details)
+    void updateUnifiedNode(const UnifiedSchedulerNodePtr & node, const UnifiedSchedulerNodePtr & old_parent, const UnifiedSchedulerNodePtr & new_parent, const WorkloadSettings & new_settings)
     {
         EXPECT_TRUE((old_parent && new_parent) || (!old_parent && !new_parent)); // changing root node is not supported
         bool detached = false;
@@ -296,7 +296,8 @@ struct ResourceTestManager : public ResourceTestBase
 {
     ResourceManagerPtr manager;
 
-    std::vector<ThreadFromGlobalPool> threads;
+    std::mutex threads_mutex;
+    std::list<ThreadFromGlobalPool> threads; // We use list to avoid moving ThreadFromGlobalPool objects
     std::barrier<> busy_period;
 
     struct Guard : public ResourceGuard
@@ -382,10 +383,21 @@ struct ResourceTestManager : public ResourceTestBase
 
     void wait()
     {
-        for (auto & thread : threads)
+        while (true)
         {
-            if (thread.joinable())
-                thread.join();
+            std::list<ThreadFromGlobalPool> threads_to_join;
+            {
+                std::scoped_lock lock{threads_mutex};
+                threads_to_join.swap(threads);
+            }
+            if (threads_to_join.empty())
+                break;
+            for (ThreadFromGlobalPool & thread : threads_to_join)
+            {
+                if (thread.joinable())
+                    thread.join();
+            }
+            // we have to repeat because threads we have just joined could have created new threads in the meantime
         }
     }
 
