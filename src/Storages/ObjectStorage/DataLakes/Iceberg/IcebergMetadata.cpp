@@ -28,6 +28,7 @@
 namespace ProfileEvents
 {
     extern const Event IcebergTrivialCountOptimizationApplied;
+    extern const Event IcebegerVersionHintUsed;
 }
 
 namespace DB
@@ -301,6 +302,7 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(
         }
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
         result = getMetadataFileAndVersion(std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file);
+        ProfileEvents::increment(ProfileEvents::IcebegerVersionHintUsed);
     }
     else
     {
