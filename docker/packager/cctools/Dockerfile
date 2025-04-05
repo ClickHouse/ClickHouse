@@ -19,10 +19,9 @@ RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
 
 # Build and install tools for cross-linking to Darwin (x86-64)
 # Build and install tools for cross-linking to Darwin (aarch64)
-RUN git clone https://github.com/tpoechtrager/cctools-port.git --branch 1010.6-ld64-951.9 \
+RUN git clone https://github.com/tpoechtrager/cctools-port.git --branch 986-ld64-711 \
     && apt-get update \
     && apt-get install --yes \
-        libdispatch-dev \
         make \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
@@ -34,7 +33,7 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git --branch 1010.6-l
     && make install -j$(nproc) \
     && cd ../.. \
     && rm -rf cctools-port \
-    && apt-get purge make libdispatch-dev \
+    && apt-get purge make \
     && apt-get clean
 
 #
