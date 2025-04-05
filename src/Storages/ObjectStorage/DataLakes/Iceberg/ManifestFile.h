@@ -92,6 +92,7 @@ public:
         Int32 format_version_,
         const String & common_path,
         Int32 schema_id_,
+        Poco::JSON::Object::Ptr schema_object_,
         const DB::IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         const std::string & table_location,
@@ -102,6 +103,11 @@ public:
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
+    const std::vector<Int32> & getPartitionKeyColumnIDs() const;
+    Poco::JSON::Object::Ptr getSchemaObject() const { return schema_object; }
+    /// Get size in bytes of how much memory one instance of this ManifestFileContent class takes.
+    /// Used for in-memory caches size accounting.
+    size_t getSizeInMemory() const;
 
     /// Fields with rows count in manifest files are optional
     /// they can be absent.
@@ -113,7 +119,7 @@ public:
 private:
 
     Int32 schema_id;
-
+    Poco::JSON::Object::Ptr schema_object;
     std::optional<DB::KeyDescription> partition_key_description;
     // Size - number of files
     std::vector<ManifestFileEntry> files;
@@ -124,6 +130,7 @@ private:
 
 /// Once manifest file is constructed. It's unchangeable.
 using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
+using ManifestFileObservePtr = std::weak_ptr<const ManifestFileContent>;
 
 }
 

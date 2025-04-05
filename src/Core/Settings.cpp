@@ -4707,6 +4707,10 @@ The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELE
 The probability of a fault injection during table creation after creating metadata in ZooKeeper
 )", 0) \
     \
+    DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
+If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
+)", 0) \
+    \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
 and [enable_writes_to_query_cache](#enable_writes_to_query_cache) control in more detail how the cache is used.
