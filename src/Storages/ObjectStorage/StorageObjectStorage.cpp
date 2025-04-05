@@ -48,56 +48,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-    void sanityCheckPartitioningConfiguration(
-        const ASTPtr & table_level_partition_by,
-        const ASTPtr & query_partition_by,
-        const std::string & partition_strategy,
-        bool has_partition_wildcard)
-    {
-        if (!table_level_partition_by && !query_partition_by)
-        {
-            // do we want to assert that `partition_strategy` is not set to something different style AND
-            // wildcard is not set either?
-            return;
-        }
-
-        if (table_level_partition_by && query_partition_by)
-        {
-            // should never happen because parser should not allow that
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table level partition expression and query level partition expression can't be specified together, this is a bug");
-        }
-
-        static std::unordered_map<std::string, bool> partition_strategy_to_wildcard_acceptance =
-        {
-            {"auto", true},
-            {"hive", false}
-        };
-
-        if (!partition_strategy_to_wildcard_acceptance.contains(partition_strategy))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Unknown partitioning style '{}'",
-                partition_strategy);
-        }
-
-        if (has_partition_wildcard && !partition_strategy_to_wildcard_acceptance.at(partition_strategy))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The {} wildcard can't be used with {} partitioning style",
-                PartitionedSink::PARTITION_ID_WILDCARD, partition_strategy);
-        }
-
-        if (!has_partition_wildcard && partition_strategy_to_wildcard_acceptance.at(partition_strategy))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Partitioning style '{}' requires {} wildcard",
-                partition_strategy,
-                PartitionedSink::PARTITION_ID_WILDCARD);
-        }
-    }
-}
-
 String StorageObjectStorage::getPathSample(ContextPtr context)
 {
     auto query_settings = configuration->getQuerySettings(context);
@@ -152,11 +102,6 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    // this function needs to be called in the constructor so we can validate table definition at creation time
-    // it is also being called during `write` because this code is also used by table functions and, unfortunately,
-    // at creation time the partition by is not available (maybe this needs to be fixed)
-    sanityCheckPartitioningConfiguration(partition_by, nullptr, configuration->partition_strategy, configuration->withPartitionWildcard());
-
     bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
     update_configuration_on_read = !is_table_function_ || do_lazy_init;
     bool failed_init = false;

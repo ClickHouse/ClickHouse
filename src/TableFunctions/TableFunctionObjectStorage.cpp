@@ -131,8 +131,9 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         ColumnsDescription cached_columns,
         const ASTPtr & insert_query) const
 {
-    ColumnsDescription columns;
     chassert(configuration);
+    ColumnsDescription columns;
+
     if (configuration->structure != "auto")
         columns = parseColumnsListFromString(configuration->structure, context);
     else if (!structure_hint.empty())
@@ -140,18 +141,45 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
     else if (!cached_columns.empty())
         columns = cached_columns;
 
-    StoragePtr storage = std::make_shared<StorageObjectStorage>(
+    StoragePtr storage;
+    const auto & query_settings = context->getSettingsRef();
+
+    const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
+    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
+                                           && query_settings[Setting::parallel_replicas_for_cluster_engines]
+                                           && context->canUseTaskBasedParallelReplicas()
+                                           && !context->isDistributed();
+
+    const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+
+    if (can_use_parallel_replicas && !is_secondary_query && !insert_query)
+    {
+        storage = std::make_shared<StorageObjectStorageCluster>(
+                parallel_replicas_cluster_name,
+                configuration,
+                getObjectStorage(context, !insert_query),
+                StorageID(getDatabaseName(), table_name),
+                columns,
+                ConstraintsDescription{},
+                context);
+
+        storage->startup();
+        return storage;
+    }
+
+    storage = std::make_shared<StorageObjectStorage>(
             configuration,
             getObjectStorage(context, !insert_query),
             context,
             StorageID(getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
-            String{},
+            /* comment */ String{},
             /* format_settings */ std::nullopt,
             /* mode */ LoadingStrictnessLevel::CREATE,
-            /* distributed_processing */ false,
-            insert_query ? insert_query->as<ASTInsertQuery>()->partition_by : nullptr);
+            /* distributed_processing */ is_secondary_query,
+            /* partition_by */ insert_query ? insert_query->as<ASTInsertQuery>()->partition_by : nullptr,
+            /* is_table_function */true);
 
     storage->startup();
     return storage;
