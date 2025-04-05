@@ -211,6 +211,57 @@ SELECT makeDateTime64(2023, 5, 15, 10, 30, 45, 779, 5);
 └─────────────────────────────────────────────────┘
 ```
 
+## makeInterval {#makeInterval}
+
+Creates an [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type value from an interval unit (eg. 'second' or 'day') and an integer interval length.
+
+**Syntax**
+
+```sql
+makeInterval(unit, length)
+```
+
+**Arguments**
+
+- `unit` — The type of interval to create. [String Literal](/sql-reference/syntax#string).
+    Possible values:
+
+    - `nanosecond`
+    - `microsecond`
+    - `millisecond`
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+
+    The `unit` argument is case-insensitive.
+
+- `length` — Length of the interval [Integer](../../sql-reference/data-types/int-uint.md)
+
+**Returned value**
+
+- The resulting interval. [Interval](../../sql-reference/data-types/special-data-types/interval.md)
+
+**Example**
+
+```sql
+SELECT toDateTime('2025-01-01 00:00:00') + makeInterval('hour', 1)
+```
+
+```response
+┌─toDateTime('2025-01-01 00:00:00') + makeInterval('hour', 1) ─┐
+│                                          2025-01-01 01:00:00 │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**See also**
+
+- [toInterval<Type>](type-conversion-functions.md#tointervalyear)
+
 ## timestamp {#timestamp}
 
 Converts the first argument 'expr' to type [DateTime64(6)](../data-types/datetime64.md).
