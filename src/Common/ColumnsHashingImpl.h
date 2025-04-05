@@ -326,19 +326,19 @@ protected:
 
     template <typename T, typename = void>
     struct HasBegin : std::false_type {};
-    
+
     template <typename T>
     struct HasBegin<T, std::void_t<decltype(std::declval<const T&>().begin())>> : std::true_type {};
 
     template <typename T, typename = void>
     struct HasForEachMapped : std::false_type {};
-    
+
     template <typename T>
     struct HasForEachMapped<T, std::void_t<decltype(std::declval<const T&>().forEachMapped())>> : std::true_type {};
 
     template <typename T, typename = void>
     struct HasKey : std::false_type {};
-    
+
     template <typename T>
     struct HasKey<T, std::void_t<decltype(std::declval<const T&>().key)>> : std::true_type {};
 
@@ -348,36 +348,17 @@ protected:
     template <typename T, typename ArgType>
     struct HasErase<T, ArgType, std::void_t<decltype(std::declval<T>().erase(std::declval<ArgType>()))>> : std::true_type {};
 
-    template <typename T, typename = void>
-    struct HasOstreamOperator : std::false_type {};
-
-    template <typename T>
-    struct HasOstreamOperator<T, std::void_t<decltype(std::declval<std::ostream&>() << std::declval<T>())>> : std::true_type {};
-
     template <typename KeyHolder1, typename KeyHolder2>
     bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::vector<std::pair<UInt64, SortDirection>> & optimization_indexes) {
-        (void)optimization_indexes;
         const auto & lhs_key = keyHolderGetKey(lhs);
         const auto & rhs_key = keyHolderGetKey(rhs);
 
-        if constexpr (std::is_same_v<decltype(lhs_key), StringRef>) { // case complex list of expressions, for example, (Int64, String)
-            // TODO have to be something like this, but keys are serializaed
-            // for (const auto & idx : optimization_indexes) {
-            //     if (lhs_key[idx] < rhs_key[idx])
-            //         return true;
-            //     if (rhs_key[idx] < lhs_key[idx])
-            //         return false;
-            // }
-        } else if constexpr (std::is_same_v<decltype(lhs_key), Int128> 
-                             || std::is_same_v<decltype(lhs_key), UInt128>
-                             || std::is_same_v<decltype(lhs_key), Int256>
-                             || std::is_same_v<decltype(lhs_key), UInt256>) { // a "glued" sequence of several integers 
-            // TODO
-        }
-        else {
+        chassert(optimization_indexes.size() == 1);
+
+        if (optimization_indexes[0].second == SortDirection::ASCENDING) { // MVP. Support only numeric types (int, float)
             return lhs_key < rhs_key;
         }
-        return false;
+        return rhs_key < lhs_key;
     }
 
     template <typename Data, typename KeyHolder>
@@ -401,23 +382,29 @@ protected:
         typename Data::LookupResult it;
         bool inserted = false;
         data.emplace(key_holder, it, inserted);
+        if constexpr (!has_mapped && !std::is_same_v<decltype(key_holder), const VoidKey>) { // TODO VoidKey doesn't work in compareKeyHolders
+            if constexpr (!std::is_same_v<KeyHolder, DB::SerializedKeyHolder>
+                       && !std::is_same_v<KeyHolder, DB::ArenaKeyHolder>
+                       && !std::is_same_v<KeyHolder, Int128>
+                       && !std::is_same_v<KeyHolder, UInt128>
+                       && !std::is_same_v<KeyHolder, Int256>
+                       && !std::is_same_v<KeyHolder, UInt256>) { // MVP. Support only basic types
+                if (optimization_indexes && data.size() >= limit_length + 1) { // TODO do == and assert <=
+                    chassert(optimization_indexes->size() == 1 && (*optimization_indexes)[0].first == 0);
+                    if constexpr (HasBegin<Data>::value) {
+                        if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>) {
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), StringRef>));
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), Int128>));
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt128>));
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), Int256>));
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt256>));
 
-        if constexpr (!std::is_same_v<decltype(key_holder), const VoidKey>) { // TODO VoidKey doesn't work in compareKeyHolders
-            if (optimization_indexes && data.size() >= limit_length + 1) { // TODO do == and assert <=
-                if constexpr (HasBegin<Data>::value) {
-                    if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>) {
-                        if (!std::is_same_v<decltype(data.begin()->getKey()), StringRef>
-                            && !std::is_same_v<decltype(data.begin()->getKey()), Int128> 
-                            && !std::is_same_v<decltype(data.begin()->getKey()), UInt128>
-                            && !std::is_same_v<decltype(data.begin()->getKey()), Int256>
-                            && !std::is_same_v<decltype(data.begin()->getKey()), UInt256>) { // for MVP only simple types are supported
-                            // find minimal element of data
+                            // find the minimal element of data
                             auto min_key_holder = key_holder;
                             for (const auto& data_el : data) {
                                 if constexpr (HasKey<KeyHolder>::value) {
-                                    const auto& key = data_el.getKey();
-                                    if (compareKeyHolders(key, min_key_holder.key, *optimization_indexes)) {
-                                        min_key_holder.key = key;
+                                    if (compareKeyHolders(data_el.getKey(), min_key_holder.key, *optimization_indexes)) {
+                                        min_key_holder.key = data_el.getKey();
                                     }
                                 } else {
                                     if (compareKeyHolders(data_el.getKey(), min_key_holder, *optimization_indexes)) {
@@ -430,16 +417,15 @@ protected:
                             if constexpr (HasErase<Data, decltype(keyHolderGetKey(min_key_holder))>::value) {
                                 data.erase(min_key);
                                 if (min_key == keyHolderGetKey(key_holder)) {
-                                    if constexpr (!has_mapped)
-                                        return EmplaceResult(inserted);
+                                    return EmplaceResult(inserted);
                                 }
                             }
                         }
+                    } else if constexpr (HasForEachMapped<Data>::value) {
+                        // TODO implement
+                        // data.forEachMapped([](auto el) {
+                        // });
                     }
-                } else if constexpr(HasForEachMapped<Data>::value) {
-                    // TODO implement
-                    // data.forEachMapped([](auto el) {
-                    // });
                 }
             }
         }
