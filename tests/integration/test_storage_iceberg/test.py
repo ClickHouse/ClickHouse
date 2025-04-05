@@ -407,10 +407,11 @@ def test_partition_by(started_cluster, format_version, storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
-    assert len(files) == 14  # 10 partitiions + 4 metadata files
+    assert len(files) == 14  # 10 partitions + 4 metadata files
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
+    assert int(instance.query(f"SELECT count() FROM system.iceberg_history WHERE table_name = '{TABLE_NAME}'")) == 1
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -761,12 +762,12 @@ def test_evolved_schema_simple(
     execute_spark_query(
         f"""
             CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                a int NOT NULL, 
-                b float, 
+                a int NOT NULL,
+                b float,
                 c decimal(9,2) NOT NULL,
                 d array<int>
             )
-            USING iceberg 
+            USING iceberg
             OPTIONS ('format-version'='{format_version}')
         """
     )
@@ -1101,6 +1102,9 @@ def test_evolved_schema_simple(
             ["\\N", "4", "7.12", "\\N"],
         ],
     )
+    if not is_table_function :
+        print (instance.query("SELECT * FROM system.iceberg_history"))
+        assert int(instance.query(f"SELECT count() FROM system.iceberg_history WHERE table_name = '{TABLE_NAME}'")) == 5
 
     # Do a single check to verify that restarting CH maintains the setting (ATTACH)
     # We are just interested on the setting working after restart, so no need to run it on all combinations
@@ -1166,12 +1170,12 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
     execute_spark_query(
         f"""
             CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                a int NOT NULL, 
-                b float, 
+                a int NOT NULL,
+                b float,
                 c decimal(9,2) NOT NULL,
                 d array<int>
             )
-            USING iceberg 
+            USING iceberg
             OPTIONS ('format-version'='{format_version}')
         """
     )
@@ -1580,6 +1584,8 @@ def test_row_based_deletes(started_cluster, storage_type):
 
     error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
     assert "UNSUPPORTED_METHOD" in error
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -1841,6 +1847,7 @@ def test_restart_broken_s3(started_cluster):
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
@@ -2176,7 +2183,7 @@ def test_schema_evolution_with_time_travel(
             CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
                 a int NOT NULL
             )
-            USING iceberg 
+            USING iceberg
             OPTIONS ('format-version'='{format_version}')
         """
     )
@@ -2346,7 +2353,7 @@ def get_last_snapshot(path_to_table):
                     last_timestamp = timestamp
                     last_snapshot_id = data.get('current-snapshot-id')
     return last_snapshot_id
-    
+
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])

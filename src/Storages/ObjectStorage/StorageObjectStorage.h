@@ -9,6 +9,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
 #include <memory>
 namespace DB
@@ -140,6 +141,8 @@ public:
 
     void updateExternalDynamicMetadata(ContextPtr) override;
 
+    IDataLakeMetadata * getExternalDynamicMetadata() const;
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 protected:
@@ -230,6 +233,8 @@ public:
     virtual std::optional<size_t> totalBytes() { return {}; }
 
     virtual bool hasExternalDynamicMetadata() { return false; }
+
+    virtual IDataLakeMetadata * getExternalDynamicMetadata() const { return nullptr; }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String&) const { return {}; }
 

@@ -118,6 +118,8 @@ public:
             && current_metadata->supportsExternalMetadataChange();
     }
 
+    IDataLakeMetadata * getExternalDynamicMetadata() const override { return current_metadata.get(); }
+
     ColumnsDescription updateAndGetCurrentSchema(
         ObjectStoragePtr object_storage,
         ContextPtr context) override
