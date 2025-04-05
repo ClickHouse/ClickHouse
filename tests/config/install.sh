@@ -30,7 +30,8 @@ function check_clickhouse_version()
 {
     local required_version=$1 && shift
     # ClickHouse local version 25.4.1.1.
-    current_version=$(clickhouse --version | awk '{print $NF}')
+    # ClickHouse local version 25.4.1.1 (official build).
+    current_version=$(clickhouse --version | awk '{print $4}')
 
     if [ "$(printf '%s\n' "$required_version" "$current_version" | sort -V | head -n1)" = "$required_version" ]; then
         echo "ClickHouse version $current_version is OK (>= $required_version)"
