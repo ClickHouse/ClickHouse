@@ -1114,11 +1114,6 @@ Field ServerSettings::get(std::string_view name) const
     return impl->get(name);
 }
 
-bool ServerSettings::tryGet(std::string_view name, Field & value) const
-{
-    return impl->tryGet(name, value);
-}
-
 void ServerSettings::set(std::string_view name, const Field & value)
 {
     impl->set(name, value);

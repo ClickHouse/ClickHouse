@@ -45,8 +45,6 @@ struct ServerSettings
 
     Field get(std::string_view name) const;
 
-    bool tryGet(std::string_view name, Field & value) const;
-
     void set(std::string_view name, const Field & value);
 
     void loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
