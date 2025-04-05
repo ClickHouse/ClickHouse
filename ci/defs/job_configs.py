@@ -318,8 +318,10 @@ class JobConfigs:
             "release, old analyzer, s3, DatabaseReplicated, 1/2",
             "release, old analyzer, s3, DatabaseReplicated, 2/2",
             "release, ParallelReplicas, s3 storage",
+            "release, AsyncInserts, s3 storage",
         ],
         runs_on=[
+            RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
@@ -330,6 +332,7 @@ class JobConfigs:
         requires=[
             ["Build (amd_asan)"],
             ["Build (amd_asan)"],
+            ["Build (amd_release)"],
             ["Build (amd_release)"],
             ["Build (amd_release)"],
             ["Build (amd_release)"],

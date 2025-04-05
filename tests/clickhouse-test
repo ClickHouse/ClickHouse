@@ -3277,6 +3277,12 @@ def main(args):
         )
         skip_list.extend(skip_list_parallel_replicas)
 
+    if args.no_async_inserts is True:
+        skip_list_async_inserts = try_get_skip_list(
+            base_dir, "../async_insert_blacklist.txt"
+        )
+        skip_list.extend(skip_list_async_inserts)
+
     for suite in sorted(os.listdir(base_dir), key=suite_key_func):
         if server_died.is_set():
             break
@@ -3745,6 +3751,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Do not include tests that are not supported with parallel replicas feature",
+    )
+    parser.add_argument(
+        "--no-async-inserts",
+        action="store_true",
+        default=False,
+        help="Do not include tests that are not supported with async insert feature",
     )
     parser.add_argument(
         "--replace-replicated-with-shared",
