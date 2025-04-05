@@ -23,6 +23,7 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git --branch 986-ld64
     && apt-get update \
     && apt-get install --yes \
         make \
+    && apt-get clean \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=x86_64-apple-darwin \
@@ -32,9 +33,7 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git --branch 986-ld64
         --target=aarch64-apple-darwin \
     && make install -j$(nproc) \
     && cd ../.. \
-    && rm -rf cctools-port \
-    && apt-get purge make --yes \
-    && apt-get clean
+    && rm -rf cctools-port
 
 #
 # GDB
