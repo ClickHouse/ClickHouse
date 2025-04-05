@@ -86,10 +86,12 @@ private:
 
         explicit Action(SkipFn skip_fn_)
             : type(Skip)
+            , target_column_idx(0)
             , skip_fn(skip_fn_) {}
 
         Action(const std::vector<size_t> & nested_column_indexes_, const std::vector<DeserializeFn> & nested_deserializers_)
             : type(Nested)
+            , target_column_idx(0)
             , nested_column_indexes(nested_column_indexes_)
             , nested_deserializers(nested_deserializers_) {}
 
