@@ -100,12 +100,24 @@ void Chain::addSink(ProcessorPtr processor)
     processors.emplace_back(std::move(processor));
 }
 
-void Chain::appendChain(Chain chain)
+Chain & Chain::appendChain(Chain chain)
 {
     connect(getOutputPort(), chain.getInputPort());
     processors.splice(processors.end(), std::move(chain.processors));
     attachResources(chain.detachResources());
     num_threads += chain.num_threads;
+    return *this;
+}
+
+Chain & Chain::appendChainNotStrict(Chain chain)
+{
+    if (!processors.empty() && !chain.processors.empty())
+        return appendChain(std::move(chain));
+
+    if (processors.empty())
+        *this = std::move(chain);
+
+    return *this;
 }
 
 IProcessor & Chain::getSource()

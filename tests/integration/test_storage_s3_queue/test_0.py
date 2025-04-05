@@ -504,14 +504,7 @@ def test_streaming_to_many_views(started_cluster, mode):
     )
 
     generate_files(file_prefix = "b")
-    rows_from_last_insert = 100 * 20
-    # we expect duplicates, but exactly certain amount,
-    # which must stop once loading retries limit is reached.
-    check(
-        dst_tables,
-        expect_rows_num[0] + rows_from_last_insert * loading_retries,
-        expect_files_num[0],
-    )
+    # there is no gurantee what is inserted to other MV because the insert is failed
     check([broken_dst_table], 0, 0)
 
     for i in range(20, 40):

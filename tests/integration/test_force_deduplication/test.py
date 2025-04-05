@@ -34,6 +34,15 @@ def test_basic(start_cluster):
 
     node.query(
         """
+        DROP TABLE IF EXISTS test_mv_c SYNC;
+        DROP TABLE IF EXISTS test_mv_b SYNC;
+        DROP TABLE IF EXISTS test_mv_a SYNC;
+        DROP TABLE IF EXISTS test SYNC;
+        """
+    )
+
+    node.query(
+        """
         CREATE TABLE test (A Int64) ENGINE = ReplicatedMergeTree ('/clickhouse/test/tables/test','1') ORDER BY tuple();
         CREATE MATERIALIZED VIEW test_mv_a Engine=ReplicatedMergeTree ('/clickhouse/test/tables/test_mv_a','1') order by tuple() AS SELECT A FROM test;
         CREATE MATERIALIZED VIEW test_mv_b Engine=ReplicatedMergeTree ('/clickhouse/test/tables/test_mv_b','1') partition by A order by tuple() AS SELECT A FROM test;
@@ -51,13 +60,13 @@ def test_basic(start_cluster):
     old_src, old_a, old_b, old_c = src, a, b, c
 
     # that issert fails on test_mv_b due to partitions by A
-    with pytest.raises(QueryRuntimeException):
-        node.query(
-            """
-            SET max_partitions_per_insert_block = 3;
-            INSERT INTO test SELECT number FROM numbers(10);
-            """
-        )
+    node.query(
+        """
+        SET max_partitions_per_insert_block = 3;
+        SET materialized_views_ignore_errors = 1;
+        INSERT INTO test SELECT number FROM numbers(10);
+        """
+    )
     src, a, b, c = get_counts()
     assert src == old_src + 10
     assert a == old_a + 10
@@ -103,14 +112,14 @@ def test_basic(start_cluster):
     old_src, old_a, old_b, old_c = src, a, b, c
 
     # that issert fails on test_mv_b due to partitions by A, it is an uniq data which is not deduplicated
-    with pytest.raises(QueryRuntimeException):
-        node.query(
-            """
-            SET max_partitions_per_insert_block = 3;
-            SET deduplicate_blocks_in_dependent_materialized_views = 1;
-            INSERT INTO test SELECT number FROM numbers(100,10);
-            """
-        )
+    node.query(
+        """
+        SET max_partitions_per_insert_block = 3;
+        SET materialized_views_ignore_errors = 1;
+        SET deduplicate_blocks_in_dependent_materialized_views = 1;
+        INSERT INTO test SELECT number FROM numbers(100,10);
+        """
+    )
     src, a, b, c = get_counts()
     assert src == old_src + 10
     assert a == old_a + 10
