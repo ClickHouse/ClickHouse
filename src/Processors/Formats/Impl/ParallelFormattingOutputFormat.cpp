@@ -16,12 +16,6 @@ namespace DB
         collector_finished.wait();
 
         {
-            std::lock_guard lock(collector_thread_mutex);
-            if (collector_thread.joinable())
-                collector_thread.join();
-        }
-
-        {
             std::lock_guard lock(mutex);
 
             if (background_exception)
@@ -109,12 +103,6 @@ namespace DB
             std::unique_lock<std::mutex> lock(mutex);
             collector_condvar.notify_all();
             writer_condvar.notify_all();
-        }
-
-        {
-            std::lock_guard lock(collector_thread_mutex);
-            if (collector_thread.joinable())
-                collector_thread.join();
         }
 
         try
