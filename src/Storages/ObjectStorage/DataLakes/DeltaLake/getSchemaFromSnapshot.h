@@ -9,25 +9,25 @@
 namespace ffi
 {
 struct SharedSnapshot;
-struct SharedExternEngine;
+struct SharedGlobalScanState;
 }
 
 namespace DeltaLake
 {
 
-/// Get table schema.
+/// Get table schema and physical column map (logical name to physical name mapping).
 /// Represents table schema from DeltaLake metadata.
 /// Contains partition columns.
-DB::NamesAndTypesList getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot);
+std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot);
 
-/// Get read schema and partition columns.
+/// Get read schema.
 /// Represents read schema based on data files.
+DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedGlobalScanState * scan_state);
+
+/// Get list of partition columns.
 /// Read schema does not contain partition columns,
 /// therefore partition columns are passed separately.
-std::pair<DB::NamesAndTypesList, DB::Names>
-getReadSchemaAndPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine);
-
-DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine);
+DB::Names getPartitionColumnsFromSnapshot(ffi::SharedGlobalScanState * scan_state);
 
 }
 

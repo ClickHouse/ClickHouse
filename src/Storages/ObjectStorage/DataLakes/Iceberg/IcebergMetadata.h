@@ -77,7 +77,7 @@ public:
             : nullptr;
     }
 
-    bool supportsExternalMetadataChange() const override { return true; }
+    bool supportsSchemaEvolution() const override { return true; }
 
     static Int32
     parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
