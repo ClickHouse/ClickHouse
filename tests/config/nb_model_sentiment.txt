@@ -1,0 +1,6 @@
+hello positive 5
+like positive 3
+hate negative 3
+love positive 2
+awesome positive 1
+medicore negative 2
