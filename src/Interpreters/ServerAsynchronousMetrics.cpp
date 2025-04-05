@@ -465,6 +465,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
                 }
 
                 // mutation status
+                const auto max_threshold_seconds_to_warn =  static_cast<std::chrono::seconds::rep>(getContext()->getMaxThresholdForMutationsToWarn());
                 for (const auto & mutation_status : table_merge_tree->getMutationsStatus())
                 {
                     if (!mutation_status.is_done)
@@ -477,9 +478,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
                             {
                                 auto mutation_create_time = std::chrono::system_clock::from_time_t(mutation_status.create_time);
                                 auto current_time = std::chrono::system_clock::now();
-
                                 const auto time_elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(current_time - mutation_create_time).count();
-                                auto max_threshold_seconds_to_warn =  static_cast<std::chrono::seconds::rep>(getContext()->getMaxThresholdForMutationsToWarn());
 
                                 if (time_elapsed_sec > max_threshold_seconds_to_warn)
                                     ++current_mutation_stats.pending_mutations_over_threshold;
