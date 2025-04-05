@@ -1,12 +1,14 @@
 #pragma once
 
-#include <exception>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/Priority.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 
+#include <future>
 
 namespace DB
 {
@@ -122,14 +124,13 @@ public:
             }
             else
             {
+                std::vector<std::future<void>> futures;
                 try
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
                     auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled, thread_group = CurrentThread::getGroup()]()
                     {
-                        ThreadGroupSwitcher switcher(thread_group, "UniqExactMerger");
-
                         while (true)
                         {
                             if (is_cancelled->load(std::memory_order_seq_cst))
@@ -142,13 +143,16 @@ public:
                         }
                     };
 
-                    for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
-                        thread_pool->scheduleOrThrowOnError(thread_func);
-                    thread_pool->wait();
+                    const auto tasks = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
+                    futures.reserve(tasks);
+                    auto schedule = threadPoolCallbackRunnerUnsafe<void>(*thread_pool, "UniqExactMerger");
+                    for (size_t i = 0; i < tasks; ++i)
+                        futures.emplace_back(schedule([thread_func]() { thread_func(); }, Priority{}));
+                    std::ranges::for_each(futures, [](auto & future) { future.wait(); });
                 }
                 catch (...)
                 {
-                    thread_pool->wait();
+                    std::ranges::for_each(futures, [](auto & future) { future.wait(); });
                     throw;
                 }
             }

@@ -9,8 +9,11 @@
 #include <Columns/ColumnLazy.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Common/typeid_cast.h>
 #include <base/range.h>
+#include <Common/typeid_cast.h>
+#include "Columns/ColumnBlob.h"
+#include "Columns/IColumn.h"
+#include "Core/ColumnWithTypeAndName.h"
 
 #include <Formats/NativeReader.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
@@ -84,14 +87,20 @@ void NativeReader::resetParser()
     use_index = false;
 }
 
-static void readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, const std::optional<FormatSettings> & format_settings, size_t rows, double avg_value_size_hint)
+void NativeReader::readData(
+    const ISerialization & serialization,
+    ColumnPtr & column,
+    ReadBuffer & istr,
+    const FormatSettings * format_settings,
+    size_t rows,
+    double avg_value_size_hint)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.avg_value_size_hint = avg_value_size_hint;
     settings.position_independent_encoding = false;
     settings.native_format = true;
-    settings.format_settings = format_settings ? &*format_settings : nullptr;
+    settings.format_settings = format_settings;
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
@@ -99,8 +108,11 @@ static void readData(const ISerialization & serialization, ColumnPtr & column, R
     serialization.deserializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state, nullptr);
 
     if (column->size() != rows)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-            "Cannot read all data in NativeReader. Rows read: {}. Rows expected: {}", column->size(), rows);
+        throw Exception(
+            ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Cannot read all data in NativeReader. Rows read: {}. Rows expected: {}",
+            column->size(),
+            rows);
 }
 
 
@@ -109,6 +121,15 @@ Block NativeReader::getHeader() const
     return header;
 }
 
+bool NativeReader::eof() const
+{
+    return istr.eof();
+}
+
+bool NativeReader::hasPendingData() const
+{
+    return istr.hasPendingData();
+}
 
 Block NativeReader::read()
 {
@@ -242,7 +263,8 @@ Block NativeReader::read()
         if (!skip_reading && rows)
         {
             double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
-            readData(*serialization, read_column, istr, format_settings, rows, avg_value_size_hint);
+            const auto * format = format_settings ? &*format_settings : nullptr;
+            readData(*serialization, read_column, istr, format, rows, avg_value_size_hint);
         }
 
         column.column = std::move(read_column);
