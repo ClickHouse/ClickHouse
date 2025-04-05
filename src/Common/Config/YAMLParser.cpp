@@ -1,7 +1,8 @@
 #include "config.h"
+#include <Common/Config/YAMLParser.h>
 
 #if USE_YAML_CPP
-#include "YAMLParser.h"
+
 
 #include <vector>
 
@@ -178,4 +179,25 @@ Poco::AutoPtr<Poco::XML::Document> YAMLParser::parse(const String& path)
 }
 
 }
+#else
+
+#include <Common/Exception.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+extern const int CANNOT_PARSE_YAML;
+}
+
+Poco::AutoPtr<Poco::XML::Document> DummyYAMLParser::parse(const String & path)
+{
+    Poco::AutoPtr<Poco::XML::Document> xml = new Poco::XML::Document;
+    throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "Unable to parse YAML configuration file {} without usage of yaml-cpp library", path);
+    return xml;
+}
+
+}
+
 #endif

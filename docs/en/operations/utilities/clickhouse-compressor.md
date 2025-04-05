@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/utilities/clickhouse-compressor
+slug: /operations/utilities/clickhouse-compressor
 title: clickhouse-compressor 
 ---
 

@@ -12,7 +12,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Common/Exception.h>
 
 #include <base/types.h>
 

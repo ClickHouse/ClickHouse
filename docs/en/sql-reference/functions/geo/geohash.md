@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/geo/geohash
+slug: /sql-reference/functions/geo/geohash
 sidebar_label: Geohash
 title: "Functions for Working with Geohash"
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/array
+slug: /sql-reference/data-types/array
 sidebar_position: 32
 sidebar_label: Array(T)
 ---

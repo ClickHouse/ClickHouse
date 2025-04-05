@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/summap
+slug: /sql-reference/aggregate-functions/reference/summap
 sidebar_position: 198
 ---
 

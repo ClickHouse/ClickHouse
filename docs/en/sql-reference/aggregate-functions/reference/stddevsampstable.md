@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/stddevsampstable
+slug: /sql-reference/aggregate-functions/reference/stddevsampstable
 sidebar_position: 191
 ---
 

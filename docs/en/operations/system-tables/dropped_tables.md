@@ -1,6 +1,6 @@
 ---
 description: "System table containing information about tables that drop table has been executed on but for which data cleanup has not yet been performed"
-slug: /en/operations/system-tables/dropped_tables
+slug: /operations/system-tables/dropped_tables
 title: "dropped_tables"
 keywords: ["system table", "dropped_tables"]
 ---

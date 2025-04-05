@@ -1,9 +1,9 @@
 ---
-slug: /en/operations/optimizing-performance/sampling-query-profiler
+slug: /operations/optimizing-performance/sampling-query-profiler
 sidebar_position: 54
 sidebar_label: Query Profiling
 ---
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
+import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
 # Sampling Query Profiler
 

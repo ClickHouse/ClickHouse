@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/combinators
+slug: /sql-reference/aggregate-functions/combinators
 sidebar_position: 37
 sidebar_label: Combinators
 ---

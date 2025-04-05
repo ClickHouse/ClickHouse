@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/utilities/clickhouse-benchmark
+slug: /operations/utilities/clickhouse-benchmark
 sidebar_position: 61
 sidebar_label: clickhouse-benchmark
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/sumwithoverflow
+slug: /sql-reference/aggregate-functions/reference/sumwithoverflow
 sidebar_position: 200
 ---
 

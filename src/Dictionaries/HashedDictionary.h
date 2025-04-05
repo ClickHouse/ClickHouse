@@ -335,17 +335,10 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
 
         if (!pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
             {
-                SCOPE_EXIT_SAFE(
-                    if (thread_group)
-                        CurrentThread::detachFromGroupIfNotDetached();
-                );
+                ThreadGroupSwitcher switcher(thread_group, "HashedDictDtor");
 
                 /// Do not account memory that was occupied by the dictionaries for the query/user context.
                 MemoryTrackerBlockerInThread memory_blocker;
-
-                if (thread_group)
-                    CurrentThread::attachToGroupIfDetached(thread_group);
-                setThreadName("HashedDictDtor");
 
                 clearContainer(container);
             }))

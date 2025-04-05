@@ -38,8 +38,8 @@ Alias: `truncate`.
 
 **Параметры**
 
-- `input` - число для округления. Может быть в любом чисельном формате ([Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md) или [Integer](/docs/en/sql-reference/data-types/int-uint.md)).
-- `precision` - точность округления, [целочисельный](/docs/en/sql-reference/data-types/int-uint.md) тип.
+- `input` - число для округления. Может быть в любом чисельном формате ([Float](/docs/sql-reference/data-types/float.md), [Decimal](/docs/sql-reference/data-types/decimal.md) или [Integer](/docs/sql-reference/data-types/int-uint.md)).
+- `precision` - точность округления, [целочисельный](/docs/sql-reference/data-types/int-uint.md) тип.
 
 **Возвращаемое значение**
 

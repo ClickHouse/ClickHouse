@@ -18,7 +18,7 @@
 #include <Columns/ColumnTuple.h>
 #include "Common/FieldVisitors.h"
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeLowCardinality.h>

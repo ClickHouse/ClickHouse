@@ -12,6 +12,11 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace ProfileEvents
 {
 
@@ -124,7 +129,14 @@ DB::Block getProfileEvents(
 {
     using namespace DB;
 
+    if (!CurrentThread::isInitialized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CurrentThread is not initialized");
+
     auto thread_group = CurrentThread::getGroup();
+
+    if (!thread_group)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Current thread is not attached to any thread group");
+
     ThreadIdToCountersSnapshot new_snapshots;
 
     ProfileEventsSnapshot group_snapshot;

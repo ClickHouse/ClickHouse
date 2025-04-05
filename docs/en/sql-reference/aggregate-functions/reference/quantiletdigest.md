@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/quantiletdigest
+slug: /sql-reference/aggregate-functions/reference/quantiletdigest
 sidebar_position: 178
 ---
 
@@ -55,4 +55,4 @@ Result:
 **See Also**
 
 - [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
-- [quantiles](/docs/en/sql-reference/aggregate-functions/reference/quantiles)
+- [quantiles](/docs/sql-reference/aggregate-functions/reference/quantiles)

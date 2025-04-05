@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/random-functions
+slug: /sql-reference/functions/random-functions
 sidebar_position: 145
 sidebar_label: Random Numbers
 ---

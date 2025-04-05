@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/create/row-policy
+slug: /sql-reference/statements/create/row-policy
 sidebar_position: 41
 sidebar_label: ROW POLICY
 title: "CREATE ROW POLICY"

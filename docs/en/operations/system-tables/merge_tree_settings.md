@@ -1,6 +1,6 @@
 ---
 description: "System table containing information about settings for MergeTree tables."
-slug: /en/operations/system-tables/merge_tree_settings
+slug: /operations/system-tables/merge_tree_settings
 title: "merge_tree_settings"
 keywords: ["system table", "merge_tree_settings"]
 ---

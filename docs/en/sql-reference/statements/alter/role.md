@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/alter/role
+slug: /sql-reference/statements/alter/role
 sidebar_position: 46
 sidebar_label: ROLE
 title: "ALTER ROLE"

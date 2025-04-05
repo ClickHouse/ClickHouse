@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/query-cache
+slug: /operations/query-cache
 sidebar_position: 65
 sidebar_label: Query Cache
 ---
@@ -33,7 +33,7 @@ effort and avoids redundancy.
 ## Configuration Settings and Usage
 
 :::note
-In ClickHouse Cloud, you must use [query level settings](/en/operations/settings/query-level) to edit query cache settings. Editing [config level settings](/en/operations/configuration-files) is currently not supported.
+In ClickHouse Cloud, you must use [query level settings](/operations/settings/query-level) to edit query cache settings. Editing [config level settings](/operations/configuration-files) is currently not supported.
 :::
 
 Setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries of the

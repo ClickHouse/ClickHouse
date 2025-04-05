@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/integrations/hive
+slug: /engines/table-engines/integrations/hive
 sidebar_position: 84
 sidebar_label: Hive
 ---

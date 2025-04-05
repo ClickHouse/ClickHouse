@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/nlp-functions
+slug: /sql-reference/functions/nlp-functions
 sidebar_position: 130
 sidebar_label: NLP
 ---

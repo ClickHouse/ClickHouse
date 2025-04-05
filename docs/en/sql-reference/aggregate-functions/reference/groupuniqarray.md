@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/groupuniqarray
+slug: /sql-reference/aggregate-functions/reference/groupuniqarray
 sidebar_position: 154
 ---
 

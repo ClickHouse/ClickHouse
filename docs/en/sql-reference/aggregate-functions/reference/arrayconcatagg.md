@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/array_concat_agg
+slug: /sql-reference/aggregate-functions/reference/array_concat_agg
 sidebar_position: 111
 ---
 

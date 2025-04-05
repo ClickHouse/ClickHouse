@@ -1,5 +1,5 @@
 ---
-slug: /en/development/build
+slug: /development/build
 sidebar_position: 10
 sidebar_label: Build on Linux
 ---

@@ -1,4 +1,5 @@
 #include <Interpreters/Context.h>
+#include <Core/Field.h>
 
 namespace DB
 {

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/skewpop
+slug: /sql-reference/aggregate-functions/reference/skewpop
 sidebar_position: 185
 ---
 

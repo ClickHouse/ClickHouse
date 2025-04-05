@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/rounding-functions
+slug: /sql-reference/functions/rounding-functions
 sidebar_position: 155
 sidebar_label: Rounding
 ---
@@ -40,7 +40,7 @@ SELECT floor(123.45, 1) AS rounded
 
 Result:
 
-```text
+```response
 ┌─rounded─┐
 │   123.4 │
 └─────────┘
@@ -54,7 +54,7 @@ SELECT floor(123.45, -1)
 
 Result:
 
-```text
+```response
 ┌─rounded─┐
 │     120 │
 └─────────┘
@@ -131,7 +131,7 @@ Example with `Float` inputs:
 SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
-```text
+```response
 ┌───x─┬─round(divide(number, 2))─┐
 │   0 │                        0 │
 │ 0.5 │                        0 │
@@ -245,7 +245,7 @@ Query:
 
 Result:
 
-```text
+```response
 ┌───x─┬─b─┐
 │   0 │ 0 │
 │ 0.5 │ 0 │
@@ -262,7 +262,7 @@ Result:
 
 Examples of Banker's rounding:
 
-```text
+```response
 roundBankers(0.4) = 0
 roundBankers(-3.5) = -4
 roundBankers(4.5) = 4

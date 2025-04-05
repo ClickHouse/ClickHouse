@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/cluster-discovery
+slug: /operations/cluster-discovery
 sidebar_label: Cluster Discovery
 ---
 # Cluster Discovery
@@ -159,7 +159,7 @@ INSERT INTO event_table ...
 
 Then, we add a new node to the cluster, starting a new node with the same entry in the `remote_servers` section in a configuration file:
 
-```text
+```response
 ┌─cluster─┬─shard_num─┬─shard_weight─┬─replica_num─┬─host_name────┬─host_address─┬─port─┬─is_local─┬─user─┬─is_active─┐
 │ default │         1 │            1 │           1 │ 92d3c04025e8 │ 172.26.0.5   │ 9000 │        0 │      │      ᴺᵁᴸᴸ │
 │ default │         1 │            1 │           2 │ a6a68731c21b │ 172.26.0.4   │ 9000 │        1 │      │      ᴺᵁᴸᴸ │

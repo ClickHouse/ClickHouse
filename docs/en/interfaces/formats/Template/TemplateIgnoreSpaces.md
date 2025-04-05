@@ -1,6 +1,6 @@
 ---
 title : TemplateIgnoreSpaces
-slug : /en/interfaces/formats/TemplateIgnoreSpaces
+slug: /interfaces/formats/TemplateIgnoreSpaces
 keywords : [TemplateIgnoreSpaces]
 input_format: true
 output_format: false
@@ -25,7 +25,7 @@ This format is suitable only for input.
 
 ## Example Usage
 
-The following request can be used for inserting data from its output example of format [JSON](/docs/en/interfaces/formats/JSON):
+The following request can be used for inserting data from its output example of format [JSON](/docs/interfaces/formats/JSON):
 
 ```sql
 INSERT INTO table_name 

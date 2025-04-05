@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/update
+slug: /operations/update
 sidebar_title: Self-managed Upgrade
 title: Self-managed Upgrade
 ---
@@ -53,7 +53,7 @@ If the difference between the current version and the target version is more tha
 These are the recommended steps for a zero-downtime ClickHouse upgrade:
 
 1. Make sure that your configuration changes are not in the default `/etc/clickhouse-server/config.xml` file and that they are instead in `/etc/clickhouse-server/config.d/`, as `/etc/clickhouse-server/config.xml` could be overwritten during an upgrade.
-2. Read through the [changelogs](/docs/en/whats-new/changelog/index.md) for breaking changes (going back from the target release to the release you are currently on).
+2. Read through the [changelogs](/docs/whats-new/changelog/index.md) for breaking changes (going back from the target release to the release you are currently on).
 3. Make any updates identified in the breaking changes that can be made before upgrading, and a list of the changes that will need to be made after the upgrade.
 4. Identify one or more replicas for each shard to keep up while the rest of the replicas for each shard are upgraded.
 5. On the replicas that will be upgraded, one at a time:

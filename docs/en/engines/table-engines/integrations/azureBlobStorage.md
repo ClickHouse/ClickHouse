@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/integrations/azureBlobStorage
+slug: /engines/table-engines/integrations/azureBlobStorage
 sidebar_position: 10
 sidebar_label: Azure Blob Storage
 ---
@@ -26,7 +26,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `blobpath` - file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
 - `account_name` - if storage_account_url is used, then account name can be specified here
 - `account_key` - if storage_account_url is used, then account key can be specified here
-- `format` — The [format](/docs/en/interfaces/formats.md) of the file.
+- `format` — The [format](/docs/interfaces/formats.md) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
 
 **Example**
@@ -62,13 +62,13 @@ SELECT * FROM test_table;
 
 Currently there are 3 ways to authenticate:
 - `Managed Identity` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`.
-- `SAS Token` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`. It is identified by presence of '?' in the url. See [azureBlobStorage](/docs/en/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.
+- `SAS Token` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`. It is identified by presence of '?' in the url. See [azureBlobStorage](/docs/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.
 - `Workload Identity` - Can be used by providing an `endpoint` or `storage_account_url`. If `use_workload_identity` parameter is set in config, ([workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications)) is used for authentication.
 
 ### Data cache {#data-cache}
 
 `Azure` table engine supports data caching on local disk.
-See filesystem cache configuration options and usage in this [section](/docs/en/operations/storing-data.md/#using-local-cache).
+See filesystem cache configuration options and usage in this [section](/docs/operations/storing-data.md/#using-local-cache).
 Caching is made depending on the path and ETag of the storage object, so clickhouse will not read a stale cache version.
 
 To enable caching use a setting `filesystem_cache_name = '<name>'` and `enable_filesystem_cache = 1`.
@@ -92,8 +92,8 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 </clickhouse>
 ```
 
-2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/docs/en/operations/storing-data.md/#using-local-cache)
+2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/docs/operations/storing-data.md/#using-local-cache)
 
 ## See also
 
-[Azure Blob Storage Table Function](/docs/en/sql-reference/table-functions/azureBlobStorage)
+[Azure Blob Storage Table Function](/docs/sql-reference/table-functions/azureBlobStorage)

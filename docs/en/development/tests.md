@@ -1,5 +1,5 @@
 ---
-slug: /en/development/tests
+slug: /development/tests
 sidebar_position: 40
 sidebar_label: Testing
 ---

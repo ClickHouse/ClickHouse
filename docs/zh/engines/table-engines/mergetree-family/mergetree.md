@@ -62,7 +62,7 @@ ORDER BY expr
 
      如果没有使用 `PRIMARY KEY` 显式指定的主键，ClickHouse 会使用排序键作为主键。
 
-     如果不需要排序，可以使用 `ORDER BY tuple()`. 参考 [选择主键](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#selecting-the-primary-key)
+     如果不需要排序，可以使用 `ORDER BY tuple()`. 参考 [选择主键](/engines/table-engines/mergetree-family/mergetree/#selecting-the-primary-key)
 
 - `PARTITION BY` — [分区键](custom-partitioning-key.md) ，可选项。
 

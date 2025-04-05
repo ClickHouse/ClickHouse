@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/any
+slug: /sql-reference/aggregate-functions/reference/any
 sidebar_position: 102
 ---
 

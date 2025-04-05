@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/functions-for-nulls
+slug: /sql-reference/functions/functions-for-nulls
 sidebar_position: 135
 sidebar_label: Nullable
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/int-uint
+slug: /sql-reference/data-types/int-uint
 sidebar_position: 2
 sidebar_label: Int | UInt
 title: Int | UInt Types

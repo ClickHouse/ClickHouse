@@ -1,3 +1,5 @@
+-- Tags: no-shared-catalog
+
 DROP TABLE IF EXISTS test;
 
 -- You can create a table with the {server_uuid} substituted.

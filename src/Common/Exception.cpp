@@ -1,3 +1,4 @@
+#include <base/MemorySanitizer.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -9,7 +10,6 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Logger.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/config_version.h>
 #include <Common/filesystemHelpers.h>
@@ -253,6 +253,12 @@ void Exception::setThreadFramePointers(ThreadFramePointersBase frame_pointers)
 {
     if (can_use_thread_frame_pointers)
         thread_frame_pointers.frame_pointers = std::move(frame_pointers);
+}
+
+void Exception::clearThreadFramePointers()
+{
+    if (can_use_thread_frame_pointers)
+        thread_frame_pointers.frame_pointers.clear();
 }
 
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)

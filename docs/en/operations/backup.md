@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/backup
+slug: /operations/backup
 description: In order to effectively mitigate possible human errors, you should carefully prepare a strategy for backing up and restoring your data.
 ---
 
@@ -81,7 +81,7 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
 - PARTITIONS: a list of partitions to restore
 - SETTINGS:
     - `id`: id of backup or restore operation, randomly generated UUID is used, if not specified manually. If there is already running operation with the same `id` exception is thrown.
-    - [`compression_method`](/docs/en/sql-reference/statements/create/table.md/#column-compression-codecs) and compression_level
+    - [`compression_method`](/docs/sql-reference/statements/create/table.md/#column-compression-codecs) and compression_level
     - `password` for the file on disk
     - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
     - `use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
@@ -90,7 +90,7 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
     - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
     - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
     - `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
-    - [core settings](/docs/en/operations/settings/settings) can be used here too
+    - [core settings](/docs/operations/settings/settings) can be used here too
 
 ### Usage examples
 
@@ -293,7 +293,7 @@ To write backups to an S3 bucket you need three pieces of information:
   for example `Abc+123`
 
 :::note
-Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk](/docs/en/integrations/data-ingestion/s3/index.md#configuring-s3-for-clickhouse-use), just come back to this doc after saving the policy, there is no need to configure ClickHouse to use the S3 bucket.
+Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk](/docs/integrations/data-ingestion/s3/index.md#configuring-s3-for-clickhouse-use), just come back to this doc after saving the policy, there is no need to configure ClickHouse to use the S3 bucket.
 :::
 
 The destination for a backup will be specified like this:
@@ -516,4 +516,4 @@ System tables related to access management, such as users, roles, row_policies, 
 
 This feature ensures that the access control configuration of a ClickHouse cluster can be backed up and restored as part of the cluster's overall setup.
 
-Note: This functionality only works for configurations managed through SQL commands (referred to as ["SQL-driven Access Control and Account Management"](/docs/en/operations/access-rights#enabling-access-control)). Access configurations defined in ClickHouse server configuration files (e.g. `users.xml`) are not included in backups and cannot be restored through this method.
+Note: This functionality only works for configurations managed through SQL commands (referred to as ["SQL-driven Access Control and Account Management"](/docs/operations/access-rights#enabling-access-control)). Access configurations defined in ClickHouse server configuration files (e.g. `users.xml`) are not included in backups and cannot be restored through this method.

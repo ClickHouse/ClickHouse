@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/allocation-profiling
+slug: /operations/allocation-profiling
 sidebar_label: "Allocation profiling"
 title: "Allocation profiling"
 ---
@@ -183,19 +183,19 @@ WHERE metric ILIKE '%jemalloc%'
 FORMAT Vertical
 ```
 
-[Reference](/en/operations/system-tables/asynchronous_metrics)
+[Reference](/operations/system-tables/asynchronous_metrics)
 
 ### System table `jemalloc_bins`
 
 Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas.
 
-[Reference](/en/operations/system-tables/jemalloc_bins)
+[Reference](/operations/system-tables/jemalloc_bins)
 
 ### Prometheus
 
 All `jemalloc` related metrics from `asynchronous_metrics` are also exposed using Prometheus endpoint in both ClickHouse and Keeper.
 
-[Reference](/en/operations/server-configuration-parameters/settings#prometheus)
+[Reference](/operations/server-configuration-parameters/settings#prometheus)
 
 ### `jmst` 4LW command in Keeper
 

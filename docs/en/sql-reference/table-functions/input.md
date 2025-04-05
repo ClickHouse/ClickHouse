@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/input
+slug: /sql-reference/table-functions/input
 sidebar_position: 95
 sidebar_label: input
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/timeSeriesTags
+slug: /sql-reference/table-functions/timeSeriesTags
 sidebar_position: 145
 sidebar_label: timeSeriesTags
 ---

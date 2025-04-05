@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/fixedstring
+slug: /sql-reference/data-types/fixedstring
 sidebar_position: 10
 sidebar_label: FixedString(N)
 ---

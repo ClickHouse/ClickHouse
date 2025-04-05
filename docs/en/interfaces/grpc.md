@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/grpc
+slug: /interfaces/grpc
 sidebar_position: 19
 sidebar_label: gRPC Interface
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/utilities/clickhouse-format
+slug: /operations/utilities/clickhouse-format
 title: clickhouse-format
 ---
 

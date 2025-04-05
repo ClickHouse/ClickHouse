@@ -9,6 +9,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Core/Field.h>
 #include <Core/ServerUUID.h>
 #include <Disks/FakeDiskTransaction.h>
 

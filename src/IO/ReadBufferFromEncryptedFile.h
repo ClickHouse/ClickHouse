@@ -33,6 +33,7 @@ public:
 
     std::optional<size_t> tryGetFileSize() override { return in->tryGetFileSize(); }
 
+    void prefetch(Priority priority) override;
 private:
     bool nextImpl() override;
 

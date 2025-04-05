@@ -1,5 +1,5 @@
 ---
-slug: /en/development/integrating_rust_libraries
+slug: /development/integrating_rust_libraries
 sidebar_label: Rust Libraries
 ---
 

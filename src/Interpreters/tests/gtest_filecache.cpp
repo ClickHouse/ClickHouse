@@ -52,6 +52,18 @@ namespace DB::ErrorCodes
 {
     extern const int FILECACHE_ACCESS_DENIED;
 }
+namespace DB::FileCacheSetting
+{
+    extern const FileCacheSettingsString path;
+    extern const FileCacheSettingsUInt64 max_size;
+    extern const FileCacheSettingsUInt64 max_elements;
+    extern const FileCacheSettingsUInt64 max_file_segment_size;
+    extern const FileCacheSettingsUInt64 boundary_alignment;
+    extern const FileCacheSettingsString cache_policy;
+    extern const FileCacheSettingsDouble slru_size_ratio;
+    extern const FileCacheSettingsUInt64 load_metadata_threads;
+    extern const FileCacheSettingsBool load_metadata_asynchronously;
+}
 
 void printRanges(const auto & segments)
 {
@@ -357,11 +369,11 @@ TEST_F(FileCacheTest, LRUPolicy)
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
-    settings.base_path = cache_base_path;
-    settings.max_size = 30;
-    settings.max_elements = 5;
-    settings.boundary_alignment = 1;
-    settings.load_metadata_asynchronously = false;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 5;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
     const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
 
@@ -749,9 +761,9 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Test max file segment size
 
         auto settings2 = settings;
-        settings2.max_file_segment_size = 10;
-        settings2.base_path = caches_dir / "cache2";
-        fs::create_directories(settings2.base_path);
+        settings2[FileCacheSetting::max_file_segment_size] = 10;
+        settings2[FileCacheSetting::path] = caches_dir / "cache2";
+        fs::create_directories(settings2[FileCacheSetting::path].value);
         auto cache2 = DB::FileCache("3", settings2);
         cache2.initialize();
         auto key = DB::FileCacheKey::fromPath("key1");
@@ -816,11 +828,11 @@ TEST_F(FileCacheTest, writeBuffer)
 {
     ServerUUID::setRandomForUnitTests();
     FileCacheSettings settings;
-    settings.max_size = 100;
-    settings.max_elements = 5;
-    settings.max_file_segment_size = 5;
-    settings.base_path = cache_base_path;
-    settings.load_metadata_asynchronously = false;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 5;
+    settings[FileCacheSetting::max_file_segment_size] = 5;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
     FileCache cache("6", settings);
     cache.initialize();
@@ -950,10 +962,10 @@ try
 {
     ServerUUID::setRandomForUnitTests();
     DB::FileCacheSettings settings;
-    settings.max_size = 10_KiB;
-    settings.max_file_segment_size = 1_KiB;
-    settings.base_path = cache_base_path;
-    settings.load_metadata_asynchronously = false;
+    settings[FileCacheSetting::max_size] = 10_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
     DB::FileCache file_cache("7", settings);
     file_cache.initialize();
@@ -1087,12 +1099,12 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
-    settings.base_path = cache_base_path;
-    settings.max_file_segment_size = 5;
-    settings.max_size = 30;
-    settings.max_elements = 10;
-    settings.boundary_alignment = 1;
-    settings.load_metadata_asynchronously = false;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 5;
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 10;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
@@ -1150,10 +1162,10 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
     /// Temporary data stored in cache
     {
         DB::FileCacheSettings settings;
-        settings.max_size = 10_KiB;
-        settings.max_file_segment_size = 1_KiB;
-        settings.base_path = cache_base_path;
-        settings.load_metadata_asynchronously = false;
+        settings[FileCacheSetting::max_size] = 10_KiB;
+        settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+        settings[FileCacheSetting::path] = cache_base_path;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
         DB::FileCache file_cache("cache", settings);
         file_cache.initialize();
@@ -1215,14 +1227,14 @@ TEST_F(FileCacheTest, SLRUPolicy)
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
-    settings.base_path = cache_base_path;
-    settings.max_size = 40;
-    settings.max_elements = 6;
-    settings.boundary_alignment = 1;
-    settings.load_metadata_asynchronously = false;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 40;
+    settings[FileCacheSetting::max_elements] = 6;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
-    settings.cache_policy = "SLRU";
-    settings.slru_size_ratio = 0.5;
+    settings[FileCacheSetting::cache_policy] = "SLRU";
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
 
     const size_t file_size = -1; // the value doesn't really matter because boundary_alignment == 1.
     size_t file_cache_name = 0;
@@ -1325,14 +1337,14 @@ TEST_F(FileCacheTest, SLRUPolicy)
         };
 
         DB::FileCacheSettings settings2;
-        settings2.base_path = cache_base_path2;
-        settings2.max_file_segment_size = 5;
-        settings2.max_size = 30;
-        settings2.max_elements = 6;
-        settings2.boundary_alignment = 1;
-        settings2.cache_policy = "SLRU";
-        settings2.slru_size_ratio = 0.5;
-        settings.load_metadata_asynchronously = false;
+        settings2[FileCacheSetting::path] = cache_base_path2;
+        settings2[FileCacheSetting::max_file_segment_size] = 5;
+        settings2[FileCacheSetting::max_size] = 30;
+        settings2[FileCacheSetting::max_elements] = 6;
+        settings2[FileCacheSetting::boundary_alignment] = 1;
+        settings2[FileCacheSetting::cache_policy] = "SLRU";
+        settings2[FileCacheSetting::slru_size_ratio] = 0.5;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
         auto cache = std::make_shared<DB::FileCache>("slru_2", settings2);
         cache->initialize();

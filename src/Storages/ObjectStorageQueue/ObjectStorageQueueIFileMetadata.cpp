@@ -2,6 +2,7 @@
 #include <Common/SipHash.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
+#include <Core/Field.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/JSON.h>

@@ -74,7 +74,7 @@ std::string getOrCreateCustomDisk(DiskConfigurationPtr config, const std::string
                 "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
                 disk_name);
 
-    if (!attach && !disk->isRemote())
+    if (!attach && !disk->isRemote() && disk->getName() != "backup")
     {
         static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
         auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");

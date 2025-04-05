@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/integrations/
+slug: /engines/table-engines/integrations/
 sidebar_position: 40
 sidebar_label:  Integrations
 ---

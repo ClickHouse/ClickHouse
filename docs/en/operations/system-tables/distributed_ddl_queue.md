@@ -1,6 +1,6 @@
 ---
 description: "System table containing information about distributed ddl queries (queries using the ON CLUSTER clause) that were executed on a cluster."
-slug: /en/operations/system-tables/distributed_ddl_queue
+slug: /operations/system-tables/distributed_ddl_queue
 title: "distributed_ddl_queue"
 keywords: ["system table", "distributed_ddl_queue"]
 ---

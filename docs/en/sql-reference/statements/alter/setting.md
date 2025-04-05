@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/alter/setting
+slug: /sql-reference/statements/alter/setting
 sidebar_position: 38
 sidebar_label: SETTING
 ---

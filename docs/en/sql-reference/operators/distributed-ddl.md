@@ -5,6 +5,6 @@ description: Page for Distributed DDL
 sidebar_label: Distributed DDL
 ---
 
-import Content from '@site/docs/en/sql-reference/distributed-ddl.md';
+import Content from '@site/docs/sql-reference/distributed-ddl.md';
 
 <Content/>

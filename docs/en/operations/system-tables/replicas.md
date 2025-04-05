@@ -1,6 +1,6 @@
 ---
 description: "System table containing information about and status of replicated tables residing on the local server. Useful for monitoring."
-slug: /en/operations/system-tables/replicas
+slug: /operations/system-tables/replicas
 title: "replicas"
 keywords: ["system table", "replicas"]
 ---

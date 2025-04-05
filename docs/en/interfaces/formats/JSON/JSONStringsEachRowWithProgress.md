@@ -1,6 +1,6 @@
 ---
 title : JSONStringsEachRowWithProgress
-slug : /en/interfaces/formats/JSONStringsEachRowWithProgress
+slug: /interfaces/formats/JSONStringsEachRowWithProgress
 keywords : [JSONStringsEachRowWithProgress]
 ---
 

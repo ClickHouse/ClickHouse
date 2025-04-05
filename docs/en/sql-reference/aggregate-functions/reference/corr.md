@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/corr
+slug: /sql-reference/aggregate-functions/reference/corr
 sidebar_position: 117
 ---
 

@@ -142,7 +142,7 @@ private:
     void setAllowEngineUDF(const bool value) { allow_engine_udf = value; }
 
     template <typename T>
-    String setMergeTableParameter(RandomGenerator & rg, char initial);
+    String setMergeTableParameter(RandomGenerator & rg, const String & initial);
 
     template <typename T>
     const std::unordered_map<uint32_t, T> & getNextCollection() const
@@ -250,6 +250,7 @@ public:
 private:
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
+    void addViewRelation(const String & rel_name, const SQLView & v);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     String strAppendAnyValue(RandomGenerator & rg, SQLType * tp);
     void flatTableColumnPath(uint32_t flags, const SQLTable & t, std::function<bool(const SQLColumn & c)> col_filter);
@@ -270,8 +271,8 @@ private:
     void generateEngineDetails(RandomGenerator & rg, SQLBase & b, bool add_pkey, TableEngine * te);
 
     DatabaseEngineValues getNextDatabaseEngine(RandomGenerator & rg);
-    TableEngineValues getNextTableEngine(RandomGenerator & rg, bool use_external_integrations);
-    PeerTableDatabase getNextPeerTableDatabase(RandomGenerator & rg, TableEngineValues teng);
+    void getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b);
+    void getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b);
 
     void generateNextRefreshableView(RandomGenerator & rg, RefreshableView * cv);
     void generateNextCreateView(RandomGenerator & rg, CreateView * cv);
@@ -355,27 +356,16 @@ public:
     SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> attached_databases
-        = [](const std::shared_ptr<SQLDatabase> & d) { return d->attached == DetachStatus::ATTACHED; };
-    const std::function<bool(const SQLTable &)> attached_tables
-        = [](const SQLTable & t) { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED; };
-    const std::function<bool(const SQLView &)> attached_views
-        = [](const SQLView & v) { return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED; };
+        = [](const std::shared_ptr<SQLDatabase> & d) { return d->isAttached(); };
+    const std::function<bool(const SQLTable &)> attached_tables = [](const SQLTable & t) { return t.isAttached(); };
+    const std::function<bool(const SQLView &)> attached_views = [](const SQLView & v) { return v.isAttached(); };
 
     const std::function<bool(const SQLTable &)> attached_tables_for_dump_table_oracle = [](const SQLTable & t)
-    {
-        return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.isNotTruncableEngine()
-            && t.teng != TableEngineValues::CollapsingMergeTree;
-    };
-    const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle = [](const SQLTable & t)
-    {
-        return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.isNotTruncableEngine()
-            && t.hasDatabasePeer();
-    };
-    const std::function<bool(const SQLTable &)> attached_tables_for_clickhouse_table_peer_oracle = [](const SQLTable & t)
-    {
-        return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.isNotTruncableEngine()
-            && t.hasClickHousePeer();
-    };
+    { return t.isAttached() && !t.isNotTruncableEngine() && t.teng != TableEngineValues::CollapsingMergeTree; };
+    const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle
+        = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasDatabasePeer(); };
+    const std::function<bool(const SQLTable &)> attached_tables_for_clickhouse_table_peer_oracle
+        = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->attached != DetachStatus::ATTACHED; };
@@ -383,6 +373,12 @@ public:
         = [](const SQLTable & t) { return (t.db && t.db->attached != DetachStatus::ATTACHED) || t.attached != DetachStatus::ATTACHED; };
     const std::function<bool(const SQLView &)> detached_views
         = [](const SQLView & v) { return (v.db && v.db->attached != DetachStatus::ATTACHED) || v.attached != DetachStatus::ATTACHED; };
+
+    template <typename T>
+    std::function<bool(const T &)> hasTableOrView(const SQLBase & b)
+    {
+        return [&b](const T & t) { return t.isAttached() && (t.is_deterministic || !b.is_deterministic); };
+    }
 
     StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool hrs)
         : fc(fuzzc)

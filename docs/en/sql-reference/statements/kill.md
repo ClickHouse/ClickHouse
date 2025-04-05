@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/kill
+slug: /sql-reference/statements/kill
 sidebar_position: 46
 sidebar_label: KILL
 title: "KILL Statements"
@@ -141,5 +141,5 @@ The query is useful when a mutation is stuck and cannot finish (e.g. if some fu
 Changes already made by the mutation are not rolled back.
 
 :::note 
-`is_killed=1` column (ClickHouse Cloud only) in the [system.mutations](/docs/en/operations/system-tables/mutations) table does not necessarily mean the mutation is completely finalized. It is possible for a mutation to remain in a state where `is_killed=1` and `is_done=0` for an extended period. This can happen if another long-running mutation is blocking the killed mutation. This is a normal situation.
+`is_killed=1` column (ClickHouse Cloud only) in the [system.mutations](/docs/operations/system-tables/mutations) table does not necessarily mean the mutation is completely finalized. It is possible for a mutation to remain in a state where `is_killed=1` and `is_done=0` for an extended period. This can happen if another long-running mutation is blocking the killed mutation. This is a normal situation.
 :::

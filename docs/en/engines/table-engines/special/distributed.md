@@ -1,7 +1,7 @@
 ---
 sidebar_label: "Distributed"
 sidebar_position: 10
-slug: /en/engines/table-engines/special/distributed
+slug: /engines/table-engines/special/distributed
 ---
 
 # Distributed Table Engine

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/studentttest
+slug: /sql-reference/aggregate-functions/reference/studentttest
 sidebar_position: 194
 sidebar_label: studentTTest
 ---

@@ -1,6 +1,6 @@
 ---
 title : PrettyJSONEachRow
-slug : /en/interfaces/formats/PrettyJSONEachRow
+slug: /interfaces/formats/PrettyJSONEachRow
 keywords : [PrettyJSONEachRow, PrettyJSONLines, PrettyNDJSON]
 input_format: false
 output_format: true

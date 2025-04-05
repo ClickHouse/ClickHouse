@@ -1,5 +1,5 @@
 ---
-slug: /en/getting-started/example-datasets/tpcds
+slug: /getting-started/example-datasets/tpcds
 sidebar_label: TPC-DS
 description:  "The TPC-DS benchmark data set and queries."
 title: "TPC-DS (2012)"

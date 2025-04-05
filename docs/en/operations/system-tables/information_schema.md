@@ -1,6 +1,6 @@
 ---
 description: "System database providing an almost standardized DBMS-agnostic view on metadata of database objects."
-slug: /en/operations/system-tables/information_schema
+slug: /operations/system-tables/information_schema
 title: "INFORMATION_SCHEMA"
 keywords: ["system database", "information_schema"]
 ---
@@ -343,13 +343,7 @@ FORMAT Vertical;
 
 Result:
 
-```yaml
-
-```
-constraint_catalog:            def
-constraint_schema:             default
-constraint_name:               PRIMARY
-```
+```response
 Row 1:
 ──────
 constraint_catalog:            def

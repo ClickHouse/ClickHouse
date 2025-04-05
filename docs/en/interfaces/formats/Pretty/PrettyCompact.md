@@ -1,6 +1,6 @@
 ---
 title : PrettyCompact
-slug : /en/interfaces/formats/PrettyCompact
+slug: /interfaces/formats/PrettyCompact
 keywords : [PrettyCompact]
 input_format: false
 output_format: true

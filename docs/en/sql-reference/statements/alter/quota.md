@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/alter/quota
+slug: /sql-reference/statements/alter/quota
 sidebar_position: 46
 sidebar_label: QUOTA
 title: "ALTER QUOTA"

@@ -1,6 +1,6 @@
 ---
 title : Template
-slug : /en/interfaces/formats/Template
+slug: /interfaces/formats/Template
 keywords : [Template]
 input_format: true
 output_format: true

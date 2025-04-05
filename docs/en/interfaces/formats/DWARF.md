@@ -1,6 +1,6 @@
 ---
 title : DWARF
-slug : /en/interfaces/formats/DWARF
+slug: /interfaces/formats/DWARF
 keywords : [DWARF]
 input_format: true
 output_format: false

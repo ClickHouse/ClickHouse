@@ -1,6 +1,6 @@
 ---
 description: "Dataset containing 400 million images with English image captions"
-slug: /en/getting-started/example-datasets/laion-400m-dataset
+slug: /getting-started/example-datasets/laion-400m-dataset
 sidebar_label: Laion-400M dataset
 title: "Laion-400M dataset"
 ---
@@ -157,7 +157,7 @@ SELECT url, caption FROM laion_annoy ORDER BY l2Distance(image_embedding, {targe
 
 **Result**
 
-```text
+```response
 ┌─url──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─caption──────────────────────────────────────────────────────────────┐
 │ http://tse1.mm.bing.net/th?id=OIP.R1CUoYp_4hbeFSHBaaB5-gHaFj                                                                                                                         │ bed bugs and pets can cats carry bed bugs pets adviser               │
 │ http://pet-uploads.adoptapet.com/1/9/c/1963194.jpg?336w                                                                                                                              │ Domestic Longhair Cat for adoption in Quincy, Massachusetts - Ashley │

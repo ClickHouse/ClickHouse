@@ -160,14 +160,8 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
             {
                 thread.emplace([this, thread_group = CurrentThread::getGroup()]
                 {
-                    SCOPE_EXIT_SAFE(
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
-                    );
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
+                    ThreadGroupSwitcher switcher(thread_group, "PrettyWriter");
 
-                    setThreadName("PrettyWriter");
                     writingThread();
                 });
             }

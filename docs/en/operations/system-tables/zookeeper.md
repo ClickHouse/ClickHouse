@@ -1,6 +1,6 @@
 ---
 description: "System table which exists only if ClickHouse Keeper or ZooKeeper are configured. It exposes data from the Keeper cluster defined in the config."
-slug: /en/operations/system-tables/zookeeper
+slug: /operations/system-tables/zookeeper
 title: "zookeeper"
 keywords: ["system table", "zookeeper"]
 ---

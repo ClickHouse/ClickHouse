@@ -1,6 +1,6 @@
 ---
 title : RowBinaryWithDefaults
-slug : /en/interfaces/formats/RowBinaryWithDefaults
+slug: /interfaces/formats/RowBinaryWithDefaults
 keywords : [RowBinaryWithDefaults]
 input_format: true
 output_format: false

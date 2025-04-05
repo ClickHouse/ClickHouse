@@ -109,16 +109,16 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         {
             ColumnDescription column;
 
-            column.name = (*name)[i].safeGet<const String &>();
+            column.name = (*name)[i].safeGet<String>();
 
-            String data_type_name = (*type)[i].safeGet<const String &>();
+            String data_type_name = (*type)[i].safeGet<String>();
             column.type = data_type_factory.get(data_type_name);
 
-            String kind_name = (*default_kind)[i].safeGet<const String &>();
+            String kind_name = (*default_kind)[i].safeGet<String>();
             if (!kind_name.empty())
             {
                 column.default_desc.kind = columnDefaultKindFromString(kind_name);
-                String expr_str = (*default_expr)[i].safeGet<const String &>();
+                String expr_str = (*default_expr)[i].safeGet<String>();
                 column.default_desc.expression = parseQuery(
                     expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression",
                     0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
@@ -214,8 +214,8 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
             size_t size = name_col.size();
             for (size_t i = 0; i < size; ++i)
             {
-                auto name = name_col[i].safeGet<const String &>();
-                auto type_name = type_col[i].safeGet<const String &>();
+                auto name = name_col[i].safeGet<String>();
+                auto type_name = type_col[i].safeGet<String>();
 
                 auto storage_column = storage_columns.tryGetPhysical(name);
                 if (storage_column && storage_column->type->hasDynamicSubcolumnsDeprecated())

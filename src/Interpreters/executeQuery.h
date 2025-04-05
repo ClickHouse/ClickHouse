@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/QueryProcessingStage.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>

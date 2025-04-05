@@ -1,6 +1,6 @@
 ---
 title : SQLInsert
-slug : /en/interfaces/formats/SQLInsert
+slug: /interfaces/formats/SQLInsert
 keywords : [SQLInsert]
 input_format: false
 output_format: true

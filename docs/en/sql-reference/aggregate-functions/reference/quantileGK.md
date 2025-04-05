@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/quantileGK
+slug: /sql-reference/aggregate-functions/reference/quantileGK
 sidebar_position: 175
 ---
 

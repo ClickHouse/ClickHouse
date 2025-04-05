@@ -1,4 +1,5 @@
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Common/Exception.h>
 #include <Core/SettingsEnums.h>
 #include <base/EnumReflection.h>
 

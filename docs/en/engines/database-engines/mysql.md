@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/database-engines/mysql
+slug: /engines/database-engines/mysql
 sidebar_position: 50
 sidebar_label: MySQL
 ---

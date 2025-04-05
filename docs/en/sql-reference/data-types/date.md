@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/date
+slug: /sql-reference/data-types/date
 sidebar_position: 12
 sidebar_label: Date
 ---

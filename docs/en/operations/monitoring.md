@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/monitoring
+slug: /operations/monitoring
 sidebar_position: 45
 sidebar_label: Monitoring
 description: You can monitor the utilization of hardware resources and also ClickHouse server metrics.

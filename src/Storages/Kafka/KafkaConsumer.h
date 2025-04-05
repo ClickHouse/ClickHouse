@@ -26,6 +26,7 @@ namespace DB
 class StorageSystemKafkaConsumers;
 
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 class KafkaConsumer
 {

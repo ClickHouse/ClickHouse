@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/cli
+slug: /interfaces/cli
 sidebar_position: 17
 sidebar_label: ClickHouse Client
 title: ClickHouse Client

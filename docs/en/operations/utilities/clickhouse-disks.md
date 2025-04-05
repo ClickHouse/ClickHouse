@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/utilities/clickhouse-disks
+slug: /operations/utilities/clickhouse-disks
 sidebar_position: 59
 sidebar_label: clickhouse-disks
 ---

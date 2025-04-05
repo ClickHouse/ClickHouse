@@ -1,10 +1,10 @@
 ---
-slug: /en/operations/tips
+slug: /operations/tips
 sidebar_position: 58
 sidebar_label: Usage Recommendations
 title: "Usage Recommendations"
 ---
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_automated.md';
+import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
 
 <SelfManaged />
 

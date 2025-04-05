@@ -5,6 +5,7 @@
 #include "StdIStreamFromMemory.h"
 #include "WriteBufferFromS3.h"
 
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>

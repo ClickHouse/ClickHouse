@@ -1,23 +1,14 @@
 #pragma once
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class SerializationNothing : public SimpleTextSerialization
 {
 private:
-    [[noreturn]] static void throwNoSerialization()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization is not implemented for type Nothing");
-    }
+    [[noreturn]] static void throwNoSerialization();
 public:
     void serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const override                       { throwNoSerialization(); }
     void deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const override                            { throwNoSerialization(); }
