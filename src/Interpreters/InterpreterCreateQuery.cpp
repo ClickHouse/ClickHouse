@@ -1635,9 +1635,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.select && create.isView())
     {
-        if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (!create.attach && getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            InterpreterSelectQueryAnalyzer interpreter(create.select->clone(), getContext(), SelectQueryOptions{}.analyze());
+            InterpreterSelectQueryAnalyzer interpreter(create.select->clone(), getContext(), SelectQueryOptions{}.analyze().noAliasing());
 
             /// Rewrite SELECT query to apply CTEs and expressions from WITH and qualify all the table expressions
             create.set(create.select, interpreter.getQueryTree()->toAST());
