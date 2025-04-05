@@ -456,6 +456,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_parquet_preserve_order", CHSetting(trueOrFalse, {}, false)},
     {"input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference", CHSetting(trueOrFalse, {}, false)},
     {"input_format_parquet_use_native_reader", CHSetting(trueOrFalse, {}, false)},
+    {"input_format_parquet_use_native_reader_v3", CHSetting(trueOrFalse, {}, false)},
     {"input_format_protobuf_flatten_google_wrappers", CHSetting(trueOrFalse, {}, false)},
     {"input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference", CHSetting(trueOrFalse, {}, false)},
     {"input_format_skip_unknown_fields", CHSetting(trueOrFalse, {}, false)},
@@ -651,6 +652,10 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          {},
          false)},
     {"output_format_parquet_datetime_as_uint32", CHSetting(trueOrFalse, {}, false)},
+    {"output_format_parquet_max_dictionary_size", [](RandomGenerator & rg)
+        { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); },
+        {},
+        false)},
     {"output_format_parquet_fixed_string_as_fixed_byte_array", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_parallel_encoding", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_string_as_string", CHSetting(trueOrFalse, {}, false)},

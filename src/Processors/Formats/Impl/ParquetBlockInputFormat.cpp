@@ -29,6 +29,10 @@
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Processors/Formats/Impl/Parquet/ParquetReader.h>
+#include <Processors/Formats/Impl/Parquet/ColumnFilterHelper.h>
+#include <Processors/Formats/Impl/ParquetMk4BlockInputFormat.h>
+#include <IO/SharedThreadPools.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -59,6 +63,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int LOGICAL_ERROR;
+    extern const int PARQUET_EXCEPTION;
 }
 
 #define THROW_ARROW_NOT_OK(status)                                     \
@@ -583,7 +588,7 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
 {
     if (max_decoding_threads > 1)
         pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, CurrentMetrics::ParquetDecoderThreadsScheduled, max_decoding_threads);
-    if (supportPrefetch())
+    if (supportPrefetch() || format_settings.parquet.use_native_reader_with_filter_push_down)
         io_pool = std::make_shared<ThreadPool>(CurrentMetrics::ParquetDecoderIOThreads, CurrentMetrics::ParquetDecoderIOThreadsActive, CurrentMetrics::ParquetDecoderIOThreadsScheduled, max_io_threads);
 }
 
@@ -759,6 +764,35 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         auto rows = adaptive_chunk_size(row_group);
         row_group_batches.back().adaptive_chunk_size = rows ? rows : format_settings.parquet.max_block_size;
     }
+    if (format_settings.parquet.use_native_reader_with_filter_push_down)
+    {
+        SeekableReadBuffer * seekable_in = nullptr;
+        if (auto * buffer_reader = dynamic_cast<arrow::io::BufferReader *>(arrow_file.get()))
+        {
+            memory_buffer_reader = std::make_shared<ReadBufferFromMemory>(buffer_reader->buffer()->data(), buffer_reader->buffer()->size());
+            seekable_in = memory_buffer_reader.get();
+        }
+        if (!seekable_in)
+        {
+            seekable_in = dynamic_cast<SeekableReadBuffer *>(in);
+            if (!seekable_in)
+                throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "native ParquetReader only supports SeekableReadBuffer");
+        }
+        std::vector<int> row_groups_indices;
+        ParquetReader::Settings settings{
+            .arrow_properties = parquet::ArrowReaderProperties(),
+            .reader_properties = parquet::ReaderProperties(ArrowMemoryPool::instance()),
+            .format_settings = format_settings,
+            .min_bytes_for_seek = min_bytes_for_seek};
+        new_native_reader = std::make_shared<ParquetReader>(
+            getPort().getHeader(), *seekable_in, settings, metadata, io_pool);
+        new_native_reader->setSourceArrowFile(arrow_file);
+        const auto & helper = key_condition->getColumnFilterHelper();
+        if (helper)
+        {
+            helper->pushDownToReader(*new_native_reader, format_settings.parquet.case_insensitive_column_matching);
+        }
+    }
 }
 
 void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_batch_idx)
@@ -816,7 +850,6 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     // That version is >10 years old, so this is not very important.
     if (metadata->writer_version().VersionLt(parquet::ApplicationVersion::PARQUET_816_FIXED_VERSION()))
         arrow_properties.set_pre_buffer(false);
-
     if (format_settings.parquet.use_native_reader)
     {
 #pragma clang diagnostic push
@@ -826,7 +859,6 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
                 ErrorCodes::BAD_ARGUMENTS,
                 "parquet native reader only supports little endian system currently");
 #pragma clang diagnostic pop
-
         row_group_batch.native_record_reader = std::make_shared<ParquetRecordReader>(
             getPort().getHeader(),
             arrow_properties,
@@ -834,6 +866,17 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
             arrow_file,
             format_settings,
             row_group_batch.row_groups_idxs);
+    }
+    else if (format_settings.parquet.use_native_reader_with_filter_push_down)
+    {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
+        if constexpr (std::endian::native != std::endian::little)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "parquet native reader only supports little endian system currently");
+#pragma clang diagnostic pop
+        row_group_batch.row_group_chunk_reader = new_native_reader->getSubRowGroupRangeReader(row_group_batch.row_groups_idxs);
     }
     else
     {
@@ -912,6 +955,8 @@ void ParquetBlockInputFormat::threadFunction(size_t row_group_batch_idx)
 
         if (row_group_batch.status == RowGroupBatchState::Status::Done)
             return;
+
+        CurrentThread::updatePerformanceCountersIfNeeded();
     }
 }
 bool ParquetBlockInputFormat::supportPrefetch() const
@@ -962,6 +1007,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
     lock.unlock();
 
     auto end_of_row_group = [&] {
+        row_group_batch.row_group_chunk_reader.reset();
         row_group_batch.native_record_reader.reset();
         row_group_batch.arrow_column_to_ch_column.reset();
         row_group_batch.record_batch_reader.reset();
@@ -981,7 +1027,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
         return static_cast<size_t>(std::ceil(static_cast<double>(row_group_batch.total_bytes_compressed) / row_group_batch.total_rows * num_rows));
     };
 
-    if (!row_group_batch.record_batch_reader && !row_group_batch.native_record_reader)
+    if (!row_group_batch.record_batch_reader && !row_group_batch.row_group_chunk_reader && !row_group_batch.native_record_reader)
         initializeRowGroupBatchReader(row_group_batch_idx);
 
     PendingChunk res(getPort().getHeader().columns());
@@ -998,6 +1044,18 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
         }
 
         /// TODO: support defaults_for_omitted_fields feature when supporting nested columns
+        res.approx_original_chunk_size = get_approx_original_chunk_size(chunk.getNumRows());
+        res.chunk = std::move(chunk);
+    }
+    else if (format_settings.parquet.use_native_reader_with_filter_push_down)
+    {
+        auto chunk = row_group_batch.row_group_chunk_reader->read(row_group_batch.adaptive_chunk_size);
+        if (!chunk)
+        {
+            end_of_row_group();
+            return;
+        }
+
         res.approx_original_chunk_size = get_approx_original_chunk_size(chunk.getNumRows());
         res.chunk = std::move(chunk);
     }
@@ -1129,11 +1187,14 @@ void ParquetBlockInputFormat::resetParser()
     is_stopped = true;
     if (pool)
         pool->wait();
+    if (io_pool)
+        io_pool->wait();
 
     arrow_file.reset();
     metadata.reset();
     column_indices.clear();
     row_group_batches.clear();
+    new_native_reader.reset();
     while (!pending_chunks.empty())
         pending_chunks.pop();
     row_group_batches_completed = 0;
@@ -1201,16 +1262,33 @@ void registerInputFormatParquet(FormatFactory & factory)
                const ReadSettings & read_settings,
                bool is_remote_fs,
                size_t max_download_threads,
-               size_t max_parsing_threads)
+               size_t max_parsing_threads) -> InputFormatPtr
             {
                 size_t min_bytes_for_seek = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
-                return std::make_shared<ParquetBlockInputFormat>(
-                    buf,
-                    sample,
-                    settings,
-                    max_parsing_threads,
-                    max_download_threads,
-                    min_bytes_for_seek);
+                if (settings.parquet.use_native_reader_v3)
+                {
+                    //TODO: actually share the shared pool, fill out its fields using settings
+                    auto pool = std::make_shared<Parquet::SharedParsingThreadPool>();
+                    pool->io_runner.emplace(
+                        getFormatParsingThreadPool().get(), max_download_threads, "parquet io", CurrentThread::getGroup());
+                    pool->parsing_runner.emplace(
+                        getFormatParsingThreadPool().get(), max_parsing_threads, "parquet parser", CurrentThread::getGroup());
+                    pool->total_memory_target = settings.parquet.memory_target;
+                    return std::make_shared<ParquetMk4BlockInputFormat>(
+                        buf,
+                        sample,
+                        settings,
+                        pool,
+                        min_bytes_for_seek);
+                }
+                else
+                    return std::make_shared<ParquetBlockInputFormat>(
+                        buf,
+                        sample,
+                        settings,
+                        max_parsing_threads,
+                        max_download_threads,
+                        min_bytes_for_seek);
             });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
 }
@@ -1221,6 +1299,7 @@ void registerParquetSchemaReader(FormatFactory & factory)
         "Parquet",
         [](ReadBuffer & buf, const FormatSettings & settings)
         {
+            //TODO: maybe make a custom one reusing the parser dispatch code
             return std::make_shared<ParquetSchemaReader>(buf, settings);
         }
         );
