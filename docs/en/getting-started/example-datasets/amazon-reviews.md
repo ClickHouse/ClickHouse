@@ -296,7 +296,7 @@ SELECT
     avg(star_rating),
     count() AS count
 FROM amazon_reviews
-WHERE position(review_body, 'awful') > 0
+WHERE like(review_body, '%awful%')
 GROUP BY product_id
 ORDER BY count DESC
 LIMIT 50;
@@ -372,7 +372,7 @@ SELECT
     avg(star_rating),
     count() AS count
 FROM amazon_reviews
-WHERE position(review_body, 'awesome') > 0
+WHERE like(review_body, '%awesome%')
 GROUP BY product_id
 ORDER BY count DESC
 LIMIT 50;
