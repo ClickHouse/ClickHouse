@@ -1,12 +1,11 @@
 #pragma once
 
-#include <exception>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-
+#include <Common/threadPoolCallbackRunner.h>
 
 namespace DB
 {
@@ -122,14 +121,13 @@ public:
             }
             else
             {
+                ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, "UniqExactMerger");
                 try
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
                     auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled, thread_group = CurrentThread::getGroup()]()
                     {
-                        ThreadGroupSwitcher switcher(thread_group, "UniqExactMerger");
-
                         while (true)
                         {
                             if (is_cancelled->load(std::memory_order_seq_cst))
@@ -143,13 +141,12 @@ public:
                     };
 
                     for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
-                        thread_pool->scheduleOrThrowOnError(thread_func);
-                    thread_pool->wait();
+                        runner(thread_func, Priority{});
+                    runner.waitForAllToFinishAndRethrowFirstError();
                 }
                 catch (...)
                 {
-                    thread_pool->wait();
-                    throw;
+                    runner.waitForAllToFinishAndRethrowFirstError();
                 }
             }
         }
