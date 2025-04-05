@@ -120,6 +120,12 @@ struct ModuloLegacyByConstantImpl : ModuloByConstantImpl<A, B>
     using Op = ModuloLegacyImpl<A, B>;
 };
 
+template<typename A, typename B>
+struct ModuloOrNullByConstantImpl : ModuloByConstantImpl<A, B>
+{
+    using Op = ModuloOrNullImpl<A, B>;
+};
+
 }
 
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
@@ -147,6 +153,26 @@ template <> struct BinaryOperationImpl<Int32, Int8, ModuloImpl<Int32, Int8>> : M
 template <> struct BinaryOperationImpl<Int32, Int16, ModuloImpl<Int32, Int16>> : ModuloByConstantImpl<Int32, Int16> {};
 template <> struct BinaryOperationImpl<Int32, Int32, ModuloImpl<Int32, Int32>> : ModuloByConstantImpl<Int32, Int32> {};
 template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> : ModuloByConstantImpl<Int32, Int64> {};
+
+template <> struct BinaryOperationImpl<UInt64, UInt8, ModuloOrNullImpl<UInt64, UInt8>> : ModuloOrNullByConstantImpl<UInt64, UInt8> {};
+template <> struct BinaryOperationImpl<UInt64, UInt16, ModuloOrNullImpl<UInt64, UInt16>> : ModuloOrNullByConstantImpl<UInt64, UInt16> {};
+template <> struct BinaryOperationImpl<UInt64, UInt32, ModuloOrNullImpl<UInt64, UInt32>> : ModuloOrNullByConstantImpl<UInt64, UInt32> {};
+template <> struct BinaryOperationImpl<UInt64, UInt64, ModuloOrNullImpl<UInt64, UInt64>> : ModuloOrNullByConstantImpl<UInt64, UInt64> {};
+
+template <> struct BinaryOperationImpl<UInt32, UInt8, ModuloOrNullImpl<UInt32, UInt8>> : ModuloOrNullByConstantImpl<UInt32, UInt8> {};
+template <> struct BinaryOperationImpl<UInt32, UInt16, ModuloOrNullImpl<UInt32, UInt16>> : ModuloOrNullByConstantImpl<UInt32, UInt16> {};
+template <> struct BinaryOperationImpl<UInt32, UInt32, ModuloOrNullImpl<UInt32, UInt32>> : ModuloOrNullByConstantImpl<UInt32, UInt32> {};
+template <> struct BinaryOperationImpl<UInt32, UInt64, ModuloOrNullImpl<UInt32, UInt64>> : ModuloOrNullByConstantImpl<UInt32, UInt64> {};
+
+template <> struct BinaryOperationImpl<Int64, Int8, ModuloOrNullImpl<Int64, Int8>> : ModuloOrNullByConstantImpl<Int64, Int8> {};
+template <> struct BinaryOperationImpl<Int64, Int16, ModuloOrNullImpl<Int64, Int16>> : ModuloOrNullByConstantImpl<Int64, Int16> {};
+template <> struct BinaryOperationImpl<Int64, Int32, ModuloOrNullImpl<Int64, Int32>> : ModuloOrNullByConstantImpl<Int64, Int32> {};
+template <> struct BinaryOperationImpl<Int64, Int64, ModuloOrNullImpl<Int64, Int64>> : ModuloOrNullByConstantImpl<Int64, Int64> {};
+
+template <> struct BinaryOperationImpl<Int32, Int8, ModuloOrNullImpl<Int32, Int8>> : ModuloOrNullByConstantImpl<Int32, Int8> {};
+template <> struct BinaryOperationImpl<Int32, Int16, ModuloOrNullImpl<Int32, Int16>> : ModuloOrNullByConstantImpl<Int32, Int16> {};
+template <> struct BinaryOperationImpl<Int32, Int32, ModuloOrNullImpl<Int32, Int32>> : ModuloOrNullByConstantImpl<Int32, Int32> {};
+template <> struct BinaryOperationImpl<Int32, Int64, ModuloOrNullImpl<Int32, Int64>> : ModuloOrNullByConstantImpl<Int32, Int64> {};
 }
 
 struct NameModulo { static constexpr auto name = "modulo"; };
@@ -156,6 +182,15 @@ REGISTER_FUNCTION(Modulo)
 {
     factory.registerFunction<FunctionModulo>();
     factory.registerAlias("mod", "modulo", FunctionFactory::Case::Insensitive);
+}
+
+struct NameModuloOrNull { static constexpr auto name = "moduloOrNull"; };
+using FunctionModuloOrNull = BinaryArithmeticOverloadResolver<ModuloOrNullImpl, NameModuloOrNull, false>;
+
+REGISTER_FUNCTION(ModuloOrNull)
+{
+    factory.registerFunction<FunctionModuloOrNull>();
+    factory.registerAlias("modOrNull", "moduloOrNull", FunctionFactory::Case::Insensitive);
 }
 
 struct NameModuloLegacy { static constexpr auto name = "moduloLegacy"; };
@@ -188,6 +223,28 @@ In other words, the function returning the modulus (modulo) in the terms of Modu
     factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::Case::Insensitive);
     /// Compatibility with Spark:
     factory.registerAlias("pmod", "positiveModulo", FunctionFactory::Case::Insensitive);
+}
+
+struct NamePositiveModuloOrNull
+{
+    static constexpr auto name = "positiveModuloOrNull";
+};
+using FunctionPositiveModuloOrNll = BinaryArithmeticOverloadResolver<PositiveModuloOrNullImpl, NamePositiveModuloOrNull, false>;
+
+REGISTER_FUNCTION(PositiveModuloOrNull)
+{
+    factory.registerFunction<FunctionPositiveModuloOrNll>(FunctionDocumentation
+        {
+            .description = R"(
+Calculates the remainder when dividing `a` by `b`. Similar to function `positiveModulo` except that `positiveModuloOrNull` will return NULL
+if the right argument is 0.
+        )",
+            .examples{{"positiveModuloOrNull", "SELECT positiveModuloOrNull(1, 0);", ""}},
+            .category{"Arithmetic"}},
+        FunctionFactory::Case::Insensitive);
+
+    factory.registerAlias("positive_modulo_or_null", "positiveModuloOrNull", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("pmodOrNull", "positiveModuloOrNull", FunctionFactory::Case::Insensitive);
 }
 
 }
