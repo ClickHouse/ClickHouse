@@ -43,9 +43,10 @@ X509Certificate::X509Certificate(const std::string& path):
 }
 
 
-X509Certificate::X509Certificate(X509* pCert):
-	_pCert(pCert)
+X509Certificate::X509Certificate(X509* pCert)
 {
+	_pCert = X509_dup(pCert);
+
 	poco_check_ptr(_pCert);
 
 	init();
@@ -56,7 +57,7 @@ X509Certificate::X509Certificate(X509* pCert, bool shared):
 	_pCert(pCert)
 {
 	poco_check_ptr(_pCert);
-	
+
 	if (shared)
 	{
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
@@ -275,13 +276,27 @@ Poco::DateTime X509Certificate::validFrom() const
 	return DateTimeParser::parse("%y%m%d%H%M%S", dateTime, tzd);
 }
 
-	
+
+std::string X509Certificate::validFromAsString() const
+{
+	ASN1_TIME* certTime = X509_get_notBefore(_pCert);
+	return reinterpret_cast<char*>(certTime->data);
+}
+
+
 Poco::DateTime X509Certificate::expiresOn() const
 {
 	ASN1_TIME* certTime = X509_get_notAfter(_pCert);
 	std::string dateTime(reinterpret_cast<char*>(certTime->data));
 	int tzd;
 	return DateTimeParser::parse("%y%m%d%H%M%S", dateTime, tzd);
+}
+
+
+std::string X509Certificate::expiresOnAsString() const
+{
+	ASN1_TIME* certTime = X509_get_notAfter(_pCert);
+	return reinterpret_cast<char*>(certTime->data);
 }
 
 
@@ -346,6 +361,22 @@ X509Certificate::List X509Certificate::readPEM(const std::string& pemFileName)
 	return caCertList;
 }
 
+std::string X509Certificate::publicKeyAlgorithm() const
+{
+    EVP_PKEY * pkey = X509_get_pubkey(_pCert);
+    if (!pkey)
+        return {};
+
+    int nid = EVP_PKEY_id(pkey);
+    EVP_PKEY_free(pkey);
+
+    if (nid == NID_undef)
+        return {};
+
+    char buf[128] = {0};
+    OBJ_obj2txt(buf, sizeof(buf), OBJ_nid2obj(nid), 0);
+    return std::string(buf);
+}
 
 void X509Certificate::writePEM(const std::string& pemFileName, const List& list)
 {
