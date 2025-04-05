@@ -915,7 +915,7 @@ void checkFunctionHasEmptyNullsAction(const ASTFunction & node)
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
-    auto column_name = ast->getColumnName();
+    auto column_name = ast->getColumnNameWithoutAlias();
     if (data.hasColumn(column_name))
         return;
 
@@ -1363,7 +1363,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (arguments_present)
     {
         /// Calculate column name here again, because AST may be changed here (in case of untuple).
-        data.addFunction(function_builder, argument_names, ast->getColumnName());
+        data.addFunction(function_builder, argument_names, ast->getColumnNameWithoutAlias());
     }
 }
 

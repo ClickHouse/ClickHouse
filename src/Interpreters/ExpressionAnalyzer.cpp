@@ -1856,7 +1856,7 @@ ActionsDAG ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool remove_unuse
 
     for (const auto & ast : asts)
     {
-        std::string name = ast->getColumnName();
+        std::string name = ast->getColumnNameWithoutAlias();
         std::string alias;
         if (add_aliases)
             alias = ast->getAliasOrColumnName();
