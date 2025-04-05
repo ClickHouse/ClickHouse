@@ -1438,9 +1438,9 @@ case "$stage" in
     time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
     time "$script_dir/report.py" > report.html
     ;&
-#"upload_results")
-#    time upload_results ||:
-#    ;&
+"upload_results")
+    time upload_results ||:
+    ;&
 esac
 
 # Print some final debug info to help debug Weirdness, of which there is plenty.
