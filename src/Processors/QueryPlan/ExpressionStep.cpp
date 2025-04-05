@@ -1,3 +1,4 @@
+#include <memory>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -8,6 +9,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Common/JSONBuilder.h>
+#include "Interpreters/ActionsDAG.h"
 
 namespace DB
 {
@@ -95,6 +97,11 @@ std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(Deserialization & ct
         throw Exception(ErrorCodes::INCORRECT_DATA, "ExpressionStep must have one input stream");
 
     return std::make_unique<ExpressionStep>(ctx.input_headers.front(), std::move(actions_dag));
+}
+
+QueryPlanStepPtr ExpressionStep::clone() const
+{
+    return std::make_unique<ExpressionStep>(*this);
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry)

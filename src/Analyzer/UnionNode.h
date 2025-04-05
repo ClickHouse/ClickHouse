@@ -10,6 +10,7 @@
 #include <Analyzer/RecursiveCTE.h>
 
 #include <Interpreters/Context_fwd.h>
+#include "Analyzer/IQueryOrUnionNode.h"
 
 namespace DB
 {
@@ -35,7 +36,7 @@ namespace DB
 class UnionNode;
 using UnionNodePtr = std::shared_ptr<UnionNode>;
 
-class UnionNode final : public IQueryTreeNode
+class UnionNode final : public IQueryOrUnionNode
 {
 public:
     /// Construct union node with context and normalized union mode
