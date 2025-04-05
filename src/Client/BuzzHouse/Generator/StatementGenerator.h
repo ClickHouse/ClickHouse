@@ -72,7 +72,7 @@ public:
     uint32_t level, cte_counter = 0, aliases_counter = 0, window_counter = 0;
     std::vector<GroupCol> gcols;
     std::vector<SQLRelation> rels;
-    std::vector<uint32_t> projections;
+    std::vector<String> projections;
 
     QueryLevel() = default;
 
@@ -251,11 +251,12 @@ private:
     }
 
     template <typename T>
-    void setTableSystemStatement(RandomGenerator & rg, const std::function<bool(const T &)> & f, ExprSchemaTable * est)
+    std::optional<String> setTableSystemStatement(RandomGenerator & rg, const std::function<bool(const T &)> & f, ExprSchemaTable * est)
     {
         const T & t = rg.pickRandomly(filterCollection<T>(f));
 
         t.setName(est, false);
+        return t.getCluster();
     }
 
 public:
@@ -277,6 +278,7 @@ public:
     }
 
 private:
+    String getNextAlias() { return "a" + std::to_string(this->levels[this->current_level].aliases_counter++); }
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
@@ -354,9 +356,7 @@ private:
     void generateFuncCall(RandomGenerator & rg, bool allow_funcs, bool allow_aggr, SQLFuncCall * func_call);
     void generateTableFuncCall(RandomGenerator & rg, SQLTableFuncCall * tfunc_call);
     void prepareNextExplain(RandomGenerator & rg, ExplainQuery * eq);
-
-    void generateOrderBy(RandomGenerator & rg, uint32_t ncols, bool allow_settings, bool allow_all, OrderByStatement * ob);
-
+    void generateOrderBy(RandomGenerator & rg, uint32_t ncols, bool allow_settings, bool is_window, OrderByStatement * ob);
     void generateLimitExpr(RandomGenerator & rg, Expr * expr);
     void generateLimit(RandomGenerator & rg, bool has_order_by, uint32_t ncols, LimitStatement * ls);
     void generateOffset(RandomGenerator & rg, bool has_order_by, OffsetStatement * off);
@@ -428,7 +428,7 @@ public:
             && t.teng != TableEngineValues::GenerateRandom;
     };
     const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle
-        = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasDatabasePeer(); };
+        = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.is_deterministic; };
     const std::function<bool(const SQLTable &)> attached_tables_for_clickhouse_table_peer_oracle
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
 
