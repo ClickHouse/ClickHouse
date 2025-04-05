@@ -3,10 +3,14 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/ProtocolDefines.h>
-#include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include "Common/StackTrace.h"
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include "Core/QueryProcessingStage.h"
+#include "Processors/QueryPlan/BlocksMarshallingStep.h"
+#include "Processors/QueryPlan/Optimizations/Optimizations.h"
 
 #include <DataTypes/DataTypeString.h>
 
@@ -1839,6 +1843,12 @@ void Planner::buildPlanForQueryNode()
         // For additional_result_filter setting
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
+
+    // TODO(nickitat): add comment
+    if (select_query_options.to_stage != QueryProcessingStage::Complete && !select_query_options.is_subquery
+        && planner_context->getQueryContext()->getClientInfo().distributed_depth <= 1
+        && planner_context->getQueryContext()->getInitialQueryId() != planner_context->getQueryContext()->getCurrentQueryId())
+        query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 
     if (!select_query_options.only_analyze)
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, useful_sets);
