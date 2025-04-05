@@ -346,7 +346,7 @@ void KeeperDispatcher::responseThread()
 
             try
             {
-                 setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
+                setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
             }
             catch (...)
             {
@@ -446,6 +446,34 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     {
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
     }
+    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
+    return true;
+}
+
+bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+{
+    if (!request->isReadRequest())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot put non-read request locally");
+    }
+
+    {
+        /// If session was already disconnected than we will ignore requests
+        std::lock_guard lock(session_to_response_callback_mutex);
+        if (!session_to_response_callback.contains(session_id))
+            return false;
+    }
+
+    KeeperStorageBase::RequestForSession request_info;
+    request_info.request = request;
+    using namespace std::chrono;
+    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    request_info.session_id = session_id;
+
+    if (keeper_context->isShutdownCalled())
+        return false;
+
+    server->putLocalReadRequest(request_info);
     CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
     return true;
 }
