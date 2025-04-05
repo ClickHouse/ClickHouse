@@ -19,6 +19,7 @@ class SchemaCache;
 class NamedCollection;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
+struct PartitionStrategy;
 
 namespace ErrorCodes
 {
@@ -157,6 +158,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const ASTPtr partition_by;
     const bool distributed_processing;
+    std::shared_ptr<PartitionStrategy> partition_strategy;
     bool update_configuration_on_read;
 
     LoggerPtr log;
@@ -261,6 +263,11 @@ public:
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
+    std::string partition_strategy = "auto";
+    /*
+     * Only supported by hive partitioning style for now
+     */
+    bool hive_partition_strategy_write_partition_columns_into_files = false;
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 

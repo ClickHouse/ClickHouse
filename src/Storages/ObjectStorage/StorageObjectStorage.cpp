@@ -45,6 +45,7 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -165,6 +166,21 @@ StorageObjectStorage::StorageObjectStorage(
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
     setInMemoryMetadata(metadata);
+
+    // perhaps it is worth adding some extra safeguards for cases like
+    // create table s3_table engine=s3('{_partition_id}'); -- partition id wildcard set, but no partition expression
+    // create table s3_table engine=s3(partition_strategy='hive'); -- partition strategy set, but no partition expression
+    if (partition_by)
+    {
+        partition_strategy = PartitionStrategyFactory::get(
+                partition_by,
+                metadata.getSampleBlock(),
+                context,
+                configuration->format,
+                configuration->withPartitionWildcard(),
+                configuration->partition_strategy,
+                configuration->hive_partition_strategy_write_partition_columns_into_files);
+    }
 }
 
 String StorageObjectStorage::getName() const
@@ -399,7 +415,7 @@ void StorageObjectStorage::read(
 }
 
 SinkToStoragePtr StorageObjectStorage::write(
-    const ASTPtr & query,
+    const ASTPtr &,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr local_context,
     bool /* async_insert */)
@@ -422,22 +438,10 @@ SinkToStoragePtr StorageObjectStorage::write(
                         configuration->getPath());
     }
 
-    if (configuration->withPartitionWildcard())
+    if (partition_strategy)
     {
-        ASTPtr partition_by_ast = nullptr;
-        if (auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query))
-        {
-            if (insert_query->partition_by)
-                partition_by_ast = insert_query->partition_by;
-            else
-                partition_by_ast = partition_by;
-        }
-
-        if (partition_by_ast)
-        {
-            return std::make_shared<PartitionedStorageObjectStorageSink>(
-                object_storage, configuration, format_settings, sample_block, local_context, partition_by_ast);
-        }
+        return std::make_shared<PartitionedStorageObjectStorageSink>(
+            partition_strategy, object_storage, configuration, format_settings, sample_block, local_context);
     }
 
     auto paths = configuration->getPaths();
@@ -610,6 +614,10 @@ void StorageObjectStorage::Configuration::initialize(
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
+
+    if (configuration_to_initialize.isNamespaceWithGlobs())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Expression can not have wildcards inside {} name", configuration_to_initialize.getNamespaceType());
 
     if (configuration_to_initialize.format == "auto")
     {

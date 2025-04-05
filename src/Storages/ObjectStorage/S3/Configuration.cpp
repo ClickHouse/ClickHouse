@@ -51,6 +51,62 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+    ASTs::const_iterator getValueForNamedArgument(const ASTs & arguments, const std::string & argument_name, Field & value)
+    {
+        for (const auto * arg_it = arguments.begin(); arg_it != arguments.end(); ++arg_it)
+        {
+            auto argument = *arg_it;
+            const auto * type_ast_function = argument->as<ASTFunction>();
+
+            if (!type_ast_function || type_ast_function->name != "equals" || !type_ast_function->arguments || type_ast_function->arguments->children.size() != 2)
+            {
+                continue;
+            }
+
+            const auto * name = type_ast_function->arguments->children[0]->as<ASTIdentifier>();
+
+            if (name && name->name() == argument_name)
+            {
+                const auto * ast_literal = type_ast_function->arguments->children[1]->as<ASTLiteral>();
+
+                if (!ast_literal)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Wrong parameter type for '{}'",
+                        name->name());
+                }
+
+                value = ast_literal->value;
+
+                return arg_it;
+            }
+        }
+
+        return arguments.end();
+    }
+
+    template <typename T>
+    std::optional<T> extractNamedArgumentAndRemoveFromList(ASTs & arguments, const std::string & argument_name)
+    {
+        Field value;
+        const auto * p = getValueForNamedArgument(arguments, argument_name, value);
+
+        if (p == arguments.end())
+        {
+            return std::nullopt;
+        }
+
+        arguments.erase(p);
+
+        return value.safeGet<T>();
+    }
 }
 
 static const std::unordered_set<std::string_view> required_configuration_keys = {
@@ -74,7 +130,9 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "max_single_part_upload_size",
     "max_connections",
     "expiration_window_seconds",
-    "no_sign_request"
+    "no_sign_request",
+    "partition_strategy",
+    "hive_partition_strategy_write_partition_columns_into_files"
 };
 
 String StorageS3Configuration::getDataSourceDescription() const
@@ -172,6 +230,9 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     else
         url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
 
+    partition_strategy = collection.getOrDefault<String>("partition_strategy", "auto");
+    hive_partition_strategy_write_partition_columns_into_files = collection.getOrDefault<bool>("hive_partition_strategy_write_partition_columns_into_files", false);
+
     auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
     auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
     auth_settings[S3AuthSetting::use_environment_credentials] = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
@@ -192,6 +253,14 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
+    /*
+     * Calls to `extractNamedArgumentAndRemoveFromList` need to happen before count is determined:
+     * `size_t count = StorageURL::evalArgsAndCollectHeaders`
+     * This is because extractNamedArgumentAndRemoveFromList alters the list of arguments
+     * */
+    partition_strategy = extractNamedArgumentAndRemoveFromList<std::string>(args, "partition_strategy").value_or("auto");
+    hive_partition_strategy_write_partition_columns_into_files = extractNamedArgumentAndRemoveFromList<bool>(args, "hive_partition_strategy_write_partition_columns_into_files").value_or(false);
+
     size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
 
     if (count == 0 || count > getMaxNumberOfArguments(with_structure))

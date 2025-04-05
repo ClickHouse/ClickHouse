@@ -3,11 +3,11 @@
 #include "PartitionedSink.h"
 
 #include <Common/ArenaUtils.h>
+#include <Core/Settings.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
 
 #include <Parsers/ASTFunction.h>
 
@@ -24,19 +24,17 @@ namespace ErrorCodes
 }
 
 PartitionedSink::PartitionedSink(
-    const ASTPtr & partition_by,
+    std::shared_ptr<PartitionStrategy> partition_strategy_,
     ContextPtr context_,
     const Block & sample_block_)
     : SinkToStorage(sample_block_)
+    , partition_strategy(partition_strategy_)
     , context(context_)
     , sample_block(sample_block_)
 {
-    ASTs arguments(1, partition_by);
-    ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
-
-    auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block.getNamesAndTypesList());
-    partition_by_expr = ExpressionAnalyzer(partition_by_string, syntax_result, context).getActions(false);
-    partition_by_column_name = partition_by_string->getColumnName();
+    auto actions_with_column_name = partition_strategy->getExpression();
+    partition_by_expr = actions_with_column_name.actions;
+    partition_by_column_name = actions_with_column_name.column_name;
 }
 
 
@@ -52,15 +50,19 @@ SinkPtr PartitionedSink::getSinkForPartitionKey(StringRef partition_key)
     return it->second;
 }
 
-void PartitionedSink::consume(Chunk & chunk)
+void PartitionedSink::consume(Chunk & input_chunk)
 {
-    const auto & columns = chunk.getColumns();
-
     Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
-    block_with_partition_by_expr.setColumns(columns);
+    block_with_partition_by_expr.setColumns(input_chunk.getColumns());
     partition_by_expr->execute(block_with_partition_by_expr);
 
     const auto * partition_by_result_column = block_with_partition_by_expr.getByName(partition_by_column_name).column.get();
+
+    /*
+     * `hive_partition_strategy_write_partition_columns_into_files`
+     */
+    const auto chunk = partition_strategy->getChunkWithoutPartitionColumnsIfNeeded(input_chunk);
+    const auto & columns_to_consume = chunk.getColumns();
 
     size_t chunk_rows = chunk.getNumRows();
     chunk_row_index_to_partition_index.resize(chunk_rows);
@@ -77,7 +79,7 @@ void PartitionedSink::consume(Chunk & chunk)
         chunk_row_index_to_partition_index[row] = it->getMapped();
     }
 
-    size_t columns_size = columns.size();
+    size_t columns_size = columns_to_consume.size();
     size_t partitions_size = partition_id_to_chunk_index.size();
 
     Chunks partition_index_to_chunk;
@@ -85,7 +87,7 @@ void PartitionedSink::consume(Chunk & chunk)
 
     for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
-        MutableColumns partition_index_to_column_split = columns[column_index]->scatter(partitions_size, chunk_row_index_to_partition_index);
+        MutableColumns partition_index_to_column_split = columns_to_consume[column_index]->scatter(partitions_size, chunk_row_index_to_partition_index);
 
         /// Add chunks into partition_index_to_chunk with sizes of result columns
         if (column_index == 0)
@@ -107,6 +109,11 @@ void PartitionedSink::consume(Chunk & chunk)
         auto sink = getSinkForPartitionKey(partition_key);
         sink->consume(partition_index_to_chunk[partition_index]);
     }
+}
+
+std::shared_ptr<PartitionStrategy> PartitionedSink::getPartitionStrategy()
+{
+    return partition_strategy;
 }
 
 void PartitionedSink::onException(std::exception_ptr exception)
