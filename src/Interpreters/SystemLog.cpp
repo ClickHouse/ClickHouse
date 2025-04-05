@@ -546,9 +546,16 @@ void SystemLog<LogElement>::shutdown()
 {
     Base::stopFlushThread();
 
-    auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-    if (table)
-        table->flushAndShutdown();
+    try
+    {
+        auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+        if (table)
+            table->flushAndShutdown();
+    }
+    catch (Exception &)
+    {
+        tryLogCurrentException(log, "Final log flush failed", LogsLevel::warning);
+    }
 }
 
 
