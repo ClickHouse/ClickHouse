@@ -652,12 +652,12 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
     return registered;
 }
 
-size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id, bool active)
+size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id, bool active, bool remove_metadata_if_no_registered)
 {
     if (active)
         return unregisterActive(storage_id);
     else
-        return unregisterNonActive(storage_id);
+        return unregisterNonActive(storage_id, remove_metadata_if_no_registered);
 }
 
 size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
@@ -687,7 +687,7 @@ size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id
     return remaining_nodes_num;
 }
 
-size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id)
+size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered)
 {
     const auto registry_path = zookeeper_path / "registry";
     const auto self = Info::create(storage_id);
@@ -695,44 +695,77 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
     Coordination::Error code = Coordination::Error::ZOK;
     for (size_t i = 0; i < 1000; ++i)
     {
-        Coordination::Stat stat;
-        std::string registry_str;
-        auto zk_client = getZooKeeper();
-
-        bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
-        if (!node_exists)
-        {
-            LOG_WARNING(log, "Cannot unregister: registry does not exist");
-            chassert(false);
-            return 0;
-        }
-
-        Strings registered;
-        splitInto<','>(registered, registry_str);
-
-        bool found = false;
-        std::string new_registry_str;
+        Coordination::Requests requests;
+        Coordination::Responses responses;
         size_t count = 0;
-        for (const auto & elem : registered)
+        try
         {
-            if (elem.empty())
-                continue;
+            Coordination::Stat stat;
+            std::string registry_str;
+            auto zk_client = getZooKeeper();
 
-            auto info = Info::deserialize(elem);
-            if (info == self)
-                found = true;
+            bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
+            if (!node_exists)
+            {
+                LOG_WARNING(log, "Cannot unregister: registry does not exist");
+                chassert(false);
+                return 0;
+            }
+
+            Strings registered;
+            splitInto<','>(registered, registry_str);
+
+            bool found = false;
+            std::string new_registry_str;
+            for (const auto & elem : registered)
+            {
+                if (elem.empty())
+                    continue;
+
+                auto info = Info::deserialize(elem);
+                if (info == self)
+                    found = true;
+                else
+                {
+                    if (!new_registry_str.empty())
+                        new_registry_str += ",";
+                    new_registry_str += elem;
+                    count += 1;
+                }
+            }
+            if (!found)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: table '{}' is not registered", self.table_id);
+
+            if (remove_metadata_if_no_registered && count == 0)
+            {
+                requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
+                requests.push_back(zkutil::makeRemoveRecursiveRequest(zookeeper_path, -1));
+
+                code = zk_client->tryMulti(requests, responses);
+            }
             else
             {
-                if (!new_registry_str.empty())
-                    new_registry_str += ",";
-                new_registry_str += elem;
-                count += 1;
+                code = zk_client->trySet(registry_path, new_registry_str, stat.version);
             }
         }
-        if (!found)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: table '{}' is not registered", self.table_id);
-
-        code = zk_client->trySet(registry_path, new_registry_str, stat.version);
+        catch (const zkutil::KeeperMultiException & e)
+        {
+            if (Coordination::isHardwareError(e.code))
+            {
+                LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                continue;
+            }
+            throw;
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            if (Coordination::isHardwareError(e.code))
+            {
+                LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                continue;
+            }
+            throw;
+        }
 
         if (code == Coordination::Error::ZOK)
         {
@@ -744,6 +777,10 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
             || code == Coordination::Error::ZBADVERSION)
             continue;
 
+        if (!responses.empty())
+        {
+            zkutil::KeeperMultiException::check(code, requests, responses);
+        }
         throw zkutil::KeeperException(code);
     }
 
