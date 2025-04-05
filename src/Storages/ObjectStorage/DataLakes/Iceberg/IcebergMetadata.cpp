@@ -1,3 +1,4 @@
+#include "Disks/ObjectStorages/StoredObject.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -27,6 +28,7 @@
 namespace ProfileEvents
 {
     extern const Event IcebergTrivialCountOptimizationApplied;
+    extern const Event IcebegerVersionHintUsed;
 }
 
 namespace DB
@@ -35,6 +37,7 @@ namespace DB
 namespace StorageObjectStorageSetting
 {
     extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
+    extern const StorageObjectStorageSettingsBool iceberg_enable_version_hint; 
 }
 
 namespace ErrorCodes
@@ -266,9 +269,13 @@ getLatestMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const S
     return *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end());
 }
 
-static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration, Poco::Logger * log)
+static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(
+    const ObjectStoragePtr & object_storage, 
+    const StorageObjectStorage::Configuration & configuration, 
+    Poco::Logger * log)
 {
     auto explicit_metadata_path = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_file_path].value;
+    auto enable_version_hint = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_enable_version_hint].value;
     std::pair<Int32, String> result;
     if (!explicit_metadata_path.empty())
     {
@@ -277,6 +284,25 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(const 
         if (!explicit_metadata_path.starts_with(prefix_storage_path))
             explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
         result = getMetadataFileAndVersion(explicit_metadata_path);
+    }
+    else if (enable_version_hint)
+    {
+        auto prefix_storage_path = configuration.getPath();
+        auto version_hint_path = std::filesystem::path(prefix_storage_path) / "metadata" / "version-hint.text";
+        std::string metadata_file;
+        StoredObject version_hint(version_hint_path);
+        auto buf = object_storage->readObject(version_hint, ReadSettings{});
+        readString(metadata_file, *buf);
+        if (!metadata_file.ends_with(".metadata.json"))
+        {
+            if (std::all_of(metadata_file.begin(), metadata_file.end(), isdigit)) 
+                metadata_file = "v" + metadata_file + ".metadata.json";
+            else 
+                metadata_file = metadata_file + ".metadata.json";
+        }
+        LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
+        result = getMetadataFileAndVersion(std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file);
+        ProfileEvents::increment(ProfileEvents::IcebegerVersionHintUsed);
     }
     else
     {

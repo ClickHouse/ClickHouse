@@ -26,6 +26,9 @@ Whether delta-lake read schema is the same as table schema.
     DECLARE(String, iceberg_metadata_file_path, "", R"(
 Explicit path to desired Iceberg metadata file, should be relative to path in object storage. Make sense for table function use case only.
 )", 0) \
+    DECLARE(Bool, iceberg_enable_version_hint, false, R"(
+Get latest metadata path from version-hint.text file.
+)", 0) \
 
 // clang-format on
 
