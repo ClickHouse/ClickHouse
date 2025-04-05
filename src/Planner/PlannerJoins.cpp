@@ -188,13 +188,9 @@ TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node)
     return res;
 }
 
-std::set<JoinTableSide> extractJoinTableSidesFromExpression(
-    const IQueryTreeNode * expression_root_node,
-    const TableExpressionSet & left_table_expressions,
-    const TableExpressionSet & right_table_expressions,
-    const JoinNode & join_node)
+TableExpressionSet getExpressionSourceSet(const IQueryTreeNode * expression_root_node)
 {
-    std::set<JoinTableSide> table_sides;
+    TableExpressionSet sources_set;
     std::vector<const IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push_back(expression_root_node);
 
@@ -218,8 +214,25 @@ std::set<JoinTableSide> extractJoinTableSidesFromExpression(
         const auto & input_name = column_node->getColumnName();
         const auto * column_source = column_node->getColumnSource().get();
         if (!column_source)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No source for column {} in JOIN {}", input_name, join_node.formatASTForErrorMessage());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No source for column {} in {}", input_name, expression_root_node->formatASTForErrorMessage());
 
+        sources_set.insert(column_source);
+    }
+
+    return sources_set;
+}
+
+std::set<JoinTableSide> extractJoinTableSidesFromExpression(
+    const IQueryTreeNode * expression_root_node,
+    const TableExpressionSet & left_table_expressions,
+    const TableExpressionSet & right_table_expressions,
+    const JoinNode & join_node)
+{
+    auto sources_set = getExpressionSourceSet(expression_root_node);
+
+    std::set<JoinTableSide> table_sides;
+    for (const auto * column_source : sources_set)
+    {
         bool is_column_from_left_expr = left_table_expressions.contains(column_source);
         bool is_column_from_right_expr = right_table_expressions.contains(column_source);
 
@@ -234,7 +247,6 @@ std::set<JoinTableSide> extractJoinTableSidesFromExpression(
         auto input_table_side = is_column_from_left_expr ? JoinTableSide::Left : JoinTableSide::Right;
         table_sides.insert(input_table_side);
     }
-
     return table_sides;
 }
 

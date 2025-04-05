@@ -48,6 +48,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
+    extern const SettingsBool query_plan_optimize_join_order;
 }
 
 namespace ServerSetting
@@ -84,6 +85,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
+    optimize_join_order = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_join_order];
 
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
@@ -109,6 +111,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     /// These settings comes from EXPLAIN settings not query settings and outside of the scope of this class
     keep_logical_steps = false;
+    // optimize_level = std::numeric_limits<decltype(optimize_level)>::max();
+
     is_explain = false;
 
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;

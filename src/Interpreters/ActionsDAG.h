@@ -166,7 +166,7 @@ public:
 
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
-    void addOrReplaceInOutputs(const Node & node);
+    bool addOrReplaceInOutputs(const Node & node);
 
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
@@ -449,6 +449,9 @@ public:
 
     UInt64 getHash() const;
     void updateHash(SipHash & hash_state) const;
+
+    /// Returns the list of inputs required to compute the target node.
+    NodeRawConstPtrs getRequiredInputs(const Node * target_node) const;
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
