@@ -33,7 +33,7 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git --branch 986-ld64
     && make install -j$(nproc) \
     && cd ../.. \
     && rm -rf cctools-port \
-    && apt-get purge make \
+    && apt-get purge make --yes \
     && apt-get clean
 
 #
