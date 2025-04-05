@@ -543,13 +543,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
 
     const auto& order_by_nodes = query_node.getOrderBy().getNodes();
     const auto& group_by_nodes = query_node.getGroupBy().getNodes();
-    auto find_result = findOptimizationSublistIndexes(group_by_nodes, order_by_nodes);
-    std::optional<std::vector<UInt64>> optimization_indexes = std::vector<UInt64>{};
-    if (find_result) {
-        for (const auto& [index, direction] : find_result.value()) {
-            optimization_indexes->emplace_back(index);
-        }
-    }
+    auto optimization_indexes = findOptimizationSublistIndexes(group_by_nodes, order_by_nodes);
 
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
