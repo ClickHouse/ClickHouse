@@ -513,7 +513,17 @@ def main():
         Shell.check(f"git log -1 HEAD > {perf_wd}/right-commit.txt")
 
         commands = [
-            f"stage=get_profiles {script_path}",
+            f"PR_TO_TEST={info.pr_number} "
+            f"SHA_TO_TEST={info.sha} "
+            f"CHPC_CHECK_START_TIMESTAMP='$(date +%s)' "
+            f"CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX={info.job_name} "
+            f"CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME={info.job_name} "
+            f"CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL= "
+            f"CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER= "
+            # FIXME: we need to pass it without printing (i.e. via env)!
+            f"CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD= "
+            "stage=get_profiles "
+            f"{script_path}",
         ]
         results.append(
             Result.from_commands_run(
