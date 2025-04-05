@@ -481,7 +481,7 @@ void ClusterDiscovery::initialUpdate()
         zk->createAncestors(path->zk_path);
         zk->createIfNotExists(path->zk_path, "");
 
-        auto watch_callback = [&path](auto) { path->need_update = true; };
+        auto watch_callback = [path](auto) { path->need_update = true; };
         zk->getChildrenWatch(path->zk_path, nullptr, watch_callback);
     }
 
