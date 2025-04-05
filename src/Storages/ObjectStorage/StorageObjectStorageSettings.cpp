@@ -72,7 +72,17 @@ STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES(StorageObjectStorageSettings, IM
 
 void StorageObjectStorageSettings::loadFromQuery(ASTSetQuery & settings_ast)
 {
-    impl->applyChanges(settings_ast.changes);
+    SettingsChanges changes;
+    const auto & accessor = StorageObjectStorageSettingsTraits::Accessor::instance();
+    for (const auto & change : settings_ast.changes)
+    {
+        if (accessor.find(change.name) < accessor.size())
+        {
+            changes.push_back(change);
+        }
+    }
+
+    impl->applyChanges(changes);
 }
 
 Field StorageObjectStorageSettings::get(const std::string & name)
