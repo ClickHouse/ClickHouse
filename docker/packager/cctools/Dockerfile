@@ -12,7 +12,7 @@ ENV CXX=clang++-${LLVM_VERSION}
 RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
     && cd apple-libtapi \
     && git checkout 15dfc2a8c9a2a89d06ff227560a69f5265b692f9 \
-    && INSTALLPREFIX=/cctools ./build.sh \
+    && INSTALLPREFIX=/cctools NINJA=1 ./build.sh \
     && ./install.sh \
     && cd .. \
     && rm -rf apple-libtapi
