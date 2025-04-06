@@ -87,7 +87,7 @@ size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, siz
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
   */
 template <size_t ELEMENT_SIZE, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
-class PODArrayBase : private boost::noncopyable, private TAllocator    /// empty base optimization
+class PODArrayBase : private boost::noncopyable, protected TAllocator    /// empty base optimization
 {
 protected:
     /// Round padding up to an whole number of elements to simplify arithmetic.
@@ -359,19 +359,19 @@ public:
         }
     }
 
-    explicit PODArray(const PaddedBuffer<T>& buf)
-    {
-        Base::c_start = buf.c_start;
-        Base::c_end = buf.c_end;
-        Base::c_end_of_storage = buf.c_end_of_storage;
-    }
+    // explicit PODArray(const PODArray<T>& buf)
+    // {
+    //     Base::c_start = buf.c_start;
+    //     Base::c_end = buf.c_end;
+    //     Base::c_end_of_storage = buf.c_end_of_storage;
+    // }
 
-    explicit PODArray(PaddedBuffer<T>& buf)
-    {
-        Base::c_start = buf.c_start;
-        Base::c_end = buf.c_end;
-        Base::c_end_of_storage = buf.c_end_of_storage;
-    }
+    // explicit PODArray(PODArray<T>& buf)
+    // {
+    //     Base::c_start = buf.c_start;
+    //     Base::c_end = buf.c_end;
+    //     Base::c_end_of_storage = buf.c_end_of_storage;
+    // }
 
     PODArray(PODArray && other) noexcept
     {

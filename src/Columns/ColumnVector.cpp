@@ -8,7 +8,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/MaskOperations.h>
-#include <Columns/PODArrayOwning.h>
+// #include <Columns/PODArrayOwning.h>
 #include <Columns/RadixSortHelper.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
@@ -64,10 +64,10 @@ namespace ErrorCodes
 
 template <typename T>
 const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
-{   
+{
     auto mutable_data = std::static_pointer_cast<PaddedBuffer<T>>(data)->getOwningBuffer();
     mutable_data->emplace_back(unalignedLoad<T>(pos));
-    data = std::static_pointer_cast<PaddedPODArray<T>>(mutable_data);
+    data = std::static_pointer_cast<PaddedBuffer<T>>(mutable_data);
     return pos + sizeof(T);
 }
 
@@ -80,7 +80,7 @@ const char * ColumnVector<T>::skipSerializedInArena(const char * pos) const
 template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    hash.update(data[n]);
+    hash.update((*data)[n]);
 }
 
 template <typename T>
@@ -126,7 +126,7 @@ struct ColumnVector<T>::less_stable
     less_stable(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        if (unlikely(parent.data[lhs] == parent.data[rhs]))
+        if (unlikely((*parent.data)[lhs] == (*parent.data)[rhs]))
             return lhs < rhs;
 
         if constexpr (is_floating_point<T>)
@@ -158,7 +158,7 @@ struct ColumnVector<T>::greater_stable
     greater_stable(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        if (unlikely(parent.data[lhs] == parent.data[rhs]))
+        if (unlikely((*parent.data)[lhs] == (*parent.data)[rhs]))
             return lhs < rhs;
 
         if constexpr (is_floating_point<T>)
@@ -356,7 +356,7 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
 
                 for (auto * it = begin; it != end; ++it)
                 {
-                    pairs[index] = {data[*it], static_cast<UInt32>(*it)};
+                    pairs[index] = {(*data)[*it], static_cast<UInt32>(*it)};
                     ++index;
                 }
 
@@ -370,7 +370,7 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
 
                     for (size_t i = 0; i < size; ++i)
                     {
-                        if (isNaN(data[begin[reverse ? i : size - 1 - i]]))
+                        if (isNaN((*data)[begin[reverse ? i : size - 1 - i]]))
                             ++nans_to_move;
                         else
                             break;
@@ -443,25 +443,25 @@ size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permut
     return elements.size();
 }
 
-// template <typename T>
-// MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const // TODO: remove or remake as we dont need COW anymore
-// {
-//     auto res = this->create(size);
+template <typename T>
+MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
+{
+    auto res = this->create(size);
 
-//     if (size > 0)
-//     {
-//         auto & new_col = static_cast<Self &>(*res);
-//         new_col.data.resize_exact(size);
+    if (size > 0)
+    {
+        auto & new_col = static_cast<Self &>(*res);
+        new_col.data->resize_exact(size);
 
-//         size_t count = std::min(this->size(), size);
-//         memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
+        size_t count = std::min(this->size(), size);
+        memcpy(new_col.data->data(), data->data(), count * sizeof((*data)[0]));
 
-//         if (size > count)
-//             memset(static_cast<void *>(&new_col.data[count]), 0, (size - count) * sizeof(ValueType));
-//     }
+        if (size > count)
+            memset(static_cast<void *>(&(*new_col.data)[count]), 0, (size - count) * sizeof(ValueType));
+    }
 
-//     return res;
-// }
+    return res;
+}
 
 template <typename T>
 std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n) const
@@ -475,7 +475,7 @@ template <typename T>
 UInt64 ColumnVector<T>::get64(size_t n [[maybe_unused]]) const
 {
     if constexpr (is_arithmetic_v<T>)
-        return bit_cast<UInt64>(data[n]);
+        return bit_cast<UInt64>((*data)[n]);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt64", TypeName<T>);
 }
@@ -512,7 +512,7 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
             {
                 auto mutable_data = std::static_pointer_cast<PaddedBuffer<T>>(data)->getOwningBuffer();
                 mutable_data->push_back(static_cast<T>(boolean_value));
-                data = std::static_pointer_cast<PaddedPODArray<T>>(mutable_data);
+                data = std::static_pointer_cast<PaddedBuffer<T>>(mutable_data);
                 return true;
             }
         }
@@ -520,7 +520,7 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
     }
     auto mutable_data = std::static_pointer_cast<PaddedBuffer<T>>(data)->getOwningBuffer();
     mutable_data->push_back(static_cast<T>(value));
-    data = std::static_pointer_cast<PaddedPODArray<T>>(mutable_data);
+    data = std::static_pointer_cast<PaddedBuffer<T>>(mutable_data);
     return true;
 }
 
@@ -544,8 +544,8 @@ void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_
     size_t old_size = data->size();
     auto mutable_data = std::static_pointer_cast<PaddedBuffer<T>>(data)->getOwningBuffer();
     mutable_data->resize(old_size + length);
-    memcpy(mutable_data->data() + old_size, &(*src_vec.data)[start], length * sizeof(data[0]));
-    data = std::static_pointer_cast<PaddedPODArray<T>>(mutable_data);
+    memcpy(mutable_data->data() + old_size, &(*src_vec.data)[start], length * sizeof((*data)[0]));
+    data = std::static_pointer_cast<PaddedBuffer<T>>(mutable_data);
 }
 
 static inline UInt64 blsr(UInt64 mask)
@@ -776,7 +776,7 @@ void ColumnVector<T>::applyZeroMap(const IColumn::Filter & filt, bool inverted)
             if (*filt_pos)
                 *data_pos = 0;
     }
-    data = std::static_pointer_cast<PaddedPODArray<T>>(owning_buffer);
+    data = std::static_pointer_cast<PaddedBuffer<T>>(owning_buffer);
 }
 
 template <typename T>

@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-// #include <Common/PODArray.h>
-#include <Columns/IBuffer.h>
+#include <Common/PODArray.h>
 
 
 namespace DB
@@ -23,24 +22,24 @@ namespace DB
   * To allow functional tests to work under UBSan we have to separate some base class that will present the memory layout in explicit way,
   *  and we will do static_cast to this class.
   */
-class ColumnFixedSizeHelper : public IColumn
-{
-public:
-    template <typename T>
-    const char * getRawDataBegin() const
-    {
-        return reinterpret_cast<const IBuffer<T, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD> *>(
-                   reinterpret_cast<const char *>(this) + sizeof(*this))
-            ->raw_data();
-    }
+  class ColumnFixedSizeHelper : public IColumn
+  {
+  public:
+      template <size_t ELEMENT_SIZE>
+      const char * getRawDataBegin() const
+      {
+          return reinterpret_cast<const PODArrayBase<ELEMENT_SIZE, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD> *>(
+                     reinterpret_cast<const char *>(this) + sizeof(*this))
+              ->raw_data();
+      }
 
-    template <typename T>
-    void insertRawData(const char * ptr)
-    {
-        return reinterpret_cast<IBuffer<T, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD> *>(
-                   reinterpret_cast<char *>(this) + sizeof(*this))
-            ->push_back_raw(ptr);
-    }
-};
+      template <size_t ELEMENT_SIZE>
+      void insertRawData(const char * ptr)
+      {
+          return reinterpret_cast<PODArrayBase<ELEMENT_SIZE, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD> *>(
+                     reinterpret_cast<char *>(this) + sizeof(*this))
+              ->push_back_raw(ptr);
+      }
+  };
 
 }

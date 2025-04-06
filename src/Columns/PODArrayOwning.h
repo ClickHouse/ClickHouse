@@ -17,6 +17,7 @@ class PODArrayOwning : public IBuffer<T, initial_bytes, TAllocator, pad_right, p
 {
 protected:
     using Base = IBuffer<T, initial_bytes, TAllocator, pad_right, pad_left>;
+    static constexpr size_t ELEMENT_SIZE = sizeof(T);
 public:
     using value_type = T;
     using iterator = T *;
@@ -64,7 +65,54 @@ public:
     }
 
     std::shared_ptr<PODArrayOwning<T, initial_bytes, TAllocator, pad_right, pad_left>> getOwningBuffer() final {
-        return Base::shared_from_this();
+        return this->shared_from_this();
+    }
+
+    void alloc_for_num_elements(size_t num_elements) override
+    {
+        alloc(PODArrayDetails::minimum_memory_for_elements(num_elements, sizeof(T), pad_left, pad_right));
+    }
+
+    void alloc(size_t bytes) override
+    {
+        char * allocated = reinterpret_cast<char *>(TAllocator::alloc(bytes));
+
+        this->c_start = allocated + pad_left;
+        this->c_end = this->c_start;
+        this->c_end_of_storage = allocated + bytes - pad_right;
+
+        if (pad_left)
+            memset(this->c_start - ELEMENT_SIZE, 0, ELEMENT_SIZE);
+    }
+
+    void dealloc() override
+    {
+        if (this->c_start == nullptr)
+            return;
+
+        // unprotect();
+
+        TAllocator::free(this->c_start - pad_left, this->allocated_bytes());
+    }
+
+    void realloc(size_t bytes) override
+    {
+        if (this->c_start == nullptr)
+        {
+            alloc(bytes);
+            return;
+        }
+
+        // unprotect();
+
+        ptrdiff_t end_diff = this->c_end - this->c_start;
+
+        char * allocated = reinterpret_cast<char *>(
+            TAllocator::realloc(this->c_start - pad_left, this->allocated_bytes(), bytes));
+
+        this->c_start = allocated + pad_left;
+        this->c_end = this->c_start + end_diff;
+        this->c_end_of_storage = allocated + bytes - pad_right;
     }
 
     template <typename ... TAllocatorParams>
@@ -169,7 +217,7 @@ public:
         this->assertNotIntersects(from_begin, from_end);
         size_t required_capacity = this->size() + (from_end - from_begin);
         if (required_capacity > this->capacity())
-            this->reserve(Base::roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
+            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
@@ -192,7 +240,7 @@ public:
 
         size_t required_capacity = this->size() + (from_end - from_begin);
         if (required_capacity > this->capacity())
-            this->reserve(Base::roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
+            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = BufferDetails::byte_size(from_end - from_begin, sizeof(T));
         if (bytes_to_copy)
@@ -250,7 +298,7 @@ public:
 
         size_t required_capacity = this->size() + copy_size;
         if (required_capacity > this->capacity())
-            this->reserve(Base::roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
+            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = BufferDetails::byte_size(copy_size, sizeof(T));
         if (bytes_to_copy)
