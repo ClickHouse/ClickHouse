@@ -810,12 +810,20 @@ void DatabaseReplicated::stopLoading()
     DatabaseAtomic::stopLoading();
 }
 
+ASTPtr DatabaseReplicated::tryGetCreateOrAttachTableQuery(const String & name, ContextPtr local_context) const
+{
+    auto res = tryGetCreateTableQuery(name, local_context);
+    auto & create = res->as<ASTCreateQuery &>();
+    create.attach = create.is_materialized_view_with_inner_table();
+    return res;
+}
+
 void DatabaseReplicated::dumpLocalTablesForDebugOnly(const ContextPtr & local_context) const
 {
     auto table_names = getAllTableNames(context.lock());
     for (const auto & table_name : table_names)
     {
-        auto ast_ptr = tryGetCreateTableQuery(table_name, local_context);
+        auto ast_ptr = tryGetCreateOrAttachTableQuery(table_name, local_context);
         if (ast_ptr)
             LOG_DEBUG(log, "[local] Table {} create query is {}", table_name, ast_ptr->formatForLogging());
         else
@@ -854,7 +862,7 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
 
     for (const auto & table_name : table_names_local)
     {
-        auto local_ast_ptr = tryGetCreateTableQuery(table_name, local_context);
+        auto local_ast_ptr = tryGetCreateOrAttachTableQuery(table_name, local_context);
         if (table_name_to_metadata_in_zk.contains(table_name))
         {
             checked_tables.insert(table_name);

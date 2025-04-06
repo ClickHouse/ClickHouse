@@ -105,6 +105,8 @@ private:
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     static bool looksLikeReplicatedDatabasePath(const ZooKeeperPtr & current_zookeeper, const String & path);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
+    /// For Replicated database will return ATTACH for MVs with inner table
+    ASTPtr tryGetCreateOrAttachTableQuery(const String & name, ContextPtr context) const;
 
     struct
     {
