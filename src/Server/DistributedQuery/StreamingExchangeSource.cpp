@@ -19,6 +19,12 @@ IProcessor::Status StreamingExchangeSource::prepare()
 {
     LOG_TEST(log, "Prepare exchange stream {}", stream_name);
 
+    if (finished_reading)
+    {
+        output.finish();
+        return Status::Finished;
+    }
+
     /// Check can output.
     if (output.isFinished())
         return Status::Finished;
@@ -34,12 +40,6 @@ IProcessor::Status StreamingExchangeSource::prepare()
     }
 
     /// TODO: handle cancelled state?
-
-    if (finished_reading)
-    {
-        getPort().finish();
-        return Status::Finished;
-    }
 
     if (in.available() > 0)
         return Status::Ready;
