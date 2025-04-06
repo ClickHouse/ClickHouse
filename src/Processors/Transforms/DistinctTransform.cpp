@@ -41,10 +41,11 @@ void DistinctTransform::buildFilter(
     for (size_t i = 0; i < rows; ++i)
     {
         auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+        assert(emplace_result);
 
         /// Emit the record if there is no such key in the current set yet.
         /// Skip it otherwise.
-        filter[i] = emplace_result.isInserted();
+        filter[i] = emplace_result->isInserted();
     }
 }
 

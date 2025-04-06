@@ -14,6 +14,7 @@
 #include <Analyzer/SortNode.h>
 #include <type_traits>
 #include <typeinfo>
+#include <iostream>
 
 namespace DB
 {
@@ -194,13 +195,13 @@ public:
     static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
 
     template <typename Data>
-    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKey(Data & data, size_t row, Arena & pool)
     {
         return emplaceKey(data, row, pool, std::nullopt, 9223372036854775807ll);
     }
 
     template <typename Data>
-    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool, const std::optional<std::vector<std::pair<UInt64, SortDirection>>> & optimization_indexes, size_t limit_length)
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKey(Data & data, size_t row, Arena & pool, const std::optional<std::vector<std::pair<UInt64, SortDirection>>> & optimization_indexes, size_t limit_length)
     {
         if constexpr (nullable)
         {
@@ -364,7 +365,7 @@ protected:
     }
 
     template <typename Data, typename KeyHolder>
-    ALWAYS_INLINE EmplaceResult emplaceImpl(
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceImpl(
         KeyHolder & key_holder,
         Data & data,
         size_t limit_length,
@@ -384,7 +385,8 @@ protected:
         typename Data::LookupResult it;
         bool inserted = false;
         data.emplace(key_holder, it, inserted);
-        if constexpr (!has_mapped && !std::is_same_v<decltype(key_holder), const VoidKey>) { // TODO VoidKey doesn't work in compareKeyHolders
+
+        if constexpr (!std::is_same_v<decltype(key_holder), const VoidKey>) { // TODO VoidKey doesn't work in compareKeyHolders
             if constexpr (!std::is_same_v<KeyHolder, DB::SerializedKeyHolder>
                        && !std::is_same_v<KeyHolder, DB::ArenaKeyHolder>
                        && !std::is_same_v<KeyHolder, Int128>
@@ -421,7 +423,7 @@ protected:
                             {
                                 data.erase(min_key);
                                 if (min_key == keyHolderGetKey(key_holder))
-                                    return EmplaceResult(inserted);
+                                    return std::nullopt;
                             }
                         }
                     } else if constexpr (HasForEachMapped<Data>::value)
@@ -433,6 +435,8 @@ protected:
                 }
             }
         }
+
+        // TODO could the iterator become invalid after deleting another key?
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)

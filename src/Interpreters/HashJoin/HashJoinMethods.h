@@ -19,10 +19,11 @@ struct Inserter
     insertOne(const HashJoin & join, HashMap & map, KeyGetter & key_getter, const Block * stored_block, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
+        assert(emplace_result.has_value());
 
-        if (emplace_result.isInserted() || join.anyTakeLastRow())
+        if (emplace_result->isInserted() || join.anyTakeLastRow())
         {
-            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block, i);
+            new (&emplace_result->getMapped()) typename HashMap::mapped_type(stored_block, i);
             return true;
         }
         return false;
@@ -32,13 +33,14 @@ struct Inserter
     insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, const Block * stored_block, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
+        assert(emplace_result.has_value());
 
-        if (emplace_result.isInserted())
-            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block, i);
+        if (emplace_result->isInserted())
+            new (&emplace_result->getMapped()) typename HashMap::mapped_type(stored_block, i);
         else
         {
             /// The first element of the list is stored in the value of the hash table, the rest in the pool.
-            emplace_result.getMapped().insert({stored_block, i}, pool);
+            emplace_result->getMapped().insert({stored_block, i}, pool);
         }
     }
 
@@ -52,10 +54,11 @@ struct Inserter
         const IColumn & asof_column)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
-        typename HashMap::mapped_type * time_series_map = &emplace_result.getMapped();
+        assert(emplace_result.has_value());
+        typename HashMap::mapped_type * time_series_map = &emplace_result->getMapped();
 
         TypeIndex asof_type = *join.getAsofType();
-        if (emplace_result.isInserted())
+        if (emplace_result->isInserted())
             time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
         (*time_series_map)->insert(asof_column, stored_block, i);
     }
