@@ -6,17 +6,18 @@
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
+#include <Common/BitHelpers.h>
 #include <Columns/BufferFWD.h>
 
 #ifndef NDEBUG
 #include <sys/mman.h>
 #endif
 
-namespace DB 
+namespace DB
 {
 
-static constexpr size_t empty_buffer_size = 1024;
-extern const char empty_buffer[empty_buffer_size];
+static constexpr size_t empty_owning_buffer_size = 1024;
+extern const char empty_owning_buffer[empty_owning_buffer_size];
 // constexpr size_t integerRoundUp(size_t value, size_t dividend);
 
 namespace BufferDetails
@@ -33,7 +34,7 @@ size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, siz
 };
 
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_> // NOLINT
-class IBuffer : private PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_>
+class IBuffer : public PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_>
 {
 protected:
     using PODBase = PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_>;
@@ -43,7 +44,7 @@ protected:
     /// pad_left is also rounded up to 16 bytes to maintain alignment of allocated memory.
     static constexpr size_t pad_left = integerRoundUp(integerRoundUp(pad_left_, element_size), 16);
     /// Empty array will point to this static memory as padding and begin/end.
-    static constexpr char * null = const_cast<char *>(empty_buffer) + pad_left;
+    static constexpr char * null = const_cast<char *>(empty_owning_buffer) + pad_left;
 
     // static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
 
@@ -58,7 +59,7 @@ protected:
     const T * t_start() const          { return reinterpret_cast<const T *>(this->c_start); } /// NOLINT
     const T * t_end() const            { return reinterpret_cast<const T *>(this->c_end); } /// NOLINT
 
-    virtual void allocForNumElements(size_t num_elements);
+    virtual void alloc_for_num_elements(size_t num_elements);
     virtual void realloc(size_t bytes);
     virtual void dealloc();
     virtual void alloc(size_t bytes);

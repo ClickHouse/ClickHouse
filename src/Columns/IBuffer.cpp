@@ -37,6 +37,6 @@ ALWAYS_INLINE size_t minimum_memory_for_elements(size_t num_elements, size_t ele
 
 }
 
-const char empty_buffer[empty_buffer_size]{};
+const char empty_owning_buffer[empty_owning_buffer_size]{};
 
 }
