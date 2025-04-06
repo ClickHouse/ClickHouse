@@ -567,25 +567,20 @@ protected: // Hide all the ISchedulerNode interface methods as an implementation
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
-        // Cycle is required to do deactivations in the case of canceled requests, when dequeueRequest returns `nullptr`
-        while (true)
+        // Dequeue request from the child
+        auto [request, child_now_active] = immediate_child->dequeueRequest();
+
+        // Deactivate if necessary
+        child_active = child_now_active;
+        if (!child_active)
+            busy_periods++;
+
+        if (request)
         {
-            // Dequeue request from the child
-            auto [request, child_now_active] = immediate_child->dequeueRequest();
-
-            // Deactivate if necessary
-            child_active = child_now_active;
-            if (!child_active)
-                busy_periods++;
-
-            if (request)
-            {
-                incrementDequeued(request->cost);
-                return {request, child_active};
-            }
-            else
-                return {nullptr, false};
+            incrementDequeued(request->cost);
+            return {request, child_active};
         }
+        return {nullptr, false};
     }
 
     bool isActive() override
