@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string_view>
+
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
@@ -12,7 +14,6 @@ namespace DB
 class ASTCreateResourceQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-
     /// Describes specific operation that requires this resource
     struct Operation
     {

@@ -83,34 +83,28 @@ public:
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
-        // Cycle is required to do deactivations in the case of canceled requests, when dequeueRequest returns `nullptr`
-        while (true)
+        // Dequeue request from the child
+        auto [request, child_now_active] = child->dequeueRequest();
+
+        std::unique_lock lock(mutex);
+
+        // Deactivate if necessary
+        child_active = child_now_active;
+        if (!active())
+            busy_periods++;
+
+        if (request)
         {
-            // Dequeue request from the child
-            auto [request, child_now_active] = child->dequeueRequest();
-
-            std::unique_lock lock(mutex);
-
-            // Deactivate if necessary
-            child_active = child_now_active;
-            if (!active())
-                busy_periods++;
-
-            if (request)
+            if (request->addConstraint(this))
             {
-                if (request->addConstraint(this))
-                {
-                    // Update state on request arrival
-                    requests++;
-                    cost += request->cost;
-                }
-                incrementDequeued(request->cost);
-                return {request, active()};
+                // Update state on request arrival
+                requests++;
+                cost += request->cost;
             }
-            else
-                return {nullptr, false};
-
+            incrementDequeued(request->cost);
+            return {request, active()};
         }
+        return {nullptr, false};
     }
 
     void finishRequest(ResourceRequest * request) override

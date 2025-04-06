@@ -11,6 +11,8 @@
 namespace DB
 {
 
+// Represent parsed version for SETTINGS clause in CREATE WORKLOAD query
+// Note that it is parsed for specific resource name and unit
 struct WorkloadSettings
 {
     static constexpr Int64 unlimited = std::numeric_limits<Int64>::max();

@@ -1079,7 +1079,7 @@ enum SQLFunc {
     FUNCrightPad = 1074;
     FUNCrightPadUTF8 = 1075;
     FUNCrightUTF8 = 1076;
-    FUNCripeMD160 = 1077;
+    FUNCRIPEMD160 = 1077;
     FUNCround = 1078;
     FUNCroundAge = 1079;
     FUNCroundBankers = 1080;
@@ -1643,6 +1643,10 @@ message Storage {
     required string storage_name = 2;
 }
 
+message Window {
+    required string window = 1;
+}
+
 enum SpecialVal {
     VAL_NULL = 1;
     VAL_TRUE = 2;
@@ -1985,10 +1989,6 @@ message SQLFuncCall {
     optional FuncNulls fnulls = 6;
 }
 
-message Window {
-    required uint32 window = 1;
-}
-
 message FrameSpecSubLeftExpr {
     enum Which {
         CURRENT_ROW = 1;
@@ -2092,8 +2092,13 @@ message WindowFuncCall {
     }
     oneof window_over_oneof {
         WindowDefn win_defn = 3;
-        Window win_name = 4;
+        Window window = 4;
     }
+}
+
+message WindowDef {
+    required Window window = 1;
+    required WindowDefn win_defn = 2;
 }
 
 message IntervalExpr {
@@ -2172,182 +2177,182 @@ message ExprColumnList {
 }
 
 enum InFormat {
-    IN_TabSeparated = 1;
-    IN_TabSeparatedRaw = 2;
-    IN_TabSeparatedWithNames = 3;
-    IN_TabSeparatedWithNamesAndTypes = 4;
-    IN_TabSeparatedRawWithNames = 5;
-    IN_TabSeparatedRawWithNamesAndTypes = 6;
-    IN_Template = 7;
-    IN_TemplateIgnoreSpaces = 8;
-    IN_CSV = 9;
-    IN_CSVWithNames = 10;
-    IN_CSVWithNamesAndTypes = 11;
-    IN_CustomSeparated = 12;
-    IN_CustomSeparatedWithNames = 13;
-    IN_CustomSeparatedWithNamesAndTypes = 14;
-    IN_Values = 15;
-    IN_JSON = 16;
+    IN_Arrow = 1;
+    IN_ArrowStream = 2;
+    IN_Avro = 3;
+    IN_AvroConfluent = 4;
+    IN_BSONEachRow = 5;
+    IN_CapnProto = 6;
+    IN_CSV = 7;
+    IN_CSVWithNames = 8;
+    IN_CSVWithNamesAndTypes = 9;
+    IN_CustomSeparated = 10;
+    IN_CustomSeparatedWithNames = 11;
+    IN_CustomSeparatedWithNamesAndTypes = 12;
+    IN_DWARF = 13;
+    IN_Form = 14;
+    IN_JSON = 15;
+    IN_JSONAsObject = 16;
     IN_JSONAsString = 17;
-    IN_JSONAsObject = 18;
-    IN_JSONStrings = 19;
-    IN_JSONColumns = 20;
-    IN_JSONColumnsWithMetadata = 21;
-    IN_JSONCompact = 22;
-    IN_JSONCompactColumns = 23;
-    IN_JSONEachRow = 24;
-    IN_JSONStringsEachRow = 25;
-    IN_JSONCompactEachRow = 26;
-    IN_JSONCompactEachRowWithNames = 27;
-    IN_JSONCompactEachRowWithNamesAndTypes = 28;
-    IN_JSONCompactStringsEachRow = 29;
-    IN_JSONCompactStringsEachRowWithNames = 30;
-    IN_JSONCompactStringsEachRowWithNamesAndTypes = 31;
-    IN_JSONObjectEachRow = 32;
-    IN_BSONEachRow = 33;
-    IN_TSKV = 34;
-    IN_Protobuf = 35;
-    IN_ProtobufSingle = 36;
-    IN_ProtobufList = 37;
-    IN_Avro = 38;
-    IN_AvroConfluent = 39;
-    IN_Parquet = 40;
-    IN_ParquetMetadata = 41;
-    IN_Arrow = 42;
-    IN_ArrowStream = 43;
-    IN_ORC = 44;
-    IN_One = 45;
-    IN_Npy = 46;
-    IN_RowBinary = 47;
+    IN_JSONColumns = 18;
+    IN_JSONColumnsWithMetadata = 19;
+    IN_JSONCompact = 20;
+    IN_JSONCompactColumns = 21;
+    IN_JSONCompactEachRow = 22;
+    IN_JSONCompactEachRowWithNames = 23;
+    IN_JSONCompactEachRowWithNamesAndTypes = 24;
+    IN_JSONCompactStringsEachRow = 25;
+    IN_JSONCompactStringsEachRowWithNames = 26;
+    IN_JSONCompactStringsEachRowWithNamesAndTypes = 27;
+    IN_JSONEachRow = 28;
+    IN_JSONObjectEachRow = 29;
+    IN_JSONStrings = 30;
+    IN_JSONStringsEachRow = 31;
+    IN_LineAsString = 32;
+    IN_MsgPack = 33;
+    IN_MySQLDump = 34;
+    IN_Native = 35;
+    IN_Npy = 36;
+    IN_One = 37;
+    IN_ORC = 38;
+    IN_Parquet = 39;
+    IN_ParquetMetadata = 40;
+    IN_Protobuf = 41;
+    IN_ProtobufList = 42;
+    IN_ProtobufSingle = 43;
+    IN_RawBLOB = 44;
+    IN_Regexp = 45;
+    IN_RowBinary = 46;
+    IN_RowBinaryWithDefaults = 47;
     IN_RowBinaryWithNames = 48;
     IN_RowBinaryWithNamesAndTypes = 49;
-    IN_RowBinaryWithDefaults = 50;
-    IN_Native = 51;
-    IN_CapnProto = 52;
-    IN_LineAsString = 53;
-    IN_Regexp = 54;
-    IN_RawBLOB = 55;
-    IN_MsgPack = 56;
-    IN_MySQLDump = 57;
-    IN_DWARF = 58;
-    IN_Form = 59;
+    IN_TabSeparated = 50;
+    IN_TabSeparatedRaw = 51;
+    IN_TabSeparatedRawWithNames = 52;
+    IN_TabSeparatedRawWithNamesAndTypes = 53;
+    IN_TabSeparatedWithNames = 54;
+    IN_TabSeparatedWithNamesAndTypes = 55;
+    IN_Template = 56;
+    IN_TemplateIgnoreSpaces = 57;
+    IN_TSKV = 58;
+    IN_Values = 59;
 }
 
 enum OutFormat {
-    OUT_TabSeparated = 1;
-    OUT_TabSeparatedRaw = 2;
-    OUT_TabSeparatedWithNames = 3;
-    OUT_TabSeparatedWithNamesAndTypes = 4;
-    OUT_TabSeparatedRawWithNames = 5;
-    OUT_TabSeparatedRawWithNamesAndTypes = 6;
-    OUT_Template = 7;
-    OUT_CSV = 8;
-    OUT_CSVWithNames = 9;
-    OUT_CSVWithNamesAndTypes = 10;
-    OUT_CustomSeparated = 11;
-    OUT_CustomSeparatedWithNames = 12;
-    OUT_CustomSeparatedWithNamesAndTypes = 13;
-    OUT_SQLInsert = 14;
-    OUT_Values = 15;
-    OUT_Vertical = 16;
-    OUT_JSON = 17;
-    OUT_JSONStrings = 18;
-    OUT_JSONColumns = 19;
-    OUT_JSONColumnsWithMetadata = 20;
-    OUT_JSONCompact = 21;
-    OUT_JSONCompactStrings = 22;
-    OUT_JSONCompactColumns = 23;
+    OUT_Arrow = 1;
+    OUT_ArrowStream = 2;
+    OUT_Avro = 3;
+    OUT_BSONEachRow = 4;
+    OUT_CapnProto = 5;
+    OUT_CSV = 6;
+    OUT_CSVWithNames = 7;
+    OUT_CSVWithNamesAndTypes = 8;
+    OUT_CustomSeparated = 9;
+    OUT_CustomSeparatedWithNames = 10;
+    OUT_CustomSeparatedWithNamesAndTypes = 11;
+    OUT_JSON = 12;
+    OUT_JSONColumns = 13;
+    OUT_JSONColumnsWithMetadata = 14;
+    OUT_JSONCompact = 15;
+    OUT_JSONCompactColumns = 16;
+    OUT_JSONCompactEachRow = 17;
+    OUT_JSONCompactEachRowWithNames = 18;
+    OUT_JSONCompactEachRowWithNamesAndTypes = 19;
+    OUT_JSONCompactStrings = 20;
+    OUT_JSONCompactStringsEachRow = 21;
+    OUT_JSONCompactStringsEachRowWithNames = 22;
+    OUT_JSONCompactStringsEachRowWithNamesAndTypes = 23;
     OUT_JSONEachRow = 24;
-    OUT_PrettyJSONEachRow = 25;
-    OUT_JSONEachRowWithProgress = 26;
-    OUT_JSONStringsEachRow = 27;
-    OUT_JSONStringsEachRowWithProgress = 28;
-    OUT_JSONCompactEachRow = 29;
-    OUT_JSONCompactEachRowWithNames = 30;
-    OUT_JSONCompactEachRowWithNamesAndTypes = 31;
-    OUT_JSONCompactStringsEachRow = 32;
-    OUT_JSONCompactStringsEachRowWithNames = 33;
-    OUT_JSONCompactStringsEachRowWithNamesAndTypes = 34;
-    OUT_JSONObjectEachRow = 35;
-    OUT_BSONEachRow = 36;
-    OUT_TSKV = 37;
+    OUT_JSONEachRowWithProgress = 25;
+    OUT_JSONObjectEachRow = 26;
+    OUT_JSONStrings = 27;
+    OUT_JSONStringsEachRow = 28;
+    OUT_JSONStringsEachRowWithProgress = 29;
+    OUT_LineAsString = 30;
+    OUT_Markdown = 31;
+    OUT_MsgPack = 32;
+    OUT_Native = 33;
+    OUT_Npy = 34;
+    OUT_Null = 35;
+    OUT_ORC = 36;
+    OUT_Parquet = 37;
     OUT_Pretty = 38;
-    OUT_PrettyNoEscapes = 39;
-    OUT_PrettyMonoBlock = 40;
-    OUT_PrettyNoEscapesMonoBlock = 41;
-    OUT_PrettyCompact = 42;
-    OUT_PrettyCompactNoEscapes = 43;
-    OUT_PrettyCompactMonoBlock = 44;
-    OUT_PrettyCompactNoEscapesMonoBlock = 45;
-    OUT_PrettySpace = 46;
-    OUT_PrettySpaceNoEscapes = 47;
+    OUT_PrettyCompact = 39;
+    OUT_PrettyCompactMonoBlock = 40;
+    OUT_PrettyCompactNoEscapes = 41;
+    OUT_PrettyCompactNoEscapesMonoBlock = 42;
+    OUT_PrettyJSONEachRow = 43;
+    OUT_PrettyMonoBlock = 44;
+    OUT_PrettyNoEscapes = 45;
+    OUT_PrettyNoEscapesMonoBlock = 46;
+    OUT_PrettySpace = 47;
     OUT_PrettySpaceMonoBlock = 48;
-    OUT_PrettySpaceNoEscapesMonoBlock = 49;
-    OUT_Prometheus = 50;
-    OUT_Protobuf = 51;
-    OUT_ProtobufSingle = 52;
+    OUT_PrettySpaceNoEscapes = 49;
+    OUT_PrettySpaceNoEscapesMonoBlock = 50;
+    OUT_Prometheus = 51;
+    OUT_Protobuf = 52;
     OUT_ProtobufList = 53;
-    OUT_Avro = 54;
-    OUT_Parquet = 55;
-    OUT_Arrow = 56;
-    OUT_ArrowStream = 57;
-    OUT_ORC = 58;
-    OUT_Npy = 59;
-    OUT_RowBinary = 60;
-    OUT_RowBinaryWithNames = 61;
-    OUT_RowBinaryWithNamesAndTypes = 62;
-    OUT_Native = 63;
-    OUT_Null = 64;
-    OUT_XML = 65;
-    OUT_CapnProto = 66;
-    OUT_LineAsString = 67;
-    OUT_RawBLOB = 68;
-    OUT_MsgPack = 69;
-    OUT_Markdown = 70;
+    OUT_ProtobufSingle = 54;
+    OUT_RawBLOB = 55;
+    OUT_RowBinary = 56;
+    OUT_RowBinaryWithNames = 57;
+    OUT_RowBinaryWithNamesAndTypes = 58;
+    OUT_SQLInsert = 59;
+    OUT_TabSeparated = 60;
+    OUT_TabSeparatedRaw = 61;
+    OUT_TabSeparatedRawWithNames = 62;
+    OUT_TabSeparatedRawWithNamesAndTypes = 63;
+    OUT_TabSeparatedWithNames = 64;
+    OUT_TabSeparatedWithNamesAndTypes = 65;
+    OUT_Template = 66;
+    OUT_TSKV = 67;
+    OUT_Values = 68;
+    OUT_Vertical = 69;
+    OUT_XML = 70;
 }
 
 enum InOutFormat {
-    INOUT_TabSeparated = 1;
-    INOUT_TabSeparatedWithNames = 2;
-    INOUT_TabSeparatedWithNamesAndTypes = 3;
-    INOUT_CSV = 4;
-    INOUT_CSVWithNames = 5;
-    INOUT_CSVWithNamesAndTypes = 6;
-    INOUT_CustomSeparated = 7;
-    INOUT_CustomSeparatedWithNames = 8;
-    INOUT_CustomSeparatedWithNamesAndTypes = 9;
-    INOUT_Values = 10;
+    INOUT_Arrow = 1;
+    INOUT_ArrowStream = 2;
+    INOUT_Avro = 3;
+    INOUT_BSONEachRow = 4;
+    INOUT_CSV = 5;
+    INOUT_CSVWithNames = 6;
+    INOUT_CSVWithNamesAndTypes = 7;
+    INOUT_CustomSeparated = 8;
+    INOUT_CustomSeparatedWithNames = 9;
+    INOUT_CustomSeparatedWithNamesAndTypes = 10;
     INOUT_JSON = 11;
     INOUT_JSONColumns = 12;
     INOUT_JSONColumnsWithMetadata = 13;
     INOUT_JSONCompact = 14;
     INOUT_JSONCompactColumns = 15;
-    INOUT_JSONEachRow = 16;
-    INOUT_JSONStringsEachRow = 17;
-    INOUT_JSONCompactEachRow = 18;
-    INOUT_JSONCompactEachRowWithNames = 19;
-    INOUT_JSONCompactEachRowWithNamesAndTypes = 20;
-    INOUT_JSONCompactStringsEachRow = 21;
-    INOUT_JSONCompactStringsEachRowWithNames = 22;
-    INOUT_JSONCompactStringsEachRowWithNamesAndTypes = 23;
-    INOUT_JSONObjectEachRow = 24;
-    INOUT_BSONEachRow = 25;
-    INOUT_TSKV = 26;
-    INOUT_Protobuf = 27;
-    INOUT_ProtobufSingle = 28;
-    INOUT_ProtobufList = 29;
-    INOUT_Avro = 30;
-    INOUT_Parquet = 31;
-    INOUT_Arrow = 32;
-    INOUT_ArrowStream = 33;
-    INOUT_ORC = 34;
-    INOUT_Npy = 35;
-    INOUT_RowBinary = 36;
-    INOUT_RowBinaryWithNames = 37;
-    INOUT_RowBinaryWithNamesAndTypes = 38;
-    INOUT_Native = 39;
-    INOUT_RawBLOB = 40;
-    INOUT_MsgPack = 41;
+    INOUT_JSONCompactEachRow = 16;
+    INOUT_JSONCompactEachRowWithNames = 17;
+    INOUT_JSONCompactEachRowWithNamesAndTypes = 18;
+    INOUT_JSONCompactStringsEachRow = 19;
+    INOUT_JSONCompactStringsEachRowWithNames = 20;
+    INOUT_JSONCompactStringsEachRowWithNamesAndTypes = 21;
+    INOUT_JSONEachRow = 22;
+    INOUT_JSONObjectEachRow = 23;
+    INOUT_JSONStringsEachRow = 24;
+    INOUT_MsgPack = 25;
+    INOUT_Native = 26;
+    INOUT_Npy = 27;
+    INOUT_ORC = 28;
+    INOUT_Parquet = 29;
+    INOUT_Protobuf = 30;
+    INOUT_ProtobufList = 31;
+    INOUT_ProtobufSingle = 32;
+    INOUT_RawBLOB = 33;
+    INOUT_RowBinary = 34;
+    INOUT_RowBinaryWithNames = 35;
+    INOUT_RowBinaryWithNamesAndTypes = 36;
+    INOUT_TabSeparated = 37;
+    INOUT_TabSeparatedWithNames = 38;
+    INOUT_TabSeparatedWithNamesAndTypes = 39;
+    INOUT_TSKV = 40;
+    INOUT_Values = 41;
 }
 
 message UsingExpr {
@@ -2542,6 +2547,7 @@ message TableFunction {
         TableOrFunction loop = 13;
         GenerateRandomFunc grandom = 14;
         ValuesStatement values = 15;
+        ExprSchemaTable dictionary = 16;
     }
 }
 
@@ -2614,7 +2620,7 @@ message GroupByStatement {
         GroupByList glist = 1;
         bool gall = 2;
     }
-    optional Expr having_expr = 3;
+    optional WhereStatement having_expr = 3;
 }
 
 message LimitStatement {
@@ -2644,15 +2650,18 @@ enum AllOrDistinct {
 
 message SelectStatementCore {
     optional AllOrDistinct s_or_d = 1;
-    repeated ResultColumn result_columns = 2;
-    optional FromStatement from = 3;
-    optional WhereStatement pre_where = 4;
-    optional WhereStatement where = 5;
-    optional GroupByStatement groupby = 6;
-    optional OrderByStatement orderby = 7;
+    optional bool from_first = 2;
+    repeated ResultColumn result_columns = 3;
+    optional FromStatement from = 4;
+    optional WhereStatement pre_where = 5;
+    optional WhereStatement where = 6;
+    optional GroupByStatement groupby = 7;
+    optional OrderByStatement orderby = 8;
+    repeated WindowDef window_defs = 9;
+    optional WhereStatement qualify_expr = 10;
     oneof limit_oneof {
-        LimitStatement limit = 8;
-        OffsetStatement offset = 9;
+        LimitStatement limit = 11;
+        OffsetStatement offset = 12;
     }
 }
 
@@ -2673,9 +2682,21 @@ message CTEquery {
     required Select query = 2;
 }
 
+message CTEexpr {
+    required Expr expr = 1;
+    required Column col_alias = 2;
+}
+
+message SingleCTE {
+    oneof cte_oneof {
+        CTEquery cte_query = 1;
+        CTEexpr cte_expr = 2;
+    }
+}
+
 message CTEs {
-    required CTEquery cte = 1;
-    repeated CTEquery other_ctes = 2;
+    required SingleCTE cte = 1;
+    repeated SingleCTE other_ctes = 2;
 }
 
 message SetValue {
@@ -2940,7 +2961,7 @@ message ColumnDef {
     optional ColumnStatistics stats = 7;
     optional Expr ttl_expr = 8;
     optional bool is_pkey = 9;
-    optional SettingValues settings = 10;
+    optional SettingValues setting_values = 10;
 }
 
 enum IndexType {
@@ -3043,6 +3064,8 @@ enum TableEngineValues {
     IcebergS3 = 26;
     Merge = 27;
     Distributed = 28;
+    Dictionary = 29;
+    GenerateRandom = 30;
 }
 
 enum TableEngineOption {
@@ -3064,6 +3087,7 @@ message TableEngineParam {
         string svalue = 10;
         ColumnPathList col_list = 11;
         string regexp = 12;
+        ExprSchemaTable est = 13;
     }
 }
 
@@ -3113,7 +3137,7 @@ message TableEngine {
     optional TableKey primary_key = 6;
     optional TableKey sample_by = 7;
     optional TTLExpr ttl_expr = 8;
-    optional SettingValues settings = 9;
+    optional SettingValues setting_values = 9;
 }
 
 message CreateTableAs {
@@ -3121,13 +3145,14 @@ message CreateTableAs {
     required ExprSchemaTable est = 2;
 }
 
+enum CreateReplaceOption {
+    Create = 1;
+    Replace = 2;
+    CreateOrReplace = 3;
+}
+
 message CreateTable {
-    enum CreateTableOption {
-        Create = 1;
-        Replace = 2;
-        CreateOrReplace = 3;
-    }
-    required CreateTableOption create_opt = 1;
+    required CreateReplaceOption create_opt = 1;
     optional bool is_temp = 2;
     optional bool if_not_exists = 3;
     required ExprSchemaTable est = 4;
@@ -3178,18 +3203,15 @@ message InsertFromFile {
 
 message Insert {
     optional CTEs ctes = 1;
-    oneof into_oneof {
-        ExprSchemaTable est = 2;
-        TableFunction tfunc = 3;
-    }
-    repeated ColumnPath cols = 4;
+    required TableOrFunction tof = 2;
+    repeated ColumnPath cols = 3;
     oneof insert_oneof {
-        ValuesStatement values = 5;
-        Select select = 6;
-        InsertFromFile insert_file = 7;
-        string query = 8;
+        ValuesStatement values = 4;
+        Select select = 5;
+        InsertFromFile insert_file = 6;
+        string query = 7;
     }
-    optional SettingValues setting_values = 9;
+    optional SettingValues setting_values = 8;
 }
 
 message PartitionExpr {
@@ -3366,7 +3388,7 @@ message RemoveColumnProperty {
 
 message ModifyColumnSetting {
     required ColumnPath col = 1;
-    required SettingValues settings = 2;
+    required SettingValues setting_values = 2;
 }
 
 message SettingList {
@@ -3376,7 +3398,7 @@ message SettingList {
 
 message RemoveColumnSetting {
     required ColumnPath col = 1;
-    required SettingList settings = 2;
+    required SettingList setting_values = 2;
 }
 
 message RefreshInterval {
@@ -3411,16 +3433,85 @@ message CreateMatViewTo {
 }
 
 message CreateView {
-    optional bool replace = 1;
-    optional bool materialized = 2;
+    required CreateReplaceOption create_opt = 1;
+    optional bool if_not_exists = 2;
+    optional bool materialized = 3;
+    required ExprSchemaTable est = 4;
+    optional Cluster cluster = 5;
+    optional RefreshableView refresh = 6;
+    optional CreateMatViewTo to = 7;
+    optional TableEngine engine = 8;
+    optional bool populate = 9;
+    optional bool empty = 10;
+    required Select select = 11;
+    optional string comment = 12;
+}
+
+message DictionaryColumn {
+    required Column col = 1;
+    required TypeName type = 2;
+    required Expr default_val = 3;
+    optional Expr expression = 4;
+    optional bool hierarchical = 5; /// or injective
+    optional bool is_object_id = 6;
+}
+
+message DictionarySource {
+    /// TODO Add other sources
+    oneof dictionary_source_oneof {
+        ExprSchemaTable est = 1;
+        bool null_src = 2;
+    }
+}
+
+enum DictionaryLayouts {
+    CACHE = 1;
+    COMPLEX_KEY_CACHE = 2;
+    COMPLEX_KEY_DIRECT = 3;
+    COMPLEX_KEY_HASHED = 4;
+    COMPLEX_KEY_HASHED_ARRAY = 5;
+    COMPLEX_KEY_RANGE_HASHED = 6;
+    COMPLEX_KEY_SPARSE_HASHED = 7;
+    COMPLEX_KEY_SSD_CACHE = 8;
+    DIRECT = 9;
+    FLAT = 10;
+    HASHED = 11;
+    HASHED_ARRAY = 12;
+    IP_TRIE = 13;
+    RANGE_HASHED = 14;
+    SPARSE_HASHED = 15;
+    SSD_CACHE = 16;
+}
+
+message DictionaryLayout {
+    required DictionaryLayouts layout = 1;
+    optional SettingValues setting_values = 2;
+}
+
+message DictionaryLifetime {
+    required uint32 min = 1;
+    optional uint32 max = 2;
+}
+
+message DictionaryRange {
+    required Expr min = 1;
+    required Expr max = 2;
+}
+
+message CreateDictionary {
+    required CreateReplaceOption create_opt = 1;
+    optional bool if_not_exists = 2;
     required ExprSchemaTable est = 3;
-    optional RefreshableView refresh = 4;
-    optional CreateMatViewTo to = 5;
-    optional TableEngine engine = 6;
-    optional bool populate = 7;
-    optional bool empty = 8;
-    required Select select = 9;
-    optional string comment = 10;
+    optional Cluster cluster = 4;
+    required DictionaryColumn col = 5;
+    repeated DictionaryColumn other_cols = 6;
+    required TableKey primary_key = 7;
+    required DictionarySource source = 8;
+    required DictionaryLayout layout = 9;
+    optional DictionaryRange range = 10;
+    optional DictionaryLifetime lifetime = 11;
+    optional SettingValues setting_values = 12;
+    optional string comment = 13;
 }
 
 message ApplyDeleteMask {
@@ -3676,6 +3767,7 @@ message SQLQueryInner {
         CreateFunction create_function = 17;
         SystemCommand system_cmd = 18;
         BackupRestore backup_restore = 19;
+        CreateDictionary create_dictionary = 20;
     }
 }
 

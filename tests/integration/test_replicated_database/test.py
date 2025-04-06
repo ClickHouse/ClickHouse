@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import shutil
@@ -22,6 +23,8 @@ main_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 1},
+    # Disable `with_remote_database_disk` as in `test_startup_without_zk`, Keeper rejects `main_node` connections before restarting
+    with_remote_database_disk=False,
 )
 dummy_node = cluster.add_instance(
     "dummy_node",
@@ -932,6 +935,11 @@ def test_recover_staled_replica(started_cluster):
         )
     for table in ["m1", "mt1"]:
         assert dummy_node.query(f"SELECT count() FROM recover.{table}") == "0\n"
+
+    logging.debug("Result: %s", dummy_node.query("SHOW DATABASES"))
+    logging.debug("Result: %s", dummy_node.query("SHOW TABLES FROM recover_broken_tables"))
+    logging.debug("Result: %s", dummy_node.query("SHOW TABLES FROM recover_broken_replicated_tables"))
+
     global test_recover_staled_replica_run
     assert (
         dummy_node.query(
@@ -946,10 +954,6 @@ def test_recover_staled_replica(started_cluster):
         == f"{test_recover_staled_replica_run}\n"
     )
     test_recover_staled_replica_run += 1
-
-    print(dummy_node.query("SHOW DATABASES"))
-    print(dummy_node.query("SHOW TABLES FROM recover_broken_tables"))
-    print(dummy_node.query("SHOW TABLES FROM recover_broken_replicated_tables"))
 
     table = dummy_node.query(
         "SHOW TABLES FROM recover_broken_tables LIKE 'mt1_41_%' LIMIT 1"
@@ -1570,3 +1574,22 @@ def test_detach_attach_table(started_cluster):
     assert (
         main_node.query("SELECT * FROM detach_attach_db.detach_attach_table;") == "1\n"
     )
+
+
+def test_alter_rename(started_cluster):
+    settings = {
+        "distributed_ddl_output_mode": "none",
+        "alter_sync": 0,
+    }
+    res = main_node.query(
+        """
+        DROP DATABASE IF EXISTS bug SYNC;
+        CREATE DATABASE bug ENGINE = Replicated('/clickhouse/databases/bug');
+        CREATE TABLE bug.table (`date` DateTime, `id` String) ENGINE = ReplicatedReplacingMergeTree(date) ORDER BY id SETTINGS deduplicate_merge_projection_mode = 'drop';
+        ALTER TABLE bug.table ADD PROJECTION max_date (SELECT max(date));
+        RENAME TABLE bug.table TO bug.table2;
+        SELECT value from system.zookeeper WHERE path = '/clickhouse/databases/bug/metadata';
+        """,
+        settings=settings,
+    )
+    assert "PROJECTION" in res

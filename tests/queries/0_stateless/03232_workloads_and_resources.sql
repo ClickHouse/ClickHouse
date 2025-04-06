@@ -4,6 +4,7 @@
 -- Test simple resource and workload hierarchy creation
 create resource 03232_write (write disk 03232_fake_disk);
 create resource 03232_read (read disk 03232_fake_disk);
+create resource 03232_invalid_mix (read disk 03232_another_fake_disk, master thread); -- {clientError BAD_ARGUMENTS}
 create workload all settings max_io_requests = 100 for 03232_write, max_io_requests = 200 for 03232_read;
 create workload admin in all settings priority = 0;
 create workload production in all settings priority = 1, weight = 9;

@@ -48,6 +48,13 @@ private:
 };
 
 // Manages group of cpu slots and slot requests for a single thread group (query)
+// It allocates slots by sending resource requests using given resource links:
+// - First it sends `master_slots` number of requests using `master_link`
+// - Then it sends `worker_slots` number of requests using `worker_link`
+// It sends not more than 1 concurrent resource request at a time.
+// If either provided link is empty, then corresponding slots are considered
+// non-competing and `AcquiredCPUSlot` are provided w/o resource requests.
+// PipelineExecutor uses 1 master thread and `max_threads - 1` worker threads
 class CPUSlotsAllocation final : public ISlotAllocation
 {
 public:
@@ -61,7 +68,7 @@ public:
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
     // For tests only. Returns true iff resource request is enqueued in the scheduler
-    bool isRequesting();
+    bool isRequesting() const;
 
 private:
     friend class CPUSlotRequest; // for schedule() and failed()
@@ -73,7 +80,7 @@ private:
     void grant();
 
     // Returns the queue for the current request
-    ISchedulerQueue * getCurrentQueue(const std::unique_lock<std::mutex> &);
+    ISchedulerQueue * getCurrentQueue(const std::unique_lock<std::mutex> &) const;
 
     const SlotCount master_slots; // Max number of slots to allocate using master link
     const SlotCount total_slots; // Total number of slots to allocate using both links
@@ -87,7 +94,7 @@ private:
     std::atomic<size_t> last_acquire_index{0};
 
     // Field that require sync with the scheduler thread
-    std::mutex schedule_mutex;
+    mutable std::mutex schedule_mutex;
     std::condition_variable schedule_cv;
     std::exception_ptr exception;
     SlotCount allocated = 0; // Total allocated slots including already released
