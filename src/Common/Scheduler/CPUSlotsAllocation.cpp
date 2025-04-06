@@ -30,6 +30,11 @@ namespace ErrorCodes
     extern const int RESOURCE_ACCESS_DENIED;
 }
 
+// This function is called by the scheduler thread and it makes sure that the next request
+// is send while executing the previous one from the scheduler thread to make sure constant competition.
+// Unfortunately, when this is the only request all the nodes are deactivated and reactivated again.
+// It is considered as busy period end, which can be seen in `system.scheduler`.
+// It costs some CPU cycles, but fairness is okay because there is no competition in that case.
 void CPUSlotRequest::execute()
 {
     chassert(allocation);

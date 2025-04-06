@@ -48,6 +48,13 @@ private:
 };
 
 // Manages group of cpu slots and slot requests for a single thread group (query)
+// It allocates slots by sending resource requests using given resource links:
+// - First it sends `master_slots` number of requests using `master_link`
+// - Then it sends `worker_slots` number of requests using `worker_link`
+// It sends not more than 1 concurrent resource request at a time.
+// If either provided link is empty, then corresponding slots are considered
+// non-competing and `AcquiredCPUSlot` are provided w/o resource requests.
+// PipelineExecutor uses 1 master thread and `max_threads - 1` worker threads
 class CPUSlotsAllocation final : public ISlotAllocation
 {
 public:
