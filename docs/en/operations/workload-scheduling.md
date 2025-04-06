@@ -231,7 +231,7 @@ CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 ```
 
-When the ClickHouse server executes many concurrent queries with [multiple threads](/operations/settings/settings.md#max_threads) and all CPU slots are in use the overload state is reached. In the overload state every released CPU slot is rescheduled to proper workload according to scheduling policies. For queries sharing the same workload slots are allocated using round robin. For queries in separate workloads, slots are allocated according to weights, priorities, and limits specified for workloads.
+When ClickHouse server executes many concurrent queries with [multiple threads](/operations/settings/settings.md#max_threads) and all CPU slots are in use the overload state is reached. In the overload state every released CPU slot is rescheduled to proper workload according to scheduling policies. For queries sharing the same workload, slots are allocated using round robin. For queries in separate workloads, slots are allocated according to weights, priorities, and limits specified for workloads.
 
 CPU time is consumed by threads when they are not blocked and work on CPU-intensive tasks. For scheduling purpose, two kinds of threads are distinguished:
 * Master thread — the first thread that starts working on a query or background activity like a merge or a mutation.
