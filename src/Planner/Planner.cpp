@@ -480,38 +480,36 @@ void addFilterStep(
 // if the first one is a subset of the second one.
 // Example: (GROUP BY a, b, c ORDER BY c, a) => {2, 0}.
 // The second elements of pairs are sort directions.
-std::optional<std::vector<std::pair<UInt64, SortDirection>>> findOptimizationSublistIndexes(const auto& group_by_nodes, const auto& order_by_nodes) {
-    if (order_by_nodes.empty()) {
+std::optional<std::vector<std::pair<UInt64, SortDirection>>> findOptimizationSublistIndexes(const auto& group_by_nodes, const auto& order_by_nodes)
+{
+    if (order_by_nodes.empty())
         return std::nullopt;
-    }
 
     // SortDirection::DESCENDING;
-    if (group_by_nodes.size() != 1 || group_by_nodes.size() != 1) { // MVP
+    if (group_by_nodes.size() != 1 || group_by_nodes.size() != 1) // MVP
         return std::nullopt;
-    }
 
     std::vector<std::pair<UInt64, SortDirection>> result(order_by_nodes.size());
     std::unordered_map<std::string, size_t> index_of_group_by_expression;
-    for (size_t i = 0; i < group_by_nodes.size(); ++i) {
-        if (group_by_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN) {
+    for (size_t i = 0; i < group_by_nodes.size(); ++i)
+    {
+        if (group_by_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN)
             continue; // MVP
-        }
         const auto& group_by_node_typed = group_by_nodes[i]->template as<ColumnNode &>();
         index_of_group_by_expression[group_by_node_typed.getColumnName()] = i;
     }
 
-    for (size_t i = 0; i < order_by_nodes.size(); ++i) {
+    for (size_t i = 0; i < order_by_nodes.size(); ++i)
+    {
         const auto& order_by_node_typed = order_by_nodes[i]->template as<SortNode &>();
         const auto& order_by_expression = order_by_node_typed.getExpression();
-        if (order_by_expression->getNodeType() != QueryTreeNodeType::COLUMN) {
+        if (order_by_expression->getNodeType() != QueryTreeNodeType::COLUMN)
             return std::nullopt; // MVP. TODO FUNCTION and maybe some others are also possible for optimization
-        }
         const auto& order_by_expression_as_column = order_by_expression->template as<ColumnNode &>();
         auto order_by_column_name = order_by_expression_as_column.getColumnName();
         auto group_by_map_iter = index_of_group_by_expression.find(order_by_column_name);
-        if (group_by_map_iter == index_of_group_by_expression.end()) {
+        if (group_by_map_iter == index_of_group_by_expression.end())
             return std::nullopt;
-        }
         result[i].first = group_by_map_iter->second;
         result[i].second = order_by_node_typed.getSortDirection();
     }

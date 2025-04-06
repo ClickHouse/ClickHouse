@@ -194,7 +194,8 @@ public:
     static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
 
     template <typename Data>
-    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool) {
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    {
         return emplaceKey(data, row, pool, std::nullopt, 9223372036854775807ll);
     }
 
@@ -349,7 +350,8 @@ protected:
     struct HasErase<T, ArgType, std::void_t<decltype(std::declval<T>().erase(std::declval<ArgType>()))>> : std::true_type {};
 
     template <typename KeyHolder1, typename KeyHolder2>
-    bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::vector<std::pair<UInt64, SortDirection>> & optimization_indexes) {
+    bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::vector<std::pair<UInt64, SortDirection>> & optimization_indexes)
+    {
         const auto & lhs_key = keyHolderGetKey(lhs);
         const auto & rhs_key = keyHolderGetKey(rhs);
 
@@ -391,8 +393,10 @@ protected:
                        && !std::is_same_v<KeyHolder, UInt256>) { // MVP. Support only basic types
                 if (optimization_indexes && data.size() >= limit_length + 1) { // TODO do == and assert <=
                     chassert(optimization_indexes->size() == 1 && (*optimization_indexes)[0].first == 0);
-                    if constexpr (HasBegin<Data>::value) {
-                        if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>) {
+                    if constexpr (HasBegin<Data>::value)
+                    {
+                        if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>)
+                        {
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), StringRef>));
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), Int128>));
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt128>));
@@ -401,27 +405,27 @@ protected:
 
                             // find the minimal element of data
                             auto min_key_holder = key_holder;
-                            for (const auto& data_el : data) {
-                                if constexpr (HasKey<KeyHolder>::value) {
-                                    if (compareKeyHolders(data_el.getKey(), min_key_holder.key, *optimization_indexes)) {
+                            for (const auto& data_el : data)
+                            {
+                                if constexpr (HasKey<KeyHolder>::value)
+                                {
+                                    if (compareKeyHolders(data_el.getKey(), min_key_holder.key, *optimization_indexes))
                                         min_key_holder.key = data_el.getKey();
-                                    }
-                                } else {
-                                    if (compareKeyHolders(data_el.getKey(), min_key_holder, *optimization_indexes)) {
+                                } else
+                                    if (compareKeyHolders(data_el.getKey(), min_key_holder, *optimization_indexes))
                                         min_key_holder = data_el.getKey();
-                                    }
-                                }
                             }
                             const auto& min_key = keyHolderGetKey(min_key_holder);
                             // erase found element
-                            if constexpr (HasErase<Data, decltype(keyHolderGetKey(min_key_holder))>::value) {
+                            if constexpr (HasErase<Data, decltype(keyHolderGetKey(min_key_holder))>::value)
+                            {
                                 data.erase(min_key);
-                                if (min_key == keyHolderGetKey(key_holder)) {
+                                if (min_key == keyHolderGetKey(key_holder))
                                     return EmplaceResult(inserted);
-                                }
                             }
                         }
-                    } else if constexpr (HasForEachMapped<Data>::value) {
+                    } else if constexpr (HasForEachMapped<Data>::value)
+                    {
                         // TODO implement
                         // data.forEachMapped([](auto el) {
                         // });
