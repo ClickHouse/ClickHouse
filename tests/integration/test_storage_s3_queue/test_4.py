@@ -624,6 +624,10 @@ def test_registry(started_cluster):
         database_name=db_name,
     )
 
+    # ensure that the table is created on node2 before we query the registry as there might be a race between the time
+    # we actually create the table on node2 and when we query the registry.
+    node2.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+
     registry, stat = zk.get(f"{keeper_path}/registry/")
 
     uuid2 = node1.query(
