@@ -421,9 +421,8 @@ protected:
                             // erase found element
                             if constexpr (HasErase<Data, decltype(keyHolderGetKey(min_key_holder))>::value)
                             {
-                                data.erase(min_key);
-                                if (min_key == keyHolderGetKey(key_holder))
-                                    return std::nullopt;
+                                if (min_key != keyHolderGetKey(key_holder)) // TODO if equals, erase and return nullptr
+                                    data.erase(min_key);
                             }
                         }
                     } else if constexpr (HasForEachMapped<Data>::value)
