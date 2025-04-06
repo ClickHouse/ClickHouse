@@ -213,7 +213,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     template <typename Data>
-    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row_, Arena & pool, const std::optional<std::vector<std::pair<UInt64, SortDirection>>> &, size_t) {
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row_, Arena & pool, const std::optional<std::vector<std::pair<UInt64, SortDirection>>> &, size_t)
+    {
         return emplaceKey(data, row_, pool);
     }
 
