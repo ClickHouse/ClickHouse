@@ -3,8 +3,8 @@
 #include <Processors/ISink.h>
 #include <Processors/Port.h>
 #include <Poco/Net/StreamSocket.h>
-#include <IO/ReadBufferFromPocoSocketChunked.h>
-#include <IO/WriteBufferFromPocoSocketChunked.h>
+#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -27,14 +27,23 @@ public:
 
 private:
     void onStart() override;
-
     void consume(Chunk chunk) override;
-
     void onFinish() override;
+    void work() override;
 
     void connect();
     void sendHello();
     void receiveHello();
+
+    /// Send data in current_send_buffer to socket in non-blocking mode.
+    void sendToSocket();
+
+    /// Checks if out buffer has not too much data already if so, it is possible to add new chunk.
+    bool canAddChunk() const;
+
+    /// Move out buffer to current_send_buffer and reset out. It is only possible if current_send_buffer have been fully sent to socket.
+    /// Otherwise, need to wait on socket and then call this method again.
+    void tryToSwitchSendBuffer();
 
     const String host;
     const UInt16 port;
@@ -42,16 +51,23 @@ private:
     const String stream_name;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
-    std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
-    std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
-    size_t rows_written = 0;
+    std::shared_ptr<ReadBufferFromPocoSocket> in;
 
-    /// Keep track of out->count() when the last call to out->next() was made
-    /// and not call out->next() if the difference is not big enough to avoid doing send() for small chaunks
-    size_t bytes_sent_to_socket = 0;
-    const size_t bytes_sent_to_socket_threshold = 128 * 1024;
-    /// After calling out->next() we will return Async from prepare() to epoll for out socket becoming ready
-    bool wait_for_out_socket_ready = true;
+    /// In-memory buffer to which the chunks are serialized.
+    /// Once it becomes big enough we move it to current_send_buffer.
+    std::shared_ptr<WriteBufferFromOwnString> out;
+
+    /// This buffer is being written to socket
+    String current_send_buffer;
+    /// How many bytes were already written to socket
+    size_t current_send_position_in_buffer = 0;
+
+    size_t rows_written = 0;
+    size_t total_bytes_sent = 0;
+
+    const size_t FLUSH_BUFFER_TO_SOCKET_THRESHOLD = 128 * 1024;
+    bool input_is_finished = false;
+    bool final_chunk_added = false;
 
     LoggerPtr log = getLogger("StreamingExchangeSink");
 };

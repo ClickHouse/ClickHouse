@@ -105,7 +105,7 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
     LOG_TRACE(log, "Query id: {}, stream: {}", query_id, stream_name);
 
     /// Send Hello back to finish handshake
-    WriteBufferFromPocoSocketChunked out(socket);
+    WriteBufferFromPocoSocket out(socket);
     writeVarUInt(StreamingExchangeProtocol::PacketType::SourceHello, out);
     out.next();
     out.cancel();

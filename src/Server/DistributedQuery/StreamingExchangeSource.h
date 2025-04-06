@@ -2,7 +2,7 @@
 
 #include <Processors/ISource.h>
 #include <Poco/Net/StreamSocket.h>
-#include <IO/ReadBufferFromPocoSocketChunked.h>
+#include <IO/ReadBufferFromPocoSocket.h>
 
 namespace DB
 {
@@ -29,8 +29,9 @@ private:
 
     bool finished_reading = false;
     Poco::Net::StreamSocket socket;
-    ReadBufferFromPocoSocketChunked in;
+    ReadBufferFromPocoSocket in;
     const String stream_name;
+    size_t rows_read = 0;
     LoggerPtr log = getLogger("StreamingExchangeSource");
 };
 

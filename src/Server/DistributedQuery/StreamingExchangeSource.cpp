@@ -41,7 +41,7 @@ IProcessor::Status StreamingExchangeSource::prepare()
         return Status::Finished;
     }
 
-    if (in.hasBufferedData())
+    if (in.available() > 0)
         return Status::Ready;
 
     return Status::Async;
@@ -73,13 +73,17 @@ Chunk StreamingExchangeSource::generate()
         auto reader = std::make_unique<NativeReader>(*compressed_buf, output.getHeader(), DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS);
         Block block = reader->read();
         result = Chunk(block.getColumns(), num_rows);
+        rows_read += num_rows;
+
+        LOG_TEST(log, "Received chunk with {} rows from exchange stream {}", num_rows, stream_name);
     }
     else
     {
+        /// Empty chunk means end of stream.
         finished_reading = true;
+        LOG_TRACE(log, "Finished reading from exchange stream {}, total rows: {}, bytes: {}",
+            stream_name, rows_read, in.count());
     }
-
-    LOG_TEST(log, "Received chunk with {} rows from exchange stream {}", num_rows, stream_name);
 
     return result;
 }
