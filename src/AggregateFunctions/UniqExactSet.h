@@ -1,6 +1,7 @@
 #pragma once
 
 #include <exception>
+#include <optional>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
@@ -111,7 +112,7 @@ public:
         else
         {
             auto & lhs = asTwoLevel();
-            const auto rhs_ptr = other.getTwoLevelSet();
+            const auto & rhs_ptr = other.getTwoLevelSet();
             const auto & rhs = *rhs_ptr;
             if (!thread_pool)
             {
@@ -165,7 +166,7 @@ public:
 
         if (worthConvertingToTwoLevel(new_size))
         {
-            two_level_set = std::make_shared<TwoLevelSet>(new_size);
+            two_level_set.emplace(new_size);
             for (size_t i = 0; i < new_size; ++i)
             {
                 typename SingleLevelSet::Cell x;
@@ -198,16 +199,20 @@ public:
     size_t size() const { return isSingleLevel() ? asSingleLevel().size() : asTwoLevel().size(); }
 
     /// To convert set to two level before merging (we cannot just call convertToTwoLevel() on right hand side set, because it is declared const).
-    std::shared_ptr<TwoLevelSet> getTwoLevelSet() const
+    const std::optional<TwoLevelSet> & getTwoLevelSet() const
     {
-        return two_level_set ? two_level_set : std::make_shared<TwoLevelSet>(asSingleLevel());
+        if (!two_level_set)
+            two_level_set.emplace(single_level_set);
+        single_level_set.clear();
+        return two_level_set;
     }
 
     static bool worthConvertingToTwoLevel(size_t size) { return size > 100'000; }
 
     void convertToTwoLevel()
     {
-        two_level_set = getTwoLevelSet();
+        if (!two_level_set)
+            two_level_set.emplace(single_level_set);
         single_level_set.clear();
     }
 
@@ -221,7 +226,7 @@ private:
     TwoLevelSet & asTwoLevel() { return *two_level_set; }
     const TwoLevelSet & asTwoLevel() const { return *two_level_set; }
 
-    SingleLevelSet single_level_set;
-    std::shared_ptr<TwoLevelSet> two_level_set;
+    mutable SingleLevelSet single_level_set;
+    mutable std::optional<TwoLevelSet> two_level_set;
 };
 }
