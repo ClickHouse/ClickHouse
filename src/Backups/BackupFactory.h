@@ -39,7 +39,7 @@ public:
         std::shared_ptr<IBackupCoordination> backup_coordination;
         std::optional<UUID> backup_uuid;
         bool deduplicate_files = true;
-        bool allow_s3_native_copy = true;
+        std::optional<bool> allow_s3_native_copy = true;
         bool allow_azure_native_copy = true;
         bool use_same_s3_credentials_for_base_backup = false;
         bool use_same_password_for_base_backup = false;

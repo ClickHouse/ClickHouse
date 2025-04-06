@@ -1,21 +1,16 @@
 #pragma once
 
-#include <chrono>
-#include <string_view>
-#include <optional>
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <base/types.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
 
+#include <chrono>
+#include <string_view>
+
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 class ReadBuffer;
 class WriteBuffer;
 
@@ -36,10 +31,10 @@ struct SettingFieldNumber
     Type value;
     bool changed = false;
 
-    explicit SettingFieldNumber(Type x = 0) : value(x) {}
+    explicit SettingFieldNumber(Type x = 0);
     explicit SettingFieldNumber(const Field & f);
 
-    SettingFieldNumber & operator=(Type x) { value = x; changed = true; return *this; }
+    SettingFieldNumber & operator=(Type x);
     SettingFieldNumber & operator=(const Field & f);
 
     operator Type() const { return value; } /// NOLINT
@@ -126,7 +121,6 @@ struct SettingAutoWrapper
     void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
 
     Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
-    std::optional<Type> get() const { return is_auto ? std::nullopt : std::make_optional(base.value); }
 };
 
 using SettingFieldBoolAuto = SettingAutoWrapper<SettingFieldBool>;
@@ -146,6 +140,8 @@ struct SettingFieldMaxThreads
     bool is_auto;
     UInt64 value;
     bool changed = false;
+
+    using ValueType = UInt64;
 
     explicit SettingFieldMaxThreads(UInt64 x = 0) : is_auto(!x), value(is_auto ? getAuto() : x)  {}
     explicit SettingFieldMaxThreads(const Field & f);
@@ -227,6 +223,7 @@ struct SettingFieldString
 {
     String value;
     bool changed = false;
+    using ValueType = String;
 
     explicit SettingFieldString(std::string_view str = {}) : value(str) {}
     explicit SettingFieldString(const String & str) : SettingFieldString(std::string_view{str}) {}
@@ -272,8 +269,6 @@ public:
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
 };
-
-#undef NORETURN
 
 struct SettingFieldChar
 {
@@ -333,7 +328,7 @@ struct SettingFieldURI
   * DECLARE_SETTING_ENUM(SettingFieldGender, Gender)
   *
   * mysettings.cpp:
-  * IMPLEMENT_SETTING_ENUM(SettingFieldGender, ErrorCodes::BAD_ARGUMENTS,
+  * IMPLEMENT_SETTING_ENUM(SettingFieldGender, ExceptionType,
   *                        {{"Male", Gender::Male}, {"Female", Gender::Female}})
   */
 template <typename EnumT, typename Traits>

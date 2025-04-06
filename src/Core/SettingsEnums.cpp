@@ -91,15 +91,15 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
      {"allow",  DistributedProductMode::ALLOW}})
 
 
-IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw",  QueryCacheNondeterministicFunctionHandling::Throw},
-     {"save",   QueryCacheNondeterministicFunctionHandling::Save},
-     {"ignore", QueryCacheNondeterministicFunctionHandling::Ignore}})
+IMPLEMENT_SETTING_ENUM(QueryResultCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryResultCacheNondeterministicFunctionHandling::Throw},
+     {"save",   QueryResultCacheNondeterministicFunctionHandling::Save},
+     {"ignore", QueryResultCacheNondeterministicFunctionHandling::Ignore}})
 
-IMPLEMENT_SETTING_ENUM(QueryCacheSystemTableHandling, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw",  QueryCacheSystemTableHandling::Throw},
-     {"save",   QueryCacheSystemTableHandling::Save},
-     {"ignore", QueryCacheSystemTableHandling::Ignore}})
+IMPLEMENT_SETTING_ENUM(QueryResultCacheSystemTableHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryResultCacheSystemTableHandling::Throw},
+     {"save",   QueryResultCacheSystemTableHandling::Save},
+     {"ignore", QueryResultCacheSystemTableHandling::Ignore}})
 
 IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
@@ -282,7 +282,10 @@ IMPLEMENT_SETTING_ENUM(
      {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE},
      {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
 
-IMPLEMENT_SETTING_ENUM(DatabaseIcebergCatalogType, ErrorCodes::BAD_ARGUMENTS,
-                       {{"rest", DatabaseIcebergCatalogType::REST}})
-
+IMPLEMENT_SETTING_ENUM(
+    DatabaseDataLakeCatalogType,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
+     {"unity", DatabaseDataLakeCatalogType::UNITY},
+     {"glue", DatabaseDataLakeCatalogType::GLUE}})
 }

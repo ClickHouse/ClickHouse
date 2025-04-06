@@ -61,7 +61,7 @@ sidebar_position: 36
 -   [quantileDeterministic](../../../sql-reference/aggregate-functions/reference/quantiledeterministic.md)
 -   [quantileTDigest](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md)
 -   [quantileTDigestWeighted](../../../sql-reference/aggregate-functions/reference/quantiletdigestweighted.md)
--   [quantileBFloat16](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16)
+-   [quantileBFloat16](/sql-reference/aggregate-functions/reference/quantilebfloat16)
 -   [quantileBFloat16Weighted](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16weighted)
 -   [simpleLinearRegression](../../../sql-reference/aggregate-functions/reference/simplelinearregression.md)
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)

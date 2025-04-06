@@ -92,6 +92,8 @@ Exception::MessageMasked::MessageMasked(std::string && msg_)
         masker->wipeSensitiveData(msg);
 }
 
+const Exception::ThreadFramePointersBase Exception::dummy_frame_pointers = {};
+
 Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     : Poco::Exception(msg_masked.msg, code)
     , remote(remote_)
@@ -241,12 +243,12 @@ Exception::ThreadFramePointers::~ThreadFramePointers()
     can_use_thread_frame_pointers = false;
 }
 
-Exception::ThreadFramePointersBase Exception::getThreadFramePointers()
+const Exception::ThreadFramePointersBase & Exception::getThreadFramePointers()
 {
     if (can_use_thread_frame_pointers)
         return thread_frame_pointers.frame_pointers;
 
-    return {};
+    return dummy_frame_pointers;
 }
 
 void Exception::setThreadFramePointers(ThreadFramePointersBase frame_pointers)

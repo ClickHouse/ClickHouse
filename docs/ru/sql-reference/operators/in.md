@@ -20,7 +20,7 @@ SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 
 В качестве правой части оператора может быть множество константных выражений, множество кортежей с константными выражениями (показано в примерах выше), а также имя таблицы или подзапрос SELECT в скобках.
 
-Если типы данных в левой и правой частях подзапроса `IN` различаются, ClickHouse преобразует значение в левой части к типу данных из правой части. Преобразование выполняется по аналогии с функцией [accurateCastOrNull](../functions/type-conversion-functions.md#type_conversion_function-accurate-cast_or_null), т.е. тип данных становится [Nullable](../../sql-reference/data-types/nullable.md), а если преобразование не может быть выполнено, возвращается значение [NULL](../../sql-reference/syntax.md#null-literal).
+Если типы данных в левой и правой частях подзапроса `IN` различаются, ClickHouse преобразует значение в левой части к типу данных из правой части. Преобразование выполняется по аналогии с функцией [accurateCastOrNull](/sql-reference/functions/type-conversion-functions#accuratecastornullx-t), т.е. тип данных становится [Nullable](../../sql-reference/data-types/nullable.md), а если преобразование не может быть выполнено, возвращается значение [NULL](/operations/settings/formats#input_format_null_as_default).
 
 **Пример**
 

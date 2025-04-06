@@ -68,7 +68,7 @@ curl "$CLICKHOUSE_URL" --silent --fail --show-error --data "SELECT sum(is_leader
 wait;
 
 $CLICKHOUSE_CLIENT -q "
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 -- Check that number of ZK request is less then a half of (total replicas * concurrency)
 SELECT sum(ProfileEvents['ZooKeeperTransactions']) < (${NUM_TABLES} * 3 * ${CONCURRENCY} / 2)

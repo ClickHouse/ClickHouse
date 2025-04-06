@@ -235,6 +235,12 @@
         <!-- <host_rsa_key>path_to_the_ssh_key</host_rsa_key> -->
         <!-- <host_ecdsa_key>path_to_the_ssh_key</host_ecdsa_key> -->
         <!-- <host_ed25519_key>path_to_the_ssh_key</host_ed25519_key> -->
+
+        <!-- Unlocks the possibility to pass the client options as an environment
+             variables in a form of: ssh -o SetEnv="key1=value1 key2=value2".
+             This is considered unsafe and should be used with caution.
+        -->
+        <!-- <enable_client_options_passing>false</enable_client_options_passing>-->
     </ssh_server>
 
     <!-- You can specify credentials for authenthication between replicas.
@@ -368,6 +374,7 @@
     -->
     <concurrent_threads_soft_limit_num>0</concurrent_threads_soft_limit_num>
     <concurrent_threads_soft_limit_ratio_to_cores>2</concurrent_threads_soft_limit_ratio_to_cores>
+    <concurrent_threads_scheduler>fair_round_robin</concurrent_threads_scheduler>
 
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>1000</max_concurrent_queries>
@@ -479,6 +486,9 @@
 
     <!-- Cache size in elements for compiled expressions.-->
     <!-- <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size> -->
+
+    <!-- Size of the query condition cache in bytes. -->
+    <query_condition_cache_size>106700800</query_condition_cache_size>
 
     <!-- Configuration for the query cache -->
     <!--
@@ -1278,7 +1288,7 @@
         <engine>
             engine MergeTree
             partition by toYYYYMM(finish_date)
-            order by (finish_date, finish_time_us, trace_id)
+            order by (finish_date, finish_time_us)
         </engine>
         <database>system</database>
         <table>opentelemetry_span_log</table>

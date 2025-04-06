@@ -28,7 +28,7 @@ function insert()
 function check_span()
 {
 ${CLICKHOUSE_CLIENT} -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS opentelemetry_span_log;
 
     SELECT operation_name,
            attribute['clickhouse.cluster'] AS cluster,
@@ -51,7 +51,7 @@ ${CLICKHOUSE_CLIENT} -q "
 function check_span_kind()
 {
 ${CLICKHOUSE_CLIENT} -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS opentelemetry_span_log;
 
     SELECT count()
     FROM system.opentelemetry_span_log

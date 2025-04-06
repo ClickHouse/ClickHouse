@@ -369,7 +369,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## join_default_strictness {#settings-join_default_strictness}
 
-设置默认严格性 [加入子句](../../sql-reference/statements/select/join.md#select-join).
+设置默认严格性 [加入子句](/sql-reference/statements/select/join).
 
 可能的值:
 
@@ -396,7 +396,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 另请参阅:
 
--   [JOIN子句](../../sql-reference/statements/select/join.md#select-join)
+-   [JOIN子句](/sql-reference/statements/select/join)
 -   [联接表引擎](../../engines/table-engines/special/join.md)
 -   [join_default_strictness](#settings-join_default_strictness)
 
@@ -407,11 +407,11 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 可能的值:
 
 -   0 — The empty cells are filled with the default value of the corresponding field type.
--   1 — `JOIN` 其行为方式与标准SQL中的行为方式相同。 相应字段的类型将转换为 [可为空](../../sql-reference/data-types/nullable.md#data_type-nullable)，和空单元格填充 [NULL](../../sql-reference/syntax.md).
+-   1 — `JOIN` 其行为方式与标准SQL中的行为方式相同。 相应字段的类型将转换为 [可为空](/sql-reference/data-types/nullable)，和空单元格填充 [NULL](../../sql-reference/syntax.md).
 
 默认值：0。
 
-## max_block_size {#setting-max_block_size}
+## max_block_size {#max_block_size}
 
 在ClickHouse中，数据由块（列部分集）处理。 单个块的内部处理周期足够高效，但每个块都有明显的支出。 该 `max_block_size` 设置是建议从表中加载块的大小（行数）。 块大小不应该太小，以便每个块上的支出仍然明显，但不能太大，以便在第一个块处理完成后快速完成限制查询。 目标是避免在多个线程中提取大量列时占用太多内存，并且至少保留一些缓存局部性。
 
@@ -419,7 +419,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 块的大小 `max_block_size` 并不总是从表中加载。 如果显然需要检索的数据较少，则处理较小的块。
 
-## preferred_block_size_bytes {#preferred-block-size-bytes}
+## preferred_block_size_bytes {#preferred_block_size_bytes}
 
 用于相同的目的 `max_block_size`，但它通过使其适应块中的行数来设置推荐的块大小（以字节为单位）。
 但是，块大小不能超过 `max_block_size` 行。
@@ -479,7 +479,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 如果克里克豪斯应该阅读更多 `merge_tree_max_rows_to_use_cache` 在一个查询中的行，它不使用未压缩块的缓存。
 
-未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
+未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
 
 可能的值:
 
@@ -491,7 +491,7 @@ Default value: 128 ✕ 8192.
 
 如果克里克豪斯应该阅读更多 `merge_tree_max_bytes_to_use_cache` 在一个查询中的字节，它不使用未压缩块的缓存。
 
-未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
+未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
 
 可能的值:
 
@@ -516,7 +516,7 @@ ClickHouse在从表中读取数据时使用此设置。 如果要读取的所有
 
 设置查询日志记录。
 
-使用此设置发送到ClickHouse的查询将根据以下内容中的规则记录 [query_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) 服务器配置参数。
+使用此设置发送到ClickHouse的查询将根据以下内容中的规则记录 [query_log](../server-configuration-parameters/settings.md/operations/server-configuration-parameters/settings#query-log) 服务器配置参数。
 
 示例:
 
@@ -566,7 +566,7 @@ log_query_threads=1
 
 默认值略高于 `max_block_size`. 这样做的原因是因为某些表引擎 (`*MergeTree`）在磁盘上为每个插入的块形成一个数据部分，这是一个相当大的实体。 同样, `*MergeTree` 表在插入过程中对数据进行排序，并且足够大的块大小允许在RAM中对更多数据进行排序。
 
-## min_insert_block_size_rows {#min-insert-block-size-rows}
+## min_insert_block_size_rows {#min_insert_block_size_rows}
 
 设置块中可以通过以下方式插入到表中的最小行数 `INSERT` 查询。 较小尺寸的块被压扁成较大的块。
 
@@ -577,7 +577,7 @@ log_query_threads=1
 
 默认值：1048576。
 
-## min_insert_block_size_bytes {#min-insert-block-size-bytes}
+## min_insert_block_size_bytes {#min_insert_block_size_bytes}
 
 设置块中的最小字节数，可以通过以下方式插入到表中 `INSERT` 查询。 较小尺寸的块被压扁成较大的块。
 
@@ -613,7 +613,7 @@ log_query_threads=1
 
 越小 `max_threads` 值，较少的内存被消耗。
 
-## max_insert_threads {#settings-max-insert-threads}
+## max_insert_threads {#max_insert_threads}
 
 要执行的最大线程数 `INSERT SELECT` 查询。
 
@@ -624,7 +624,7 @@ log_query_threads=1
 
 默认值：0。
 
-平行 `INSERT SELECT` 只有在 `SELECT` 部分并行执行，请参阅 [max_threads](#settings-max_threads) 设置。
+平行 `INSERT SELECT` 只有在 `SELECT` 部分并行执行，请参阅 [max_threads](/operations/settings/settings#max_threads) 设置。
 更高的值将导致更高的内存使用率。
 
 ## max_compress_block_size {#max-compress-block-size}
@@ -724,7 +724,7 @@ Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connectio
 ## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
 是否使用未压缩块的缓存。 接受0或1。 默认情况下，0（禁用）。
-使用未压缩缓存（仅适用于MergeTree系列中的表）可以在处理大量短查询时显着减少延迟并提高吞吐量。 为频繁发送短请求的用户启用此设置。 还要注意 [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+使用未压缩缓存（仅适用于MergeTree系列中的表）可以在处理大量短查询时显着减少延迟并提高吞吐量。 为频繁发送短请求的用户启用此设置。 还要注意 [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
 对于至少读取大量数据（一百万行或更多行）的查询，将自动禁用未压缩缓存，以节省真正小型查询的空间。 这意味着你可以保持 ‘use_uncompressed_cache’ 设置始终设置为1。
 
@@ -867,7 +867,7 @@ load_balancing = first_or_random
 
 在TSV中使用DOC/Windows样式的行分隔符（CRLF）而不是Unix样式（LF）。
 
-## insert_quorum {#settings-insert_quorum}
+## insert_quorum {#insert_quorum
 
 启用仲裁写入。
 
@@ -902,7 +902,7 @@ ClickHouse生成异常
 
 另请参阅:
 
--   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum](#insert_quorum)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## select_sequential_consistency {#settings-select_sequential_consistency}
@@ -922,7 +922,7 @@ ClickHouse生成异常
 
 另请参阅:
 
--   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum](#insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
 ## insert_deduplicate {#settings-insert-deduplicate}
@@ -1006,7 +1006,7 @@ ClickHouse生成异常
 
 可能的值:
 
--   [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniq](/sql-reference/aggregate-functions/reference/uniq)
 -   [uniqCombined](../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
 -   [uniqCombined64](../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
 -   [uniqHLL12](../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
@@ -1081,7 +1081,7 @@ ClickHouse生成异常
 
 这些函数可以转化为：
 
-- [length](../../sql-reference/functions/array-functions.md/#array_functions-length) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
+- [length](/sql-reference/functions/array-functions#length) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
 - [empty](../../sql-reference/functions/array-functions.md/#empty函数) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
 - [notEmpty](../../sql-reference/functions/array-functions.md/#notempty函数) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
 - [isNull](../../sql-reference/operators/index.md#operator-is-null) 读取 [null](../../sql-reference/data-types/nullable. md/#finding-null) 子列。
@@ -1190,7 +1190,7 @@ ClickHouse生成异常
 
 另请参阅:
 
--   系统表 [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   系统表 [trace_log](/operations/system-tables/trace_log)
 
 ## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
@@ -1213,7 +1213,7 @@ ClickHouse生成异常
 
 另请参阅:
 
--   系统表 [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   系统表 [trace_log](/operations/system-tables/trace_log)
 
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
@@ -1229,7 +1229,7 @@ ClickHouse生成异常
 **另请参阅**
 
 -   [采样查询探查器](../optimizing-performance/sampling-query-profiler.md)
--   系统表 [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   系统表 [trace_log](/operations/system-tables/trace_log)
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
@@ -1281,7 +1281,7 @@ ClickHouse生成异常
 
 ## transform_null_in {#transform_null_in}
 
-为[IN](../../sql-reference/operators/in.md) 运算符启用[NULL](../../sql-reference/syntax.md#null-literal) 值的相等性。
+为[IN](../../sql-reference/operators/in.md) 运算符启用[NULL](/operations/settings/formats#input_format_null_as_default) 值的相等性。
 
 默认情况下，无法比较 `NULL` 值，因为 `NULL` 表示未定义的值。 因此，比较 `expr = NULL` 必须始终返回 `false`。 在此设置下，`NULL = NULL` 为IN运算符返回 `true`.
 

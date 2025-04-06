@@ -1,26 +1,29 @@
 #pragma once
+#include "config.h"
 
+#include <Storages/IndicesDescription.h>
+
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <memory>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/MergeTree/GinIndexStore.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/IDataPartStorage.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-
-#include "config.h"
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
 namespace DB
 {
 
+class ActionsDAG;
 class Block;
+class IDataPartStorage;
 struct MergeTreeWriterSettings;
+struct SelectQueryInfo;
+
+class GinIndexStore;
+using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 namespace ErrorCodes
 {
@@ -40,6 +43,7 @@ struct MergeTreeIndexFormat
 /// A vehicle which transports elements of the SELECT query to the vector similarity index.
 struct VectorSearchParameters
 {
+    String column;
     String distance_function;
     size_t limit;
     std::vector<Float64> reference_vector;
@@ -172,12 +176,8 @@ struct IMergeTreeIndex
     /// Returns extension for deserialization.
     ///
     /// Return pair<extension, version>.
-    virtual MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
-    {
-        if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
-            return {1, ".idx"};
-        return {0 /*unknown*/, ""};
-    }
+    virtual MergeTreeIndexFormat
+    getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 

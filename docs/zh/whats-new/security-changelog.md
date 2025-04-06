@@ -132,4 +132,4 @@ deb包中的错误配置可能导致未经授权使用数据库。
 
 作者：英国国家网络安全中心（NCSC）
 
-[Original article](/docs/whats-new/security-changelog)
+[Original article](/whats-new/security-changelog)
