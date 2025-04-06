@@ -40,7 +40,6 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
-#include <future>
 #include <numeric>
 #include <optional>
 
@@ -2332,7 +2331,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
 {
     /// TODO Make a custom threshold.
     const bool use_thread_pool = params.max_threads > 1 && data_variants.sizeWithoutOverflowRow() > 100000 && data_variants.isTwoLevel();
-    const size_t max_threads = use_thread_pool ? thread_pool.getMaxThreads() : 1;
+    const size_t max_threads = use_thread_pool ? params.max_threads : 1;
     if (max_threads > data_variants.aggregates_pools.size())
         for (size_t i = data_variants.aggregates_pools.size(); i < max_threads; ++i)
             data_variants.aggregates_pools.push_back(std::make_shared<Arena>());
@@ -2383,7 +2382,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
 }
 
 
-BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t) const
+BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, bool final) const
 {
     LOG_TRACE(log, "Converting aggregated data to blocks");
 
@@ -3041,7 +3040,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
 }
 
 
-void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads, std::atomic<bool> & is_cancelled)
+void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, std::atomic<bool> & is_cancelled)
 {
     if (bucket_to_blocks.empty())
         return;
@@ -3117,14 +3116,14 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
         };
 
         /// TODO Make a custom threshold.
-        const bool use_thread_pool = max_threads > 1 && total_input_rows > 100000;
+        const bool use_thread_pool = params.max_threads > 1 && total_input_rows > 100000;
 
         if (use_thread_pool)
         {
             ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "AggregatorPool");
             try
             {
-                for (size_t i = 0; i < max_threads; ++i)
+                for (size_t i = 0; i < params.max_threads; ++i)
                 {
                     result.aggregates_pools.push_back(std::make_shared<Arena>());
                     Arena * aggregates_pool = result.aggregates_pools.back().get();

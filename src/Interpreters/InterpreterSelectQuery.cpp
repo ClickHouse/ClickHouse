@@ -2184,7 +2184,6 @@ static void executeMergeAggregatedImpl(
         final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
         settings[Setting::distributed_aggregation_memory_efficient] && is_remote_storage && !has_grouping_sets,
-        settings[Setting::max_threads],
         settings[Setting::aggregation_memory_efficient_merge_threads],
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::max_block_size],

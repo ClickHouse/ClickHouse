@@ -106,7 +106,6 @@ public:
         /// Return empty result when aggregating without keys on empty set.
         bool empty_result_for_aggregation_by_empty_set = false;
         TemporaryDataOnDiskScopePtr tmp_data_scope;
-        /// Settings is used to determine cache size. No threads are created.
         size_t max_threads = 0;
         const size_t min_free_disk_space = 0;
         bool compile_aggregate_expressions = false;
@@ -251,13 +250,13 @@ public:
       *  which can then be combined with other states (for distributed query processing).
       * If final = true, then columns with ready values are created as aggregate columns.
       */
-    BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
+    BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final) const;
 
     ManyAggregatedDataVariants prepareVariantsToMerge(ManyAggregatedDataVariants && data_variants) const;
 
     using BucketToBlocks = std::map<Int32, BlocksList>;
     /// Merge partially aggregated blocks separated to buckets into one data structure.
-    void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads, std::atomic<bool> & is_cancelled);
+    void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, std::atomic<bool> & is_cancelled);
 
     /// Merge several partially aggregated blocks into one.
     /// Precondition: for all blocks block.info.is_overflows flag must be the same.
