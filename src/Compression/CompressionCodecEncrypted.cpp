@@ -6,6 +6,7 @@
 #include <Parsers/IAST.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/OpenSSLHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
 #include "config.h"
@@ -92,14 +93,6 @@ UInt64 methodKeySize(EncryptionMethod Method)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
 }
 
-/// Get human-readable string representation of last error
-std::string lastErrorString()
-{
-    std::array<char, 1024> buffer = {};
-    ERR_error_string_n(ERR_get_error(), buffer.data(), buffer.size());
-    return std::string(buffer.data());
-}
-
 /// Get encryption/decryption algorithms.
 const char * getMethod(EncryptionMethod Method)
 {
@@ -136,49 +129,49 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
     EVP_CIPHER * cipher;
 
     ctx = EVP_CIPHER_CTX_new();
-    if (ctx == nullptr)
-        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+    if (!ctx)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed: {}", getOpenSSLErrors());
 
     try
     {
         cipher = EVP_CIPHER_fetch(nullptr, getMethod(method), nullptr);
-        if (cipher == nullptr)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!cipher)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_fetch failed: {}", getOpenSSLErrors());
 
-        if (int ok = EVP_EncryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr); ok == 0)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!EVP_EncryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_EncryptInit_ex failed: {}", getOpenSSLErrors());
 
-        if (int ok = EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, static_cast<int32_t>(nonce.size()), nullptr); ok == 0)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, static_cast<int32_t>(nonce.size()), nullptr))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_ctrl failed: {}", getOpenSSLErrors());
 
-        if (int ok = EVP_EncryptInit_ex(ctx, nullptr, nullptr,
-                                            reinterpret_cast<const uint8_t*>(key.data()),
-                                            reinterpret_cast<const uint8_t *>(nonce.data())); ok == 0)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!EVP_EncryptInit_ex(ctx, nullptr, nullptr,
+                                reinterpret_cast<const uint8_t*>(key.data()),
+                                reinterpret_cast<const uint8_t *>(nonce.data())))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_EncryptInit_ex failed: {}", getOpenSSLErrors());
 
-        if (int ok = EVP_EncryptUpdate(ctx,
-                                        reinterpret_cast<uint8_t *>(ciphertext_and_tag),
-                                        &out_len,
-                                        reinterpret_cast<const uint8_t *>(plaintext.data()),
-                                        static_cast<int32_t>(plaintext.size())); ok == 0)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!EVP_EncryptUpdate(ctx,
+                               reinterpret_cast<uint8_t *>(ciphertext_and_tag),
+                               &out_len,
+                               reinterpret_cast<const uint8_t *>(plaintext.data()),
+                               static_cast<int32_t>(plaintext.size())))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_EncryptUpdate failed: {}", getOpenSSLErrors());
 
         __msan_unpoison(ciphertext_and_tag, out_len); /// OpenSSL uses assembly which evades msan's analysis
 
         ciphertext_len = out_len;
 
-        if (int ok = EVP_EncryptFinal_ex(ctx,
-                                            reinterpret_cast<uint8_t *>(ciphertext_and_tag) + out_len,
-                                            reinterpret_cast<int32_t *>(&out_len)); ok == 0)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!EVP_EncryptFinal_ex(ctx,
+                                 reinterpret_cast<uint8_t *>(ciphertext_and_tag) + out_len,
+                                 reinterpret_cast<int32_t *>(&out_len)))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_EncryptFinal_ex failed: {}", getOpenSSLErrors());
 
         __msan_unpoison(ciphertext_and_tag, out_len); /// OpenSSL uses assembly which evades msan's analysis
 
         ciphertext_len += out_len;
 
         /// Get the tag
-        if (int ok = EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, tag_size, reinterpret_cast<uint8_t *>(ciphertext_and_tag) + plaintext.size()); ok == 0)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, tag_size, reinterpret_cast<uint8_t *>(ciphertext_and_tag) + plaintext.size()))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_ctrl failed: {}", getOpenSSLErrors());
     }
     catch (...)
     {
@@ -203,47 +196,47 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
     EVP_CIPHER * cipher;
 
     ctx = EVP_CIPHER_CTX_new();
-    if (ctx == nullptr)
-        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+    if (!ctx)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed: {}", getOpenSSLErrors());
 
     try
     {
         cipher = EVP_CIPHER_fetch(nullptr, getMethod(method), nullptr);
-        if (cipher == nullptr)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!cipher)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_fetch failed: {}", getOpenSSLErrors());
 
-        if (int ok = EVP_DecryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr); ok == 0)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!EVP_DecryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DecryptInit_ex failed: {}", getOpenSSLErrors());
 
-        if (int ok = EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, static_cast<int32_t>(nonce.size()), nullptr); ok == 0)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, static_cast<int32_t>(nonce.size()), nullptr))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_ctrl failed: {}", getOpenSSLErrors());
 
-        if (int ok = EVP_DecryptInit_ex(ctx, nullptr, nullptr,
-                                            reinterpret_cast<const uint8_t*>(key.data()),
-                                            reinterpret_cast<const uint8_t *>(nonce.data())); ok == 0)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!EVP_DecryptInit_ex(ctx, nullptr, nullptr,
+                                reinterpret_cast<const uint8_t*>(key.data()),
+                                reinterpret_cast<const uint8_t *>(nonce.data())))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DecryptInit_ex failed: {}", getOpenSSLErrors());
 
-        if (int ok = EVP_CIPHER_CTX_ctrl(ctx,
-                                            EVP_CTRL_GCM_SET_TAG,
-                                            tag_size,
-                                            reinterpret_cast<uint8_t *>(const_cast<char *>(ciphertext.data())) + ciphertext.size() - tag_size); ok == 0)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!EVP_CIPHER_CTX_ctrl(ctx,
+                                 EVP_CTRL_GCM_SET_TAG,
+                                 tag_size,
+                                 reinterpret_cast<uint8_t *>(const_cast<char *>(ciphertext.data())) + ciphertext.size() - tag_size))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_ctrl failed: {}", getOpenSSLErrors());
 
-        if (int ok = EVP_DecryptUpdate(ctx,
-                                        reinterpret_cast<uint8_t *>(plaintext),
-                                        reinterpret_cast<int32_t *>(&out_len),
-                                        reinterpret_cast<const uint8_t *>(ciphertext.data()),
-                                        static_cast<int32_t>(ciphertext.size()) - tag_size); ok == 0)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!EVP_DecryptUpdate(ctx,
+                               reinterpret_cast<uint8_t *>(plaintext),
+                               reinterpret_cast<int32_t *>(&out_len),
+                               reinterpret_cast<const uint8_t *>(ciphertext.data()),
+                               static_cast<int32_t>(ciphertext.size()) - tag_size))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DecryptUpdate failed: {}", getOpenSSLErrors());
 
         __msan_unpoison(plaintext, out_len); /// OpenSSL uses assembly which evades msan's analysis
 
         plaintext_len = out_len;
 
-        if (int ok = EVP_DecryptFinal_ex(ctx,
-                                            reinterpret_cast<uint8_t *>(plaintext) + out_len,
-                                            reinterpret_cast<int32_t *>(&out_len)); ok == 0)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!EVP_DecryptFinal_ex(ctx,
+                                 reinterpret_cast<uint8_t *>(plaintext) + out_len,
+                                 reinterpret_cast<int32_t *>(&out_len)))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DecryptFinal_ex failed: {}", getOpenSSLErrors());
 
         __msan_unpoison(plaintext, out_len); /// OpenSSL uses assembly which evades msan's analysis
     }
