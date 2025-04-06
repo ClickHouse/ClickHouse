@@ -208,7 +208,7 @@ To customize workload the following settings could be used:
 * `max_burst_bytes` - maximum number of bytes that could be processed by the workload without being throttled (for every resource independently).
 * `max_concurrent_threads` - the limit on the number of threads for queries in this workload.
 
-All limit specified through workload settings are independent for every resource. For example workload with `max_bytes_per_second = 10485760` will have 10 MB/s bandwidth limit for every read and write resource independently. If common limit for reading and writing is required, consider using the same resource for READ and WRITE access.
+All limits specified through workload settings are independent for every resource. For example workload with `max_bytes_per_second = 10485760` will have 10 MB/s bandwidth limit for every read and write resource independently. If common limit for reading and writing is required, consider using the same resource for READ and WRITE access.
 
 There is no way to specify different hierarchies of workloads for different resources. But there is a way to specify different workload setting value for a specific resource:
 
