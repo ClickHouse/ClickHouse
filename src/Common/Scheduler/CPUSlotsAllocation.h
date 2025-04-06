@@ -94,7 +94,7 @@ private:
     std::atomic<size_t> last_acquire_index{0};
 
     // Field that require sync with the scheduler thread
-    std::mutex schedule_mutex;
+    mutable std::mutex schedule_mutex;
     std::condition_variable schedule_cv;
     std::exception_ptr exception;
     SlotCount allocated = 0; // Total allocated slots including already released
