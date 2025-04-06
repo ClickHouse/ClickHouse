@@ -4,6 +4,10 @@
 
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ParserDropQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseFactory.h>
@@ -166,6 +170,39 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
         else if (auto mut_command = MutationCommand::parse(command_ast))
         {
+            /// ALTER TABLE ... DELETE WHERE 1 should be executed as truncate
+            if (mut_command->type == MutationCommand::DELETE && isAlwaysTruePredicate(mut_command->predicate))
+            {
+                auto context = getContext();
+                context->checkAccess(AccessType::TRUNCATE, table_id);
+                table->checkTableCanBeDropped(context);
+
+                auto metadata_snapshot = table->getInMemoryMetadataPtr();
+
+                TableExclusiveLockHolder table_excl_lock;
+                /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
+                /// For the rest of tables types exclusive lock is needed
+                if (!std::dynamic_pointer_cast<MergeTreeData>(table))
+                    table_excl_lock = table->lockExclusively(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+                String truncate_query = "TRUNCATE TABLE " + table->getStorageID().getFullTableName()
+                    + (alter.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(alter.cluster));
+
+                ParserDropQuery parser;
+                auto current_query_ptr = parseQuery(
+                    parser,
+                    truncate_query.data(),
+                    truncate_query.data() + truncate_query.size(),
+                    "ALTER query",
+                    0,
+                    DBMS_DEFAULT_MAX_PARSER_DEPTH,
+                    DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+                /// Drop table data, don't touch metadata
+                table->truncate(current_query_ptr, metadata_snapshot, context, table_excl_lock);
+                return {};
+            }
+
             if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
             {
                 /// TODO: add a check for result query size.
