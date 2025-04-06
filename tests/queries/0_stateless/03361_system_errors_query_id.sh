@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-query_id="01545_system_errors-$CLICKHOUSE_DATABASE"
+query_id="03361_system_errors-$CLICKHOUSE_DATABASE"
 
 retry=0
 max_retries=30
