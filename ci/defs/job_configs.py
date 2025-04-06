@@ -913,28 +913,22 @@ class JobConfigs:
     bugfix_validation = Job.Config(
         name=JobNames.BUGFIX_VALIDATE,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        digest_config=Job.CacheDigestConfig(
-            include_paths=["./tests/ci/sqltest.py"],
-        ),
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         requires=["Build (amd_debug)"],
     )
-    # TODO: run by labels Labels.JEPSEN_TEST
     jepsen_keeper = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         requires=["Build (amd_binary)"],
     )
-    # TODO: run by labels Labels.JEPSEN_TEST
     jepsen_server = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         requires=["Build (amd_binary)"],
     )
-    # TODO: run by label Tags.libFuzzer
-    libfuzzer_jjob = Job.Config(
+    libfuzzer_job = Job.Config(
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
