@@ -154,6 +154,8 @@ public:
                 }
             }
         }
+
+        other.clear();
     }
 
     void read(ReadBuffer & in)
@@ -218,6 +220,12 @@ public:
 
     bool isSingleLevel() const { return !two_level_set; }
     bool isTwoLevel() const { return !!two_level_set; }
+
+    void clear() const
+    {
+        single_level_set.clear();
+        two_level_set.reset();
+    }
 
 private:
     SingleLevelSet & asSingleLevel() { return single_level_set; }
