@@ -73,7 +73,7 @@ private:
     void grant();
 
     // Returns the queue for the current request
-    ISchedulerQueue * getCurrentQueue(const std::unique_lock<std::mutex> &);
+    ISchedulerQueue * getCurrentQueue(const std::unique_lock<std::mutex> &) const;
 
     const SlotCount master_slots; // Max number of slots to allocate using master link
     const SlotCount total_slots; // Total number of slots to allocate using both links
