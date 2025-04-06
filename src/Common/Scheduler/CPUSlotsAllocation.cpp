@@ -204,7 +204,7 @@ void CPUSlotsAllocation::grant()
     wait_timer.reset();
 }
 
-ISchedulerQueue * CPUSlotsAllocation::getCurrentQueue(const std::unique_lock<std::mutex> &)
+ISchedulerQueue * CPUSlotsAllocation::getCurrentQueue(const std::unique_lock<std::mutex> &) const
 {
     return allocated < master_slots ? master_link.queue : worker_link.queue;
 }
