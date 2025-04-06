@@ -25,10 +25,12 @@ void StorageSystemWorkloads::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & entities = storage.getAllEntities();
     for (const auto & [name, ast] : entities)
     {
-        auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(ast.get());
-        res_columns[0]->insert(name);
-        res_columns[1]->insert(workload->getWorkloadParent());
-        res_columns[2]->insert(ast->formatForLogging());
+        if (auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(ast.get()))
+        {
+            res_columns[0]->insert(name);
+            res_columns[1]->insert(workload->getWorkloadParent());
+            res_columns[2]->insert(ast->formatForLogging());
+        }
     }
 }
 

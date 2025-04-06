@@ -28,33 +28,35 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & entities = storage.getAllEntities();
     for (const auto & [name, ast] : entities)
     {
-        auto * resource = typeid_cast<ASTCreateResourceQuery *>(ast.get());
-        res_columns[0]->insert(name);
+        if (auto * resource = typeid_cast<ASTCreateResourceQuery *>(ast.get()))
         {
-            Array read_disks;
-            Array write_disks;
-            for (const auto & [mode, disk] : resource->operations)
+            res_columns[0]->insert(name);
             {
-                switch (mode)
+                Array read_disks;
+                Array write_disks;
+                for (const auto & [mode, disk] : resource->operations)
                 {
-                    case DB::ASTCreateResourceQuery::AccessMode::DiskRead:
+                    switch (mode)
                     {
-                        read_disks.emplace_back(disk ? *disk : "ANY");
-                        break;
+                        case DB::ASTCreateResourceQuery::AccessMode::DiskRead:
+                        {
+                            read_disks.emplace_back(disk ? *disk : "ANY");
+                            break;
+                        }
+                        case DB::ASTCreateResourceQuery::AccessMode::DiskWrite:
+                        {
+                            write_disks.emplace_back(disk ? *disk : "ANY");
+                            break;
+                        }
+                        default: // Ignore
                     }
-                    case DB::ASTCreateResourceQuery::AccessMode::DiskWrite:
-                    {
-                        write_disks.emplace_back(disk ? *disk : "ANY");
-                        break;
-                    }
-                    default: // Ignore
                 }
+                res_columns[1]->insert(read_disks);
+                res_columns[2]->insert(write_disks);
             }
-            res_columns[1]->insert(read_disks);
-            res_columns[2]->insert(write_disks);
+            res_columns[3]->insert(DB::ASTCreateResourceQuery::unitToString(resource->unit));
+            res_columns[4]->insert(ast->formatForLogging());
         }
-        res_columns[3]->insert(DB::ASTCreateResourceQuery::unitToString(resource->unit));
-        res_columns[4]->insert(ast->formatForLogging());
     }
 }
 
