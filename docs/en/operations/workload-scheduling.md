@@ -23,7 +23,7 @@ CREATE RESOURCE read_resource_name (WRITE DISK write_disk_name)
 CREATE RESOURCE write_resource_name (READ DISK read_disk_name)
 ```
 
-Resource could be used for any number of disk for READ or WRITE or both for READ and WRITE. There a syntax allowing to use a resource for all the disks:
+Resource could be used for any number of disks for READ or WRITE or both for READ and WRITE. There is a syntax allowing to use a resource for all the disks:
 
 ```sql
 CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
