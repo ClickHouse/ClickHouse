@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <async_insert>1</async_insert>
+            <!--wait for fix https://github.com/ClickHouse/ClickHouse/issues/78130-->
+            <apply_settings_from_server>0</apply_settings_from_server>
+        </default>
+    </profiles>
+</clickhouse>
