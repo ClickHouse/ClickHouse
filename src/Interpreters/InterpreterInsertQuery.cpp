@@ -82,6 +82,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool parallel_replicas_local_plan;
 }
 
 namespace MergeTreeSetting
@@ -520,6 +521,17 @@ std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildP
     return {std::move(presink_chains), std::move(sink_chains)};
 }
 
+QueryPipelineBuilder getSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
+{
+    auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+
+    InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
+    auto & plan = interpreter.getQueryPlan();
+
+    /// find reading steps for remote replicas and remove them
+    ClusterProxy::dropReadFromRemoteInPlan(plan);
+    return  interpreter.buildQueryPipeline();
+}
 
 QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
 {
@@ -580,8 +592,15 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
         if (settings[Setting::allow_experimental_analyzer])
         {
-            InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
-            pipeline = interpreter_select_analyzer.buildQueryPipeline();
+            if (select_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_local_plan])
+            {
+                pipeline = getSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
+            }
+            else
+            {
+                InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
+                pipeline = interpreter_select_analyzer.buildQueryPipeline();
+            }
         }
         else
         {
@@ -746,8 +765,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     return QueryPipelineBuilder::getPipeline(std::move(pipeline));
 }
 
-
-std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(const ASTInsertQuery & query)
+std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
 {
     auto context_ptr = getContext();
     const Settings & settings = context_ptr->getSettingsRef();
@@ -775,6 +793,11 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
         getLogger("InterpreterInsertQuery"),
         "Building distributed insert select pipeline with parallel replicas: table={}",
         query.getTable());
+
+    if (settings[Setting::parallel_replicas_local_plan])
+    {
+        return buildInsertSelectPipeline(query, table);
+    }
 
     return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context_ptr);
 }
@@ -905,7 +928,7 @@ BlockIO InterpreterInsertQuery::execute()
             }
             if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
             {
-                auto pipeline = buildInsertSelectPipelineParallelReplicas(query);
+                auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
                 if (pipeline)
                     res.pipeline = std::move(*pipeline);
             }

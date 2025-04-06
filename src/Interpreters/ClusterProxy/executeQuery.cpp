@@ -489,7 +489,6 @@ bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & con
 
     InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
     auto & plan = interpreter.getQueryPlan();
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", dumpQueryPlan(plan));
 
     auto is_reading_with_parallel_replicas = [](const QueryPlan::Node * node) -> bool
     {
@@ -531,6 +530,55 @@ bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & con
     };
 
     return is_reading_with_parallel_replicas(plan.getRootNode());
+}
+
+void dropReadFromRemoteInPlan(QueryPlan & query_plan)
+{
+    struct Frame
+    {
+        QueryPlan::Node * node = nullptr;
+        QueryPlan::Node * parent = nullptr;
+        size_t next_child = 0;
+    };
+
+    using Stack = std::vector<Frame>;
+
+    Stack stack;
+    stack.push_back(Frame{.node = query_plan.getRootNode()});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        if (frame.node->children.empty())
+        {
+            const auto * step = frame.node->step.get();
+            if (typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
+            {
+                auto & children = frame.parent->children;
+                for (auto it = begin(children); it != end(children); ++it)
+                {
+                    if ((*it)->step.get() == step)
+                    {
+                        children.erase(it);
+                        break;
+                    }
+                }
+                return;
+            }
+        }
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child], .parent = frame.node};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        stack.pop_back();
+    }
 }
 
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(const ASTInsertQuery & query_ast, ContextPtr context)
@@ -687,6 +735,14 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(const ASTIn
             /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
         query_ast.IAST::format(buf, ast_format_settings);
         new_query_str = buf.str();
+    }
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Formatted insert select query: {}", new_query_str);
+    {
+        WriteBufferFromOwnString buf;
+        IAST::FormatSettings ast_format_settings(
+            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+        query_ast.select->IAST::format(buf, ast_format_settings);
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Formatted select query: {}", buf.str());
     }
 
     QueryPipeline pipeline;

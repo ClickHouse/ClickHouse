@@ -66,6 +66,7 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 
 bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & context);
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
+void dropReadFromRemoteInPlan(QueryPlan & query_plan);
 
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
 /// `stream_factory` object encapsulates the logic of creating plans for a different type of query
