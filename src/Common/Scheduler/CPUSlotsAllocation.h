@@ -68,7 +68,7 @@ public:
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
     // For tests only. Returns true iff resource request is enqueued in the scheduler
-    bool isRequesting();
+    bool isRequesting() const;
 
 private:
     friend class CPUSlotRequest; // for schedule() and failed()
@@ -80,7 +80,7 @@ private:
     void grant();
 
     // Returns the queue for the current request
-    ISchedulerQueue * getCurrentQueue(const std::unique_lock<std::mutex> &);
+    ISchedulerQueue * getCurrentQueue(const std::unique_lock<std::mutex> &) const;
 
     const SlotCount master_slots; // Max number of slots to allocate using master link
     const SlotCount total_slots; // Total number of slots to allocate using both links
