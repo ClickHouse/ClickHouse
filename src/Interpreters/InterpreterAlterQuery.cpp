@@ -1,9 +1,11 @@
+#include <variant>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
+#include "Storages/TableLockHolder.h"
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDropQuery.h>
@@ -141,7 +143,23 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
-    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    bool should_take_exclusive_lock = false;
+    for (const auto & child : alter.command_list->children)
+    {
+        auto * command_ast = child->as<ASTAlterCommand>();
+        if (auto mut_command = MutationCommand::parse(command_ast); mut_command->type == MutationCommand::DELETE && isAlwaysTruePredicate(mut_command->predicate))
+        {
+            should_take_exclusive_lock = true;
+            break;
+        }
+    }
+
+    std::variant<TableLockHolder, TableExclusiveLockHolder> table_lock;
+    if (!should_take_exclusive_lock)
+        table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+    else
+        table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     if (modify_query)
     {
@@ -179,12 +197,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
                 auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
-                TableExclusiveLockHolder table_excl_lock;
-                /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
-                /// For the rest of tables types exclusive lock is needed
-                if (!std::dynamic_pointer_cast<MergeTreeData>(table))
-                    table_excl_lock = table->lockExclusively(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-
                 String truncate_query = "TRUNCATE TABLE " + table->getStorageID().getFullTableName()
                     + (alter.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(alter.cluster));
 
@@ -199,8 +211,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                     DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
                 /// Drop table data, don't touch metadata
-                table->truncate(current_query_ptr, metadata_snapshot, context, table_excl_lock);
-                return {};
+                table->truncate(current_query_ptr, metadata_snapshot, context, std::get<TableExclusiveLockHolder>(table_lock));
+                continue;
             }
 
             if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
