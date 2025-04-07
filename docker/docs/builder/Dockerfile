@@ -10,6 +10,7 @@ FROM node:20-bookworm-slim
 
 RUN apt-get update && \
     apt install -y --no-install-recommends git openssh-server bash ca-certificates curl python3 python3-venv rsync && \
+    build-essential g++ make && \
     rm -rf /var/lib/apt/lists/*:
 
 # At this point we want to really update /opt/clickhouse-docs directory
