@@ -512,4 +512,41 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
     visitor.visit(query_tree_to_modify);
 }
 
+class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>;
+    using Base::Base;
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        if (auto * function_node = node->as<FunctionNode>(); function_node && function_node->getFunctionName() == "in")
+        {
+            if (!function_node->getArguments().getNodes()[1]->as<QueryNode>())
+                return;
+            auto result_function = std::make_shared<FunctionNode>("globalIn");
+            result_function->getArguments().getNodes() = std::move(function_node->getArguments().getNodes());
+            resolveOrdinaryFunctionNodeByName(*result_function, result_function->getFunctionName(), getContext());
+            node = result_function;
+        }
+    }
+
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr &)
+    {
+        if (auto * function_node = parent->as<FunctionNode>(); function_node && function_node->getFunctionName() == "globalIn")
+            return false;
+
+        return true;
+    }
+};
+
+void rewriteInToGlobalIn(QueryTreeNodePtr query_tree_to_modify, ContextPtr context)
+{
+    if (auto * query_node = query_tree_to_modify->as<QueryNode>(); query_node && query_node->hasWhere())
+    {
+        RewriteInToGlobalInVisitor visitor(context);
+        visitor.visit(query_node->getWhere());
+    }
+}
+
 }
