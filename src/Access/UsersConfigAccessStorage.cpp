@@ -696,18 +696,18 @@ namespace
                     profile_element.min_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
                     profile_element.max_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
-                /// When the xml config is parsed, the first constraint_type is parsed as `disallow` and the subsequent ones are parsed as
-                /// disallow[1], disallow[2] and so on. So, both `disallow` and `disallow[` should be considered as valid constraint types.
+                /// When the xml config is parsed, the first constraint_type is parsed as `disallowed` and the subsequent ones are parsed as
+                /// disallowed[1], disallowed[2] and so on. So, both `disallowed` and `disallowed[` should be considered as valid constraint types.
                 /// Example:
                 ///   <constraints>
                 ///     <max_execution_time>
                 ///         <max>50</max>
-                ///         <disallow>3</disallow>
-                ///         <disallow>4</disallow>
-                ///         <disallow>5</disallow>
+                ///         <disallowed>3</disallowed>
+                ///         <disallowed>4</disallowed>
+                ///         <disallowed>5</disallowed>
                 ///     </max_execution_time>
                 /// </constraints>
-                else if (constraint_type == "disallow" || constraint_type.starts_with("disallow["))
+                else if (constraint_type == "disallowed" || constraint_type.starts_with("disallowed["))
                     profile_element.disallowed_values.push_back(settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type)));
                 else if (constraint_type == "readonly" || constraint_type == "const")
                 {
