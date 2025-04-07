@@ -146,7 +146,7 @@ NameSet getVirtualNamesForFileLikeStorage()
 
 static std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path)
 {
-    std::string pattern = "([^/]+)=([^/]+)/";
+    std::string pattern = "([^/]+)=([^/]*)/";
     re2::StringPiece input_piece(path);
 
     std::unordered_map<std::string, std::string> key_values;
