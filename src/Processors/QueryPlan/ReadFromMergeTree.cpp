@@ -1936,7 +1936,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     {
         result.index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::PrimaryKeyExpand,
-            .description = "PrimaryKeyExpandForFinal",
+            .description = "Selects all granules that intersect by PK values with the previous skip indexes selection",
             .num_parts_after = result.parts_with_ranges.size(),
             .num_granules_after = sum_marks});
     }
