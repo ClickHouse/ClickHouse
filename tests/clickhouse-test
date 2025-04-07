@@ -1087,7 +1087,12 @@ class SettingsRandomizer:
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         "use_query_condition_cache": lambda: random.randint(0, 1),
+        "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
+    }
+
+    dependent_settings = {
+        "use_skip_indexes_if_final_exact_mode": "use_skip_indexes_if_final",
     }
 
     @staticmethod
@@ -1102,6 +1107,8 @@ class SettingsRandomizer:
                 random_settings[setting] = 0
             else:
                 random_settings[setting] = generator()
+        for setting, other_setting in SettingsRandomizer.dependent_settings.items():
+            random_settings[setting] = random_settings[other_setting]
         return random_settings
 
 
