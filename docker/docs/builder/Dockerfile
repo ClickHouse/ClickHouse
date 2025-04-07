@@ -10,7 +10,7 @@ FROM ubuntu:22.04
 
 RUN apt-get update && \
     apt install -y --no-install-recommends git openssh-server bash ca-certificates curl python3 python3-venv rsync \
-    rm -rf /var/lib/apt/lists/*:
+    && rm -rf /var/lib/apt/lists/*:
 
 # At this point we want to really update /opt/clickhouse-docs directory
 # So we reset the cache
