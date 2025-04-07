@@ -30,7 +30,7 @@ if __name__ == "__main__":
         workdir="/opt/clickhouse-docs",
     )
 
-    testname = "Markdown lint"
+    testname = "Run markdown linter"
     results.append(
         Result.from_commands_run(
             name=testname,
@@ -39,25 +39,21 @@ if __name__ == "__main__":
         )
     )
 
+    testname = "Generate changelog"
     Result.from_commands_run(
         name=testname,
         command=[f"yarn generate-changelog"],
         workdir="/opt/clickhouse-docs",
     )
 
+    testname = "Generate documentation from source"
     Result.from_commands_run(
         name=testname,
         command=[f"yarn autogenerate-settings"],
         workdir="/opt/clickhouse-docs",
     )
 
-    Result.from_commands_run(
-        name=testname,
-        command=[f"yarn autogenerate-table-of-contents"],
-        workdir="/opt/clickhouse-docs",
-    )
-
-    testname = "generate table of contents pages"
+    testname = "Generate table of contents pages"
     results.append(
         Result.from_commands_run(
             name=testname,
