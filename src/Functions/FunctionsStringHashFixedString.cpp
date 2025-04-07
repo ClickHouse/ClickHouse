@@ -48,6 +48,8 @@ namespace ErrorCodes
 #if USE_SSL
 using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
 
+/// Initializes a context with the right provider in the constructor.
+/// Apply() then only copies it (once per new thread), this is faster than re-creating the context every time.
 template <typename ProviderImpl>
 class OpenSSLProvider
 {
@@ -55,12 +57,13 @@ public:
     static constexpr auto name = ProviderImpl::name;
     static constexpr auto length = ProviderImpl::length;
 
-    OpenSSLProvider() : ctx_template(EVP_MD_CTX_new(), &EVP_MD_CTX_free)
+    OpenSSLProvider()
+        : ctx_template(EVP_MD_CTX_new(), &EVP_MD_CTX_free)
     {
         if (!ctx_template)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
 
-        if (EVP_DigestInit_ex(ctx_template.get(), ProviderImpl::provider(), nullptr) != 1)
+        if (!EVP_DigestInit_ex(ctx_template.get(), ProviderImpl::provider(), nullptr))
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
     }
 
@@ -70,13 +73,14 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No context provided");
 
         thread_local EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
-        if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
+
+        if (!EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()))
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
 
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+        if (!EVP_DigestUpdate(ctx.get(), begin, size))
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
 
-        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
+        if (!EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr))
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
     }
 
