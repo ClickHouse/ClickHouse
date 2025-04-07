@@ -757,14 +757,20 @@ StoredObjects getStoredObjectsSafely(IMetadataStorage & metadata_storage, const 
     }
     catch (const Exception & e)
     {
-        if (!(e.code() == ErrorCodes::UNKNOWN_FORMAT
+        if (e.code() == ErrorCodes::UNKNOWN_FORMAT
             || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
             || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA
             || e.code() == ErrorCodes::CANNOT_OPEN_FILE
-            || e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED))
+            || e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED)
         {
-            throw;
+            LOG_DEBUG(
+                getLogger("DiskObjectStorageTransaction"),
+                "Can't read metadata because of an exception. Skip it. Path: {}, exception: {}",
+                metadata_storage.getPath() + path,
+                e.message());
         }
+        else
+            throw;
     }
     return {};
 }
