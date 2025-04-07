@@ -823,7 +823,7 @@ void StatementGenerator::generateWindowDefinition(RandomGenerator & rg, WindowDe
     }
     if (!this->allow_not_deterministic || (this->width < this->fc.max_width && rg.nextSmallNumber() < 4))
     {
-        generateOrderBy(rg, 0, true, false, wdef->mutable_order_by());
+        generateOrderBy(rg, 0, true, true, wdef->mutable_order_by());
     }
     if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
     {
@@ -911,7 +911,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         this->generateExpression(rg, inter->mutable_expr());
         this->depth--;
     }
-    else if (noption < 556)
+    else if (this->allow_not_deterministic && noption < 556)
     {
         String ret;
         const uint32_t nopt2 = rg.nextSmallNumber();
@@ -1128,13 +1128,12 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     if (eca && this->allow_in_expression_alias && !this->inside_projection && rg.nextSmallNumber() < 4)
     {
         SQLRelation rel("");
-        const uint32_t cname = this->levels[this->current_level].aliases_counter++;
-        const String cname_str = "c" + std::to_string(cname);
+        const String ncname = this->getNextAlias();
 
-        rel.cols.emplace_back(SQLRelationCol("", {cname_str}));
+        rel.cols.emplace_back(SQLRelationCol("", {ncname}));
         this->levels[this->current_level].rels.emplace_back(rel);
-        eca->mutable_col_alias()->set_column(cname_str);
-        this->levels[this->current_level].projections.emplace_back(cname);
+        eca->mutable_col_alias()->set_column(ncname);
+        this->levels[this->current_level].projections.emplace_back(ncname);
     }
 }
 
