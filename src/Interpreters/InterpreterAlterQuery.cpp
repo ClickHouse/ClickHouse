@@ -234,6 +234,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
         /// Drop table data, don't touch metadata
         table->truncate(current_query_ptr, metadata_snapshot, context, table_excl_lock);
+        return {};
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
