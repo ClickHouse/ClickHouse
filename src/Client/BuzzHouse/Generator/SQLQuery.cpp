@@ -277,7 +277,7 @@ void StatementGenerator::setTableRemote(
         else
         {
             chassert(table_engine);
-            rfunc->set_address(fc.getConnectionHostAndPort());
+            rfunc->set_address(fc.getConnectionHostAndPort(false));
         }
         if (use_cluster && cluster.has_value())
         {
@@ -411,9 +411,10 @@ bool StatementGenerator::joinedTableOrFunction(
         const uint32_t pspace = remote_table + remote_view + remote_dictionary + recurse;
         std::uniform_int_distribution<uint32_t> ndist(1, pspace);
         const uint32_t nopt2 = ndist(rg.generator);
+        const RemoteFunc_RName fname = rg.nextBool() ? RemoteFunc::remote : RemoteFunc::remoteSecure;
 
-        rfunc->set_rname(rg.nextBool() ? RemoteFunc::remote : RemoteFunc::remoteSecure);
-        rfunc->set_address(fc.getConnectionHostAndPort());
+        rfunc->set_rname(fname);
+        rfunc->set_address(fc.getConnectionHostAndPort(fname == RemoteFunc::remoteSecure));
         if (remote_table && nopt2 < (remote_table + 1))
         {
             t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
