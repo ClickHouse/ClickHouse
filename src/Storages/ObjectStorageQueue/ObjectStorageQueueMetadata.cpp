@@ -581,6 +581,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
 {
     const auto registry_path = zookeeper_path / "registry";
     const auto self = Info::create(storage_id);
+    const auto drop_lock_path = zookeeper_path / "drop";
 
     Coordination::Error code;
     for (size_t i = 0; i < 1000; ++i)
@@ -588,6 +589,10 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
         Coordination::Stat stat;
         std::string registry_str;
         auto zk_client = getZooKeeper();
+        bool supports_remove_recursive = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
+
+        Coordination::Requests requests;
+        Coordination::Responses responses;
 
         if (zk_client->tryGet(registry_path, registry_str, &stat))
         {
@@ -608,14 +613,20 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
             }
 
             auto new_registry_str = registry_str + "," + self.serialize();
-            code = zk_client->trySet(registry_path, new_registry_str, stat.version);
+            requests.push_back(zkutil::makeSetRequest(registry_path, new_registry_str, stat.version));
         }
         else
-            code = zk_client->tryCreate(
+        {
+            requests.push_back(zkutil::makeCreateRequest(
                 registry_path,
                 self.serialize(),
-                zkutil::CreateMode::Persistent);
+                zkutil::CreateMode::Persistent));
 
+            if (!supports_remove_recursive)
+                zkutil::addCheckNotExistsRequest(requests, *zk_client, drop_lock_path);
+        }
+
+        code = zk_client->tryMulti(requests, responses);
         if (code == Coordination::Error::ZOK)
         {
             LOG_TRACE(log, "Added {} to registry", self.table_id);
@@ -690,20 +701,27 @@ size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id
 size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered)
 {
     const auto registry_path = zookeeper_path / "registry";
+    const auto drop_lock_path = zookeeper_path / "drop";
     const auto self = Info::create(storage_id);
 
     Coordination::Error code = Coordination::Error::ZOK;
+
     for (size_t i = 0; i < 1000; ++i)
     {
         Coordination::Requests requests;
         Coordination::Responses responses;
         size_t count = 0;
+
+        bool supports_remove_recursive = true;
+        zkutil::ZooKeeperPtr zk_client;
+
         try
         {
+            zk_client = getZooKeeper();
+            supports_remove_recursive = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
+
             Coordination::Stat stat;
             std::string registry_str;
-            auto zk_client = getZooKeeper();
-
             bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
             if (!node_exists)
             {
@@ -738,9 +756,17 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
 
             if (remove_metadata_if_no_registered && count == 0)
             {
-                requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
-                requests.push_back(zkutil::makeRemoveRecursiveRequest(zookeeper_path, -1));
-
+                LOG_TRACE(log, "Removing all metadata in keeper by path: {}", zookeeper_path.string());
+                if (supports_remove_recursive)
+                {
+                    requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
+                    requests.push_back(zkutil::makeRemoveRecursiveRequest(zookeeper_path, -1));
+                }
+                else
+                {
+                    requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
+                    requests.push_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
+                }
                 code = zk_client->tryMulti(requests, responses);
             }
             else
@@ -770,6 +796,36 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
         if (code == Coordination::Error::ZOK)
         {
             LOG_TRACE(log, "Table '{}' has been removed from the registry", self.table_id);
+
+            if (!supports_remove_recursive && remove_metadata_if_no_registered && count == 0)
+            {
+                /// Take a drop lock and do recursive remove as a separate request.
+                /// In case of unsupported "remove_recursive" feature, it will
+                /// do getChildren and remove them one by one.
+                auto drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zk_client);
+                try
+                {
+                    zk_client->removeRecursive(zookeeper_path);
+                }
+                catch (const zkutil::KeeperMultiException & e)
+                {
+                    if (Coordination::isHardwareError(e.code))
+                    {
+                        LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                        continue;
+                    }
+                    throw;
+                }
+                catch (const zkutil::KeeperException & e)
+                {
+                    if (Coordination::isHardwareError(e.code))
+                    {
+                        LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                        continue;
+                    }
+                    throw;
+                }
+            }
             return count;
         }
 

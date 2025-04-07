@@ -170,6 +170,8 @@ def test_replicated(started_cluster):
         time.sleep(1)
     assert expected_rows == get_count()
 
+    node1.query(f"DROP TABLE {db_name}.{table_name} SYNC")
+
 
 def test_bad_settings(started_cluster):
     node = started_cluster.instances["node_cloud_mode"]
