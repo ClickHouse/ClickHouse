@@ -749,6 +749,26 @@ String revisionToString(UInt64 revision)
     return std::bitset<64>(revision).to_string();
 }
 
+StoredObjects getStoredObjectsSafely(IMetadataStorage & metadata_storage, const String & path)
+{
+    try
+    {
+        return metadata_storage.getStorageObjects(path);
+    }
+    catch (const Exception & e)
+    {
+        if (!(e.code() == ErrorCodes::UNKNOWN_FORMAT
+            || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+            || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA
+            || e.code() == ErrorCodes::CANNOT_OPEN_FILE
+            || e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED))
+        {
+            throw;
+        }
+    }
+    return {};
+}
+
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile( /// NOLINT
@@ -790,7 +810,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                 /// Otherwise we will produce lost blobs which nobody points to
                 /// WriteOnce storages are not affected by the issue
                 if (!tx->object_storage.isPlain() && tx->metadata_storage.existsFile(path))
-                    tx->object_storage.removeObjectsIfExist(tx->metadata_storage.getStorageObjects(path));
+                    tx->object_storage.removeObjectsIfExist(getStoredObjectsSafely(tx->metadata_storage, path));
 
                 tx->metadata_transaction->createMetadataFile(path, key_, count);
             }
@@ -823,9 +843,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                     /// Otherwise we will produce lost blobs which nobody points to
                     /// WriteOnce storages are not affected by the issue
                     if (!object_storage_tx->object_storage.isPlain() && object_storage_tx->metadata_storage.existsFile(path))
-                    {
-                        object_storage_tx->object_storage.removeObjectsIfExist(object_storage_tx->metadata_storage.getStorageObjects(path));
-                    }
+                        object_storage_tx->object_storage.removeObjectsIfExist(getStoredObjectsSafely(object_storage_tx->metadata_storage, path));
 
                     tx->createMetadataFile(path, key_, count);
                 }
