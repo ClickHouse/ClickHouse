@@ -17,6 +17,7 @@
 #include <Storages/MutationCommands.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
+#include <Parsers/formatAST.h>
 #include <base/sort.h>
 #include <cassert>
 #include <ranges>
@@ -31,10 +32,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 replicated_max_mutations_in_one_entry;
-    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
-    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_fetches_ms;
-    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_merges_ms;
-    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_tasks_ms;
 }
 
 namespace ErrorCodes
@@ -992,18 +989,14 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
     {
         LOG_INFO(log, "Loading {} mutation entries: {} - {}", toString(entries_to_load.size()), entries_to_load.front(), entries_to_load.back());
 
-        std::vector<String> entry_paths;
-        entry_paths.reserve(entries_to_load.size());
-
+        std::vector<std::future<Coordination::GetResponse>> futures;
         for (const String & entry : entries_to_load)
-            entry_paths.emplace_back(fs::path(zookeeper_path) / "mutations" / entry);
-
-        auto entries = zookeeper->tryGet(entry_paths);
+            futures.emplace_back(zookeeper->asyncTryGet(fs::path(zookeeper_path) / "mutations" / entry));
 
         std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
         for (size_t i = 0; i < entries_to_load.size(); ++i)
         {
-            const auto & maybe_response = entries[i];
+            auto maybe_response = futures[i].get();
             if (maybe_response.error != Coordination::Error::ZOK)
             {
                 assert(maybe_response.error == Coordination::Error::ZNONODE);
@@ -1391,36 +1384,6 @@ bool ReplicatedMergeTreeQueue::addFuturePartIfNotCoveredByThem(const String & pa
 }
 
 
-UInt64 ReplicatedMergeTreeQueue::getPostponeTimeMsForEntry(const LogEntry & entry, const MergeTreeData & data) const
-{
-    UInt64 postpone_time_upper_bound_ms = 0;
-    const auto data_settings = data.getSettings();
-    switch (entry.type)
-    {
-    case LogEntry::GET_PART:
-        postpone_time_upper_bound_ms = (*data_settings)[MergeTreeSetting::max_postpone_time_for_failed_replicated_fetches_ms];
-        break;
-    case LogEntry::MUTATE_PART:
-        postpone_time_upper_bound_ms = (*data_settings)[MergeTreeSetting::max_postpone_time_for_failed_mutations_ms];
-        break;
-    case LogEntry::MERGE_PARTS:
-        postpone_time_upper_bound_ms = (*data_settings)[MergeTreeSetting::max_postpone_time_for_failed_replicated_merges_ms];
-        break;
-    default:
-        postpone_time_upper_bound_ms = (*data_settings)[MergeTreeSetting::max_postpone_time_for_failed_replicated_tasks_ms];
-        break;
-    }
-    if (!postpone_time_upper_bound_ms)
-        return postpone_time_upper_bound_ms;
-
-    auto current_time_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000ull;
-    UInt64 postpone_time_ms = 1ull << std::min(entry.num_tries, static_cast<size_t>(std::numeric_limits<UInt64>::digits - 1));
-    postpone_time_ms = std::min(postpone_time_ms, postpone_time_upper_bound_ms);
-
-    auto next_min_allowed_time_ms = entry.last_exception_time_ms + postpone_time_ms;
-    return ((current_time_ms >= next_min_allowed_time_ms) ? 0ull : next_min_allowed_time_ms - current_time_ms);
-}
-
 bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     const LogEntry & entry,
     String & out_postpone_reason,
@@ -1428,16 +1391,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeData & data,
     std::unique_lock<std::mutex> & state_lock) const
 {
-
-    if (auto postpone_time = getPostponeTimeMsForEntry(entry, data))
-    {
-        constexpr auto fmt_string = "Not executing log entry {} of type {} "
-                           "because recently it has failed. According to exponential backoff policy, put aside this log entry for {} ms.";
-
-        LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), postpone_time);
-        return false;
-    }
-
     /// If our entry produce part which is already covered by
     /// some other entry which is currently executing, then we can postpone this entry.
     for (const String & new_part_name : entry.getVirtualPartNames(format_version))
@@ -1513,6 +1466,15 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     sum_parts_size_in_bytes += part->getExistingBytesOnDisk();
                 else
                     sum_parts_size_in_bytes += part->getBytesOnDisk();
+
+                if (entry.type == LogEntry::MUTATE_PART && !storage.mutation_backoff_policy.partCanBeMutated(part->name))
+                {
+                        constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} "
+                           "because recently it has failed. According to exponential backoff policy, put aside this log entry.";
+
+                        LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
+                        return false;
+                }
             }
         }
 
@@ -1587,7 +1549,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 {
                     constexpr auto fmt_string = "Not executing log entry {} for part {} because {} merges with TTL already executing, maximum {}.";
                     LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name, total_merges_with_ttl,
-                              (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool].value);
+                              (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool]);
                     return false;
                 }
             }
@@ -1879,7 +1841,8 @@ bool ReplicatedMergeTreeQueue::processEntry(
     if (saved_exception)
     {
         std::lock_guard lock(state_mutex);
-        entry->updateLastExeption(saved_exception);
+        entry->exception = saved_exception;
+        entry->last_exception_time = time(nullptr);
         return false;
     }
 
@@ -2412,8 +2375,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
         for (const MutationCommand & command : entry.commands)
         {
             WriteBufferFromOwnString buf;
-            IAST::FormatSettings format_settings(/*one_line=*/true, /*hilite=*/false);
-            command.ast->format(buf, format_settings);
+            formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.znode_name,

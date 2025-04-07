@@ -139,8 +139,7 @@ public:
                 /* cluster_secret_= */ "",
                 /* client_name_= */ std::string(DEFAULT_CLIENT_NAME),
                 Protocol::Compression::Enable,
-                secure,
-                /* bind_host_= */ ""));
+                secure));
 
             if (!round_robin || comparison_info_per_interval.empty())
             {
@@ -654,7 +653,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
-            std::cout << "\nSee also: https://clickhouse.com/docs/operations/utilities/clickhouse-benchmark/\n";
+            std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/\n";
             return 0;
         }
 

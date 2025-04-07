@@ -7,7 +7,7 @@ CXXFLAGS = "@RUST_CXXFLAGS@"
 [build]
 rustflags = @RUSTFLAGS@
 rustdocflags = @RUSTFLAGS@
-@RUSTWRAPPER@
+@RUSTCWRAPPER@
 
 [unstable]
 @RUST_CARGO_BUILD_STD@

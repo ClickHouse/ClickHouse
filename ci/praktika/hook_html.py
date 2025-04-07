@@ -1,6 +1,5 @@
 import dataclasses
 import json
-import os
 from pathlib import Path
 from typing import List
 
@@ -12,16 +11,16 @@ from .info import Info
 from .parser import WorkflowConfigParser
 from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
-from .s3 import S3, StorageUsage
+from .s3 import S3
 from .settings import Settings
 from .utils import Utils
 
 
 @dataclasses.dataclass
 class GitCommit:
-    sha: str
-    message: str = ""
     # date: str
+    # message: str
+    sha: str
 
     @staticmethod
     def from_json(file) -> List["GitCommit"]:
@@ -32,7 +31,7 @@ class GitCommit:
                 json_data = json.load(f)
             commits = [
                 GitCommit(
-                    message=commit["message"],
+                    # message=commit["messageHeadline"],
                     sha=commit["sha"],
                     # date=commit["committedDate"],
                 )
@@ -59,17 +58,7 @@ class GitCommit:
                     f"INFO: Sha already present in commits data [{sha}] - skip data update"
                 )
                 return
-        # TODO: fetch and store commit message in RunConfig (to be available from every job) and use it here
-        if os.environ.get("DISABLE_CI_MERGE_COMMIT", "0") == "1":
-            commit_message = Shell.get_output(
-                f"git log -1 --pretty=%s {sha}", verbose=True
-            )
-        else:
-            commit_message = Shell.get_output(
-                f"gh api repos/{env.REPOSITORY}/commits/{sha} --jq '.commit.message'",
-                verbose=True,
-            )
-        commits.append(GitCommit(sha=sha, message=commit_message))
+        commits.append(GitCommit(sha=sha))
         commits = commits[
             -20:
         ]  # limit maximum number of commits from the past to show in the report
@@ -147,30 +136,31 @@ class HtmlRunnerHooks:
         summary_result.links.append(env.RUN_URL)
         summary_result.start_time = Utils.timestamp()
         info = Info()
-        summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value(
-            "git_branch", info.git_branch
-        ).dump()
+        summary_result.set_info(
+            f"{info.pr_title}  |  {info.git_branch}  |  {info.git_sha}"
+            if info.pr_number
+            else f"{info.git_branch}  |  {Shell.get_output('git log -1 --pretty=%s | head -n1')}  |  {info.git_sha}"
+        )
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
-        report_url_latest_sha = Info().get_report_url(latest=True)
-        report_url_current_sha = Info().get_report_url(latest=False)
-        print(f"CI Status page url [{report_url_current_sha}]")
+        page_url = Info().get_report_url(latest=bool(info.pr_number))
+        print(f"CI Status page url [{page_url}]")
 
         if Settings.USE_CUSTOM_GH_AUTH:
-            from .gh_auth import GHAuth
+            from praktika.gh_auth_deprecated import GHAuth
 
             pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
             app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-            GHAuth.auth(app_id=app_id, app_key=pem)
+            GHAuth.auth(app_key=pem, app_id=app_id)
 
         res2 = not bool(env.PR_NUMBER) or GH.post_pr_comment(
-            comment_body=f"Workflow [[{_workflow.name}]({report_url_latest_sha})], commit [{_Environment.get().SHA[:8]}]",
+            comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
             or_update_comment_with_substring=f"Workflow [[{_workflow.name}]",
         )
         res1 = GH.post_commit_status(
             name=_workflow.name,
             status=Result.Status.PENDING,
             description="",
-            url=report_url_current_sha,
+            url=page_url,
         )
         if not (res1 or res2):
             Utils.raise_with_error(
@@ -225,14 +215,6 @@ class HtmlRunnerHooks:
     def post_run(cls, _workflow, _job, info_errors):
         result = Result.from_fs(_job.name)
         _ResultS3.upload_result_files_to_s3(result).dump()
-        storage_usage = None
-        if StorageUsage.exist():
-            StorageUsage.add_uploaded(
-                result.file_name()
-            )  # add Result file beforehand to upload actual storage usage data
-            print("Storage usage data found - add to Result")
-            storage_usage = StorageUsage.from_fs()
-            result.ext["storage_usage"] = storage_usage
         _ResultS3.copy_result_to_s3(result)
 
         env = _Environment.get()
@@ -290,21 +272,20 @@ class HtmlRunnerHooks:
             new_info=new_result_info,
             new_sub_results=new_sub_results,
             workflow_name=_workflow.name,
-            storage_usage=storage_usage,
         )
 
         if updated_status:
             if Settings.USE_CUSTOM_GH_AUTH:
-                from .gh_auth import GHAuth
+                from praktika.gh_auth_deprecated import GHAuth
 
                 pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
                 app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-                GHAuth.auth(app_id=app_id, app_key=pem)
+                GHAuth.auth(app_key=pem, app_id=app_id)
 
             print(f"Update GH commit status [{result.name}]: [{updated_status}]")
             GH.post_commit_status(
                 name=_workflow.name,
                 status=GH.convert_to_gh_status(updated_status),
                 description="",
-                url=Info().get_report_url(latest=False),
+                url=Info().get_report_url(latest=bool(Info().pr_number)),
             )

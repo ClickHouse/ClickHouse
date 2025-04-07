@@ -32,7 +32,7 @@ constexpr Int128 exp10_i128(int x)
 }
 
 extern const Int256 exp10_i256_table[];
-inline Int256 exp10_i256(int x)
+constexpr Int256 exp10_i256(int x)
 {
     if (x < 0)
         return 0;
@@ -47,7 +47,7 @@ inline Int256 exp10_i256(int x)
 
 /// intExp10 returning the type T.
 template <typename T>
-T intExp10OfSize(int x)
+constexpr T intExp10OfSize(int x)
 {
     if constexpr (sizeof(T) <= 4)
         return static_cast<T>(common::exp10_i32(x));

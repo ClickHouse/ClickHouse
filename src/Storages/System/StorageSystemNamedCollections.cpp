@@ -1,6 +1,5 @@
 #include "StorageSystemNamedCollections.h"
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>

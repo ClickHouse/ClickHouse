@@ -17,8 +17,6 @@
 #include <Common/noexcept_scope.h>
 #include <Common/setThreadName.h>
 
-#include <fmt/ranges.h>
-
 
 namespace ProfileEvents
 {

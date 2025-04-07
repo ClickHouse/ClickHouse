@@ -2,9 +2,9 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/JoinNode.h>
 
 #include <Planner/PlannerContext.h>
-
 
 namespace DB
 {
@@ -65,3 +65,4 @@ ColumnIdentifierSet collectTopLevelColumnIdentifiers(const QueryTreeNodePtr & no
 }
 
 }
+

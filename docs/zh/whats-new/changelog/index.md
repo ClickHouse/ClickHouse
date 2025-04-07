@@ -6,4 +6,4 @@ sidebar_label:  Changelog
 
 # Changelog
 
-You can view the latest Changelog at [/whats-new/changelog/](/whats-new/changelog/index.md)
+You can view the latest Changelog at [/whats-new/changelog/](/docs/whats-new/changelog/index.md)

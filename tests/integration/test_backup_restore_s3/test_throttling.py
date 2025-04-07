@@ -2,7 +2,6 @@ import pytest
 from minio.deleteobjects import DeleteObject
 
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import minio_secret_key
 from helpers.s3_tools import list_s3_objects
 from helpers.utility import random_string
 
@@ -77,7 +76,7 @@ def test_backup_scheduler_settings(
 
     result = node.query(
         f"""
-            BACKUP TABLE {table_name} TO S3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/data', 'minio', '{minio_secret_key}')
+            BACKUP TABLE {table_name} TO S3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/data', 'minio', 'minio123')
             SETTINGS s3_storage_class='STANDARD', allow_s3_native_copy={allow_s3_native_copy} SETTINGS workload='backup';
         """,
         query_id=query_id,

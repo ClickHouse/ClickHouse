@@ -45,8 +45,8 @@
 namespace DB
 {
 
-/// Number of streams is not number parts, but number or parts*files, hence 100.
-const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 100;
+/// Number of streams is not number parts, but number or parts*files, hence 1000.
+const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 1000;
 
 struct AlterCommand;
 class AlterCommands;
@@ -546,6 +546,7 @@ public:
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
         const DataPartStates & affordable_states, MergeTreeData::DataPartStateVector * out_states) const;
 
+
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
@@ -684,7 +685,6 @@ public:
 
     DataPartsVector grabActivePartsToRemoveForDropRange(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
-
     /// This wrapper is required to restrict access to parts in Deleting state
     class PartToRemoveFromZooKeeper
     {
@@ -1202,8 +1202,8 @@ protected:
 
 private:
     /// Columns and secondary indices sizes can be calculated lazily.
-    mutable std::mutex columns_and_secondary_indices_sizes_mutex;
-    mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
+    mutable std::mutex columns_and_secondary_inices_sizes_mutex;
+    mutable bool are_columns_and_secondary_inices_sizes_calculated = false;
     /// Current column sizes in compressed and uncompressed form.
     mutable ColumnSizeByName column_sizes;
     /// Current secondary index sizes in compressed and uncompressed form.
@@ -1213,7 +1213,7 @@ protected:
     void resetColumnSizes()
     {
         column_sizes.clear();
-        are_columns_and_secondary_indices_sizes_calculated = false;
+        are_columns_and_secondary_inices_sizes_calculated = false;
     }
 
     /// Engine-specific methods
@@ -1461,6 +1461,93 @@ protected:
         const MergeListEntry * merge_entry,
         std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters);
 
+    class PartMutationBackoffPolicy
+    {
+        struct PartMutationInfo
+        {
+            size_t retry_count;
+            size_t latest_fail_time_us;
+            size_t max_postpone_time_ms;
+            size_t max_postpone_power;
+
+            explicit PartMutationInfo(size_t max_postpone_time_ms_)
+                            : retry_count(0ull)
+                            , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
+                            , max_postpone_time_ms(max_postpone_time_ms_)
+                            , max_postpone_power((max_postpone_time_ms_) ? (static_cast<size_t>(std::log2(max_postpone_time_ms_))) : (0ull))
+            {}
+
+
+            size_t getNextMinExecutionTimeUsResolution() const
+            {
+                if (max_postpone_time_ms == 0)
+                    return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+                size_t current_backoff_interval_us = (1 << retry_count) * 1000ul;
+                return latest_fail_time_us + current_backoff_interval_us;
+            }
+
+            void addPartFailure()
+            {
+                if (max_postpone_time_ms == 0)
+                    return;
+                retry_count = std::min(max_postpone_power, retry_count + 1);
+                latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+            }
+
+            bool partCanBeMutated() const
+            {
+                if (max_postpone_time_ms == 0)
+                    return true;
+
+                auto current_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+                return current_time_us >= getNextMinExecutionTimeUsResolution();
+            }
+        };
+
+        using DataPartsWithRetryInfo = std::unordered_map<String, PartMutationInfo>;
+        DataPartsWithRetryInfo failed_mutation_parts;
+        mutable std::mutex parts_info_lock;
+
+    public:
+
+        void resetMutationFailures()
+        {
+            std::unique_lock _lock(parts_info_lock);
+            failed_mutation_parts.clear();
+        }
+
+        void removePartFromFailed(const String & part_name)
+        {
+            std::unique_lock _lock(parts_info_lock);
+            failed_mutation_parts.erase(part_name);
+        }
+
+        void addPartMutationFailure (const String& part_name, size_t max_postpone_time_ms_)
+        {
+            std::unique_lock _lock(parts_info_lock);
+            auto part_info_it = failed_mutation_parts.find(part_name);
+            if (part_info_it == failed_mutation_parts.end())
+            {
+                auto [it, success] = failed_mutation_parts.emplace(part_name, PartMutationInfo(max_postpone_time_ms_));
+                std::swap(it, part_info_it);
+            }
+            auto& part_info = part_info_it->second;
+            part_info.addPartFailure();
+        }
+
+        bool partCanBeMutated(const String& part_name)
+        {
+
+            std::unique_lock _lock(parts_info_lock);
+            auto iter = failed_mutation_parts.find(part_name);
+            if (iter == failed_mutation_parts.end())
+                return true;
+            return iter->second.partCanBeMutated();
+        }
+    };
+    /// Controls postponing logic for failed mutations.
+    PartMutationBackoffPolicy mutation_backoff_policy;
+
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
     /// mechanisms for parts locking
@@ -1503,11 +1590,11 @@ protected:
      *  This tree provides the order of loading of parts.
      *
      *  We start to traverse tree from the top level and load parts
-     *  corresponding to nodes. If part is loaded successfully then
+     *  corresposponded to nodes. If part is loaded successfully then
      *  we stop traversal at this node. Otherwise part is broken and we
      *  traverse its children and try to load covered parts which will
      *  replace broken covering part. Unloaded nodes represent outdated parts
-     *  and they are pushed to background task and loaded asynchronously.
+     *  nd they are pushed to background task and loaded asynchronoulsy.
      */
     class PartLoadingTree
     {

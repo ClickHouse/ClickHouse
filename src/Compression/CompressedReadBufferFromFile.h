@@ -4,7 +4,6 @@
 #include <time.h>
 #include <Compression/CompressedReadBufferBase.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include "Common/LoggingFormatStringHelpers.h"
 
 
 namespace DB
@@ -28,7 +27,7 @@ private:
     ReadBufferFromFileBase & file_in;
     size_t size_compressed = 0;
 
-    LogSeriesLimiter log;
+    LoggerPtr log;
 
     /// This field inherited from ReadBuffer. It's used to perform "lazy" seek, so in seek() call we:
     /// 1) actually seek only underlying compressed file_in to offset_in_compressed_file;
