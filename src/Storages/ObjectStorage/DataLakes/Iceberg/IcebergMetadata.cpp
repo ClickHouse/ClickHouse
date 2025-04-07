@@ -284,7 +284,7 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(const 
             }
             auto prefix_storage_path = configuration.getPath();
             if (!explicit_metadata_path.starts_with(prefix_storage_path))
-                explicit_metadata_path = prefix_storage_path + explicit_metadata_path;
+                explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
             result = getMetadataFileAndVersion(explicit_metadata_path);
         }
         catch (const std::exception & ex)
