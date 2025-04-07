@@ -9,6 +9,7 @@ if [ "$GIT_DOCS_BRANCH" ] && ! [ "$GIT_DOCS_BRANCH" == "$GIT_BRANCH" ]; then
   git checkout -f "$GIT_DOCS_BRANCH"
 else
   # Update docs repo
+  git checkout -f "$GIT_DOCS_BRANCH"
   git pull
 fi
 
