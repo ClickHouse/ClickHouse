@@ -1,1 +1,6 @@
-<clickhouse></clickhouse>
+<clickhouse>
+    <async_load_databases>true</async_load_databases>
+    <fail_points_active>
+        <database_replicated_startup_pause>false</database_replicated_startup_pause>
+    </fail_points_active>
+</clickhouse>
