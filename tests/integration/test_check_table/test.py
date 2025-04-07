@@ -139,6 +139,7 @@ def test_check_replicated_table_simple(
     for node in [node1, node2]:
         node.query("DROP TABLE IF EXISTS replicated_mt SYNC")
 
+    for node in [node1, node2]:
         node.query(
             """
         CREATE TABLE replicated_mt(date Date, id UInt32, value Int32)
@@ -365,16 +366,19 @@ def test_check_all_tables(started_cluster):
             assert flag == "1"
             assert message == ""
 
+    for database in ["db1", "db2", "db3"]:
+        node1.query(f"DROP DATABASE {database} SYNC")
     node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
 
 
 @pytest.mark.parametrize("engine", ["ReplicatedMergeTree"])
 def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
     part_count = 100
+    table_name = f"replicated_check_{engine}"
     node1.query(
         f"""
-            CREATE TABLE replicated_check(id UInt32, value Int32)
-            ENGINE = {engine}('/clickhouse/tables/{{database}}/replicated_check', '{node1.name}')
+            CREATE TABLE {table_name}(id UInt32, value Int32)
+            ENGINE = {engine}('/clickhouse/tables/{{database}}/{table_name}', '{node1.name}')
             PARTITION BY id
             ORDER BY tuple()
             AS SELECT number, number FROM numbers({part_count})
@@ -392,17 +396,22 @@ def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
 
         cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
         err = node1.query_and_get_error(
-            "INSERT INTO replicated_check SELECT number, number FROM numbers(10) SETTINGS insert_keeper_max_retries=0"
+            f"INSERT INTO {table_name} SELECT number, number FROM numbers(10) SETTINGS insert_keeper_max_retries=0"
         )
         assert err != ""
         cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+
+        # Wait for keeper reconnection
+        node1.query(
+            f"INSERT INTO {table_name} SELECT number, number FROM numbers(10) SETTINGS insert_keeper_max_retries=100"
+        )
 
     node1.query("SYSTEM ENABLE FAILPOINT check_table_query_delay_for_part")
 
     def run_check_table_and_measure_time():
         start_time = time.time()
         result = node1.query(
-            "CHECK TABLE replicated_check SETTINGS max_threads=1", query_id=query_id
+            f"CHECK TABLE {table_name} SETTINGS max_threads=1", query_id=query_id
         )
         end_time = time.time()
         assert result == "0\n"  # 0 means error
@@ -421,4 +430,4 @@ def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
             future.result()
 
     node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
-    node1.query("DROP TABLE replicated_check SYNC")
+    node1.query(f"DROP TABLE {table_name} SYNC")
