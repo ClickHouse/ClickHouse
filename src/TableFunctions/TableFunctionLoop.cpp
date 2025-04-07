@@ -127,7 +127,7 @@ namespace DB
                     context,
                     table_name,
                     std::move(cached_columns),
-                    false,
+                    /*use_global_context=*/ false,
                     insert_query);
         }
         auto res = std::make_shared<StorageLoop>(
