@@ -681,7 +681,13 @@
             const h = Math.floor(s / 3600);
             const m = Math.floor((s % 3600) / 60);
             const sec = s % 60;
-            return `${h}h ${m}m ${sec}s`;
+
+            const parts = [];
+            if (h > 0) parts.push(`${h}h`);
+            parts.push(`${m}m`);
+            parts.push(`${sec}s`);
+
+            return parts.join(' ');
         }
     }
 
