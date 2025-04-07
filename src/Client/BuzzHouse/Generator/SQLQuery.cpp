@@ -265,6 +265,7 @@ void StatementGenerator::setTableRemote(
         TableOrFunction * tof = rfunc->mutable_tof();
         const std::optional<String> & cluster = t.getCluster();
 
+        rfunc->set_rname(RemoteFunc::remote);
         if (!table_engine && t.hasClickHousePeer())
         {
             const ServerCredentials & sc = fc.clickhouse_server.value();
@@ -402,7 +403,7 @@ bool StatementGenerator::joinedTableOrFunction(
     }
     else if (remote_udf && nopt < (derived_table + cte + table + view + remote_udf + 1))
     {
-        TableFunction * tf = tof->mutable_tfunc();
+        RemoteFunc * rfunc = tof->mutable_tfunc()->mutable_remote();
         const uint32_t remote_table = 10 * static_cast<uint32_t>(has_table);
         const uint32_t remote_view = 5 * static_cast<uint32_t>(has_view);
         const uint32_t remote_dictionary = 5 * static_cast<uint32_t>(has_dictionary);
@@ -411,40 +412,34 @@ bool StatementGenerator::joinedTableOrFunction(
         std::uniform_int_distribution<uint32_t> ndist(1, pspace);
         const uint32_t nopt2 = ndist(rg.generator);
 
+        rfunc->set_rname(rg.nextBool() ? RemoteFunc::remote : RemoteFunc::remoteSecure);
+        rfunc->set_address(fc.getConnectionHostAndPort());
         if (remote_table && nopt2 < (remote_table + 1))
         {
             t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
 
-            setTableRemote(rg, true, false, *t, tf);
+            t->setName(rfunc->mutable_tof()->mutable_est(), true);
             addTableRelation(rg, true, rel_name, *t);
         }
         else if (remote_view && nopt2 < (remote_table + remote_view + 1))
         {
-            RemoteFunc * rfunc = tf->mutable_remote();
             v = &rg.pickRandomly(filterCollection<SQLView>(has_view_lambda)).get();
 
-            rfunc->set_address(fc.getConnectionHostAndPort());
             v->setName(rfunc->mutable_tof()->mutable_est(), true);
             addViewRelation(rel_name, *v);
         }
         else if (remote_dictionary && nopt2 < (remote_table + remote_view + remote_dictionary + 1))
         {
-            RemoteFunc * rfunc = tf->mutable_remote();
             const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
 
-            rfunc->set_address(fc.getConnectionHostAndPort());
             d.setName(rfunc->mutable_tof()->mutable_est(), true);
             addDictionaryRelation(rel_name, d);
         }
         else if (recurse && nopt2 < (remote_table + remote_view + remote_dictionary + recurse + 1))
         {
-            /// This is the tricky part
-            RemoteFunc * rfunc = tf->mutable_remote();
-
-            rfunc->set_address(fc.getConnectionHostAndPort());
             /// Here don't care about the returned result
             this->depth++;
-            auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, rfunc->mutable_tof());
+            const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, rfunc->mutable_tof());
             UNUSED(u);
             this->depth--;
         }
@@ -651,7 +646,7 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             /// Here don't care about the returned result
             this->depth++;
-            auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, cdf->mutable_tof());
+            const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, cdf->mutable_tof());
             UNUSED(u);
             this->depth--;
         }
@@ -690,7 +685,7 @@ bool StatementGenerator::joinedTableOrFunction(
     {
         /// Here don't care about the returned result
         this->depth++;
-        auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, tof->mutable_tfunc()->mutable_loop());
+        const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, tof->mutable_tfunc()->mutable_loop());
         UNUSED(u);
         this->depth--;
     }
