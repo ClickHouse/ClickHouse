@@ -226,7 +226,7 @@ public:
         if (tokens.size() >= n)
         {
             for (size_t i = 0; i <= tokens.size() - n; ++i)
-        {
+            {
                 String ngram;
                 for (size_t j = 0; j < n; ++j)
                 {
@@ -327,8 +327,8 @@ public:
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing model ngram 'n' via 'n' key in <nb_models> for model {}", key);
             }
 
-                const String model_name = config.getString(model_name_path);
-                const String model_data = config.getString(model_data_path);
+            const String model_name = config.getString(model_name_path);
+            const String model_data = config.getString(model_data_path);
             const UInt32 n = config.getInt(model_n_path);
 
             if (n == 0)
@@ -336,25 +336,25 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngram size 'n' must be greater than 0 for model {}", model_name);
             }
 
-                /// Extract the priors from the config if they exist
-                Poco::Util::AbstractConfiguration::Keys prior_keys;
+            /// Extract the priors from the config if they exist
+            Poco::Util::AbstractConfiguration::Keys prior_keys;
 
             const String model_priors_path = "nb_models." + key + ".priors";
-                config.keys(model_priors_path, prior_keys);
+            config.keys(model_priors_path, prior_keys);
 
             ProbabilityMap priors;
-                for (const auto & prior_key : prior_keys)
+            for (const auto & prior_key : prior_keys)
+            {
+                const String model_prior_path = model_priors_path + "." + prior_key;
+                if (!config.has(model_prior_path + ".class") or !config.has(model_prior_path + ".value"))
                 {
-                    const String model_prior_path = model_priors_path + "." + prior_key;
-                    if (!config.has(model_prior_path + ".class") or !config.has(model_prior_path + ".value"))
-                    {
-                        throw Exception(
-                            ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing 'class' or 'value' key in <priors> for model {}", model_name);
-                    }
-                const UInt32 class_id = config.getInt(model_prior_path + ".class");
-                    const double prior = config.getDouble(model_prior_path + ".value");
-                priors[class_id] = prior;
+                    throw Exception(
+                        ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing 'class' or 'value' key in <priors> for model {}", model_name);
                 }
+                const UInt32 class_id = config.getInt(model_prior_path + ".class");
+                const double prior = config.getDouble(model_prior_path + ".value");
+                priors[class_id] = prior;
+            }
 
             String start_token = "<s>";
             if (config.has("nb_models." + key + ".start_token"))
@@ -407,14 +407,16 @@ public:
                 getName(),
                 arguments[1].type->getName());
 
-        return std::make_shared<DataTypeString>();
+        return std::make_shared<DataTypeUInt32>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * input_string_column = checkAndGetColumn<ColumnString>(arguments[1].column.get());
 
-        auto result_column = ColumnString::create();
+        auto result_column = ColumnUInt32::create();
+
+        const auto & models = getModelCache();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -440,8 +442,8 @@ public:
 
             const auto & model = models.at(model_name);
             String input_string = input_string_column->getDataAt(i).toString();
-            String predicted_class = model.classify(input_string);
-            result_column->insertData(predicted_class.data(), predicted_class.size());
+            UInt32 predicted_class = model.classify(input_string);
+            result_column->insert(predicted_class);
         }
 
         return result_column;
