@@ -1,22 +1,43 @@
 <clickhouse>
     <nb_models>
         <model>
-            <name>sentiment</name>
-            <path>/etc/clickhouse-server/config.d/nb_model_sentiment.txt</path>
+            <name>sentiment1</name>
+            <path>/etc/clickhouse-server/config.d/nb_model_sentiment_1.bin</path>
+            <n>1</n>
             <priors>
                 <prior>
-                    <class>positive</class>
-                    <value>0.6</value>
+                    <class>0</class>
+                    <value>0.5</value>
                 </prior>
-               <prior>
-                    <class>negative</class>
-                    <value>0.4</value>
+                <prior>
+                    <class>1</class>
+                    <value>0.5</value>
                 </prior>
             </priors>
         </model>
         <model>
-            <name>language</name>
-            <path>/etc/clickhouse-server/config.d/nb_model_language.txt</path>
+            <name>sentiment2</name>
+            <path>/etc/clickhouse-server/config.d/nb_model_sentiment_2.bin</path>
+            <n>2</n>
+            <start_token>&lt;s&gt;</start_token>
+            <end_token>&lt;/s&gt;</end_token>
+        </model>
+        <model>
+            <name>sentiment3</name>
+            <path>/etc/clickhouse-server/config.d/nb_model_sentiment_3.bin</path>
+            <n>3</n>
+            <start_token>&lt;s&gt;</start_token>
+            <end_token>&lt;/s&gt;</end_token>
+            <priors>
+                <prior>
+                    <class>0</class>
+                    <value>0.5</value>
+                </prior>
+                <prior>
+                    <class>1</class>
+                    <value>0.5</value>
+                </prior>
+            </priors>
         </model>
     </nb_models>
- </clickhouse>
+</clickhouse>
