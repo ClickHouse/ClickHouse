@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 go install github.com/wjdp/htmltest@v${HTMLTEST_VERSION} \
 FROM ubuntu:22.04
 
 RUN apt-get update && \
-    apt install -y --no-install-recommends git openssh-server bash ca-certificates curl python3 python3-venv rsync \
+    apt install -y --no-install-recommends yarn git openssh-server bash ca-certificates curl python3 python3-venv rsync \
     && rm -rf /var/lib/apt/lists/*:
 
 # At this point we want to really update /opt/clickhouse-docs directory
