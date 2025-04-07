@@ -26,46 +26,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-/// Manifest list contains only a list of manifest files, so we don't have to store the deserialized manifest_list content.
-/// In ManifestListCacheCell we store a list of manifest files' data path and sequence number,
-/// so we can get manifest files from cache or read and construct them.
-/// struct ManifestListCacheCell
-/// {
-///     using CachedManifestList = std::list<ManifestFileEntry>;
-///     CachedManifestList cached_manifest_files;
-///     size_t getSizeInMemory() const
-///     {
-///         size_t total_size = sizeof(std::list<ManifestFileEntry>);
-///         for (const auto & entry: cached_manifest_files)
-///         {
-///             total_size += sizeof(ManifestFileEntry) + entry.data_path.capacity();
-///         }
-///         return total_size;
-///     }
-///
-///     /// getManifestList will return a list of ManifestFilePtr, from cache or construct from scratch.
-///     template<typename LoadFunc>
-///     Iceberg::ManifestListPtr getManifestList(LoadFunc && load_func) const
-///     {
-///         Iceberg::ManifestList manifest_list;
-///         for (const auto & entry : cached_manifest_files)
-///         {
-///             /// in the load function, we will visit cache again.
-///             /// If a manifest file does not exist in cache, we can read the content from remote file and construct them.
-///             auto manifest_file_ptr = load_func(entry.data_path, entry.added_sequence_number);
-///             manifest_list.push_back(manifest_file_ptr);
-///         }
-///         return std::make_shared<Iceberg::ManifestList>(std::move(manifest_list));
-///     }
-///
-///     explicit ManifestListCacheCell(CachedManifestList && cached_manifest_list_)
-///         : cached_manifest_files(std::move(cached_manifest_list_))
-///     {
-///     }
-///
-///     ManifestListCacheCell() = default;
-/// };
-
 /// The structure that can identify a manifest file. We store it in cache.
 /// And we can get `ManifestFileContent` from cache by ManifestFileEntry.
 struct ManifestFileCacheKey
@@ -80,9 +40,11 @@ using ManifestFileCacheKeys = std::vector<ManifestFileCacheKey>;
 /// For simplicity, we keep them in same cache.
 struct IcebergMetadataFilesCacheCell
 {
-    Poco::JSON::Object::Ptr metadata_object;
-    ManifestFileCacheKeys manifest_file_cache_keys;
-    Iceberg::ManifestFilePtr manifest_file;
+    /// The cached element could be
+    /// - metadata.json deserialized as Poco::JSON::Object::Ptr
+    /// - manifest list consists of cache keys which will retrieve the manifest file from cache
+    /// - manifest file
+    std::variant<Poco::JSON::Object::Ptr, ManifestFileCacheKeys, Iceberg::ManifestFilePtr> cached_element;
 
     Int64 memory_bytes;
     CurrentMetrics::Increment metric_increment;
@@ -99,20 +61,20 @@ struct IcebergMetadataFilesCacheCell
     }
 
     explicit IcebergMetadataFilesCacheCell(Poco::JSON::Object::Ptr metadata_object_, size_t memory_bytes_)
-        : metadata_object(metadata_object_)
+        : cached_element(metadata_object_)
         , memory_bytes(memory_bytes_ + SIZE_IN_MEMORY_OVERHEAD)
         , metric_increment{CurrentMetrics::IcebergMetadataFilesCacheSize, memory_bytes}
     {
     }
     explicit IcebergMetadataFilesCacheCell(ManifestFileCacheKeys && manifest_file_cache_keys_)
-        : manifest_file_cache_keys(std::move(manifest_file_cache_keys_))
-        , memory_bytes(getMemorySizeOfManifestCacheKeys(manifest_file_cache_keys) + SIZE_IN_MEMORY_OVERHEAD)
+        : cached_element(std::move(manifest_file_cache_keys_))
+        , memory_bytes(getMemorySizeOfManifestCacheKeys(std::get<ManifestFileCacheKeys>(cached_element)) + SIZE_IN_MEMORY_OVERHEAD)
         , metric_increment{CurrentMetrics::IcebergMetadataFilesCacheSize, memory_bytes}
     {
     }
     explicit IcebergMetadataFilesCacheCell(Iceberg::ManifestFilePtr manifest_file_)
-        : manifest_file(manifest_file_)
-        , memory_bytes(manifest_file->getSizeInMemory() + SIZE_IN_MEMORY_OVERHEAD)
+        : cached_element(manifest_file_)
+        , memory_bytes(std::get<Iceberg::ManifestFilePtr>(cached_element)->getSizeInMemory() + SIZE_IN_MEMORY_OVERHEAD)
         , metric_increment{CurrentMetrics::IcebergMetadataFilesCacheSize, memory_bytes}
     {
     }
@@ -155,7 +117,7 @@ public:
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
-        return result.first->metadata_object;
+        return std::get<Poco::JSON::Object::Ptr>(result.first->cached_element);
     }
 
     template <typename LoadFunc>
@@ -171,7 +133,7 @@ public:
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
-        return result.first->manifest_file_cache_keys;
+        return std::get<ManifestFileCacheKeys>(result.first->cached_element);
     }
 
     template <typename LoadFunc>
@@ -187,7 +149,7 @@ public:
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
-        return result.first->manifest_file;
+        return std::get<Iceberg::ManifestFilePtr>(result.first->cached_element);
     }
 
 private:
