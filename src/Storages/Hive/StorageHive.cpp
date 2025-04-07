@@ -118,6 +118,7 @@ public:
                 {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
                  std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                  "_file"});
+
         return header;
     }
 
