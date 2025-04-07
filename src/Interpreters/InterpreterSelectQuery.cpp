@@ -2526,8 +2526,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     else if (storage)
     {
         /// Table.
-        if (max_streams == 0)
-            max_streams = 1;
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_sync_remote)
@@ -2540,6 +2538,9 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                     "Make sure that `max_streams * max_streams_to_max_threads_ratio` is in some reasonable boundaries, current value: {}",
                     streams_with_ratio);
         }
+
+        if (max_streams == 0)
+            max_streams = 1;
 
         auto & prewhere_info = analysis_result.prewhere_info;
 
