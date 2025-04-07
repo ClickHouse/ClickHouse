@@ -804,7 +804,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
 
         if (!throw_on_bad_include_from && !fs::exists(include_from_path))
         {
-            LOG_DEBUG(log, "File {} (from 'include_from') does not exist. Ignoring.", include_from_path);
+            LOG_WARNING(log, "File {} (from 'include_from') does not exist. Ignoring.", include_from_path);
         }
         else
         {
