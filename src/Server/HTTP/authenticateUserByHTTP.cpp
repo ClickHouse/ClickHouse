@@ -192,7 +192,10 @@ bool authenticateUserByHTTP(
         if (!gss_acceptor_context)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: unexpected 'Negotiate' HTTP Authorization scheme expected");
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
         const auto spnego_response = base64Encode(gss_acceptor_context->processToken(base64Decode(spnego_challenge), log));
+#pragma clang diagnostic pop
         if (!spnego_response.empty())
             response.set("WWW-Authenticate", "Negotiate " + spnego_response);
 
