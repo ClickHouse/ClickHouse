@@ -1036,7 +1036,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```
     )", 0) \
     DECLARE(Bool, process_query_plan_packet, false, R"(
-    This setting allows reading QueryPlan packet. This packet is sent for distributed queries when serialize_query_plan is enables.
+    This setting allows reading QueryPlan packet. This packet is sent for distributed queries when serialize_query_plan is enabled.
     Disabled by default to avoid possible security issues which can be caused by bugs in query plan binary deserialization.
 
     **Example**
