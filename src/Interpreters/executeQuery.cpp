@@ -67,6 +67,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <Core/ServerSettings.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -76,6 +77,7 @@
 
 #include <Poco/Net/SocketAddress.h>
 
+#include <cfloat>
 #include <memory>
 #include <random>
 
@@ -160,6 +162,13 @@ namespace Setting
     extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsMap http_response_headers;
     extern const SettingsBool apply_mutations_on_fly;
+    extern const SettingsFloat min_os_cpu_wait_time_ratio_to_throw;
+    extern const SettingsFloat max_os_cpu_wait_time_ratio_to_throw;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
 }
 
 namespace ErrorCodes
@@ -177,6 +186,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int SERVER_OVERLOADED;
 }
 
 namespace FailPoints
@@ -391,6 +401,30 @@ static UInt64 getQueryMetricLogInterval(ContextPtr context)
         interval_milliseconds = context->getConfigRef().getUInt64("query_metric_log.collect_interval_milliseconds", 1000);
 
     return interval_milliseconds;
+}
+
+static void checkCPUOverload(const ContextPtr & context)
+{
+    double cpu_load = ProfileEvents::global_counters.getCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold]);
+
+    if (cpu_load > DBL_EPSILON)
+    {
+        double min_ratio = context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw];
+        double max_ratio = context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw];
+        double current_ratio = std::min(std::max(min_ratio, cpu_load), max_ratio);
+        double probability_to_throw = (max_ratio <= min_ratio) ? 0.0 : (current_ratio - min_ratio) / (max_ratio - min_ratio);
+
+        if (std::bernoulli_distribution server_overloaded(probability_to_throw); server_overloaded(thread_local_rng))
+            throw Exception(ErrorCodes::SERVER_OVERLOADED,
+                "CPU is overloaded, CPU is waiting for execution way more than executing, "
+                "ratio of wait time (OSCPUWaitMicroseconds metric) to busy time (OSCPUVirtualTimeMicroseconds metric) is {}. "
+                "Min ratio for error (min_os_cpu_wait_time_to_throw setting) {}, max ratio for error (max_os_cpu_wait_time_ratio_to_throw setting) {}, probability used to decide whether to discard the query {}. "
+                "Consider reducing the number of queries or increase backoff between retries",
+                current_ratio,
+                min_ratio,
+                max_ratio,
+                probability_to_throw);
+    }
 }
 
 QueryLogElement logQueryStart(
@@ -1621,6 +1655,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     QueryFlags flags,
     QueryProcessingStage::Enum stage)
 {
+    checkCPUOverload(context);
     ASTPtr ast;
     BlockIO res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr, ast);
 
@@ -1663,6 +1698,8 @@ void executeQuery(
     }
 
     size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
+
+    checkCPUOverload(context);
 
     if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {

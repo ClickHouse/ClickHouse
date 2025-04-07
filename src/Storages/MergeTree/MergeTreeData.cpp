@@ -1,3 +1,4 @@
+#include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Access/AccessControl.h>
@@ -5444,8 +5445,6 @@ void MergeTreeData::checkAlterPartitionIsPossible(
     const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings, ContextPtr local_context) const
 {
     const auto disks = getDisks();
-    auto disk_without_hardlink_support_it
-        = std::find_if(disks.begin(), disks.end(), [](const auto & disk_ptr) { return !disk_ptr->supportsHardLinks(); });
     for (const auto & command : commands)
     {
         if (command.type == PartitionCommand::DROP_DETACHED_PARTITION && !settings[Setting::allow_drop_detached])
@@ -5453,13 +5452,14 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                                 "Cannot execute query: DROP DETACHED PART "
                                 "is disabled (see allow_drop_detached setting)");
 
-        if (disk_without_hardlink_support_it != disks.end() && command.type != PartitionCommand::DROP_PARTITION
-            && command.type != PartitionCommand::DROP_DETACHED_PARTITION)
+        auto disk_without_partition_command_support_it = std::find_if(
+            disks.begin(), disks.end(), [&command](const auto & disk_ptr) { return !disk_ptr->supportsPartitionCommand(command); });
+        if (disk_without_partition_command_support_it != disks.end())
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "Partition operation ALTER TABLE {} is not supported for immutable disk '{}'",
+                "Partition operation ALTER TABLE {} is not supported for disk '{}'",
                 command.typeToString(),
-                (*disk_without_hardlink_support_it)->getName());
+                (*disk_without_partition_command_support_it)->getName());
 
         if (command.partition && command.type != PartitionCommand::DROP_DETACHED_PARTITION)
         {
