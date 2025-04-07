@@ -237,7 +237,13 @@ class FunctionNaiveBayesClassifier : public IFunction
 {
 private:
     ContextPtr context;
-    std::map<String, NaiveBayesModel> models;
+
+    /// Use static cache to ensure model loading happens only once
+    static std::map<String, NaiveBayesModel> & getModelCache()
+    {
+        static std::map<String, NaiveBayesModel> models;
+        return models;
+    }
 
 public:
     static constexpr auto name = "naiveBayesClassifier";
