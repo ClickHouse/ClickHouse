@@ -144,23 +144,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
-    bool should_take_exclusive_lock = false;
-    for (const auto & child : alter.command_list->children)
-    {
-        auto * command_ast = child->as<ASTAlterCommand>();
-        if (auto mut_command = MutationCommand::parse(command_ast); mut_command->type == MutationCommand::DELETE && isAlwaysTruePredicate(mut_command->predicate))
-        {
-            should_take_exclusive_lock = true;
-            break;
-        }
-    }
-
-    std::variant<TableLockHolder, TableExclusiveLockHolder> table_lock;
-    if (!should_take_exclusive_lock)
-        table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-    else
-        table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-
     if (modify_query)
     {
         // Expand CTE before filling default database
@@ -175,6 +158,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     AlterCommands alter_commands;
     PartitionCommands partition_commands;
     MutationCommands mutation_commands;
+    bool is_truncate = false;
+
     for (const auto & child : alter.command_list->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
@@ -191,27 +176,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             /// ALTER TABLE ... DELETE WHERE 1 should be executed as truncate
             if (mut_command->type == MutationCommand::DELETE && isAlwaysTruePredicate(mut_command->predicate))
             {
-                auto context = getContext();
-                context->checkAccess(AccessType::TRUNCATE, table_id);
-                table->checkTableCanBeDropped(context);
-
-                auto metadata_snapshot = table->getInMemoryMetadataPtr();
-
-                String truncate_query = "TRUNCATE TABLE " + table->getStorageID().getFullTableName()
-                    + (alter.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(alter.cluster));
-
-                ParserDropQuery parser;
-                auto current_query_ptr = parseQuery(
-                    parser,
-                    truncate_query.data(),
-                    truncate_query.data() + truncate_query.size(),
-                    "ALTER query",
-                    0,
-                    DBMS_DEFAULT_MAX_PARSER_DEPTH,
-                    DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-                /// Drop table data, don't touch metadata
-                table->truncate(current_query_ptr, metadata_snapshot, context, std::get<TableExclusiveLockHolder>(table_lock));
+                is_truncate = true;
                 continue;
             }
 
@@ -240,6 +205,38 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 || command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTICS))
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is now disabled. Turn on allow_experimental_statistics");
     }
+
+    if (is_truncate)
+    {
+        auto context = getContext();
+        context->checkAccess(AccessType::TRUNCATE, table_id);
+        table->checkTableCanBeDropped(context);
+
+        auto metadata_snapshot = table->getInMemoryMetadataPtr();
+
+        TableExclusiveLockHolder table_excl_lock;
+        /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
+        /// For the rest of tables types exclusive lock is needed
+        if (!std::dynamic_pointer_cast<MergeTreeData>(table))
+            table_excl_lock = table->lockExclusively(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        String truncate_query = "TRUNCATE TABLE " + table->getStorageID().getFullTableName()
+            + (alter.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(alter.cluster));
+
+        ParserDropQuery parser;
+        auto current_query_ptr = parseQuery(
+            parser,
+            truncate_query.data(),
+            truncate_query.data() + truncate_query.size(),
+            "ALTER query",
+            0,
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+        /// Drop table data, don't touch metadata
+        table->truncate(current_query_ptr, metadata_snapshot, context, table_excl_lock);
+    }
+
+    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     if (typeid_cast<DatabaseReplicated *>(database.get()))
     {
