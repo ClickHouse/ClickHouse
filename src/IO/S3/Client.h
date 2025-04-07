@@ -192,7 +192,6 @@ public:
     Model::ListObjectsV2Outcome ListObjectsV2(ListObjectsV2Request & request) const;
     Model::ListObjectsOutcome ListObjects(ListObjectsRequest & request) const;
     Model::GetObjectOutcome GetObject(GetObjectRequest & request) const;
-    Model::GetObjectTaggingOutcome GetObjectTagging(const Model::GetObjectTaggingRequest & request) const override;
 
     Model::AbortMultipartUploadOutcome AbortMultipartUpload(AbortMultipartUploadRequest & request) const;
     Model::CreateMultipartUploadOutcome CreateMultipartUpload(CreateMultipartUploadRequest & request) const;
