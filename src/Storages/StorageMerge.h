@@ -123,13 +123,13 @@ private:
     DatabaseNameOrRegexp database_name_or_regexp;
 
     template <typename F>
-    StoragePtr getFirstTable(F && predicate) const;
+    StoragePtr traverseTablesUntil(F && predicate) const;
 
     template <typename F>
     void forEachTable(F && func) const;
 
     template <typename F>
-    static StoragePtr getFirstTableImpl(const ContextPtr & query_context, const IStorage * ignore_self, const DatabaseNameOrRegexp & database_name_or_regexp, F && predicate);
+    static StoragePtr traverseTablesUntilImpl(const ContextPtr & query_context, const IStorage * ignore_self, const DatabaseNameOrRegexp & database_name_or_regexp, F && predicate);
 
     /// Returns a unified column structure among multiple tables.
     static ColumnsDescription getColumnsDescriptionFromSourceTablesImpl(

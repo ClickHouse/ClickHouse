@@ -221,7 +221,7 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
     size_t table_num = 0;
     ColumnsDescription res;
 
-    getFirstTableImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look](auto && t)
+    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look](auto && t)
     {
         if (!t)
             return false;
@@ -257,13 +257,13 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
 }
 
 template <typename F>
-StoragePtr StorageMerge::getFirstTable(F && predicate) const
+StoragePtr StorageMerge::traverseTablesUntil(F && predicate) const
 {
-    return getFirstTableImpl(context.lock(), this, database_name_or_regexp, std::forward<F>(predicate));
+    return traverseTablesUntilImpl(getContext(), this, database_name_or_regexp, std::forward<F>(predicate));
 }
 
 template <typename F>
-StoragePtr StorageMerge::getFirstTableImpl(const ContextPtr & query_context, const IStorage * ignore_self, const DatabaseNameOrRegexp & database_name_or_regexp, F && predicate)
+StoragePtr StorageMerge::traverseTablesUntilImpl(const ContextPtr & query_context, const IStorage * ignore_self, const DatabaseNameOrRegexp & database_name_or_regexp, F && predicate)
 {
     auto database_table_iterators = database_name_or_regexp.getDatabaseIterators(query_context);
 
@@ -285,7 +285,7 @@ StoragePtr StorageMerge::getFirstTableImpl(const ContextPtr & query_context, con
 template <typename F>
 void StorageMerge::forEachTable(F && func) const
 {
-    getFirstTable([&func](const auto & table)
+    traverseTablesUntil([&func](const auto & table)
     {
         func(table);
         /// Always continue to the next table.
@@ -295,13 +295,13 @@ void StorageMerge::forEachTable(F && func) const
 
 bool StorageMerge::isRemote() const
 {
-    auto first_remote_table = getFirstTable([](const StoragePtr & table) { return table && table->isRemote(); });
+    auto first_remote_table = traverseTablesUntil([](const StoragePtr & table) { return table && table->isRemote(); });
     return first_remote_table != nullptr;
 }
 
 bool StorageMerge::supportsPrewhere() const
 {
-    return getFirstTable([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;
+    return traverseTablesUntil([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;
 }
 
 bool StorageMerge::canMoveConditionsToPrewhere() const
@@ -316,7 +316,7 @@ bool StorageMerge::canMoveConditionsToPrewhere() const
     /// NOTE: Type can be different, and in this case, PREWHERE cannot be
     /// applied for those columns, but there a separate method to return
     /// supported columns for PREWHERE - supportedPrewhereColumns().
-    return getFirstTable([](const auto & table) { return !table->canMoveConditionsToPrewhere(); }) == nullptr;
+    return traverseTablesUntil([](const auto & table) { return !table->canMoveConditionsToPrewhere(); }) == nullptr;
 }
 
 std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
@@ -421,7 +421,7 @@ StorageSnapshotPtr StorageMerge::getStorageSnapshot(const StorageMetadataPtr & m
     const auto & access = query_context->getAccess();
 
     auto virtuals = common_virtuals;
-    if (auto first_table = getFirstTable([access](auto && table)
+    if (auto first_table = traverseTablesUntil([access](auto && table)
     {
         if (!table)
             return false;
@@ -1325,12 +1325,13 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
             ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_database"),
             ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_table")
         };
+        // Extract predicate part, that could be evaluated only with _database and _table columns
         auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block);
         if (table_filter_dag)
         {
             auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
             auto filter_column_name = filter_expression->getActionsDAG().getOutputs().at(0)->result_name;
-            table_filter = [filter_expression, filter_column_name] (const auto& database_name, const auto& table_name)
+            table_filter = [filter=std::move(filter_expression), column_name=std::move(filter_column_name)] (const auto& database_name, const auto& table_name)
             {
                 MutableColumnPtr database_column = ColumnString::create();
                 MutableColumnPtr table_column = ColumnString::create();
@@ -1340,9 +1341,9 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                     ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "_database"),
                     ColumnWithTypeAndName(std::move(table_column), std::make_shared<DataTypeString>(), "_table")
                 };
-                filter_expression->execute(block);
+                filter->execute(block);
                 // Valid only when block has exactly one row.
-                return block.getByName(filter_column_name).column->getBool(0);
+                return block.getByName(column_name).column->getBool(0);
             };
         }
     }
@@ -1350,8 +1351,8 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     auto access = query_context->getAccess();
     for (const auto & iterator : database_table_iterators)
     {
-        auto all_show = access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName());
-        auto all_select = access->isGranted(AccessType::SELECT, iterator->databaseName());
+        auto granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName());
+        auto granted_select_on_all_tables = access->isGranted(AccessType::SELECT, iterator->databaseName());
         while (iterator->isValid())
         {
             StoragePtr storage = iterator->table();
@@ -1360,10 +1361,10 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
 
             if (storage.get() != storage_merge.get())
                 if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
-                    if (all_show || access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName(), iterator->name()))
+                    if (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName(), iterator->name()))
                     {
 
-                        if  (!all_select)
+                        if  (!granted_select_on_all_tables)
                             access->checkAccess(AccessType::SELECT, iterator->databaseName(), iterator->name(), column_names);
 
                         auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
@@ -1671,7 +1672,7 @@ bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, 
 {
     /// Here we actually need storage snapshot of all nested tables.
     /// But to avoid complexity pass nullptr to make more lightweight check in MergeTreeData.
-    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(nullptr, ctx); }) == nullptr;
+    return traverseTablesUntil([&](const auto & table) { return !table->supportsTrivialCountOptimization(nullptr, ctx); }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(ContextPtr query_context) const
@@ -1688,7 +1689,7 @@ template <typename F>
 std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
 {
     UInt64 total_rows_or_bytes = 0;
-    auto first_table = getFirstTable([&](const auto & table)
+    auto first_table = traverseTablesUntil([&](const auto & table)
     {
         if (auto rows_or_bytes = func(table))
         {
