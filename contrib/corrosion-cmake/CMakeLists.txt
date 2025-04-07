@@ -122,18 +122,6 @@ configure_file("config.toml.in" "config.toml" @ONLY)
 set (RUST_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config.toml" CACHE INTERNAL "Rust config")
 
 function(clickhouse_import_crate)
-    # This is a workaround for Corrosion case sensitive build type matching in
-    # _generator_add_cargo_targets(), that leads to different paths in
-    # IMPORTED_LOCATION and real path of the library.
-    #
-    # It uses CMAKE_CONFIGURATION_TYPES and $<CONFIG>, so here we preserve the
-    # case of ${CMAKE_BUILD_TYPE} in ${CMAKE_CONFIGURATION_TYPES}.
-    if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
-        set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};release")
-    else()
-        set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};debug")
-    endif()
-
     if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
         set(profile "")
     else()
