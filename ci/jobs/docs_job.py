@@ -10,8 +10,8 @@ if __name__ == "__main__":
 
     Result.from_commands_run(
         name="Fetch latest docs-repo changes",
-        command=["git fetch origin main", "git pull"],
-        workdir="/opt/clickhouse-docs",
+        command=["git clone https://github.com/ClickHouse/clickhouse-docs.git"],
+        workdir="/opt",
         with_log=True,
         with_info=True,
     )

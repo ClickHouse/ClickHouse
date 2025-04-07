@@ -9,17 +9,25 @@ RUN apt-get update && \
     python3-venv \
     rsync \
     curl \
-    ca-certificates && \
+    ca-certificates \
+    build-essential \
+    g++ \
+    make && \
     rm -rf /var/lib/apt/lists/*
 
-# So we reset the cache
 ARG CACHE_INVALIDATOR=0
 
-RUN git config --global url."https://github.com/".insteadOf git@github.com:
+# Create a specific user and group
+RUN groupadd -r clickhouse && \
+    useradd -r -g clickhouse -m -d /home/clickhouse -s /sbin/nologin -c "ClickHouse user" clickhouse
 
-RUN git clone https://github.com/ClickHouse/clickhouse-docs.git \
-    --depth=1 --branch=main /opt/clickhouse-docs
+RUN yarn config set registry https://registry.npmjs.org
+ENV HOME=/opt/clickhouse-docs
 
-RUN yarn config set registry https://registry.npmjs.org \
-    && yarn install \
-    && yarn cache clean
+# Create directory with specific ownership
+RUN mkdir -p /opt/clickhouse-docs && \
+    chown clickhouse:clickhouse /opt/clickhouse-docs && \
+    chmod -R a+rw /opt/clickhouse-docs/
+
+# Set working directory
+WORKDIR /
