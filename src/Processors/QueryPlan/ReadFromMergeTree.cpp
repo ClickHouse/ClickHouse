@@ -937,6 +937,20 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         return new_ranges;
     };
 
+    if (num_streams > 1)
+    {
+        /// Reduce num_streams if requested value is unnecessarily large.
+        ///
+        /// Additional increase of streams number in case of skewed parts, like it's
+        /// done in `spreadMarkRangesAmongStreams` won't affect overall performance
+        /// due to the single downstream `MergingSortedTransform`.
+        if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
+        {
+            num_streams = std::max(
+                (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
+        }
+    }
+
     const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
     bool need_preliminary_merge = (parts_with_ranges.size() > settings.read_in_order_two_level_merge_threshold);
 
