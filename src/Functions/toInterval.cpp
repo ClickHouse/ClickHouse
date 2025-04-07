@@ -53,7 +53,7 @@ public:
         interval_kind = Poco::toLower(kind_column->getValue<String>());
         if (interval_kind.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument (unit) for function {} cannot be empty", getName());
-        
+
         if (!IntervalKind::tryParseString(interval_kind, kind.kind))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like an interval unit in {}", interval_kind, getName());
 
