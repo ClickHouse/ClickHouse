@@ -183,26 +183,24 @@ namespace DB
             return IPAddressVariant(IPTrait<kind>::getElement(col_addr, n));
         }
 
+    #pragma clang diagnostic ignored "-Wshadow"
+    #define EXEC_IMPL(col, func, ...) \
+        if (const auto * ipv4_column = dynamic_cast<const ColumnIPv4 *>(&(col))) \
+            return func<IPKind::IPv4>(ipv4_column, __VA_ARGS__); \
+        else if (const auto * ipv6_column = dynamic_cast<const ColumnIPv6 *>(&(col))) \
+            return func<IPKind::IPv6>(ipv6_column, __VA_ARGS__); \
+        else if (const auto * string_column = dynamic_cast<const ColumnString *>(&(col))) \
+            return func<IPKind::String>(string_column, __VA_ARGS__);
+
         static std::optional<IPAddressVariant> parseConstantIP(const ColumnConst & col_addr)
         {
-            if (const auto * ipv4_column = dynamic_cast<const ColumnIPv4 *>(&col_addr.getDataColumn()))
-                return parseIP<IPKind::IPv4>(ipv4_column, 0);
-            else if (const auto * ipv6_column = dynamic_cast<const ColumnIPv6 *>(&col_addr.getDataColumn()))
-                return parseIP<IPKind::IPv6>(ipv6_column, 0);
-            else if (const auto * string_column = dynamic_cast<const ColumnString *>(&col_addr.getDataColumn()))
-                return parseIP<IPKind::String>(string_column, 0);
+            EXEC_IMPL(col_addr.getDataColumn(), parseIP, 0)
             else if (col_addr.onlyNull())
                 return std::nullopt;
             else if (const auto * nullable_column = dynamic_cast<const ColumnNullable *>(&col_addr.getDataColumn()))
             {
-                if (const auto * inner_ipv4_column = dynamic_cast<const ColumnIPv4 *>(&nullable_column->getNestedColumn()))
-                    return parseIP<IPKind::IPv4>(inner_ipv4_column, 0);
-                else if (const auto * inner_ipv6_column = dynamic_cast<const ColumnIPv6 *>(&nullable_column->getNestedColumn()))
-                    return parseIP<IPKind::IPv6>(inner_ipv6_column, 0);
-                else if (const auto * inner_string_column = dynamic_cast<const ColumnString *>(&nullable_column->getNestedColumn()))
-                    return parseIP<IPKind::String>(inner_string_column, 0);
+                EXEC_IMPL(nullable_column->getNestedColumn(), parseIP, 0) ///NO-LINT
             }
-
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The IP column type must be one of: String, IPv4, IPv6, Nullable(IPv4), Nullable(IPv6), or Nullable(String).");
         }
 
@@ -215,16 +213,11 @@ namespace DB
             {
                 if (const auto * col_cidr_const = checkAndGetAnyColumnConst(col_cidr))
                     return executeImpl(*col_addr_const, *col_cidr_const, input_rows_count);
-                else
-                    return executeImpl(*col_addr_const, *col_cidr, input_rows_count);
+                return executeImpl(*col_addr_const, *col_cidr, input_rows_count);
             }
-            else
-            {
-                if (const auto * col_cidr_const = checkAndGetAnyColumnConst(col_cidr))
-                    return executeImpl(*col_addr, *col_cidr_const, input_rows_count);
-                else
-                    return executeImpl(*col_addr, *col_cidr, input_rows_count);
-            }
+            if (const auto * col_cidr_const = checkAndGetAnyColumnConst(col_cidr))
+                return executeImpl(*col_addr, *col_cidr_const, input_rows_count);
+            return executeImpl(*col_addr, *col_cidr, input_rows_count);
         }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -244,8 +237,8 @@ namespace DB
             if (!(type.isString() || type.isIPv4() || type.isIPv6()) || !isString(prefix_type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The first arguments of function {} must be one of: String, IPv4, IPv6, Nullable(IPv4), Nullable(IPv6), or "
-                    "Nullable(String) and the second argument must be String. Get first type: {} and second type: {}",
+                    "The first argument of function {} must be one of: String, IPv4, IPv6, Nullable(String), Nullable(IPv4), or "
+                    "Nullable(IPv6) and the second argument must be String. Type of the first argument: {}, type of the second argument: {}",
                     getName(),
                     addr_type->getName(),
                     prefix_type->getName());
@@ -320,8 +313,8 @@ namespace DB
 
         template <IPKind kind>
         static ColumnPtr executeImpl(
-            const ColumnNullable * nullable_column,
             const IPTrait<kind>::ColumnType * col_addr,
+            const ColumnNullable * nullable_column,
             const IPAddressCIDR & cidr,
             size_t input_rows_count)
         {
@@ -344,22 +337,11 @@ namespace DB
         template <typename T>
         static ColumnPtr executeImpl(const IColumn & col_addr, const T & cidr, size_t input_rows_count)
         {
-            if (const auto * ipv4_column = dynamic_cast<const ColumnIPv4 *>(&col_addr))
-                return executeImpl<IPKind::IPv4>(ipv4_column, cidr, input_rows_count);
-            else if (const auto * ipv6_column = dynamic_cast<const ColumnIPv6 *>(&col_addr))
-                return executeImpl<IPKind::IPv6>(ipv6_column, cidr, input_rows_count);
-            else if (const auto * string_column = dynamic_cast<const ColumnString *>(&col_addr))
-                return executeImpl<IPKind::String>(string_column, cidr, input_rows_count);
+            EXEC_IMPL(col_addr, executeImpl, cidr, input_rows_count)
             else if (const auto * nullable_column = dynamic_cast<const ColumnNullable *>(&col_addr))
             {
-                if (const auto * inner_ipv4_column = dynamic_cast<const ColumnIPv4 *>(&nullable_column->getNestedColumn()))
-                    return executeImpl<IPKind::IPv4>(nullable_column, inner_ipv4_column, cidr, input_rows_count);
-                else if (const auto * inner_ipv6_column = dynamic_cast<const ColumnIPv6 *>(&nullable_column->getNestedColumn()))
-                    return executeImpl<IPKind::IPv6>(nullable_column, inner_ipv6_column, cidr, input_rows_count);
-                else if (const auto * inner_string_column = dynamic_cast<const ColumnString *>(&nullable_column->getNestedColumn()))
-                    return executeImpl<IPKind::String>(nullable_column, inner_string_column, cidr, input_rows_count);
+                EXEC_IMPL(nullable_column->getNestedColumn(), executeImpl, nullable_column, cidr, input_rows_count)
             }
-
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The IP column type must be one of: String, IPv4, IPv6, Nullable(IPv4), Nullable(IPv6), or Nullable(String).");
         }
 
@@ -387,8 +369,8 @@ namespace DB
 
         template <IPKind kind>
         static ColumnPtr executeImpl(
-            const ColumnNullable * nullable_column,
             const IPTrait<kind>::ColumnType * col_addr,
+            const ColumnNullable * nullable_column,
             const IColumn & col_cidr,
             size_t input_rows_count)
         {
