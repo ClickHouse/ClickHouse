@@ -85,9 +85,6 @@ BlockIO InterpreterDeleteQuery::execute()
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
     }
 
-    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
-
     /// DELETE FROM ... WHERE 1 should be executed as truncate
     if ((table->supportsDelete() || table->supportsLightweightDelete()) && isAlwaysTruePredicate(delete_query.predicate))
     {
@@ -114,10 +111,14 @@ BlockIO InterpreterDeleteQuery::execute()
             DBMS_DEFAULT_MAX_PARSER_DEPTH,
             DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
+        auto metadata_snapshot = table->getInMemoryMetadataPtr();
         /// Drop table data, don't touch metadata
         table->truncate(current_query_ptr, metadata_snapshot, context, table_excl_lock);
         return {};
     }
+
+    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     if (table->supportsDelete())
     {
