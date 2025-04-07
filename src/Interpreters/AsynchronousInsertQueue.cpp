@@ -225,7 +225,7 @@ void AsynchronousInsertQueue::QueueShardFlushTimeHistory::updateWithCurrentTime(
     time_points.second = std::chrono::steady_clock::now();
 }
 
-AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_)
+AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_, size_t parse_pool_size_)
     : WithContext(context_)
     , pool_size(pool_size_)
     , flush_on_shutdown(flush_on_shutdown_)
@@ -239,6 +239,13 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
 {
     if (!pool_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "pool_size cannot be zero");
+
+    if (parse_pool_size_)
+        parse_pool_ptr = std::make_shared<ThreadPool>(
+          CurrentMetrics::AsynchronousInsertThreads,
+          CurrentMetrics::AsynchronousInsertThreadsActive,
+          CurrentMetrics::AsynchronousInsertThreadsScheduled,
+          parse_pool_size_);
 
     const auto & settings = getContext()->getSettingsRef();
 
@@ -777,7 +784,7 @@ try
 
     setThreadName("AsyncInsertQ");
 
-    const auto log = getLogger("AsynchronousInsertQueue");
+    // const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     auto insert_context = Context::createCopy(global_context);
@@ -972,7 +979,12 @@ try
         auto header = pipeline.getHeader();
 
         if (key.data_kind == DataKind::Parsed)
-            chunk = processEntriesWithParsing(key, data, header, insert_context, log, add_entry_to_asynchronous_insert_log);
+        {
+            if (parse_pool_ptr)
+                chunk = processEntriesWithAsyncParsing(key, data, header, insert_context, log, add_entry_to_asynchronous_insert_log);
+            else
+                chunk = processEntriesWithParsing(key, data, header, insert_context, log, add_entry_to_asynchronous_insert_log);
+        }
         else
             chunk = processPreprocessedEntries(data, header, add_entry_to_asynchronous_insert_log);
 
@@ -1109,6 +1121,177 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     Chunk chunk(executor.getResultColumns(), total_rows);
     chunk.getChunkInfos().add(std::move(chunk_info));
     return chunk;
+}
+
+template <typename LogFunc>
+Chunk AsynchronousInsertQueue::processEntriesWithAsyncParsing(
+    const InsertQuery & key,
+    const InsertDataPtr & data,
+    const Block & header,
+    const ContextPtr & insert_context,
+    LoggerPtr logger,
+    LogFunc && add_to_async_insert_log)
+{
+    // size_t total_rows = 0;
+    InsertData::EntryPtr current_entry;
+
+    const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
+    // auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
+    // std::shared_ptr<ISimpleTransform> adding_defaults_transform;
+
+    // if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_query.table_id)
+    // {
+    //     StoragePtr storage = DatabaseCatalog::instance().getTable(insert_query.table_id, insert_context);
+    //     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+    //     const auto & columns = metadata_snapshot->getColumns();
+    //     if (columns.hasDefaults())
+    //         adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(header, columns, *format, insert_context);
+    // }
+
+    // auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
+    // {
+    //     current_exception_v[executors_num] = e.displayText();
+    //     LOG_ERROR(logger, "Failed parsing for query '{}' with query id {}. {}",
+    //         key.query_str, current_entry->query_id, current_exception);
+
+    //     for (size_t i = 0; i < result_columns.size(); ++i)
+    //         result_columns[i]->rollback(*checkpoints[i]);
+
+    //     current_entry->finish(std::current_exception());
+    //     return 0;
+    // };
+
+    size_t num_threads = parse_pool_ptr->getMaxThreads();
+    std::vector<std::unique_ptr<StreamingFormatExecutor>> executors;
+    std::vector<InsertData::EntriesPair> entries_pairs;
+    // std::vector<AsyncInsertInfo> async_insert_infos;
+    std::vector<std::shared_ptr<AsyncInsertInfo>> chunk_info_v;
+    std::vector<size_t> total_rows_v;
+    std::vector<String> current_exception_v;
+    std::vector<InsertData::EntryPtr> entries_it_v;
+
+
+
+    auto entries_it = data->entries.begin();
+    size_t num_entries = data->entries.size();
+    size_t quotient = num_entries / num_threads;
+    size_t remainder = num_entries % num_threads;
+
+    current_exception_v.resize(num_threads);
+    entries_it_v.resize(num_threads);
+
+    for (size_t executors_num = 0; executors_num < num_threads; ++executors_num)
+    {
+        auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
+        std::shared_ptr<ISimpleTransform> adding_defaults_transform;
+
+        if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_query.table_id)
+        {
+            StoragePtr storage = DatabaseCatalog::instance().getTable(insert_query.table_id, insert_context);
+            auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+            const auto & columns = metadata_snapshot->getColumns();
+            if (columns.hasDefaults())
+                adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(header, columns, *format, insert_context);
+        }
+
+
+        auto on_error = [&, executors_num](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
+        {
+            current_exception_v[executors_num] = e.displayText();
+            LOG_ERROR(logger, "Failed parsing for query '{}' with query id {}. {}",
+                key.query_str, entries_it_v[executors_num]->query_id, current_exception_v[executors_num]);
+
+            for (size_t ii = 0; ii < result_columns.size(); ++ii)
+                result_columns[ii]->rollback(*checkpoints[executors_num]);
+
+            entries_it_v[executors_num]->finish(std::current_exception());
+            return 0;
+        };
+
+        executors.push_back(std::make_unique<StreamingFormatExecutor>(header, format, on_error, adding_defaults_transform));
+        chunk_info_v.push_back(std::make_shared<AsyncInsertInfo>());
+
+        size_t len = quotient;
+        if (remainder)
+        {
+            --remainder;
+            ++len;
+        }
+        auto from = entries_it;
+        std::advance(entries_it, len);
+
+        entries_pairs.push_back({from, entries_it});
+    }
+    // async_insert_infos.resize(num_threads);
+    total_rows_v.resize(num_threads);
+
+
+    // StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
+
+    for (size_t executors_num = 0; executors_num < executors.size(); ++executors_num)
+    {
+        parse_pool_ptr->scheduleOrThrowOnError(
+            [&, executors_num]()
+            {
+                auto & executor = executors[executors_num];
+                // auto & async_insert_info = async_insert_infos[executors_num];
+                auto & total_rows = total_rows_v[executors_num];
+                auto [entry_from, entry_to] = entries_pairs[executors_num];
+
+                for (auto entry_it = entry_from; entry_it != entry_to; ++entry_it)
+                {
+                    entries_it_v[executors_num] = *entry_it;
+
+                    auto & entry = *entry_it;
+
+                    const auto * bytes = entry->chunk.asString();
+                    if (!bytes)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Expected entry with data kind Parsed. Got: {}", entry->chunk.getDataKind());
+
+                    auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
+                    executor->setQueryParameters(entry->query_parameters);
+
+                    size_t num_bytes = bytes->size();
+                    size_t num_rows = executor->execute(*buffer);
+
+                    total_rows += num_rows;
+
+                    /// For some reason, client can pass zero rows and bytes to server.
+                    /// We don't update offsets in this case, because we assume every insert has some rows during dedup
+                    /// but we have nothing to deduplicate for this insert.
+                    if (num_rows > 0)
+                    {
+                        chunk_info_v[executors_num]->offsets.push_back(total_rows);
+                        chunk_info_v[executors_num]->tokens.push_back(entry->async_dedup_token);
+                    }
+
+                    add_to_async_insert_log(entry, current_exception_v[executors_num], num_rows, num_bytes);
+                    current_exception_v[executors_num].clear();
+                    entry->resetChunk();
+                }
+
+
+            });
+
+
+    }
+
+    parse_pool_ptr->wait();
+    Chunk result_chunk;
+
+    for (size_t executors_num = 0; executors_num < executors.size(); ++executors_num)
+    {
+        auto & executor = executors[executors_num];
+        Chunk chunk(executor->getResultColumns(), total_rows_v[executors_num]);
+        chunk.getChunkInfos().add(chunk_info_v[executors_num]);
+        if (executors_num)
+            result_chunk.append(chunk);
+        else
+            result_chunk.swap(chunk);
+    }
+
+    return result_chunk;
 }
 
 template <typename LogFunc>
