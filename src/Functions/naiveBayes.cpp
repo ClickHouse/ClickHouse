@@ -81,28 +81,25 @@ public:
 
         while (!in.eof())
         {
-            String ngram, class_label;
-            int count = 0;
+            UInt32 class_id = 0;
+            DB::readBinary(class_id, in); // read the 4-byte class id
 
-            DB::readStringUntilWhitespace(ngram, in);
-            in.ignore();
+            UInt32 ngram_length = 0;
+            DB::readBinary(ngram_length, in); // read the 4-byte length of the ngram string
 
-            if (ngram.empty())
-                break;
+            String ngram;
+            ngram.resize(ngram_length);
+            in.readStrict(&ngram[0], ngram_length); // read the ngram bytes
 
-            DB::readStringUntilWhitespace(class_label, in);
-            in.ignore();
-
-            DB::readIntText(count, in);
-            in.ignore();
+            UInt32 count = 0;
+            DB::readBinary(count, in); // read the 4-byte count
 
             StringRef ngram_ref = allocateString(ngram);
-            StringRef class_label_ref = allocateString(class_label);
 
             auto & class_map = ngram_counts[ngram_ref];
-            class_map[class_label_ref] += count;
+            class_map[class_id] += count;
 
-            class_totals[class_label_ref] += count;
+            class_totals[class_id] += count;
         }
 
         if (ngram_counts.empty())
