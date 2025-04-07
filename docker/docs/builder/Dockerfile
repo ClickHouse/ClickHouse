@@ -6,10 +6,10 @@ ARG HTMLTEST_VERSION=0.17.0
 RUN CGO_ENABLED=0 go install github.com/wjdp/htmltest@v${HTMLTEST_VERSION} \
     && mv "${GOPATH}/bin/htmltest" /usr/bin/htmltest
 
-FROM node:20-bookworm-slim
+FROM node:20-bookworm
 
 RUN apt-get update && \
-    apt install -y --no-install-recommends git openssh-server bash ca-certificates curl python3 python3-venv rsync build-essential && \
+    apt install -y --no-install-recommends git openssh-server bash ca-certificates curl python3 python3-venv rsync && \
     rm -rf /var/lib/apt/lists/*:
 
 # At this point we want to really update /opt/clickhouse-docs directory
