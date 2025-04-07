@@ -1,13 +1,11 @@
 #pragma once
 
-#include <exception>
 #include <optional>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-
 
 namespace DB
 {
@@ -112,8 +110,9 @@ public:
         else
         {
             auto & lhs = asTwoLevel();
-            const auto & rhs_ptr = other.getTwoLevelSet();
-            const auto & rhs = *rhs_ptr;
+            if (other.isSingleLevel())
+                other.convertToTwoLevel();
+            const auto & rhs = other.asTwoLevel();
             if (!thread_pool)
             {
                 for (size_t i = 0; i < rhs.NUM_BUCKETS; ++i)
@@ -200,18 +199,9 @@ public:
 
     size_t size() const { return isSingleLevel() ? asSingleLevel().size() : asTwoLevel().size(); }
 
-    /// To convert set to two level before merging (we cannot just call convertToTwoLevel() on right hand side set, because it is declared const).
-    const std::optional<TwoLevelSet> & getTwoLevelSet() const
-    {
-        if (!two_level_set)
-            two_level_set.emplace(single_level_set);
-        single_level_set.clear();
-        return two_level_set;
-    }
-
     static bool worthConvertingToTwoLevel(size_t size) { return size > 100'000; }
 
-    void convertToTwoLevel()
+    void convertToTwoLevel() const
     {
         if (!two_level_set)
             two_level_set.emplace(single_level_set);

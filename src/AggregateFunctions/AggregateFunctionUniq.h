@@ -3,7 +3,6 @@
 #include <atomic>
 #include <memory>
 #include <type_traits>
-#include <utility>
 #include <city.h>
 
 #include <base/bit_cast.h>
@@ -145,7 +144,7 @@ struct AggregateFunctionUniqExactData
 
     /// When creating, the hash table must be small.
     using SingleLevelSet = HashSet<Key, HashCRC32<Key>, HashTableGrower<4>, HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 4)>>;
-    using TwoLevelSet = TwoLevelHashSet<Key, HashCRC32<Key>>;
+    using TwoLevelSet = TwoLevelHashSet<Key, HashCRC32<Key>, HashTableGrower<>>;
     using Set = UniqExactSet<SingleLevelSet, TwoLevelSet>;
 
     Set set;
@@ -165,7 +164,7 @@ struct AggregateFunctionUniqExactData<String, is_able_to_parallelize_merge_>
 
     /// When creating, the hash table must be small.
     using SingleLevelSet = HashSet<Key, UInt128TrivialHash, HashTableGrower<3>, HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>>;
-    using TwoLevelSet = TwoLevelHashSet<Key, UInt128TrivialHash>;
+    using TwoLevelSet = TwoLevelHashSet<Key, UInt128TrivialHash, HashTableGrower<>>;
     using Set = UniqExactSet<SingleLevelSet, TwoLevelSet>;
 
     Set set;
@@ -185,7 +184,7 @@ struct AggregateFunctionUniqExactData<IPv6, is_able_to_parallelize_merge_>
 
     /// When creating, the hash table must be small.
     using SingleLevelSet = HashSet<Key, UInt128TrivialHash, HashTableGrower<3>, HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>>;
-    using TwoLevelSet = TwoLevelHashSet<Key, UInt128TrivialHash>;
+    using TwoLevelSet = TwoLevelHashSet<Key, UInt128TrivialHash, HashTableGrower<>>;
     using Set = UniqExactSet<SingleLevelSet, TwoLevelSet>;
 
     Set set;
