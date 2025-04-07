@@ -65,6 +65,8 @@ Chunk StreamingExchangeSource::generate()
 
     UInt64 num_rows = 0;
     readVarUInt(num_rows, in);
+    UInt64 num_columns = 0;
+    readVarUInt(num_columns, in);
 
     Chunk result;
     if (num_rows != 0)
@@ -77,9 +79,15 @@ Chunk StreamingExchangeSource::generate()
 
         LOG_TEST(log, "Received chunk with {} rows from exchange stream {}", num_rows, stream_name);
     }
+    else if (num_columns != 0)
+    {
+        /// Empty chunk with non-zero number of columns
+        LOG_TEST(log, "Received empty chunk with {} columns from exchange stream {}", num_columns, stream_name);
+        result = Chunk(output.getHeader().cloneEmptyColumns(), 0);
+    }
     else
     {
-        /// Empty chunk means end of stream.
+        /// Empty chunk with no columns means end of stream.
         finished_reading = true;
         LOG_TRACE(log, "Finished reading from exchange stream {}, total rows: {}, bytes: {}",
             stream_name, rows_read, in.count());

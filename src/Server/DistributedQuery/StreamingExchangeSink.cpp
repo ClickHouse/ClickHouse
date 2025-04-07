@@ -82,6 +82,10 @@ void StreamingExchangeSink::tryToSwitchSendBuffer()
     if (current_send_position_in_buffer < current_send_buffer.size())
         return;
 
+    /// Check that new buffer has anything in it
+    if (out->count() == 0)
+        return;
+
     out->finalize();
     current_send_buffer = out->str();
     current_send_position_in_buffer = 0;
@@ -180,7 +184,6 @@ void StreamingExchangeSink::consume(Chunk chunk)
     if (chunk.getNumRows() == 0 && chunk.getNumColumns() != 0)
     {
         LOG_TEST(log, "Unexpected chunk with 0 rows to exchange stream {}", stream_name);
-        return;
     }
 
     LOG_TEST(log, "Writing chunk with {} rows to exchange stream {}", chunk.getNumRows(), stream_name);
@@ -189,6 +192,7 @@ void StreamingExchangeSink::consume(Chunk chunk)
     writeVarUInt(StreamingExchangeProtocol::PacketType::Data, *out);
 
     writeVarUInt(chunk.getNumRows(), *out);
+    writeVarUInt(chunk.getNumColumns(), *out);
 
     if (chunk.getNumRows() > 0)
     {
@@ -200,6 +204,11 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
         writer->flush();
         compressed_buf->finalize();
+    }
+    else
+    {
+        /// Just in case, flush buffer to the socket
+        tryToSwitchSendBuffer();
     }
 
     sendToSocket();
