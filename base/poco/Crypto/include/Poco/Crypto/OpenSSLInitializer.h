@@ -24,10 +24,6 @@
 #include "Poco/Crypto/Crypto.h"
 #include "Poco/Mutex.h"
 
-#if defined(OPENSSL_FIPS) && OPENSSL_VERSION_NUMBER < 0x010001000L
-#    include <openssl/fips.h>
-#endif
-
 
 extern "C" {
 struct CRYPTO_dynlock_value

@@ -20,9 +20,7 @@
 #include <openssl/crypto.h>
 #include <openssl/err.h>
 #include <openssl/provider.h>
-#if OPENSSL_VERSION_NUMBER >= 0x0907000L
 #include <openssl/conf.h>
-#endif
 
 
 using Poco::RandomInputStream;
@@ -63,9 +61,7 @@ void OpenSSLInitializer::initialize()
 {
 	if (++_rc == 1)
 	{
-#if OPENSSL_VERSION_NUMBER >= 0x0907000L
 		OPENSSL_config(NULL);
-#endif
 		SSL_library_init();
 		SSL_load_error_strings();
 		OpenSSL_add_all_algorithms();

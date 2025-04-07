@@ -27,12 +27,6 @@
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
-#if defined(BORINGSSL_API_VERSION)
-#if BORINGSSL_API_VERSION <= 9
-#define BORINGSSL_DEPRECATED 1
-#endif
-#endif
-
 namespace Poco {
 namespace Net {
 
@@ -543,18 +537,10 @@ void Context::createSSLContext()
 		switch (_usage)
 		{
 		case CLIENT_USE:
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 			_pSSLContext = SSL_CTX_new(TLS_client_method());
-#else
-			_pSSLContext = SSL_CTX_new(SSLv23_client_method());
-#endif
 			break;
 		case SERVER_USE:
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 			_pSSLContext = SSL_CTX_new(TLS_server_method());
-#else
-			_pSSLContext = SSL_CTX_new(SSLv23_server_method());
-#endif
 			break;
 #if defined(SSL_OP_NO_TLSv1) && !defined(OPENSSL_NO_TLS1)
 		case TLSV1_CLIENT_USE:
@@ -670,7 +656,6 @@ void Context::initDH(const std::string& dhParamsFile)
 			std::string msg = Utility::getLastError();
 			throw SSLContextException("Error creating Diffie-Hellman parameters", msg);
 		}
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER) && !defined(BORINGSSL_DEPRECATED)
 		BIGNUM* p = BN_bin2bn(dh1024_p, sizeof(dh1024_p), 0);
 		BIGNUM* g = BN_bin2bn(dh1024_g, sizeof(dh1024_g), 0);
 		DH_set0_pqg(dh, p, 0, g);
@@ -680,20 +665,6 @@ void Context::initDH(const std::string& dhParamsFile)
 			DH_free(dh);
 			throw SSLContextException("Error creating Diffie-Hellman parameters");
 		}
-#else
-		dh->p = BN_bin2bn(dh1024_p, sizeof(dh1024_p), 0);
-		dh->g = BN_bin2bn(dh1024_g, sizeof(dh1024_g), 0);
-#ifdef BORINGSSL_DEPRECATED
-		dh->priv_length = 160;
-#else
-		dh->length = 160;
-#endif
-		if ((!dh->p) || (!dh->g))
-		{
-			DH_free(dh);
-			throw SSLContextException("Error creating Diffie-Hellman parameters");
-		}
-#endif
 	}
 	SSL_CTX_set_tmp_dh(_pSSLContext, dh);
 	SSL_CTX_set_options(_pSSLContext, SSL_OP_SINGLE_DH_USE);
@@ -707,8 +678,6 @@ void Context::initDH(const std::string& dhParamsFile)
 
 void Context::initECDH(const std::string& curve)
 {
-#if OPENSSL_VERSION_NUMBER >= 0x0090800fL
-#ifndef OPENSSL_NO_ECDH
 	int nid = 0;
 	if (!curve.empty())
 	{
@@ -731,8 +700,6 @@ void Context::initECDH(const std::string& curve)
 	SSL_CTX_set_tmp_ecdh(_pSSLContext, ecdh);
 	SSL_CTX_set_options(_pSSLContext, SSL_OP_SINGLE_ECDH_USE);
 	EC_KEY_free(ecdh);
-#endif
-#endif
 }
 
 
