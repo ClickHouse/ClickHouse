@@ -487,6 +487,7 @@ class ClickHouseCluster:
         self.base_zookeeper_cmd = None
         self.base_mysql57_cmd = []
         self.base_kafka_cmd = []
+        self.base_kafka_sasl_cmd = []
         self.base_kerberized_kafka_cmd = []
         self.base_kerberos_kdc_cmd = []
         self.base_rabbitmq_cmd = []
@@ -506,6 +507,7 @@ class ClickHouseCluster:
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
         self.with_kafka = False
+        self.with_kafka_sasl = False
         self.with_kerberized_kafka = False
         self.with_kerberos_kdc = False
         self.with_rabbitmq = False
@@ -559,6 +561,8 @@ class ClickHouseCluster:
         self.kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
 
         self.coredns_host = "coredns"
+
+        self.kafka_sasl_host = "kafka_sasl"
 
         # available when with_kerberozed_kafka == True
         # reuses kafka_dir
@@ -1225,6 +1229,22 @@ class ClickHouseCluster:
         )
         return self.base_kafka_cmd
 
+    def setup_kafka_sasl_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_kafka_sasl = True
+        env_variables["KAFKA_HOST"] = self.kafka_sasl_host
+        env_variables["KAFKA_EXTERNAL_PORT"] = str(self.kafka_port)
+        env_variables["KAFKA_DIR"] = instance.path + "/"
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka_sasl.yml")]
+        )
+        self.base_kafka_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_kafka_sasl.yml"),
+        )
+        return self.base_kafka_cmd
+
     def setup_kerberized_kafka_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1562,6 +1582,7 @@ class ClickHouseCluster:
         with_mysql8=False,
         with_mysql_cluster=False,
         with_kafka=False,
+        with_kafka_sasl=False,
         with_kerberized_kafka=False,
         with_kerberos_kdc=False,
         with_secrets=False,
@@ -1687,12 +1708,13 @@ class ClickHouseCluster:
             with_mysql8=with_mysql8,
             with_mysql_cluster=with_mysql_cluster,
             with_kafka=with_kafka,
+            with_kafka_sasl=with_kafka_sasl,
             with_kerberized_kafka=with_kerberized_kafka,
             with_kerberos_kdc=with_kerberos_kdc,
             with_rabbitmq=with_rabbitmq,
             with_nats=with_nats,
             with_nginx=with_nginx,
-            with_secrets=with_secrets or with_kerberos_kdc or with_kerberized_kafka,
+            with_secrets=with_secrets or with_kerberos_kdc or with_kerberized_kafka or with_kafka_sasl,
             with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
@@ -1832,6 +1854,11 @@ class ClickHouseCluster:
         if with_kafka and not self.with_kafka:
             cmds.append(
                 self.setup_kafka_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_kafka_sasl and not self.with_kafka_sasl:
+            cmds.append(
+                self.setup_kafka_sasl_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_kerberized_kafka and not self.with_kerberized_kafka:
@@ -2906,6 +2933,15 @@ class ClickHouseCluster:
                 self.wait_kafka_is_available(self.kafka_docker_id, self.kafka_port)
                 self.wait_schema_registry_to_start()
 
+            if self.with_kafka_sasl and self.base_kafka_sasl_cmd:
+                logging.debug("Setup Kafka with SASL")
+                os.mkdir(self.kafka_dir)
+                subprocess_check_call(
+                    self.base_kafka_sasl_cmd + common_opts + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+                self.wait_kafka_is_available(self.kafka_docker_id, self.kafka_port)
+
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 logging.debug("Setup kerberized kafka")
                 os.mkdir(self.kafka_dir)
@@ -3383,6 +3419,7 @@ class ClickHouseInstance:
         with_mysql8,
         with_mysql_cluster,
         with_kafka,
+        with_kafka_sasl,
         with_kerberized_kafka,
         with_kerberos_kdc,
         with_rabbitmq,
@@ -3477,6 +3514,7 @@ class ClickHouseInstance:
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
         self.with_kafka = with_kafka
+        self.with_kafka_sasl = with_kafka_sasl
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_kerberos_kdc = with_kerberos_kdc
         self.with_rabbitmq = with_rabbitmq
@@ -4732,6 +4770,9 @@ class ClickHouseInstance:
         if self.with_kafka:
             depends_on.append("kafka1")
             depends_on.append("schema-registry")
+
+        if self.with_kafka_sasl:
+            depends_on.append("kafka_sasl")
 
         if self.with_kerberized_kafka:
             depends_on.append("kerberized_kafka1")
