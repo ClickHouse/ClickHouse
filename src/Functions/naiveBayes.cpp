@@ -179,13 +179,12 @@ public:
 
     /// Classify an input string. The function splits the input into tokens (by space)
     /// and computes a log-probability for each class using Laplace smoothing
-    String classify(const String & input) const
+    UInt32 classify(const String & input) const
     {
         if (!model_loaded)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Model not loaded. Load the model using loadModel() before classifying.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Model not loaded. Load the model using loadModel() before classifying.");
         }
-
 
         ProbabilityMap class_log_probabilities;
         for (const auto & entry : class_priors)
@@ -196,29 +195,56 @@ public:
         std::vector<String> tokens;
         boost::split(tokens, input, boost::is_any_of(" "));
 
-        for (const auto & token : tokens)
+        // If n > 1, add (n - 1) start tokens at the front and (n - 1) end tokens at the back
+        if (n > 1)
         {
-            StringRef token_ref(token);
+            std::vector<String> padded;
+            padded.insert(padded.end(), n - 1, start_token);
+            padded.insert(padded.end(), tokens.begin(), tokens.end());
+            padded.insert(padded.end(), n - 1, end_token);
+            tokens = std::move(padded);
+        }
+
+        // Now, create n-grams: each ngram will consist of n consecutive tokens
+        std::vector<String> ngrams;
+        if (tokens.size() >= n)
+        {
+            for (size_t i = 0; i <= tokens.size() - n; ++i)
+        {
+                String ngram;
+                for (size_t j = 0; j < n; ++j)
+                {
+                    if (j > 0)
+                        ngram += " ";
+                    ngram += tokens[i + j];
+                }
+                ngrams.push_back(ngram);
+            }
+        }
+
+        for (const auto & ngram : ngrams)
+        {
+            StringRef token_ref(ngram);
             bool token_exists = (ngram_counts.find(token_ref) != ngram_counts.end());
             const auto * token_class_map = token_exists ? &ngram_counts.find(token_ref)->getMapped() : nullptr;
             for (const auto & class_entry : class_totals)
             {
-                StringRef class_label = class_entry.getKey();
+                UInt32 class_id = class_entry.getKey();
                 double class_total = static_cast<double>(class_entry.getMapped());
                 double count = 0.0;
                 if (token_exists)
                 {
-                    auto it = token_class_map->find(class_label);
+                    auto it = token_class_map->find(class_id);
                     if (it != token_class_map->end())
                         count = static_cast<double>(it->getMapped());
                 }
-                double probability = (count + alpha) / (class_total + alpha * vocabulary_size);
-                class_log_probabilities[class_label] += std::log(probability);
+                const double probability = (count + alpha) / (class_total + alpha * vocabulary_size);
+                class_log_probabilities[class_id] += std::log(probability);
             }
         }
 
         /// Find the class with the highest log probability
-        StringRef best_class;
+        UInt32 best_class = 0;
         double max_log_prob = -std::numeric_limits<double>::infinity();
         for (const auto & entry : class_log_probabilities)
         {
@@ -229,7 +255,7 @@ public:
             }
         }
 
-        return best_class.toString();
+        return best_class;
     }
 };
 
