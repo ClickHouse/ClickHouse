@@ -3,8 +3,10 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include "Interpreters/Context.h"
 
 #include <list>
+#include <optional>
 
 namespace DB
 {
@@ -44,6 +46,9 @@ class ASTInsertQuery;
 
 class QueryPipeline;
 
+class ParallelReplicasReadingCoordinator;
+using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
+
 namespace ClusterProxy
 {
 
@@ -66,7 +71,7 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 
 bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & context);
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
-void dropReadFromRemoteInPlan(QueryPlan & query_plan);
+ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query_plan);
 
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
 /// `stream_factory` object encapsulates the logic of creating plans for a different type of query
@@ -87,7 +92,11 @@ void executeQuery(
     AdditionalShardFilterGenerator shard_filter_generator,
     bool is_remote_function);
 
-std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(const ASTInsertQuery & query_ast, ContextPtr context);
+std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
+    const ASTInsertQuery & query_ast,
+    const ContextPtr & context,
+    std::optional<QueryPipeline> pipeline = std::nullopt,
+    std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator = std::nullopt);
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,

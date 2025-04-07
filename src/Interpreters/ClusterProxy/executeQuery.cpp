@@ -1,3 +1,4 @@
+#include <optional>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -532,7 +533,7 @@ bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & con
     return is_reading_with_parallel_replicas(plan.getRootNode());
 }
 
-void dropReadFromRemoteInPlan(QueryPlan & query_plan)
+ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query_plan)
 {
     struct Frame
     {
@@ -553,7 +554,7 @@ void dropReadFromRemoteInPlan(QueryPlan & query_plan)
         if (frame.node->children.empty())
         {
             const auto * step = frame.node->step.get();
-            if (typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
+            if (const auto * read_from_remote = typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
             {
                 auto & children = frame.parent->children;
                 for (auto it = begin(children); it != end(children); ++it)
@@ -561,10 +562,9 @@ void dropReadFromRemoteInPlan(QueryPlan & query_plan)
                     if ((*it)->step.get() == step)
                     {
                         children.erase(it);
-                        break;
+                        return read_from_remote->getCoordinator();
                     }
                 }
-                return;
             }
         }
 
@@ -579,9 +579,15 @@ void dropReadFromRemoteInPlan(QueryPlan & query_plan)
 
         stack.pop_back();
     }
+
+    return nullptr;
 }
 
-std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(const ASTInsertQuery & query_ast, ContextPtr context)
+std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
+    const ASTInsertQuery & query_ast,
+    const ContextPtr & context,
+    std::optional<QueryPipeline> local_pipeline,
+    std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator)
 {
     auto logger = getLogger("executeInsertSelectWithParallelReplicas");
     LOG_DEBUG(logger, "Executing query with parallel replicas: {}", query_ast.select->formatForLogging());
@@ -673,8 +679,6 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(const ASTIn
         max_replicas_to_use = shard.getAllNodeCount();
     }
 
-    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
-
     auto external_tables = new_context->getExternalTables();
 
     std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
@@ -745,17 +749,27 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(const ASTIn
         LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Formatted select query: {}", buf.str());
     }
 
+    const bool skip_local_replica = local_pipeline.has_value();
     QueryPipeline pipeline;
+    if (local_pipeline)
+    {
+        chassert(coordinator.has_value());
+        pipeline.addCompletedPipeline(std::move(*local_pipeline));
+    }
+    if (!coordinator)
+        coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
+
     for (size_t i = 0; i < pools_to_use.size(); ++i)
     {
-        const auto & pool = pools_to_use[i];
+        if (skip_local_replica && i == *local_replica_index)
+            continue;
 
         IConnections::ReplicaInfo replica_info{
             /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
             .number_of_current_replica = i,
         };
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            pool,
+            pools_to_use[i],
             new_query_str,
             Block{},
             new_context,
@@ -763,7 +777,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(const ASTIn
             Scalars{},
             Tables{},
             QueryProcessingStage::Complete,
-            RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = replica_info});
+            RemoteQueryExecutor::Extension{.parallel_reading_coordinator = *coordinator, .replica_info = replica_info});
 
         QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
             remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
