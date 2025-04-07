@@ -528,7 +528,8 @@ try
                         createKeeperPrometheusHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"),
                         server_pool,
                         socket,
-                        http_params));
+                        http_params,
+                        nullptr));
             });
 
         /// HTTP control endpoints
@@ -550,7 +551,7 @@ try
                 port_name,
                 "HTTP Control: http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    std::move(my_http_context), createKeeperHTTPControlMainHandlerFactory(config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params)
+                    std::move(my_http_context), createKeeperHTTPControlMainHandlerFactory(config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params, nullptr)
                     );
         });
     }
