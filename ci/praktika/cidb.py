@@ -107,6 +107,45 @@ class CIDB:
                 record.test_context_raw = result_.info
                 yield json.dumps(dataclasses.asdict(record))
 
+    def query(self, query: str, retries: int = 1):
+        """
+        Executes a SELECT query on CI DB with retry support.
+
+        :param query: SQL query string
+        :param retries: Number of retry attempts on failure
+        :return: Response text if successful
+        """
+        params = {
+            "database": Settings.CI_DB_DB_NAME,
+            "query": query,
+            "send_logs_level": "warning",
+        }
+
+        for attempt in range(1, retries + 1):
+            try:
+                response = requests.post(
+                    url=self.url,
+                    params=params,
+                    headers=self.auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                )
+
+                if response.ok:
+                    return response.text
+                else:
+                    print(
+                        f"WARNING: CIDB query failed (status {response.status_code}) - Attempt {attempt}"
+                    )
+                    if attempt == retries:
+                        raise RuntimeError(
+                            f"Failed to query CI DB. Response code: {response.status_code}, Body: {response.text}"
+                        )
+
+            except Exception as ex:
+                print(f"ERROR: Exception during CI DB query attempt {attempt}: {ex}")
+                if attempt == retries:
+                    raise ex
+
     def insert_rows(self, jsons, retries=3):
         params = {
             "database": Settings.CI_DB_DB_NAME,
