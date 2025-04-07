@@ -220,9 +220,12 @@
     \
     M(IcebergPartitionPrunnedFiles, "Number of skipped files during Iceberg partition pruning", ValueType::Number) \
     M(IcebergTrivialCountOptimizationApplied, "Trivial count optimization applied while reading from Iceberg", ValueType::Number) \
+    M(IcebergMinMaxIndexPrunnedFiles, "Number of skipped files by using MinMax index in Iceberg", ValueType::Number) \
     M(JoinBuildTableRowCount, "Total number of rows in the build table for a JOIN operation.", ValueType::Number) \
     M(JoinProbeTableRowCount, "Total number of rows in the probe table for a JOIN operation.", ValueType::Number) \
     M(JoinResultRowCount, "Total number of rows in the result of a JOIN operation.", ValueType::Number) \
+    \
+    M(DeltaLakePartitionPrunedFiles, "Number of skipped files during DeltaLake partition pruning", ValueType::Number) \
     \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.", ValueType::Number) \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.", ValueType::Number) \
@@ -386,7 +389,7 @@ The server successfully detected this situation and will download merged part fr
     M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel mode. This is time spent in syscalls, excluding waiting time during blocking syscalls.", ValueType::Microseconds) \
     M(MemoryOvercommitWaitTimeMicroseconds, "Total time spent in waiting for memory to be freed in OvercommitTracker.", ValueType::Microseconds) \
     M(MemoryAllocatorPurge, "Total number of times memory allocator purge was requested", ValueType::Number) \
-    M(MemoryAllocatorPurgeTimeMicroseconds, "Total number of times memory allocator purge was requested", ValueType::Microseconds) \
+    M(MemoryAllocatorPurgeTimeMicroseconds, "Total time spent for memory allocator purge", ValueType::Microseconds) \
     M(SoftPageFaults, "The number of soft page faults in query execution threads. Soft page fault usually means a miss in the memory allocator cache, which requires a new memory mapping from the OS and subsequent allocation of a page of physical memory.", ValueType::Number) \
     M(HardPageFaults, "The number of hard page faults in query execution threads. High values indicate either that you forgot to turn off swap on your server, or eviction of memory pages of the ClickHouse binary during very high memory pressure, or successful usage of the 'mmap' read method for the tables data.", ValueType::Number) \
     \
@@ -815,6 +818,10 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheStartRangeMicroseconds, "Distributed Cache read buffer event. Time spent to start a new read range with distributed cache", ValueType::Microseconds) \
     M(DistrCacheIgnoredBytesWhileWaitingProfileEvents, "Distributed Cache read buffer event. Ignored bytes while waiting for profile events in distributed cache", ValueType::Number) \
     M(DistrCacheRangeChange, "Distributed Cache read buffer event. Number of times we changed read range because of seek/last_position change", ValueType::Number) \
+    M(DistrCacheRangeResetBackward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
+    M(DistrCacheRangeResetForward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
+    M(DistrCacheReconnectsAfterTimeout, "Distributed Cache read buffer event. The number of reconnects after timeout", ValueType::Number) \
+    M(DistrCacheServerUpdates, "Distributed Cache read buffer event. The number of server updates because server is not longer registered in keeper", ValueType::Number) \
     \
     M(DistrCacheGetResponseMicroseconds, "Distributed Cache client event. Time spend to wait for response from distributed cache", ValueType::Microseconds) \
     M(DistrCacheReadErrors, "Distributed Cache client event. Number of distributed cache errors during read", ValueType::Number) \
@@ -834,10 +841,6 @@ The server successfully detected this situation and will download merged part fr
     \
     M(DistrCacheReadBytesFromCache, "Distributed Cache read buffer event. Bytes read from distributed cache", ValueType::Bytes) \
     M(DistrCacheReadBytesFromFallbackBuffer, "Distributed Cache read buffer event. Bytes read from fallback buffer", ValueType::Number) \
-    \
-    M(DistrCacheRangeResetBackward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
-    M(DistrCacheRangeResetForward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
-    M(DistrCacheReconnectsAfterTimeout, "Distributed Cache server event. The number of reconnects after timeout", ValueType::Number) \
     \
     M(DistrCacheOpenedConnections, "Distributed Cache connection event. The number of open connections to distributed cache", ValueType::Number) \
     M(DistrCacheReusedConnections, "Distributed Cache connection event. The number of reused connections to distributed cache", ValueType::Number) \
@@ -917,8 +920,14 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeHandleOutdatedPartsMicroseconds, "Time of handling outdated parts in scheduleDataProcessingJob", ValueType::Number) \
     M(SharedMergeTreeGetPartsBatchToLoadMicroseconds, "Time of getPartsBatchToLoad in scheduleDataProcessingJob", ValueType::Number) \
     M(SharedMergeTreeTryUpdateDiskMetadataCacheForPartMicroseconds, "Time of tryUpdateDiskMetadataCacheForPart in scheduleDataProcessingJob", ValueType::Number) \
-    M(SharedMergeTreeLoadChecksumAndIndexesMicroseconds, "Time of loadColumnsChecksumsIndexes only for SharedMergeTree", ValueType::Number) \
-    M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache", ValueType::Number) \
+    M(SharedMergeTreeLoadChecksumAndIndexesMicroseconds, "Time of loadColumnsChecksumsIndexes only for SharedMergeTree", ValueType::Number)                                                                                                                                                                                                             \
+    \
+    M(SharedMergeTreeDataPartsFetchAttempt, "How many times we tried to fetch data parts", ValueType::Number) \
+    M(SharedMergeTreeDataPartsFetchFromPeer, "How many times we fetch data parts from peer", ValueType::Number) \
+    M(SharedMergeTreeDataPartsFetchFromPeerMicroseconds, "Data parts fetch from peer microseconds", ValueType::Number) \
+    M(SharedMergeTreeDataPartsFetchFromS3, "How many times we fetch data parts from S3", ValueType::Number) \
+    \
+    M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache", ValueType::Number)                                                                                                                                                                                                                       \
     M(KeeperLogsEntryReadFromCommitCache, "Number of log entries in Keeper being read from commit logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromFile, "Number of log entries in Keeper being read directly from the changelog file", ValueType::Number) \
     M(KeeperLogsPrefetchedEntries, "Number of log entries in Keeper being prefetched from the changelog file", ValueType::Number) \
@@ -959,6 +968,7 @@ The server successfully detected this situation and will download merged part fr
     M(ConcurrencyControlSlotsAcquired, "Total number of CPU slot acquired", ValueType::Number) \
     M(ConcurrencyControlSlotsAcquiredNonCompeting, "Total number of noncompeting CPU slot acquired", ValueType::Number) \
     M(ConcurrencyControlQueriesDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale", ValueType::Number) \
+    M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots.", ValueType::Microseconds) \
     \
     M(SharedDatabaseCatalogFailedToApplyState, "Number of failures to apply new state in SharedDatabaseCatalog", ValueType::Number) \
     M(SharedDatabaseCatalogStateApplicationMicroseconds, "Total time spend on application of new state in SharedDatabaseCatalog", ValueType::Microseconds) \
