@@ -11,6 +11,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <base/UUID.h>
 
+#include <filesystem>
 #include <optional>
 
 namespace DB
@@ -28,6 +29,9 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
+
+template <typename TKey, typename TMapped, typename HashFunction, typename WeightFunction>
+class OnDiskCache;
 
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
@@ -142,8 +146,14 @@ private:
 public:
     /// query --> query result
     using Cache = CacheBase<Key, Entry, KeyHasher, QueryResultCacheEntryWeight>;
+    using DiskCache = OnDiskCache<Key, Entry, KeyHasher, QueryResultCacheEntryWeight>;
 
-    QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
+    QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_, const std::optional<std::filesystem::path> & path_);
+
+    void shutdown();
+
+    void readCacheEntriesFromPersistence();
+    void writeCacheEntriesToPersistence();
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
@@ -169,6 +179,8 @@ public:
 
 private:
     Cache cache; /// has its own locking --> not protected by mutex
+
+    DiskCache disk_cache; /// has its own locking --> not protected by mutex
 
     mutable std::mutex mutex;
 
@@ -261,6 +273,20 @@ private:
     friend class QueryResultCache; /// for createReader()
 };
 
+template <typename TKey, typename TMapped, typename HashFunction, typename WeightFunction>
+class OnDiskCache {
+public:
+    explicit OnDiskCache(std::filesystem::path& path_) : path(path_) {
+        readCacheEntriesFromPersistence();
+    }
+
+private:
+    void readCacheEntriesFromPersistence();
+
+    std::filesystem::path path; /// directory containing persisted query cache entries which are loaded/stored on
+                                /// database startup/shutdown (only set if query cache persistence is configured)
+    std::mutex mutex;
+};
 
 using QueryResultCachePtr = std::shared_ptr<QueryResultCache>;
 

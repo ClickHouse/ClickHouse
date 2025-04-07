@@ -1568,10 +1568,13 @@ static BlockIO executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                if (query_result_cache_usage == QueryResultCacheUsage::Write)
+                if (query_result_cache_usage == QueryResultCacheUsage::Write) {
                     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
                     /// prevent partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryResultCache();
+                    context->getQueryResultCache()->writeCacheEntriesToPersistence(); /// debug
+                    context->getQueryResultCache()->readCacheEntriesFromPersistence(); /// debug
+                }
 
                 logQueryFinish(elem, context, out_ast, query_pipeline, pulling_pipeline, query_span, query_result_cache_usage, internal);
 

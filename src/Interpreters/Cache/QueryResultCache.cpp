@@ -1,8 +1,14 @@
 #include "Interpreters/Cache/QueryResultCache.h"
 
+#include <Formats/NativeWriter.h>
+#include <Formats/NativeReader.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -23,6 +29,7 @@
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
+#include <filesystem>
 
 namespace ProfileEvents
 {
@@ -410,6 +417,50 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
     }
 }
 
+namespace
+{
+
+/// Combine N (usually small) chunks to M chunks with max_chunk_size rows each.
+/// The input chunks are non-const to save unnecessary copies for convertToFullIfSparse and convertToFullIfConst.
+Chunks squashChunks(Chunks & chunks, size_t max_chunk_size)
+{
+    Chunks squashed_chunks;
+    size_t rows_remaining_in_squashed = 0; /// how many further rows can the last squashed chunk consume until it reaches max_block_size
+
+    for (auto & chunk : chunks)
+    {
+        convertToFullIfSparse(chunk);
+        convertToFullIfConst(chunk);
+
+        const size_t rows_chunk = chunk.getNumRows();
+        if (rows_chunk == 0)
+            continue;
+
+        size_t rows_chunk_processed = 0;
+        while (true)
+        {
+            if (rows_remaining_in_squashed == 0)
+            {
+                Chunk empty_chunk = Chunk(chunk.cloneEmptyColumns(), 0);
+                squashed_chunks.push_back(std::move(empty_chunk));
+                rows_remaining_in_squashed = max_chunk_size;
+            }
+
+            const size_t rows_to_append = std::min(rows_chunk - rows_chunk_processed, rows_remaining_in_squashed);
+            squashed_chunks.back().append(chunk, rows_chunk_processed, rows_to_append);
+            rows_chunk_processed += rows_to_append;
+            rows_remaining_in_squashed -= rows_to_append;
+
+            if (rows_chunk_processed == rows_chunk)
+                break;
+        }
+    }
+
+    return squashed_chunks;
+}
+
+}
+
 void QueryResultCacheWriter::finalizeWrite()
 {
     if (skip_insert)
@@ -440,62 +491,30 @@ void QueryResultCacheWriter::finalizeWrite()
         /// Squash partial result chunks to chunks of size 'max_block_size' each. This costs some performance but provides a more natural
         /// compression of neither too small nor big blocks. Also, it will look like 'max_block_size' is respected when the query result is
         /// served later on from the query result cache.
-
-        Chunks squashed_chunks;
-        size_t rows_remaining_in_squashed = 0; /// how many further rows can the last squashed chunk consume until it reaches max_block_size
-
-        for (auto & chunk : query_result->chunks)
-        {
-            convertToFullIfSparse(chunk);
-            convertToFullIfConst(chunk);
-
-            const size_t rows_chunk = chunk.getNumRows();
-            if (rows_chunk == 0)
-                continue;
-
-            size_t rows_chunk_processed = 0;
-            while (true)
-            {
-                if (rows_remaining_in_squashed == 0)
-                {
-                    Chunk empty_chunk = Chunk(chunk.cloneEmptyColumns(), 0);
-                    squashed_chunks.push_back(std::move(empty_chunk));
-                    rows_remaining_in_squashed = max_block_size;
-                }
-
-                const size_t rows_to_append = std::min(rows_chunk - rows_chunk_processed, rows_remaining_in_squashed);
-                squashed_chunks.back().append(chunk, rows_chunk_processed, rows_to_append);
-                rows_chunk_processed += rows_to_append;
-                rows_remaining_in_squashed -= rows_to_append;
-
-                if (rows_chunk_processed == rows_chunk)
-                    break;
-            }
-        }
-
+        Chunks squashed_chunks = squashChunks(query_result->chunks, max_block_size);
         query_result->chunks = std::move(squashed_chunks);
     }
 
-    if (key.is_compressed)
-    {
-        /// Compress result chunks. Reduces the space consumption of the cache but means reading from it will be slower due to decompression.
+    // if (key.is_compressed)
+    // {
+    //     /// Compress result chunks. Reduces the space consumption of the cache but means reading from it will be slower due to decompression.
 
-        Chunks compressed_chunks;
+    //     Chunks compressed_chunks;
 
-        for (const auto & chunk : query_result->chunks)
-        {
-            const Columns & columns = chunk.getColumns();
-            Columns compressed_columns;
-            for (const auto & column : columns)
-            {
-                auto compressed_column = column->compress(/*force_compression=*/false);
-                compressed_columns.push_back(compressed_column);
-            }
-            Chunk compressed_chunk(compressed_columns, chunk.getNumRows());
-            compressed_chunks.push_back(std::move(compressed_chunk));
-        }
-        query_result->chunks = std::move(compressed_chunks);
-    }
+    //     for (const auto & chunk : query_result->chunks)
+    //     {
+    //         const Columns & columns = chunk.getColumns();
+    //         Columns compressed_columns;
+    //         for (const auto & column : columns)
+    //         {
+    //             auto compressed_column = column->compress(/*force_compression=*/false);
+    //             compressed_columns.push_back(compressed_column);
+    //         }
+    //         Chunk compressed_chunk(compressed_columns, chunk.getNumRows());
+    //         compressed_chunks.push_back(std::move(compressed_chunk));
+    //     }
+    //     query_result->chunks = std::move(compressed_chunks);
+    // }
 
     /// Check more reasons why the entry must not be cached.
 
@@ -520,6 +539,8 @@ void QueryResultCacheWriter::finalizeWrite()
     }
 
     cache.set(key, query_result);
+    
+    /// Write result to disk cache
 
     LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
 
@@ -555,6 +576,8 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         LOG_TRACE(logger, "No query result found for query {}", doubleQuoteString(key.query_string));
         return;
     }
+
+    /// Else check query cache on disk, and load entry in memory
 
     const auto & entry_key = entry->key;
     const auto & entry_mapped = entry->mapped;
@@ -637,11 +660,229 @@ std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceExtremes()
     return std::move(source_from_chunks_extremes);
 }
 
-QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_, const std::optional<std::filesystem::path> & path_)
     : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryResultCacheEntryWeight, IsStale>>(
           std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+    , path(path_)
 {
     updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
+
+    readCacheEntriesFromPersistence();
+}
+
+void QueryResultCache::shutdown()
+{
+    writeCacheEntriesToPersistence();
+}
+
+static constexpr std::string_view format_version_txt = "format_version.txt";
+static constexpr uint32_t current_version = 1;
+
+static constexpr auto * token_user_id = "user_id: ";
+static constexpr auto * token_current_user_roles = "current_user_roles: ";
+static constexpr auto * token_is_shared = "is_shared: ";
+static constexpr auto * token_is_compressed = "is_compressed: ";
+static constexpr auto * token_query_string = "query_string: ";
+
+/// TODO remove weird logging (can't really debug)
+void QueryResultCache::readCacheEntriesFromPersistence() {
+    // try
+    // {
+        if (!path)
+            return; /// loading of persisted query cache entries is disabled by config
+
+        /// TODO document the data organization on disk
+
+        LoggerPtr logger = getLogger("XXX");
+
+        namespace fs = std::filesystem;
+
+        fs::path query_cache_path = *path;
+
+        LOG_TRACE(getLogger("XXX"), "Reading disk cache {}", query_cache_path.string());
+
+        fs::path format_version_path = query_cache_path / format_version_txt;
+        ReadBufferFromFile format_version_file(format_version_path); /// throws if file can't be opened
+        uint32_t version;
+
+        readIntText(version, format_version_file);
+        if (version != current_version)
+            return;
+
+        for (const auto & entry_file_it : fs::directory_iterator(query_cache_path))
+        {
+            const fs::path & entry_path = entry_file_it.path();
+
+            if (entry_path == format_version_path)
+                continue; /// ignore format_version.txt
+
+            String ast_hash_str = entry_path.filename();
+            size_t separator_pos = ast_hash_str.find('_');
+            chassert(separator_pos != String::npos);
+            String low64_str = ast_hash_str.substr(0, separator_pos);
+            String high64_str = ast_hash_str.substr(separator_pos + 1, ast_hash_str.size());
+            IASTHash ast_hash(std::stoull(low64_str), std::stoull(high64_str));
+
+            /// TODO construct a key, add it to the cache (needs a new ctor which accepts the hash directly)
+
+            ReadBufferFromFile entry_file(entry_path);
+
+            assertString(token_user_id, entry_file);
+            UUID user_id;
+            readUUIDText(user_id, entry_file);
+            /// can be UUIDHelpers::Nil
+
+            assertChar('\n', entry_file);
+
+            assertString(token_current_user_roles, entry_file);
+            std::vector<UUID> current_user_roles;
+            while (!checkChar('\n', entry_file))
+            {
+                LOG_TRACE(logger, "usr role");
+                UUID user_role;
+                readUUIDText(user_role, entry_file);
+                current_user_roles.push_back(user_role);
+                assertChar(',', entry_file);
+            }
+
+            // assertChar('\n', entry_file);
+
+            assertString(token_is_shared, entry_file);
+            bool is_shared;
+            readBoolText(is_shared, entry_file);
+            assertChar('\n', entry_file);
+
+            /// expires_at is not read
+
+            assertString(token_is_compressed, entry_file);
+            bool is_compressed;
+            readBoolText(is_compressed, entry_file);
+            assertChar('\n', entry_file);
+
+            assertString(token_query_string, entry_file);
+            String query_string;
+            readStringUntilNewlineInto(query_string, entry_file);
+            assertChar('\n', entry_file);
+
+            NativeReader block_reader(entry_file, 0);
+            Block block = block_reader.read();
+
+            LOG_TRACE(logger, "entry read {} {} {} {} {}", is_shared, is_compressed, query_string, block.rows(), block.columns());
+        }
+    // }
+    // catch (...)
+    // {
+    //     /// TODO log exception
+    //     /// throw; /// TODO don't throw, silently swallow exception
+    //     LOG_TRACE(getLogger("XXX"), "Exception on reading disk cache");
+    // }
+}
+
+/// TODO wrap in try-catch
+/// TODO remove weird logging (can't really debug)
+void QueryResultCache::writeCacheEntriesToPersistence() {
+    // try
+    {
+        LoggerPtr logger = getLogger("XXX");
+
+        /// Store query cache entries to persistence:
+
+        LOG_TRACE(logger, "Writing entries to disk");
+
+        if (!path)
+            return; /// storing of query cache entries to persistence disabled by config
+
+        namespace fs = std::filesystem;
+
+        fs::path query_cache_path = *path;
+        
+        LOG_TRACE(logger, "Writing entries to disk on path: {}", query_cache_path.string());
+
+        fs::remove_all(query_cache_path);
+        fs::create_directory(query_cache_path);
+
+        fs::path format_version_path = query_cache_path / format_version_txt;
+
+        WriteBufferFromFile format_version_file(format_version_path);
+        writeIntText(current_version, format_version_file);
+        format_version_file.finalize();
+
+        const auto & entries = dump();
+        for (const auto & entry : entries)
+        {
+            const auto & entry_key = entry.key;
+            const auto & entry_mapped = entry.mapped;
+
+            IASTHash ast_hash = entry_key.ast_hash;
+            String ast_hash_str = std::to_string(ast_hash.low64) + '_' + std::to_string(ast_hash.high64);
+
+            fs::path entry_file_path = query_cache_path / ast_hash_str;
+            WriteBufferFromFile entry_file(entry_file_path.string());
+
+            writeText(token_user_id, entry_file);
+            UUID user_id = entry_key.user_id ? *entry_key.user_id : UUIDHelpers::Nil;
+            writeUUIDText(user_id, entry_file);
+            writeText("\n", entry_file);
+
+            writeText(token_current_user_roles, entry_file);
+            /// writeVectorBinary(entry_key.current_user_roles, entry_file);
+            for (size_t i = 0; i < entry_key.current_user_roles.size(); ++i)
+            {
+                writeUUIDText(entry_key.current_user_roles[i], entry_file);
+                if (i != entry_key.current_user_roles.size() - 1)
+                    writeText(",", entry_file);
+            }
+            writeText("\n", entry_file);
+
+            writeText(token_is_shared, entry_file);
+            writeBoolText(entry_key.is_shared, entry_file);
+            writeText("\n", entry_file);
+
+            /// expires_at is not written
+
+            writeText(token_is_compressed, entry_file);
+            writeBoolText(entry_key.is_compressed, entry_file);
+            writeText("\n", entry_file);
+
+            writeText(token_query_string, entry_file);
+            writeText(entry_key.query_string, entry_file);
+            writeText("\n", entry_file);
+
+            /// TODO write chunks, totals, extremes (in separate files?)
+
+            Chunks & chunks = entry_mapped->chunks;
+            // const std::optional<Chunk> & totals = entry_mapped->totals;
+            // const std::optional<Chunk> & extremes = entry_mapped->extremes;
+
+            /// To keep the file format simple, squash the result chunks to a single chunk.
+            chunks = squashChunks(chunks, std::numeric_limits<size_t>::max());
+
+            /// Get only one chunk after squash
+            auto& chunk = chunks[0];
+
+            Block header = entry_key.header;
+
+            NativeWriter block_writer(entry_file, 0, header);
+
+            Block block = header.cloneWithColumns(chunk.getColumns());
+
+            block_writer.write(block);
+
+            /// TODO write num_rows
+            /// TODO get TypeIndex from column, get DataType from TypeIndex (how??), get Serialization from DataType
+            /// TODO write into separate file
+            /// LOL ... see above header_serializations
+
+            entry_file.finalize();
+
+            LOG_TRACE(logger, "entry written");
+        }
+    }
+    // catch (...)
+    // {
+    //     /// TODO log exception
+    //     LOG_TRACE(getLogger("XXX"), "Exception on writing to disk cache");
+    // }
 }
 
 void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
