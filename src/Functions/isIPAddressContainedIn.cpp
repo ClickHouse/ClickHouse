@@ -40,11 +40,7 @@ template <>
 struct IPTrait<IPKind::IPv4>
 {
     using ColumnType = DB::ColumnIPv4;
-    using ElementType = UInt32;
-    static ElementType getElement(const ColumnType * col, size_t n)
-    {
-        return col->getElement(n);
-    }
+    using ElementType = DB::IPv4;
 };
 
 template <>
@@ -52,10 +48,6 @@ struct IPTrait<IPKind::IPv6>
 {
     using ColumnType = DB::ColumnIPv6;
     using ElementType = DB::UInt128;
-    static ElementType getElement(const ColumnType * col, size_t n)
-    {
-        return col->getElement(n);
-    }
 };
 
 template <>
@@ -63,16 +55,12 @@ struct IPTrait<IPKind::String>
 {
     using ColumnType = DB::ColumnString;
     using ElementType = std::string_view;
-    static ElementType getElement(const ColumnType * col, size_t n)
-    {
-        return col->getDataAt(n).toView();
-    }
 };
 
 class IPAddressVariant
 {
 public:
-    explicit IPAddressVariant(UInt32 addr_): addr(addr_)
+    explicit IPAddressVariant(DB::IPv4 addr_): addr(addr_)
     {
     }
 
@@ -180,7 +168,11 @@ namespace DB
         template <IPKind kind>
         static inline IPAddressVariant parseIP(const IPTrait<kind>::ColumnType * col_addr, size_t n)
         {
-            return IPAddressVariant(IPTrait<kind>::getElement(col_addr, n));
+            if constexpr (kind == IPKind::IPv4 || kind == IPKind::IPv6)
+            {
+                return IPAddressVariant(col_addr->getElement(n));
+            }
+            return IPAddressVariant(col_addr->getDataAt(n).toView());
         }
 
     #pragma clang diagnostic ignored "-Wshadow"
