@@ -37,7 +37,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsBool use_iceberg_partition_pruning;
 }
 
 namespace ErrorCodes
@@ -258,11 +257,6 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override
     {
         SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-        if (filter_actions_dag.has_value())
-        {
-            if (getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning])
-                configuration->implementPartitionPruning(*filter_actions_dag);
-        }
         createIterator();
     }
 
