@@ -148,7 +148,7 @@ def _build_dockers(workflow, job_name):
                     with_log=True,
                 )
             )
-            if results[0].is_ok():
+            if results[-1].is_ok():
                 ready.append(docker.name)
             else:
                 job_status = Result.Status.FAILED
@@ -165,7 +165,7 @@ def _build_dockers(workflow, job_name):
                     config=docker,
                     digests=docker_digests,
                     with_log=True,
-                    add_latest=False,
+                    add_latest=workflow.set_latest_in_dockers_build,
                 )
             )
 
@@ -247,6 +247,21 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         custom_data={},
     ).dump()
 
+    if env.PR_NUMBER > 0:
+        # refresh PR data
+        title, body, labels = GH.get_pr_title_body_labels()
+        if title:
+            if title != env.PR_TITLE:
+                print("PR title has been changed")
+                env.PR_TITLE = title
+            if env.PR_BODY != body:
+                print("PR body has been changed")
+                env.PR_BODY = body
+            if env.PR_LABELS != labels:
+                print("PR labels have been changed")
+                env.PR_LABELS = labels
+            env.dump()
+
     if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
         res_ = []
@@ -289,20 +304,18 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if results[-1].is_ok() and workflow.dockers:
         sw_ = Utils.Stopwatch()
         print("Calculate docker's digests")
-        try:
-            dockers = workflow.dockers
-            dockers = Docker.sort_in_build_order(dockers)
-            for docker in dockers:
-                workflow_config.digest_dockers[docker.name] = (
-                    Digest().calc_docker_digest(docker, dockers)
-                )
-            workflow_config.dump()
-            res = True
-        except Exception as e:
-            res = False
+        dockers = workflow.dockers
+        dockers = Docker.sort_in_build_order(dockers)
+        for docker in dockers:
+            workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
+                docker, dockers
+            )
+        workflow_config.dump()
         results.append(
             Result.create_from(
-                name="Calculate docker digests", status=res, stopwatch=sw_
+                name="Calculate docker digests",
+                status=Result.Status.SUCCESS,
+                stopwatch=sw_,
             )
         )
 
@@ -456,9 +469,9 @@ def _finish_workflow(workflow, job_name):
     if workflow.enable_merge_ready_status:
         pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
         app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        from praktika.gh_auth_deprecated import GHAuth
+        from .gh_auth import GHAuth
 
-        GHAuth.auth(app_key=pem, app_id=app_id)
+        GHAuth.auth(app_id=app_id, app_key=pem)
         if not GH.post_commit_status(
             name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
             or f"Ready For Merge [{workflow.name}]",
@@ -503,7 +516,8 @@ if __name__ == "__main__":
             name=job_name,
             status=Result.Status.ERROR,
             stopwatch=sw,
-            info=f"Failed with Exception [{e}]\n{error_traceback}",
+            # try out .info generated in runner._run() which works for all jobs automatically
+            # info=f"Failed with Exception [{e}]\n{error_traceback}",
         )
 
     result.dump().complete_job()

@@ -24,6 +24,7 @@ namespace ErrorCodes
 }
 
 class IMetadataStorage;
+struct PartitionCommand;
 
 /// Return the result of operation to the caller.
 /// It is used in `IDiskObjectStorageOperation::finalize` after metadata transaction executed to make decision on blob removal.
@@ -224,6 +225,8 @@ public:
     {
         throwNotImplemented();
     }
+
+    virtual bool supportsPartitionCommand(const PartitionCommand & /* command */) const = 0;
 
     virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
 

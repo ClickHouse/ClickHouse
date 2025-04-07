@@ -130,6 +130,7 @@ def test_replicated(started_cluster):
         "ordered",
         files_path,
         additional_settings={
+            "processing_threads_num": 16,
             "keeper_path": keeper_path,
         },
         database_name="r",
@@ -209,6 +210,7 @@ def test_processing_threads(started_cluster):
         "ordered",
         files_path,
         additional_settings={
+            "processing_threads_num": 16,
             "keeper_path": keeper_path,
         },
     )

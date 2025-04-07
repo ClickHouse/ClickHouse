@@ -40,6 +40,7 @@
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/PoolId.h>
@@ -95,6 +96,12 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ASYNC_LOAD_CANCELED;
+}
+
+namespace FailPoints
+{
+    extern const char database_replicated_startup_pause[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -368,6 +375,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         treat_local_as_remote,
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
+        /* bind_host= */ "",
         Priority{1},
         cluster_name,
         cluster_auth_info.cluster_secret};
@@ -765,6 +773,8 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
 
             if (is_probably_dropped)
                 return;
+
+            FailPointInjection::pauseFailPoint(FailPoints::database_replicated_startup_pause);
 
             {
                 std::lock_guard lock{ddl_worker_mutex};
@@ -1694,6 +1704,17 @@ void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String &
 
 void DatabaseReplicated::stopReplication()
 {
+    try
+    {
+        /// Make sure startupDatabaseAsync doesn't start ddl_worker after stopReplication().
+        waitDatabaseStarted();
+    }
+    catch (Exception & e)
+    {
+        if (e.code() != ErrorCodes::ASYNC_LOAD_CANCELED)
+            tryLogCurrentException("DatabaseReplicated", "Async loading failed", LogsLevel::warning);
+    }
+
     std::lock_guard lock{ddl_worker_mutex};
     if (ddl_worker)
         ddl_worker->shutdown();
@@ -1769,16 +1790,35 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         String metadata_zk_path_to = zookeeper_path + "/metadata/" + escapeForFileName(to_table_name);
+
+        String zk_statement;
+        Coordination::Stat stat;
+        String zk_statement_to;
+        Coordination::Stat stat_to;
+
+        /// When performing an ALTER operation on ReplicatedMergeTree tables,
+        ///  we update the metadata in ZooKeeper before updating it locally.
+        /// To prevent overwriting the new version of the metadata, we fetch and
+        ///  use the latest version and ensure it hasn't changed using a version check.
+        auto zookeeper = txn->getZooKeeper();
+        zookeeper->tryGet(metadata_zk_path, zk_statement, &stat);
+        zookeeper->tryGet(metadata_zk_path_to, zk_statement_to, &stat_to);
+
         if (!txn->isCreateOrReplaceQuery())
-            txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+            txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, stat.version));
 
         if (exchange)
         {
-            txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path_to, -1));
+            txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path_to, stat_to.version));
             if (!txn->isCreateOrReplaceQuery())
-                txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement_to, zkutil::CreateMode::Persistent));
+                txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, zk_statement_to, zkutil::CreateMode::Persistent));
         }
-        txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, statement, zkutil::CreateMode::Persistent));
+
+        /// In case of CREATE OR REPLACE there is no statement for the temporary table in ZK, so we use the local definition
+        if (txn->isCreateOrReplaceQuery())
+            txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, statement, zkutil::CreateMode::Persistent));
+        else
+            txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, zk_statement, zkutil::CreateMode::Persistent));
     }
 
     std::lock_guard lock{metadata_mutex};
