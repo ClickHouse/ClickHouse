@@ -403,3 +403,29 @@ Result:
 │ ['test1','test2','test3','test4'] │
 └───────────────────────────────────┘
 ```
+
+## tokenizeChinese {#tokenizeChinese}
+
+Splits Chinese text into tokens / words.
+
+**Arguments**
+
+- `input_string` — Any set of bytes represented as the [String](../data-types/string.md) data type object.
+
+**Returned value**
+
+- The resulting array of tokens from input string. [Array](../data-types/array.md).
+
+**Example**
+
+```sql
+SELECT tokenizeChinese('你好世界！') AS tokens;
+```
+
+Result:
+
+```text
+┌─tokens───────────────┐
+│ ['你好','世界','！'] │
+└──────────────────────┘
+```

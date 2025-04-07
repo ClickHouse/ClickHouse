@@ -375,3 +375,9 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
+[submodule "contrib/limonp"]
+	path = contrib/limonp
+	url = https://github.com/yanyiwu/limonp
+[submodule "contrib/cppjieba"]
+	path = contrib/cppjieba
+	url = https://github.com/yanyiwu/cppjieba
