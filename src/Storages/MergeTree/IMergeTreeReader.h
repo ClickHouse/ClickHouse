@@ -9,14 +9,15 @@
 namespace DB
 {
 
+using VirtualFields = std::unordered_map<String, Field>;
+using ValueSizeMap = std::map<std::string, double>;
+
 /// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
 /// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.
 /// Avoids loading the marks file if it is not needed (e.g. when reading the whole part).
 class IMergeTreeReader : private boost::noncopyable
 {
 public:
-    using ValueSizeMap = std::map<std::string, double>;
-    using VirtualFields = std::unordered_map<String, Field>;
     using DeserializeBinaryBulkStateMap = std::unordered_map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
@@ -137,5 +138,20 @@ private:
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
 };
+
+using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+
+MergeTreeReaderPtr createMergeTreeReader(
+    const MergeTreeDataPartInfoForReaderPtr & read_info,
+    const NamesAndTypesList & columns,
+    const StorageSnapshotPtr & storage_snapshot,
+    const MarkRanges & mark_ranges,
+    const VirtualFields & virtual_fields,
+    UncompressedCache * uncompressed_cache,
+    MarkCache * mark_cache,
+    DeserializationPrefixesCache * deserialization_prefixes_cache,
+    const MergeTreeReaderSettings & reader_settings,
+    const ValueSizeMap & avg_value_size_hints,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
 }

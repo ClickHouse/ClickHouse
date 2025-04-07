@@ -77,6 +77,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_shared_set_join", 0, 1, "A setting for ClickHouse Cloud to enable SharedSet and SharedJoin"},
             {"allow_special_bool_values_inside_variant", true, false, "Don't allow special bool values during Variant type parsing"},
             {"cast_string_to_variant_use_inference", true, true, "New setting to enable/disable types inference during CAST from String to Variant"},
+            {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
@@ -699,6 +700,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
             {"max_merge_delayed_streams_for_parallel_write", 1000, 100, "New setting"},
+            {"max_postpone_time_for_failed_replicated_fetches_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing fetch tasks in the replication queue."},
+            {"max_postpone_time_for_failed_replicated_merges_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing merge tasks in the replication queue."},
+            {"max_postpone_time_for_failed_replicated_tasks_ms", 5ULL * 60 * 1000, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."},
+            {"allow_summing_columns_in_partition_or_order_key", true, false, "New setting to allow summing of partition or sorting key columns"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.3",
         {

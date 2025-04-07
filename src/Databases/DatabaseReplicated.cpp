@@ -40,6 +40,7 @@
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/PoolId.h>
@@ -95,6 +96,12 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ASYNC_LOAD_CANCELED;
+}
+
+namespace FailPoints
+{
+    extern const char database_replicated_startup_pause[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -368,6 +375,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         treat_local_as_remote,
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
+        /* bind_host= */ "",
         Priority{1},
         cluster_name,
         cluster_auth_info.cluster_secret};
@@ -765,6 +773,8 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
 
             if (is_probably_dropped)
                 return;
+
+            FailPointInjection::pauseFailPoint(FailPoints::database_replicated_startup_pause);
 
             {
                 std::lock_guard lock{ddl_worker_mutex};
@@ -1694,6 +1704,17 @@ void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String &
 
 void DatabaseReplicated::stopReplication()
 {
+    try
+    {
+        /// Make sure startupDatabaseAsync doesn't start ddl_worker after stopReplication().
+        waitDatabaseStarted();
+    }
+    catch (Exception & e)
+    {
+        if (e.code() != ErrorCodes::ASYNC_LOAD_CANCELED)
+            tryLogCurrentException("DatabaseReplicated", "Async loading failed", LogsLevel::warning);
+    }
+
     std::lock_guard lock{ddl_worker_mutex};
     if (ddl_worker)
         ddl_worker->shutdown();

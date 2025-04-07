@@ -4,7 +4,7 @@
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/ConcurrencyControl.h>
+#include <Common/ISlotControl.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 
 #include <deque>
@@ -85,7 +85,7 @@ private:
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
     std::unique_ptr<ThreadPool> pool;
     std::atomic_size_t threads = 0;
-    std::mutex spawn_lock;
+    std::mutex spawn_mutex;
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
@@ -112,7 +112,7 @@ private:
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
     void spawnThreads();
-    void spawnThreadsImpl() TSA_REQUIRES(spawn_lock);
+    void spawnThreadsImpl(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
