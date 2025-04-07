@@ -135,10 +135,10 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
 {
     return {{"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
             {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_tags", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
             {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
             {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
-            {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+            {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+            {"_tags", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())}};
 }
 
 NameSet getVirtualNamesForFileLikeStorage()
@@ -334,6 +334,21 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), (*virtual_values.etag))->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_tags")
+        {
+            if (virtual_values.tags)
+            {
+                Map map_value;
+                for (const auto & [key, value] : *virtual_values.tags)
+                    map_value.push_back(Field(Tuple{Field(key), Field(value)}));
+
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), map_value)->convertToFullColumnIfConst());
+            }
+            else
+            {
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+            }
         }
     }
 }

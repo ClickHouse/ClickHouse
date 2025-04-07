@@ -1,4 +1,5 @@
 #include <IO/S3/getObjectInfo.h>
+#include <aws/s3/model/GetObjectTaggingRequest.h>
 
 #if USE_AWS_S3
 
@@ -41,6 +42,19 @@ namespace
         return client.HeadObject(req);
     }
 
+    Aws::S3::Model::GetObjectTaggingOutcome getObjectTagging(
+        const S3::Client & client, const String & bucket, const String & key, const String & version_id)
+    {
+        Aws::S3::Model::GetObjectTaggingRequest req;
+        req.SetBucket(bucket);
+        req.SetKey(key);
+
+        if (!version_id.empty())
+            req.SetVersionId(version_id);
+
+        return client.GetObjectTagging(req);
+    }
+
     /// Performs a request to get the size and last modification time of an object.
     std::pair<std::optional<ObjectInfo>, Aws::S3::S3Error> tryGetObjectInfo(
         const S3::Client & client, const String & bucket, const String & key, const String & version_id,
@@ -55,6 +69,19 @@ namespace
         object_info.size = static_cast<size_t>(result.GetContentLength());
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
+
+        const auto & tagging_result = getObjectTagging(client, bucket, key, version_id);
+
+        if (tagging_result.IsSuccess())
+        {
+            const auto & tag_set = tagging_result.GetResult().GetTagSet();
+            std::map<String, String> tags;
+            for (const auto & tag : tag_set)
+            {
+                tags.emplace(tag.GetKey(), tag.GetValue());
+            }
+            object_info.tags = std::move(tags);
+        }
 
         if (with_metadata)
             object_info.metadata = result.GetMetadata();

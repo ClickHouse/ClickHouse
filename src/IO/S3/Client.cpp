@@ -427,6 +427,11 @@ Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
         doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
 }
 
+Model::GetObjectTaggingOutcome Client::GetObjectTagging(const Model::GetObjectTaggingRequest & request) const
+{
+    return Aws::S3::S3Client::GetObjectTagging(request);
+}
+
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
