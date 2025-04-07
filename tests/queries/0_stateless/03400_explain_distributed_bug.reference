@@ -1,0 +1,13 @@
+Expression (Project names)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        MergingAggregated
+          Union
+            Aggregating
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromSystemNumbers
+            ReadFromRemote (Read from remote replica)
+              Aggregating
+                Expression ((Before GROUP BY + Change column names to column identifiers))
+                  ReadFromSystemNumbers

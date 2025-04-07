@@ -1,7 +1,6 @@
-from praktika.info import Info
-
 from ci.defs.defs import JobNames
 from ci.jobs.scripts.workflow_hooks.pr_description import Labels
+from ci.praktika.info import Info
 
 
 def only_docs(changed_files):
@@ -69,6 +68,9 @@ def should_skip_job(job_name):
             True,
             "Skipped, labeled with 'ci-performance' - run performance jobs only",
         )
+
+    if "- Bug Fix" not in _info_cache.pr_body and JobNames.BUGFIX_VALIDATE in job_name:
+        return True, "Skipped, not a bug-fix PR"
 
     # skip ARM perf tests for non-performance update
     if (

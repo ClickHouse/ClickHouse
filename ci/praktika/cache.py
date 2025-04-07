@@ -54,7 +54,10 @@ class Cache:
         record_file = Path(Settings.TEMP_DIR) / type_
         record.dump(record_file)
         S3.put(
-            s3_path=record_path, local_path=record_file, if_none_matched=if_not_exist
+            s3_path=record_path,
+            local_path=record_file,
+            if_none_matched=if_not_exist,
+            no_strict=True,
         )
         record_file.unlink()
 
@@ -74,6 +77,7 @@ class Cache:
             s3_path=record_path,
             local_path=record_file_local_dir,
             _skip_download_counter=True,
+            no_strict=True,
         )
 
         if res:

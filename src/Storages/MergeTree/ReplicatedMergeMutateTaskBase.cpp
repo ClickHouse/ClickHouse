@@ -103,9 +103,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
         std::lock_guard lock(storage.queue.state_mutex);
 
         auto & log_entry = selected_entry->log_entry;
-
-        log_entry->exception = saved_exception;
-        log_entry->last_exception_time = time(nullptr);
+        log_entry->updateLastExeption(saved_exception);
 
         if (log_entry->type == ReplicatedMergeTreeLogEntryData::MUTATE_PART)
         {
@@ -129,8 +127,6 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                     status.latest_fail_time = time(nullptr);
                     status.latest_fail_reason = getExceptionMessage(saved_exception, false);
                     status.latest_fail_error_code_name = ErrorCodes::getName(getExceptionErrorCode(saved_exception));
-                    if (result_data_version == it->first)
-                        storage.mutation_backoff_policy.addPartMutationFailure(src_part, (*storage.getSettings())[MergeTreeSetting::max_postpone_time_for_failed_mutations_ms]);
                 }
             }
         }
@@ -155,12 +151,6 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
         {
             storage.queue.removeProcessedEntry(storage.getZooKeeper(), selected_entry->log_entry);
             state = State::SUCCESS;
-
-            auto & log_entry = selected_entry->log_entry;
-            if (log_entry->type == ReplicatedMergeTreeLogEntryData::MUTATE_PART)
-            {
-                storage.mutation_backoff_policy.removePartFromFailed(log_entry->source_parts.at(0));
-            }
         }
         catch (...)
         {

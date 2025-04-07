@@ -41,7 +41,7 @@ RUN pip3 --no-cache-dir install -r requirements.txt
 
 COPY run.sh /
 
-COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:13cfebfd8f1bbc65ab49 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
 CMD ["bash", "/run.sh"]

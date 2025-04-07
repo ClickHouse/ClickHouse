@@ -55,7 +55,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.performance_reports,
     ],
     dockers=DOCKERS,
-    disable_dockers_build=True,
+    set_latest_in_dockers_build=True,
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,

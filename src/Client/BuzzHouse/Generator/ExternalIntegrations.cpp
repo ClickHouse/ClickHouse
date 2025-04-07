@@ -80,7 +80,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
-            newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
+            t.db->setName(newd.mutable_database());
             t.db->finishDatabaseSpecification(deng);
             CreateDatabaseToString(buf, newd);
             res &= performQuery(buf + ";");
@@ -95,7 +95,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             ExprSchemaTable & est = const_cast<ExprSchemaTable &>(newt.est());
             if (t.db)
             {
-                est.mutable_database()->set_database("d" + std::to_string(t.db->dname));
+                t.db->setName(est.mutable_database());
             }
 
             CreateTableToString(buf, newt);
@@ -274,7 +274,7 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, c
     }
     if (scc.port)
     {
-        connection_str += fmt::format("{}port='{}'", has_something ? " " : "", std::to_string(scc.port));
+        connection_str += fmt::format("{}port='{}'", has_something ? " " : "", scc.port);
         has_something = true;
     }
     if (!scc.user.empty())
@@ -475,7 +475,7 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
     {
         connection_str += fmt::format("{}{}@", scc.user, scc.password.empty() ? "" : (":" + scc.password));
     }
-    connection_str += fmt::format("{}={}", scc.hostname, std::to_string(scc.port));
+    connection_str += fmt::format("{}={}", scc.hostname, scc.port);
 
     try
     {

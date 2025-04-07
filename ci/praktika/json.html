@@ -774,6 +774,7 @@
         function drawTimeline() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             let taskRects = [];
+            const failedMarkers = [];
 
             const minStartTime = runtimeCache.json0.start_time;
             const currentUtcTimestamp = Date.now() / 1000;
@@ -804,8 +805,20 @@
                 ctx.fillRect(x, y, width, height);
 
                 taskRects.push({ x, y, width, height, task });
+
+                // Save failure marker position for second pass
+                if (task.status === "failure" || task.status === "error") {
+                    failedMarkers.push({ x: x + width, y: y + height / 2 });
+                }
             });
 
+            // Draw failure markers on top
+            failedMarkers.forEach(({ x, y }) => {
+                ctx.font = "12px sans-serif";
+                ctx.fillText("❌", Math.max(x - 14, 0), y + 4);
+            });
+
+            // Event listeners
             canvas.addEventListener("mousemove", (event) => {
                 const rect = canvas.getBoundingClientRect();
                 const mouseY = event.clientY - rect.top;

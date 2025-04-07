@@ -25,44 +25,34 @@ Positions: 2
         Positions: 0 2
           ReadFromSystemNumbers
       ReadFromRemote (Read from remote replica)
-        Expression ((Project names + Projection))
-        Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
-                 INPUT :: 1 -> bitAnd(__table1.number, 3_UInt8) UInt64 : 1
-                 ALIAS sum(__table1.number) :: 0 -> sum(number) UInt64 : 2
-        Positions: 2
-          Aggregating
-          Keys: bitAnd(__table1.number, 3_UInt8)
-          Aggregates:
-              sum(__table1.number)
-                Function: sum(UInt64) → UInt64
-                Arguments: __table1.number
-          Skip merging: 0
-            Expression ((Before GROUP BY + Change column names to column identifiers))
-            Actions: INPUT : 0 -> number UInt64 : 0
-                     COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
-                     ALIAS number :: 0 -> __table1.number UInt64 : 2
-                     FUNCTION bitAnd(__table1.number : 2, 3_UInt8 :: 1) -> bitAnd(__table1.number, 3_UInt8) UInt64 : 0
-            Positions: 0 2
-              ReadFromSystemNumbers
-        Expression ((Project names + Projection))
-        Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
-                 INPUT :: 1 -> bitAnd(__table1.number, 3_UInt8) UInt64 : 1
-                 ALIAS sum(__table1.number) :: 0 -> sum(number) UInt64 : 2
-        Positions: 2
-          Aggregating
-          Keys: bitAnd(__table1.number, 3_UInt8)
-          Aggregates:
-              sum(__table1.number)
-                Function: sum(UInt64) → UInt64
-                Arguments: __table1.number
-          Skip merging: 0
-            Expression ((Before GROUP BY + Change column names to column identifiers))
-            Actions: INPUT : 0 -> number UInt64 : 0
-                     COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
-                     ALIAS number :: 0 -> __table1.number UInt64 : 2
-                     FUNCTION bitAnd(__table1.number : 2, 3_UInt8 :: 1) -> bitAnd(__table1.number, 3_UInt8) UInt64 : 0
-            Positions: 0 2
-              ReadFromSystemNumbers
+        Aggregating
+        Keys: bitAnd(__table1.number, 3_UInt8)
+        Aggregates:
+            sum(__table1.number)
+              Function: sum(UInt64) → UInt64
+              Arguments: __table1.number
+        Skip merging: 0
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+          Actions: INPUT : 0 -> number UInt64 : 0
+                   COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
+                   ALIAS number :: 0 -> __table1.number UInt64 : 2
+                   FUNCTION bitAnd(__table1.number : 2, 3_UInt8 :: 1) -> bitAnd(__table1.number, 3_UInt8) UInt64 : 0
+          Positions: 0 2
+            ReadFromSystemNumbers
+        Aggregating
+        Keys: bitAnd(__table1.number, 3_UInt8)
+        Aggregates:
+            sum(__table1.number)
+              Function: sum(UInt64) → UInt64
+              Arguments: __table1.number
+        Skip merging: 0
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+          Actions: INPUT : 0 -> number UInt64 : 0
+                   COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
+                   ALIAS number :: 0 -> __table1.number UInt64 : 2
+                   FUNCTION bitAnd(__table1.number : 2, 3_UInt8 :: 1) -> bitAnd(__table1.number, 3_UInt8) UInt64 : 0
+          Positions: 0 2
+            ReadFromSystemNumbers
 Union
   Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
     Filter ((WHERE + Change column names to column identifiers))
@@ -102,25 +92,20 @@ Positions: 2
           Parts: 1
           Granules: 1
       ReadFromRemoteParallelReplicas (Query: SELECT sum(`__table1`.`number`) AS `sum(number)` FROM `default`.`test_parallel_replicas` AS `__table1` GROUP BY bitAnd(`__table1`.`number`, 3) Replicas: 127.0.0.2:9000)
-        Expression ((Project names + Projection))
-        Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
-                 INPUT :: 1 -> bitAnd(__table1.number, 3_UInt8) UInt64 : 1
-                 ALIAS sum(__table1.number) :: 0 -> sum(number) UInt64 : 2
-        Positions: 2
-          Aggregating
-          Keys: bitAnd(__table1.number, 3_UInt8)
-          Aggregates:
-              sum(__table1.number)
-                Function: sum(UInt64) → UInt64
-                Arguments: __table1.number
-          Skip merging: 0
-            Expression ((Before GROUP BY + Change column names to column identifiers))
-            Actions: INPUT : 0 -> number UInt64 : 0
-                     COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
-                     ALIAS number :: 0 -> __table1.number UInt64 : 2
-                     FUNCTION bitAnd(__table1.number : 2, 3_UInt8 :: 1) -> bitAnd(__table1.number, 3_UInt8) UInt64 : 0
-            Positions: 0 2
-              ReadFromMergeTree (default.test_parallel_replicas)
-              ReadType: Default
-              Parts: 1
-              Granules: 1
+        Aggregating
+        Keys: bitAnd(__table1.number, 3_UInt8)
+        Aggregates:
+            sum(__table1.number)
+              Function: sum(UInt64) → UInt64
+              Arguments: __table1.number
+        Skip merging: 0
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+          Actions: INPUT : 0 -> number UInt64 : 0
+                   COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
+                   ALIAS number :: 0 -> __table1.number UInt64 : 2
+                   FUNCTION bitAnd(__table1.number : 2, 3_UInt8 :: 1) -> bitAnd(__table1.number, 3_UInt8) UInt64 : 0
+          Positions: 0 2
+            ReadFromMergeTree (default.test_parallel_replicas)
+            ReadType: Default
+            Parts: 1
+            Granules: 1

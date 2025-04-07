@@ -101,15 +101,12 @@ DOCKERS = [
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=[],
     # ),
-    # TODO: fix build failure:
-    # 7 58.76 In file included from ./../code-sign-blobs/superblob.h:7:
-    # 7 58.76 ./../code-sign-blobs/blob.h:185:60: error: no member named 'clone' in 'Security::BlobCore'
-    # Docker.Config(
-    #     name="clickhouse/cctools",
-    #     path="./docker/packager/cctools",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/fasttest"],
-    # ),
+    Docker.Config(
+        name="clickhouse/cctools",
+        path="./docker/packager/cctools",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/fasttest"],
+    ),
     Docker.Config(
         name="clickhouse/test-util",
         path="./docker/test/util",
@@ -251,7 +248,7 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/docs-builder",
         path="./docker/docs/builder",
-        platforms=[Docker.Platforms.AMD],
+        platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
@@ -473,6 +470,7 @@ class ArtifactConfigs:
         name="...",
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/src/unit_tests_dbms",
+        compress_zst=True,
     ).parametrize(
         names=[
             ArtifactNames.UNITTEST_AMD_ASAN,

@@ -157,7 +157,7 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
         version += ch;
 
     if (version.size() > MAX_VERSION_LENGTH)
-        throw Poco::Net::MessageException("Invalid HTTP version string");
+        throw Poco::Net::MessageException(fmt::format("Invalid HTTP version string: {}", version));
 
     // since HTTP always use Windows-style EOL '\r\n' we always can safely skip to '\n'
 

@@ -13,6 +13,8 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
+#include <Common/StringUtils.h>
+#include <boost/algorithm/string/trim.hpp>
 
 
 namespace DB
@@ -58,7 +60,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         if (!key_identifier)
             throwBadConfiguration("expected the key (key=value) to be identifier");
 
-        const std::string & key = key_identifier->name();
+        std::string key = key_identifier->name();
         Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement(key));
         root->appendChild(key_element);
 
@@ -66,8 +68,28 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             throwBadConfiguration("expected values to be literals or identifiers");
 
         auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
-        Poco::AutoPtr<Poco::XML::Text> value_element(xml_document->createTextNode(convertFieldToString(value->as<ASTLiteral>()->value)));
-        key_element->appendChild(value_element);
+        auto value_str = convertFieldToString(value->as<ASTLiteral>()->value);
+        if (key == "include")
+        {
+            key_element->setAttribute("incl", value_str);
+        }
+        else if (startsWith(value_str, "from_env"))
+        {
+            value_str = value_str.substr(std::strlen("from_env"));
+            boost::trim(value_str);
+            key_element->setAttribute("from_env", value_str);
+        }
+        else if (startsWith(value_str, "from_zk"))
+        {
+            value_str = value_str.substr(std::strlen("from_zk"));
+            boost::trim(value_str);
+            key_element->setAttribute("from_zk", value_str);
+        }
+        else
+        {
+            Poco::AutoPtr<Poco::XML::Text> value_element(xml_document->createTextNode(value_str));
+            key_element->appendChild(value_element);
+        }
     }
 
     return xml_document;
@@ -80,7 +102,6 @@ DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, Context
     conf->load(xml_document);
     return conf;
 }
-
 
 ASTs convertDiskConfigurationToAST(const Poco::Util::AbstractConfiguration & configuration, const std::string & config_path)
 {

@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/CustomMetricLogViewStep.h>
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -611,6 +612,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         Names allowed_inputs = child->getOutputHeader().getNames();
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, can_remove_filter))
+            return updated_steps;
+    }
+
+    if (typeid_cast<CustomMetricLogViewStep *>(child.get()))
+    {
+        Names allowed_inputs = {"event_date", "event_time", "hostname"};
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, true))
             return updated_steps;
     }
 
