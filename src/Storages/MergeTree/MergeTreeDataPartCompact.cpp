@@ -108,8 +108,6 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     const IDataPartStorage & data_part_storage_,
     const MergeTreeSettings & storage_settings)
 {
-    LOG_DEBUG(getLogger("MergeTreeDataPartCompact"), "loadIndexGranularityImpl. Marks per granule: {}", marks_per_granule);
-
     if (!index_granularity_info_.mark_type.adaptive)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeDataPartCompact cannot be created with non-adaptive granularity.");
 
