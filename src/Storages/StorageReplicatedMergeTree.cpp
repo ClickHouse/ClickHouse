@@ -9635,14 +9635,9 @@ MergeTreeData::MutationsSnapshotPtr StorageReplicatedMergeTree::getMutationsSnap
     return queue.getMutationsSnapshot(params);
 }
 
-UInt64 StorageReplicatedMergeTree::getNumberOnFlyDataMutations() const
+MutationCounters StorageReplicatedMergeTree::getMutationCounters() const
 {
-    return queue.getNumberOnFlyDataMutations();
-}
-
-UInt64 StorageReplicatedMergeTree::getNumberOnFlyMetadataMutations() const
-{
-    return queue.getNumberOnFlyMetadataMutations();
+    return queue.getMutationCounters();
 }
 
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
