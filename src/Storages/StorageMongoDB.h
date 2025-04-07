@@ -6,6 +6,8 @@
 #include <Common/RemoteHostFilter.h>
 
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
@@ -74,6 +76,14 @@ private:
         const FunctionNode * func,
         const JoinNode * join_node,
         OnError on_error);
+
+    template <typename OnError>
+    std::optional<bsoncxx::document::value> visitWhereColumnConst(
+        const ColumnNode * column_node,
+        const ConstantNode * const_node,
+        const FunctionNode * func,
+        OnError on_error,
+        bool invert_comparison);
 
     bsoncxx::document::value buildMongoDBQuery(
         const ContextPtr & context,
