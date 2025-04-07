@@ -395,6 +395,8 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                         source_shards.push_back(source_shard);
 
                     auto send_and_receive_steps = exchange_step->createSinkAndSourcePair(exchange_description.name, source_shards);
+                    send_and_receive_steps.first->setStepDescription(exchange_description.name);
+                    send_and_receive_steps.second->setStepDescription(exchange_description.name);
 
                     Strings list_of_exchange_shards = shardsForShuffleBuckets(exchange_step->getResultBucketCount());
 
