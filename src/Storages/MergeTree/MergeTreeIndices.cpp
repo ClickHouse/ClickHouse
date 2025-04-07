@@ -1,12 +1,12 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <IO/WriteHelpers.h>
+
+#include <Columns/IColumn.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
+
 #include <numeric>
-
-#include <boost/algorithm/string.hpp>
-
 
 namespace DB
 {
@@ -15,6 +15,19 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+}
+
+Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
+{
+    return index.expression->getRequiredColumns();
+}
+
+MergeTreeIndexFormat
+IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
+{
+    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
+        return {1, ".idx"};
+    return {0 /*unknown*/, ""};
 }
 
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
@@ -43,8 +56,7 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
                         {
                             if (left.empty())
                                 return right.first;
-                            else
-                                return left + ", " + right.first;
+                            return left + ", " + right.first;
                         })
                 );
     }
@@ -98,8 +110,7 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
                     {
                         if (left.empty())
                             return right.first;
-                        else
-                            return left + ", " + right.first;
+                        return left + ", " + right.first;
                     })
             );
     }
@@ -127,15 +138,21 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("hypothesis", hypothesisIndexCreator);
 
     registerValidator("hypothesis", hypothesisIndexValidator);
-#ifdef ENABLE_ANNOY
-    registerCreator("annoy", annoyIndexCreator);
-    registerValidator("annoy", annoyIndexValidator);
-#endif
 
-#ifdef ENABLE_USEARCH
-    registerCreator("usearch", usearchIndexCreator);
-    registerValidator("usearch", usearchIndexValidator);
+#if USE_USEARCH
+    registerCreator("vector_similarity", vectorSimilarityIndexCreator);
+    registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
+    /// ------
+    /// TODO: remove this block at the end of 2024.
+    /// Index types 'annoy' and 'usearch' are no longer supported as of June 2024. Their successor is index type 'vector_similarity'.
+    /// To support loading tables with old indexes during a transition period, register dummy indexes which allow load/attaching but
+    /// throw an exception when the user attempts to use them.
+    registerCreator("annoy", legacyVectorSimilarityIndexCreator);
+    registerValidator("annoy", legacyVectorSimilarityIndexValidator);
+    registerCreator("usearch", legacyVectorSimilarityIndexCreator);
+    registerValidator("usearch", legacyVectorSimilarityIndexValidator);
+    /// ------
 
     registerCreator("inverted", fullTextIndexCreator);
     registerValidator("inverted", fullTextIndexValidator);

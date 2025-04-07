@@ -1,17 +1,24 @@
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
-#include <Columns/ColumnDynamic.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/PerformanceAdaptors.h>
+#include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
+
 namespace
 {
 
@@ -22,7 +29,12 @@ class FunctionIsNotNull : public IFunction
 public:
     static constexpr auto name = "isNotNull";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsNotNull>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionIsNotNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
+    }
+
+    explicit FunctionIsNotNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 
     std::string getName() const override
     {
@@ -31,6 +43,10 @@ public:
 
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
+        /// (column IS NULL) triggers a bug in old analyzer when it is replaced to constant.
+        if (!use_analyzer)
+            return nullptr;
+
         const ColumnWithTypeAndName & elem = arguments[0];
         if (elem.type->onlyNull())
             return result_type->createColumnConst(1, UInt8(0));
@@ -90,11 +106,9 @@ public:
             vector(src_data, res_data);
             return res_column;
         }
-        else
-        {
-            /// Since no element is nullable, return a constant one.
-            return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
-        }
+
+        /// Since no element is nullable, return a constant one.
+        return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
     }
 
 private:
@@ -123,6 +137,8 @@ private:
 #endif
         vectorImpl(null_map, res);
     }
+
+    bool use_analyzer;
 };
 }
 

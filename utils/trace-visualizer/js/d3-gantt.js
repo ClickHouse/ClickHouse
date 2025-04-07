@@ -288,6 +288,7 @@
                 }
             })
           .merge(bands)
+            .attr("class", d => "bar " + (filter != '' && !d.text.toLowerCase().includes(filter) ? " bar-u" : " bar-f"))
           .transition().duration(smooth? 250: 0)
             .attr("y", 0)
             .attr("transform", bandTransform)
@@ -442,6 +443,18 @@
         return gantt;
     }
 
+    gantt.filter = function(pattern) {
+        if (!arguments.length)
+            return filter;
+        filter = pattern.toLowerCase();
+        render();
+        return gantt;
+    }
+
+    gantt.filteredCount = function() {
+        return bandsSvg.selectAll("rect.bar-f").size();
+    }
+
     gantt.data = function() {
         return data;
     }
@@ -461,7 +474,7 @@
         selector = 'body',
         timeDomainStart = 0,
         timeDomainEnd = 1000,
-        scales = {};
+        filter = ''
     ;
 
     // View

@@ -168,7 +168,7 @@ ZooKeeper 中该表的路径对每个可复制表都要是唯一的。不同分�
 
 `/clickhouse/tables/` 是公共前缀，我们推荐使用这个。
 
-`{layer}-{shard}` 是分片标识部分。在此示例中，由于 Yandex.Metrica 集群使用了两级分片，所以它是由两部分组成的。但对于大多数情况来说，你只需保留 {shard} 占位符即可，它会替换展开为分片标识。
+`{layer}-{shard}` 是分片标识部分。在此示例中，由于 Yandex.Metrica 集群使用了两级分片，所以它是由两部分组成的。但对于大多数情况来说，你只需保留 `{shard}` 占位符即可，它会替换展开为分片标识。
 
 `table_name` 是该表在 ZooKeeper 中的名称。使其与 ClickHouse 中的表名相同比较好。 这里它被明确定义，跟 ClickHouse 表名不一样，它并不会被 RENAME 语句修改。
 *HINT*：你也可以在 `table_name` 前面添加一个数据库名称。例如： `db_name.table_name` 。

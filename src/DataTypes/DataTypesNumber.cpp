@@ -54,6 +54,7 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerDataType("Int32", createNumericDataType<Int32>);
     factory.registerDataType("Int64", createNumericDataType<Int64>);
 
+    factory.registerDataType("BFloat16", createNumericDataType<BFloat16>);
     factory.registerDataType("Float32", createNumericDataType<Float32>);
     factory.registerDataType("Float64", createNumericDataType<Float64>);
 
@@ -111,6 +112,7 @@ template class DataTypeNumber<Int8>;
 template class DataTypeNumber<Int16>;
 template class DataTypeNumber<Int32>;
 template class DataTypeNumber<Int64>;
+template class DataTypeNumber<BFloat16>;
 template class DataTypeNumber<Float32>;
 template class DataTypeNumber<Float64>;
 

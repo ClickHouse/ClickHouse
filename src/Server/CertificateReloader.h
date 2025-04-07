@@ -77,6 +77,9 @@ public:
     /// Handle configuration reload for default path
     void tryLoad(const Poco::Util::AbstractConfiguration & config);
 
+    /// Handle configuration reload client for default path
+    void tryLoadClient(const Poco::Util::AbstractConfiguration & config);
+
     /// Handle configuration reload
     void tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
 
@@ -103,6 +106,9 @@ private:
     std::unordered_map<std::string, std::list<MultiData>::iterator> data_index TSA_GUARDED_BY(data_mutex);
     mutable std::mutex data_mutex;
 };
+
+/// A callback for OpenSSL
+int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_data, LoggerPtr log);
 
 }
 

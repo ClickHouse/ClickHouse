@@ -7,7 +7,7 @@ import re
 from datetime import date, timedelta
 from pathlib import Path
 from subprocess import DEVNULL
-from typing import Any, Dict, List, Optional, TextIO
+from typing import Any, Dict, List, Optional, TextIO, Tuple
 
 import tqdm  # type: ignore
 from github.GithubException import RateLimitExceededException, UnknownObjectException
@@ -15,6 +15,7 @@ from github.NamedUser import NamedUser
 from thefuzz.fuzz import ratio  # type: ignore
 
 from cache_utils import GitHubCache
+from ci_utils import Shell
 from env_helper import TEMP_PATH
 from git_helper import git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
@@ -36,7 +37,7 @@ categories_preferred_order = (
     "Experimental Feature",
     "Performance Improvement",
     "Improvement",
-    "Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)",
+    # "Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)",
     "Bug Fix (user-visible misbehavior in an official stable release)",
     "Build/Testing/Packaging Improvement",
     "Other",
@@ -113,7 +114,6 @@ def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
         # pylint: enable=protected-access
         if repo_name not in repos:
             repos[repo_name] = pr.base.repo
-        in_changelog = False
         merge_commit = pr.merge_commit_sha
         if merge_commit is None:
             logging.warning("PR %s does not have merge-commit, skipping", pr.number)
@@ -288,10 +288,11 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     # Normalize bug fixes
     if (
         re.match(
-            r"(?i)bug\Wfix",
+            r"(?i).*bug\Wfix",
             category,
         )
-        and "Critical Bug Fix" not in category
+        # Map "Critical Bug Fix" to "Bug fix" category for changelog
+        # and "Critical Bug Fix" not in category
     ):
         category = "Bug Fix (user-visible misbehavior in an official stable release)"
 
@@ -347,7 +348,7 @@ def write_changelog(
 
 
 def check_refs(from_ref: Optional[str], to_ref: str, with_testing_tags: bool) -> None:
-    global FROM_REF, TO_REF
+    global FROM_REF, TO_REF  # pylint:disable=global-statement
     TO_REF = to_ref
 
     # Check TO_REF
@@ -385,7 +386,7 @@ def check_refs(from_ref: Optional[str], to_ref: str, with_testing_tags: bool) ->
 
 
 def set_sha_in_changelog():
-    global SHA_IN_CHANGELOG
+    global SHA_IN_CHANGELOG  # pylint:disable=global-statement
     SHA_IN_CHANGELOG = runner.run(
         f"git log --format=format:%H {FROM_REF}..{TO_REF}"
     ).split("\n")
@@ -395,6 +396,21 @@ def get_year(prs: PullRequests) -> int:
     if not prs:
         return date.today().year
     return max(pr.created_at.year for pr in prs)
+
+
+def get_branch_and_patch_by_tag(tag: str) -> Tuple[Optional[str], Optional[int]]:
+    tag = tag.removeprefix("v")
+    versions = tag.split(".")
+    if len(versions) < 4:
+        print("ERROR: Can't get branch by tag")
+        return None, None
+    try:
+        patch_version = int(versions[2])
+        branch = f"{int(versions[0])}.{int(versions[1])}"
+        print(f"Branch [{branch}], patch version [{patch_version}]")
+    except ValueError:
+        return None, None
+    return branch, patch_version
 
 
 def main():
@@ -434,7 +450,7 @@ def main():
     )
 
     # Get all PRs for the given time frame
-    global gh
+    global gh  # pylint:disable=global-statement
     gh = GitHub(
         args.gh_user_or_token,
         args.gh_password,
@@ -446,6 +462,24 @@ def main():
     gh_cache = GitHubCache(gh.cache_path, temp_path, S3Helper())
     gh_cache.download()
     query = f"type:pr repo:{args.repo} is:merged"
+
+    branch, patch = get_branch_and_patch_by_tag(TO_REF)
+    if branch and patch and Shell.check(f"git show-ref --quiet {branch}"):
+        if patch > 1:
+            query += f" base:{branch}"
+            logging.info(
+                "NOTE: It's a patch [%s]. will use base branch to filter PRs [%s]",
+                patch,
+                branch,
+            )
+        else:
+            logging.info(
+                "NOTE: It's a first patch version. should count PRs merged on master - won't filter PRs by branch"
+            )
+    else:
+        logging.error("ERROR: invalid branch %s - pass", branch)
+
+    logging.info("Fetch PRs with query %s", query)
     prs = gh.get_pulls_from_search(
         query=query, merged=merged, sort="created", progress_func=tqdm.tqdm
     )

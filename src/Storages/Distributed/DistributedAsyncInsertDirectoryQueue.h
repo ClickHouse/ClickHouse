@@ -1,12 +1,13 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
-#include <Common/ConcurrentBoundedQueue.h>
+#include <mutex>
 #include <Client/ConnectionPool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Cluster.h>
-#include <Disks/IDisk.h>
-#include <mutex>
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace CurrentMetrics { class Increment; }
@@ -99,9 +100,10 @@ private:
 
     void addFile(const std::string & file_path);
     void initializeFilesFromDisk();
-    void processFiles(const SettingsChanges & settings_changes = {});
+    /// Set `force = true` if processing of files must be finished fully despite cancellation flag being set
+    void processFiles(bool force, const SettingsChanges & settings_changes = {});
     void processFile(std::string & file_path, const SettingsChanges & settings_changes);
-    void processFilesWithBatching(const SettingsChanges & settings_changes);
+    void processFilesWithBatching(bool force, const SettingsChanges & settings_changes);
 
     void markAsBroken(const std::string & file_path);
     void markAsSend(const std::string & file_path);

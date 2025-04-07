@@ -10,6 +10,6 @@ ClickHouse поддерживает аутентификацию и управл
 
 Поддерживаются следующие внешние аутентификаторы и каталоги:
 
-- [LDAP](./ldap.md#external-authenticators-ldap) [аутентификатор](./ldap.md#ldap-external-authenticator) и [каталог](./ldap.md#ldap-external-user-directory)
-- Kerberos [аутентификатор](./kerberos.md#external-authenticators-kerberos)
-- [SSL X.509 аутентификация](./ssl-x509.md#ssl-external-authentication)
+- [LDAP](/operations/external-authenticators/ldap#ldap-external-authenticator) [аутентификатор](./ldap.md#ldap-external-authenticator) и [каталог](./ldap.md#ldap-external-user-directory)
+- Kerberos [аутентификатор](/operations/external-authenticators/kerberos#kerberos-as-an-external-authenticator-for-existing-users)
+- [SSL X.509 аутентификация](/operations/external-authenticators/ssl-x509)

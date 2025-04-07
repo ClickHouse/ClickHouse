@@ -12,17 +12,16 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
 
+namespace DB
+{
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int BAD_ARGUMENTS;
 }
-
-namespace DB
-{
 
 struct Settings;
 
@@ -169,7 +168,11 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                  * J.DURBIN
                  * Distribution theory for tests based on the sample distribution function
                  */
-                Float64 new_val, old_val, s, w, z;
+                Float64 new_val;
+                Float64 old_val;
+                Float64 s;
+                Float64 w;
+                Float64 z;
                 UInt64 k_max = static_cast<UInt64>(sqrt(2 - log(tol)));
 
                 if (p < 1)
@@ -238,7 +241,7 @@ public:
         if (params[0].getType() != Field::Types::String)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require first parameter to be a String", getName());
 
-        const auto & param = params[0].get<String>();
+        const auto & param = params[0].safeGet<String>();
         if (param == "two-sided")
             alternative = Alternative::TwoSided;
         else if (param == "less")
@@ -255,7 +258,7 @@ public:
         if (params[1].getType() != Field::Types::String)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require second parameter to be a String", getName());
 
-        method = params[1].get<String>();
+        method = params[1].safeGet<String>();
         if (method != "auto" && method != "exact" && method != "asymp" && method != "asymptotic")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown method in aggregate function {}. "
                     "It must be one of: 'auto', 'exact', 'asymp' (or 'asymptotic')", getName());

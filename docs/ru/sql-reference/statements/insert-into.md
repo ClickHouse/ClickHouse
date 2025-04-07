@@ -14,7 +14,7 @@ sidebar_label: INSERT INTO
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
-Вы можете указать список столбцов для вставки, используя синтаксис `(c1, c2, c3)`. Также можно использовать выражение cо [звездочкой](../../sql-reference/statements/select/index.md#asterisk) и/или модификаторами, такими как [APPLY](../../sql-reference/statements/select/index.md#apply-modifier), [EXCEPT](../../sql-reference/statements/select/index.md#except-modifier), [REPLACE](../../sql-reference/statements/select/index.md#replace-modifier).
+Вы можете указать список столбцов для вставки, используя синтаксис `(c1, c2, c3)`. Также можно использовать выражение cо [звездочкой](../../sql-reference/statements/select/index.md#asterisk) и/или модификаторами, такими как [APPLY](/sql-reference/statements/select#apply), [EXCEPT](/sql-reference/statements/select#except), [REPLACE](/sql-reference/statements/select#replace).
 
 В качестве примера рассмотрим таблицу:
 
@@ -67,7 +67,7 @@ INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
 -   Значения, вычисляемые из `DEFAULT` выражений, указанных в определении таблицы.
 -   Нули и пустые строки, если `DEFAULT` не определены.
 
-В INSERT можно передавать данные любого [формата](../../interfaces/formats.md#formats), который поддерживает ClickHouse. Для этого формат необходимо указать в запросе в явном виде:
+В INSERT можно передавать данные любого [формата](/sql-reference/formats), который поддерживает ClickHouse. Для этого формат необходимо указать в запросе в явном виде:
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
@@ -160,7 +160,7 @@ INSERT INTO [TABLE] FUNCTION table_func ...
 
 **Пример**
 
-Табличная функция [remote](../../sql-reference/table-functions/index.md#remote) используется в следующих запросах:
+Табличная функция [remote](/sql-reference/table-functions/remote) используется в следующих запросах:
 
 ``` sql
 CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
@@ -189,14 +189,14 @@ SELECT * FROM simple_table;
 -   Данные поступают в режиме реального времени.
 -   Вы загружаете данные, которые как правило отсортированы по времени.
 
-Также возможно вставлять данные асинхронно во множественных маленьких вставках. Данные от таких вставок сначала собираются в пачки, а потом вставляются в таблицу. Чтобы включить асинхронный режим, используйте настройку [async_insert](../../operations/settings/settings.md#async-insert). Обратите внимание, что асинхронные вставки поддерживаются только через протокол HTTP, а дедупликация при этом не производится.
+Также возможно вставлять данные асинхронно во множественных маленьких вставках. Данные от таких вставок сначала собираются в пачки, а потом вставляются в таблицу. Чтобы включить асинхронный режим, используйте настройку [async_insert](/operations/settings/settings#async_insert). Обратите внимание, что асинхронные вставки поддерживаются только через протокол HTTP, а дедупликация при этом не производится.
 
 **См. также**
 
--   [async_insert](../../operations/settings/settings.md#async-insert)
--   [async_insert_threads](../../operations/settings/settings.md#async-insert-threads)
--   [wait_for_async_insert](../../operations/settings/settings.md#wait-for-async-insert)
--   [wait_for_async_insert_timeout](../../operations/settings/settings.md#wait-for-async-insert-timeout)
--   [async_insert_max_data_size](../../operations/settings/settings.md#async-insert-max-data-size)
--   [async_insert_busy_timeout_ms](../../operations/settings/settings.md#async-insert-busy-timeout-ms)
--   [async_insert_stale_timeout_ms](../../operations/settings/settings.md#async-insert-stale-timeout-ms)
+-   [async_insert](/operations/settings/settings#async_insert)
+-   [async_insert_threads](/operations/settings/settings#async-insert-threads)
+-   [wait_for_async_insert](/operations/settings/settings#wait_for_async_insert)
+-   [wait_for_async_insert_timeout](/operations/settings/settings#wait_for_async_insert_timeout)
+-   [async_insert_max_data_size](/operations/settings/settings#async_insert_max_data_size)
+-   [async_insert_busy_timeout_ms](/operations/settings/settings#async_insert_busy_timeout_max_ms)
+-   [async_insert_stale_timeout_ms](/operations/settings/settings#async_insert_max_data_size)

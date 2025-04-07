@@ -13,7 +13,7 @@ sidebar_position: 9
 
 那么，如何辨别谁在使用ClickHouse呢?
 
-一种方法是询问周围的人。如果不是书面形式，人们更愿意分享他们公司使用的技术、用例、使用的硬件类型、数据量等。我们定期在[ClickHouse meetup](https://www.youtube.com/channel/UChtmrD-dsdpspr42P_PyRAw/playlists)上与世界各地的用户进行交流，并听到了大约1000多家使用ClickHouse的公司的故事。不幸的是，这是不可复制的，我们试图把这些故事当作是在保密协议下被告知的，以避免任何潜在的麻烦。但你可以参加我们未来的任何聚会，并与其他用户单独交谈。有多种方式宣布聚会，例如，你可以订阅[我们的Twitter](http://twitter.com/ClickHouseDB/)。
+一种方法是询问周围的人。如果不是书面形式，人们更愿意分享他们公司使用的技术、用例、使用的硬件类型、数据量等。我们定期在[ClickHouse meetup](https://www.youtube.com/channel/UChtmrD-dsdpspr42P_PyRAw/playlists)上与世界各地的用户进行交流，并听到了大约1000多家使用ClickHouse的公司的故事。不幸的是，这是不可复制的，我们试图把这些故事当作是在保密协议下被告知的，以避免任何潜在的麻烦。但你可以参加我们未来的任何聚会，并与其他用户单独交谈。有多种方式宣布聚会，例如，你可以订阅[我们的X](http://x.com/ClickHouseDB/)、[Bluesky](https://bsky.app/profile/clickhouse.com)。
 
 第二种方法是寻找**公开表示**使用ClickHouse的公司。因为通常会有一些确凿的证据，如博客文章、谈话视频录音、幻灯片等。我们在我们的[**Adopters**](../../introduction/adopters.md)页面上收集指向此类证据的链接。你可以随意提供你雇主的故事，或者只是一些你偶然发现的链接(但尽量不要在这个过程中违反保密协议)。
 

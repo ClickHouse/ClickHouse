@@ -11,7 +11,7 @@ user2="user02884_2_${CLICKHOUSE_DATABASE}_$RANDOM"
 user3="user02884_3_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
 
-${CLICKHOUSE_CLIENT} --multiquery <<EOF
+${CLICKHOUSE_CLIENT} <<EOF
 CREATE TABLE $db.test_table (s String) ENGINE = MergeTree ORDER BY s;
 
 DROP USER IF EXISTS $user1, $user2, $user3;
@@ -20,7 +20,7 @@ GRANT SELECT ON $db.* TO $user1;
 EOF
 
 echo "===== StorageView ====="
-${CLICKHOUSE_CLIENT} --multiquery <<EOF
+${CLICKHOUSE_CLIENT} <<EOF
 CREATE VIEW $db.test_view_1 (s String)
 AS SELECT * FROM $db.test_table;
 
@@ -58,12 +58,17 @@ AS SELECT * FROM $db.test_table;
 CREATE VIEW $db.test_view_10 (s String)
 SQL SECURITY DEFINER
 AS SELECT * FROM $db.test_table;
+
+CREATE VIEW $db.test_view_11 (s String)
+SQL SECURITY DEFINER
+AS SELECT * FROM $db.test_table
+WHERE s = {param_id:String};
 EOF
 
 (( $(${CLICKHOUSE_CLIENT} --query "SHOW TABLE $db.test_view_5" 2>&1 | grep -c "INVOKER") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 (( $(${CLICKHOUSE_CLIENT} --query "SHOW TABLE $db.test_view_2" 2>&1 | grep -c "DEFINER = $user1") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
-${CLICKHOUSE_CLIENT} --multiquery <<EOF
+${CLICKHOUSE_CLIENT} <<EOF
 GRANT SELECT ON $db.test_view_1 TO $user2;
 GRANT SELECT ON $db.test_view_2 TO $user2;
 GRANT SELECT ON $db.test_view_3 TO $user2;
@@ -74,6 +79,7 @@ GRANT SELECT ON $db.test_view_7 TO $user2;
 GRANT SELECT ON $db.test_view_8 TO $user2;
 GRANT SELECT ON $db.test_view_9 TO $user2;
 GRANT SELECT ON $db.test_view_10 TO $user2;
+GRANT SELECT ON $db.test_view_11 TO $user2;
 EOF
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO $db.test_table VALUES ('foo'), ('bar');"
@@ -88,6 +94,7 @@ ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_7"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_view_8" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_9"
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_10"
+${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_11(param_id='foo')"
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $db.test_view_10 MODIFY SQL SECURITY INVOKER"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_view_10" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
@@ -159,7 +166,7 @@ ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT ON $db.test_table FROM $user1"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_4" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 (( $(${CLICKHOUSE_CLIENT} --query "INSERT INTO $db.test_table VALUES ('foo'), ('bar');" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
-${CLICKHOUSE_CLIENT} --multiquery <<EOF
+${CLICKHOUSE_CLIENT} <<EOF
 CREATE TABLE $db.source
 (
     a UInt64
@@ -199,6 +206,16 @@ ${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO source SELECT * FROM gen
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination1"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination2"
 
+(( $(${CLICKHOUSE_CLIENT} --query "ALTER TABLE test_table MODIFY SQL SECURITY INVOKER" 2>&1 | grep -c "is not supported") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+
+(( $(${CLICKHOUSE_CLIENT} --user $user1 --query "
+  CREATE VIEW $db.test_view_broken
+  SQL SECURITY DEFINER
+  DEFINER CURRENT_USER
+  DEFINER $user2
+  AS SELECT * FROM $db.test_table;
+" 2>&1 | grep -c "Syntax error") >= 1 )) && echo "Syntax error" || echo "UNEXPECTED"
+
 echo "===== TestGrants ====="
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE ON *.* TO $user1"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_table TO $user1, $user2"
@@ -232,7 +249,7 @@ ${CLICKHOUSE_CLIENT} --user $user1 --query "
 ${CLICKHOUSE_CLIENT} --query "GRANT SET DEFINER ON $user2 TO $user1"
 
 echo "===== TestRowPolicy ====="
-${CLICKHOUSE_CLIENT} --multiquery <<EOF
+${CLICKHOUSE_CLIENT} <<EOF
 CREATE TABLE $db.test_row_t (x Int32, y Int32) ENGINE = MergeTree ORDER BY x;
 
 CREATE VIEW $db.test_view_row_1 DEFINER = $user1 SQL SECURITY DEFINER AS SELECT x, y AS z FROM $db.test_row_t;
@@ -246,7 +263,7 @@ EOF
 
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_view_row_1"
 
-${CLICKHOUSE_CLIENT} --multiquery <<EOF
+${CLICKHOUSE_CLIENT} <<EOF
 CREATE TABLE $db.test_row_t2 (x Int32, y Int32) ENGINE = MergeTree ORDER BY x;
 
 CREATE VIEW $db.test_mv_row_2 DEFINER = $user1 SQL SECURITY DEFINER AS SELECT x, y AS z FROM $db.test_row_t2;
@@ -262,7 +279,7 @@ ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_row_2"
 
 echo "===== TestInsertChain ====="
 
-${CLICKHOUSE_CLIENT} --multiquery <<EOF
+${CLICKHOUSE_CLIENT} <<EOF
 CREATE TABLE $db.session_events(
     clientId UUID,
     sessionId UUID,
@@ -302,7 +319,7 @@ ${CLICKHOUSE_CLIENT} --user $user3 --query "SELECT count(*) FROM session_events"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM materialized_events"
 
 echo "===== TestOnCluster ====="
-${CLICKHOUSE_CLIENT} --multiquery <<EOF
+${CLICKHOUSE_CLIENT} <<EOF
 
 CREATE TABLE $db.test_cluster ON CLUSTER test_shard_localhost (a String) Engine = MergeTree() ORDER BY a FORMAT Null;
 CREATE TABLE $db.test_cluster_2 ON CLUSTER test_shard_localhost (a String) Engine = MergeTree() ORDER BY a FORMAT Null;

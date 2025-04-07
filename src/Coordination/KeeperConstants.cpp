@@ -183,8 +183,6 @@
     M(ReadBufferFromS3InitMicroseconds) \
     M(ReadBufferFromS3Bytes) \
     M(ReadBufferFromS3RequestsErrors) \
-    M(ReadBufferFromS3ResetSessions) \
-    M(ReadBufferFromS3PreservedSessions) \
 \
     M(WriteBufferFromS3Microseconds) \
     M(WriteBufferFromS3Bytes) \
@@ -283,6 +281,7 @@
     M(LogWarning) \
     M(LogError) \
     M(LogFatal) \
+    M(LoggerElapsedNanoseconds) \
 \
     M(InterfaceHTTPSendBytes) \
     M(InterfaceHTTPReceiveBytes) \

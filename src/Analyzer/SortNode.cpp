@@ -69,6 +69,12 @@ void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
         buffer << '\n' << std::string(indent + 2, ' ') << "FILL STEP\n";
         getFillStep()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
+
+    if (hasFillStaleness())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "FILL STALENESS\n";
+        getFillStaleness()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 }
 
 bool SortNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
@@ -81,9 +87,9 @@ bool SortNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 
     if (!collator && !rhs_typed.collator)
         return true;
-    else if (collator && !rhs_typed.collator)
+    if (collator && !rhs_typed.collator)
         return false;
-    else if (!collator && rhs_typed.collator)
+    if (!collator && rhs_typed.collator)
         return false;
 
     return collator->getLocale() == rhs_typed.collator->getLocale();
@@ -132,6 +138,8 @@ ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
         result->setFillTo(getFillTo()->toAST(options));
     if (hasFillStep())
         result->setFillStep(getFillStep()->toAST(options));
+    if (hasFillStaleness())
+        result->setFillStaleness(getFillStaleness()->toAST(options));
 
     return result;
 }

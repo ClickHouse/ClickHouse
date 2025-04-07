@@ -1,5 +1,8 @@
-import pytest
 import random
+import time
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -11,9 +14,18 @@ DICTIONARY_FILES = [
 ]
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance(
-    "instance",
+node1 = cluster.add_instance(
+    "node1",
     main_configs=["configs/config.xml"],
+    dictionaries=DICTIONARY_FILES,
+    stay_alive=True,
+)
+
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=[
+        "configs/async_load_system_database.xml",
+    ],
     dictionaries=DICTIONARY_FILES,
     stay_alive=True,
 )
@@ -24,15 +36,13 @@ def started_cluster():
     try:
         cluster.start()
 
-        instance.query(
-            """
-            CREATE DATABASE IF NOT EXISTS dict ENGINE=Dictionary;
-            CREATE DATABASE IF NOT EXISTS test;
-            DROP TABLE IF EXISTS test.elements;
-            CREATE TABLE test.elements (id UInt64, a String, b Int32, c Float64) ENGINE=Log;
-            INSERT INTO test.elements VALUES (0, 'water', 10, 1), (1, 'air', 40, 0.01), (2, 'earth', 100, 1.7);
-            """
-        )
+        for node in [node1, node2]:
+            node.query(
+                """
+                CREATE DATABASE IF NOT EXISTS dict ENGINE=Dictionary;
+                CREATE DATABASE IF NOT EXISTS test;
+                """
+            )
 
         yield cluster
 
@@ -41,13 +51,20 @@ def started_cluster():
 
 
 def get_status(dictionary_name):
-    return instance.query(
+    return node1.query(
         "SELECT status FROM system.dictionaries WHERE name='" + dictionary_name + "'"
     ).rstrip("\n")
 
 
 def test_dict_get_data(started_cluster):
-    query = instance.query
+    query = node1.query
+
+    query(
+        "CREATE TABLE test.elements (id UInt64, a String, b Int32, c Float64) ENGINE=Log;"
+    )
+    query(
+        "INSERT INTO test.elements VALUES (0, 'water', 10, 1), (1, 'air', 40, 0.01), (2, 'earth', 100, 1.7);"
+    )
 
     # dictionaries_lazy_load == false, so these dictionary are not loaded.
     assert get_status("dep_x") == "NOT_LOADED"
@@ -74,7 +91,7 @@ def test_dict_get_data(started_cluster):
 
     # Wait for dictionaries to be reloaded.
     assert_eq_with_retry(
-        instance,
+        node1,
         "SELECT dictHas('dep_x', toUInt64(3))",
         "1",
         sleep_time=2,
@@ -88,7 +105,7 @@ def test_dict_get_data(started_cluster):
     # so dep_x and dep_z are not going to be updated after the following INSERT.
     query("INSERT INTO test.elements VALUES (4, 'ether', 404, 0.001)")
     assert_eq_with_retry(
-        instance,
+        node1,
         "SELECT dictHas('dep_y', toUInt64(4))",
         "1",
         sleep_time=2,
@@ -97,10 +114,12 @@ def test_dict_get_data(started_cluster):
     assert query("SELECT dictGetString('dep_x', 'a', toUInt64(4))") == "XX\n"
     assert query("SELECT dictGetString('dep_y', 'a', toUInt64(4))") == "ether\n"
     assert query("SELECT dictGetString('dep_z', 'a', toUInt64(4))") == "ZZ\n"
+    query("DROP TABLE IF EXISTS test.elements;")
+    node1.restart_clickhouse()
 
 
 def dependent_tables_assert():
-    res = instance.query("select database || '.' || name from system.tables")
+    res = node1.query("select database || '.' || name from system.tables")
     assert "system.join" in res
     assert "default.src" in res
     assert "dict.dep_y" in res
@@ -111,7 +130,7 @@ def dependent_tables_assert():
 
 
 def test_dependent_tables(started_cluster):
-    query = instance.query
+    query = node1.query
     query("create database lazy engine=Lazy(10)")
     query("create database a")
     query("create table lazy.src (n int, m int) engine=Log")
@@ -149,7 +168,7 @@ def test_dependent_tables(started_cluster):
     )
 
     dependent_tables_assert()
-    instance.restart_clickhouse()
+    node1.restart_clickhouse()
     dependent_tables_assert()
     query("drop table a.t")
     query("drop table lazy.log")
@@ -162,16 +181,64 @@ def test_dependent_tables(started_cluster):
 
 
 def test_multiple_tables(started_cluster):
-    query = instance.query
+    query = node1.query
     tables_count = 20
     for i in range(tables_count):
         query(
             f"create table test.table_{i} (n UInt64, s String) engine=MergeTree order by n as select number, randomString(100) from numbers(100)"
         )
 
-    instance.restart_clickhouse()
+    node1.restart_clickhouse()
 
     order = [i for i in range(tables_count)]
     random.shuffle(order)
     for i in order:
         assert query(f"select count() from test.table_{i}") == "100\n"
+    for i in range(tables_count):
+        query(f"drop table test.table_{i} sync")
+
+
+def test_async_load_system_database(started_cluster):
+    id = 1
+    for i in range(4):
+        # Access some system tables that might be still loading
+        if id > 1:
+            for j in range(3):
+                node2.query(
+                    f"select count() from system.text_log_{random.randint(1, id - 1)}_test"
+                )
+                node2.query(
+                    f"select count() from system.query_log_{random.randint(1, id - 1)}_test"
+                )
+
+            assert (
+                int(
+                    node2.query(
+                        f"select count() from system.asynchronous_loader where job ilike '%_log_%_test' and execution_pool = 'BackgroundLoad'"
+                    )
+                )
+                > 0
+            )
+
+        # Generate more system tables
+        for j in range(10):
+            while True:
+                node2.query("system flush logs")
+                count = int(
+                    node2.query(
+                        "select count() from system.tables where database = 'system' and name in ['query_log', 'text_log']"
+                    )
+                )
+                if count == 2:
+                    break
+                time.sleep(0.1)
+            node2.query(f"rename table system.text_log to system.text_log_{id}_test")
+            node2.query(f"rename table system.query_log to system.query_log_{id}_test")
+            id += 1
+
+        # Trigger async load of system database
+        node2.restart_clickhouse()
+
+    for i in range(id - 1):
+        node2.query(f"drop table if exists system.text_log_{i + 1}_test")
+        node2.query(f"drop table if exists system.query_log_{i + 1}_test")

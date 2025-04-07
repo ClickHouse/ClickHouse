@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/WeakHash.h>
 
 
 namespace DB
@@ -26,7 +27,7 @@ public:
     size_t byteSize() const override { return 0; }
     size_t byteSizeAt(size_t) const override { return 0; }
     size_t allocatedBytes() const override { return 0; }
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 #else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
@@ -39,6 +40,7 @@ public:
 
     Field operator[](size_t) const override;
     void get(size_t, Field &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
     void insert(const Field &) override;
     bool tryInsert(const Field &) override { return false; }
     bool isDefaultAt(size_t) const override;
@@ -63,15 +65,16 @@ public:
     {
     }
 
-    void updateWeakHash32(WeakHash32 & /*hash*/) const override
+    WeakHash32 getWeakHash32() const override
     {
+        return WeakHash32(s);
     }
 
     void updateHashFast(SipHash & /*hash*/) const override
     {
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn &, size_t) override
 #else
     void doInsertFrom(const IColumn &, size_t) override
@@ -80,7 +83,7 @@ public:
         ++s;
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
 #else
     void doInsertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override

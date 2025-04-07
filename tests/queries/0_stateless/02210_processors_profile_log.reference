@@ -6,6 +6,6 @@ ExpressionTransform
 ExpressionTransform	1	1	1	1	1
 LazyOutputFormat	1	1	1	0	0
 LimitsCheckingTransform	1	1	1	1	1
-NullSource	1	0	0	0	0
-NullSource	1	0	0	0	0
+NullSource	0	0	0	0	0
+NullSource	0	0	0	0	0
 SourceFromSingleChunk	1	0	0	1	1

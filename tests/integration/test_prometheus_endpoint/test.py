@@ -3,6 +3,7 @@ import time
 
 import pytest
 import requests
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)

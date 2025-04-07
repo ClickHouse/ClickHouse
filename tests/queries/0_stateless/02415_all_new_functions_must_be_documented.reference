@@ -90,7 +90,7 @@ alphaTokens
 and
 appendTrailingCharIfAbsent
 array
-arrayAUC
+arrayAUCPR
 arrayAll
 arrayAvg
 arrayCompact
@@ -101,7 +101,6 @@ arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
 arrayDotProduct
-arrayElement
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -128,6 +127,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayROCAUC
 arrayRandomSample
 arrayReduce
 arrayReduceInRanges
@@ -141,9 +141,10 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arraySymmetricDifference
+arrayUnion
 arrayUniq
 arrayWithConstant
-arrayZip
 asinh
 assumeNotNull
 atan
@@ -310,6 +311,7 @@ fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
+fromUnixTimestamp64Second
 fromUnixTimestampInJodaSyntax
 fuzzBits
 gccMurmurHash
@@ -322,7 +324,6 @@ geohashesInBox
 getMacro
 getOSKernelVersion
 getServerPort
-getSetting
 getSizeOfEnumType
 getTypeSerializationStreams
 globalIn
@@ -416,7 +417,6 @@ logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
-lowerUTF8
 makeDate
 makeDate32
 makeDateTime
@@ -516,12 +516,18 @@ parseDateTime
 parseDateTime32BestEffort
 parseDateTime32BestEffortOrNull
 parseDateTime32BestEffortOrZero
+parseDateTime64
 parseDateTime64BestEffort
 parseDateTime64BestEffortOrNull
 parseDateTime64BestEffortOrZero
 parseDateTime64BestEffortUS
 parseDateTime64BestEffortUSOrNull
 parseDateTime64BestEffortUSOrZero
+parseDateTime64InJodaSyntax
+parseDateTime64InJodaSyntaxOrNull
+parseDateTime64InJodaSyntaxOrZero
+parseDateTime64OrNull
+parseDateTime64OrZero
 parseDateTimeBestEffort
 parseDateTimeBestEffortOrNull
 parseDateTimeBestEffortOrZero
@@ -853,6 +859,7 @@ toUnixTimestamp
 toUnixTimestamp64Micro
 toUnixTimestamp64Milli
 toUnixTimestamp64Nano
+toUnixTimestamp64Second
 toValidUTF8
 toWeek
 toYYYYMM
@@ -896,7 +903,6 @@ tupleToNameValuePairs
 unbin
 unhex
 upper
-upperUTF8
 uptime
 validateNestedArraySizes
 version

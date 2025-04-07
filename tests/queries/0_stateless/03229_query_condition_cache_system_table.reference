@@ -1,0 +1,14 @@
+--- with move to PREWHERE
+Expect the cache to be initially empty.
+0
+Expect that the cache contains one entry after the first query.
+1
+If the same query runs again, the cache still contains just a single entry.
+1
+--- without move to PREWHERE
+Expect the cache to be initially empty.
+0
+Expect that the cache contains one entry after the first query.
+1
+If the same query runs again, the cache still contains just a single entry.
+1

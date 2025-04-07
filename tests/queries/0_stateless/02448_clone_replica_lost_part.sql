@@ -1,4 +1,5 @@
--- Tags: long
+-- Tags: long, no-shared-merge-tree
+-- no-shared-merge-tree: depend on replication queue/fetches
 
 SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
 

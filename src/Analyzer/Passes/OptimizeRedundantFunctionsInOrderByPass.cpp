@@ -12,6 +12,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_redundant_functions_in_order_by;
+}
 
 namespace
 {
@@ -31,7 +35,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_redundant_functions_in_order_by)
+        if (!getSettings()[Setting::optimize_redundant_functions_in_order_by])
             return;
 
         auto * query = node->as<QueryNode>();

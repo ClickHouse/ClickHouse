@@ -1,23 +1,27 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/VirtualColumnsDescription.h>
+#include <Formats/MarkInCompressedFile.h>
 
 
 namespace DB
 {
 
+using IColumnPermutation = PaddedPODArray<size_t>;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
-Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
+Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation);
 
-Block permuteBlockIfNeeded(const Block & block, const IColumn::Permutation * permutation);
+Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation);
 
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
@@ -34,18 +38,26 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const VirtualsDescriptionPtr & virtual_columns_,
         const MergeTreeWriterSettings & settings_,
-        const MergeTreeIndexGranularity & index_granularity_ = {});
+        MergeTreeIndexGranularityPtr index_granularity_);
 
     virtual ~IMergeTreeDataPartWriter();
 
-    virtual void write(const Block & block, const IColumn::Permutation * permutation) = 0;
+    virtual void write(const Block & block, const IColumnPermutation * permutation) = 0;
 
     virtual void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) = 0;
 
     virtual void finish(bool sync) = 0;
+    virtual void cancel() noexcept = 0;
 
-    Columns releaseIndexColumns();
-    const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
+    virtual size_t getNumberOfOpenStreams() const = 0;
+
+    std::optional<Columns> releaseIndexColumns();
+
+    PlainMarksByName releaseCachedMarks();
+
+    MergeTreeIndexGranularityPtr getIndexGranularity() const { return index_granularity; }
+
+    virtual const Block & getColumnsSample() const = 0;
 
 protected:
     SerializationPtr getSerialization(const String & column_name) const;
@@ -67,7 +79,9 @@ protected:
 
     MutableDataPartStoragePtr data_part_storage;
     MutableColumns index_columns;
-    MergeTreeIndexGranularity index_granularity;
+    MergeTreeIndexGranularityPtr index_granularity;
+    /// Marks that will be saved to cache on finish.
+    PlainMarksByName cached_marks;
 };
 
 using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
@@ -90,6 +104,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity);
+        MergeTreeIndexGranularityPtr computed_index_granularity);
 
 }

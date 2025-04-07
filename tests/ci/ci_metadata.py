@@ -1,17 +1,16 @@
 from pathlib import Path
 from typing import Optional
 
+from ci_utils import GH
 from env_helper import (
-    S3_BUILDS_BUCKET,
-    TEMP_PATH,
-    GITHUB_UPSTREAM_REPOSITORY,
     GITHUB_REPOSITORY,
+    GITHUB_UPSTREAM_REPOSITORY,
+    S3_BUILDS_BUCKET,
     S3_BUILDS_BUCKET_PUBLIC,
+    TEMP_PATH,
 )
 from s3_helper import S3Helper
-from ci_utils import GHActions
 from synchronizer_utils import SYNC_BRANCH_PREFIX
-
 
 # pylint: disable=too-many-lines
 
@@ -111,7 +110,7 @@ class CiMetadata:
         else:
             log_title = f"Storing workflow metadata: PR [{self.pr_number}], upstream PR [{self.upstream_pr_number}]"
 
-        GHActions.print_in_group(
+        GH.print_in_group(
             log_title,
             [f"run_id: {self.run_id}"],
         )

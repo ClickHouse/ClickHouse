@@ -61,12 +61,13 @@ public:
     MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
     SerializationInfoPtr getSerializationInfo(const IColumn & column) const override;
 
+    DataTypePtr getNormalizedType() const override;
     const DataTypePtr & getElement(size_t i) const { return elems[i]; }
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }
 
-    size_t getPositionByName(const String & name) const;
-    std::optional<size_t> tryGetPositionByName(const String & name) const;
+    size_t getPositionByName(const String & name, bool case_insensitive = false) const;
+    std::optional<size_t> tryGetPositionByName(const String & name, bool case_insensitive = false) const;
     String getNameByPosition(size_t i) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }

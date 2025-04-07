@@ -7,11 +7,16 @@ namespace DB
 
 String getRandomASCIIString(size_t length)
 {
+    return getRandomASCIIString(length, thread_local_rng);
+}
+
+String getRandomASCIIString(size_t length, pcg64 & rng)
+{
     std::uniform_int_distribution<int> distribution('a', 'z');
     String res;
     res.resize(length);
     for (auto & c : res)
-        c = distribution(thread_local_rng);
+        c = distribution(rng);
     return res;
 }
 

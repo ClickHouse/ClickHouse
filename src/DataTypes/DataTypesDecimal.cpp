@@ -2,6 +2,7 @@
 #include <DataTypes/Serializations/SerializationDecimal.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/NaNUtils.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadHelpers.h>
@@ -19,6 +20,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int DECIMAL_OVERFLOW;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -41,8 +43,7 @@ DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 {
     if (sizeof(T) <= sizeof(Decimal128))
         return std::make_shared<DataTypeDecimal<Decimal128>>(DataTypeDecimal<Decimal128>::maxPrecision(), this->scale);
-    else
-        return std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), this->scale);
+    return std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), this->scale);
 }
 
 template <is_decimal T>
@@ -80,14 +81,14 @@ static DataTypePtr create(const ASTPtr & arguments)
         const auto * precision_arg = arguments->children[0]->as<ASTLiteral>();
         if (!precision_arg || precision_arg->value.getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Decimal argument precision is invalid");
-        precision = precision_arg->value.get<UInt64>();
+        precision = precision_arg->value.safeGet<UInt64>();
 
         if (arguments->children.size() == 2)
         {
             const auto * scale_arg = arguments->children[1]->as<ASTLiteral>();
             if (!scale_arg || !isInt64OrUInt64FieldType(scale_arg->value.getType()))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Decimal argument scale is invalid");
-            scale = scale_arg->value.get<UInt64>();
+            scale = scale_arg->value.safeGet<UInt64>();
         }
     }
 
@@ -107,7 +108,7 @@ static DataTypePtr createExact(const ASTPtr & arguments)
         "Decimal32 | Decimal64 | Decimal128 | Decimal256 data type family must have a one number as its argument");
 
     UInt64 precision = DecimalUtils::max_precision<T>;
-    UInt64 scale = scale_arg->value.get<UInt64>();
+    UInt64 scale = scale_arg->value.safeGet<UInt64>();
 
     return createDecimal<DataTypeDecimal>(precision, scale);
 }
@@ -269,9 +270,13 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    if constexpr (std::is_floating_point_v<FromFieldType>)
+    if constexpr (std::is_same_v<typename FromDataType::FieldType, BFloat16>)
     {
-        if (!std::isfinite(value))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from BFloat16 to Decimal is not implemented");
+    }
+    else if constexpr (is_floating_point<FromFieldType>)
+    {
+        if (!isFinite(value))
         {
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Cannot convert infinity or NaN to decimal", ToDataType::family_name);

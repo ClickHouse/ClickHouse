@@ -1,18 +1,23 @@
 #pragma once
 
-#include <map>
+#include <Core/Names.h>
+#include <base/types.h>
+
+#include <initializer_list>
 #include <list>
 #include <optional>
 #include <string>
-#include <set>
-#include <initializer_list>
-
-#include <DataTypes/IDataType.h>
-#include <Core/Names.h>
 
 
 namespace DB
 {
+
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+using DataTypes = std::vector<DataTypePtr>;
+
+class ReadBuffer;
+class WriteBuffer;
 
 struct NameAndTypePair
 {
@@ -30,15 +35,8 @@ public:
     bool isSubcolumn() const { return subcolumn_delimiter_position != std::nullopt; }
     const DataTypePtr & getTypeInStorage() const { return type_in_storage; }
 
-    bool operator<(const NameAndTypePair & rhs) const
-    {
-        return std::forward_as_tuple(name, type->getName()) < std::forward_as_tuple(rhs.name, rhs.type->getName());
-    }
-
-    bool operator==(const NameAndTypePair & rhs) const
-    {
-        return name == rhs.name && type->equals(*rhs.type);
-    }
+    bool operator<(const NameAndTypePair & rhs) const;
+    bool operator==(const NameAndTypePair & rhs) const;
 
     String dump() const;
 
@@ -100,6 +98,7 @@ public:
     void getDifference(const NamesAndTypesList & rhs, NamesAndTypesList & deleted, NamesAndTypesList & added) const;
 
     Names getNames() const;
+    NameSet getNameSet() const;
     DataTypes getTypes() const;
 
     /// Remove columns which names are not in the `names`.

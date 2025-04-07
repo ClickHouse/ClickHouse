@@ -19,7 +19,7 @@ file(path [,format] [,structure] [,compression])
 **Параметры**
 
 -   `path` — относительный путь до файла от [user_files_path](../../sql-reference/table-functions/file.md#server_configuration_parameters-user_files_path). Путь к файлу поддерживает следующие шаблоны в режиме доступа только для чтения `*`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, `'abc', 'def'` — строки.
--   `format` — [формат](../../interfaces/formats.md#formats) файла.
+-   `format` — [формат](/sql-reference/formats) файла.
 -   `structure` — структура таблицы. Формат: `'colunmn1_name column1_ype, column2_name column2_type, ...'`.
 - `compression` — Используемый тип сжатия для запроса SELECT или желаемый тип сжатия для запроса INSERT. Поддерживаемые типы сжатия: `gz`, `br`, `xz`, `zst`, `lz4` и `bz2`.
 
@@ -81,6 +81,7 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 Обрабатываться будут те и только те файлы, которые существуют в файловой системе и удовлетворяют всему шаблону пути.
 
 -   `*` — заменяет любое количество любых символов кроме `/`, включая отсутствие символов.
+-   `**` — Заменяет любое количество любых символов, включая `/`, то есть осуществляет рекурсивный поиск по вложенным директориям.
 -   `?` — заменяет ровно один любой символ.
 -   `{some_string,another_string,yet_another_one}` — заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`. Эти строки также могут содержать символ `/`.
 -   `{N..M}` — заменяет любое число в интервале от `N` до `M` включительно (может содержать ведущие нули).
@@ -131,4 +132,4 @@ SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String,
 **Смотрите также**
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
--   [Переименование файлов после обработки](/docs/ru/operations/settings/settings.md#rename_files_after_processing)
+-   [Переименование файлов после обработки](/ru/operations/settings/settings.md#rename_files_after_processing)

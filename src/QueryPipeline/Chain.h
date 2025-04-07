@@ -42,8 +42,8 @@ public:
     InputPort & getInputPort() const;
     OutputPort & getOutputPort() const;
 
-    const Block & getInputHeader() const { return getInputPort().getHeader(); }
-    const Block & getOutputHeader() const { return getOutputPort().getHeader(); }
+    const Block & getInputHeader() const;
+    const Block & getOutputHeader() const;
 
     const std::list<ProcessorPtr> & getProcessors() const { return processors; }
     static std::list<ProcessorPtr> getProcessors(Chain chain) { return std::move(chain.processors); }

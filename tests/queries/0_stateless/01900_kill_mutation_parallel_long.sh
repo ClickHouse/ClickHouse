@@ -12,7 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     drop table if exists data_01900_1;
     drop table if exists data_01900_2;
 
@@ -27,18 +27,18 @@ $CLICKHOUSE_CLIENT -nm -q "
 # so 100 mutations will be scheduled and killed later.
 for i in {1..100}; do
     echo "alter table data_01900_1 update s = 'foo_$i' where 1;"
-done | $CLICKHOUSE_CLIENT -nm
+done | $CLICKHOUSE_CLIENT -m
 
 # but these mutations should not be killed.
 (
     for i in {1..100}; do
         echo "alter table data_01900_2 update s = 'bar_$i' where 1;"
-    done | $CLICKHOUSE_CLIENT -nm --mutations_sync=1
+    done | $CLICKHOUSE_CLIENT -m --mutations_sync=1
 ) &
-$CLICKHOUSE_CLIENT --format Null -nm -q "kill mutation where table = 'data_01900_1' and database = '$CLICKHOUSE_DATABASE';"
+$CLICKHOUSE_CLIENT --format Null -m -q "kill mutation where table = 'data_01900_1' and database = '$CLICKHOUSE_DATABASE';"
 wait
 
-$CLICKHOUSE_CLIENT -nm -q "select * from data_01900_2"
+$CLICKHOUSE_CLIENT -m -q "select * from data_01900_2"
 
 $CLICKHOUSE_CLIENT -q "drop table data_01900_1"
 $CLICKHOUSE_CLIENT -q "drop table data_01900_2"

@@ -150,12 +150,11 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (s_drop.ignore(pos, expected))
         return parseDropQuery(pos, node, expected, ASTDropQuery::Kind::Drop);
-    else if (s_detach.ignore(pos, expected))
+    if (s_detach.ignore(pos, expected))
         return parseDropQuery(pos, node, expected, ASTDropQuery::Kind::Detach);
-    else if (s_truncate.ignore(pos, expected))
+    if (s_truncate.ignore(pos, expected))
         return parseDropQuery(pos, node, expected, ASTDropQuery::Kind::Truncate);
-    else
-        return false;
+    return false;
 }
 
 }

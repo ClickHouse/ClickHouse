@@ -1,51 +1,75 @@
 #pragma once
 
-#include <Core/BaseSettings.h>
-#include <Core/Settings.h>
+#include <Core/BaseSettingsFwdMacros.h>
+#include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
+#include <Core/SettingsFields.h>
 
 
 namespace DB
 {
 class ASTStorage;
+struct ObjectStorageQueueSettingsImpl;
+struct MutableColumnsAndConstraints;
+class StorageObjectStorageQueue;
+class SettingsChanges;
+struct StorageID;
 
+/// List of available types supported in ObjectStorageQueueSettings object
+#define OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+    M(CLASS_NAME, ArrowCompression) \
+    M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, CapnProtoEnumComparingMode) \
+    M(CLASS_NAME, Char) \
+    M(CLASS_NAME, DateTimeInputFormat) \
+    M(CLASS_NAME, DateTimeOutputFormat) \
+    M(CLASS_NAME, DateTimeOverflowBehavior) \
+    M(CLASS_NAME, Double) \
+    M(CLASS_NAME, EscapingRule) \
+    M(CLASS_NAME, Float) \
+    M(CLASS_NAME, IdentifierQuotingRule) \
+    M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, Int64) \
+    M(CLASS_NAME, IntervalOutputFormat) \
+    M(CLASS_NAME, MsgPackUUIDRepresentation) \
+    M(CLASS_NAME, ObjectStorageQueueAction) \
+    M(CLASS_NAME, ObjectStorageQueueMode) \
+    M(CLASS_NAME, ORCCompression) \
+    M(CLASS_NAME, ParquetCompression) \
+    M(CLASS_NAME, ParquetVersion) \
+    M(CLASS_NAME, SchemaInferenceMode) \
+    M(CLASS_NAME, String) \
+    M(CLASS_NAME, UInt32) \
+    M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, UInt64Auto) \
+    M(CLASS_NAME, URI)
 
-#define OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(M, ALIAS) \
-    M(ObjectStorageQueueMode, \
-      mode, \
-      ObjectStorageQueueMode::ORDERED, \
-      "With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKepeer." \
-      "With ordered mode, only the max name of the successfully consumed file stored.", \
-      0) \
-    M(ObjectStorageQueueAction, after_processing, ObjectStorageQueueAction::KEEP, "Delete or keep file in after successful processing", 0) \
-    M(String, keeper_path, "", "Zookeeper node path", 0) \
-    M(UInt32, loading_retries, 10, "Retry loading up to specified number of times", 0) \
-    M(UInt32, processing_threads_num, 1, "Number of processing threads", 0) \
-    M(UInt32, enable_logging_to_queue_log, 1, "Enable logging to system table system.(s3/azure_)queue_log", 0) \
-    M(String, last_processed_path, "", "For Ordered mode. Files that have lexicographically smaller file name are considered already processed", 0) \
-    M(UInt32, tracked_file_ttl_sec, 0, "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default)", 0) \
-    M(UInt32, polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
-    M(UInt32, polling_max_timeout_ms, 10000, "Maximum timeout before next polling", 0) \
-    M(UInt32, polling_backoff_ms, 1000, "Polling backoff", 0) \
-    M(UInt32, tracked_files_limit, 1000, "For unordered mode. Max set size for tracking processed files in ZooKeeper", 0) \
-    M(UInt32, cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
-    M(UInt32, cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
-    M(UInt32, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
-    M(UInt32, max_processed_files_before_commit, 100, "Number of files which can be processed before being committed to keeper", 0) \
-    M(UInt32, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper", 0) \
-    M(UInt32, max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper", 0) \
-    M(UInt32, max_processing_time_sec_before_commit, 0, "Timeout in seconds after which to commit files committed to keeper", 0) \
+OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES(ObjectStorageQueueSettings, DECLARE_SETTING_TRAIT)
 
-#define LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS(M, ALIAS) \
-    OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(M, ALIAS) \
-    LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
-
-DECLARE_SETTINGS_TRAITS(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS)
-
-
-struct ObjectStorageQueueSettings : public BaseSettings<ObjectStorageQueueSettingsTraits>
+struct ObjectStorageQueueSettings
 {
-    void loadFromQuery(ASTStorage & storage_def);
-};
+    ObjectStorageQueueSettings();
+    ObjectStorageQueueSettings(const ObjectStorageQueueSettings & settings);
+    ObjectStorageQueueSettings(ObjectStorageQueueSettings && settings) noexcept;
+    ~ObjectStorageQueueSettings();
 
+    OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES(ObjectStorageQueueSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
+
+    void dumpToSystemEngineSettingsColumns(
+        MutableColumnsAndConstraints & params,
+        const std::string & table_name,
+        const std::string & database_name,
+        const StorageObjectStorageQueue & storage) const;
+
+    void loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id);
+
+    void applyChanges(const SettingsChanges & changes);
+
+    Field get(const std::string & name);
+
+    static bool hasBuiltin(std::string_view name);
+
+private:
+    std::unique_ptr<ObjectStorageQueueSettingsImpl> impl;
+};
 }

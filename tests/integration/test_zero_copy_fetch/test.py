@@ -4,11 +4,11 @@ import logging
 import random
 import string
 import time
-
 from multiprocessing.dummy import Pool
-import pytest
-from helpers.cluster import ClickHouseCluster
 
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 

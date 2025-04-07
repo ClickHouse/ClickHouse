@@ -1,6 +1,9 @@
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/Port.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
@@ -23,12 +26,12 @@ static ITransformingStep::Traits getTraits()
 }
 
 LimitStep::LimitStep(
-    const DataStream & input_stream_,
+    const Header & input_header_,
     size_t limit_, size_t offset_,
     bool always_read_till_end_,
     bool with_ties_,
     SortDescription description_)
-    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+    : ITransformingStep(input_header_, input_header_, getTraits())
     , limit(limit_), offset(offset_)
     , always_read_till_end(always_read_till_end_)
     , with_ties(with_ties_), description(std::move(description_))
@@ -74,6 +77,49 @@ void LimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Offset", offset);
     map.add("With Ties", with_ties);
     map.add("Reads All Data", always_read_till_end);
+}
+
+void LimitStep::serialize(Serialization & ctx) const
+{
+    UInt8 flags = 0;
+    if (always_read_till_end)
+        flags |= 1;
+    if (with_ties)
+        flags |= 2;
+
+    writeIntBinary(flags, ctx.out);
+
+    writeVarUInt(limit, ctx.out);
+    writeVarUInt(offset, ctx.out);
+
+    if (with_ties)
+        serializeSortDescription(description, ctx.out);
+}
+
+std::unique_ptr<IQueryPlanStep> LimitStep::deserialize(Deserialization & ctx)
+{
+    UInt8 flags;
+    readIntBinary(flags, ctx.in);
+
+    bool always_read_till_end = bool(flags & 1);
+    bool with_ties = bool(flags & 2);
+
+    UInt64 limit;
+    UInt64 offset;
+
+    readVarUInt(limit, ctx.in);
+    readVarUInt(offset, ctx.in);
+
+    SortDescription description;
+    if (with_ties)
+        deserializeSortDescription(description, ctx.in);
+
+    return std::make_unique<LimitStep>(ctx.input_headers.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
+}
+
+void registerLimitStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("Limit", LimitStep::deserialize);
 }
 
 }

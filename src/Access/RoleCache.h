@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Access/EnabledRoles.h>
-#include <Poco/AccessExpireCache.h>
-#include <boost/container/flat_set.hpp>
 #include <map>
 #include <mutex>
+#include <Access/EnabledRoles.h>
+#include <Poco/AccessExpireCache.h>
 
 
 namespace DB
@@ -22,6 +21,10 @@ public:
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
         const std::vector<UUID> & current_roles,
         const std::vector<UUID> & current_roles_with_admin_option);
+
+    std::shared_ptr<const EnabledRoles> getEnabledRoles(
+        boost::container::flat_set<UUID> current_roles,
+        boost::container::flat_set<UUID> current_roles_with_admin_option);
 
 private:
     using SubscriptionsOnRoles = std::vector<std::shared_ptr<scope_guard>>;

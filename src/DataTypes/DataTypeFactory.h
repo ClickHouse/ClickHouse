@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
 #include <Common/IFactoryWithAliases.h>
 #include <DataTypes/DataTypeCustom.h>
 
@@ -12,6 +11,9 @@
 
 namespace DB
 {
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -34,6 +36,8 @@ public:
     DataTypePtr get(const String & family_name, const ASTPtr & parameters) const;
     DataTypePtr get(const ASTPtr & ast) const;
     DataTypePtr getCustom(DataTypeCustomDescPtr customization) const;
+    DataTypePtr getCustom(const String & base_name, DataTypeCustomDescPtr customization) const;
+    static void setCustom(DataTypePtr & type, DataTypeCustomDescPtr customization);
 
     /// Return nullptr in case of error.
     DataTypePtr tryGet(const String & full_name) const;
@@ -98,8 +102,9 @@ void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainBool(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);
-void registerDataTypeObject(DataTypeFactory & factory);
+void registerDataTypeObjectDeprecated(DataTypeFactory & factory);
 void registerDataTypeVariant(DataTypeFactory & factory);
 void registerDataTypeDynamic(DataTypeFactory & factory);
+void registerDataTypeJSON(DataTypeFactory & factory);
 
 }

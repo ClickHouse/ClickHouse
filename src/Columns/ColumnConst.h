@@ -1,21 +1,14 @@
 #pragma once
 
-#include <Core/Field.h>
-#include <Common/Exception.h>
 #include <Columns/IColumn.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
+#include <Core/Field.h>
 #include <Common/PODArray.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
@@ -78,6 +71,11 @@ public:
         data->get(0, res);
     }
 
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
+    {
+        return data->getValueNameAndType(0);
+    }
+
     StringRef getDataAt(size_t) const override
     {
         return data->getDataAt(0);
@@ -123,7 +121,7 @@ public:
         return data->isNullAt(0);
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
 #else
     void doInsertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
@@ -151,7 +149,7 @@ public:
         ++s;
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn &, size_t) override
 #else
     void doInsertFrom(const IColumn &, size_t) override
@@ -160,7 +158,7 @@ public:
         ++s;
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
 #else
     void doInsertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
@@ -204,7 +202,7 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -237,7 +235,7 @@ public:
         return data->allocatedBytes() + sizeof(s);
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
 #else
     int doCompareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
@@ -254,25 +252,33 @@ public:
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
-    void gather(ColumnGathererStream &) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot gather into constant column {}", getName());
-    }
+    void gather(ColumnGathererStream &) override;
 
     void getExtremes(Field & min, Field & max) const override
     {
         data->getExtremes(min, max);
     }
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
         callback(*data);
         data->forEachSubcolumnRecursively(callback);
+    }
+
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override
+    {
+        callback(data);
+    }
+
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    {
+        callback(*data);
+        data->forEachMutableSubcolumnRecursively(callback);
     }
 
     bool structureEquals(const IColumn & rhs) const override

@@ -1,6 +1,6 @@
+#include <Columns/IColumn.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowTablesQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
@@ -53,7 +53,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << " ORDER BY name";
 
         if (query.limit_length)
-            rewritten_query << " LIMIT " << query.limit_length;
+            rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
 
         return rewritten_query.str();
     }
@@ -77,11 +77,11 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << " ORDER BY cluster";
 
         if (query.limit_length)
-            rewritten_query << " LIMIT " << query.limit_length;
+            rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
 
         return rewritten_query.str();
     }
-    else if (query.cluster)
+    if (query.cluster)
     {
         WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT * FROM system.clusters";
@@ -121,9 +121,18 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.merges)
     {
         WriteBufferFromOwnString rewritten_query;
-        rewritten_query << "SELECT table, database, round((elapsed * (1 / merges.progress)) - merges.elapsed, 2) AS estimate_complete, round(elapsed,2) elapsed, "
-                           "round(progress*100, 2) AS progress, is_mutation, formatReadableSize(total_size_bytes_compressed) AS size_compressed, "
-                           "formatReadableSize(memory_usage) AS memory_usage FROM system.merges";
+        rewritten_query << R"(
+            SELECT
+                table,
+                database,
+                merges.progress > 0 ? round(merges.elapsed * (1 - merges.progress) / merges.progress, 2) : NULL AS estimate_complete,
+                round(elapsed, 2) AS elapsed,
+                round(progress * 100, 2) AS progress,
+                is_mutation,
+                formatReadableSize(total_size_bytes_compressed) AS size_compressed,
+                formatReadableSize(memory_usage) AS memory_usage
+            FROM system.merges
+            )";
 
         if (!query.like.empty())
         {
@@ -138,7 +147,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << " ORDER BY elapsed desc";
 
         if (query.limit_length)
-            rewritten_query << " LIMIT " << query.limit_length;
+            rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
 
         return rewritten_query.str();
     }
@@ -183,13 +192,13 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
             << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
             << DB::quote << query.like;
     else if (query.where_expression)
-        rewritten_query << " AND (" << query.where_expression << ")";
+        rewritten_query << " AND (" << query.where_expression->formatWithSecretsOneLine() << ")";
 
     /// (*)
     rewritten_query << " ORDER BY name ";
 
     if (query.limit_length)
-        rewritten_query << " LIMIT " << query.limit_length;
+        rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
 
     return rewritten_query.str();
 }

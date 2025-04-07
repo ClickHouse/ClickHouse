@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -59,3 +60,4 @@ def test_comment(started_cluster):
 
     expected = "CREATE TABLE default.test_table (`id` Int64 COMMENT \\'column_comment_2\\') ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\') ORDER BY id SETTINGS index_granularity = 8192 COMMENT \\'table_comment_2\\'"
     assert_create_query([node_1, node_2], "default", "test_table", expected)
+    node_1.query("DROP TABLE test_table ON CLUSTER 'cluster'")

@@ -1,4 +1,3 @@
-version: '2.3'
 services:
     # nginx server to host static files.
     # Accepts only PUT data by test.com/path and GET already existing data on test.com/path.
@@ -8,4 +7,8 @@ services:
         image: clickhouse/nginx-dav:${DOCKER_NGINX_DAV_TAG:-latest}
         restart: always
         ports:
-            - 80:80
+            # NOTE: It is enough to change only the host port, since in
+            # container there should not be overlaps, plus, you don't have to
+            # change all the invocations inside the container network to this
+            # $NGINX_EXTERNAL_PORT and simply can use "80".
+            - ${NGINX_EXTERNAL_PORT}:80

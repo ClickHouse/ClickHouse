@@ -1,8 +1,14 @@
-#include <Storages/SelectQueryInfo.h>
+#include <Interpreters/Set.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Planner/PlannerContext.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
+
+SelectQueryInfo::SelectQueryInfo()
+    : prepared_sets(std::make_shared<PreparedSets>())
+{}
 
 bool SelectQueryInfo::isFinal() const
 {
@@ -18,7 +24,7 @@ std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNod
     std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
     if (planner_context)
     {
-        const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
+        auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
         const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
         for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
         {

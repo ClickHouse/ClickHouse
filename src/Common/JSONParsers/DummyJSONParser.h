@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <base/types.h>
 #include <base/defines.h>
 #include "ElementTypes.h"
@@ -8,10 +7,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 /// This class can be used as an argument for the template class FunctionJSON when we unable to parse JSONs.
 /// It can't do anything useful and just throws an exception.
@@ -95,7 +90,7 @@ struct DummyJSONParser
     };
 
     /// Parses a JSON document, returns the reference to its root element if succeeded.
-    bool parse(std::string_view, Element &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Functions JSON* are not supported"); } /// NOLINT
+    bool parse(std::string_view, Element &);
 
 #if 0
     /// Optional: Allocates memory to parse JSON documents faster.

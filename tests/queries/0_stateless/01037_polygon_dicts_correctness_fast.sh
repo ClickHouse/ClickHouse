@@ -14,7 +14,7 @@ declare -a SearchTypes=("POLYGON_INDEX_EACH" "POLYGON_INDEX_CELL")
 
 tar -xf "${CURDIR}"/01037_test_data_perf.tar.gz -C "${DATA_DIR}"
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 CREATE TABLE points (x Float64, y Float64) ENGINE = Memory;
 "
 
@@ -22,7 +22,7 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO points FORMAT TSV" --min_chunk_bytes_for
 
 rm "${DATA_DIR}"/01037_point_data
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 DROP TABLE IF EXISTS polygons_array;
 
 CREATE TABLE polygons_array
@@ -42,7 +42,7 @@ for type in "${SearchTypes[@]}";
 do
    outputFile="${TMP_DIR}/results${type}.out"
 
-   $CLICKHOUSE_CLIENT -n --query="
+   $CLICKHOUSE_CLIENT --query="
    DROP DICTIONARY IF EXISTS dict_array;
 
    CREATE DICTIONARY dict_array

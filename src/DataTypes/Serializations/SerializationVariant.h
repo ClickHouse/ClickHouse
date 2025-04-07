@@ -113,10 +113,12 @@ public:
         size_t limit,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state,
-        std::unordered_map<String, size_t> & variants_statistics) const;
+        std::unordered_map<String, size_t> & variants_statistics,
+        size_t & total_size_of_variants) const;
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -145,6 +147,7 @@ public:
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
@@ -184,14 +187,20 @@ private:
         CompactDiscriminatorsGranuleFormat granule_format = CompactDiscriminatorsGranuleFormat::PLAIN;
         size_t remaining_rows_in_granule = 0;
         ColumnVariant::Discriminator compact_discr = 0;
+
+        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+        {
+            return std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(*this);
+        }
     };
 
     static DeserializeBinaryBulkStatePtr deserializeDiscriminatorsStatePrefix(
         DeserializeBinaryBulkSettings & settings,
         SubstreamsDeserializeStatesCache * cache);
 
-    std::vector<size_t> deserializeCompactDiscriminators(
+    std::pair<std::vector<size_t>, std::vector<size_t>> deserializeCompactDiscriminators(
         ColumnPtr & discriminators_column,
+        size_t rows_offset,
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,

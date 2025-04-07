@@ -18,8 +18,8 @@ slug: /zh/operations/system-tables/grants
 
 -    `column` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — 被授予访问权限的列的名称.
 
--    `is_partial_revoke` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 逻辑值. 它显示了某些特权是否被取消. 可能的值:
+-    `is_partial_revoke` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 逻辑值. 它显示了某些特权是否被取消. 可能的值:
 - `0` — 该行描述了部分撤销.
 - `1` — 这一行描述了一个授权.
 
--    `grant_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 被授予`WITH GRANT OPTION` 权限, 参见 [GRANT](../../sql-reference/statements/grant.md#grant-privigele-syntax).
+-    `grant_option` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 被授予`WITH GRANT OPTION` 权限, 参见 [GRANT](../../sql-reference/statements/grant.md#grant-privigele-syntax).

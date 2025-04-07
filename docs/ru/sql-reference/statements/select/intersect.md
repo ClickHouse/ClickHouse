@@ -29,7 +29,7 @@ FROM table2
 Запрос:
 
 ``` sql
-SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,6);
+SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
 ```
 
 Результат:
@@ -70,5 +70,5 @@ SELECT * FROM t1 INTERSECT SELECT * FROM t2;
 
 **См. также**
 
--   [UNION](union.md#union-clause)
--   [EXCEPT](except.md#except-clause)
+-   [UNION](/sql-reference/statements/select/union)
+-   [EXCEPT](/sql-reference/statements/select/except)

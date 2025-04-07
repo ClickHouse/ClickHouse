@@ -9,7 +9,7 @@ sidebar_label: GRANT
 - Присваивает [привилегии](#grant-privileges) пользователям или ролям ClickHouse.
 - Назначает роли пользователям или другим ролям.
 
-Отозвать привилегию можно с помощью выражения [REVOKE](revoke.md). Чтобы вывести список присвоенных привилегий, воспользуйтесь выражением [SHOW GRANTS](show.md#show-grants-statement).
+Отозвать привилегию можно с помощью выражения [REVOKE](revoke.md). Чтобы вывести список присвоенных привилегий, воспользуйтесь выражением [SHOW GRANTS](/sql-reference/statements/show#show-grants).
 
 ## Синтаксис присвоения привилегий {#grant-privigele-syntax}
 
@@ -192,14 +192,23 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
     - `addressToSymbol`
     - `demangle`
 - [SOURCES](#grant-sources)
+    - `AZURE`
     - `FILE`
-    - `URL`
-    - `REMOTE`
-    - `MYSQL`
-    - `ODBC`
-    - `JDBC`
     - `HDFS`
+    - `HIVE`
+    - `JDBC`
+    - `KAFKA`
+    - `MONGO`
+    - `MYSQL`
+    - `NATS`
+    - `ODBC`
+    - `POSTGRES`
+    - `RABBITMQ`
+    - `REDIS`
+    - `REMOTE`
     - `S3`
+    - `SQLITE`
+    - `URL`
 - [dictGet](#grant-dictget)
 
 Примеры того, как трактуется данная иерархия:
@@ -461,14 +470,23 @@ GRANT INSERT(x,y) ON db.table TO john
 Разрешает использовать внешние источники данных. Применяется к [движкам таблиц](../../engines/table-engines/index.md) и [табличным функциям](../table-functions/index.md#table-functions).
 
 - `SOURCES`. Уровень: `GROUP`
+    - `AZURE`. Уровень: `GLOBAL`
     - `FILE`. Уровень: `GLOBAL`
-    - `URL`. Уровень: `GLOBAL`
-    - `REMOTE`. Уровень: `GLOBAL`
-    - `YSQL`. Уровень: `GLOBAL`
-    - `ODBC`. Уровень: `GLOBAL`
-    - `JDBC`. Уровень: `GLOBAL`
     - `HDFS`. Уровень: `GLOBAL`
+    - `HIVE`. Уровень: `GLOBAL`
+    - `JDBC`. Уровень: `GLOBAL`
+    - `KAFKA`. Уровень: `GLOBAL`
+    - `MONGO`. Уровень: `GLOBAL`
+    - `MYSQL`. Уровень: `GLOBAL`
+    - `NATS`. Уровень: `GLOBAL`
+    - `ODBC`. Уровень: `GLOBAL`
+    - `POSTGRES`. Уровень: `GLOBAL`
+    - `RABBITMQ`. Уровень: `GLOBAL`
+    - `REDIS`. Уровень: `GLOBAL`
+    - `REMOTE`. Уровень: `GLOBAL`
     - `S3`. Уровень: `GLOBAL`
+    - `SQLITE`. Уровень: `GLOBAL`
+    - `URL`. Уровень: `GLOBAL`
 
 Привилегия `SOURCES` разрешает использование всех источников. Также вы можете присвоить привилегию для каждого источника отдельно. Для использования источников необходимы дополнительные привилегии.
 
@@ -481,7 +499,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 - `dictGet`. Алиасы: `dictHas`, `dictGetHierarchy`, `dictIsIn`
 
-Разрешает вызывать функции [dictGet](../functions/ext-dict-functions.md#dictget), [dictHas](../functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../functions/ext-dict-functions.md#dictisin).
+Разрешает вызывать функции [dictGet](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull), [dictHas](../functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../functions/ext-dict-functions.md#dictisin).
 
 Уровень: `DICTIONARY`.
 

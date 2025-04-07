@@ -109,7 +109,7 @@ ClickHouse Keeper 完全可以作为ZooKeeper的独立替代品或者作为Click
 
 ## 如何运行 {#how-to-run}
 
-ClickHouse Keeper被绑定到ClickHouse服务器包中，只需添加配置' <keeper_server> '，并像往常一样启动ClickHouse服务器。如果你想运行独立的ClickHouse Keeper，你可以用类似的方式启动它:
+ClickHouse Keeper被绑定到ClickHouse服务器包中，只需添加配置' `<keeper_server>` '，并像往常一样启动ClickHouse服务器。如果你想运行独立的ClickHouse Keeper，你可以用类似的方式启动它:
 
 ```bash
 clickhouse-keeper --config /etc/your_path_to_config/config.xml

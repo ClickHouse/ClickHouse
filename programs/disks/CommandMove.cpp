@@ -1,5 +1,6 @@
 #include <Interpreters/Context.h>
 #include "ICommand.h"
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ namespace ErrorCodes
 class CommandMove final : public ICommand
 {
 public:
-    CommandMove()
+    CommandMove() : ICommand("CommandMove")
     {
         command_name = "move";
         description = "Move file or directory from `from_path` to `to_path`";
@@ -30,21 +31,23 @@ public:
         String path_from = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
         String path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
 
-        if (disk.getDisk()->isFile(path_from))
+        if (disk.getDisk()->existsFile(path_from))
         {
+            LOG_INFO(log, "Moving file from '{}' to '{}' at disk '{}'", path_from, path_to, disk.getDisk()->getName());
             disk.getDisk()->moveFile(path_from, path_to);
         }
-        else if (disk.getDisk()->isDirectory(path_from))
+        else if (disk.getDisk()->existsDirectory(path_from))
         {
             auto target_location = getTargetLocation(path_from, disk, path_to);
-            if (!disk.getDisk()->exists(target_location))
+            if (!disk.getDisk()->existsDirectory(target_location))
             {
+                LOG_INFO(log, "Moving directory from '{}' to '{}' at disk '{}'", path_from, target_location, disk.getDisk()->getName());
                 disk.getDisk()->createDirectory(target_location);
                 disk.getDisk()->moveDirectory(path_from, target_location);
             }
             else
             {
-                if (disk.getDisk()->isFile(target_location))
+                if (disk.getDisk()->existsFile(target_location))
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS, "cannot overwrite non-directory '{}' with directory '{}'", target_location, path_from);
@@ -53,13 +56,11 @@ public:
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot move '{}' to '{}': Directory not empty", path_from, target_location);
                 }
-                else
-                {
-                    disk.getDisk()->moveDirectory(path_from, target_location);
-                }
+                LOG_INFO(log, "Moving directory from '{}' to '{}' at disk '{}'", path_from, target_location, disk.getDisk()->getName());
+                disk.getDisk()->moveDirectory(path_from, target_location);
             }
         }
-        else if (!disk.getDisk()->exists(path_from))
+        else
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -74,5 +75,4 @@ CommandPtr makeCommandMove()
 {
     return std::make_shared<DB::CommandMove>();
 }
-
 }
