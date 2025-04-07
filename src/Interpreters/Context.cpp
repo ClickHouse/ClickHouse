@@ -4805,6 +4805,16 @@ std::shared_ptr<MetricLog> Context::getMetricLog() const
     return shared->system_logs->metric_log;
 }
 
+std::shared_ptr<TransposedMetricLog> Context::getTransposedMetricLog() const
+{
+     SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->transposed_metric_log;
+}
+
 
 std::shared_ptr<LatencyLog> Context::getLatencyLog() const
 {

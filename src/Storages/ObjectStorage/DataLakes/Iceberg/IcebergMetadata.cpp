@@ -50,6 +50,7 @@ namespace Setting
 extern const SettingsInt64 iceberg_timestamp_ms;
 extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
+extern const SettingsBool use_iceberg_partition_pruning;
 }
 
 
@@ -275,11 +276,25 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(const 
     std::pair<Int32, String> result;
     if (!explicit_metadata_path.empty())
     {
-        LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
-        auto prefix_storage_path = configuration.getPath();
-        if (!explicit_metadata_path.starts_with(prefix_storage_path))
-            explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
-        result = getMetadataFileAndVersion(explicit_metadata_path);
+        try
+        {
+            LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
+            std::filesystem::path p(explicit_metadata_path);
+            auto it = p.begin();
+            if (it != p.end())
+            {
+                if (*it == "." || *it == "..")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative paths are not allowed");
+            }
+            auto prefix_storage_path = configuration.getPath();
+            if (!explicit_metadata_path.starts_with(prefix_storage_path))
+                explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
+            result = getMetadataFileAndVersion(explicit_metadata_path);
+        }
+        catch (const std::exception & ex)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid path {} specified for iceberg_metadata_file_path: '{}'", explicit_metadata_path, ex.what());
+        }
     }
     else
     {
@@ -307,7 +322,7 @@ Poco::JSON::Object::Ptr IcebergMetadata::readJSON(const String & metadata_file_p
     };
     if (manifest_cache)
     {
-        return manifest_cache->getOrSetMetadataObject(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), create_fn);
+        return manifest_cache->getOrSetTableMetadata(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), create_fn);
     }
     return create_fn().first;
 }
@@ -500,7 +515,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
     };
 
     if (cache_ptr)
-        object = cache_ptr->getOrSetMetadataObject(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), create_fn);
+        object = cache_ptr->getOrSetTableMetadata(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), create_fn);
     else
         object = create_fn().first;
 
@@ -539,7 +554,7 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
         auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, getContext(), log);
         AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), filename, getFormatSettings(getContext()));
 
-        ManifestListCacheCell::CachedManifestList cached_manifest_list;
+        ManifestFileCacheKeys manifest_file_cache_keys;
 
         for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
         {
@@ -548,28 +563,30 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
             Int64 added_sequence_number = 0;
             if (format_version > 1)
                 added_sequence_number = manifest_list_deserializer.getValueFromRowByName(i, SEQUENCE_NUMBER_COLUMN, TypeIndex::Int64).safeGet<Int64>();
-            cached_manifest_list.emplace_back(manifest_file_name, added_sequence_number);
+            manifest_file_cache_keys.emplace_back(manifest_file_name, added_sequence_number);
         }
         /// We only return the list of {file name, seq number} for cache.
         /// Because ManifestList holds a list of ManifestFilePtr which consume much memory space.
         /// ManifestFilePtr is shared pointers can be held for too much time, so we cache ManifestFile separately.
-        return cached_manifest_list;
+        return manifest_file_cache_keys;
     };
 
-    auto convert_fn = [&](const String & filename_, Int64 inherited_sequence_number_)
-    {
-        return getManifestFile(filename_, inherited_sequence_number_);
-    };
-
-    Iceberg::ManifestListPtr manifest_list_ptr;
+    ManifestFileCacheKeys manifest_file_cache_keys;
+    ManifestList manifest_list;
     if (manifest_cache)
     {
-        manifest_list_ptr = manifest_cache->getOrSetManifestList(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn, convert_fn);
+        manifest_file_cache_keys = manifest_cache->getOrSetManifestFileCacheKeys(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
     }
     else
     {
-        manifest_list_ptr = ManifestListCacheCell(create_fn()).getManifestList(convert_fn);
+        manifest_file_cache_keys = create_fn();
     }
+    for (const auto & entry : manifest_file_cache_keys)
+    {
+        auto manifest_file_ptr = getManifestFile(entry.manifest_file_path, entry.added_sequence_number);
+        manifest_list.push_back(manifest_file_ptr);
+    }
+    ManifestListPtr manifest_list_ptr = std::make_shared<ManifestList>(std::move(manifest_list));
     initializeDataFiles(manifest_list_ptr);
     return manifest_list_ptr;
 }
@@ -606,18 +623,23 @@ ManifestFilePtr IcebergMetadata::getManifestFile(const String & filename, Int64 
     return create_fn();
 }
 
-Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
+Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
 {
     if (!relevant_snapshot)
         return {};
 
-    if (!filter_dag && cached_unprunned_files_for_last_processed_snapshot.has_value())
+    bool use_partition_pruning = filter_dag && getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning];
+
+    if (!use_partition_pruning && cached_unprunned_files_for_last_processed_snapshot.has_value())
         return cached_unprunned_files_for_last_processed_snapshot.value();
 
     Strings data_files;
     for (const auto & manifest_file_ptr : *(relevant_snapshot->manifest_list))
     {
-        ManifestFilesPruner pruner(schema_processor, relevant_snapshot_schema_id, filter_dag, *manifest_file_ptr, getContext());
+        ManifestFilesPruner pruner(
+            schema_processor, relevant_snapshot_schema_id,
+            use_partition_pruning ? filter_dag : nullptr,
+            *manifest_file_ptr, getContext());
         const auto & data_files_in_manifest = manifest_file_ptr->getFiles();
         for (const auto & manifest_file_entry : data_files_in_manifest)
         {
@@ -632,23 +654,13 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
         }
     }
 
-    if (!filter_dag)
+    if (!use_partition_pruning)
     {
         cached_unprunned_files_for_last_processed_snapshot = data_files;
         return cached_unprunned_files_for_last_processed_snapshot.value();
     }
 
     return data_files;
-}
-
-Strings IcebergMetadata::makePartitionPruning(const ActionsDAG & filter_dag)
-{
-    auto configuration_ptr = configuration.lock();
-    if (!configuration_ptr)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
-    }
-    return getDataFilesImpl(&filter_dag);
 }
 
 std::optional<size_t> IcebergMetadata::totalRows() const
@@ -711,6 +723,14 @@ std::optional<size_t> IcebergMetadata::totalBytes() const
     }
 
     return result;
+}
+
+ObjectIterator IcebergMetadata::iterate(
+    const ActionsDAG * filter_dag,
+    FileProgressCallback callback,
+    size_t /* list_batch_size */) const
+{
+    return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);
 }
 
 }

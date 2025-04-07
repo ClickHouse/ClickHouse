@@ -46,13 +46,13 @@ void encodeSHA256(const void * text, size_t size, unsigned char * out)
     auto ctx = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>(EVP_MD_CTX_new(), EVP_MD_CTX_free);
 
     if (!EVP_DigestInit(ctx.get(), EVP_sha256()))
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "SHA256 EVP_DigestInit failed: {}", getOpenSSLErrors());
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit failed: {}", getOpenSSLErrors());
 
     if (!EVP_DigestUpdate(ctx.get(), text, size))
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "SHA256 EVP_DigestUpdate failed: {}", getOpenSSLErrors());
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
 
     if (!EVP_DigestFinal(ctx.get(), out, nullptr))
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "SHA256 EVP_DigestFinal failed: {}", getOpenSSLErrors());
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal failed: {}", getOpenSSLErrors());
 }
 
 std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::string & data)
@@ -61,31 +61,28 @@ std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::str
     size_t out_len = 0;
 
     using MacPtr = std::unique_ptr<EVP_MAC, decltype(&EVP_MAC_free)>;
-    using CtxPtr = std::unique_ptr<EVP_MAC_CTX, decltype(&EVP_MAC_CTX_free)>;
-
     MacPtr mac(EVP_MAC_fetch(nullptr, "HMAC", nullptr), &EVP_MAC_free);
     if (!mac)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to fetch HMAC algorithm");
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MAC_fetch failed: {}", getOpenSSLErrors());
 
+    using CtxPtr = std::unique_ptr<EVP_MAC_CTX, decltype(&EVP_MAC_CTX_free)>;
     CtxPtr ctx(EVP_MAC_CTX_new(mac.get()), &EVP_MAC_CTX_free);
     if (!ctx)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to create HMAC context");
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MAC_CTX_new failed: {}", getOpenSSLErrors());
 
     OSSL_PARAM params[] = {
         OSSL_PARAM_utf8_string("digest", const_cast<char*>("SHA256"), 0),
         OSSL_PARAM_END
     };
 
-    if (EVP_MAC_init(ctx.get(), key.data(), key.size(), params) != 1)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MAC_init failed");
+    if (!EVP_MAC_init(ctx.get(), key.data(), key.size(), params))
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MAC_init failed: {}", getOpenSSLErrors());
 
-    if (EVP_MAC_update(ctx.get(),
-                       reinterpret_cast<const unsigned char*>(data.data()),
-                       data.size()) != 1)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MAC_update failed");
+    if (!EVP_MAC_update(ctx.get(), reinterpret_cast<const unsigned char*>(data.data()), data.size()))
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MAC_update failed: {}", getOpenSSLErrors());
 
-    if (EVP_MAC_final(ctx.get(), result.data(), &out_len, result.size()) != 1)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MAC_final failed");
+    if (!EVP_MAC_final(ctx.get(), result.data(), &out_len, result.size()))
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MAC_final failed: {}", getOpenSSLErrors());
 
     result.resize(out_len);
     return result;

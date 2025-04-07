@@ -356,6 +356,7 @@
     M(FilteringMarksWithPrimaryKey, "Number of threads currently doing filtering of mark ranges by the primary key") \
     M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
     \
+    M(ConcurrencyControlScheduled, "Total number of CPU slot requests are being scheduled currently") \
     M(ConcurrencyControlAcquired, "Total number of acquired CPU slots") \
     M(ConcurrencyControlAcquiredNonCompeting, "Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)") \
     M(ConcurrencyControlSoftLimit, "Value of soft limit on number of CPU slots") \
