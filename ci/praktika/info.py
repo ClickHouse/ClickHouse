@@ -192,7 +192,7 @@ class Info:
             return custom_data.get(key, None)
         return custom_data
 
-    def store_exception_traceback(self):
+    def store_traceback(self):
         self.env.TRACEBACKS.append(traceback.format_exc())
         self.env.dump()
 
