@@ -76,6 +76,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"low_priority_query_wait_time_ms", 1000, 1000, "New setting."},
             {"allow_experimental_shared_set_join", 0, 1, "A setting for ClickHouse Cloud to enable SharedSet and SharedJoin"},
             {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
+            {"min_os_cpu_wait_time_ratio_to_throw", 0, 2, "New setting"},
+            {"max_os_cpu_wait_time_ratio_to_throw", 0, 6, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
@@ -701,7 +703,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"max_postpone_time_for_failed_replicated_fetches_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing fetch tasks in the replication queue."},
             {"max_postpone_time_for_failed_replicated_merges_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing merge tasks in the replication queue."},
             {"max_postpone_time_for_failed_replicated_tasks_ms", 5ULL * 60 * 1000, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."},
-
+            {"allow_summing_columns_in_partition_or_order_key", true, false, "New setting to allow summing of partition or sorting key columns"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.3",
         {

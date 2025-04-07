@@ -1242,7 +1242,7 @@ void StatementGenerator::addTableColumnInternal(
         {
             generateSettingValues(rg, csettings, cd->mutable_setting_values());
         }
-        if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !t.hasDatabasePeer() && rg.nextMediumNumber() < 16)
+        if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !t.is_deterministic && rg.nextMediumNumber() < 16)
         {
             flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
             generateTTLExpression(rg, t, cd->mutable_ttl_expr());
@@ -1520,9 +1520,9 @@ void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase 
 
 void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b)
 {
+    /// Make sure `is_determistic is already set`
     const uint32_t noption = rg.nextSmallNumber();
 
-    b.is_deterministic = rg.nextSmallNumber() < 9;
     if (noption < 4)
     {
         b.teng = TableEngineValues::MergeTree;
@@ -1613,11 +1613,8 @@ static const std::vector<TableEngineValues> likeEngs
        TableEngineValues::Log,
        TableEngineValues::TinyLog,
        TableEngineValues::EmbeddedRocksDB,
-       TableEngineValues::Merge};
-
-static const auto replaceTableLambda = [](const SQLTable & t) { return t.isAttached() && !t.hasDatabasePeer(); };
-
-static const auto tableLikeLambda = [](const SQLTable & t) { return t.isAttached() && !t.is_temp; };
+       TableEngineValues::Merge,
+       TableEngineValues::GenerateRandom};
 
 void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTable * ct)
 {
@@ -1625,10 +1622,20 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
     uint32_t tname = 0;
     bool added_pkey = false;
     TableEngine * te = ct->mutable_engine();
-    const bool replace = collectionCount<SQLTable>(replaceTableLambda) > 3 && rg.nextMediumNumber() < 16;
+    const bool prev_enforce_final = this->enforce_final;
+    const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
+    SQLBase::setDeterministic(rg, next);
+    this->allow_not_deterministic = !next.is_deterministic;
+    this->enforce_final = next.is_deterministic;
     next.is_temp = rg.nextMediumNumber() < 11;
     ct->set_is_temp(next.is_temp);
+
+    const auto tableLikeLambda
+        = [&next](const SQLTable & t) { return t.isAttached() && !t.is_temp && (t.is_deterministic || !next.is_deterministic); };
+    const auto replaceTableLambda
+        = [&next](const SQLTable & t) { return t.isAttached() && !t.hasDatabasePeer() && (t.is_deterministic || !next.is_deterministic); };
+    const bool replace = collectionCount<SQLTable>(replaceTableLambda) > 3 && rg.nextMediumNumber() < 16;
     if (replace)
     {
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(replaceTableLambda));
@@ -1771,7 +1778,6 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
 
         next.teng = val;
         te->set_engine(val);
-        next.is_deterministic = rg.nextSmallNumber() < 9;
         cta->set_clone(next.isMergeTreeFamily() && t.isMergeTreeFamily() && rg.nextBool());
         t.setName(cta->mutable_est(), false);
         for (const auto & col : t.cols)
@@ -1803,7 +1809,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         connections.createPeerTable(rg, next.peer_table, next, ct, entries);
         entries.clear();
     }
-    else if (next.isMergeTreeFamily())
+    else if (!next.is_deterministic && next.isMergeTreeFamily())
     {
         bool has_date_cols = false;
 
@@ -1829,6 +1835,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         ct->mutable_cluster()->set_cluster(next.cluster.value());
     }
 
+    this->enforce_final = prev_enforce_final;
+    this->allow_not_deterministic = prev_allow_not_deterministic;
     chassert(!next.toption.has_value() || next.isMergeTreeFamily() || next.isJoinEngine() || next.isSetEngine());
     this->staged_tables[tname] = std::move(next);
 }
@@ -1838,7 +1846,6 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     SQLDictionary next;
     uint32_t tname = 0;
     uint32_t col_counter = 0;
-    const bool replace = collectionCount<SQLDictionary>(attached_dictionaries) > 3 && rg.nextMediumNumber() < 16;
     const DictionaryLayouts & dl = rg.pickRandomly(allDictionaryLayoutSettings);
     const bool isRange = dl == COMPLEX_KEY_RANGE_HASHED || dl == RANGE_HASHED;
     /// Range requires 2 cols for min and max
@@ -1847,10 +1854,18 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     DictionarySource * source = cd->mutable_source();
     DictionaryLayout * layout = cd->mutable_layout();
     const uint32_t type_mask_backup = this->next_type_mask;
+    const bool prev_enforce_final = this->enforce_final;
+    const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
+    SQLBase::setDeterministic(rg, next);
+    this->allow_not_deterministic = !next.is_deterministic;
+    this->enforce_final = next.is_deterministic;
+    const auto replaceDictionaryLambda
+        = [&next](const SQLDictionary & d) { return d.isAttached() && (d.is_deterministic || !next.is_deterministic); };
+    const bool replace = collectionCount<SQLDictionary>(replaceDictionaryLambda) > 3 && rg.nextMediumNumber() < 16;
     if (replace)
     {
-        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(replaceDictionaryLambda));
 
         next.db = d.db;
         tname = next.tname = d.tname;
@@ -1865,21 +1880,48 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
     cd->set_create_opt(replace ? CreateReplaceOption::Replace : CreateReplaceOption::Create);
     next.setName(cd->mutable_est(), false);
-    next.is_deterministic = rg.nextSmallNumber() < 9;
 
     const auto & dictionary_table_lambda
         = [&next](const SQLTable & t) { return t.isAttached() && (t.is_deterministic || !next.is_deterministic); };
+    const auto & dictionary_view_lambda
+        = [&next](const SQLView & v) { return v.isAttached() && (v.is_deterministic || !next.is_deterministic); };
     const bool has_table = collectionHas<SQLTable>(dictionary_table_lambda);
+    const bool has_view = collectionHas<SQLView>(dictionary_view_lambda);
 
-    if (has_table && rg.nextSmallNumber() < 9)
+    const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table);
+    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!systemTables.empty() && !next.is_deterministic);
+    const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view);
+    const uint32_t null_src = 2;
+    const uint32_t prob_space = dict_table + dict_system_table + dict_view + null_src;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.generator);
+
+    if (dict_table && nopt < (dict_table + 1))
     {
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(dictionary_table_lambda));
 
         t.setName(source->mutable_est(), false);
     }
-    else
+    else if (dict_system_table && nopt < (dict_table + dict_system_table + 1))
+    {
+        ExprSchemaTable * est = source->mutable_est();
+
+        est->mutable_database()->set_database("system");
+        est->mutable_table()->set_table(rg.pickRandomly(systemTables));
+    }
+    else if (dict_view && nopt < (dict_table + dict_system_table + dict_view + 1))
+    {
+        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(dictionary_view_lambda));
+
+        v.setName(source->mutable_est(), false);
+    }
+    else if (null_src && nopt < (dict_table + dict_system_table + dict_view + null_src + 1))
     {
         source->set_null_src(true);
+    }
+    else
+    {
+        chassert(0);
     }
 
     /// Set columns
@@ -1978,11 +2020,13 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     {
         generateSettingValues(rg, serverSettings, cd->mutable_setting_values());
     }
+    this->enforce_final = prev_enforce_final;
+    this->allow_not_deterministic = prev_allow_not_deterministic;
     if (rg.nextSmallNumber() < 3)
     {
         cd->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
     }
-    this->staged_dictionaries[tname] = next;
+    this->staged_dictionaries[tname] = std::move(next);
 }
 
 }
