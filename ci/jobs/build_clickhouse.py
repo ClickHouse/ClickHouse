@@ -162,15 +162,14 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
-        run_shell("clang-tidy without cache for Aggregator.cpp", f"./clang_tidy_cache clang-tidy-19 -p {build_dir} {current_directory}/src/Interpreters/Aggregator.cpp")
         run_shell("sccache stats", "sccache --show-stats")
-        run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
         if build_type in BUILD_TYPE_TO_DEB_PACKAGE_TYPE:
             targets = "clickhouse-bundle"
         elif build_type == BuildTypes.FUZZERS:
             targets = "fuzzers"
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             targets = "-k0 all"
+            run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
         else:
             targets = "clickhouse-bundle"
         results.append(
@@ -182,7 +181,8 @@ def main():
             )
         )
         run_shell("sccache stats", "sccache --show-stats")
-        run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
+        if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
+            run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
         run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
         Shell.check("pwd")
         res = results[-1].is_ok()
