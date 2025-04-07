@@ -132,10 +132,7 @@ std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats
                     stats_collecting_params.max_size_to_preallocate,
                     hint->ht_size);
             }
-            else if (hint->ht_size > 100'000)
-            {
-                return hint;
-            }
+            return hint;
         }
     }
     return std::nullopt;
