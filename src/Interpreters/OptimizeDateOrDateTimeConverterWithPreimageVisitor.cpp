@@ -4,7 +4,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
-#include <Functions/FieldInterval.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Parsers/ASTIdentifier.h>
@@ -33,7 +32,7 @@ namespace ErrorCodes
  *
  *  This function generates a new AST with the transformed relation.
  */
-ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTypePair & column, const FieldInterval & range)
+ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTypePair & column, const std::pair<Field, Field>& range)
 {
     const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 

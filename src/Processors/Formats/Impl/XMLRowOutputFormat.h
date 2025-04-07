@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
-#include <Formats/FormatSettings.h>
+#include <Core/Block.h>
 #include <IO/Progress.h>
 #include <IO/WriteBuffer.h>
+#include <Common/Stopwatch.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 

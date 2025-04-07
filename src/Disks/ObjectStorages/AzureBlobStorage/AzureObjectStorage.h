@@ -92,8 +92,6 @@ public:
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
-    bool areObjectKeysRandom() const override { return true; }
-
     bool isRemote() const override { return true; }
 
     std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }

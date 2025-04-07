@@ -4,6 +4,8 @@
 
 #if USE_MSGPACK
 
+#include <Core/Block.h>
+#include <IO/WriteBuffer.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Formats/FormatSettings.h>
 #include <msgpack.hpp>

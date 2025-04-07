@@ -8,8 +8,6 @@
 #include "Common/setThreadName.h"
 #include <Common/Exception.h>
 
-#include <iomanip>
-
 
 namespace DB
 {
@@ -93,7 +91,7 @@ void ClientEmbedded::connect()
     }
     connection_parameters = ConnectionParameters::createForEmbedded(session->sessionContext()->getUserName(), default_database);
     connection = LocalConnection::createConnection(
-        connection_parameters, std::move(session), std_in.get(), need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, std::move(session), need_render_progress, need_render_profile_events, server_display_name);
     if (!default_database.empty())
     {
         connection->setDefaultDatabase(default_database);
@@ -107,13 +105,8 @@ Poco::Util::LayeredConfiguration & ClientEmbedded::getClientConfiguration()
 }
 
 
-bool ClientEmbedded::isEmbeeddedClient() const
-{
-    return true;
-}
-
-
 int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_query)
+{
 try
 {
     setThreadName("LocalServerPty");
@@ -164,7 +157,7 @@ try
 
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
-    global_context->setApplicationType(Context::ApplicationType::SERVER);
+    global_context->setApplicationType(Context::ApplicationType::EMBEDDED_CLIENT);
     global_context->setSettings(cmd_settings);
 
     is_interactive = stdin_is_a_tty;
@@ -180,8 +173,6 @@ try
         ignore_error = getClientConfiguration().getBool("ignore-error", false);
     }
 
-    load_suggestions = true;
-    wait_for_suggestions_to_load = true;
     server_display_name = getFQDNOrHostName();
     prompt = fmt::format("{} :) ", server_display_name);
     query_processing_stage = QueryProcessingStage::Enum::Complete;
@@ -195,7 +186,9 @@ try
 
     initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
         toProgressOption(getClientConfiguration().getString("progress-table", "default")));
-    initKeystrokeInterceptor();
+
+    /// TODO: Support progress table.
+    /// initKeystrokeInterceptor();
 
     client_context = session->sessionContext();
     initClientContext();
@@ -230,17 +223,17 @@ catch (const DB::Exception & e)
     cleanup();
 
     error_stream << getExceptionMessage(e, print_stack_trace, true) << std::endl;
-    auto code = DB::getCurrentExceptionCode();
-    return static_cast<UInt8>(code) ? code : 1;
+    return e.code() ? e.code() : -1;
 }
 catch (...)
 {
     cleanup();
 
     error_stream << getCurrentExceptionMessage(false) << std::endl;
-    auto code = DB::getCurrentExceptionCode();
-    return static_cast<UInt8>(code) ? code : 1;
+    return getCurrentExceptionCode();
 }
+}
+
 
 }
 

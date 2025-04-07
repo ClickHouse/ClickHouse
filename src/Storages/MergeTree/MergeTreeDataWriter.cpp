@@ -1,5 +1,4 @@
 #include <Columns/ColumnConst.h>
-#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/ObjectUtils.h>
@@ -9,8 +8,6 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/PreparedSets.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -18,13 +15,14 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
-#include <Common/ColumnsHashing.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
+
+#include <Parsers/queryToString.h>
 
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
@@ -34,8 +32,6 @@
 #include <Processors/Merges/Algorithms/VersionedCollapsingAlgorithm.h>
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-
-#include <fmt/ranges.h>
 
 namespace ProfileEvents
 {
@@ -775,7 +771,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
         if (projection_block.rows())
         {
-            auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
+            auto proj_temp_part
+                = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part.part));
             for (auto & stream : proj_temp_part.streams)
                 temp_part.streams.emplace_back(std::move(stream));
@@ -954,11 +951,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
     size_t block_num)
 {
     auto part_name = fmt::format("{}_{}", projection.name, block_num);
-    auto new_part = writeProjectionPartImpl(
-        part_name, /*is_temp=*/ true, parent_part, data, log, std::move(block), projection, /*merge_is_needed=*/true);
-
-    new_part.part->temp_projection_block_number = block_num;
-    return new_part;
+    return writeProjectionPartImpl(
+        part_name, true /* is_temp */, parent_part, data, log, std::move(block), projection, /*merge_is_needed=*/true);
 }
 
 }

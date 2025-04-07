@@ -1,5 +1,3 @@
-#include "config.h"
-
 #include <Databases/DatabaseFactory.h>
 #include <Databases/registerDatabases.h>
 
@@ -37,11 +35,9 @@ void registerDatabaseS3(DatabaseFactory & factory);
 void registerDatabaseHDFS(DatabaseFactory & factory);
 #endif
 
-#if USE_AVRO && USE_PARQUET
-void registerDatabaseDataLake(DatabaseFactory & factory);
+#if USE_AVRO
+void registerDatabaseIceberg(DatabaseFactory & factory);
 #endif
-
-void registerDatabaseBackup(DatabaseFactory & factory);
 
 void registerDatabases()
 {
@@ -75,10 +71,8 @@ void registerDatabases()
     registerDatabaseHDFS(factory);
 #endif
 
-#if USE_AVRO && USE_PARQUET
-    registerDatabaseDataLake(factory);
+#if USE_AVRO
+    registerDatabaseIceberg(factory);
 #endif
-
-    registerDatabaseBackup(factory);
 }
 }

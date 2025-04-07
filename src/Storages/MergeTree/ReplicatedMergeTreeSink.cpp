@@ -10,7 +10,6 @@
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>

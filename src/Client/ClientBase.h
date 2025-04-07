@@ -103,10 +103,8 @@ public:
     void stopQuery() { query_interrupt_handler.stop(); }
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
-    /// Returns true if query succeeded
-    bool processTextAsSingleQuery(const String & full_query);
+    void processTextAsSingleQuery(const String & full_query);
 
-    std::string getConnectionHostAndPortForFuzzing() const;
 protected:
     void runInteractive();
     void runNonInteractive();
@@ -192,9 +190,6 @@ protected:
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
-    /// Used to check certain things that are considered unsafe for the embedded client
-    virtual bool isEmbeeddedClient() const = 0;
-
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
@@ -232,8 +227,6 @@ private:
 
     void initQueryIdFormats();
     bool addMergeTreeSettings(ASTCreateQuery & ast_create);
-
-    void applySettingsFromServerIfNeeded();
 
     void startKeystrokeInterceptorIfExists();
     void stopKeystrokeInterceptorIfExists();
@@ -331,7 +324,8 @@ protected:
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
-    std::optional<size_t> insert_format_max_block_size_from_config; /// Max block size when reading INSERT data.
+    size_t format_max_block_size = 0; /// Max block size for console output.
+    size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
@@ -381,9 +375,6 @@ protected:
     String server_version;
     String prompt;
     String server_display_name;
-
-    /// Settings received from the server, if any. Populated by connect().
-    SettingsChanges settings_from_server;
 
     ProgressIndication progress_indication;
     ProgressTable progress_table;

@@ -67,9 +67,6 @@ public:
     std::string getSignatures(bool with_structure = true) const { return with_structure ? signatures_with_structure : signatures_without_structure; }
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
-    S3::URI getURL() const { return url; }
-    const S3::S3AuthSettings & getAuthSettings() const { return auth_settings; }
-
     Path getPath() const override { return url.key; }
     void setPath(const Path & path) override { url.key = path; }
 

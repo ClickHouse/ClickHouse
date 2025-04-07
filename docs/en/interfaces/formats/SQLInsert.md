@@ -1,22 +1,21 @@
 ---
-alias: []
-description: 'Documentation for the SQLInsert format'
+title : SQLInsert
+slug : /en/interfaces/formats/SQLInsert
+keywords : [SQLInsert]
 input_format: false
-keywords: ['SQLInsert']
 output_format: true
-slug: /interfaces/formats/SQLInsert
-title: 'SQLInsert'
+alias: []
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✗     | ✔      |       |
 
-## Description {#description}
+## Description
 
 Outputs data as a sequence of `INSERT INTO table (columns...) VALUES (...), (...) ...;` statements.
 
-## Example Usage {#example-usage}
+## Example Usage
 
 Example:
 
@@ -34,7 +33,7 @@ INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
 
 To read data output by this format you can use [MySQLDump](../formats/MySQLDump.md) input format.
 
-## Format Settings {#format-settings}
+## Format Settings
 
 | Setting                                                                                                                                | Description                                         | Default   |
 |----------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|-----------|

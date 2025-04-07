@@ -9,8 +9,6 @@
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 
-#include <Core/Field.h>
-
 #include <Interpreters/Context.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>

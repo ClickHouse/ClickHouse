@@ -1,4 +1,3 @@
-#include <Processors/Port.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>

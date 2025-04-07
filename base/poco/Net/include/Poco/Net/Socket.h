@@ -87,16 +87,6 @@ namespace Net
         bool operator>=(const Socket & socket) const;
         /// Compares the SocketImpl pointers.
 
-        void shutdownReceive();
-        /// Shuts down the receiving part of the socket connection.
-
-        void shutdownSend();
-        /// Shuts down the sending part of the socket connection.
-
-        void shutdown();
-        /// Shuts down both the receiving and the sending part
-        /// of the socket connection.
-
         void close();
         /// Closes the socket.
 
@@ -372,21 +362,6 @@ namespace Net
         return _pImpl >= socket._pImpl;
     }
 
-
-    inline void Socket::shutdownReceive()
-    {
-        _pImpl->shutdownReceive();
-    }
-
-    inline void Socket::shutdownSend()
-    {
-        _pImpl->shutdownSend();
-    }
-
-    inline void Socket::shutdown()
-    {
-        _pImpl->shutdown();
-    }
 
     inline void Socket::close()
     {

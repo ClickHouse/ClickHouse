@@ -1,8 +1,8 @@
-#include <Compression/CompressionFactory.h>
-#include <Compression/ICompressionCodec.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
+#include <DataTypes/NestedUtils.h>
+#include <Storages/StorageView.h>
 #include <Common/quoteString.h>
 
 #include <sparsehash/dense_hash_set>

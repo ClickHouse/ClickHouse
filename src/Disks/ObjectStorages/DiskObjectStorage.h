@@ -74,10 +74,6 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void renameExchange(const std::string & old_path, const std::string & new_path) override;
-
-    bool renameExchangeIfSupported(const std::string & old_path, const std::string & new_path) override;
-
     void removeFile(const String & path) override { removeSharedFile(path, false); }
 
     void removeFileIfExists(const String & path) override { removeSharedFileIfExists(path, false); }
@@ -128,11 +124,7 @@ public:
 
     void removeDirectory(const String & path) override;
 
-    void removeDirectoryIfExists(const String & path) override;
-
     DirectoryIteratorPtr iterateDirectory(const String & path) const override;
-
-    bool isDirectoryEmpty(const String & path) const override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
@@ -145,11 +137,6 @@ public:
     void shutdown() override;
 
     void startupImpl(ContextPtr context) override;
-
-    void refresh() override
-    {
-        metadata_storage->refresh();
-    }
 
     ReservationPtr reserve(UInt64 bytes) override;
 
@@ -172,7 +159,6 @@ public:
         const WriteSettings & settings) override;
 
     Strings getBlobPath(const String & path) const override;
-    bool areBlobPathsRandom() const override;
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
     void copyFile( /// NOLINT
@@ -204,8 +190,6 @@ public:
     /// For example: WebObjectStorage is read only as it allows to read from a web server
     /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
-
-    bool isPlain() const;
 
     /// Is object write-once?
     /// For example: S3PlainObjectStorage is write once, this means that it

@@ -118,10 +118,6 @@ ORDER BY key;
 SELECT 'tbl5 with add_minmax_index_for_numeric_columns and add_minmax_index_for_string_columns disabled';
 SELECT name,type,expr,data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl5' AND database = currentDatabase();
 
--- check that ATTACH of such tables will not throw "uses a reserved index name" error
-DETACH TABLE tbl1;
-ATTACH TABLE tbl1;
-
 DROP TABLE tbl1;
 DROP TABLE tbl2;
 DROP TABLE tbl3;

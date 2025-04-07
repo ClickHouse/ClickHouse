@@ -457,7 +457,7 @@ public:
             if (!this->contains(attr_name))
                 (*this)[attr_name] = Array();
 
-            Array & values = (*this)[attr_name].safeGet<Array>();
+            Array & values = (*this)[attr_name].safeGet<Array &>();
             if (values.size() < *collect_values_limit)
             {
                 values.push_back(std::move(field));
@@ -491,7 +491,7 @@ public:
             auto it = this->find(attr_name);
             if (it == this->end())
                 return false;
-            return it->second.safeGet<Array>().size() >= *collect_values_limit;
+            return it->second.safeGet<const Array &>().size() >= *collect_values_limit;
         }
 
         return this->contains(attr_name) || (defaults && defaults->contains(attr_name));

@@ -14,7 +14,7 @@ insert into testX select number from numbers(200) settings
     parallel_view_processing=0,
     optimize_trivial_insert_select=0,
     max_insert_threads=0;
-system flush logs system.query_log;
+system flush logs;
 select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
@@ -38,7 +38,7 @@ insert into testX select number from numbers(200) settings
     parallel_view_processing=0,
     optimize_trivial_insert_select=0,
     max_insert_threads=5;
-system flush logs system.query_log;
+system flush logs;
 select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
@@ -62,7 +62,7 @@ insert into testX select number from numbers(200) settings
     parallel_view_processing=0,
     optimize_trivial_insert_select=1,
     max_insert_threads=0;
-system flush logs system.query_log;
+system flush logs;
 select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
@@ -86,7 +86,7 @@ insert into testX select number from numbers(200) settings
     parallel_view_processing=0,
     optimize_trivial_insert_select=1,
     max_insert_threads=5;
-system flush logs system.query_log;
+system flush logs;
 select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
@@ -110,7 +110,7 @@ insert into testX select number from numbers(200) settings
     parallel_view_processing=1,
     optimize_trivial_insert_select=0,
     max_insert_threads=0;
-system flush logs system.query_log;
+system flush logs;
 select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
@@ -134,7 +134,7 @@ insert into testX select number from numbers(200) settings
     parallel_view_processing=1,
     optimize_trivial_insert_select=0,
     max_insert_threads=5;
-system flush logs system.query_log;
+system flush logs;
 select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
@@ -158,7 +158,7 @@ insert into testX select number from numbers(200) settings
     parallel_view_processing=1,
     optimize_trivial_insert_select=1,
     max_insert_threads=0;
-system flush logs system.query_log;
+system flush logs;
 select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
@@ -182,7 +182,7 @@ insert into testX select number from numbers(200) settings
     parallel_view_processing=1,
     optimize_trivial_insert_select=1,
     max_insert_threads=5;
-system flush logs system.query_log;
+system flush logs;
 select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and

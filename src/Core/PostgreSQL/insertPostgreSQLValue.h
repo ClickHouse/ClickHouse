@@ -4,6 +4,7 @@
 
 #if USE_LIBPQXX
 
+#include <Core/Block.h>
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
 

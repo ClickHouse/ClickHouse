@@ -23,9 +23,6 @@
 #    include <Common/ZooKeeper/ZooKeeperIO.h>
 #    include <Common/logger_useful.h>
 #    include <Common/setThreadName.h>
-#    include <Compression/CompressionFactory.h>
-
-#    include <boost/algorithm/string/trim.hpp>
 
 
 #    ifdef POCO_HAVE_FD_EPOLL

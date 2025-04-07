@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
-#include <Storages/StorageInMemoryMetadata.h>
+
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -12,7 +13,7 @@ std::string astToString(ASTPtr ast_ptr)
     if (!ast_ptr)
         return "";
 
-    return ast_ptr->formatWithSecretsOneLine();
+    return queryToString(ast_ptr);
 }
 
 std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part)

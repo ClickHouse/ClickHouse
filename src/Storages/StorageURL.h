@@ -4,7 +4,6 @@
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/Cache/SchemaCache.h>

@@ -13,23 +13,24 @@
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
+#include <bit>
+#include <string>
+#include <type_traits>
 #include <Core/Defines.h>
 #include <base/extended_types.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <base/hex.h>
-
-#include <array>
-#include <bit>
-#include <string>
+#include <Common/Exception.h>
+#include <Common/transformEndianness.h>
 
 #include <city.h>
 
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#include <Common/transformEndianness.h>
 
-#include <type_traits>
-#endif
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 #define SIPROUND                                                  \
     do                                                            \
@@ -164,17 +165,18 @@ public:
     template <typename Transform = void, typename T>
     ALWAYS_INLINE void update(const T & x)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        auto transformed_x = x;
-        if constexpr (!std::is_same_v<Transform, void>)
-            transformed_x = Transform()(x);
-        else
-            DB::transformEndianness<std::endian::little>(transformed_x);
+        if constexpr (std::endian::native == std::endian::big)
+        {
+            auto transformed_x = x;
+            if constexpr (!std::is_same_v<Transform, void>)
+                transformed_x = Transform()(x);
+            else
+                DB::transformEndianness<std::endian::little>(transformed_x);
 
-        update(reinterpret_cast<const char *>(&transformed_x), sizeof(transformed_x)); /// NOLINT
-#else
-        update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
-#endif
+            update(reinterpret_cast<const char *>(&transformed_x), sizeof(transformed_x)); /// NOLINT
+        }
+        else
+            update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
     }
 
     ALWAYS_INLINE void update(const std::string & x) { update(x.data(), x.length()); }
@@ -203,11 +205,32 @@ public:
         return res;
     }
 
-    UInt128 get128Reference();
+    UInt128 get128Reference()
+    {
+        if (!is_reference_128)
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR, "Can't call get128Reference when is_reference_128 is not set");
+        finalize();
+        const auto lo = v0 ^ v1 ^ v2 ^ v3;
+        v1 ^= 0xdd;
+        SIPROUND;
+        SIPROUND;
+        SIPROUND;
+        SIPROUND;
+        const auto hi = v0 ^ v1 ^ v2 ^ v3;
+
+        UInt128 res = hi;
+        res <<= 64;
+        res |= lo;
+        return res;
+    }
 };
 
 
 #undef ROTL
+#undef SIPROUND
+
+#include <cstddef>
 
 inline std::array<char, 16> getSipHash128AsArray(SipHash & sip_hash)
 {

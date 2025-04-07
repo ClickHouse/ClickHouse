@@ -3,10 +3,13 @@
 #include <Access/IAccessEntity.h>
 #include <Access/AuthenticationData.h>
 #include <Core/Types.h>
+#include <Core/UUID.h>
+#include <Parsers/IParser.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Common/SettingsChanges.h>
 #include <Common/callOnce.h>
-#include <Interpreters/ClientInfo.h>
 
+#include <atomic>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -197,14 +200,12 @@ public:
         const Credentials & credentials,
         const Poco::Net::IPAddress & address,
         const ExternalAuthenticators & external_authenticators,
-        const ClientInfo & client_info,
         bool allow_no_password,
         bool allow_plaintext_password) const;
     std::optional<AuthResult> authenticate(
         const Credentials & credentials,
         const Poco::Net::IPAddress & address,
         const ExternalAuthenticators & external_authenticators,
-        const ClientInfo & client_info,
         bool throw_if_user_not_exists,
         bool allow_no_password,
         bool allow_plaintext_password) const;
@@ -230,7 +231,6 @@ protected:
         const Credentials & credentials,
         const Poco::Net::IPAddress & address,
         const ExternalAuthenticators & external_authenticators,
-        const ClientInfo & client_info,
         bool throw_if_user_not_exists,
         bool allow_no_password,
         bool allow_plaintext_password) const;
@@ -239,7 +239,6 @@ protected:
         const AuthenticationData & authentication_method,
         const Credentials & credentials,
         const ExternalAuthenticators & external_authenticators,
-        const ClientInfo & client_info,
         SettingsChanges & settings) const;
     virtual bool isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const;
     static UUID generateRandomID();
@@ -347,6 +346,9 @@ std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> IAccessStorage
     return entities;
 }
 
-bool parseAccessStorageName(IParser::Pos & pos, Expected & expected, String & storage_name);
+inline bool parseAccessStorageName(IParser::Pos & pos, Expected & expected, String & storage_name)
+{
+    return parseIdentifierOrStringLiteral(pos, expected, storage_name);
+}
 
 }

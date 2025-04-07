@@ -1,9 +1,7 @@
 ---
-description: 'This engine allows integrating ClickHouse with Redis.'
-sidebar_label: 'Redis'
+slug: /en/engines/table-engines/integrations/redis
 sidebar_position: 175
-slug: /engines/table-engines/integrations/redis
-title: 'Redis'
+sidebar_label: Redis
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -16,7 +14,7 @@ This engine allows integrating ClickHouse with [Redis](https://redis.io/). For R
 
 ## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
 (
     name1 [type1],
@@ -39,7 +37,7 @@ PRIMARY KEY(primary_key_name);
 Columns other than the primary key will be serialized in binary as Redis value in corresponding order.
 :::
 
-Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment. At this moment, all parameters passed using named collections to redis are required.
+Arguments also can be passed using [named collections](/docs/en/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment. At this moment, all parameters passed using named collections to redis are required.
 
 :::note Filtering
 Queries with `key equals` or `in filtering` will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
@@ -49,7 +47,7 @@ Queries with `key equals` or `in filtering` will be optimized to multi keys look
 
 Create a table in ClickHouse using `Redis` engine with plain arguments:
 
-```sql
+``` sql
 CREATE TABLE redis_table
 (
     `key` String,
@@ -60,9 +58,9 @@ CREATE TABLE redis_table
 ENGINE = Redis('redis1:6379') PRIMARY KEY(key);
 ```
 
-Or using [named collections](/operations/named-collections.md):
+Or using [named collections](/docs/en/operations/named-collections.md):
 
-```xml
+```
 <named_collections>
     <redis_creds>
         <host>localhost</host>
@@ -93,17 +91,17 @@ INSERT INTO redis_table Values('1', 1, '1', 1.0), ('2', 2, '2', 2.0);
 
 Query:
 
-```sql
+``` sql
 SELECT COUNT(*) FROM redis_table;
 ```
 
-```text
+``` text
 ┌─count()─┐
 │       2 │
 └─────────┘
 ```
 
-```sql
+``` sql
 SELECT * FROM redis_table WHERE key='1';
 ```
 
@@ -113,7 +111,7 @@ SELECT * FROM redis_table WHERE key='1';
 └─────┴────┴────┴────┘
 ```
 
-```sql
+``` sql
 SELECT * FROM redis_table WHERE v1=2;
 ```
 
@@ -149,7 +147,7 @@ Join:
 
 Join with other tables.
 
-```sql
+```
 SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 

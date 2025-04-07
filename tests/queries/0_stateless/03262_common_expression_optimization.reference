@@ -18,8 +18,8 @@ QUERY id: 0
           FUNCTION id: 10, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 11, nodes: 2
-                COLUMN id: 12, column_name: A, result_type: UInt8, source_id: 3
-                COLUMN id: 13, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 8, column_name: A, result_type: UInt8, source_id: 3
+                COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
   SETTINGS optimize_extract_common_expressions=0
 
 SELECT count() AS `count()`
@@ -624,13 +624,13 @@ QUERY id: 0
                 FUNCTION id: 12, function_name: and, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 2
-                      COLUMN id: 14, column_name: B, result_type: UInt8, source_id: 3
-                      COLUMN id: 15, column_name: D, result_type: UInt8, source_id: 3
-                FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 9, column_name: B, result_type: UInt8, source_id: 3
+                      COLUMN id: 14, column_name: D, result_type: UInt8, source_id: 3
+                FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 17, nodes: 2
-                      COLUMN id: 18, column_name: E, result_type: UInt8, source_id: 3
-                      COLUMN id: 19, column_name: F, result_type: UInt8, source_id: 3
+                    LIST id: 16, nodes: 2
+                      COLUMN id: 17, column_name: E, result_type: UInt8, source_id: 3
+                      COLUMN id: 18, column_name: F, result_type: UInt8, source_id: 3
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
@@ -677,12 +677,12 @@ QUERY id: 0
                   ARGUMENTS
                     LIST id: 12, nodes: 2
                       COLUMN id: 13, column_name: E, result_type: UInt8, source_id: 3
-                      COLUMN id: 14, column_name: E, result_type: UInt8, source_id: 3
-                FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 13, column_name: E, result_type: UInt8, source_id: 3
+                FUNCTION id: 14, function_name: and, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 16, nodes: 2
-                      COLUMN id: 17, column_name: F, result_type: UInt8, source_id: 3
-                      COLUMN id: 18, column_name: F, result_type: UInt8, source_id: 3
+                    LIST id: 15, nodes: 2
+                      COLUMN id: 16, column_name: F, result_type: UInt8, source_id: 3
+                      COLUMN id: 16, column_name: F, result_type: UInt8, source_id: 3
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
@@ -824,8 +824,8 @@ QUERY id: 0
                       FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
                           LIST id: 17, nodes: 2
-                            COLUMN id: 18, column_name: C, result_type: UInt8, source_id: 3
-                            COLUMN id: 19, column_name: E, result_type: UInt8, source_id: 3
+                            COLUMN id: 14, column_name: C, result_type: UInt8, source_id: 3
+                            COLUMN id: 18, column_name: E, result_type: UInt8, source_id: 3
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
@@ -1038,33 +1038,33 @@ QUERY id: 0
     TABLE id: 3, alias: __table1, table_name: default.x
   GROUP BY
     LIST id: 13, nodes: 1
-      COLUMN id: 14, column_name: x, result_type: Int64, source_id: 3
+      COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
   HAVING
-    FUNCTION id: 15, function_name: or, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 14, function_name: or, function_type: ordinary, result_type: UInt8
       ARGUMENTS
-        LIST id: 16, nodes: 2
-          FUNCTION id: 17, function_name: and, function_type: ordinary, result_type: UInt8
+        LIST id: 15, nodes: 2
+          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 18, nodes: 2
-                FUNCTION id: 19, function_name: max, function_type: aggregate, result_type: UInt8
+              LIST id: 17, nodes: 2
+                FUNCTION id: 4, function_name: max, function_type: aggregate, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 20, nodes: 1
-                      COLUMN id: 21, column_name: A, result_type: UInt8, source_id: 3
-                FUNCTION id: 22, function_name: max, function_type: aggregate, result_type: UInt8
+                    LIST id: 5, nodes: 1
+                      COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+                FUNCTION id: 7, function_name: max, function_type: aggregate, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 23, nodes: 1
-                      COLUMN id: 24, column_name: B, result_type: UInt8, source_id: 3
-          FUNCTION id: 25, function_name: and, function_type: ordinary, result_type: UInt8
+                    LIST id: 8, nodes: 1
+                      COLUMN id: 9, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 18, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 26, nodes: 2
-                FUNCTION id: 27, function_name: max, function_type: aggregate, result_type: UInt8
+              LIST id: 19, nodes: 2
+                FUNCTION id: 4, function_name: max, function_type: aggregate, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 28, nodes: 1
-                      COLUMN id: 29, column_name: A, result_type: UInt8, source_id: 3
-                FUNCTION id: 30, function_name: max, function_type: aggregate, result_type: UInt8
+                    LIST id: 5, nodes: 1
+                      COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+                FUNCTION id: 10, function_name: max, function_type: aggregate, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 31, nodes: 1
-                      COLUMN id: 32, column_name: C, result_type: UInt8, source_id: 3
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
 
 SELECT
     __table1.x AS x,
@@ -1114,98 +1114,98 @@ QUERY id: 0
                 FUNCTION id: 9, function_name: modulo, function_type: ordinary, result_type: Int32
                   ARGUMENTS
                     LIST id: 10, nodes: 2
-                      COLUMN id: 11, column_name: x, result_type: Int64, source_id: 3
-                      CONSTANT id: 12, constant_value: UInt64_1000, constant_value_type: UInt16
-      FUNCTION id: 13, function_name: max, function_type: window, result_type: UInt8
+                      COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
+                      CONSTANT id: 11, constant_value: UInt64_1000, constant_value_type: UInt16
+      FUNCTION id: 12, function_name: max, function_type: window, result_type: UInt8
         ARGUMENTS
-          LIST id: 14, nodes: 1
-            COLUMN id: 15, column_name: B, result_type: UInt8, source_id: 3
+          LIST id: 13, nodes: 1
+            COLUMN id: 14, column_name: B, result_type: UInt8, source_id: 3
         WINDOW
-          WINDOW id: 16, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+          WINDOW id: 15, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
             PARTITION BY
-              LIST id: 17, nodes: 1
-                FUNCTION id: 18, function_name: modulo, function_type: ordinary, result_type: Int32
+              LIST id: 16, nodes: 1
+                FUNCTION id: 17, function_name: modulo, function_type: ordinary, result_type: Int32
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      COLUMN id: 20, column_name: x, result_type: Int64, source_id: 3
-                      CONSTANT id: 21, constant_value: UInt64_1000, constant_value_type: UInt16
-      FUNCTION id: 22, function_name: max, function_type: window, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
+                      CONSTANT id: 19, constant_value: UInt64_1000, constant_value_type: UInt16
+      FUNCTION id: 20, function_name: max, function_type: window, result_type: UInt8
         ARGUMENTS
-          LIST id: 23, nodes: 1
-            COLUMN id: 24, column_name: C, result_type: UInt8, source_id: 3
+          LIST id: 21, nodes: 1
+            COLUMN id: 22, column_name: C, result_type: UInt8, source_id: 3
         WINDOW
-          WINDOW id: 25, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+          WINDOW id: 23, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
             PARTITION BY
-              LIST id: 26, nodes: 1
-                FUNCTION id: 27, function_name: modulo, function_type: ordinary, result_type: Int32
+              LIST id: 24, nodes: 1
+                FUNCTION id: 25, function_name: modulo, function_type: ordinary, result_type: Int32
                   ARGUMENTS
-                    LIST id: 28, nodes: 2
-                      COLUMN id: 29, column_name: x, result_type: Int64, source_id: 3
-                      CONSTANT id: 30, constant_value: UInt64_1000, constant_value_type: UInt16
+                    LIST id: 26, nodes: 2
+                      COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
+                      CONSTANT id: 27, constant_value: UInt64_1000, constant_value_type: UInt16
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.x
   QUALIFY
-    FUNCTION id: 31, function_name: or, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 28, function_name: or, function_type: ordinary, result_type: UInt8
       ARGUMENTS
-        LIST id: 32, nodes: 2
-          FUNCTION id: 33, function_name: and, function_type: ordinary, result_type: UInt8
+        LIST id: 29, nodes: 2
+          FUNCTION id: 30, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 34, nodes: 2
-                FUNCTION id: 35, function_name: max, function_type: window, result_type: UInt8
+              LIST id: 31, nodes: 2
+                FUNCTION id: 4, function_name: max, function_type: window, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 36, nodes: 1
-                      COLUMN id: 37, column_name: A, result_type: UInt8, source_id: 3
+                    LIST id: 5, nodes: 1
+                      COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
                   WINDOW
-                    WINDOW id: 38, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+                    WINDOW id: 7, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
                       PARTITION BY
-                        LIST id: 39, nodes: 1
-                          FUNCTION id: 40, function_name: modulo, function_type: ordinary, result_type: Int32
+                        LIST id: 8, nodes: 1
+                          FUNCTION id: 9, function_name: modulo, function_type: ordinary, result_type: Int32
                             ARGUMENTS
-                              LIST id: 41, nodes: 2
-                                COLUMN id: 42, column_name: x, result_type: Int64, source_id: 3
-                                CONSTANT id: 43, constant_value: UInt64_1000, constant_value_type: UInt16
-                FUNCTION id: 44, function_name: max, function_type: window, result_type: UInt8
+                              LIST id: 10, nodes: 2
+                                COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
+                                CONSTANT id: 11, constant_value: UInt64_1000, constant_value_type: UInt16
+                FUNCTION id: 12, function_name: max, function_type: window, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 45, nodes: 1
-                      COLUMN id: 46, column_name: B, result_type: UInt8, source_id: 3
+                    LIST id: 13, nodes: 1
+                      COLUMN id: 14, column_name: B, result_type: UInt8, source_id: 3
                   WINDOW
-                    WINDOW id: 47, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+                    WINDOW id: 15, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
                       PARTITION BY
-                        LIST id: 48, nodes: 1
-                          FUNCTION id: 49, function_name: modulo, function_type: ordinary, result_type: Int32
+                        LIST id: 16, nodes: 1
+                          FUNCTION id: 17, function_name: modulo, function_type: ordinary, result_type: Int32
                             ARGUMENTS
-                              LIST id: 50, nodes: 2
-                                COLUMN id: 51, column_name: x, result_type: Int64, source_id: 3
-                                CONSTANT id: 52, constant_value: UInt64_1000, constant_value_type: UInt16
-          FUNCTION id: 53, function_name: and, function_type: ordinary, result_type: UInt8
+                              LIST id: 18, nodes: 2
+                                COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
+                                CONSTANT id: 19, constant_value: UInt64_1000, constant_value_type: UInt16
+          FUNCTION id: 32, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 54, nodes: 2
-                FUNCTION id: 55, function_name: max, function_type: window, result_type: UInt8
+              LIST id: 33, nodes: 2
+                FUNCTION id: 4, function_name: max, function_type: window, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 56, nodes: 1
-                      COLUMN id: 57, column_name: A, result_type: UInt8, source_id: 3
+                    LIST id: 5, nodes: 1
+                      COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
                   WINDOW
-                    WINDOW id: 58, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+                    WINDOW id: 7, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
                       PARTITION BY
-                        LIST id: 59, nodes: 1
-                          FUNCTION id: 60, function_name: modulo, function_type: ordinary, result_type: Int32
+                        LIST id: 8, nodes: 1
+                          FUNCTION id: 9, function_name: modulo, function_type: ordinary, result_type: Int32
                             ARGUMENTS
-                              LIST id: 61, nodes: 2
-                                COLUMN id: 62, column_name: x, result_type: Int64, source_id: 3
-                                CONSTANT id: 63, constant_value: UInt64_1000, constant_value_type: UInt16
-                FUNCTION id: 64, function_name: max, function_type: window, result_type: UInt8
+                              LIST id: 10, nodes: 2
+                                COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
+                                CONSTANT id: 11, constant_value: UInt64_1000, constant_value_type: UInt16
+                FUNCTION id: 20, function_name: max, function_type: window, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 65, nodes: 1
-                      COLUMN id: 66, column_name: C, result_type: UInt8, source_id: 3
+                    LIST id: 21, nodes: 1
+                      COLUMN id: 22, column_name: C, result_type: UInt8, source_id: 3
                   WINDOW
-                    WINDOW id: 67, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+                    WINDOW id: 23, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
                       PARTITION BY
-                        LIST id: 68, nodes: 1
-                          FUNCTION id: 69, function_name: modulo, function_type: ordinary, result_type: Int32
+                        LIST id: 24, nodes: 1
+                          FUNCTION id: 25, function_name: modulo, function_type: ordinary, result_type: Int32
                             ARGUMENTS
-                              LIST id: 70, nodes: 2
-                                COLUMN id: 71, column_name: x, result_type: Int64, source_id: 3
-                                CONSTANT id: 72, constant_value: UInt64_1000, constant_value_type: UInt16
+                              LIST id: 26, nodes: 2
+                                COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
+                                CONSTANT id: 27, constant_value: UInt64_1000, constant_value_type: UInt16
 
 SELECT
     __table1.x AS x,

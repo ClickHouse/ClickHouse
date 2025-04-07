@@ -2,11 +2,11 @@
 
 #include "config.h"
 
-#include <base/MemorySanitizer.h>
+#include <Common/safe_cast.h>
+#include <Common/MemorySanitizer.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/safe_cast.h>
 
 #if USE_SSL
 #include <DataTypes/DataTypeString.h>

@@ -192,7 +192,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
 
     for (const auto & elem : map)
     {
-        const auto & tuple = elem.safeGet<Tuple>();
+        const auto & tuple = elem.safeGet<const Tuple &>();
         assert(tuple.size() == 2);
         key_types.push_back(applyVisitor(*this, tuple[0]));
         value_types.push_back(applyVisitor(*this, tuple[1]));

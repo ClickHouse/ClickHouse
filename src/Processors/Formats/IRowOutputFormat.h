@@ -2,16 +2,11 @@
 
 #include <Processors/Formats/IOutputFormat.h>
 
+#include <string>
+
+
 namespace DB
 {
-
-class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
-
-class ISerialization;
-using SerializationPtr = std::shared_ptr<const ISerialization>;
-using Serializations = std::vector<SerializationPtr>;
 
 class WriteBuffer;
 

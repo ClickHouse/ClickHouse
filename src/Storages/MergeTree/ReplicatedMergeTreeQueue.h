@@ -68,7 +68,6 @@ private:
         size_t merges_with_ttl = 0;
     };
 
-    UInt64 getPostponeTimeMsForEntry(const LogEntry & entry, const MergeTreeData & data) const;
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
@@ -314,7 +313,7 @@ private:
 
 public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
-    ~ReplicatedMergeTreeQueue() = default;
+    ~ReplicatedMergeTreeQueue();
 
     /// Clears queue state
     void clear();
@@ -441,9 +440,6 @@ public:
     /// it according to part mutation version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot(const MutationsSnapshot::Params & params) const;
-
-    UInt64 getNumberOnFlyDataMutations() const;
-    UInt64 getNumberOnFlyMetadataMutations() const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time
     /// (because some mutations are probably done but we are not sure yet), returns true.

@@ -44,9 +44,6 @@ private:
     static constexpr size_t FINISH_TIMEOUT_SECONDS = 5;
     static constexpr size_t EVENT_POLL_TIMEOUT_MILLISECONDS = 100;
 
-    /// Non static part of the configuration.
-    bool enable_client_options_passing = false;
-
 public:
     explicit SSHPtyHandlerFactory(
         IServer & server_, const Poco::Util::AbstractConfiguration & config)
@@ -68,10 +65,6 @@ public:
             ssh_bind.setHostKey(ecdsa_key);
         if (!ed25519_key.empty())
             ssh_bind.setHostKey(ed25519_key);
-
-        enable_client_options_passing = config.getBool(prefix + "enable_client_options_passing", false);
-        if (enable_client_options_passing)
-            LOG_WARNING(log, "Client options propagation is enabled. This is considered unsafe and shouldn't be used in production.");
     }
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &) override
@@ -83,20 +76,14 @@ public:
         session.disableDefaultConfig();
         ssh_bind.acceptFd(session, socket.sockfd());
 
-        auto options = SSHPtyHandler::Options
-        {
-            .max_auth_attempts = MAX_AUTH_ATTEMPTS,
-            .auth_timeout_seconds = AUTHENTICATION_TIMEOUT_SECONDS,
-            .finish_timeout_seconds = FINISH_TIMEOUT_SECONDS,
-            .event_poll_interval_milliseconds = EVENT_POLL_TIMEOUT_MILLISECONDS,
-            .enable_client_options_passing = enable_client_options_passing,
-        };
-
         return new SSHPtyHandler(
             server,
             std::move(session),
             socket,
-            options);
+            MAX_AUTH_ATTEMPTS,
+            AUTHENTICATION_TIMEOUT_SECONDS,
+            FINISH_TIMEOUT_SECONDS,
+            EVENT_POLL_TIMEOUT_MILLISECONDS);
     }
 };
 

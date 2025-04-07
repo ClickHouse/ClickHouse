@@ -61,8 +61,7 @@ namespace
         {"microseconds", 1e-6},
         {"microsecond", 1e-6},
         {"microsec", 1e-6},
-        {"μs", 1e-6}, // U+03BC = Greek letter mu
-        {"µs", 1e-6}, // U+00B5 = micro symbol
+        {"μs", 1e-6},
         {"us", 1e-6},
 
         {"nanoseconds", 1e-9},

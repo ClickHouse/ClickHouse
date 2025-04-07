@@ -1,17 +1,16 @@
 ---
-description: 'Documentation for the Markdown format'
-keywords: ['Markdown']
-slug: /interfaces/formats/Markdown
-title: 'Markdown'
+title : Markdown
+slug : /en/interfaces/formats/Markdown
+keywords : [Markdown]
 ---
 
-## Description {#description}
+## Description
 
 You can export results using [Markdown](https://en.wikipedia.org/wiki/Markdown) format to generate output ready to be pasted into your `.md` files:
 
 The markdown table will be generated automatically and can be used on markdown-enabled platforms, like Github. This format is used only for output.
 
-## Example Usage {#example-usage}
+## Example Usage
 
 ```sql
 SELECT
@@ -30,4 +29,4 @@ FORMAT Markdown
 | 4 | 8 |
 ```
 
-## Format Settings {#format-settings}
+## Format Settings
