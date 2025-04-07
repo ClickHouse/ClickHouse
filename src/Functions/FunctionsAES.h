@@ -376,8 +376,7 @@ private:
                 encrypted += output_len;
 
                 // 3: retrieve encrypted data (ciphertext)
-                if (!EVP_EncryptFinal_ex(evp_ctx,
-                        reinterpret_cast<unsigned char*>(encrypted), &output_len))
+                if (!EVP_EncryptFinal_ex(evp_ctx, reinterpret_cast<unsigned char*>(encrypted), &output_len))
                     onError("EVP_EncryptFinal_ex");
                 __msan_unpoison(encrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                 encrypted += output_len;
@@ -693,8 +692,7 @@ private:
                     }
 
                     // 4: retrieve encrypted data (ciphertext)
-                    if (!decrypt_fail && !EVP_DecryptFinal_ex(evp_ctx,
-                            reinterpret_cast<unsigned char*>(decrypted), &output_len))
+                    if (!decrypt_fail && !EVP_DecryptFinal_ex(evp_ctx, reinterpret_cast<unsigned char*>(decrypted), &output_len))
                     {
                         if constexpr (!use_null_when_decrypt_fail)
                             onError("EVP_DecryptFinal_ex");
