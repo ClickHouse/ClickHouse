@@ -107,7 +107,7 @@ KeeperHTTPStorageHandler::KeeperHTTPStorageHandler(const IServer & server_, std:
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperRequest(
-    Coordination::OpNum opnum, const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response)
+    Coordination::OpNum opnum, const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const
 {
     switch (opnum)
     {
@@ -134,7 +134,7 @@ void KeeperHTTPStorageHandler::performZooKeeperRequest(
     }
 }
 
-Coordination::ZooKeeperResponsePtr KeeperHTTPStorageHandler::awaitKeeperResponse(std::shared_ptr<Coordination::ZooKeeperRequest> request)
+Coordination::ZooKeeperResponsePtr KeeperHTTPStorageHandler::awaitKeeperResponse(std::shared_ptr<Coordination::ZooKeeperRequest> request) const
 {
     auto response_promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
     auto response_future = response_promise->get_future();
@@ -152,7 +152,7 @@ Coordination::ZooKeeperResponsePtr KeeperHTTPStorageHandler::awaitKeeperResponse
     {
         keeper_dispatcher->putLocalReadRequest(request, session_id);
     }
-    else if (!keeper_dispatcher->putRequest(request, session_id))
+    else if (!keeper_dispatcher->putRequest(request, session_id, /* use_xid_64= */ false))
     {
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
     }
@@ -166,7 +166,7 @@ Coordination::ZooKeeperResponsePtr KeeperHTTPStorageHandler::awaitKeeperResponse
     return result;
 }
 
-void KeeperHTTPStorageHandler::performZooKeeperExistsRequest(const std::string & storage_path, HTTPServerResponse & response)
+void KeeperHTTPStorageHandler::performZooKeeperExistsRequest(const std::string & storage_path, HTTPServerResponse & response) const
 {
     Coordination::ZooKeeperExistsRequest zk_request;
     zk_request.path = storage_path;
@@ -192,7 +192,7 @@ void KeeperHTTPStorageHandler::performZooKeeperExistsRequest(const std::string &
     *response.send() << oss.str();
 }
 
-void KeeperHTTPStorageHandler::performZooKeeperListRequest(const std::string & storage_path, HTTPServerResponse & response)
+void KeeperHTTPStorageHandler::performZooKeeperListRequest(const std::string & storage_path, HTTPServerResponse & response) const
 {
     Coordination::ZooKeeperListRequest zk_request;
     zk_request.path = storage_path;
@@ -219,7 +219,7 @@ void KeeperHTTPStorageHandler::performZooKeeperListRequest(const std::string & s
     *response.send() << oss.str();
 }
 
-void KeeperHTTPStorageHandler::performZooKeeperGetRequest(const std::string & storage_path, HTTPServerResponse & response)
+void KeeperHTTPStorageHandler::performZooKeeperGetRequest(const std::string & storage_path, HTTPServerResponse & response) const
 {
     Coordination::ZooKeeperGetRequest zk_request;
     zk_request.path = storage_path;
@@ -241,7 +241,7 @@ void KeeperHTTPStorageHandler::performZooKeeperGetRequest(const std::string & st
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
-    const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response)
+    const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const
 {
     const auto maybe_request_version = getVersionFromRequest(request);
     if (!maybe_request_version.has_value())
@@ -270,7 +270,7 @@ void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperCreateRequest(
-    const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response)
+    const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const
 {
     Coordination::ZooKeeperCreateRequest zk_request;
     zk_request.path = storage_path;
@@ -290,7 +290,7 @@ void KeeperHTTPStorageHandler::performZooKeeperCreateRequest(
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperRemoveRequest(
-    const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response)
+    const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const
 {
     const auto maybe_request_version = getVersionFromRequest(request);
     if (!maybe_request_version.has_value())
@@ -320,7 +320,7 @@ void KeeperHTTPStorageHandler::handleRequest(
     HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 try
 {
-    static const auto uri_segments_prefix_length = 3; /// /api/v1/storage
+    static const auto uri_segments_prefix_length = 3;  /// /api/v1/storage
     static const std::unordered_map<std::string, Coordination::OpNum> supported_storage_operations = {
         {"exists", Coordination::OpNum::Exists},
         {"list", Coordination::OpNum::List},

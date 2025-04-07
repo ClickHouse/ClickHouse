@@ -77,7 +77,6 @@
         body {
             height: 100%;
             margin: 0;
-            /* This enables position: sticky on controls */
             overflow: auto;
         }
 
@@ -176,7 +175,6 @@
             background: var(--error-color);
             white-space: pre-wrap;
             padding: 0.5rem 1rem;
-            display: none;
         }
 
         a {
@@ -366,7 +364,7 @@
             width: 16rem;
             height: 100%;
             padding: 1.2rem;
-            overflow: scroll;
+            overflow: auto;
             background-color: var(--element-background-color);
         }
 
@@ -580,7 +578,7 @@
 
             </div>
 
-            <div id="error" style="display: flex; width: 100%;"></div>
+            <div id="error" style="display: none; width: 100%;"></div>
         </div>
 
         <p id="logo-container">

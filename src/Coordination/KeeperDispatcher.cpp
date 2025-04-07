@@ -452,11 +452,6 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 
 bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
-    if (!request->isReadRequest())
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot put non-read request locally");
-    }
-
     {
         /// If session was already disconnected than we will ignore requests
         std::lock_guard lock(session_to_response_callback_mutex);
@@ -464,7 +459,7 @@ bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestP
             return false;
     }
 
-    KeeperStorageBase::RequestForSession request_info;
+    KeeperRequestForSession request_info;
     request_info.request = request;
     using namespace std::chrono;
     request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();

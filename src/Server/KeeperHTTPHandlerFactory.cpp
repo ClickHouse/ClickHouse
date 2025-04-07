@@ -43,15 +43,14 @@ std::unique_ptr<HTTPRequestHandler> KeeperHTTPRequestHandlerFactory::createReque
 
     for (auto & handler_factory : child_factories)
     {
-        auto handler = handler_factory->createRequestHandler(request);
-        if (handler)
+        if (auto handler = handler_factory->createRequestHandler(request))
             return handler;
     }
 
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
         || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
     {
-        return std::unique_ptr<HTTPRequestHandler>(new KeeperNotFoundHandler(hints.getHints(request.getURI())));
+        return std::make_unique<KeeperNotFoundHandler>(hints.getHints(request.getURI()));
     }
 
     return nullptr;
@@ -132,7 +131,7 @@ void addDefaultHandlersToFactory(
     addStorageHandlersToFactory(factory, server, keeper_dispatcher);
 }
 
-static inline auto createHandlersFactoryFromConfig(
+static auto createHandlersFactoryFromConfig(
     const IServer & server,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
     const Poco::Util::AbstractConfiguration & config,
@@ -161,7 +160,8 @@ static inline auto createHandlersFactoryFromConfig(
                     "{}.{}.handler.type",
                     prefix,
                     key);
-            else if (handler_type == "ready")
+
+            if (handler_type == "ready")
                 addReadinessHandlerToFactory(*main_handler_factory, keeper_dispatcher, config);
             else if (handler_type == "dashboard")
                 addDashboardHandlersToFactory(*main_handler_factory, keeper_dispatcher);

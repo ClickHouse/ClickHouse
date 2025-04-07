@@ -2,6 +2,7 @@
 
 #if USE_NURAFT
 
+#include <Coordination/KeeperStorage.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
@@ -36,8 +37,9 @@ void KeeperDashboardWebUIRequestHandler::handleRequest(
 
     setResponseDefaultHeaders(response);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD)
-        .write(html.data(), html.size());
+    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
+    wb.write(html.data(), html.size());
+    wb.finalize();
 }
 
 void KeeperDashboardContentRequestHandler::handleRequest(
@@ -53,11 +55,12 @@ try
         Poco::JSON::Object keeper_details;
         auto & stats = keeper_dispatcher->getKeeperConnectionStats();
         Keeper4LWInfo keeper_info = keeper_dispatcher->getKeeper4LWInfo();
+        const auto & storage_stats = keeper_dispatcher->getStateMachine().getStorageStats();
 
         keeper_details.set("latency_avg", stats.getAvgLatency());
         keeper_details.set("role", keeper_info.getRole());
         keeper_details.set("alive_connections", toString(keeper_info.alive_connections_count));
-        keeper_details.set("node_count", toString(keeper_info.total_nodes_count));
+        keeper_details.set("node_count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
 
         response_json.set("keeper_details", keeper_details);
     }
