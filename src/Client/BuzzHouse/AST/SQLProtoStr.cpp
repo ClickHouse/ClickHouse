@@ -4284,6 +4284,10 @@ CONV_FN(SystemCommand, cmd)
             ret += "SYNC DATABASE REPLICA ";
             DatabaseToString(ret, cmd.sync_replicated_database());
             break;
+        case CmdType::kRestoreDatabaseReplica:
+            ret += "RESTORE DATABASE REPLICA ";
+            ExprSchemaTableToString(ret, cmd.restore_replica());
+            break;
         case CmdType::kRestartReplica:
             ret += "SYNC RESTART REPLICA ";
             ExprSchemaTableToString(ret, cmd.restart_replica());
