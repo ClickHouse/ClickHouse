@@ -519,6 +519,8 @@ def test_datetime_condition(started_cluster):
     assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE '2025-01-11 00:00:00' < timestamp")) == TSV("2\n")
     assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE toDateTime('2025-01-11 00:00:00') < timestamp")) == TSV("2\n")
 
+    datetime_mongo_table.drop()
+
 
 def test_limit(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
@@ -537,3 +539,5 @@ def test_limit(started_cluster):
     assert TSV(node.query(f"SELECT sum(value) FROM {table_func} GROUP BY key ORDER BY key LIMIT 1 SETTINGS mongodb_throw_on_unsupported_query = 0")) == TSV("450\n")
     assert TSV(node.query(f"SELECT value FROM {table_func} ORDER BY value LIMIT 5 SETTINGS mongodb_throw_on_unsupported_query = 1")) == TSV("0\n1\n2\n3\n4\n")
     assert TSV(node.query(f"SELECT value FROM {table_func} ORDER BY value LIMIT 5 OFFSET 5 SETTINGS mongodb_throw_on_unsupported_query = 1")) == TSV("5\n6\n7\n8\n9\n")
+
+    group_by_limit_mongo_table.drop()
