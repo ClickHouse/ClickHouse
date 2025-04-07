@@ -22,6 +22,7 @@ RUN git clone https://github.com/ClickHouse/clickhouse-docs.git \
 WORKDIR /opt/clickhouse-docs
 
 RUN yarn config set registry https://registry.npmjs.org \
+    && yarn config set unsafe-perm true \
     && yarn install \
     && yarn cache clean
 
