@@ -7,7 +7,6 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -73,9 +72,6 @@ namespace
                     visitTableEngine(*function);
                 else
                     visitFunction(*function);
-            } else if (const auto * alter = ast->as<ASTAlterQuery>())
-            {
-                visitAlterQuery(*alter);
             }
         }
 
@@ -121,14 +117,6 @@ namespace
             /// an actual dependency as it will be executed only once to fill the table.
             if (create.select && !create.isView())
                 skip_asts.insert(create.select);
-        }
-
-        void visitAlterQuery(const ASTAlterQuery & alter)
-        {
-            for (const auto& command : alter.children)
-            {
-                visit(command);
-            }
         }
 
         /// The definition of a dictionary: SOURCE(CLICKHOUSE(...)) LAYOUT(...) LIFETIME(...)
@@ -507,14 +495,6 @@ namespace
 
 
 TableNamesSet getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw)
-{
-    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw};
-    DDLDependencyVisitor::Visitor visitor{data};
-    visitor.visit(ast);
-    return std::move(data).getDependencies();
-}
-
-TableNamesSet getDependenciesFromAlterQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw)
 {
     DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw};
     DDLDependencyVisitor::Visitor visitor{data};
