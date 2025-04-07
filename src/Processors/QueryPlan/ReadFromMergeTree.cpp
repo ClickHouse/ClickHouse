@@ -1283,7 +1283,7 @@ static void addMergingFinal(
     Pipe & pipe,
     const SortDescription & sort_description,
     MergeTreeData::MergingParams merging_params,
-    Names partition_key_columns,
+    const StorageMetadataPtr & metadata_snapshot,
     size_t max_block_size_rows,
     bool enable_vertical_final)
 {
@@ -1304,9 +1304,12 @@ static void addMergingFinal(
                 return std::make_shared<CollapsingSortedTransform>(header, num_outputs,
                             sort_description, merging_params.sign_column, true, max_block_size_rows, /*max_block_size_bytes=*/0);
 
-            case MergeTreeData::MergingParams::Summing:
+            case MergeTreeData::MergingParams::Summing: {
+                auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
+                required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, partition_key_columns, max_block_size_rows, /*max_block_size_bytes=*/0);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0);
+            }
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
@@ -1518,8 +1521,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         size_t sort_columns_size = sort_columns.size();
         sort_description.reserve(sort_columns_size);
 
-        Names partition_key_columns = storage_snapshot->metadata->getPartitionKey().column_names;
-
         for (size_t i = 0; i < sort_columns_size; ++i)
         {
             if (!reverse_flags.empty() && reverse_flags[i])
@@ -1533,7 +1534,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 pipe,
                 sort_description,
                 data.merging_params,
-                partition_key_columns,
+                storage_snapshot->metadata,
                 block_size.max_block_size_rows,
                 enable_vertical_final);
 
@@ -2279,12 +2280,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     {
         for (const auto & ranges_in_data_part : result.parts_with_ranges)
         {
-            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
-                ranges_in_data_part.data_part,
-                mutations_snapshot,
-                storage_snapshot->metadata,
-                getContext());
-
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges_in_data_part.data_part, mutations_snapshot, getContext());
             auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges_in_data_part.data_part, std::move(alter_conversions));
             lazily_read_info->data_part_infos->emplace(ranges_in_data_part.part_index_in_query, std::move(part_info));
         }
