@@ -2,6 +2,7 @@
 
 #include <png.h>
 #include <boost/noncopyable.hpp>
+#include "Common/Logger.h"
 #include <Common/Exception.h>
 
 namespace DB
@@ -16,18 +17,14 @@ extern const int CANNOT_CONVERT_TYPE;
 class WriteBuffer;
 
 /**
- * RAII-wrapper for managing libpng resources
+ * RAII move-only wrapper for managing libpng resources
  */
-class PngStructWrapper
+class PngStructWrapper : private boost::noncopyable
 {
 public:
     PngStructWrapper(png_structp png_ptr_, png_infop info_ptr_);
 
     ~PngStructWrapper();
-
-    PngStructWrapper(const PngStructWrapper &) = delete;
-
-    PngStructWrapper & operator=(const PngStructWrapper &) = delete;
 
     PngStructWrapper(PngStructWrapper && other) noexcept;
 
@@ -41,7 +38,7 @@ private:
     void cleanup();
 
     png_structp png_ptr = nullptr;
-    png_infop   info_ptr = nullptr;
+    png_infop info_ptr = nullptr;
 };
 
 
@@ -49,16 +46,12 @@ private:
  * Utility class for writing in the png format.
  * Just provides useful functions to serialize data 
  */
-class PngWriter final : boost::noncopyable
+class PngWriter : private boost::noncopyable
 {
 public:
     explicit PngWriter(WriteBuffer &, Int32);
 
     ~PngWriter();
-
-    PngWriter(PngWriter && other) noexcept;
-    
-    PngWriter & operator=(PngWriter && other) noexcept;
 
     void startImage(size_t width_, size_t height_);
 
@@ -74,12 +67,14 @@ private:
     void cleanup();
 
     WriteBuffer & out;
+    Int32 bit_depth = 8;
+    
     size_t width = 0;
     size_t height = 0;
-    Int32 bit_depth;
-    bool started = false;
-
+    
     std::unique_ptr<PngStructWrapper> png_resource;
+
+    LoggerPtr log;
 };
 
 }

@@ -10,7 +10,7 @@ namespace DB
 {
 
 PngStructWrapper::PngStructWrapper(png_structp png_ptr_, png_infop info_ptr_)
-    : png_ptr(png_ptr_), info_ptr(info_ptr_) 
+    : png_ptr(png_ptr_), info_ptr(info_ptr_)
 {
 }
 
@@ -37,13 +37,18 @@ PngStructWrapper & PngStructWrapper::operator=(PngStructWrapper && other) noexce
         other.png_ptr = nullptr;
         other.info_ptr = nullptr;
     }
+
     return *this;
 }
 
 void PngStructWrapper::cleanup()
 {
-    if (png_ptr)
+    if (png_ptr || info_ptr)
+    {
+        LOG_INFO(getLogger("PngWriter"), "libpng resources freed in cleanup");
         png_destroy_write_struct(&png_ptr, &info_ptr);
+    }
+
     png_ptr = nullptr;
     info_ptr = nullptr;
 }
@@ -52,8 +57,10 @@ PngWriter::PngWriter(WriteBuffer & out_, Int32 bit_depth_) : out(out_), bit_dept
 {
     if (bit_depth > 16 || bit_depth < 1)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid bit depth: {}", bit_depth);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid bit depth provided ({}). Bit depth must be between 1 and 16", bit_depth);
     }
+
+    log = getLogger("PngWriter");
 }
 
 PngWriter::~PngWriter() = default;
@@ -61,54 +68,49 @@ PngWriter::~PngWriter() = default;
 void PngWriter::writeDataCallback(png_struct_def * png_ptr_, unsigned char * data, size_t length)
 {
     auto * self = reinterpret_cast<PngWriter *>(png_get_io_ptr(png_ptr_));
-    if (!self)
-        return;
-
     self->out.write(reinterpret_cast<const char *>(data), length);
 }
 
 void PngWriter::flushDataCallback(png_struct_def * png_ptr_)
 {
     auto * self = reinterpret_cast<PngWriter *>(png_get_io_ptr(png_ptr_));
-    if (!self)
-        return;
-
     self->out.next();
 }
 
 void PngWriter::startImage(size_t width_, size_t height_)
 {
-    if (started)
+    if (png_resource)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "TODO");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempting to start a new png image without finishing the previous one");
     }
 
     width = width_;
     height = height_;
-    started = true;
-    
+
+    LOG_INFO(getLogger("PngWriter"), "Starting new png image with resolution {}x{}", width, height); 
+
     auto * png_ptr = png_create_write_struct(
         PNG_LIBPNG_VER_STRING,
         nullptr,
-        /// libpng function for errors handling
+        /// Error handling function
         [](png_structp, png_const_charp msg) { 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error: {}", std::string(msg)); 
         },
-        /// libpng function for warnings handling
+        /// Warning handling function
         [](png_structp, png_const_charp msg) { 
-            LOG_WARNING(getLogger("pngWriter"), "{}", msg);  
+            LOG_WARNING(getLogger("pngWriter"), "libpng warning: {}", std::string(msg));  
         }
     );
 
     if (!png_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "png_create_write_struct() failed");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create libpng png_struct. Likely a memory allocation error");
 
     auto * info_ptr = png_create_info_struct(png_ptr);
 
     if (!info_ptr)
     {
         png_destroy_write_struct(&png_ptr, nullptr);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng failed to create info struct");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create libpng info_struct");
     }
 
     if (setjmp(png_jmpbuf(png_ptr)))
@@ -139,21 +141,27 @@ void PngWriter::startImage(size_t width_, size_t height_)
         PNG_COMPRESSION_TYPE_DEFAULT,
         PNG_FILTER_TYPE_DEFAULT
     );
+
+    LOG_INFO(getLogger("PngWriter"), "Image header set: {}x{} with bit_depth {} and color_type RGBA", width, height, bit_depth);
 }
 
 void PngWriter::writeEntireImage(const unsigned char * data)
 {
-    if (!started || !png_resource)
+    if (!png_resource)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write png image data before header is set");
     }
-    
+
     std::vector<png_bytep> row_pointers(height);
-    size_t row_bytes = width * 4;
+    
+    /// For RGBA
+    size_t row_bytes = 4 * width; 
 
     for (size_t y = 0; y < height; ++y)
         row_pointers[y] = const_cast<png_bytep>(data + (y * row_bytes));
-        
+
+    LOG_INFO(getLogger("PngWriter"), "Writing png image data: {} rows", height);
+
     png_write_info(png_resource->getPngPtr(), png_resource->getInfoPtr());
     png_write_image(png_resource->getPngPtr(), row_pointers.data());
     png_write_end(png_resource->getPngPtr(), png_resource->getInfoPtr());
@@ -161,31 +169,27 @@ void PngWriter::writeEntireImage(const unsigned char * data)
 
 void PngWriter::finishImage()
 {
-    if (!started)
+    if (!png_resource)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PngWriter::startImage not called before PngWriter::finishImage");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finish writing png image before header is set");
     }
 
-    auto * png_ptr = png_resource ? png_resource->getPngPtr() : nullptr;
-    
+    png_structp png_ptr = png_resource->getPngPtr();
     if (setjmp(png_jmpbuf(png_ptr)))
     {
         cleanup();
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error during finishImage (setjmp triggered)");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Setjmp triggered an error during finishing to write png image");
     }
 
+    LOG_INFO(getLogger("PngWriter"), "Successfully finished writing png image");
+    
     cleanup();
 }
 
 void PngWriter::cleanup()
 {
     png_resource.reset();
-
-    if (started)
-    {
-        out.next();
-        started = false;
-    }
+    out.next();
 }
 
 }

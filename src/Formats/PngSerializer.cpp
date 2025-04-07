@@ -41,6 +41,7 @@ inline UInt8 extractUInt8(const IColumn & col, size_t row_num)
         auto val = nested.getUInt(row_num);
         if (val > 255) [[unlikely]]
             val = 255;
+
         return static_cast<UInt8>(val);
     }
     else
@@ -48,6 +49,7 @@ inline UInt8 extractUInt8(const IColumn & col, size_t row_num)
         auto val = col.getUInt(row_num);
         if (val > 255) [[unlikely]]
             val = 255;
+
         return static_cast<UInt8>(val);
     }
 }
@@ -72,7 +74,7 @@ class PngSerializer::SerializerImpl
 {
 public:
     SerializerImpl(size_t width_, size_t height_, PngWriter & writer_)
-        : max_width(width_), max_height(height_), row_count(0), writer(writer_)
+        : writer(writer_), max_width(width_), max_height(height_), row_count(0)
     {
         pixels.reserve(4 * max_width * max_height);
     }
@@ -81,7 +83,7 @@ public:
     {
         if (num_columns != expected)
         {
-            throw Exception(ErrorCodes::TOO_MANY_ROWS, "Expected {} columns, got {}", expected, num_columns);
+            throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Expected {} columns, got {}", expected, num_columns);
         }
 
         src_columns.assign(columns, columns + num_columns);
@@ -93,7 +95,7 @@ public:
         {
             throw Exception(ErrorCodes::TOO_MANY_ROWS, "Exceeded maximum image resolution: {}x{}", max_width, max_height);
         }
-
+        
         pixels.push_back(pixel.r);
         pixels.push_back(pixel.g);
         pixels.push_back(pixel.b);
@@ -102,28 +104,38 @@ public:
         ++row_count;
     }
 
-    void commonFinalizeWrite(size_t width, size_t height)
+     void commonFinalizeWrite(size_t width, size_t height)
     {
-        pixels.resize(4 * width * height);
-        writer.startImage(width, height);
-        writer.writeEntireImage(
-        reinterpret_cast<const unsigned char *>(pixels.data())
-        );
-        writer.finishImage();
+        try {
+            pixels.resize(4 * width * height);
+            writer.startImage(width, height);
+            writer.writeEntireImage(reinterpret_cast<const unsigned char *>(pixels.data()));
+            writer.finishImage();
+        } catch (...) {
+            clear();
+            throw;
+        }
+        
     }
 
-    void commonReset()
-    {
+    void clear() {
         pixels.clear();
         row_count = 0;
     }
 
+    void commonReset()
+    {
+        clear();
+    }
+
+    PngWriter & writer;
+
     size_t max_width;
     size_t max_height;
     size_t row_count;
-    PngWriter & writer;
-    std::vector<ColumnPtr> src_columns;
+    
     PODArray<UInt8> pixels;
+    std::vector<ColumnPtr> src_columns;
 };
 
 PngSerializer::PngSerializer(size_t width_, size_t height_, PngWriter & writer_)
@@ -143,7 +155,7 @@ void PngSerializer::reset()
     impl->commonReset();
 }
 
-size_t & PngSerializer::getRowCount()
+size_t PngSerializer::getRowCount() const
 {
     return impl->row_count;
 }
@@ -169,7 +181,6 @@ public:
 
     void setColumns(const ColumnPtr * columns, size_t num_columns) override { impl->commonSetColumns(columns, num_columns, 1); }
 
-    /// Transform to shade of gray
     void writeRow(size_t row_num) override
     {
         const UInt8 val = extractUInt8(*impl->src_columns[0], row_num);
@@ -211,7 +222,6 @@ public:
 };
 
 std::unique_ptr<PngSerializer> PngSerializer::create(
-    [[maybe_unused]] const Strings & column_names,
     const DataTypes & data_types,
     size_t width,
     size_t height,
@@ -235,9 +245,10 @@ std::unique_ptr<PngSerializer> PngSerializer::create(
 
     if (data_types.size() != required_columns)
     {
-        throw Exception(
-            ErrorCodes::CANNOT_CONVERT_TYPE,
-            "Serializer expects {} columns for pixel format {}, but got {}",
+        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+            "Serializer expects {} columns for pixel format {}, but got {}. "
+            "The default pixel format is 'RGB'. To resolve this, explicitly set the "
+            "'output_png_image_pixel_format' setting in your query",
             required_columns,
             required_columns,
             data_types.size());

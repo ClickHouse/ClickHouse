@@ -30,12 +30,11 @@ public:
 
     void finalizeWrite(size_t width, size_t height);
 
-    size_t & getRowCount();
+    size_t getRowCount() const ;
 
     void reset();
 
     static std::unique_ptr<PngSerializer> create(
-        [[maybe_unused]] const Strings & column_names,
         const DataTypes & data_types,
         size_t width,
         size_t height,

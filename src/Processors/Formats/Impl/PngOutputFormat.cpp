@@ -5,9 +5,9 @@
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/PngSerializer.h>
 #include <Interpreters/ProcessList.h>
 #include <Common/Exception.h>
+#include <Formats/PngWriter.h>
 #include "PngOutputFormat.h"
 
 namespace DB
@@ -38,12 +38,9 @@ PngOutputFormat::PngOutputFormat(WriteBuffer & out_, const Block & header_, cons
     max_height = format_settings.png_image.max_height;
     output_format = validateFormat(format_settings.png_image.pixel_output_format);
 
-    /// TODO: Extra fields {column_names & data_types could be used in serializer for debug information}, 
-    /// i.e PngSerializer::dump method
-    Strings column_names = header_.getNames();
     DataTypes data_types = header_.getDataTypes();
-    png_serializer = PngSerializer::create(column_names, 
-        data_types, 
+    
+    png_serializer = PngSerializer::create(data_types, 
         max_width, 
         max_height, 
         output_format, 
@@ -98,6 +95,13 @@ void PngOutputFormat::consume(Chunk chunk)
 void PngOutputFormat::writeSuffix()
 {
     size_t total_row = png_serializer->getRowCount();
+
+    if (total_row > max_height * max_width) 
+    {
+        throw Exception(ErrorCodes::TOO_MANY_ROWS, "The number of pixels ({}) exceeds the maximum allowed resolution ({}x{} = {}). "
+            "Please adjust your query or the maximum allowed resolution in settings", total_row, max_width, max_height, max_width * max_height);
+    }
+    
     size_t ideal_width = static_cast<size_t>(std::floor(
         std::sqrt(static_cast<double>(total_row)))
     );
@@ -111,14 +115,12 @@ void PngOutputFormat::writeSuffix()
         max_height, 
         (total_row + final_width - 1) / final_width
     );
-
-    // LOG_DEBUG(
-    //     getLogger("PngOutputFormat"),
-    //     "Read rows: {}, Ideal png image width: {}, final width: {}, final height: {}",
-    //     total_row, ideal_width, final_width, final_height
-    // );
-
-    png_serializer->finalizeWrite(final_width, final_height);
+    try {
+        png_serializer->finalizeWrite(final_width, final_height);
+    } catch (const Poco::Exception & e) { 
+        LOG_ERROR(getLogger("PngOutputFormat"), "Failed to write png image: {}", e.what());
+        throw ;
+    }
 }
 
 void registerOutputFormatPNG(FormatFactory & factory)

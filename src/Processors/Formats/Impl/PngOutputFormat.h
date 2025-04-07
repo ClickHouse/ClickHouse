@@ -3,14 +3,15 @@
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/PngSerializer.h>
-#include <Formats/PngWriter.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include "base/types.h"
 
 namespace DB
 {
 
-/** A stream for outputting data in PNG format.
+class PngWriter;
+
+/** A stream for outputting data as PNG image.
   */
 class PngOutputFormat final : public IOutputFormat
 {
