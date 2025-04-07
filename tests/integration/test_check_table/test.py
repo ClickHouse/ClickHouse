@@ -1,10 +1,12 @@
 import concurrent
-
 import pytest
+import uuid
+import time
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -362,3 +364,61 @@ def test_check_all_tables(started_cluster):
         else:
             assert flag == "1"
             assert message == ""
+
+    node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
+
+
+@pytest.mark.parametrize("engine", ["ReplicatedMergeTree"])
+def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
+    part_count = 100
+    node1.query(
+        f"""
+            CREATE TABLE replicated_check(id UInt32, value Int32)
+            ENGINE = {engine}('/clickhouse/tables/{{database}}/replicated_check', '{node1.name}')
+            PARTITION BY id
+            ORDER BY tuple()
+            AS SELECT number, number FROM numbers({part_count})
+        """
+    )
+
+    query_id = uuid.uuid4().hex
+
+    def wait_check_table_and_restart_keeper():
+        assert_eq_with_retry(
+            node1,
+            f"SELECT query_id FROM system.processes WHERE query_id = '{query_id}'",
+            query_id,
+        )
+
+        cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+        err = node1.query_and_get_error(
+            "INSERT INTO replicated_check SELECT number, number FROM numbers(10) SETTINGS insert_keeper_max_retries=0"
+        )
+        assert err != ""
+        cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+
+    node1.query("SYSTEM ENABLE FAILPOINT check_table_query_delay_for_part")
+
+    def run_check_table_and_measure_time():
+        start_time = time.time()
+        result = node1.query(
+            "CHECK TABLE replicated_check SETTINGS max_threads=1", query_id=query_id
+        )
+        end_time = time.time()
+        assert result == "0\n"  # 0 means error
+        avg_sleep = 0.5
+        # The process should have stopped before checking all parts
+        assert end_time - start_time < (part_count * avg_sleep)
+        node1.contains_in_log("reason: DB::Exception: Table shutdown was called")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        futures = [
+            executor.submit(run_check_table_and_measure_time),
+            executor.submit(wait_check_table_and_restart_keeper),
+        ]
+
+        for future in concurrent.futures.as_completed(futures):
+            future.result()
+
+    node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
+    node1.query("DROP TABLE replicated_check SYNC")
