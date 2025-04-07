@@ -15,9 +15,15 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
 
+StreamingExchangeSource::~StreamingExchangeSource()
+{
+    if (!out.isFinalized())
+        out.cancel();
+}
+
 IProcessor::Status StreamingExchangeSource::prepare()
 {
-    LOG_TEST(log, "Prepare exchange stream {}", stream_name);
+    LOG_TEST(log, "Prepare exchange source {}", stream_name);
 
     if (finished_reading)
     {
@@ -27,7 +33,11 @@ IProcessor::Status StreamingExchangeSource::prepare()
 
     /// Check can output.
     if (output.isFinished())
-        return Status::Finished;
+    {
+        output_finished = true;
+        /// Return Status::Ready because we still need to send NoMoreDataNeeded packet to sink before closing the socket to let it know that this is not a disconnect.
+        return Status::Ready;
+    }
 
     if (!output.canPush())
         return Status::PortFull;
@@ -54,8 +64,23 @@ int StreamingExchangeSource::schedule()
     return socket.sockfd();
 }
 
+void StreamingExchangeSource::sendNoMoreDataNeeded()
+{
+    writeVarUInt(StreamingExchangeProtocol::PacketType::NoMoreDataNeeded, out);
+    out.next();
+}
+
 Chunk StreamingExchangeSource::generate()
 {
+    if (output_finished)
+    {
+        LOG_TRACE(log, "NoMoreDataNeeded from exchange stream {}, total rows: {}, bytes: {}", stream_name, rows_read, in.count());
+
+        sendNoMoreDataNeeded();
+        finished_reading = true;
+        return {};
+    }
+
     LOG_TEST(log, "Reading from exchange stream {}", stream_name);
 
     UInt64 packet_type = 0;

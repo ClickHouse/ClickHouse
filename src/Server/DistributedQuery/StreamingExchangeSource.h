@@ -3,6 +3,7 @@
 #include <Processors/ISource.h>
 #include <Poco/Net/StreamSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromPocoSocket.h>
 
 namespace DB
 {
@@ -14,10 +15,13 @@ public:
         : ISource(std::move(header_))
         , socket(socket_)
         , in(socket)
+        , out(socket)
         , stream_name(stream_name_)
     {
         socket.setReceiveBufferSize(10 * 1024 * 1024);
     }
+
+    ~StreamingExchangeSource() override;
 
     String getName() const override { return "StreamingExchangeSource(" + stream_name + ")"; }
 
@@ -27,9 +31,13 @@ public:
 private:
     Chunk generate() override;
 
-    bool finished_reading = false;
+    void sendNoMoreDataNeeded();
+
+    bool finished_reading = false;  /// All data has been read from socket.
+    bool output_finished = false;   /// Output port is finished, do not need to receive more data.
     Poco::Net::StreamSocket socket;
     ReadBufferFromPocoSocket in;
+    WriteBufferFromPocoSocket out;
     const String stream_name;
     size_t rows_read = 0;
     LoggerPtr log = getLogger("StreamingExchangeSource");

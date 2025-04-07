@@ -34,6 +34,7 @@ private:
     void connect();
     void sendHello();
     void receiveHello();
+    void receiveNoMoDataNeeded();
 
     /// Send data in current_send_buffer to socket in non-blocking mode.
     void sendToSocket();
@@ -66,8 +67,9 @@ private:
     size_t total_bytes_sent = 0;
 
     const size_t FLUSH_BUFFER_TO_SOCKET_THRESHOLD = 128 * 1024;
-    bool input_is_finished = false;
-    bool final_chunk_added = false;
+    bool input_is_finished = false;     /// We have read all the data from input port.
+    bool final_chunk_added = false;     /// Final empty chunk was added to signal the exchange stream receiver that we are done.
+    bool no_more_data_needed = false;   /// Set to true when exchange stream receiver has sent us NoMoreDataNeeded.
 
     LoggerPtr log = getLogger("StreamingExchangeSink");
 };

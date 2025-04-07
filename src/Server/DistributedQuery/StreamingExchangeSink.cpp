@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+    extern const int LOGICAL_ERROR;
 }
 
 StreamingExchangeSink::~StreamingExchangeSink()
@@ -40,30 +41,45 @@ void StreamingExchangeSink::sendToSocket()
 {
     while (current_send_position_in_buffer < current_send_buffer.size())
     {
-        size_t bytes_to_send = current_send_buffer.size() - current_send_position_in_buffer;
-        ssize_t sent = socket->sendBytes(current_send_buffer.data() + current_send_position_in_buffer, bytes_to_send);
-        if (sent < 0)
+        try
         {
-            auto last_error = errno;
-            if (last_error == EINTR)
+            /// If we have already received NoMoreDataNeeded packet then we should not try to send anything to socket.
+            if (no_more_data_needed)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No more data needed packet was not received");
+
+            size_t bytes_to_send = current_send_buffer.size() - current_send_position_in_buffer;
+            ssize_t sent = socket->sendBytes(current_send_buffer.data() + current_send_position_in_buffer, bytes_to_send);
+            if (sent < 0)
             {
-                continue;
+                auto last_error = errno;
+                if (last_error == EINTR)
+                {
+                    continue;
+                }
+                else if (last_error == EAGAIN || last_error == EWOULDBLOCK)
+                {
+                    /// Socket is not ready for writing, wait for epoll event
+                    break;
+                }
+                else
+                {
+                    throw Poco::Net::NetException("Failed to send data to socket", last_error);
+                }
             }
-            else if (last_error == EAGAIN || last_error == EWOULDBLOCK)
-            {
-                /// Socket is not ready for writing, wait for epoll event
-                break;
-            }
-            else
-            {
-                throw Poco::Net::NetException("Failed to send data to socket", last_error);
-            }
+
+            LOG_TEST(log, "Sent {} bytes to exchange stream {}, fd: {}", sent, stream_name, socket->sockfd());
+
+            current_send_position_in_buffer += sent;
+            total_bytes_sent += sent;
         }
-
-        LOG_TEST(log, "Sent {} bytes to exchange stream {}, fd: {}", sent, stream_name, socket->sockfd());
-
-        current_send_position_in_buffer += sent;
-        total_bytes_sent += sent;
+        catch (const Poco::IOException &)
+        {
+            /// If socket was closed by remote side this might be due to no more data needed.
+            /// In this case the remote side should have sent a packet with PacketType::NoMoreDataNeeded.
+            /// Check if we have received this packet and if so then this is not an error but we should drop all remaining data.
+            receiveNoMoDataNeeded();
+            return;
+        }
     }
 
     /// Is there enough serialized data to start sending it to socket?
@@ -179,6 +195,16 @@ std::pair<int, uint32_t> StreamingExchangeSink::scheduleForEvent()
 
 void StreamingExchangeSink::consume(Chunk chunk)
 {
+    if (no_more_data_needed)
+    {
+        /// We have to consume all chunks from input even if we have already received NoMoreDataNeeded packet.
+        /// This is needed to avoid stuck pipeline in case of some buckets of ShuffleExchange don't need data while others still do.
+        /// So we just drop the chunk and continue.
+        /// TODO: is there a better way to figure out when when all buckets don't need data and close the inputs in pipeline?
+        LOG_TEST(log, "No more data needed for exchange stream {}, dropping chunk with {} rows", stream_name, chunk.getNumRows());
+        return;
+    }
+
     rows_written += chunk.getNumRows();
 
     if (chunk.getNumRows() == 0 && chunk.getNumColumns() != 0)
@@ -245,6 +271,23 @@ void StreamingExchangeSink::receiveHello()
     readVarUInt(packet_type, *in);
     if (packet_type != StreamingExchangeProtocol::PacketType::SourceHello)
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", packet_type);
+}
+
+void StreamingExchangeSink::receiveNoMoDataNeeded()
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+    if (packet_type != StreamingExchangeProtocol::PacketType::NoMoreDataNeeded)
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", packet_type);
+
+    LOG_TRACE(log, "No more data needed from exchange stream {}", stream_name);
+
+    no_more_data_needed = true;
+
+    /// Clear current_send_buffer and new out buffer
+    current_send_buffer.clear();
+    current_send_position_in_buffer = 0;
+    out = std::make_shared<WriteBufferFromOwnString>();
 }
 
 }
