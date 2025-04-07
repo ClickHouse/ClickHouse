@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 go install github.com/wjdp/htmltest@v${HTMLTEST_VERSION} \
 FROM node:20-bookworm-slim
 
 RUN apt-get update && \
-    apt install -y --no-install-recommends git openssh-server bash ca-certificates curl python3 python3-venv rsync vips && \
+    apt install -y --no-install-recommends git openssh-server bash ca-certificates curl python3 python3-venv rsync && \
     rm -rf /var/lib/apt/lists/*:
 
 # At this point we want to really update /opt/clickhouse-docs directory
@@ -23,6 +23,7 @@ WORKDIR /opt/clickhouse-docs
 
 RUN yarn config set registry https://registry.npmjs.org \
     && yarn config set unsafe-perm true \
+    && yarn add node-gyp
     && yarn install \
     && yarn cache clean
 
