@@ -21,20 +21,26 @@ max_dynamic_paths=0
 max_dynamic_paths=3
 Dynamic paths
 k1
+k2
 k3
 k4
 Shared data paths
-k2
+k4
 max_dynamic_paths=2
 Dynamic paths
 k1
-k4
-Shared data paths
 k2
 k3
+k4
+Shared data paths
+k3
+k4
 max_dynamic_paths=1
 Dynamic paths
 k1
+k2
+k3
+k4
 Shared data paths
 k2
 k3
