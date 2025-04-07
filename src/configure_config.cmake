@@ -199,6 +199,8 @@ if (ENABLE_BUZZHOUSE)
 endif()
 if (TARGET ch_contrib::sha3iuf)
     set(USE_SHA3IUF 1)
+if (TARGET ch_contrib::libpng)
+    set(USE_LIBPNG 1)
 endif()
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})
