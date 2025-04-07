@@ -12,8 +12,10 @@ class KeysIterator : public IObjectIterator
 public:
     KeysIterator(
         Strings && data_files_,
+        ObjectStoragePtr object_storage_,
         IDataLakeMetadata::FileProgressCallback callback_)
         : data_files(data_files_)
+        , object_storage(object_storage_)
         , callback(callback_)
     {
     }
@@ -32,11 +34,10 @@ public:
                 return nullptr;
 
             auto key = data_files[current_index];
-            ObjectMetadata object_metadata;
-            // auto object_metadata = object_storage->getObjectMetadata(key);
+            auto object_metadata = object_storage->getObjectMetadata(key);
 
-            // if (callback)
-            //     callback(FileProgress(0, object_metadata.size_bytes));
+            if (callback)
+                callback(FileProgress(0, object_metadata.size_bytes));
 
             return std::make_shared<ObjectInfo>(key, std::move(object_metadata));
         }
@@ -44,23 +45,19 @@ public:
 
 private:
     Strings data_files;
+    ObjectStoragePtr object_storage;
     std::atomic<size_t> index = 0;
     IDataLakeMetadata::FileProgressCallback callback;
 };
 
 }
 
-ObjectIterator IDataLakeMetadata::iterate(
-    const ActionsDAG * filter_dag,
-    FileProgressCallback callback,
-    size_t /* list_batch_size */) const
+ObjectIterator IDataLakeMetadata::createKeysIterator(
+    Strings && data_files_,
+    ObjectStoragePtr object_storage_,
+    IDataLakeMetadata::FileProgressCallback callback_) const
 {
-    return std::make_shared<KeysIterator>(getDataFiles(filter_dag), callback);
-}
-
-Strings IDataLakeMetadata::getDataFiles(const ActionsDAG * /* filter_dag */) const
-{
-    throwNotImplemented("getDataFiles");
+    return std::make_shared<KeysIterator>(std::move(data_files_), object_storage_, callback_);
 }
 
 }

@@ -98,4 +98,12 @@ Strings HudiMetadata::getDataFiles(const ActionsDAG *) const
     return data_files;
 }
 
+ObjectIterator HudiMetadata::iterate(
+    const ActionsDAG * filter_dag,
+    FileProgressCallback callback,
+    size_t /* list_batch_size */) const
+{
+    return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);
+}
+
 }

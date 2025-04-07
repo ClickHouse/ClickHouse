@@ -84,7 +84,10 @@ public:
     std::optional<size_t> totalBytes() const override;
 
 protected:
-    Strings getDataFiles(const ActionsDAG * filter_dag) const override;
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        FileProgressCallback callback,
+        size_t list_batch_size) const override;
 
 private:
     using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFilePtr>;
@@ -113,6 +116,8 @@ private:
     String table_location;
 
     mutable std::optional<Strings> cached_unprunned_files_for_last_processed_snapshot;
+
+    Strings getDataFiles(const ActionsDAG * filter_dag) const;
 
     void updateState(const ContextPtr & local_context);
 

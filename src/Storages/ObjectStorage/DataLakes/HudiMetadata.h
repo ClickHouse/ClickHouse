@@ -38,7 +38,10 @@ public:
     }
 
 protected:
-    Strings getDataFiles(const ActionsDAG * filter_dag) const override;
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        FileProgressCallback callback,
+        size_t list_batch_size) const override;
 
 private:
     const ObjectStoragePtr object_storage;
@@ -46,6 +49,7 @@ private:
     mutable Strings data_files;
 
     Strings getDataFilesImpl() const;
+    Strings getDataFiles(const ActionsDAG * filter_dag) const;
 };
 
 }

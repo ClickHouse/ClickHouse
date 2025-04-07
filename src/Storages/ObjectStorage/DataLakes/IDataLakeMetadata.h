@@ -25,7 +25,7 @@ public:
     virtual ObjectIterator iterate(
         const ActionsDAG * /* filter_dag */,
         FileProgressCallback /* callback */,
-        size_t /* list_batch_size */) const;
+        size_t /* list_batch_size */) const = 0;
 
     /// Table schema from data lake metadata.
     virtual NamesAndTypesList getTableSchema() const = 0;
@@ -50,9 +50,10 @@ public:
     virtual std::optional<size_t> totalBytes() const { return {}; }
 
 protected:
-    /// List all data files.
-    /// For better parallelization, iterate() method should be used.
-    virtual Strings getDataFiles(const ActionsDAG * filter_dag) const;
+    ObjectIterator createKeysIterator(
+        Strings && data_files_,
+        ObjectStoragePtr object_storage_,
+        IDataLakeMetadata::FileProgressCallback callback_) const;
 
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {

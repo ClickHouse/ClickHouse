@@ -79,12 +79,18 @@ public:
     static Field getFieldValue(const String & value, DataTypePtr data_type);
 
 protected:
-    Strings getDataFiles(const ActionsDAG *) const override { return data_files; }
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        FileProgressCallback callback,
+        size_t list_batch_size) const override;
 
 private:
     mutable Strings data_files;
     NamesAndTypesList schema;
     DeltaLakePartitionColumns partition_columns;
+    ObjectStoragePtr object_storage;
+
+    Strings getDataFiles(const ActionsDAG *) const { return data_files; }
 };
 
 }
