@@ -12,6 +12,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
+#include <Storages/PartitionCommands.h>
 #include <Poco/Timestamp.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -55,7 +56,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
 
     auto settings = getReadSettings();
     settings.enable_filesystem_cache = false;
-    settings.remote_fs_method = RemoteFSReadMethod::read;
+    settings.remote_fs_method = RemoteFSReadMethod::threadpool;
+    settings.remote_fs_prefetch = false;
     settings.remote_fs_buffer_size = 1024;  /// These files are small.
 
     LOG_DEBUG(log, "Loading metadata");
@@ -257,6 +259,13 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(cons
         return true;
 
     return getObjectMetadataEntryWithCache(path) != nullptr;
+}
+
+bool MetadataStorageFromPlainRewritableObjectStorage::supportsPartitionCommand(const PartitionCommand & command) const
+{
+    return command.type == PartitionCommand::DROP_PARTITION || command.type == PartitionCommand::DROP_DETACHED_PARTITION
+        || command.type == PartitionCommand::ATTACH_PARTITION || command.type == PartitionCommand::MOVE_PARTITION
+        || command.type == PartitionCommand::REPLACE_PARTITION;
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const

@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/array-functions
+description: 'Documentation for Array Functions'
+sidebar_label: 'Arrays'
 sidebar_position: 10
-sidebar_label: Arrays
+slug: /sql-reference/functions/array-functions
+title: 'Array Functions'
 ---
 
 # Array Functions
@@ -12,7 +14,7 @@ Checks whether the input array is empty.
 
 **Syntax**
 
-``` sql
+```sql
 empty([x])
 ```
 
@@ -54,7 +56,7 @@ Checks whether the input array is non-empty.
 
 **Syntax**
 
-``` sql
+```sql
 notEmpty([x])
 ```
 
@@ -521,7 +523,7 @@ Returns an array of numbers from `start` to `end - 1` by `step`. The supported t
 
 **Syntax**
 
-``` sql
+```sql
 range([start, ] end [, step])
 ```
 
@@ -545,7 +547,7 @@ range([start, ] end [, step])
 
 Query:
 
-``` sql
+```sql
 SELECT range(5), range(1, 5), range(1, 5, 2), range(-1, 5, 2);
 ```
 
@@ -571,7 +573,7 @@ Creates an array of length `length` filled with the constant `elem`.
 
 Combines arrays passed as arguments.
 
-``` sql
+```sql
 arrayConcat(arrays)
 ```
 
@@ -581,11 +583,11 @@ arrayConcat(arrays)
 
 **Example**
 
-``` sql
+```sql
 SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 ```
 
-``` text
+```text
 ┌─res───────────┐
 │ [1,2,3,4,5,6] │
 └───────────────┘
@@ -607,11 +609,11 @@ Returns 0 if the element is not in the array, or 1 if it is.
 
 `NULL` is processed as a value.
 
-``` sql
+```sql
 SELECT has([1, 2, NULL], NULL)
 ```
 
-``` text
+```text
 ┌─has([1, 2, NULL], NULL)─┐
 │                       1 │
 └─────────────────────────┘
@@ -628,11 +630,11 @@ If the index falls outside of the bounds of an array, it returns `NULL` instead 
 
 ### Examples {#examples}
 
-``` sql
+```sql
 SELECT arrayElementOrNull([1, 2, 3], 2), arrayElementOrNull([1, 2, 3], 4)
 ```
 
-``` text
+```text
  ┌─arrayElementOrNull([1, 2, 3], 2)─┬─arrayElementOrNull([1, 2, 3], 4)─┐
  │                                2 │                             ᴺᵁᴸᴸ │
  └──────────────────────────────────┴──────────────────────────────────┘
@@ -642,7 +644,7 @@ SELECT arrayElementOrNull([1, 2, 3], 2), arrayElementOrNull([1, 2, 3], 4)
 
 Checks whether one array is a subset of another.
 
-``` sql
+```sql
 hasAll(set, subset)
 ```
 
@@ -682,7 +684,7 @@ Raises an exception `NO_COMMON_TYPE` if the set and subset elements do not share
 
 Checks whether two arrays have intersection by some elements.
 
-``` sql
+```sql
 hasAny(array1, array2)
 ```
 
@@ -719,7 +721,7 @@ Raises an exception `NO_COMMON_TYPE` if the array1 and array2 elements do not sh
 
 Checks whether all the elements of array2 appear in array1 in the same exact order. Therefore, the function will return 1, if and only if `array1 = prefix + array2 + suffix`.
 
-``` sql
+```sql
 hasSubstr(array1, array2)
 ```
 
@@ -775,11 +777,11 @@ If the array does not contain the searched-for value, the function returns 0.
 
 Example:
 
-``` sql
+```sql
 SELECT indexOf([1, 3, NULL, NULL], NULL)
 ```
 
-``` text
+```text
 ┌─indexOf([1, 3, NULL, NULL], NULL)─┐
 │                                 3 │
 └───────────────────────────────────┘
@@ -797,11 +799,11 @@ If the internal array is of type Nullable, function 'indexOf' will be called.
 
 Example:
 
-``` sql
+```sql
 SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 ```
 
-``` text
+```text
 ┌─indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)─┐
 │                                             5 │
 └───────────────────────────────────────────────┘
@@ -853,7 +855,7 @@ SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);
 Result:
 
 ```response
-32	UInt16
+32    UInt16
 ```
 
 Query:
@@ -865,7 +867,7 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 Result:
 
 ```response
-32	Float64
+32    Float64
 ```
 
 ## countEqual(arr, x) {#countequalarr-x}
@@ -876,11 +878,11 @@ Returns the number of elements in the array equal to x. Equivalent to arrayCount
 
 Example:
 
-``` sql
+```sql
 SELECT countEqual([1, 2, NULL, NULL], NULL)
 ```
 
-``` text
+```text
 ┌─countEqual([1, 2, NULL, NULL], NULL)─┐
 │                                    2 │
 └──────────────────────────────────────┘
@@ -892,7 +894,7 @@ Returns the array \[1, 2, 3, ..., length (arr) \]
 
 This function is normally used with ARRAY JOIN. It allows counting something just once for each array after applying ARRAY JOIN. Example:
 
-``` sql
+```sql
 SELECT
     count() AS Reaches,
     countIf(num = 1) AS Hits
@@ -904,7 +906,7 @@ WHERE CounterID = 160656
 LIMIT 10
 ```
 
-``` text
+```text
 ┌─Reaches─┬──Hits─┐
 │   95606 │ 31406 │
 └─────────┴───────┘
@@ -912,7 +914,7 @@ LIMIT 10
 
 In this example, Reaches is the number of conversions (the strings received after applying ARRAY JOIN), and Hits is the number of pageviews (strings before ARRAY JOIN). In this particular case, you can get the same result in an easier way:
 
-``` sql
+```sql
 SELECT
     sum(length(GoalsReached)) AS Reaches,
     count() AS Hits
@@ -920,7 +922,7 @@ FROM test.hits
 WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 ```
 
-``` text
+```text
 ┌─Reaches─┬──Hits─┐
 │   95606 │ 31406 │
 └─────────┴───────┘
@@ -936,7 +938,7 @@ For example: arrayEnumerateUniq(\[10, 20, 10, 30\]) = \[1, 1, 2, 1\].
 This function is useful when using ARRAY JOIN and aggregation of array elements.
 Example:
 
-``` sql
+```sql
 SELECT
     Goals.ID AS GoalID,
     sum(Sign) AS Reaches,
@@ -951,7 +953,7 @@ ORDER BY Reaches DESC
 LIMIT 10
 ```
 
-``` text
+```text
 ┌──GoalID─┬─Reaches─┬─Visits─┐
 │   53225 │    3214 │   1097 │
 │ 2825062 │    3188 │   1097 │
@@ -970,11 +972,11 @@ In this example, each goal ID has a calculation of the number of conversions (ea
 
 The arrayEnumerateUniq function can take multiple arrays of the same size as arguments. In this case, uniqueness is considered for tuples of elements in the same positions in all the arrays.
 
-``` sql
+```sql
 SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 ```
 
-``` text
+```text
 ┌─res───────────┐
 │ [1,2,1,1,2,1] │
 └───────────────┘
@@ -1004,13 +1006,13 @@ With `clear_depth=1` and `max_array_depth=1`, the result of `arrayEnumerateUniqR
 
 Query:
 
-``` sql
+```sql
 SELECT arrayEnumerateUniqRanked(1, [1,2,1], 1);
 ```
 
 Result:
 
-``` text
+```text
 [1,1,2]
 ```
 
@@ -1018,13 +1020,13 @@ In this example, `arrayEnumerateUniqRanked` is used to obtain an array indicatin
 
 Query:
 
-``` sql
+```sql
 SELECT arrayEnumerateUniqRanked(1, [[1,2,3],[2,2,1],[3]], 2);
 ```
 
 Result:
 
-``` text
+```text
 [[1,1,1],[2,3,2],[2]]
 ```
 
@@ -1032,13 +1034,13 @@ Changing `clear_depth=2`, results in elements being enumerated separately for ea
 
 Query:
 
-``` sql
+```sql
 SELECT arrayEnumerateUniqRanked(2, [[1,2,3],[2,2,1],[3]], 2);
 ```
 
 Result:
 
-``` text
+```text
 [[1,1,1],[1,2,1],[1]]
 ```
 
@@ -1046,7 +1048,7 @@ Result:
 
 Removes the last item from the array.
 
-``` sql
+```sql
 arrayPopBack(array)
 ```
 
@@ -1056,11 +1058,11 @@ arrayPopBack(array)
 
 **Example**
 
-``` sql
+```sql
 SELECT arrayPopBack([1, 2, 3]) AS res;
 ```
 
-``` text
+```text
 ┌─res───┐
 │ [1,2] │
 └───────┘
@@ -1070,7 +1072,7 @@ SELECT arrayPopBack([1, 2, 3]) AS res;
 
 Removes the first item from the array.
 
-``` sql
+```sql
 arrayPopFront(array)
 ```
 
@@ -1080,11 +1082,11 @@ arrayPopFront(array)
 
 **Example**
 
-``` sql
+```sql
 SELECT arrayPopFront([1, 2, 3]) AS res;
 ```
 
-``` text
+```text
 ┌─res───┐
 │ [2,3] │
 └───────┘
@@ -1094,7 +1096,7 @@ SELECT arrayPopFront([1, 2, 3]) AS res;
 
 Adds one item to the end of the array.
 
-``` sql
+```sql
 arrayPushBack(array, single_value)
 ```
 
@@ -1105,11 +1107,11 @@ arrayPushBack(array, single_value)
 
 **Example**
 
-``` sql
+```sql
 SELECT arrayPushBack(['a'], 'b') AS res;
 ```
 
-``` text
+```text
 ┌─res───────┐
 │ ['a','b'] │
 └───────────┘
@@ -1119,7 +1121,7 @@ SELECT arrayPushBack(['a'], 'b') AS res;
 
 Adds one element to the beginning of the array.
 
-``` sql
+```sql
 arrayPushFront(array, single_value)
 ```
 
@@ -1130,11 +1132,11 @@ arrayPushFront(array, single_value)
 
 **Example**
 
-``` sql
+```sql
 SELECT arrayPushFront(['b'], 'a') AS res;
 ```
 
-``` text
+```text
 ┌─res───────┐
 │ ['a','b'] │
 └───────────┘
@@ -1144,7 +1146,7 @@ SELECT arrayPushFront(['b'], 'a') AS res;
 
 Changes the length of the array.
 
-``` sql
+```sql
 arrayResize(array, size[, extender])
 ```
 
@@ -1162,21 +1164,21 @@ An array of length `size`.
 
 **Examples of calls**
 
-``` sql
+```sql
 SELECT arrayResize([1], 3);
 ```
 
-``` text
+```text
 ┌─arrayResize([1], 3)─┐
 │ [1,0,0]             │
 └─────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT arrayResize([1], 3, NULL);
 ```
 
-``` text
+```text
 ┌─arrayResize([1], 3, NULL)─┐
 │ [1,NULL,NULL]             │
 └───────────────────────────┘
@@ -1186,7 +1188,7 @@ SELECT arrayResize([1], 3, NULL);
 
 Returns a slice of the array.
 
-``` sql
+```sql
 arraySlice(array, offset[, length])
 ```
 
@@ -1198,11 +1200,11 @@ arraySlice(array, offset[, length])
 
 **Example**
 
-``` sql
+```sql
 SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 ```
 
-``` text
+```text
 ┌─res────────┐
 │ [2,NULL,4] │
 └────────────┘
@@ -1216,7 +1218,7 @@ Generates an array of "shingles", i.e. consecutive sub-arrays with specified len
 
 **Syntax**
 
-``` sql
+```sql
 arrayShingles(array, length)
 ```
 
@@ -1233,13 +1235,13 @@ arrayShingles(array, length)
 
 Query:
 
-``` sql
+```sql
 SELECT arrayShingles([1,2,3,4], 3) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────────┐
 │ [[1,2,3],[2,3,4]] │
 └───────────────────┘
@@ -1251,11 +1253,11 @@ Sorts the elements of the `arr` array in ascending order. If the `func` function
 
 Example of integer values sorting:
 
-``` sql
+```sql
 SELECT arraySort([1, 3, 3, 0]);
 ```
 
-``` text
+```text
 ┌─arraySort([1, 3, 3, 0])─┐
 │ [0,1,3,3]               │
 └─────────────────────────┘
@@ -1263,11 +1265,11 @@ SELECT arraySort([1, 3, 3, 0]);
 
 Example of string values sorting:
 
-``` sql
+```sql
 SELECT arraySort(['hello', 'world', '!']);
 ```
 
-``` text
+```text
 ┌─arraySort(['hello', 'world', '!'])─┐
 │ ['!','hello','world']              │
 └────────────────────────────────────┘
@@ -1275,11 +1277,11 @@ SELECT arraySort(['hello', 'world', '!']);
 
 Consider the following sorting order for the `NULL`, `NaN` and `Inf` values:
 
-``` sql
+```sql
 SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);
 ```
 
-``` text
+```text
 ┌─arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf])─┐
 │ [-inf,-4,1,2,3,inf,nan,nan,NULL,NULL]                     │
 └───────────────────────────────────────────────────────────┘
@@ -1294,11 +1296,11 @@ Note that `arraySort` is a [higher-order function](/sql-reference/functions/over
 
 Let's consider the following example:
 
-``` sql
+```sql
 SELECT arraySort((x) -> -x, [1, 2, 3]) as res;
 ```
 
-``` text
+```text
 ┌─res─────┐
 │ [3,2,1] │
 └─────────┘
@@ -1308,11 +1310,11 @@ For each element of the source array, the lambda function returns the sorting ke
 
 The lambda function can accept multiple arguments. In this case, you need to pass the `arraySort` function several arrays of identical length that the arguments of lambda function will correspond to. The resulting array will consist of elements from the first input array; elements from the next input array(s) specify the sorting keys. For example:
 
-``` sql
+```sql
 SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 ```
 
-``` text
+```text
 ┌─res────────────────┐
 │ ['world', 'hello'] │
 └────────────────────┘
@@ -1322,21 +1324,21 @@ Here, the elements that are passed in the second array (\[2, 1\]) define a sorti
 
 Other examples are shown below.
 
-``` sql
+```sql
 SELECT arraySort((x, y) -> y, [0, 1, 2], ['c', 'b', 'a']) as res;
 ```
 
-``` text
+```text
 ┌─res─────┐
 │ [2,1,0] │
 └─────────┘
 ```
 
-``` sql
+```sql
 SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 ```
 
-``` text
+```text
 ┌─res─────┐
 │ [2,1,0] │
 └─────────┘
@@ -1361,11 +1363,11 @@ arrayReverseSort([func,] arr, ...)
 ```
 Example of integer values sorting:
 
-``` sql
+```sql
 SELECT arrayReverseSort([1, 3, 3, 0]);
 ```
 
-``` text
+```text
 ┌─arrayReverseSort([1, 3, 3, 0])─┐
 │ [3,3,1,0]                      │
 └────────────────────────────────┘
@@ -1373,11 +1375,11 @@ SELECT arrayReverseSort([1, 3, 3, 0]);
 
 Example of string values sorting:
 
-``` sql
+```sql
 SELECT arrayReverseSort(['hello', 'world', '!']);
 ```
 
-``` text
+```text
 ┌─arrayReverseSort(['hello', 'world', '!'])─┐
 │ ['world','hello','!']                     │
 └───────────────────────────────────────────┘
@@ -1385,11 +1387,11 @@ SELECT arrayReverseSort(['hello', 'world', '!']);
 
 Consider the following sorting order for the `NULL`, `NaN` and `Inf` values:
 
-``` sql
+```sql
 SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]) as res;
 ```
 
-``` text
+```text
 ┌─res───────────────────────────────────┐
 │ [inf,3,2,1,-4,-inf,nan,nan,NULL,NULL] │
 └───────────────────────────────────────┘
@@ -1402,11 +1404,11 @@ SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]) as res;
 
 Note that the `arrayReverseSort` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument. Example is shown below.
 
-``` sql
+```sql
 SELECT arrayReverseSort((x) -> -x, [1, 2, 3]) as res;
 ```
 
-``` text
+```text
 ┌─res─────┐
 │ [1,2,3] │
 └─────────┘
@@ -1419,11 +1421,11 @@ The array is sorted in the following way:
 
 The lambda function can accept multiple arguments. In this case, you need to pass the `arrayReverseSort` function several arrays of identical length that the arguments of lambda function will correspond to. The resulting array will consist of elements from the first input array; elements from the next input array(s) specify the sorting keys. For example:
 
-``` sql
+```sql
 SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 ```
 
-``` text
+```text
 ┌─res───────────────┐
 │ ['hello','world'] │
 └───────────────────┘
@@ -1436,21 +1438,21 @@ In this example, the array is sorted in the following way:
 
 Other examples are shown below.
 
-``` sql
+```sql
 SELECT arrayReverseSort((x, y) -> y, [4, 3, 5], ['a', 'b', 'c']) AS res;
 ```
 
-``` text
+```text
 ┌─res─────┐
 │ [5,3,4] │
 └─────────┘
 ```
 
-``` sql
+```sql
 SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 ```
 
-``` text
+```text
 ┌─res─────┐
 │ [4,3,5] │
 └─────────┘
@@ -1596,7 +1598,7 @@ Calculates an array of differences between adjacent array elements. The first el
 
 **Syntax**
 
-``` sql
+```sql
 arrayDifference(array)
 ```
 
@@ -1612,13 +1614,13 @@ Returns an array of differences between adjacent array elements. [UInt\*](/sql-r
 
 Query:
 
-``` sql
+```sql
 SELECT arrayDifference([1, 2, 3, 4]);
 ```
 
 Result:
 
-``` text
+```text
 ┌─arrayDifference([1, 2, 3, 4])─┐
 │ [0,1,1,1]                     │
 └───────────────────────────────┘
@@ -1628,13 +1630,13 @@ Example of the overflow due to result type Int64:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayDifference([0, 10000000000000000000]);
 ```
 
 Result:
 
-``` text
+```text
 ┌─arrayDifference([0, 10000000000000000000])─┐
 │ [0,-8446744073709551616]                   │
 └────────────────────────────────────────────┘
@@ -1646,7 +1648,7 @@ Takes an array, returns an array containing the distinct elements only.
 
 **Syntax**
 
-``` sql
+```sql
 arrayDistinct(array)
 ```
 
@@ -1662,13 +1664,13 @@ Returns an array containing the distinct elements.
 
 Query:
 
-``` sql
+```sql
 SELECT arrayDistinct([1, 2, 2, 3, 1]);
 ```
 
 Result:
 
-``` text
+```text
 ┌─arrayDistinct([1, 2, 2, 3, 1])─┐
 │ [1,2,3]                        │
 └────────────────────────────────┘
@@ -1688,13 +1690,13 @@ arrayEnumerateDense(arr)
 
 Query:
 
-``` sql
+```sql
 SELECT arrayEnumerateDense([10, 20, 10, 30])
 ```
 
 Result:
 
-``` text
+```text
 ┌─arrayEnumerateDense([10, 20, 10, 30])─┐
 │ [1,2,1,3]                             │
 └───────────────────────────────────────┘
@@ -1721,13 +1723,13 @@ With `clear_depth=1` and `max_array_depth=1`, the result is identical to what [a
 
 Query:
 
-``` sql
+```sql
 SELECT arrayEnumerateDenseRanked(1,[10, 20, 10, 30],1);
 ```
 
 Result:
 
-``` text
+```text
 [1,2,1,3]
 ```
 
@@ -1736,13 +1738,13 @@ In this example, `arrayEnumerateDenseRanked` is used to obtain an array indicati
 
 Query:
 
-``` sql
+```sql
 SELECT arrayEnumerateDenseRanked(1,[[10,10,30,20],[40,50,10,30]],2);
 ```
 
 Result:
 
-``` text
+```text
 [[1,1,2,3],[4,5,1,2]]
 ```
 
@@ -1750,12 +1752,12 @@ Changing `clear_depth=2` results in the enumeration occurring separately for eac
 
 Query:
 
-``` sql
+```sql
 SELECT arrayEnumerateDenseRanked(2,[[10,10,30,20],[40,50,10,30]],2);
 ```
 Result:
 
-``` text
+```text
 [[1,1,2,3],[1,2,3,4]]
 ```
 
@@ -1766,7 +1768,7 @@ The result contains only unique values.
 
 **Syntax**
 
-``` sql
+```sql
 arrayUnion(arr1, arr2, ..., arrN)
 ```
 
@@ -1807,7 +1809,7 @@ The result contains only unique values.
 
 **Syntax**
 
-``` sql
+```sql
 arrayIntersect(arr1, arr2, ..., arrN)
 ```
 
@@ -1825,7 +1827,7 @@ The function can take any number of arrays of different types.
 
 Query:
 
-``` sql
+```sql
 SELECT
     arrayIntersect([1, 2], [1, 3], [2, 3]) AS empty_intersection,
     arrayIntersect([1, 2], [1, 3], [1, 4]) AS non_empty_intersection
@@ -1833,7 +1835,7 @@ SELECT
 
 Result:
 
-``` text
+```text
 ┌─non_empty_intersection─┬─empty_intersection─┐
 │ []                     │ [1]                │
 └────────────────────────┴────────────────────┘
@@ -1851,7 +1853,7 @@ In contrast, function `arraySymmetricDifference` simply returns the set of input
 
 **Syntax**
 
-``` sql
+```sql
 arraySymmetricDifference(arr1, arr2, ..., arrN)
 ```
 
@@ -1869,7 +1871,7 @@ The function can take any number of arrays of different types.
 
 Query:
 
-``` sql
+```sql
 SELECT
     arraySymmetricDifference([1, 2], [1, 2], [1, 2]) AS empty_symmetric_difference
     arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_difference,
@@ -1877,7 +1879,7 @@ SELECT
 
 Result:
 
-``` text
+```text
 ┌─empty_symmetric_difference─┬─non_empty_symmetric_difference─┐
 │ []                         │ [3]                            │
 └────────────────────────────┴────────────────────────────────┘
@@ -1890,12 +1892,12 @@ Returns the [Jaccard index](https://en.wikipedia.org/wiki/Jaccard_index) of two 
 **Example**
 
 Query:
-``` sql
+```sql
 SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
 ```
 
 Result:
-``` text
+```text
 ┌─res────────────────┐
 │ 0.3333333333333333 │
 └────────────────────┘
@@ -1907,7 +1909,7 @@ Applies an aggregate function to array elements and returns its result. The name
 
 **Syntax**
 
-``` sql
+```sql
 arrayReduce(agg_func, arr1, arr2, ..., arrN)
 ```
 
@@ -1922,13 +1924,13 @@ arrayReduce(agg_func, arr1, arr2, ..., arrN)
 
 Query:
 
-``` sql
+```sql
 SELECT arrayReduce('max', [1, 2, 3]);
 ```
 
 Result:
 
-``` text
+```text
 ┌─arrayReduce('max', [1, 2, 3])─┐
 │                             3 │
 └───────────────────────────────┘
@@ -1938,13 +1940,13 @@ If an aggregate function takes multiple arguments, then this function must be ap
 
 Query:
 
-``` sql
+```sql
 SELECT arrayReduce('maxIf', [3, 5], [1, 0]);
 ```
 
 Result:
 
-``` text
+```text
 ┌─arrayReduce('maxIf', [3, 5], [1, 0])─┐
 │                                    3 │
 └──────────────────────────────────────┘
@@ -1954,13 +1956,13 @@ Example with a parametric aggregate function:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 ```
 
 Result:
 
-``` text
+```text
 ┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
 │                                                           4 │
 └─────────────────────────────────────────────────────────────┘
@@ -1976,7 +1978,7 @@ Applies an aggregate function to array elements in given ranges and returns an a
 
 **Syntax**
 
-``` sql
+```sql
 arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
 ```
 
@@ -1994,7 +1996,7 @@ arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
 
 Query:
 
-``` sql
+```sql
 SELECT arrayReduceInRanges(
     'sum',
     [(1, 5), (2, 3), (3, 4), (4, 4)],
@@ -2004,7 +2006,7 @@ SELECT arrayReduceInRanges(
 
 Result:
 
-``` text
+```text
 ┌─res─────────────────────────┐
 │ [1234500,234000,34560,4567] │
 └─────────────────────────────┘
@@ -2016,7 +2018,7 @@ Applies a lambda function to one or more equally-sized arrays and collects the r
 
 **Syntax**
 
-``` sql
+```sql
 arrayFold(lambda_function, arr1, arr2, ..., accumulator)
 ```
 
@@ -2024,13 +2026,13 @@ arrayFold(lambda_function, arr1, arr2, ..., accumulator)
 
 Query:
 
-``` sql
+```sql
 SELECT arrayFold( acc,x -> acc + x*2,  [1, 2, 3, 4], toInt64(3)) AS res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res─┐
 │  23 │
 └─────┘
@@ -2072,11 +2074,11 @@ arrayReverse(arr)
 
 Example:
 
-``` sql
+```sql
 SELECT arrayReverse([1, 2, 3])
 ```
 
-``` text
+```text
 ┌─arrayReverse([1, 2, 3])─┐
 │ [3,2,1]                 │
 └─────────────────────────┘
@@ -2099,7 +2101,7 @@ The flattened array contains all the elements from all source arrays.
 
 **Syntax**
 
-``` sql
+```sql
 flatten(array_of_arrays)
 ```
 
@@ -2111,11 +2113,11 @@ Alias: `flatten`.
 
 **Examples**
 
-``` sql
+```sql
 SELECT flatten([[[1]], [[2], [3]]]);
 ```
 
-``` text
+```text
 ┌─flatten(array(array([1]), array([2], [3])))─┐
 │ [1,2,3]                                     │
 └─────────────────────────────────────────────┘
@@ -2127,7 +2129,7 @@ Removes consecutive duplicate elements from an array. The order of result values
 
 **Syntax**
 
-``` sql
+```sql
 arrayCompact(arr)
 ```
 
@@ -2143,13 +2145,13 @@ The array without duplicate. [Array](/sql-reference/data-types/array).
 
 Query:
 
-``` sql
+```sql
 SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3]);
 ```
 
 Result:
 
-``` text
+```text
 ┌─arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])─┐
 │ [1,nan,nan,2,3]                            │
 └────────────────────────────────────────────┘
@@ -2161,7 +2163,7 @@ Combines multiple arrays into a single array. The resulting array contains the c
 
 **Syntax**
 
-``` sql
+```sql
 arrayZip(arr1, arr2, ..., arrN)
 ```
 
@@ -2179,14 +2181,14 @@ The function can take any number of arrays of different types. All the input arr
 
 Query:
 
-``` sql
+```sql
 SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 ```
 
 
 Result:
 
-``` text
+```text
 ┌─arrayZip(['a', 'b', 'c'], [5, 2, 1])─┐
 │ [('a',5),('b',2),('c',1)]            │
 └──────────────────────────────────────┘
@@ -2198,7 +2200,7 @@ Combines multiple arrays into a single array, allowing for unaligned arrays. The
 
 **Syntax**
 
-``` sql
+```sql
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
 
@@ -2216,13 +2218,13 @@ The function can take any number of arrays of different types.
 
 Query:
 
-``` sql
+```sql
 SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 ```
 
 Result:
 
-``` text
+```text
 ┌─arrayZipUnaligned(['a'], [1, 2, 3])─┐
 │ [('a',1),(NULL,2),(NULL,3)]         │
 └─────────────────────────────────────┘
@@ -2239,7 +2241,7 @@ For more details, please see [here](https://developers.google.com/machine-learni
 
 **Syntax**
 
-``` sql
+```sql
 arrayROCAUC(arr_scores, arr_labels[, scale[, arr_partial_offsets]])
 ```
 
@@ -2272,13 +2274,13 @@ Returns area under the receiver operating characteristic (ROC) curve. [Float64](
 
 Query:
 
-``` sql
+```sql
 select arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 ```
 
 Result:
 
-``` text
+```text
 ┌─arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
 │                                             0.75 │
 └──────────────────────────────────────────────────┘
@@ -2294,7 +2296,7 @@ For more details, please see [here](https://developers.google.com/machine-learni
 
 **Syntax**
 
-``` sql
+```sql
 arrayAUCPR(arr_scores, arr_labels[, arr_partial_offsets])
 ```
 
@@ -2325,13 +2327,13 @@ Returns area under the precision-recall (PR) curve. [Float64](../data-types/floa
 
 Query:
 
-``` sql
+```sql
 select arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 ```
 
 Result:
 
-``` text
+```text
 ┌─arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
 │                              0.8333333333333333 │
 └─────────────────────────────────────────────────┘
@@ -2343,11 +2345,11 @@ Returns an array obtained from the original arrays by application of `func(arr1[
 
 Examples:
 
-``` sql
+```sql
 SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
 ```
 
-``` text
+```text
 ┌─res─────┐
 │ [3,4,5] │
 └─────────┘
@@ -2355,11 +2357,11 @@ SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
 
 The following example shows how to create a tuple of elements from different arrays:
 
-``` sql
+```sql
 SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 ```
 
-``` text
+```text
 ┌─res─────────────────┐
 │ [(1,4),(2,5),(3,6)] │
 └─────────────────────┘
@@ -2373,17 +2375,17 @@ Returns an array containing only the elements in `arr1` for which `func(arr1[i],
 
 Examples:
 
-``` sql
+```sql
 SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 ```
 
-``` text
+```text
 ┌─res───────────┐
 │ ['abc World'] │
 └───────────────┘
 ```
 
-``` sql
+```sql
 SELECT
     arrayFilter(
         (i, x) -> x LIKE '%World%',
@@ -2392,7 +2394,7 @@ SELECT
     AS res
 ```
 
-``` text
+```text
 ┌─res─┐
 │ [2] │
 └─────┘
@@ -2406,11 +2408,11 @@ Scan through `arr1` from the first element to the last element and replace `arr1
 
 Examples:
 
-``` sql
+```sql
 SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, null, null]) AS res
 ```
 
-``` text
+```text
 ┌─res──────────────────────────────┐
 │ [1,1,3,11,12,12,12,5,6,14,14,14] │
 └──────────────────────────────────┘
@@ -2424,11 +2426,11 @@ Scan through `arr1` from the last element to the first element and replace `arr1
 
 Examples:
 
-``` sql
+```sql
 SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, null, null]) AS res
 ```
 
-``` text
+```text
 ┌─res────────────────────────────────┐
 │ [1,3,3,11,12,5,5,5,6,14,NULL,NULL] │
 └────────────────────────────────────┘
@@ -2442,11 +2444,11 @@ Split `arr1` into multiple arrays. When `func(arr1[i], ..., arrN[i])` returns so
 
 Examples:
 
-``` sql
+```sql
 SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
-``` text
+```text
 ┌─res─────────────┐
 │ [[1,2,3],[4,5]] │
 └─────────────────┘
@@ -2460,11 +2462,11 @@ Split `arr1` into multiple arrays. When `func(arr1[i], ..., arrN[i])` returns so
 
 Examples:
 
-``` sql
+```sql
 SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
-``` text
+```text
 ┌─res───────────────┐
 │ [[1],[2,3,4],[5]] │
 └───────────────────┘
@@ -2853,7 +2855,7 @@ Returns an array of the partial (running) sums of the elements in the source arr
 
 **Syntax**
 
-``` sql
+```sql
 arrayCumSum(arr)
 ```
 
@@ -2867,11 +2869,11 @@ arrayCumSum(arr)
 
 Example:
 
-``` sql
+```sql
 SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
-``` text
+```text
 ┌─res──────────┐
 │ [1, 2, 3, 4] │
 └──────────────┘
@@ -2885,7 +2887,7 @@ Same as `arrayCumSum`, returns an array of the partial (running) sums of the ele
 
 **Syntax**
 
-``` sql
+```sql
 arrayCumSumNonNegative(arr)
 ```
 
@@ -2897,11 +2899,11 @@ arrayCumSumNonNegative(arr)
 
 - Returns an array of non-negative partial sums of elements in the source array. [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/sql-reference/data-types/int-uint#integer-ranges), [Float\*](/sql-reference/data-types/float/).
 
-``` sql
+```sql
 SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 
-``` text
+```text
 ┌─res───────┐
 │ [1,2,0,1] │
 └───────────┘
@@ -2915,7 +2917,7 @@ Multiplies elements of an [array](/sql-reference/data-types/array).
 
 **Syntax**
 
-``` sql
+```sql
 arrayProduct(arr)
 ```
 
@@ -2931,13 +2933,13 @@ arrayProduct(arr)
 
 Query:
 
-``` sql
+```sql
 SELECT arrayProduct([1,2,3,4,5,6]) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───┐
 │ 720   │
 └───────┘
@@ -2945,13 +2947,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as res, toTypeName(res);
 ```
 
 Return value type is always [Float64](../data-types/float.md). Result:
 
-``` text
+```text
 ┌─res─┬─toTypeName(arrayProduct(array(toDecimal64(1, 8), toDecimal64(2, 8), toDecimal64(3, 8))))─┐
 │ 6   │ Float64                                                                                  │
 └─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
@@ -2964,7 +2966,7 @@ If the number of elements is negative, the array is rotated to the right.
 
 **Syntax**
 
-``` sql
+```sql
 arrayRotateLeft(arr, n)
 ```
 
@@ -2981,13 +2983,13 @@ arrayRotateLeft(arr, n)
 
 Query:
 
-``` sql
+```sql
 SELECT arrayRotateLeft([1,2,3,4,5,6], 2) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────┐
 │ [3,4,5,6,1,2] │
 └───────────────┘
@@ -2995,13 +2997,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayRotateLeft([1,2,3,4,5,6], -2) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────┐
 │ [5,6,1,2,3,4] │
 └───────────────┘
@@ -3009,13 +3011,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayRotateLeft(['a','b','c','d','e'], 3) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────────────┐
 │ ['d','e','a','b','c'] │
 └───────────────────────┘
@@ -3028,7 +3030,7 @@ If the number of elements is negative, the array is rotated to the left.
 
 **Syntax**
 
-``` sql
+```sql
 arrayRotateRight(arr, n)
 ```
 
@@ -3045,13 +3047,13 @@ arrayRotateRight(arr, n)
 
 Query:
 
-``` sql
+```sql
 SELECT arrayRotateRight([1,2,3,4,5,6], 2) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────┐
 │ [5,6,1,2,3,4] │
 └───────────────┘
@@ -3059,13 +3061,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayRotateRight([1,2,3,4,5,6], -2) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────┐
 │ [3,4,5,6,1,2] │
 └───────────────┘
@@ -3073,13 +3075,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayRotateRight(['a','b','c','d','e'], 3) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────────────┐
 │ ['c','d','e','a','b'] │
 └───────────────────────┘
@@ -3093,7 +3095,7 @@ If the number of elements is negative, the array is shifted to the right.
 
 **Syntax**
 
-``` sql
+```sql
 arrayShiftLeft(arr, n[, default])
 ```
 
@@ -3111,13 +3113,13 @@ arrayShiftLeft(arr, n[, default])
 
 Query:
 
-``` sql
+```sql
 SELECT arrayShiftLeft([1,2,3,4,5,6], 2) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────┐
 │ [3,4,5,6,0,0] │
 └───────────────┘
@@ -3125,13 +3127,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayShiftLeft([1,2,3,4,5,6], -2) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────┐
 │ [0,0,1,2,3,4] │
 └───────────────┘
@@ -3139,13 +3141,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayShiftLeft([1,2,3,4,5,6], 2, 42) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res─────────────┐
 │ [3,4,5,6,42,42] │
 └─────────────────┘
@@ -3153,13 +3155,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayShiftLeft(['a','b','c','d','e','f'], 3, 'foo') as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res─────────────────────────────┐
 │ ['d','e','f','foo','foo','foo'] │
 └─────────────────────────────────┘
@@ -3167,13 +3169,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayShiftLeft([1,2,3,4,5,6] :: Array(UInt16), 2, 4242) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res─────────────────┐
 │ [3,4,5,6,4242,4242] │
 └─────────────────────┘
@@ -3187,7 +3189,7 @@ If the number of elements is negative, the array is shifted to the left.
 
 **Syntax**
 
-``` sql
+```sql
 arrayShiftRight(arr, n[, default])
 ```
 
@@ -3205,13 +3207,13 @@ arrayShiftRight(arr, n[, default])
 
 Query:
 
-``` sql
+```sql
 SELECT arrayShiftRight([1,2,3,4,5,6], 2) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────┐
 │ [0,0,1,2,3,4] │
 └───────────────┘
@@ -3219,13 +3221,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayShiftRight([1,2,3,4,5,6], -2) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────┐
 │ [3,4,5,6,0,0] │
 └───────────────┘
@@ -3233,13 +3235,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayShiftRight([1,2,3,4,5,6], 2, 42) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res─────────────┐
 │ [42,42,1,2,3,4] │
 └─────────────────┘
@@ -3247,13 +3249,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayShiftRight(['a','b','c','d','e','f'], 3, 'foo') as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res─────────────────────────────┐
 │ ['foo','foo','foo','a','b','c'] │
 └─────────────────────────────────┘
@@ -3261,13 +3263,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT arrayShiftRight([1,2,3,4,5,6] :: Array(UInt16), 2, 4242) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res─────────────────┐
 │ [4242,4242,1,2,3,4] │
 └─────────────────────┘
@@ -3370,6 +3372,121 @@ Result:
 ┌─arrayNormalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2])──────────┐
 │ (0.18055555555555558,0.2638888888888889,0.6842105263157896) │
 └─────────────────────────────────────────────────────────────┘
+```
+
+## arrayLevenshteinDistance {#arraylevenshteindistance}
+
+Calculates Levenshtein distance for two arrays.
+
+**Syntax**
+
+```sql
+arrayLevenshteinDistance(from, to)
+```
+
+**Arguments**
+
+- `from` — first array
+- `to` — second array
+
+**Returned Value**
+
+- Levenshtein distance between the first and the second arrays
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])
+```
+
+Result:
+
+```text
+
+┌─arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
+
+```
+
+## arrayLevenshteinDistanceWeighted {#arraylevenshteindistanceweighted}
+
+Calculates Levenshtein distance for two arrays with custom weights for each element. Number of elements for array and its weights should match
+
+**Syntax**
+
+```sql
+arrayLevenshteinDistanceWeighted(from, to, from_weights, to_weights)
+```
+
+**Arguments**
+
+- `from` — first array
+- `to` — second array
+- `from_weights` — weights for the first array
+- `to_weights` — weights for the second array
+
+**Returned Value**
+
+- Levenshtein distance between the first and the second arrays with custom weights for each element
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayLevenshteinDistanceWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])
+```
+
+Result:
+
+```text
+
+┌─arrayLevenshteinDistanceWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
+│                                                                                           14 │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+```
+
+## arraySimilarity {#arraysimilarity}
+
+Calculates arrays' similarity from 0 to 1 based on weighed Levenshtein distance. Accepts the same arguments as `arrayLevenshteinDistanceWeighted` function.
+
+**Syntax**
+
+```sql
+arraySimilarity(from, to, from_weights, to_weights)
+```
+
+**Arguments**
+
+- `from` — first array
+- `to` — second array
+- `from_weights` — weights for the first array
+- `to_weights` — weights for the second array
+
+**Returned Value**
+
+- Similarity of two arrays based on the weighted Levenshtein distance
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])
+```
+
+Result:
+
+```text
+
+┌─arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
+│                                                          0.2222222222222222 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
 ```
 
 ## Distance functions {#distance-functions}

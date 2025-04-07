@@ -1,6 +1,6 @@
 from praktika import Workflow
 
-from ci.defs.defs import SECRETS, ArtifactConfigs
+from ci.defs.defs import DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 
@@ -9,7 +9,7 @@ workflow = Workflow.Config(
     event=Workflow.Event.PUSH,
     branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
     jobs=[
-        *[job for job in JobConfigs.build_jobs if "tidy" not in job.name],
+        *JobConfigs.build_jobs,
         *[
             job
             for job in JobConfigs.special_build_jobs
@@ -41,9 +41,8 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
-        *ArtifactConfigs.performance_packages,
     ],
-    # dockers=DOCKERS,
+    dockers=DOCKERS,
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,

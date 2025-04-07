@@ -270,7 +270,10 @@ Ignore extra columns in TSV input (if file has more columns than expected) and t
 Ignore extra columns in CustomSeparated input (if file has more columns than expected) and treat missing fields in CustomSeparated input as default values
 )", 0) \
     DECLARE(Bool, input_format_json_compact_allow_variable_number_of_columns, false, R"(
-Ignore extra columns in JSONCompact(EachRow) input (if file has more columns than expected) and treat missing fields in JSONCompact(EachRow) input as default values
+Allow variable number of columns in rows in JSONCompact/JSONCompactEachRow input formats.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
+
+Disabled by default.
 )", 0) \
     DECLARE(Bool, input_format_tsv_detect_header, true, R"(
 Automatically detect header with names and types in TSV format
@@ -491,7 +494,12 @@ When enabled, during parsing JSON object into JSON type duplicated paths will be
 Maximum depth of a field in JSON. This is not a strict limit, it does not have to be applied precisely.
 )", 0) \
     DECLARE(Bool, input_format_json_empty_as_default, false, R"(
-Treat empty fields in JSON input as default values.
+When enabled, replace empty input fields in JSON with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
+
+Possible values:
+
++ 0 — Disable.
++ 1 — Enable.
 )", 0) \
     DECLARE(Bool, input_format_try_infer_integers, true, R"(
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats. If all numbers in the column from input data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
@@ -515,7 +523,18 @@ When input_format_try_infer_datetimes is enabled, infer only DateTime64 but not 
 Try to infer floats in exponential notation while schema inference in text formats (except JSON, where exponent numbers are always inferred)
 )", 0) \
     DECLARE(Bool, output_format_markdown_escape_special_characters, false, R"(
-Escape special characters in Markdown
+When enabled, escape special characters in Markdown.
+
+[Common Mark](https://spec.commonmark.org/0.30/#example-12) defines the following special characters that can be escaped by \:
+
+```
+! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
+```
+
+Possible values:
+
++ 0 — Disable.
++ 1 — Enable.
 )", 0) \
     DECLARE(Bool, input_format_protobuf_flatten_google_wrappers, false, R"(
 Enable Google wrappers for regular non-nested columns, e.g. google.protobuf.StringValue 'str' for String column 'str'. For Nullable columns empty wrappers are recognized as defaults, and missing as nulls
@@ -862,37 +881,6 @@ Enabled by default.
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow) format.
 Column type should be String. If value is empty, default names `row_{i}`will be used for object names.
-
-### input_format_json_compact_allow_variable_number_of_columns {#input_format_json_compact_allow_variable_number_of_columns}
-
-Allow variable number of columns in rows in JSONCompact/JSONCompactEachRow input formats.
-Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
-
-Disabled by default.
-
-### output_format_markdown_escape_special_characters {#output_format_markdown_escape_special_characters}
-
-When enabled, escape special characters in Markdown.
-
-[Common Mark](https://spec.commonmark.org/0.30/#example-12) defines the following special characters that can be escaped by \:
-
-```
-! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
-```
-
-Possible values:
-
-+ 0 — Disable.
-+ 1 — Enable.
-
-### input_format_json_empty_as_default {#input_format_json_empty_as_default}
-
-When enabled, replace empty input fields in JSON with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
-
-Possible values:
-
-+ 0 — Disable.
-+ 1 — Enable.
 )", 0) \
     \
     DECLARE(UInt64, output_format_pretty_max_rows, 1000, R"(

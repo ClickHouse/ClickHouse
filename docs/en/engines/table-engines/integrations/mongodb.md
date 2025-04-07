@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/mongodb
+description: 'MongoDB engine is read-only table engine which allows to read data from
+  a remote collection.'
+sidebar_label: 'MongoDB'
 sidebar_position: 135
-sidebar_label: MongoDB
-title: "MongoDB"
-description: "MongoDB engine is read-only table engine which allows to read data from a remote collection."
+slug: /engines/table-engines/integrations/mongodb
+title: 'MongoDB'
 ---
 
 # MongoDB
@@ -13,14 +14,9 @@ MongoDB engine is read-only table engine which allows to read data from a remote
 Only MongoDB v3.6+ servers are supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
 
-:::note
-If you're facing troubles, please report the issue, and try to use [the legacy implementation](../../../operations/server-configuration-parameters/settings.md#use_legacy_mongodb_integration).
-Keep in mind that it is deprecated, and will be removed in next releases.
-:::
-
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
 (
     name1 [type1],
@@ -52,7 +48,7 @@ Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future r
 
 Alternatively, you can pass a URI:
 
-``` sql
+```sql
 ENGINE = MongoDB(uri, collection[, oid_columns]);
 ```
 
@@ -168,7 +164,7 @@ Assuming MongoDB has [sample_mflix](https://www.mongodb.com/docs/atlas/sample-da
 
 Create a table in ClickHouse which allows to read data from MongoDB collection:
 
-``` sql
+```sql
 CREATE TABLE sample_mflix_table
 (
     _id String,
@@ -185,11 +181,11 @@ CREATE TABLE sample_mflix_table
 
 Query:
 
-``` sql
+```sql
 SELECT count() FROM sample_mflix_table
 ```
 
-``` text
+```text
    ┌─count()─┐
 1. │   21349 │
    └─────────┘

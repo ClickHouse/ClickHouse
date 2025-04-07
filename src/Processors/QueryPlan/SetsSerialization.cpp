@@ -31,6 +31,9 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 enum class SetSerializationKind : UInt8
@@ -177,7 +180,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
                 auto type = decodeDataType(in);
                 auto serialization = type->getSerialization(ISerialization::Kind::DEFAULT);
                 auto column = type->createColumn();
-                serialization->deserializeBinaryBulk(*column, in, num_rows, 0);
+                serialization->deserializeBinaryBulk(*column, in, 0, num_rows, 0);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }
@@ -258,10 +261,14 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
         subqueries.push_back(std::move(future_set));
     }
 
+    SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+    auto prepared_sets_cache = context->getPreparedSetsCache();
+
     auto step = std::make_unique<DelayedCreatingSetsStep>(
         plan.getCurrentHeader(),
         std::move(subqueries),
-        context);
+        network_transfer_limits,
+        prepared_sets_cache);
 
     plan.addStep(std::move(step));
 }

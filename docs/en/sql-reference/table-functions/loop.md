@@ -1,14 +1,15 @@
 ---
+description: 'The loop table function in ClickHouse is used to return query results
+  in an infinite loop.'
 slug: /sql-reference/table-functions/loop
-title: "loop"
-description: "The loop table function in ClickHouse is used to return query results in an infinite loop."
+title: 'loop'
 ---
 
 # loop Table Function
 
 **Syntax**
 
-``` sql
+```sql
 SELECT ... FROM loop(database, table);
 SELECT ... FROM loop(database.table);
 SELECT ... FROM loop(table);
@@ -31,7 +32,7 @@ Infinite loop to return query results.
 
 Selecting data from ClickHouse:
 
-``` sql
+```sql
 SELECT * FROM loop(test_database, test_table);
 SELECT * FROM loop(test_database.test_table);
 SELECT * FROM loop(test_table);
@@ -39,7 +40,7 @@ SELECT * FROM loop(test_table);
 
 Or using other table function:
 
-``` sql
+```sql
 SELECT * FROM loop(numbers(3)) LIMIT 7;
    ┌─number─┐
 1. │      0 │
@@ -55,7 +56,7 @@ SELECT * FROM loop(numbers(3)) LIMIT 7;
 7. │      0 │
    └────────┘
 ``` 
-``` sql
+```sql
 SELECT * FROM loop(mysql('localhost:3306', 'test', 'test', 'user', 'password'));
 ...
 ```

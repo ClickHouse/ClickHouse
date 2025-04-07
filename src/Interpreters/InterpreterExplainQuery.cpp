@@ -15,7 +15,6 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -401,7 +400,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     bool single_line = false;
     bool insert_buf = true;
 
-    SelectQueryOptions options;
     options.setExplain();
 
     ContextPtr query_context = getContext();
@@ -684,10 +682,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
 void registerInterpreterExplainQuery(InterpreterFactory & factory)
 {
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterExplainQuery>(args.query, args.context);
-    };
+    auto create_fn = [](const InterpreterFactory::Arguments & args)
+    { return std::make_unique<InterpreterExplainQuery>(args.query, args.context, args.options); };
     factory.registerInterpreter("InterpreterExplainQuery", create_fn);
 }
 

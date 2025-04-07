@@ -53,9 +53,123 @@ jobs:
             python3 -m praktika run 'Config Workflow' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
+  dockers_build_arm:
+    runs-on: [self-hosted, style-checker-aarch64]
+    needs: [config_workflow]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
+    name: "Dockers Build (arm)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  dockers_build_amd_and_merge:
+    runs-on: [self-hosted, style-checker]
+    needs: [config_workflow, dockers_build_arm]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKSBhbmQgTWVyZ2U=') }}
+    name: "Dockers Build (amd) and Merge"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Dockers Build (amd) and Merge' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Dockers Build (amd) and Merge' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  build_amd_tidy:
+    runs-on: [self-hosted, builder]
+    needs: [config_workflow, dockers_build_amd_and_merge]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF90aWR5KQ==') }}
+    name: "Build (amd_tidy)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Build (amd_tidy)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Build (amd_tidy)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
   build_amd_debug:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9kZWJ1Zyk=') }}
     name: "Build (amd_debug)"
     outputs:
@@ -93,7 +207,7 @@ jobs:
 
   build_amd_release:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlKQ==') }}
     name: "Build (amd_release)"
     outputs:
@@ -131,7 +245,7 @@ jobs:
 
   build_amd_asan:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9hc2FuKQ==') }}
     name: "Build (amd_asan)"
     outputs:
@@ -169,7 +283,7 @@ jobs:
 
   build_amd_tsan:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF90c2FuKQ==') }}
     name: "Build (amd_tsan)"
     outputs:
@@ -207,7 +321,7 @@ jobs:
 
   build_amd_msan:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9tc2FuKQ==') }}
     name: "Build (amd_msan)"
     outputs:
@@ -245,7 +359,7 @@ jobs:
 
   build_amd_ubsan:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF91YnNhbik=') }}
     name: "Build (amd_ubsan)"
     outputs:
@@ -283,7 +397,7 @@ jobs:
 
   build_amd_binary:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
     name: "Build (amd_binary)"
     outputs:
@@ -321,7 +435,7 @@ jobs:
 
   build_arm_release:
     runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9yZWxlYXNlKQ==') }}
     name: "Build (arm_release)"
     outputs:
@@ -359,7 +473,7 @@ jobs:
 
   build_arm_asan:
     runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9hc2FuKQ==') }}
     name: "Build (arm_asan)"
     outputs:
@@ -395,85 +509,9 @@ jobs:
             python3 -m praktika run 'Build (arm_asan)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  build_amd_tidy:
-    runs-on: [self-hosted, builder]
-    needs: [config_workflow]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF90aWR5KQ==') }}
-    name: "Build (amd_tidy)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_tidy)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (amd_tidy)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  build_fuzzers:
-    runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGZ1enplcnMp') }}
-    name: "Build (fuzzers)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (fuzzers)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (fuzzers)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
   build_amd_coverage:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9jb3ZlcmFnZSk=') }}
     name: "Build (amd_coverage)"
     outputs:
@@ -511,7 +549,7 @@ jobs:
 
   build_arm_binary:
     runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9iaW5hcnkp') }}
     name: "Build (arm_binary)"
     outputs:
@@ -549,7 +587,7 @@ jobs:
 
   build_amd_darwin:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9kYXJ3aW4p') }}
     name: "Build (amd_darwin)"
     outputs:
@@ -587,7 +625,7 @@ jobs:
 
   build_arm_darwin:
     runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9kYXJ3aW4p') }}
     name: "Build (arm_darwin)"
     outputs:
@@ -625,7 +663,7 @@ jobs:
 
   build_arm_v80compat:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV92ODBjb21wYXQp') }}
     name: "Build (arm_v80compat)"
     outputs:
@@ -663,7 +701,7 @@ jobs:
 
   build_amd_freebsd:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9mcmVlYnNkKQ==') }}
     name: "Build (amd_freebsd)"
     outputs:
@@ -701,7 +739,7 @@ jobs:
 
   build_ppc64le:
     runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKHBwYzY0bGUp') }}
     name: "Build (ppc64le)"
     outputs:
@@ -739,7 +777,7 @@ jobs:
 
   build_amd_compat:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9jb21wYXQp') }}
     name: "Build (amd_compat)"
     outputs:
@@ -777,7 +815,7 @@ jobs:
 
   build_amd_musl:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9tdXNsKQ==') }}
     name: "Build (amd_musl)"
     outputs:
@@ -815,7 +853,7 @@ jobs:
 
   build_riscv64:
     runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKHJpc2N2NjQp') }}
     name: "Build (riscv64)"
     outputs:
@@ -853,7 +891,7 @@ jobs:
 
   build_s390x:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKHMzOTB4KQ==') }}
     name: "Build (s390x)"
     outputs:
@@ -891,7 +929,7 @@ jobs:
 
   build_loongarch64:
     runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGxvb25nYXJjaDY0KQ==') }}
     name: "Build (loongarch64)"
     outputs:
@@ -927,11 +965,11 @@ jobs:
             python3 -m praktika run 'Build (loongarch64)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  unit_tests_binary:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_binary]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VW5pdCB0ZXN0cyAoYmluYXJ5KQ==') }}
-    name: "Unit tests (binary)"
+  build_fuzzers:
+    runs-on: [self-hosted, builder-aarch64]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGZ1enplcnMp') }}
+    name: "Build (fuzzers)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -960,14 +998,14 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Unit tests (binary)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (fuzzers)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Unit tests (binary)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (fuzzers)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   unit_tests_asan:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    runs-on: [self-hosted, builder]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbik=') }}
     name: "Unit tests (asan)"
     outputs:
@@ -1004,8 +1042,8 @@ jobs:
           fi
 
   unit_tests_tsan:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    runs-on: [self-hosted, builder]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbik=') }}
     name: "Unit tests (tsan)"
     outputs:
@@ -1042,8 +1080,8 @@ jobs:
           fi
 
   unit_tests_msan:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_msan]
+    runs-on: [self-hosted, builder]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_msan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VW5pdCB0ZXN0cyAobXNhbik=') }}
     name: "Unit tests (msan)"
     outputs:
@@ -1080,8 +1118,8 @@ jobs:
           fi
 
   unit_tests_ubsan:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_ubsan]
+    runs-on: [self-hosted, builder]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_ubsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VW5pdCB0ZXN0cyAodWJzYW4p') }}
     name: "Unit tests (ubsan)"
     outputs:
@@ -1119,7 +1157,7 @@ jobs:
 
   docker_server_image:
     runs-on: [self-hosted, style-checker]
-    needs: [config_workflow, build_amd_release, build_arm_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VyIHNlcnZlciBpbWFnZQ==') }}
     name: "Docker server image"
     outputs:
@@ -1157,7 +1195,7 @@ jobs:
 
   docker_keeper_image:
     runs-on: [self-hosted, style-checker]
-    needs: [config_workflow, build_amd_release, build_arm_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VyIGtlZXBlciBpbWFnZQ==') }}
     name: "Docker keeper image"
     outputs:
@@ -1195,7 +1233,7 @@ jobs:
 
   install_packages_release:
     runs-on: [self-hosted, style-checker]
-    needs: [config_workflow, build_amd_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAocmVsZWFzZSk=') }}
     name: "Install packages (release)"
     outputs:
@@ -1233,7 +1271,7 @@ jobs:
 
   install_packages_aarch64:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, build_arm_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYWFyY2g2NCk=') }}
     name: "Install packages (aarch64)"
     outputs:
@@ -1271,7 +1309,7 @@ jobs:
 
   compatibility_check_release:
     runs-on: [self-hosted, style-checker]
-    needs: [config_workflow, build_amd_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAocmVsZWFzZSk=') }}
     name: "Compatibility check (release)"
     outputs:
@@ -1309,7 +1347,7 @@ jobs:
 
   compatibility_check_aarch64:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, build_arm_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAoYWFyY2g2NCk=') }}
     name: "Compatibility check (aarch64)"
     outputs:
@@ -1347,7 +1385,7 @@ jobs:
 
   stateless_tests_asan_1_2:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhc2FuLCAxLzIp') }}
     name: "Stateless tests (asan, 1/2)"
     outputs:
@@ -1385,7 +1423,7 @@ jobs:
 
   stateless_tests_asan_2_2:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhc2FuLCAyLzIp') }}
     name: "Stateless tests (asan, 2/2)"
     outputs:
@@ -1423,7 +1461,7 @@ jobs:
 
   stateless_tests_release:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChyZWxlYXNlKQ==') }}
     name: "Stateless tests (release)"
     outputs:
@@ -1461,7 +1499,7 @@ jobs:
 
   stateless_tests_release_old_analyzer_s3_databasereplicated_1_2:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChyZWxlYXNlLCBvbGQgYW5hbHl6ZXIsIHMzLCBEYXRhYmFzZVJlcGxpY2F0ZWQsIDEvMik=') }}
     name: "Stateless tests (release, old analyzer, s3, DatabaseReplicated, 1/2)"
     outputs:
@@ -1499,7 +1537,7 @@ jobs:
 
   stateless_tests_release_old_analyzer_s3_databasereplicated_2_2:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChyZWxlYXNlLCBvbGQgYW5hbHl6ZXIsIHMzLCBEYXRhYmFzZVJlcGxpY2F0ZWQsIDIvMik=') }}
     name: "Stateless tests (release, old analyzer, s3, DatabaseReplicated, 2/2)"
     outputs:
@@ -1537,7 +1575,7 @@ jobs:
 
   stateless_tests_release_parallelreplicas_s3_storage:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChyZWxlYXNlLCBQYXJhbGxlbFJlcGxpY2FzLCBzMyBzdG9yYWdlKQ==') }}
     name: "Stateless tests (release, ParallelReplicas, s3 storage)"
     outputs:
@@ -1575,7 +1613,7 @@ jobs:
 
   stateless_tests_debug:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_debug]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_debug]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChkZWJ1Zyk=') }}
     name: "Stateless tests (debug)"
     outputs:
@@ -1613,7 +1651,7 @@ jobs:
 
   stateless_tests_tsan_1_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzICh0c2FuLCAxLzMp') }}
     name: "Stateless tests (tsan, 1/3)"
     outputs:
@@ -1651,7 +1689,7 @@ jobs:
 
   stateless_tests_tsan_2_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzICh0c2FuLCAyLzMp') }}
     name: "Stateless tests (tsan, 2/3)"
     outputs:
@@ -1689,7 +1727,7 @@ jobs:
 
   stateless_tests_tsan_3_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzICh0c2FuLCAzLzMp') }}
     name: "Stateless tests (tsan, 3/3)"
     outputs:
@@ -1727,7 +1765,7 @@ jobs:
 
   stateless_tests_msan_1_4:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_msan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_msan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChtc2FuLCAxLzQp') }}
     name: "Stateless tests (msan, 1/4)"
     outputs:
@@ -1765,7 +1803,7 @@ jobs:
 
   stateless_tests_msan_2_4:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_msan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_msan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChtc2FuLCAyLzQp') }}
     name: "Stateless tests (msan, 2/4)"
     outputs:
@@ -1803,7 +1841,7 @@ jobs:
 
   stateless_tests_msan_3_4:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_msan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_msan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChtc2FuLCAzLzQp') }}
     name: "Stateless tests (msan, 3/4)"
     outputs:
@@ -1841,7 +1879,7 @@ jobs:
 
   stateless_tests_msan_4_4:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_msan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_msan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChtc2FuLCA0LzQp') }}
     name: "Stateless tests (msan, 4/4)"
     outputs:
@@ -1879,7 +1917,7 @@ jobs:
 
   stateless_tests_ubsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_ubsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_ubsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzICh1YnNhbik=') }}
     name: "Stateless tests (ubsan)"
     outputs:
@@ -1915,237 +1953,9 @@ jobs:
             python3 -m praktika run 'Stateless tests (ubsan)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_coverage_1_6:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgMS82KQ==') }}
-    name: "Stateless tests (coverage, 1/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (coverage, 1/6)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (coverage, 1/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_coverage_2_6:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgMi82KQ==') }}
-    name: "Stateless tests (coverage, 2/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (coverage, 2/6)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (coverage, 2/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_coverage_3_6:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgMy82KQ==') }}
-    name: "Stateless tests (coverage, 3/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (coverage, 3/6)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (coverage, 3/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_coverage_4_6:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgNC82KQ==') }}
-    name: "Stateless tests (coverage, 4/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (coverage, 4/6)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (coverage, 4/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_coverage_5_6:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgNS82KQ==') }}
-    name: "Stateless tests (coverage, 5/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (coverage, 5/6)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (coverage, 5/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_coverage_6_6:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgNi82KQ==') }}
-    name: "Stateless tests (coverage, 6/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (coverage, 6/6)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (coverage, 6/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
   stateless_tests_debug_s3_storage:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_debug]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_debug]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChkZWJ1ZywgczMgc3RvcmFnZSk=') }}
     name: "Stateless tests (debug, s3 storage)"
     outputs:
@@ -2183,7 +1993,7 @@ jobs:
 
   stateless_tests_tsan_s3_storage_1_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzICh0c2FuLCBzMyBzdG9yYWdlLCAxLzMp') }}
     name: "Stateless tests (tsan, s3 storage, 1/3)"
     outputs:
@@ -2221,7 +2031,7 @@ jobs:
 
   stateless_tests_tsan_s3_storage_2_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzICh0c2FuLCBzMyBzdG9yYWdlLCAyLzMp') }}
     name: "Stateless tests (tsan, s3 storage, 2/3)"
     outputs:
@@ -2259,7 +2069,7 @@ jobs:
 
   stateless_tests_tsan_s3_storage_3_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzICh0c2FuLCBzMyBzdG9yYWdlLCAzLzMp') }}
     name: "Stateless tests (tsan, s3 storage, 3/3)"
     outputs:
@@ -2297,7 +2107,7 @@ jobs:
 
   stateless_tests_aarch64:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, build_arm_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhYXJjaDY0KQ==') }}
     name: "Stateless tests (aarch64)"
     outputs:
@@ -2335,7 +2145,7 @@ jobs:
 
   stateless_tests_azure_asan_1_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhenVyZSwgYXNhbiwgMS8zKQ==') }}
     name: "Stateless tests (azure, asan, 1/3)"
     outputs:
@@ -2373,7 +2183,7 @@ jobs:
 
   stateless_tests_azure_asan_2_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhenVyZSwgYXNhbiwgMi8zKQ==') }}
     name: "Stateless tests (azure, asan, 2/3)"
     outputs:
@@ -2411,7 +2221,7 @@ jobs:
 
   stateless_tests_azure_asan_3_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhenVyZSwgYXNhbiwgMy8zKQ==') }}
     name: "Stateless tests (azure, asan, 3/3)"
     outputs:
@@ -2449,7 +2259,7 @@ jobs:
 
   integration_tests_asan_old_analyzer_1_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgMS82KQ==') }}
     name: "Integration tests (asan, old analyzer, 1/6)"
     outputs:
@@ -2487,7 +2297,7 @@ jobs:
 
   integration_tests_asan_old_analyzer_2_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgMi82KQ==') }}
     name: "Integration tests (asan, old analyzer, 2/6)"
     outputs:
@@ -2525,7 +2335,7 @@ jobs:
 
   integration_tests_asan_old_analyzer_3_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgMy82KQ==') }}
     name: "Integration tests (asan, old analyzer, 3/6)"
     outputs:
@@ -2563,7 +2373,7 @@ jobs:
 
   integration_tests_asan_old_analyzer_4_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgNC82KQ==') }}
     name: "Integration tests (asan, old analyzer, 4/6)"
     outputs:
@@ -2601,7 +2411,7 @@ jobs:
 
   integration_tests_asan_old_analyzer_5_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgNS82KQ==') }}
     name: "Integration tests (asan, old analyzer, 5/6)"
     outputs:
@@ -2639,7 +2449,7 @@ jobs:
 
   integration_tests_asan_old_analyzer_6_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgNi82KQ==') }}
     name: "Integration tests (asan, old analyzer, 6/6)"
     outputs:
@@ -2677,7 +2487,7 @@ jobs:
 
   integration_tests_release_1_4:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHJlbGVhc2UsIDEvNCk=') }}
     name: "Integration tests (release, 1/4)"
     outputs:
@@ -2715,7 +2525,7 @@ jobs:
 
   integration_tests_release_2_4:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHJlbGVhc2UsIDIvNCk=') }}
     name: "Integration tests (release, 2/4)"
     outputs:
@@ -2753,7 +2563,7 @@ jobs:
 
   integration_tests_release_3_4:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHJlbGVhc2UsIDMvNCk=') }}
     name: "Integration tests (release, 3/4)"
     outputs:
@@ -2791,7 +2601,7 @@ jobs:
 
   integration_tests_release_4_4:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHJlbGVhc2UsIDQvNCk=') }}
     name: "Integration tests (release, 4/4)"
     outputs:
@@ -2829,7 +2639,7 @@ jobs:
 
   integration_tests_aarch64_1_4:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, build_arm_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIDEvNCk=') }}
     name: "Integration tests (aarch64, 1/4)"
     outputs:
@@ -2867,7 +2677,7 @@ jobs:
 
   integration_tests_aarch64_2_4:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, build_arm_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIDIvNCk=') }}
     name: "Integration tests (aarch64, 2/4)"
     outputs:
@@ -2905,7 +2715,7 @@ jobs:
 
   integration_tests_aarch64_3_4:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, build_arm_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIDMvNCk=') }}
     name: "Integration tests (aarch64, 3/4)"
     outputs:
@@ -2943,7 +2753,7 @@ jobs:
 
   integration_tests_aarch64_4_4:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, build_arm_release]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIDQvNCk=') }}
     name: "Integration tests (aarch64, 4/4)"
     outputs:
@@ -2981,7 +2791,7 @@ jobs:
 
   integration_tests_tsan_1_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDEvNik=') }}
     name: "Integration tests (tsan, 1/6)"
     outputs:
@@ -3019,7 +2829,7 @@ jobs:
 
   integration_tests_tsan_2_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDIvNik=') }}
     name: "Integration tests (tsan, 2/6)"
     outputs:
@@ -3057,7 +2867,7 @@ jobs:
 
   integration_tests_tsan_3_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDMvNik=') }}
     name: "Integration tests (tsan, 3/6)"
     outputs:
@@ -3095,7 +2905,7 @@ jobs:
 
   integration_tests_tsan_4_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDQvNik=') }}
     name: "Integration tests (tsan, 4/6)"
     outputs:
@@ -3133,7 +2943,7 @@ jobs:
 
   integration_tests_tsan_5_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDUvNik=') }}
     name: "Integration tests (tsan, 5/6)"
     outputs:
@@ -3171,7 +2981,7 @@ jobs:
 
   integration_tests_tsan_6_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDYvNik=') }}
     name: "Integration tests (tsan, 6/6)"
     outputs:
@@ -3207,9 +3017,237 @@ jobs:
             python3 -m praktika run 'Integration tests (tsan, 6/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
+  stateless_tests_coverage_1_6:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_coverage, stateless_tests_asan_1_2, stateless_tests_asan_2_2]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgMS82KQ==') }}
+    name: "Stateless tests (coverage, 1/6)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (coverage, 1/6)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (coverage, 1/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_coverage_2_6:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_coverage, stateless_tests_asan_1_2, stateless_tests_asan_2_2]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgMi82KQ==') }}
+    name: "Stateless tests (coverage, 2/6)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (coverage, 2/6)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (coverage, 2/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_coverage_3_6:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_coverage, stateless_tests_asan_1_2, stateless_tests_asan_2_2]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgMy82KQ==') }}
+    name: "Stateless tests (coverage, 3/6)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (coverage, 3/6)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (coverage, 3/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_coverage_4_6:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_coverage, stateless_tests_asan_1_2, stateless_tests_asan_2_2]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgNC82KQ==') }}
+    name: "Stateless tests (coverage, 4/6)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (coverage, 4/6)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (coverage, 4/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_coverage_5_6:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_coverage, stateless_tests_asan_1_2, stateless_tests_asan_2_2]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgNS82KQ==') }}
+    name: "Stateless tests (coverage, 5/6)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (coverage, 5/6)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (coverage, 5/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_coverage_6_6:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_coverage, stateless_tests_asan_1_2, stateless_tests_asan_2_2]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgNi82KQ==') }}
+    name: "Stateless tests (coverage, 6/6)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (coverage, 6/6)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (coverage, 6/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
   stress_test_debug:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_debug]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_debug]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGRlYnVnKQ==') }}
     name: "Stress test (debug)"
     outputs:
@@ -3247,7 +3285,7 @@ jobs:
 
   stress_test_tsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKHRzYW4p') }}
     name: "Stress test (tsan)"
     outputs:
@@ -3285,7 +3323,7 @@ jobs:
 
   stress_test_asan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFzYW4p') }}
     name: "Stress test (asan)"
     outputs:
@@ -3323,7 +3361,7 @@ jobs:
 
   stress_test_ubsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_ubsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_ubsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKHVic2FuKQ==') }}
     name: "Stress test (ubsan)"
     outputs:
@@ -3361,7 +3399,7 @@ jobs:
 
   stress_test_msan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_msan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_msan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKG1zYW4p') }}
     name: "Stress test (msan)"
     outputs:
@@ -3399,7 +3437,7 @@ jobs:
 
   stress_test_azure_tsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGF6dXJlLCB0c2FuKQ==') }}
     name: "Stress test (azure, tsan)"
     outputs:
@@ -3437,7 +3475,7 @@ jobs:
 
   stress_test_azure_msan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_msan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_msan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGF6dXJlLCBtc2FuKQ==') }}
     name: "Stress test (azure, msan)"
     outputs:
@@ -3473,85 +3511,9 @@ jobs:
             python3 -m praktika run 'Stress test (azure, msan)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  clickbench_release:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q2xpY2tCZW5jaCAocmVsZWFzZSk=') }}
-    name: "ClickBench (release)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'ClickBench (release)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'ClickBench (release)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  clickbench_aarch64:
-    runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q2xpY2tCZW5jaCAoYWFyY2g2NCk=') }}
-    name: "ClickBench (aarch64)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'ClickBench (aarch64)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'ClickBench (aarch64)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
   ast_fuzzer_debug:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_debug]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_debug]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIGZ1enplciAoZGVidWcp') }}
     name: "AST fuzzer (debug)"
     outputs:
@@ -3589,7 +3551,7 @@ jobs:
 
   ast_fuzzer_asan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIGZ1enplciAoYXNhbik=') }}
     name: "AST fuzzer (asan)"
     outputs:
@@ -3627,7 +3589,7 @@ jobs:
 
   ast_fuzzer_tsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIGZ1enplciAodHNhbik=') }}
     name: "AST fuzzer (tsan)"
     outputs:
@@ -3665,7 +3627,7 @@ jobs:
 
   ast_fuzzer_msan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_msan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_msan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIGZ1enplciAobXNhbik=') }}
     name: "AST fuzzer (msan)"
     outputs:
@@ -3703,7 +3665,7 @@ jobs:
 
   ast_fuzzer_ubsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_ubsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_ubsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIGZ1enplciAodWJzYW4p') }}
     name: "AST fuzzer (ubsan)"
     outputs:
@@ -3741,7 +3703,7 @@ jobs:
 
   buzzhouse_debug:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_debug]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_debug]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlIChkZWJ1Zyk=') }}
     name: "BuzzHouse (debug)"
     outputs:
@@ -3779,7 +3741,7 @@ jobs:
 
   buzzhouse_asan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlIChhc2FuKQ==') }}
     name: "BuzzHouse (asan)"
     outputs:
@@ -3817,7 +3779,7 @@ jobs:
 
   buzzhouse_tsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlICh0c2FuKQ==') }}
     name: "BuzzHouse (tsan)"
     outputs:
@@ -3855,7 +3817,7 @@ jobs:
 
   buzzhouse_msan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_msan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_msan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlIChtc2FuKQ==') }}
     name: "BuzzHouse (msan)"
     outputs:
@@ -3893,7 +3855,7 @@ jobs:
 
   buzzhouse_ubsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_ubsan]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_ubsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlICh1YnNhbik=') }}
     name: "BuzzHouse (ubsan)"
     outputs:
@@ -3929,11 +3891,11 @@ jobs:
             python3 -m praktika run 'BuzzHouse (ubsan)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  performance_comparison_release_1_3:
+  performance_comparison_amd_release_master_head_1_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAocmVsZWFzZSwgMS8zKQ==') }}
-    name: "Performance Comparison (release, 1/3)"
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsbWFzdGVyX2hlYWQsMS8zKQ==') }}
+    name: "Performance Comparison (amd_release,master_head,1/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -3962,16 +3924,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (release, 1/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release,master_head,1/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (release, 1/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release,master_head,1/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  performance_comparison_release_2_3:
+  performance_comparison_amd_release_master_head_2_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAocmVsZWFzZSwgMi8zKQ==') }}
-    name: "Performance Comparison (release, 2/3)"
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsbWFzdGVyX2hlYWQsMi8zKQ==') }}
+    name: "Performance Comparison (amd_release,master_head,2/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4000,16 +3962,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (release, 2/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release,master_head,2/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (release, 2/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release,master_head,2/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  performance_comparison_release_3_3:
+  performance_comparison_amd_release_master_head_3_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAocmVsZWFzZSwgMy8zKQ==') }}
-    name: "Performance Comparison (release, 3/3)"
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsbWFzdGVyX2hlYWQsMy8zKQ==') }}
+    name: "Performance Comparison (amd_release,master_head,3/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4038,16 +4000,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (release, 3/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release,master_head,3/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (release, 3/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release,master_head,3/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  sqlancer_release:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U1FMYW5jZXIgKHJlbGVhc2Up') }}
-    name: "SQLancer (release)"
+  performance_comparison_arm_release_master_head_1_3:
+    runs-on: [self-hosted, func-tester-aarch64]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsbWFzdGVyX2hlYWQsMS8zKQ==') }}
+    name: "Performance Comparison (arm_release,master_head,1/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4076,16 +4038,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'SQLancer (release)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release,master_head,1/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'SQLancer (release)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release,master_head,1/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  sqlancer_debug:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_debug]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U1FMYW5jZXIgKGRlYnVnKQ==') }}
-    name: "SQLancer (debug)"
+  performance_comparison_arm_release_master_head_2_3:
+    runs-on: [self-hosted, func-tester-aarch64]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsbWFzdGVyX2hlYWQsMi8zKQ==') }}
+    name: "Performance Comparison (arm_release,master_head,2/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4114,14 +4076,166 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'SQLancer (debug)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release,master_head,2/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'SQLancer (debug)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release,master_head,2/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  performance_comparison_arm_release_master_head_3_3:
+    runs-on: [self-hosted, func-tester-aarch64]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsbWFzdGVyX2hlYWQsMy8zKQ==') }}
+    name: "Performance Comparison (arm_release,master_head,3/3)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Performance Comparison (arm_release,master_head,3/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Performance Comparison (arm_release,master_head,3/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  clickbench_amd_release:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q2xpY2tCZW5jaCAoYW1kX3JlbGVhc2Up') }}
+    name: "ClickBench (amd_release)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'ClickBench (amd_release)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'ClickBench (amd_release)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  clickbench_arm_release:
+    runs-on: [self-hosted, func-tester-aarch64]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q2xpY2tCZW5jaCAoYXJtX3JlbGVhc2Up') }}
+    name: "ClickBench (arm_release)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'ClickBench (arm_release)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'ClickBench (arm_release)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  sqlancer_amd_debug:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_debug]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U1FMYW5jZXIgKGFtZF9kZWJ1Zyk=') }}
+    name: "SQLancer (amd_debug)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'SQLancer (amd_debug)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'SQLancer (amd_debug)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   sqltest:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
+    runs-on: [self-hosted, func-tester-aarch64]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U1FMVGVzdA==') }}
     name: "SQLTest"
     outputs:
