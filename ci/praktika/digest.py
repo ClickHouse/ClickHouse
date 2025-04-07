@@ -6,12 +6,10 @@ from hashlib import md5
 from pathlib import Path
 from typing import List
 
-from praktika.utils import Shell
-
-from . import Job
 from .docker import Docker
+from .job import Job
 from .settings import Settings
-from .utils import Utils
+from .utils import Shell, Utils
 
 
 class Digest:
@@ -30,7 +28,7 @@ class Digest:
     def get_null_digest(cls):
         return "f" * Settings.CACHE_DIGEST_LEN
 
-    def calc_job_digest(self, job_config: Job.Config, docker_digests):
+    def calc_job_digest(self, job_config: Job.Config, docker_digests, artifact_configs):
         config = job_config.digest_config
         if not config:
             return self.get_null_digest()
@@ -64,12 +62,15 @@ class Digest:
 
         self.digest_cache[cache_key] = digest
 
-        if job_config.run_in_docker:
+        if (
+            job_config.run_in_docker and ":" not in job_config.run_in_docker
+        ):  # if : in image name - there is a tag, thus it's not managed by praktika e.g.: ubuntu:22.04
             # respect docker digest in the job digest
             docker_digest = docker_digests[job_config.run_in_docker.split("+")[0]]
             digest = "-".join([docker_digest, digest])
 
         job_config_dict = dataclasses.asdict(job_config)
+
         drop_fields = [
             "requires",
             "enable_commit_status",
@@ -78,6 +79,15 @@ class Digest:
         filtered_job_dict = {
             k: v for k, v in job_config_dict.items() if k not in drop_fields
         }
+        # add Articat.Configs list to the job config dict so that changed Articat.Config object affects job digest
+        job_provides_artifact_configs = []
+        for a in job_config.provides:
+            if a in artifact_configs:
+                job_provides_artifact_configs.append(
+                    dataclasses.asdict(artifact_configs[a])
+                )
+        filtered_job_dict["provides"] = job_provides_artifact_configs
+
         config_digest = hashlib.md5(
             json.dumps(filtered_job_dict, sort_keys=True).encode()
         ).hexdigest()[: min(Settings.CACHE_DIGEST_LEN // 4, 4)]

@@ -204,6 +204,8 @@ private:
             const auto & distributed_storage_columns = table_node_typed.getStorageSnapshot()->metadata->getColumns();
             auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_columns);
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
+            if (auto table_expression_modifiers = table_node_typed.getTableExpressionModifiers())
+                replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
             replacement_map.emplace(table_node.get(), std::move(replacement_table_expression));
         }
         else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings()[Setting::prefer_global_in_and_join]) &&
@@ -381,8 +383,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
             else
             {
-                throw Exception(
-                    ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Unexpected join kind: {}", join_kind);
+                throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Unexpected global join kind: {}", join_kind);
             }
 
             auto subquery_node

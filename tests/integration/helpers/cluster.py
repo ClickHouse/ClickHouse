@@ -276,7 +276,7 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     return p.returncode == 0
 
 
-def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
+def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
     try:
         subprocess.check_output(
             docker_exec(
@@ -284,24 +284,28 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
                 f"RABBITMQ_ERLANG_COOKIE={cookie}",
                 rabbitmq_id,
                 "rabbitmqctl",
-                "await_startup",
+                command,
             ),
             stderr=subprocess.STDOUT,
             timeout=timeout,
         )
-        return True
     except subprocess.CalledProcessError as e:
         # Raised if the command returns a non-zero exit code
         error_message = (
-            f"RabbitMQ startup failed with return code {e.returncode}. "
+            f"rabbitmqctl {command} failed with return code {e.returncode}. "
             f"Output: {e.output.decode(errors='replace')}"
         )
         raise RuntimeError(error_message)
     except subprocess.TimeoutExpired as e:
         # Raised if the command times out
         raise RuntimeError(
-            f"RabbitMQ startup timed out. Output: {e.output.decode(errors='replace')}"
+            f"rabbitmqctl {command} timed out. Output: {e.output.decode(errors='replace')}"
         )
+
+
+def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
+    run_rabbitmqctl(rabbitmq_id, cookie, "await_startup", timeout)
+    return True
 
 
 def rabbitmq_debuginfo(rabbitmq_id, cookie):
@@ -2386,6 +2390,18 @@ class ClickHouseCluster:
                 time.sleep(0.5)
 
         raise RuntimeError("Cannot wait RabbitMQ container")
+
+    def stop_rabbitmq_app(self, timeout=120):
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout)
+
+    def start_rabbitmq_app(self, timeout=120):
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout)
+        self.wait_rabbitmq_to_start()
+
+    def reset_rabbitmq(self, timeout=120):
+        self.stop_rabbitmq_app()
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
+        self.start_rabbitmq_app()
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0
@@ -4521,8 +4537,20 @@ class ClickHouseInstance:
         )
 
     def replace_in_config(self, path_to_config, replace, replacement):
+        # Do `sed 's/{replace}/{replacement}/g'`, but with some hacks to make it work when {replace}
+        # and {replacement} have quotes or slashes.
+        for d in "/|#-=+@^*~":
+            if d not in replace and d not in replacement:
+                delimiter = d
+                break
+        else:
+            raise Exception(
+                f"Couldn't find a suitable delimiter"
+            )
+        replace = shlex.quote(replace)
+        replacement = shlex.quote(replacement)
         self.exec_in_container(
-            ["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"]
+            ["bash", "-c", f"sed -i 's{delimiter}'{replace}'{delimiter}'{replacement}'{delimiter}g' {path_to_config}"]
         )
 
     def create_dir(self):

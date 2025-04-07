@@ -166,7 +166,7 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
             res_columns[col_num++]->insert(entry.currently_executing);
             res_columns[col_num++]->insert(entry.num_tries);
             res_columns[col_num++]->insert(entry.exception ? getExceptionMessage(entry.exception, true) : "");
-            res_columns[col_num++]->insert(UInt64(entry.last_exception_time));
+            res_columns[col_num++]->insert(entry.last_exception_time_ms / 1000ull);
             res_columns[col_num++]->insert(UInt64(entry.last_attempt_time));
             res_columns[col_num++]->insert(entry.num_postponed);
             res_columns[col_num++]->insert(entry.postpone_reason);

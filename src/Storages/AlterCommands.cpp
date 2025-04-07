@@ -237,6 +237,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.comment = ast_comment.value.safeGet<String>();
         return command;
     }
+    if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_COMMENT)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = MODIFY_DATABASE_COMMENT;
+        const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
+        command.comment = ast_comment.value.safeGet<String>();
+        return command;
+    }
     if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
         AlterCommand command;
