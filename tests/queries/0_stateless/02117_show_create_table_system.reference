@@ -264,7 +264,8 @@ CREATE TABLE system.errors
     `last_error_time` DateTime,
     `last_error_message` String,
     `last_error_trace` Array(UInt64),
-    `remote` UInt8
+    `remote` UInt8,
+    `query_id` String
 )
 ENGINE = SystemErrors
 COMMENT 'Contains a list of all errors which have ever happened including the error code, last time and message with unsymbolized stacktrace.'
