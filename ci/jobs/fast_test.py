@@ -267,8 +267,6 @@ def main():
 
     Result.create_from(
         results=results, stopwatch=stop_watch, files=attach_files
-    ).add_job_summary_to_info(
-        with_local_run_command=True, with_test_in_run_command=True
     ).complete_job()
 
 

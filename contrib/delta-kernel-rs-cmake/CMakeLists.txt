@@ -58,7 +58,7 @@ set(DELTA_KERNEL_TARGET_PATH ${DELTA_KERNEL_RS_BINARY_DIR}/include)
 
 corrosion_set_env_vars(delta_kernel_ffi
         "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}"
-        "OPENSSL_LIBS=${SSLNAME}:${CRYPTONAME}"
+        "OPENSSL_LIBS=ssl:crypto"
         "OPENSSL_STATIC=1"
         "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
         "OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_BINARY_DIR}/${PLATFORM_DIRECTORY}")

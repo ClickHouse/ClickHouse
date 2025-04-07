@@ -63,7 +63,10 @@ public:
 
     bool supportsFileIterator() const override { return true; }
 
-    ObjectIterator iterate(FileProgressCallback callback, size_t list_batch_size) const override;
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        FileProgressCallback callback,
+        size_t list_batch_size) const override;
 
 private:
     const LoggerPtr log;
