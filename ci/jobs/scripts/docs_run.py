@@ -1,1 +1,1 @@
-print('Hello from clickhouse/docs-builder!')
+print("Hello from clickhouse/docs-builder!")
