@@ -16,8 +16,10 @@ struct UseSSL : private boost::noncopyable
 {
     std::atomic<uint8_t> ref_count{0};
 
+#if USE_SSL
     static OSSL_PROVIDER * legacy_provider;
     static OSSL_PROVIDER * default_provider;
+#endif
 
     UseSSL();
     ~UseSSL();
