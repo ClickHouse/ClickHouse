@@ -1009,7 +1009,7 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context) cons
     UInt64 local_digest = 0;
     {
         std::lock_guard lock{mutex};
-        for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
+        for (const auto & table : tables)
             local_digest += getMetadataHash(table.first);
     }
 
