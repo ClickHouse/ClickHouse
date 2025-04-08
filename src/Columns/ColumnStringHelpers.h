@@ -56,13 +56,13 @@ public:
 
     void finalize()
     {
+        buffer.finalize();
+
         // Buffer might overflow at the end and be resized.
         // This will make `ColumnFixedString` think that it has more rows than it actually has.
         // To avoid this effect, let's manually restore the correct size.
         if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
             resizeColumn(col, rows);
-
-        buffer.finalize();
     }
 
     auto & getWriteBuffer()
