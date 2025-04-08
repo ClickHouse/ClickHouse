@@ -164,7 +164,6 @@ public:
     void releaseAndCloseSession(const UUID & user_id, const String & session_id, std::shared_ptr<NamedSessionData> & session_data)
     {
         std::unique_lock lock(mutex);
-        scheduleCloseSession(*session_data, lock);
         session_data = nullptr;
 
         Key key{user_id, session_id};
