@@ -17,6 +17,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MessageQueueSink.h>
+#include <Storages/NATS/NATSCoreConsumer.h>
 #include <Storages/NATS/NATSProducer.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATSSource.h>
@@ -530,7 +531,7 @@ INATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 
 INATSConsumerPtr StorageNATS::createConsumer()
 {
-    return std::make_shared<INATSConsumer>(
+    return std::make_shared<NATSCoreConsumer>(
         consumers_connection, subjects,
         (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value : getStorageID().getFullTableName(),
         log, queue_size, shutdown_called);

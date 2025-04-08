@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 INATSConsumer::INATSConsumer(
     NATSConnectionPtr connection_,
-    std::vector<String> & subjects_,
+    const std::vector<String> & subjects_,
     const String & subscribe_queue_name,
     LoggerPtr log_,
     uint32_t queue_size_,
@@ -36,34 +36,6 @@ bool INATSConsumer::isSubscribed() const
 {
     return !subscriptions.empty();
 }
-void INATSConsumer::subscribe()
-{
-    if (isSubscribed())
-        return;
-
-    std::vector<NATSSubscriptionPtr> created_subscriptions;
-    for (const auto & subject : subjects)
-    {
-        natsSubscription * ns;
-        auto status = natsConnection_QueueSubscribe(
-            &ns, connection->getConnection(), subject.c_str(), queue_name.c_str(), onMsg, static_cast<void *>(this));
-        if (status == NATS_OK)
-        {
-            created_subscriptions.emplace_back(ns, &natsSubscription_Destroy);
-            LOG_DEBUG(log, "Subscribed to subject {}", subject);
-
-            natsSubscription_SetPendingLimits(ns, -1, -1);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to subscribe consumer {} to subject {}", static_cast<void*>(this), subject);
-        }
-    }
-    LOG_DEBUG(log, "Consumer {} subscribed to {} subjects", static_cast<void*>(this), created_subscriptions.size());
-
-    subscriptions = std::move(created_subscriptions);
-}
-
 void INATSConsumer::unsubscribe()
 {
     subscriptions.clear();
