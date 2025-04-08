@@ -18,10 +18,10 @@ namespace DB
 
 using NATSSubscriptionPtr = std::unique_ptr<natsSubscription, decltype(&natsSubscription_Destroy)>;
 
-class NATSConsumer
+class INATSConsumer
 {
 public:
-    NATSConsumer(
+    INATSConsumer(
         NATSConnectionPtr connection_,
         std::vector<String> & subjects_,
         const String & subscribe_queue_name,

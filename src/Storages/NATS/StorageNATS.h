@@ -16,8 +16,8 @@
 namespace DB
 {
 
-class NATSConsumer;
-using NATSConsumerPtr = std::shared_ptr<NATSConsumer>;
+class INATSConsumer;
+using INATSConsumerPtr = std::shared_ptr<INATSConsumer>;
 struct NATSSettings;
 
 class StorageNATS final : public IStorage, WithContext
@@ -63,9 +63,9 @@ public:
     /// We want to control the number of rows in a chunk inserted into NATS
     bool prefersLargeBlocks() const override { return false; }
 
-    void pushConsumer(NATSConsumerPtr consumer);
-    NATSConsumerPtr popConsumer();
-    NATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
+    void pushConsumer(INATSConsumerPtr consumer);
+    INATSConsumerPtr popConsumer();
+    INATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
 
@@ -90,7 +90,7 @@ private:
     std::atomic<size_t> num_created_consumers = 0;
     Poco::Semaphore semaphore;
     std::mutex consumers_mutex;
-    std::vector<NATSConsumerPtr> consumers; /// available NATS consumers
+    std::vector<INATSConsumerPtr> consumers; /// available NATS consumers
 
     /// maximum number of messages in NATS queue (x-max-length). Also used
     /// to setup size of inner consumer for received messages
@@ -110,7 +110,7 @@ private:
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
 
-    NATSConsumerPtr createConsumer();
+    INATSConsumerPtr createConsumer();
 
     bool isSubjectInSubscriptions(const std::string & subject);
 

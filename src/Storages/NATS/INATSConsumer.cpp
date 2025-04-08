@@ -2,7 +2,7 @@
 #include <chrono>
 #include <memory>
 #include <utility>
-#include <Storages/NATS/NATSConsumer.h>
+#include <Storages/NATS/INATSConsumer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Poco/Timer.h>
 #include <Common/logger_useful.h>
@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int INVALID_STATE;
 }
 
-NATSConsumer::NATSConsumer(
+INATSConsumer::INATSConsumer(
     NATSConnectionPtr connection_,
     std::vector<String> & subjects_,
     const String & subscribe_queue_name,
@@ -32,11 +32,11 @@ NATSConsumer::NATSConsumer(
 {
 }
 
-bool NATSConsumer::isSubscribed() const
+bool INATSConsumer::isSubscribed() const
 {
     return !subscriptions.empty();
 }
-void NATSConsumer::subscribe()
+void INATSConsumer::subscribe()
 {
     if (isSubscribed())
         return;
@@ -64,14 +64,14 @@ void NATSConsumer::subscribe()
     subscriptions = std::move(created_subscriptions);
 }
 
-void NATSConsumer::unsubscribe()
+void INATSConsumer::unsubscribe()
 {
     subscriptions.clear();
 
     LOG_DEBUG(log, "Consumer {} unsubscribed", static_cast<void*>(this));
 }
 
-ReadBufferPtr NATSConsumer::consume()
+ReadBufferPtr INATSConsumer::consume()
 {
     if (stopped || !received.tryPop(current))
         return nullptr;
@@ -79,9 +79,9 @@ ReadBufferPtr NATSConsumer::consume()
     return std::make_shared<ReadBufferFromMemory>(current.message.data(), current.message.size());
 }
 
-void NATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, void * consumer)
+void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, void * consumer)
 {
-    auto * nats_consumer = static_cast<NATSConsumer *>(consumer);
+    auto * nats_consumer = static_cast<INATSConsumer *>(consumer);
     const int msg_length = natsMsg_GetDataLength(msg);
 
     if (msg_length)

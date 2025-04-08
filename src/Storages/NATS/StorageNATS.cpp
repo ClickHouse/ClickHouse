@@ -495,20 +495,20 @@ void StorageNATS::shutdown(bool /* is_drop */)
     stopEventLoop();
 }
 
-void StorageNATS::pushConsumer(NATSConsumerPtr consumer)
+void StorageNATS::pushConsumer(INATSConsumerPtr consumer)
 {
     std::lock_guard lock(consumers_mutex);
     consumers.push_back(consumer);
     semaphore.set();
 }
 
-NATSConsumerPtr StorageNATS::popConsumer()
+INATSConsumerPtr StorageNATS::popConsumer()
 {
     return popConsumer(std::chrono::milliseconds::zero());
 }
 
 
-NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
+INATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 {
     // Wait for the first free consumer
     if (timeout == std::chrono::milliseconds::zero())
@@ -528,9 +528,9 @@ NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 }
 
 
-NATSConsumerPtr StorageNATS::createConsumer()
+INATSConsumerPtr StorageNATS::createConsumer()
 {
-    return std::make_shared<NATSConsumer>(
+    return std::make_shared<INATSConsumer>(
         consumers_connection, subjects,
         (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value : getStorageID().getFullTableName(),
         log, queue_size, shutdown_called);
