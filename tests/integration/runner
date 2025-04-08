@@ -337,7 +337,7 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
         dest="distributed_plan",
-        help="Use old analyzer infrastructure",
+        help="Use serialized query plan in distributed queries",
     )
 
     parser.add_argument(
