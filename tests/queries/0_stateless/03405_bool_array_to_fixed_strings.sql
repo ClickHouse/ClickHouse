@@ -1,1 +1,3 @@
-select [true, false]::Array(String(5));
+select [true, false]::Array(FixedString(5));
+
+select arrayMap(x -> x::FixedString(5), [true, false]);
