@@ -8,7 +8,6 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Storages/MergeTree/MergeTreeLazilyReader.h>
-#include "Processors/QueryPlan/QueryPlan.h"
 
 namespace DB::QueryPlanOptimizations
 {
@@ -285,6 +284,9 @@ void optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPla
         = std::make_unique<LazilyReadStep>(sorting_step->getOutputHeader(), lazily_read_info, std::move(lazy_column_reader));
     lazily_read_step->setStepDescription("Lazily Read");
 
+    /// the root node can be a limit node when query is distributed
+    /// and executed on remote node till WithMergeableStateAfterAggregationAndLimit stage
+    /// see 03404_lazy_materialization_distributed.sql
     if (limit_node == &root)
     {
         chassert(stack.size() == 1);
