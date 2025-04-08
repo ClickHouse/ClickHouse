@@ -407,23 +407,23 @@ protected:
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt256>));
 
                             // find the minimal element of data
-                            auto min_key_holder = key_holder;
+                            auto max_key_holder = key_holder;
                             for (const auto& data_el : data)
                             {
                                 if constexpr (HasKey<KeyHolder>::value)
                                 {
-                                    if (compareKeyHolders(data_el.getKey(), min_key_holder.key, *optimization_indexes))
-                                        min_key_holder.key = data_el.getKey();
+                                    if (compareKeyHolders(max_key_holder.key, data_el.getKey(), *optimization_indexes))
+                                        max_key_holder.key = data_el.getKey();
                                 } else
-                                    if (compareKeyHolders(data_el.getKey(), min_key_holder, *optimization_indexes))
-                                        min_key_holder = data_el.getKey();
+                                    if (compareKeyHolders(max_key_holder, data_el.getKey(), *optimization_indexes))
+                                        max_key_holder = data_el.getKey();
                             }
-                            const auto& min_key = keyHolderGetKey(min_key_holder);
+                            const auto& max_key = keyHolderGetKey(max_key_holder);
                             // erase found element
-                            if constexpr (HasErase<Data, decltype(keyHolderGetKey(min_key_holder))>::value)
+                            if constexpr (HasErase<Data, decltype(keyHolderGetKey(max_key_holder))>::value)
                             {
-                                if (min_key != keyHolderGetKey(key_holder)) // TODO if equals, erase and return nullptr
-                                    data.erase(min_key);
+                                if (max_key != keyHolderGetKey(key_holder)) // TODO if equals, erase and return nullptr
+                                    data.erase(max_key);
                             }
                         }
                     } else if constexpr (HasForEachMapped<Data>::value)
