@@ -469,7 +469,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         {
             // Since lightweight delete still impact the following granule-based count optimization,
             // skipping setting the only_count_column.
-            if(reading.getMergeTreeData().has_lightweight_delete_parts.load())
+            if (reading.getMergeTreeData().has_lightweight_delete_parts.load())
                 return candidates;
             /// Trivial count optimization only applies after @can_use_minmax_projection.
             if (keys.empty() && aggregates.size() == 1 && typeid_cast<const AggregateFunctionCount *>(aggregates[0].function.get()))
