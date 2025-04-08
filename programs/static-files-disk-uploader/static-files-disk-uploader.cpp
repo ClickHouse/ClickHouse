@@ -72,7 +72,6 @@ static void processFile(const fs::path & file_path, const fs::path & dst_path, b
             dst_buf = BuilderWriteBufferFromHTTP(Poco::URI(dst_file_path))
                           .withConnectionGroup(HTTPConnectionGroupType::HTTP)
                           .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
-                          .withBypassProxy(true)
                           .create();
         }
         else
@@ -101,7 +100,6 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
         root_meta = BuilderWriteBufferFromHTTP(Poco::URI(files_root / ".index"))
                       .withConnectionGroup(HTTPConnectionGroupType::HTTP)
                       .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
-                      .withBypassProxy(true)
                       .create();
     }
     else
@@ -129,7 +127,6 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
                 directory_meta = BuilderWriteBufferFromHTTP(Poco::URI(dst_path / directory_prefix / ".index"))
                                     .withConnectionGroup(HTTPConnectionGroupType::HTTP)
                                     .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
-                                    .withBypassProxy(true)
                                     .create();
             }
             else
