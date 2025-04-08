@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
+#include <IO/UseSSL.h>
 
 #if defined(SANITIZE_COVERAGE)
 #    include <Common/Coverage.h>
@@ -226,6 +227,8 @@ __attribute__((constructor(0))) void init_je_malloc_message()
         write(STDERR_FILENO, message_view.data(), message_view.size());
 #    endif
     };
+
+    DB::UseSSL();
 }
 #endif
 

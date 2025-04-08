@@ -78,12 +78,15 @@ public:
                 x509_cert = std::make_unique<X509Certificate>(certificate);
 
             if (!x509_cert)
-                x509_cert = std::make_unique<X509Certificate>(SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext()));
+            {
+                const auto * server_context_cert = SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext());
+                x509_cert = std::make_unique<X509Certificate>(X509_dup(server_context_cert));
+            }
 
             if (x509_cert)
             {
                 keys->insert("version");
-                values->insert(x509_cert->version());
+                values->insert(std::to_string(x509_cert->version()));
 
                 keys->insert("serial_number");
                 values->insert(x509_cert->serialNumber());
