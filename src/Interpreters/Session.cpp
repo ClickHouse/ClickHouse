@@ -232,7 +232,7 @@ private:
         }
     }
 
-    void closeSessions(std::unique_lock<std::mutex> &)
+    void closeSessions(std::unique_lock<std::mutex> & lock)
     {
         const auto now = std::chrono::steady_clock::now();
 
@@ -254,10 +254,11 @@ private:
                 /// We can get here only if the session is still in use somehow. But since we don't allow concurrent usage
                 /// of the same session, that means that the session wasn't yet released or closed.
                 //
-                /// The only two ways, that could lead to such a situation in theory are:
+                /// There are 3 ways that could lead to such a situation in theory:
                 ///   1. The session is released, but being reused before the timeout expires
                 ///   2. The session was closed, but a new one with the same name was created before the timeout for a
                 ///      previous one expires.
+                ///   3. The session was released, but the pointer wasn't reset yet.
                 ///
                 /// For the first one, if we reuse the same session, there's a special block that resets session close
                 /// time bucket, and effectively cancels a previous scheduleCloseSession call.
@@ -266,11 +267,21 @@ private:
                 /// The only way to get here in such a case would be if we called a scheduleCloseSession from inside
                 /// releaseAndCloseSession. But since it's not the case, such a scenario is not possible.
                 ///
-                /// That means that if the session is still in use at this point, something went really wrong.
+                /// So the only possible reason to get refcount > 1 is when we released the session, but haven't reset
+                /// the pointer yet. And since the pointer is reset without a lock, it's technically possible to get
+                /// into a situation when refcount > 1. In this case, we want to delay closing the session, but set the
+                /// timeout to 0 explicitly. This should be a very rare situation, since in order for it to happen, we should
+                /// have a session timeout less than close_interval, and also be able to reach this code before
+                /// resetting a pointer.
                 if (session.use_count() != 1)
                 {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Session is still in use, session_id: {}, user_id: {}, refcount: {}",
-                            key.second, toString(key.first), session.use_count());
+                    LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}, refcount: {}",
+                        key.second, toString(key.first), session.use_count());
+
+                    session->timeout = std::chrono::steady_clock::duration{0};
+                    session->close_time_bucket = std::chrono::steady_clock::time_point{};
+                    scheduleCloseSession(*session, lock);
+                    continue;
                 }
 
                 LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, toString(key.first));
