@@ -8,26 +8,31 @@ if __name__ == "__main__":
     results = []
     stop_watch = Utils.Stopwatch()
 
-    Result.from_commands_run(
-        name="Fetch latest docs-repo changes",
-        command=["git clone https://github.com/ClickHouse/clickhouse-docs.git"],
-        workdir="/opt",
-        with_log=True,
-        with_info=True,
+    testname = "Fetch latest ClickHouse/clickhouse-docs changes"
+    results.append(
+        Result.from_commands_run(
+            name=testname,
+            command=["git clone https://github.com/ClickHouse/clickhouse-docs.git"],
+            workdir="/opt",
+        )
     )
 
-    Result.from_commands_run(
-        name="Install packages",
-        command=["yarn install"],
-        with_info=True,
-        workdir="/opt/clickhouse-docs",
+    testname = "Install required packages"
+    results.append(
+        Result.from_commands_run(
+            name=testname,
+            command=["yarn install"],
+            workdir="/opt/clickhouse-docs",
+        )
     )
 
-    Result.from_commands_run(
-        name="Get ClickHouse/ClickHouse docs",
-        command=[f"yarn copy-clickhouse-repo-docs -l {os.getcwd()}"],
-        with_info=True,
-        workdir="/opt/clickhouse-docs",
+    testname = "Get ClickHouse/ClickHouse docs"
+    results.append(
+        Result.from_commands_run(
+            name=testname,
+            command=[f"yarn copy-clickhouse-repo-docs -l {os.getcwd()}"],
+            workdir="/opt/clickhouse-docs",
+        )
     )
 
     testname = "Run markdown linter"
@@ -40,17 +45,21 @@ if __name__ == "__main__":
     )
 
     testname = "Generate changelog"
-    Result.from_commands_run(
-        name=testname,
-        command=[f"yarn generate-changelog"],
-        workdir="/opt/clickhouse-docs",
+    results.append(
+        Result.from_commands_run(
+            name=testname,
+            command=[f"yarn generate-changelog"],
+            workdir="/opt/clickhouse-docs",
+        )
     )
 
     testname = "Generate documentation from source"
-    Result.from_commands_run(
-        name=testname,
-        command=[f"yarn autogenerate-settings"],
-        workdir="/opt/clickhouse-docs",
+    results.append(
+        Result.from_commands_run(
+            name=testname,
+            command=[f"yarn autogenerate-settings"],
+            workdir="/opt/clickhouse-docs",
+        )
     )
 
     testname = "Generate table of contents pages"
