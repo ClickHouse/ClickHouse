@@ -1,4 +1,4 @@
-#include "CompressedReadBufferBase.h"
+#include <Compression/CompressedReadBufferBase.h>
 
 #include <bit>
 #include <cstring>
@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <base/demangle.h>
 #include <base/hex.h>
+#include <base/MemorySanitizer.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
@@ -337,6 +338,7 @@ void CompressedReadBufferBase::addDiagnostics(Exception & e) const
     if (auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(compressed_in))
         current_pos = seekable_in->tryGetPosition();
     UInt8 header_size = ICompressionCodec::getHeaderSize();
+    __msan_unpoison(own_compressed_buffer.data(), own_compressed_buffer.size()); // PODArray might not have been initialized, but we only print it out for debugging purposes
     String header_hex = hexString(own_compressed_buffer.data(), std::min(own_compressed_buffer.size(), sizeof(Checksum) + header_size));
 
     e.addMessage("While reading or decompressing {} (position: {}, typename: {}, compressed data header: {})",
