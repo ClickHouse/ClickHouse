@@ -536,32 +536,24 @@ void Context::createSSLContext()
 {
 	if (SSLManager::isFIPSEnabled())
 	{
-		_pSSLContext = SSL_CTX_new(TLSv1_method());
+		_pSSLContext = SSL_CTX_new(TLS_method());
 	}
 	else
 	{
 		switch (_usage)
 		{
 		case CLIENT_USE:
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 			_pSSLContext = SSL_CTX_new(TLS_client_method());
-#else
-			_pSSLContext = SSL_CTX_new(SSLv23_client_method());
-#endif
 			break;
 		case SERVER_USE:
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 			_pSSLContext = SSL_CTX_new(TLS_server_method());
-#else
-			_pSSLContext = SSL_CTX_new(SSLv23_server_method());
-#endif
 			break;
 #if defined(SSL_OP_NO_TLSv1) && !defined(OPENSSL_NO_TLS1)
 		case TLSV1_CLIENT_USE:
-			_pSSLContext = SSL_CTX_new(TLSv1_client_method());
+			_pSSLContext = SSL_CTX_new(TLS_client_method());
 			break;
 		case TLSV1_SERVER_USE:
-			_pSSLContext = SSL_CTX_new(TLSv1_server_method());
+			_pSSLContext = SSL_CTX_new(TLS_server_method());
 			break;
 #endif
 #if defined(SSL_OP_NO_TLSv1_1) && !defined(OPENSSL_NO_TLS1)
@@ -670,7 +662,7 @@ void Context::initDH(const std::string& dhParamsFile)
 			std::string msg = Utility::getLastError();
 			throw SSLContextException("Error creating Diffie-Hellman parameters", msg);
 		}
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER) && !defined(BORINGSSL_DEPRECATED)
+#if !defined(LIBRESSL_VERSION_NUMBER) && !defined(BORINGSSL_DEPRECATED)
 		BIGNUM* p = BN_bin2bn(dh1024_p, sizeof(dh1024_p), 0);
 		BIGNUM* g = BN_bin2bn(dh1024_g, sizeof(dh1024_g), 0);
 		DH_set0_pqg(dh, p, 0, g);
@@ -707,7 +699,6 @@ void Context::initDH(const std::string& dhParamsFile)
 
 void Context::initECDH(const std::string& curve)
 {
-#if OPENSSL_VERSION_NUMBER >= 0x0090800fL
 #ifndef OPENSSL_NO_ECDH
 	int nid = 0;
 	if (!curve.empty())
@@ -731,7 +722,6 @@ void Context::initECDH(const std::string& curve)
 	SSL_CTX_set_tmp_ecdh(_pSSLContext, ecdh);
 	SSL_CTX_set_options(_pSSLContext, SSL_OP_SINGLE_ECDH_USE);
 	EC_KEY_free(ecdh);
-#endif
 #endif
 }
 

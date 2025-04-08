@@ -181,7 +181,7 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 	}
 	SSL_set_bio(_pSSL, pBIO, pBIO);
 
-#if OPENSSL_VERSION_NUMBER >= 0x0908060L && !defined(OPENSSL_NO_TLSEXT)
+#if !defined(OPENSSL_NO_TLSEXT)
 	if (!_peerHostName.empty())
 	{
 		SSL_set_tlsext_host_name(_pSSL, _peerHostName.c_str());
@@ -425,7 +425,7 @@ long SecureSocketImpl::verifyPeerCertificateImpl(const std::string& hostName)
 	    (mode != Context::VERIFY_STRICT && isLocalHost(hostName)))
 		return X509_V_OK;
 
-	X509* pCert = SSL_get_peer_certificate(_pSSL);
+	X509* pCert = SSL_get1_peer_certificate(_pSSL);
 	if (pCert)
 	{
         if (X509_check_host(pCert, hostName.c_str(), hostName.length(), 0, nullptr) == 1)
@@ -465,7 +465,7 @@ X509* SecureSocketImpl::peerCertificate() const
 {
 	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (_pSSL)
-		return SSL_get_peer_certificate(_pSSL);
+		return SSL_get1_peer_certificate(_pSSL);
 	else
 		return 0;
 }
