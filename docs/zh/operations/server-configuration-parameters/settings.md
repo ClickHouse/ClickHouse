@@ -627,6 +627,7 @@ SSL客户端/服务器配置。
         <name>hide SSN</name>
         <regexp>(^|\D)\d{3}-\d{2}-\d{4}($|\D)</regexp>
         <replace>000-00-0000</replace>
+        <throw_on_match>false</throw_on_match>
     </rule>
 </query_masking_rules>
 ```
@@ -635,6 +636,7 @@ SSL客户端/服务器配置。
 - `name` -规则的名称（可选)
 - `regexp` -RE2兼容正则表达式（强制性)
 - `replace` -敏感数据的替换字符串（可选，默认情况下-六个星号)
+- `throw_on_match` -如果在日志中找到这样的字符串，我是否需要抛出异常？
 
 屏蔽规则应用于整个查询（以防止敏感数据从格式错误/不可解析的查询泄漏）。
 

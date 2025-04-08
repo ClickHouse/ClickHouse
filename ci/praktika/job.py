@@ -3,8 +3,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
-from praktika import Artifact
-from praktika.utils import Utils
+from . import Artifact
+from .utils import Utils
 
 
 class Job:
@@ -52,7 +52,13 @@ class Job:
 
         enable_commit_status: bool = False
 
+        # If a job Result contains multiple sub-results, and only a specific sub-result should be sent to CIDB, set its name here.
+        result_name_for_cidb: str = ""
+
         parameter: Any = None
+
+        # List of commands to call upon job completion
+        post_hooks: List[str] = field(default_factory=list)
 
         def parametrize(
             self,

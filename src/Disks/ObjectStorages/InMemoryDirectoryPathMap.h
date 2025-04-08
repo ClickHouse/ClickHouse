@@ -79,6 +79,20 @@ public:
         return res;
     }
 
+    bool existsFile(const std::string & local_path) const
+    {
+        auto path = std::filesystem::path(local_path);
+        auto dir = path.parent_path();
+        auto filename = path.filename();
+
+        std::lock_guard lock(mutex);
+        auto it = map.find(dir);
+        if (it == map.end())
+            return false;
+
+        return it->second.files.contains(filename);
+    }
+
     bool addFile(const std::string & local_path)
     {
         auto path = std::filesystem::path(local_path);
