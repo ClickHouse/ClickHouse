@@ -82,9 +82,11 @@ public:
         const String & model_path,
         ProbabilityMap && priors,
         const UInt32 given_n,
+        const double given_alpha,
         const String & given_start_token,
         const String & given_end_token)
         : n(given_n)
+        , alpha(given_alpha)
         , start_token(given_start_token)
         , end_token(given_end_token)
     {
@@ -356,21 +358,18 @@ public:
                 priors[class_id] = prior;
             }
 
-            String start_token = "<s>";
-            if (config.has("nb_models." + key + ".start_token"))
+            const double alpha = config.getDouble("nb_models." + key + ".alpha", 1.0);
+
+            if (alpha <= 0.0)
             {
-                start_token = config.getString("nb_models." + key + ".start_token");
-            }
-            String end_token = "</s>";
-            if (config.has("nb_models." + key + ".end_token"))
-            {
-                end_token = config.getString("nb_models." + key + ".end_token");
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Laplace smoothing parameter 'alpha' must be greater than 0 for model {}", model_name);
             }
 
             models.emplace(
                 std::piecewise_construct,
                 std::make_tuple(model_name),
-                std::make_tuple(model_data, std::move(priors), n, start_token, end_token));
+                std::make_tuple(model_data, std::move(priors), n, alpha, start_token, end_token));
         }
 
         if (models.empty())
