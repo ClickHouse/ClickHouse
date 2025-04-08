@@ -166,6 +166,13 @@ void buildLayoutConfiguration(
                 value_field.getTypeName());
         }
 
+        if (value_field.safeGet<UInt64>() == 0)
+        {
+            throw DB::Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be greater than 0.");
+        }
+
         AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
         AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
         layout_type_parameter_element->appendChild(value_to_append);
