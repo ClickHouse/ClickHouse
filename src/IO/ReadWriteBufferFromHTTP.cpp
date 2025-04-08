@@ -811,7 +811,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
     if (!bypass_proxy)
     {
         auto proxy_protocol = ProxyConfiguration::protocolFromString(uri.getScheme());
-        proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
+        proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol)->resolve();
     }
 
     // todo it could be a problem if ReadWriteBufferFromHTTP throws

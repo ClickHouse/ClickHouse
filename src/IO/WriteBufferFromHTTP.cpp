@@ -60,7 +60,7 @@ std::unique_ptr<WriteBufferFromHTTP> BuilderWriteBufferFromHTTP::create()
     if (!bypass_proxy)
     {
         auto proxy_protocol = ProxyConfiguration::protocolFromString(uri.getScheme());
-        proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
+        proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol)->resolve();
     }
 
     /// WriteBufferFromHTTP constructor is private and can't be used in `make_unique`
