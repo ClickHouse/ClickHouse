@@ -3699,9 +3699,14 @@ message SystemCommand {
         bool drop_s3_client_cache = 59;
         bool flush_async_insert_queue = 60;
         bool sync_filesystem_cache = 61;
-        bool drop_cache = 62;
-        bool drop_skip_index_cache = 63;
+        bool drop_skip_index_cache = 62;
+        ExprSchemaTable reload_dictionary = 63;
+        ExprSchemaTable flush_distributed = 64;
+        ExprSchemaTable stop_distributed_sends = 65;
+        ExprSchemaTable start_distributed_sends = 66;
+        bool drop_query_condition_cache = 67;
     }
+    optional Cluster cluster = 68;
 }
 
 message BackupRestoreObject {

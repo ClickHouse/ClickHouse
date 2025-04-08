@@ -13,6 +13,7 @@
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 #include <xxhash.h>
 
+#include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
@@ -250,16 +251,16 @@ struct HalfMD5Impl
         const auto ctx = EVP_MD_CTX_ptr(EVP_MD_CTX_new(), EVP_MD_CTX_free);
 
         if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed");
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
 
-        if (!EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr))
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed");
+        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
 
-        if (!EVP_DigestUpdate(ctx.get(), begin, size))
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed");
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
 
-        if (!EVP_DigestFinal_ex(ctx.get(), buf.char_data, nullptr))
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed");
+        if (EVP_DigestFinal_ex(ctx.get(), buf.char_data, nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
 
         /// Compatibility with existing code. Cast is necessary for old poco AND macos where UInt64 != uint64_t
         transformEndianness<std::endian::big>(buf.uint64_data);
