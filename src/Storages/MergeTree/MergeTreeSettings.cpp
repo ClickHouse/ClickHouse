@@ -57,7 +57,7 @@ namespace ErrorCodes
     for this setting.
     )", 0) \
     DECLARE(UInt64, max_compress_block_size, 0, R"(
-    Maximum size of blocks of uncompressed data before compressing for writing
+    The maximum size of blocks of uncompressed data before compressing for writing
     to a table. You can also specify this setting in the global settings
     (see [max_compress_block_size](/operations/settings/merge-tree-settings#max_compress_block_size)
     setting). The value specified when the table is created overrides the global
