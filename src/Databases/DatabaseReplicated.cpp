@@ -851,6 +851,12 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
 
         if (local_query_with_secrets != zookeeper_query_with_secrets || local_query_with_secrets != on_disk_query_with_secrets)
         {
+            /// NOTE: due to transaction will be committed **before**
+            /// tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly()
+            /// runs, you will almost never enter this code path, since it will
+            /// update on disk metadata. But the checkDigestValid() will still
+            /// throw LOGICAL_ERROR since database relies on the on-disk data
+            /// (for tracking tables_metadata_digest)
             LOG_ERROR(log, "AST differs for table {}", table_name);
             LOG_ERROR(log, "\t  in memory: {}", local_ast_ptr ? local_ast_ptr->formatForLogging() : "nullptr");
             LOG_ERROR(log, "\tcoordinator: {}", zk_ast_ptr ? zk_ast_ptr->formatForLogging() : "nullptr");
