@@ -986,6 +986,7 @@ SelfManaged
 Sematext
 SendExternalTables
 SendScalars
+ServerSettings
 SetOperationMode
 ShareAlike
 ShareSet
@@ -1304,6 +1305,8 @@ arrayJoin
 arrayLast
 arrayLastIndex
 arrayLastOrNull
+arrayLevenshteinDistance
+arrayLevenshteinDistanceWeighted
 arrayMap
 arrayMax
 arrayMin
@@ -1331,6 +1334,7 @@ arrayShiftLeft
 arrayShiftRight
 arrayShingles
 arrayShuffle
+arraySimilarity
 arraySlice
 arraySort
 arraySplit
@@ -1644,6 +1648,7 @@ dbal
 dbeaver
 dbgen
 dbms
+dbpedia
 ddl
 deallocated
 deallocation
@@ -2767,6 +2772,10 @@ socketcache
 soundex
 sparkBar
 sparkbar
+sparseGrams
+sparseGramsHashes
+sparseGramsHashesUTF
+sparseGramsUTF
 sparsehash
 speedscope
 splitBy

@@ -6,8 +6,6 @@ import sys
 import traceback
 from pathlib import Path
 
-from praktika.info import Info
-
 from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
@@ -15,6 +13,7 @@ from .digest import Digest
 from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
+from .info import Info
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3, StorageUsage
@@ -24,18 +23,16 @@ from .utils import Shell, TeePopen, Utils
 
 class Runner:
     @staticmethod
-    def generate_local_run_environment(workflow, job, pr=None, branch=None, sha=None):
+    def generate_local_run_environment(workflow, job, pr=None, sha=None):
         print("WARNING: Generate dummy env for local test")
-        Shell.check(
-            f"mkdir -p {Settings.TEMP_DIR} {Settings.INPUT_DIR} {Settings.OUTPUT_DIR}"
-        )
+        Shell.check(f"mkdir -p {Settings.TEMP_DIR}", strict=True)
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
             REPOSITORY="",
-            BRANCH=branch or Settings.MAIN_BRANCH if not pr else "",
+            BRANCH="branch_name",
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
             PR_NUMBER=pr or -1,
             EVENT_TYPE="",
@@ -98,6 +95,7 @@ class Runner:
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
+        env.JOB_CONFIG = job
         env.dump()
         print(env)
 
@@ -122,6 +120,7 @@ class Runner:
 
         if job.requires and job.name not in (
             Settings.CI_CONFIG_JOB_NAME,
+            Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
             Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
             Settings.FINISH_WORKFLOW_JOB_NAME,
         ):
@@ -146,9 +145,11 @@ class Runner:
                             if job.name
                             not in (
                                 Settings.CI_CONFIG_JOB_NAME,
+                                Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
                                 Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
                                 Settings.FINISH_WORKFLOW_JOB_NAME,
                             )
+                            and job.provides
                         ]
                         and Settings.ENABLE_ARTIFACTS_REPORT
                     ):
@@ -172,10 +173,17 @@ class Runner:
             else:
                 prefixes = [env.get_s3_prefix()] * len(required_artifacts)
             for artifact, prefix in zip(required_artifacts, prefixes):
+                if artifact.compress_zst:
+                    assert not isinstance(
+                        artifact.path, (tuple, list)
+                    ), "Not yes supported for compressed artifacts"
+                    artifact.path = f"{Path(artifact.path).name}.zst"
+
                 if isinstance(artifact.path, (tuple, list)):
                     artifact_paths = artifact.path
                 else:
                     artifact_paths = [artifact.path]
+
                 for artifact_path in artifact_paths:
                     recursive = False
                     include_pattern = ""
@@ -186,18 +194,15 @@ class Runner:
                         assert "*" in include_pattern
                     else:
                         s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
-                    if not S3.copy_file_from_s3(
+                    S3.copy_file_from_s3(
                         s3_path=s3_path,
                         local_path=Settings.INPUT_DIR,
                         recursive=recursive,
                         include_pattern=include_pattern,
-                    ):
-                        if artifact.type != Artifact.Type.PHONY:
-                            Utils.raise_with_error(
-                                f"Failed to download artifact [{artifact.name}]"
-                            )
-                        else:
-                            print(f"NOTE: no artifact report from [{artifact.name}]")
+                    )
+
+                    if artifact.compress_zst:
+                        Utils.decompress_file(Path(Settings.INPUT_DIR) / artifact_path)
 
         return 0
 
@@ -281,17 +286,18 @@ class Runner:
                         print(
                             f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
                         )
-                        result.set_status(Result.Status.ERROR).set_info(
-                            ResultInfo.TIMEOUT
-                        )
+                        info = ResultInfo.TIMEOUT
                     elif result.is_running():
-                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]"
+                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]."
                         print(info)
-                        result.set_status(Result.Status.ERROR).set_info(info)
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
-                        result.set_status(Result.Status.ERROR).set_info(info)
+                    result.set_status(Result.Status.ERROR)
+                    result.set_info(info)
+                    result.set_info("---").set_info(
+                        process.get_latest_log(max_lines=20)
+                    ).set_info("---")
             result.dump()
 
         return exit_code
@@ -356,6 +362,21 @@ class Runner:
         # if result.is_error():
         result.set_files([Settings.RUN_LOG])
 
+        if job.post_hooks:
+            sw_ = Utils.Stopwatch()
+            results_ = []
+            for check in job.post_hooks:
+                if callable(check):
+                    name = check.__name__
+                else:
+                    name = str(check)
+                results_.append(
+                    Result.from_commands_run(name=name, command=check, with_info=True)
+                )
+            result.results.append(
+                Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+            )
+
         if run_exit_code == 0:
             providing_artifacts = []
             if job.provides and workflow.artifacts:
@@ -371,6 +392,18 @@ class Runner:
                 artifact_links = []
                 s3_path = f"{Settings.S3_ARTIFACT_PATH}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
                 for artifact in providing_artifacts:
+                    if artifact.compress_zst:
+                        if isinstance(artifact.path, (tuple, list)):
+                            Utils.raise_with_error(
+                                "TODO: list of paths is not supported with comress = True"
+                            )
+                        if "*" in artifact.path:
+                            Utils.raise_with_error(
+                                "TODO: globe is not supported with comress = True"
+                            )
+                        print(f"Compress artifact file [{artifact.path}]")
+                        artifact.path = Utils.compress_file_zst(artifact.path)
+
                     if isinstance(artifact.path, (tuple, list)):
                         artifact_paths = artifact.path
                     else:
@@ -415,13 +448,15 @@ class Runner:
                     passwd=workflow.get_secret(
                         Settings.SECRET_CI_DB_PASSWORD
                     ).get_value(),
-                ).insert(result)
+                ).insert(result, result_name_for_cidb=job.result_name_for_cidb)
             except Exception as ex:
                 traceback.print_exc()
                 error = f"ERROR: Failed to insert data into CI DB, exception [{ex}]"
                 print(error)
                 info_errors.append(error)
 
+        if env.TRACEBACKS:
+            result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
         result.dump()
 
         # always in the end
@@ -451,11 +486,11 @@ class Runner:
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
             if Settings.USE_CUSTOM_GH_AUTH:
-                from .gh_auth_deprecated import GHAuth
+                from .gh_auth import GHAuth
 
                 pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
                 app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-                GHAuth.auth(app_key=pem, app_id=app_id)
+                GHAuth.auth(app_id=app_id, app_key=pem)
             if not GH.post_commit_status(
                 name=job.name,
                 status=result.status,
@@ -503,11 +538,10 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Setup env script failed with exception [{e}]")
                 traceback.print_exc()
+                Info().store_traceback()
             print(f"=== Setup env finished ===\n\n")
         else:
-            self.generate_local_run_environment(
-                workflow, job, pr=pr, branch=branch, sha=sha
-            )
+            self.generate_local_run_environment(workflow, job, pr=pr, sha=sha)
 
         if res and (not local_run or pr or sha or branch):
             res = False
@@ -520,11 +554,12 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Pre-run script failed with exception [{e}]")
                 traceback.print_exc()
+                Info().store_traceback()
             print(f"=== Pre run finished ===\n\n")
 
         if res:
-            res = False
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
+            run_code = None
             try:
                 run_code = self._run(
                     workflow,
@@ -540,11 +575,24 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Run script failed with exception [{e}]")
                 traceback.print_exc()
+                Info().store_traceback()
+                res = False
+
+            result = Result.from_fs(job.name)
+            if not res and result.is_ok():
+                # TODO: It happens due to invalid timeout handling (forceful termination by timeout does not work) - fix
+                result.set_status(Result.Status.ERROR).set_info(
+                    f"Job got terminated with an error, exit code [{run_code}]"
+                ).dump()
+
             print(f"=== Run script finished ===\n\n")
 
         if not local_run:
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
-            self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
+            post_res = self._post_run(
+                workflow, job, setup_env_code, prerun_code, run_code
+            )
+            res = res and post_res
             print(f"=== Post run script finished ===")
 
         if not res:
