@@ -366,7 +366,7 @@ def test_check_all_tables(started_cluster):
             assert flag == "1"
             assert message == ""
 
-    for database in ["db1", "db2", "db3"]:
+    for database in ["db1", "db3"]:
         node1.query(f"DROP DATABASE {database} SYNC")
     node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
 
