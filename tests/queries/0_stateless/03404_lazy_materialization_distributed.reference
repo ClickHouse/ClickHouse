@@ -1,0 +1,1 @@
+42809e74-efe7-412f-8326-7569039feecb	SELECT * FROM numbers(10)\nSETTINGS log_comment = \'42809e74-efe7-412f-8326-7569039feecb\' FORMAT Null;	Select	QueryFinish
