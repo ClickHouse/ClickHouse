@@ -1634,7 +1634,7 @@ class TestCase:
 
         # "X-ClickHouse-Exception-Code" included in "Access-Control-Expose-Headers"
         # "Exception" may be included into i.e. metric name
-        if re.search(r'(^|\W)Exception(\W|$)', stdout) and "X-ClickHouse-Exception-Code" not in stdout:
+        if re.search(r'(^|\W)(Net|Errno|)Exception(\W|$)', stdout) and "X-ClickHouse-Exception-Code" not in stdout:
             description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
             if debug_log:
                 description += "\n"
