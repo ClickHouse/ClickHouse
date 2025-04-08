@@ -19,8 +19,6 @@
 #include <Functions/indexHint.h>
 #include <Planner/PlannerActionsVisitor.h>
 
-#include <Storages/MergeTree/MergeTreeIndexUtils.h>
-
 namespace DB
 {
 

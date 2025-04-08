@@ -15,7 +15,6 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <algorithm>
