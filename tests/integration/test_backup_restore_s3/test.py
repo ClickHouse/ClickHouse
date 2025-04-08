@@ -804,12 +804,9 @@ def test_backup_to_s3_different_credentials(allow_s3_native_copy, use_multipart_
         # If allow_s3_native_copy == 'auto' then we expect ClickHouse to find that the source and destination credentials
         # are different, then go directly to the reading+writing approach (without trying s3 native copy).
         assert ("S3CopyObject" in events) == (allow_s3_native_copy == True)
-        # We need the if condition below to skip assertion. Otherwise, we will always assert that:
-        # - S3WriteRequestsErrors present in events if allow_s3_native_copy == True
-        # - S3WriteRequestsErrors not present in events if allow_s3_native_copy == False
-        # However, imagine a case when: allow_s3_native_copy == False and use_multipart_copy == True and there were
-        # failures that happened during the multipart copy which succeeded on retries. In this case, S3WriteRequestsErrors
-        # metric won't be empty. This can be reproduced when we run the test multiple times in parallel.
+        # When `use_multipart_copy` is enabled, even though `allow_s3_native_copy` is disabled, `S3WriteRequestsErrors` is still possible  in `events`.
+        # In `UploadHelper::completeMultipartUpload`, it uses the native S3 `CompleteMultipartUpload` API. And if failure happens in the first tries, `S3WriteRequestsErrors` is still reported.
+        # To make the test deterministic, `S3WriteRequestsErrors` is asserted in `events` only when `allow_s3_native_copy` is enabled or `use_multipart_copy` is disabled.
         if allow_s3_native_copy == True or use_multipart_copy == False:
             assert ("S3WriteRequestsErrors" in events) == (allow_s3_native_copy == True)
         assert "S3ReadRequestsErrors" not in events
