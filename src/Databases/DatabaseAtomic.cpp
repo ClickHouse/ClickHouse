@@ -740,6 +740,14 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
+        if (args.database_name.ends_with(DatabaseReplicated::BROKEN_REPLICATED_TABLES_SUFFIX))
+            args.context->addOrUpdateWarningMessage(
+                Context::WarningType::MAYBE_BROKEN_TABLES,
+                PreformattedMessage::create(
+                    "The database {} is probably created during recovering a lost replica. If it has no tables, it can be deleted. If it "
+                    "has tables, it worth to check why they were considered broken.",
+                    backQuoteIfNeed(args.database_name)));
+
         return make_shared<DatabaseAtomic>(
             args.database_name,
             args.metadata_path,
