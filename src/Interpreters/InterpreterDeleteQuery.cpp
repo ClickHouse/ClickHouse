@@ -1,4 +1,3 @@
-#include <memory>
 #include <Interpreters/InterpreterDeleteQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
@@ -17,12 +16,11 @@
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ParserDropQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include "Parsers/ParserDropQuery.h"
-#include "base/types.h"
 
 
 namespace DB

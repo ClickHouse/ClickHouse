@@ -1,11 +1,10 @@
-#include <variant>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
-#include "Storages/TableLockHolder.h"
+#include <Storages/TableLockHolder.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDropQuery.h>
@@ -159,6 +158,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     PartitionCommands partition_commands;
     MutationCommands mutation_commands;
     bool is_truncate = false;
+    bool forbid_truncate = false;
 
     for (const auto & child : alter.command_list->children)
     {
@@ -180,6 +180,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             }
             else if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
             {
+                forbid_truncate = true;
+
                 /// TODO: add a check for result query size.
                 auto rewritten_command_ast = replaceNonDeterministicToScalars(*command_ast, getContext());
                 if (rewritten_command_ast)
@@ -210,7 +212,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
     }
 
-    if (is_truncate)
+    if (is_truncate && !forbid_truncate)
     {
         auto context = getContext();
         context->checkAccess(AccessType::TRUNCATE, table_id);
