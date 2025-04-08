@@ -1266,7 +1266,8 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_length);
 
-            if (!emplace_result.has_value()) {
+            if (!emplace_result.has_value())
+            {
                 places[i] = nullptr;
                 continue;
             }

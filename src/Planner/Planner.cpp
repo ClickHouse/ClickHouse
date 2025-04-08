@@ -566,7 +566,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
-        query_analysis_result.limit_length,
+        query_analysis_result.limit_length > 0 ? query_analysis_result.limit_length : 18446744073709551615ull,
         optimization_indexes);
 
     return aggregator_params;
