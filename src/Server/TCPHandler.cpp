@@ -550,8 +550,8 @@ void TCPHandler::runImpl()
             {
                 if (!session->globalContext()->getServerSettings()[ServerSetting::process_query_plan_packet])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Reading of QueryPlan packed is disabled. "
-                        "Enable process_query_plan_packet is server config or disable serialize_query_plan setting.");
+                        "Reading of QueryPlan packet is disabled. "
+                        "Enable process_query_plan_packet in server config or disable serialize_query_plan setting.");
 
                 query_state->query_context->setQueryPlanDeserializationCallback([&query_state]()
                 {
