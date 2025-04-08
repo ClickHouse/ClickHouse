@@ -117,7 +117,6 @@ message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 
 # We now prepare a custom config.toml with all the flags and add it to cargo via flags
-# This needs to be done for each project using set_property(INTERFACE_CORROSION_CARGO_FLAGS)
 configure_file("config.toml.in" "config.toml" @ONLY)
 set (RUST_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config.toml" CACHE INTERNAL "Rust config")
 
@@ -135,5 +134,20 @@ function(clickhouse_import_crate)
     disable_dummy_launchers_if_needed()
     corrosion_import_crate(${ARGN} NO_STD PROFILE ${profile} CRATE_TYPES staticlib LOCKED FLAGS --offline NO_DEFAULT_FEATURES)
     enable_dummy_launchers_if_needed()
+endfunction()
 
+function(clickhouse_config_crate target_name)
+    # We set manually the cargo config flags via command line `--config` option
+    # We have to do it this way because workspaces are built from source folder and we can't place the `config.toml`
+    # there, as it would conflict if you have multiple build folders
+    get_property(
+        CRATE_CARGO_FLAGS
+        TARGET "${target_name}"
+        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS
+    )
+
+    set_property(
+        TARGET "${target_name}"
+        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS "${CRATE_CARGO_FLAGS};--config=${RUST_CONFIG_FILE}"
+    )
 endfunction()

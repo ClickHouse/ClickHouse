@@ -62,26 +62,7 @@ corrosion_set_env_vars(delta_kernel_ffi
         "OPENSSL_STATIC=1"
         "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
         "OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_BINARY_DIR}/${PLATFORM_DIRECTORY}")
-
-# We set manually the cargo config flags via command line `--config` option
-# This is needed to pass the proper compilation flags (CC, CXX, CFLAGS, etc)
-# We have to do it this way because the project is built from the source folder and we can't place the `config.toml`
-# there, as it would conflict if you have multiple build folders
-get_property(
-        INTERFACE_DELTA_CARGO_FLAGS
-        TARGET delta_kernel_ffi
-        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS
-)
-set_property(
-        TARGET delta_kernel_ffi
-        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS "${INTERFACE_DELTA_CARGO_FLAGS};--config=${RUST_CONFIG_FILE}"
-)
-get_property(
-        INTERFACE_DELTA_CARGO_FLAGS
-        TARGET delta_kernel_ffi
-        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS
-)
-message(STATUS "Delta-kernel cargo flags: ${INTERFACE_DELTA_CARGO_FLAGS}")
+clickhouse_config_crate(delta_kernel_ffi)
 
 target_include_directories(delta_kernel_ffi INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
 target_link_libraries(delta_kernel_ffi INTERFACE OpenSSL::Crypto OpenSSL::SSL)
