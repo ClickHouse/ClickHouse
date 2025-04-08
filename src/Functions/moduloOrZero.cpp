@@ -51,7 +51,7 @@ REGISTER_FUNCTION(ModuloOrZero)
     FunctionDocumentation::Argument argument1 = {"a", "The dividend"};
     FunctionDocumentation::Argument argument2 = {"b", "The divisor (modulus)"};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = "The remainer of a % b, or `0` when the divisor is `0`.";
+    FunctionDocumentation::ReturnedValue returned_value = "The remainder of a % b, or `0` when the divisor is `0`.";
     FunctionDocumentation::Example example1 = {"", "SELECT moduloOrZero(5, 0)", "0"};
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::Category categories = {"arithmetic"};

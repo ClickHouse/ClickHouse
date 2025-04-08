@@ -170,7 +170,7 @@ REGISTER_FUNCTION(Modulo)
     FunctionDocumentation::Argument argument1 = {"a", "The dividend"};
     FunctionDocumentation::Argument argument2 = {"b", "The divisor (modulus)"};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = "The remainer of a % b";
+    FunctionDocumentation::ReturnedValue returned_value = "The remainder of a % b";
     FunctionDocumentation::Example example1 = {"", "SELECT modulo(5, 2)", "1"};
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::Category categories = {"arithmetic"};

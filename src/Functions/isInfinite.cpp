@@ -43,7 +43,7 @@ REGISTER_FUNCTION(IsInfinite)
     FunctionDocumentation::Syntax syntax = "isInfinite(x)";
     FunctionDocumentation::Argument argument1 = {"x", "Number to check for infiniteness. Float32 or Float64."};
     FunctionDocumentation::Arguments arguments = {argument1};
-    FunctionDocumentation::ReturnedValue returned_value = "`1` if x is inifinite, otherwise `0` (including for `NaN`).";
+    FunctionDocumentation::ReturnedValue returned_value = "`1` if x is infinite, otherwise `0` (including for `NaN`).";
     FunctionDocumentation::Example example1 = {"Test if a number is infinite", R"(
     SELECT
         isInfinite(inf),
