@@ -543,7 +543,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 // is an unsigned integer lineral. We also allow nonnegative
                 // signed integer literals, because the fuzzer sometimes inserts
                 // them, and we want to have consistent formatting.
-                if (tuple_arguments_valid && lit_right)
+                if (tuple_arguments_valid && lit_left && lit_right)
                 {
                     if (isInt64OrUInt64FieldType(lit_right->value.getType())
                         && lit_right->value.safeGet<Int64>() >= 0)
