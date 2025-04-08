@@ -3,6 +3,7 @@ import pytest
 import time
 
 from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.config_cluster import kafka_sasl_user, kafka_sasl_pass
 from helpers.test_tools import assert_eq_with_retry
 
 from kafka import KafkaProducer
@@ -24,8 +25,8 @@ def get_kafka_producer(port):
                 bootstrap_servers = "localhost:{}".format(port),
                 security_protocol = "SASL_PLAINTEXT",
                 sasl_mechanism    = "PLAIN",
-                sasl_plain_username = "admin",
-                sasl_plain_password = "admin-password",
+                sasl_plain_username = kafka_sasl_user,
+                sasl_plain_password = kafka_sasl_pass,
                 value_serializer = lambda v: v.encode('utf-8'),
             )
             logging.debug("Kafka Connection established: localhost:{}".format(port))
@@ -62,8 +63,8 @@ def test_kafka_sasl(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka_sasl:19092',
                      kafka_security_protocol = 'sasl_plaintext',
                      kafka_sasl_mechanism = 'PLAIN',
-                     kafka_sasl_username = 'admin',
-                     kafka_sasl_password = 'admin-password',
+                     kafka_sasl_username = '{kafka_sasl_user}',
+                     kafka_sasl_password = '{kafka_sasl_pass}',
                      kafka_topic_list = 'topic1',
                      kafka_group_name = 'group1',
                      kafka_format = 'JSONEachRow';

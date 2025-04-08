@@ -9,6 +9,7 @@
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Storages/NATS/NATS_fwd.h>
+#include <Storages/Kafka/Kafka_fwd.h>
 
 
 namespace DB
@@ -87,12 +88,6 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
 
         auto format_if_secret = [&]() -> bool
         {
-            if (change.name.contains("password"))
-            {
-                ostr << " = " << "'[HIDDEN]'";
-                return true;
-            }
-
             CustomType custom;
             if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
             {
@@ -121,6 +116,14 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
                 if (NATS::SETTINGS_TO_HIDE.contains(change.name))
                 {
                     ostr << " = " << NATS::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                    return true;
+                }
+            }
+            if (Kafka::TABLE_ENGINE_NAME == state.create_engine_name)
+            {
+                if (Kafka::SETTINGS_TO_HIDE.contains(change.name))
+                {
+                    ostr << " = " << Kafka::SETTINGS_TO_HIDE.at(change.name)(change.value);
                     return true;
                 }
             }
@@ -174,6 +177,8 @@ bool ASTSetQuery::hasSecretParts() const
         if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
             return true;
         if (NATS::SETTINGS_TO_HIDE.contains(change.name))
+            return true;
+        if (Kafka::SETTINGS_TO_HIDE.contains(change.name))
             return true;
     }
     return false;
