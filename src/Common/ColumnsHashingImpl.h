@@ -393,7 +393,8 @@ protected:
                        && !std::is_same_v<KeyHolder, UInt128>
                        && !std::is_same_v<KeyHolder, Int256>
                        && !std::is_same_v<KeyHolder, UInt256>) { // MVP. Support only basic types
-                if (optimization_indexes && data.size() >= limit_length + 1) { // TODO do == and assert <=
+                if (optimization_indexes && data.size() > limit_length)
+                {
                     chassert(optimization_indexes->size() == 1 && (*optimization_indexes)[0].first == 0);
                     if constexpr (HasBegin<Data>::value)
                     {
