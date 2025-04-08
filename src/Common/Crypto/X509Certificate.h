@@ -105,7 +105,7 @@ public:
                 /// We read at least one cert, and can't find
                 /// the beginning of a next one.
                 /// This most likely means we reached the end of the file.
-                if (certs.size() > 0
+                if (!certs.empty()
                     /// Manually unwrap ERR_GET_REASON(err) due to ossl_unused
                     /// https://github.com/openssl/openssl/issues/16776
                     ///
