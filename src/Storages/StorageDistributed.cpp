@@ -37,6 +37,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -970,14 +971,25 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     const auto & settings = local_context->getSettingsRef();
     auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
 
-    /// Unwrap view() function.
     if (src_distributed.remote_table_function_ptr)
     {
         const TableFunctionPtr src_table_function =
             TableFunctionFactory::instance().get(src_distributed.remote_table_function_ptr, local_context);
-        const TableFunctionView * view_function =
-            assert_cast<const TableFunctionView *>(src_table_function.get());
-        new_query->select = view_function->getSelectQuery().clone();
+        if (const TableFunctionView * view_function = typeid_cast<const TableFunctionView *>(src_table_function.get()))
+        {
+            new_query->select = view_function->getSelectQuery().clone();
+        }
+        else
+        {
+            const auto select = std::make_shared<ASTSelectQuery>();
+
+            auto expression_list = std::make_shared<ASTExpressionList>();
+            expression_list->children.push_back(std::make_shared<ASTAsterisk>());
+            select->setExpression(ASTSelectQuery::Expression::SELECT, expression_list->clone());
+            select->addTableFunction(src_distributed.remote_table_function_ptr);
+
+            new_query->select = select;
+        }
     }
     else
     {
