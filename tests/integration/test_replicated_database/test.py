@@ -980,8 +980,6 @@ def test_recover_staled_replica(started_cluster):
     )
     main_node.query("DROP DATABASE recover SYNC")
     dummy_node.query("DROP DATABASE recover SYNC")
-    dummy_node.query("DROP DATABASE recover_broken_tables SYNC")
-    dummy_node.query("DROP DATABASE recover_broken_replicated_tables SYNC")
 
 
 def test_recover_staled_replica_many_mvs(started_cluster):
