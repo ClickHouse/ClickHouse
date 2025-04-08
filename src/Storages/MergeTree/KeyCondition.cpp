@@ -572,6 +572,23 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
     return need_inversion ? makeASTFunction("not", cloned_node) : cloned_node;
 }
 
+static bool isTrivialCast(const ActionsDAG::Node & node)
+{
+    if (node.function_base->getName() != "CAST" || node.children.size() != 2 || node.children[1]->type != ActionsDAG::ActionType::COLUMN)
+        return false;
+
+    const auto * column_const = typeid_cast<const ColumnConst *>(node.children[1]->column.get());
+    if (!column_const)
+        return false;
+
+    Field field = column_const->getField();
+    if (field.getType() != Field::Types::String)
+        return false;
+
+    auto type_name = field.safeGet<String>();
+    return node.children[0]->result_type->getName() == type_name;
+}
+
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node & node,
     ActionsDAG & inverted_dag,
@@ -654,6 +671,11 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             else if (name == "materialize")
             {
                 /// Remove "materialize" from index analysis.
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+            }
+            else if (isTrivialCast(node))
+            {
+                /// Remove trivial cast and keep its first argument.
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
             }
             else if (need_inversion && (name == "and" || name == "or"))
