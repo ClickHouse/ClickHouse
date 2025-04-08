@@ -36,29 +36,16 @@ struct ManifestFileCacheKey
 
 using ManifestFileCacheKeys = std::vector<ManifestFileCacheKey>;
 
-/// We have three kind of metadata files in iceberg: metadata object, manifest list and manifest files.
-/// For simplicity, we keep them in same cache.
-struct IcebergMetadataFilesCacheCell
+/// We have three kinds of metadata files in iceberg: metadata object, manifest list and manifest files.
+/// For simplicity, we keep them in the same cache.
+struct IcebergMetadataFilesCacheCell : private boost::noncopyable
 {
     /// The cached element could be
     /// - metadata.json deserialized as Poco::JSON::Object::Ptr
     /// - manifest list consists of cache keys which will retrieve the manifest file from cache
     /// - manifest file
     std::variant<Poco::JSON::Object::Ptr, ManifestFileCacheKeys, Iceberg::ManifestFilePtr> cached_element;
-
     Int64 memory_bytes;
-    CurrentMetrics::Increment metric_increment;
-    static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200; /// we always underestimate the size of an object;
-
-    static size_t getMemorySizeOfManifestCacheKeys(const ManifestFileCacheKeys & manifest_file_cache_keys)
-    {
-         size_t total_size = 0;
-         for (const auto & entry: manifest_file_cache_keys)
-         {
-             total_size += sizeof(Iceberg::ManifestFileEntry) + entry.manifest_file_path.capacity();
-         }
-         return total_size;
-    }
 
     explicit IcebergMetadataFilesCacheCell(Poco::JSON::Object::Ptr metadata_object_, size_t memory_bytes_)
         : cached_element(metadata_object_)
@@ -78,8 +65,20 @@ struct IcebergMetadataFilesCacheCell
         , metric_increment{CurrentMetrics::IcebergMetadataFilesCacheSize, memory_bytes}
     {
     }
-    IcebergMetadataFilesCacheCell(const IcebergMetadataFilesCacheCell &) = delete;
-    IcebergMetadataFilesCacheCell & operator=(const IcebergMetadataFilesCacheCell &) = delete;
+private:
+    CurrentMetrics::Increment metric_increment;
+    static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200; /// we always underestimate the size of an object;
+
+    static size_t getMemorySizeOfManifestCacheKeys(const ManifestFileCacheKeys & manifest_file_cache_keys)
+    {
+         size_t total_size = 0;
+         for (const auto & entry: manifest_file_cache_keys)
+         {
+             total_size += sizeof(ManifestFileCacheKey) + entry.manifest_file_path.capacity();
+         }
+         return total_size;
+    }
+
 };
 
 struct IcebergMetadataFilesCacheWeightFunction
