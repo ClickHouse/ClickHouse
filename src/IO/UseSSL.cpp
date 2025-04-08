@@ -17,8 +17,10 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
+#if USE_SSL
 OSSL_PROVIDER * DB::UseSSL::default_provider = nullptr;
 OSSL_PROVIDER * DB::UseSSL::legacy_provider = nullptr;
+#endif
 
 UseSSL::UseSSL()
 {
