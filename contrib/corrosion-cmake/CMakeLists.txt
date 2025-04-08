@@ -131,17 +131,19 @@ function(clickhouse_import_crate)
         endif()
     endif()
 
-    # We set manually the cargo config flags via command line `--config` option
-    # We have to do it this way because workspaces are built from source folder and we can't place the `config.toml`
-    # there, as it would conflict if you have multiple build folders
     disable_dummy_launchers_if_needed()
     corrosion_import_crate(${ARGN}
+            # We set manually the cargo config flags via command line `--config` option
+            # We have to do it this way because workspaces are built from source folder and we can't place the `config.toml`
+            # there, as it would conflict if you have multiple build folders
             FLAGS "--config=${RUST_CONFIG_FILE}"
             NO_STD
             PROFILE ${profile}
+            # We only care about static libraries and want to avoid as much dynamic libs as possible
             CRATE_TYPES staticlib
-            LOCKED FLAGS --offline
+            LOCKED
+            FLAGS --offline # It's ok to pass FLAGS multiple times
             NO_DEFAULT_FEATURES
-            )
+    )
     enable_dummy_launchers_if_needed()
 endfunction()
