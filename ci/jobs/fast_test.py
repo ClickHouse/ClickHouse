@@ -1,12 +1,14 @@
 import argparse
+import time
+from pathlib import Path
 
-from praktika.result import Result
-from praktika.settings import Settings
-from praktika.utils import MetaClasses, Shell, Utils
-
+from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
-from ci.workflows.defs import ToolSet
+from ci.praktika.info import Info
+from ci.praktika.result import Result
+from ci.praktika.settings import Settings
+from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/build"
@@ -21,7 +23,6 @@ def clone_submodules():
         "contrib/boost",
         "contrib/zlib-ng",
         "contrib/libxml2",
-        "contrib/libunwind",
         "contrib/fmtlib",
         "contrib/aklomp-base64",
         "contrib/cctz",
@@ -105,6 +106,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Fast Test Job")
+    parser.add_argument("--test", help="Optional test_case name to run", default="")
     parser.add_argument("--param", help="Optional custom job start stage", default=None)
     return parser.parse_args()
 
@@ -122,10 +124,28 @@ def main():
             stages.pop(0)
         stages.insert(0, stage)
 
+    clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
+    if Info().is_local_run:
+        if clickhouse_bin_path.exists():
+            print(
+                f"NOTE: It's a local run and clickhouse binary is found [{clickhouse_bin_path}] - skip the build"
+            )
+            stages = [JobStages.CONFIG, JobStages.TEST]
+        else:
+            print(
+                f"NOTE: It's a local run and clickhouse binary is not found [{clickhouse_bin_path}] - will be built"
+            )
+            time.sleep(5)
+        clickhouse_server_link = Path(f"{build_dir}/programs/clickhouse-server")
+        if not clickhouse_server_link.is_file():
+            Shell.check(f"ln -sf {clickhouse_bin_path} {clickhouse_server_link}")
+        Shell.check(f"chmod +x {clickhouse_bin_path}")
+
     Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
 
     res = True
     results = []
+    attach_files = []
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
@@ -139,11 +159,12 @@ def main():
 
     if res and JobStages.CMAKE in stages:
         results.append(
+            # TODO: commented out to make job platform agnostic
+            #   -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake \
             Result.from_commands_run(
                 name="Cmake configuration",
                 command=f"cmake {current_directory} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
                 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} \
-                -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake \
                 -DENABLE_LIBRARIES=0 \
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DCOMPILER_CACHE=sccache",
@@ -169,8 +190,6 @@ def main():
     if res and JobStages.BUILD in stages:
         commands = [
             f"mkdir -p {Settings.OUTPUT_DIR}/binaries",
-            f"cp ./programs/clickhouse {Settings.OUTPUT_DIR}/binaries/clickhouse",
-            f"zstd --threads=0 --force programs/clickhouse-stripped -o {Settings.OUTPUT_DIR}/binaries/clickhouse-stripped.zst",
             "sccache --show-stats",
             "clickhouse-client --version",
             "clickhouse-test --help",
@@ -204,6 +223,7 @@ def main():
         res = results[-1].is_ok()
 
     CH = ClickHouseProc(fast_test=True)
+    attach_debug = False
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
@@ -213,19 +233,41 @@ def main():
         results.append(
             Result.create_from(name=step_name, status=res, stopwatch=stop_watch_)
         )
+        if not results[-1].is_ok():
+            attach_debug = True
 
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
-        res = res and CH.run_fast_test()
+        res = res and CH.run_fast_test(test=args.test or "")
         if res:
             results.append(FTResultsProcessor(wd=Settings.OUTPUT_DIR).run())
-        results[-1].set_timing(stopwatch=stop_watch_)
+            results[-1].set_timing(stopwatch=stop_watch_)
+        else:
+            results.append(
+                Result.create_from(
+                    name=step_name,
+                    status=Result.Status.ERROR,
+                    stopwatch=stop_watch_,
+                    info="Tests run error",
+                )
+            )
+        if not results[-1].is_ok():
+            attach_debug = True
+
+    if attach_debug:
+        attach_files += [
+            Utils.compress_file(f"{temp_dir}/build/programs/clickhouse-stripped"),
+            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
+            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
+        ]
 
     CH.terminate()
 
-    Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+    Result.create_from(
+        results=results, stopwatch=stop_watch, files=attach_files
+    ).complete_job()
 
 
 if __name__ == "__main__":
