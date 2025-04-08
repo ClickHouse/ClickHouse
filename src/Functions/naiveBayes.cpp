@@ -112,11 +112,27 @@ public:
             UInt32 count = 0;
             DB::readBinary(count, in); // read the 4-byte count
 
-            StringRef ngram_ref = allocateString(ngram);
+            StringRef temp(ngram.data(), ngram.size());
+            auto it = ngram_counts.find(temp);
 
-            auto & class_map = ngram_counts[ngram_ref];
-            class_map[class_id] += count;
+            if (it == ngram_counts.end())
+            {
+                /// The key is not present: allocate the string in the arena
+                StringRef key = allocateString(ngram);
+                typename NGramMap::LookupResult insert_it;
+                bool inserted;
+                ngram_counts.emplace(key, insert_it, inserted);
+                if (inserted)
+                {
+                    it = insert_it;
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to insert ngram {} into the map.", ngram);
+                }
+            }
 
+            it->getMapped()[class_id] += count;
             class_totals[class_id] += count;
         }
 
