@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree
+# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache
 # Tag no-shared-merge-tree: does not support replication
+# Tag no-distributed-cache: requires investigation
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

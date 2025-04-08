@@ -143,8 +143,7 @@ namespace
     {
         uint8_t ciphertext[kBlockSize];
         int ciphertext_size = 0;
-        if (!EVP_EncryptFinal_ex(evp_ctx,
-                                 ciphertext, &ciphertext_size))
+        if (!EVP_EncryptFinal_ex(evp_ctx, ciphertext, &ciphertext_size))
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_EncryptFinal_ex: {}", getOpenSSLErrors());
         __msan_unpoison(ciphertext, ciphertext_size); /// OpenSSL uses assembly which evades msans analysis
         if (ciphertext_size)
@@ -302,7 +301,7 @@ void Encryptor::encrypt(const char * data, size_t size, WriteBuffer & out)
 
     if (!EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
                             reinterpret_cast<const uint8_t*>(key.c_str()), reinterpret_cast<const uint8_t*>(current_iv.c_str())))
-        throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "!EVP_EncryptInit_ex failed: {}", getOpenSSLErrors());
+        throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_EncryptInit_ex failed: {}", getOpenSSLErrors());
 
     size_t in_size = 0;
     size_t out_size = 0;
