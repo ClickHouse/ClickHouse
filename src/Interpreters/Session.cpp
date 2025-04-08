@@ -251,36 +251,29 @@ private:
 
                 const auto & session = session_it->second;
 
-                /// It is possible to get a race here. Let's suppose the following situation happens:
-                ///   1. Named session "abc" is created.
-                ///   2. Named session "abc" is being closed through "releaseAndCloseSession", that effectively
-                ///      means that the named session is erased from sessions map,
-                ///      close_time_bucket is set and close_time_buckets updated in scheduleCloseSession.
-                ///   3. Named session "abc" is being recreated (basically it's a totally new session with the same name),
-                ///      but close_time_buckets is not updated (under assumption, that this is a new session and it wasn't
-                ///      present at all there).
-                ///   4. We invoke closeSessions from cleanThread, we see in close_time_buckets the session with name "abc",
-                ///      and while technically it's an old named session and we shouldn't do anything, we see a new "abc"
-                ///      named session in the sessions map. At this point there's no way to distinguish between a new and an
-                ///      old session. Since new "abc" session is currently in use, the refcount is 2 and we delay closing of
-                ///      the session. At the same time we invoke scheduleCloseSession and update close_time_bucket for a new
-                ///      "abc" session. This already means that the timeout for session if effectively 0 at this point.
-                ///   5. When releaseSessionID is being called, we again invoke scheduleCloseSession. But since we updated
-                ///      close_time_bucket for this session, the assert fails and we get logical error.
+                /// We can get here only if the session is still in use somehow. But since we don't allow concurrent usage
+                /// of the same session, that means that the session wasn't yet released or closed.
+                //
+                /// The only two ways, that could lead to such a situation in theory are:
+                ///   1. The session is released, but being reused before the timeout expires
+                ///   2. The session was closed, but a new one with the same name was created before the timeout for a
+                ///      previous one expires.
                 ///
-                /// In fact, refcount > 1 is only possible when we have acquired a new session with the same name. And in such
-                /// a scenario we don't need to do anything and try to close the session ASAP. The closing of the session will
-                /// be triggered by scheduleCloseSession respecting the session timeout (either through releaseSessionID or
-                /// releaseAndCloseSession).
+                /// For the first one, if we reuse the same session, there's a special block that resets session close
+                /// time bucket, and effectively cancels a previous scheduleCloseSession call.
+                //
+                /// Also note, that we can't create a session with the same name and get here while it's in use.
+                /// The only way to get here in such a case would be if we called a scheduleCloseSession from inside
+                /// releaseAndCloseSession. But since it's not the case, such a scenario is not possible.
+                ///
+                /// That means that if the session is still in use at this point, something went really wrong.
                 if (session.use_count() != 1)
                 {
-                    LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}, refcount: {}",
-                        key.second, toString(key.first), session.use_count());
-                    continue;
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Session is still in use, session_id: {}, user_id: {}, refcount: {}",
+                            key.second, toString(key.first), session.use_count());
                 }
 
                 LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, toString(key.first));
-
                 sessions.erase(session_it);
             }
         }
