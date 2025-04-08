@@ -45,12 +45,12 @@ private:
     /// N-gram size
     const UInt32 n;
 
+    /// Laplace smoothing parameter
+    const double alpha;
+
     /// Start and end tokens to pad the input string
     const String start_token;
     const String end_token;
-
-    /// Laplace smoothing parameter
-    const double alpha = 1.0;
 
     NGramMap ngram_counts;
     ClassCountMap class_totals;
@@ -60,9 +60,6 @@ private:
 
     /// Vocabulary size is the number of distinct tokens in the model across all classes
     size_t vocabulary_size = 0;
-
-    /// Useful to detect if the model has been loaded before classifying
-    bool model_loaded = false;
 
     /// Arena to own all the key strings
     Arena pool;
@@ -206,20 +203,14 @@ public:
 
         /// Vocabulary size is the number of distinct tokens
         vocabulary_size = ngram_counts.size();
-
-        /// Mark the model as loaded
-        model_loaded = true;
     }
 
     /// Classify an input string. The function splits the input into tokens (by space)
-    /// and computes a log-probability for each class using Laplace smoothing
+    /// and adds (n - 1) start tokens at the front and (n - 1) end tokens at the back.
+    /// Then, it creates n-grams and computes the log probabilities for each class.
+    /// Finally, it returns the class with the highest log probability.
     UInt32 classify(const String & input) const
     {
-        if (!model_loaded)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Model not loaded. Load the model using loadModel() before classifying.");
-        }
-
         ProbabilityMap class_log_probabilities;
         for (const auto & entry : class_priors)
         {
@@ -229,38 +220,55 @@ public:
         std::vector<String> tokens;
         boost::split(tokens, input, boost::is_any_of(" "));
 
-        // If n > 1, add (n - 1) start tokens at the front and (n - 1) end tokens at the back
+        /// Add (n - 1) start tokens at the front and (n - 1) end tokens at the back
         if (n > 1)
         {
             std::vector<String> padded;
+            padded.reserve(tokens.size() + (n - 1) * 2);
             padded.insert(padded.end(), n - 1, start_token);
             padded.insert(padded.end(), tokens.begin(), tokens.end());
             padded.insert(padded.end(), n - 1, end_token);
             tokens = std::move(padded);
         }
 
-        // Now, create n-grams: each ngram will consist of n consecutive tokens
+        /// Now, create n-grams: each ngram will consist of n consecutive tokens
         std::vector<String> ngrams;
         if (tokens.size() >= n)
         {
+            ngrams.reserve(tokens.size() - n + 1);
             for (size_t i = 0; i <= tokens.size() - n; ++i)
             {
-                String ngram;
-                for (size_t j = 0; j < n; ++j)
+                // Pre-calculate the final length of the ngram
+                size_t total_length = 0;
+                for (size_t j = i; j < i + n; ++j)
                 {
-                    if (j > 0)
-                        ngram += " ";
-                    ngram += tokens[i + j];
+                    total_length += tokens[j].size();
                 }
-                ngrams.push_back(ngram);
+                total_length += (n - 1); // spaces between tokens
+
+                String ngram;
+                ngram.resize(total_length);
+                size_t pos = 0;
+                for (size_t j = i; j < i + n; ++j)
+                {
+                    if (j > i)
+                    {
+                        ngram[pos++] = ' ';
+                    }
+                    const String & token = tokens[j];
+                    memcpy(&ngram[pos], token.data(), token.size());
+                    pos += token.size();
+                }
+                ngrams.push_back(std::move(ngram));
             }
         }
 
         for (const auto & ngram : ngrams)
         {
-            StringRef token_ref(ngram);
-            bool token_exists = (ngram_counts.find(token_ref) != ngram_counts.end());
-            const auto * token_class_map = token_exists ? &ngram_counts.find(token_ref)->getMapped() : nullptr;
+            StringRef ngram_ref(ngram);
+            auto ref_it = ngram_counts.find(ngram_ref);
+            bool token_exists = (ref_it != ngram_counts.end());
+            const auto * token_class_map = token_exists ? &ref_it->getMapped() : nullptr;
             for (const auto & class_entry : class_totals)
             {
                 UInt32 class_id = class_entry.getKey();
@@ -374,6 +382,8 @@ public:
                 priors[class_id] = prior;
             }
 
+            const String start_token = config.getString("nb_models." + key + ".start_token", "<s>");
+            const String end_token = config.getString("nb_models." + key + ".end_token", "</s>");
             const double alpha = config.getDouble("nb_models." + key + ".alpha", 1.0);
 
             if (alpha <= 0.0)
