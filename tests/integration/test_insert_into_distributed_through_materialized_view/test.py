@@ -107,7 +107,6 @@ def test_reconnect(started_cluster):
         time.sleep(1)
 
         assert remote.query("SELECT count(*) FROM local1").strip() == "3"
-        remote.query("TRUNCATE local1 SYNC")
 
 
 def test_inserts_local(started_cluster):
@@ -115,4 +114,3 @@ def test_inserts_local(started_cluster):
     instance.query("INSERT INTO local_source VALUES ('2000-01-01', 1)")
     time.sleep(0.5)
     assert instance.query("SELECT count(*) FROM local").strip() == "1"
-    instance.query("TRUNCATE local SYNC")
