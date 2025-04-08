@@ -484,7 +484,7 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
 
 CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
-    auto get_codec_or_default = [&](const auto & column_desc)
+    auto get_codec_or_default = [&default_codec](const auto & column_desc)
     {
         return column_desc.codec
             ? CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec)
@@ -499,9 +499,8 @@ CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, Compr
     if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
         return get_codec_or_default(*virtual_desc);
 
-    return default_codec;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
 }
-
 
 CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name) const
 {

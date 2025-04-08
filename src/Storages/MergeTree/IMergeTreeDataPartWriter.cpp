@@ -122,24 +122,19 @@ SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & colum
 
 ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
-    auto get_codec_or_default = [this, &default_codec](const auto & column_desc)
-    {
-        if (column_desc.codec)
-            return column_desc.codec;
+    ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
 
-        auto default_compression_codec_mergetree_settings = (*storage_settings)[MergeTreeSetting::default_compression_codec].toString();
-        if (!default_compression_codec_mergetree_settings.empty())
-            return CompressionCodecFactory::instance().get(default_compression_codec_mergetree_settings)->getFullCodecDesc();
-
-        return default_codec->getFullCodecDesc();
-    };
+    auto default_compression_codec_mergetree_settings = (*storage_settings)[MergeTreeSetting::default_compression_codec].toString();
+    // Prioritize the codec from the settings over `default_codec`
+    if (!default_compression_codec_mergetree_settings.empty())
+        default_codec_desc = CompressionCodecFactory::instance().get(default_compression_codec_mergetree_settings)->getFullCodecDesc();
 
     const auto & columns = metadata_snapshot->getColumns();
     if (const auto * column_desc = columns.tryGet(column_name))
-        return get_codec_or_default(*column_desc);
+        return column_desc->codec ? column_desc->codec : default_codec_desc;
 
     if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
-        return get_codec_or_default(*virtual_desc);
+        return virtual_desc->codec ? virtual_desc->codec : default_codec_desc;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
 }
