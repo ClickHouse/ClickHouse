@@ -1995,47 +1995,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
     };
 }
 
-JoinTreeQueryPlan joinPlansWithStep(
-    QueryPlanStepPtr join_step,
-    JoinTreeQueryPlan left_join_tree_query_plan,
-    JoinTreeQueryPlan right_join_tree_query_plan)
-{
-    std::vector<QueryPlanPtr> plans;
-    plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_join_tree_query_plan.query_plan)));
-    plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_join_tree_query_plan.query_plan)));
-
-    QueryPlan result_plan;
-    auto inputs_count = join_step->getInputHeaders().size();
-    if (inputs_count == 2)
-        result_plan.unitePlans(std::move(join_step), {std::move(plans)});
-    else if (inputs_count == 1)
-        result_plan = std::move(*plans[0]);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "JOIN step expected to have 1 or 2 inputs. Actual {}", inputs_count);
-
-    /// Collect all required row_policies and actions sets from left and right join tree query plans
-
-    auto result_used_row_policies = std::move(left_join_tree_query_plan.used_row_policies);
-    for (const auto & right_join_tree_query_plan_row_policy : right_join_tree_query_plan.used_row_policies)
-        result_used_row_policies.insert(right_join_tree_query_plan_row_policy);
-
-    auto result_useful_sets = std::move(left_join_tree_query_plan.useful_sets);
-    for (const auto & useful_set : right_join_tree_query_plan.useful_sets)
-        result_useful_sets.insert(useful_set);
-
-    auto result_mapping = std::move(left_join_tree_query_plan.query_node_to_plan_step_mapping);
-    const auto & r_mapping = right_join_tree_query_plan.query_node_to_plan_step_mapping;
-    result_mapping.insert(r_mapping.begin(), r_mapping.end());
-
-    return JoinTreeQueryPlan{
-        .query_plan = std::move(result_plan),
-        .from_stage = QueryProcessingStage::FetchColumns,
-        .used_row_policies = std::move(result_used_row_policies),
-        .useful_sets = std::move(result_useful_sets),
-        .query_node_to_plan_step_mapping = std::move(result_mapping),
-    };
-}
-
 JoinTreeQueryPlan buildQueryPlanForJoinNode(
     const QueryTreeNodePtr & join_table_expression,
     JoinTreeQueryPlan left_join_tree_query_plan,
@@ -2057,24 +2016,12 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         return buildQueryPlanForJoinNodeLegacy(
             join_table_expression, std::move(left_join_tree_query_plan), std::move(right_join_tree_query_plan), outer_scope_columns, planner_context, select_query_info);
 
-    auto join_step_logical = buildJoinStepLogical(
-        left_join_tree_query_plan.query_plan.getCurrentHeader(),
-        right_join_tree_query_plan.query_plan.getCurrentHeader(),
+    return buildJoinStepLogical(
+        std::move(left_join_tree_query_plan),
+        std::move(right_join_tree_query_plan),
         outer_scope_columns,
         join_node,
         planner_context);
-
-    join_step_logical->setPreparedJoinStorage(
-        tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context));
-
-    const auto & join_expression_actions = join_step_logical->getExpressionActions();
-    appendSetsFromActionsDAG(*join_expression_actions.left_pre_join_actions, left_join_tree_query_plan.useful_sets);
-    appendSetsFromActionsDAG(*join_expression_actions.post_join_actions, left_join_tree_query_plan.useful_sets);
-    appendSetsFromActionsDAG(*join_expression_actions.right_pre_join_actions, right_join_tree_query_plan.useful_sets);
-    return joinPlansWithStep(
-        std::move(join_step_logical),
-        std::move(left_join_tree_query_plan),
-        std::move(right_join_tree_query_plan));
 }
 
 JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_join_table_expression,

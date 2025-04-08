@@ -24,6 +24,7 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <stack>
+#include <ranges>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
@@ -494,7 +495,7 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutputs(const Names & names) cons
     return required_nodes;
 }
 
-void ActionsDAG::addOrReplaceInOutputs(const Node & node)
+bool ActionsDAG::addOrReplaceInOutputs(const Node & node)
 {
     bool replaced = false;
     for (auto & output_node : outputs)
@@ -508,6 +509,8 @@ void ActionsDAG::addOrReplaceInOutputs(const Node & node)
 
     if (!replaced)
         outputs.push_back(&node);
+
+    return replaced;
 }
 
 NamesAndTypesList ActionsDAG::getRequiredColumns() const
@@ -1401,6 +1404,43 @@ void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression, cons
     removeUnusedActions(/*allow_remove_inputs = */ false);
 }
 #endif
+
+/// Returns the list of inputs required to compute the target node.
+ActionsDAG::NodeRawConstPtrs ActionsDAG::getRequiredInputs(const Node * target_node) const
+{
+    std::unordered_map<const Node *, bool> input_map;
+    for (const auto * input : inputs)
+        input_map[input] = false;
+
+    std::unordered_set<const Node *> visited_nodes;
+    std::stack<const Node *> stack;
+
+    stack.push(target_node);
+    while (!stack.empty())
+    {
+        const auto * node = stack.top();
+        stack.pop();
+
+        if (visited_nodes.contains(node))
+            continue;
+
+        visited_nodes.insert(node);
+
+        if (auto it = input_map.find(node); it != input_map.end())
+            it->second = true;
+
+        for (const auto * child : node->children)
+            stack.push(child);
+    }
+
+    NodeRawConstPtrs required_inputs;
+    for (const auto & [node, is_required] : input_map)
+    {
+        if (is_required)
+            required_inputs.push_back(node);
+    }
+    return required_inputs;
+}
 
 std::string ActionsDAG::dumpDAG() const
 {

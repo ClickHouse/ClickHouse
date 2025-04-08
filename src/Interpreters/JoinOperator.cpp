@@ -1,4 +1,4 @@
-#include <Interpreters/JoinInfo.h>
+#include <Interpreters/JoinOperator.h>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
 #include <fmt/ranges.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -121,6 +122,8 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     join_to_sort_minimum_perkey_rows = query_settings[Setting::join_to_sort_minimum_perkey_rows];
     join_to_sort_maximum_table_rows = query_settings[Setting::join_to_sort_maximum_table_rows];
     allow_experimental_join_right_table_sorting = query_settings[Setting::allow_experimental_join_right_table_sorting];
+
+
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
@@ -237,14 +240,10 @@ String toString(const JoinCondition & condition)
             return String{};
         return fmt::format("{}: {}", label, fmt::join(conditions | std::views::transform([](auto && x) { return toString(x); }), ", "));
     };
-    return fmt::format("{} {} {} {}",
+    return fmt::format("{} {}",
         fmt::join(condition.predicates | std::views::transform([](auto && x) { return toString(x); }), ", "),
-        format_conditions("Left filter", condition.left_filter_conditions),
-        format_conditions("Right filter", condition.right_filter_conditions),
-        format_conditions("Residual filter", condition.residual_conditions)
-    );
+        format_conditions("Filters", condition.restrict_conditions));
 }
-
 
 static bool checkNodeInOutputs(const ActionsDAG::Node * node, const ActionsDAG * actions_dag)
 {
@@ -256,11 +255,29 @@ static bool checkNodeInOutputs(const ActionsDAG::Node * node, const ActionsDAG *
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is not in outputs of actions DAG:\n{}", node->result_name, actions_dag->dumpDAG());
 }
 
-JoinActionRef::JoinActionRef(const ActionsDAG::Node * node_, const ActionsDAG * actions_dag_)
-    : actions_dag(actions_dag_)
-    , column_name(node_->result_name)
+JoinActionRef::JoinActionRef(std::nullptr_t)
+{
+}
+
+JoinActionRef::JoinActionRef(const ActionsDAG::Node * node_, ActionsDAG * actions_dag_, BaseRelsSet src_rels_)
+    : column_name(node_->result_name)
+    , src_rels(src_rels_)
+    , actions_dag(actions_dag_)
 {
     chassert(checkNodeInOutputs(node_, actions_dag));
+}
+
+ActionsDAG * JoinActionRef::getActions() const
+{
+    if (!actions_dag)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function {} called on uninitialized actions", __PRETTY_FUNCTION__);
+
+    return actions_dag;
+}
+
+void JoinActionRef::setActions(ActionsDAG * actions_dag_)
+{
+    actions_dag = actions_dag_;
 }
 
 const ActionsDAG::Node * JoinActionRef::getNode() const
@@ -339,16 +356,19 @@ JoinActionRef JoinActionRef::deserialize(ReadBuffer & in, const ActionsDAGRawPtr
     UInt64 pos;
     readVarUInt(pos, in);
 
-    if (pos >= dags.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot deserialize JoinActionRef because actions_dag position {} outside of range (0, {})",
-            pos, dags.size());
+    UNUSED(dags);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO {}", __PRETTY_FUNCTION__);
 
-    JoinActionRef res(nullptr);
-    readStringBinary(res.column_name, in);
-    res.actions_dag = dags[pos];
+    // if (pos >= dags.size())
+    //     throw Exception(ErrorCodes::LOGICAL_ERROR,
+    //         "Cannot deserialize JoinActionRef because actions_dag position {} outside of range (0, {})",
+    //         pos, dags.size());
 
-    return res;
+    // JoinActionRef res(nullptr);
+    // readStringBinary(res.column_name, in);
+    // res.actions_dag = dags[pos];
+
+    // return res;
 }
 
 void JoinPredicate::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
@@ -411,23 +431,16 @@ static std::vector<JoinActionRef> deserializeJoinActions(ReadBuffer & in, const 
 void JoinCondition::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
 {
     serializePredicates(out, predicates, dags);
-    serializeJoinActions(out, left_filter_conditions, dags);
-    serializeJoinActions(out, right_filter_conditions, dags);
-    serializeJoinActions(out, residual_conditions, dags);
+    serializeJoinActions(out, restrict_conditions, dags);
 }
 
 JoinCondition JoinCondition::deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
 {
-    auto predicates = deserializePredicates(in, dags);
-    auto left_filter_conditions = deserializeJoinActions(in, dags);
-    auto right_filter_conditions = deserializeJoinActions(in, dags);
-    auto residual_conditions = deserializeJoinActions(in, dags);
-    return {
-        std::move(predicates),
-        std::move(left_filter_conditions),
-        std::move(right_filter_conditions),
-        std::move(residual_conditions)
-    };
+    JoinCondition result;
+    result.predicates = deserializePredicates(in, dags);
+    result.restrict_conditions = deserializeJoinActions(in, dags);
+
+    return result;
 }
 
 void JoinExpression::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
@@ -468,21 +481,23 @@ JoinExpression JoinExpression::deserialize(ReadBuffer & in, const JoinActionRef:
     return {std::move(condition), std::move(disjunctive_conditions), bool(is_using_flag)};
 }
 
-void JoinInfo::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
+void JoinOperator::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
 {
-    expression.serialize(out, dags);
     serializeJoinKind(kind, out);
     serializeJoinStrictness(strictness, out);
     serializeJoinLocality(locality, out);
+    expression.serialize(out, dags);
 }
-JoinInfo JoinInfo::deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
+
+JoinOperator JoinOperator::deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
 {
-    auto expressin = JoinExpression::deserialize(in, dags);
     auto kind = deserializeJoinKind(in);
     auto strictness = deserializeJoinStrictness(in);
     auto locality = deserializeJoinLocality(in);
+    JoinOperator res(kind, strictness, locality);
+    res.expression = JoinExpression::deserialize(in, dags);
 
-    return {std::move(expressin), kind, strictness, locality};
+    return res;
 }
 
 }

@@ -8,8 +8,28 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Core/Settings.h>
+#include <Common/SafePtr.h>
 
 #include <QueryPipeline/SizeLimits.h>
+
+namespace DB
+{
+
+class BaseRelsSet : public std::bitset<64>
+{
+public:
+    BaseRelsSet() = default;
+    BaseRelsSet(UInt64 value) : std::bitset<64>(value) {} /// NOLINT
+    BaseRelsSet(const std::bitset<64> & value) : std::bitset<64>(value) {} /// NOLINT
+};
+
+}
+
+template <>
+struct std::hash<DB::BaseRelsSet>
+{
+    size_t operator()(const DB::BaseRelsSet & rels) const { return std::hash<std::bitset<64>>{}(rels); }
+};
 
 namespace DB
 {
@@ -44,7 +64,7 @@ inline std::optional<PredicateOperator> getJoinPredicateOperator(const String & 
     return {};
 }
 
-inline PredicateOperator reversePredicateOperator(PredicateOperator op)
+inline PredicateOperator flipPredicateOperator(PredicateOperator op)
 {
     switch (op)
     {
@@ -57,56 +77,45 @@ inline PredicateOperator reversePredicateOperator(PredicateOperator op)
     }
 }
 
-using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
-
-struct JoinExpressionActions
-{
-    JoinExpressionActions(const ColumnsWithTypeAndName & left_columns, const ColumnsWithTypeAndName & right_columns, const ColumnsWithTypeAndName & joined_columns)
-        : left_pre_join_actions(std::make_unique<ActionsDAG>(left_columns))
-        , right_pre_join_actions(std::make_unique<ActionsDAG>(right_columns))
-        , post_join_actions(std::make_unique<ActionsDAG>(joined_columns))
-    {
-    }
-
-    JoinExpressionActions(ActionsDAGPtr left_pre_join_actions_, ActionsDAGPtr right_pre_join_actions_, ActionsDAGPtr post_join_actions_)
-        : left_pre_join_actions(std::move(left_pre_join_actions_))
-        , right_pre_join_actions(std::move(right_pre_join_actions_))
-        , post_join_actions(std::move(post_join_actions_))
-    {
-    }
-
-    ActionsDAGPtr left_pre_join_actions;
-    ActionsDAGPtr right_pre_join_actions;
-    ActionsDAGPtr post_join_actions;
-};
-
+using ActionsDAGPtr = SafeUniquePtr<ActionsDAG>;
 
 class JoinActionRef
 {
 public:
-    explicit JoinActionRef(std::nullptr_t)
-        : actions_dag(nullptr)
-    {}
-
-    explicit JoinActionRef(const ActionsDAG::Node * node_, const ActionsDAG * actions_dag_);
+    explicit JoinActionRef(std::nullptr_t);
+    explicit JoinActionRef(const ActionsDAG::Node * node_, ActionsDAG * actions_dag_, BaseRelsSet src_rels_ = {});
 
     const ActionsDAG::Node * getNode() const;
+    ActionsDAG * getActions() const;
+    void setActions(ActionsDAG * actions_dag_);
 
     ColumnWithTypeAndName getColumn() const;
     const String & getColumnName() const;
     DataTypePtr getType() const;
 
-    operator bool() const { return actions_dag != nullptr; } /// NOLINT
+    operator bool() const { return !column_name.empty(); } /// NOLINT
 
     using ActionsDAGRawPtrs = std::vector<const ActionsDAG *>;
 
     void serialize(WriteBuffer & out, const ActionsDAGRawPtrs & dags) const;
     static JoinActionRef deserialize(ReadBuffer & in, const ActionsDAGRawPtrs & dags);
 
+    BaseRelsSet getSourceRels() const
+    {
+        return src_rels;
+    }
+
 private:
-    const ActionsDAG * actions_dag = nullptr;
     String column_name;
+    BaseRelsSet src_rels;
+
+    ActionsDAG * actions_dag = nullptr;
 };
+
+inline bool isSubsetOf(const BaseRelsSet & subset, const BaseRelsSet & superset)
+{
+    return (subset & superset) == subset;
+}
 
 /// JoinPredicate represents a single join qualifier
 /// that that apply to the combination of two tables.
@@ -126,13 +135,8 @@ struct JoinCondition
     /// Join predicates that must be satisfied to join rows
     std::vector<JoinPredicate> predicates;
 
-    /// Pre-Join filters applied to the left and right tables independently
-    std::vector<JoinActionRef> left_filter_conditions;
-    std::vector<JoinActionRef> right_filter_conditions;
-
-    /// Residual conditions depend on data from both tables and must be evaluated after the join has been performed.
-    /// Unlike the join predicates, these conditions can be arbitrary expressions.
-    std::vector<JoinActionRef> residual_conditions;
+    /// Additional restrictions that must be satisfied
+    std::vector<JoinActionRef> restrict_conditions;
 
     void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
     static JoinCondition deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
@@ -156,24 +160,27 @@ struct JoinExpression
     static JoinExpression deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
 };
 
-struct JoinInfo
+struct JoinOperator
 {
-    /// An expression in ON/USING clause of a JOIN statement
-    JoinExpression expression;
-
     /// The type of join (e.g., INNER, LEFT, RIGHT, FULL)
     JoinKind kind;
 
-    /// The strictness of the join (e.g., ALL, ANY, SEMI, ANTI)
+    /// The strictness of the join (e.g., ALL, ANY, SEMI, ANTI, ASOF)
     JoinStrictness strictness;
 
     /// The locality of the join (e.g., LOCAL, GLOBAL)
     JoinLocality locality;
 
-    void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
-    static JoinInfo deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
-};
+    /// An expression in ON/USING clause of a JOIN statement
+    JoinExpression expression = {};
 
+    JoinOperator(JoinKind kind_, JoinStrictness strictness_, JoinLocality locality_)
+        : kind(kind_), strictness(strictness_), locality(locality_) {}
+
+    void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
+
+    static JoinOperator deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
+};
 
 std::string_view toString(PredicateOperator op);
 String toString(const JoinActionRef & node);

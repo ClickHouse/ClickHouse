@@ -2,11 +2,19 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
 
 namespace DB::QueryPlanOptimizations
 {
+
+size_t tryFlattenJoins(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+{
+    UNUSED(node);
+    UNUSED(nodes);
+    return 0;
+}
 
 size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
