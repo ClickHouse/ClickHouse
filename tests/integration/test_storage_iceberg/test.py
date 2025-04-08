@@ -2842,7 +2842,7 @@ def test_minmax_pruning_with_null(started_cluster, storage_type):
         f"""
         INSERT INTO {TABLE_NAME} VALUES
         (1, DATE '2024-01-20',
-        TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-01-20', 'b', TIMESTAMP '2024-02-20 10:00:00'), 'vasya', 5)
+        TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-02-20', 'b', TIMESTAMP '2024-02-20 10:00:00'), 'vasya', 5)
     """
     )
 
