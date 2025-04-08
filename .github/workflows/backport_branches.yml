@@ -701,11 +701,11 @@ jobs:
             python3 -m praktika run 'Stateless tests (asan, 2/2)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stress_test_tsan:
+  stress_test_amd_tsan:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKHRzYW4p') }}
-    name: "Stress test (tsan)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF90c2FuKQ==') }}
+    name: "Stress test (amd_tsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -734,9 +734,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (tsan)' --workflow "BackportPR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "BackportPR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (tsan)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
           fi
 
   integration_tests_asan_old_analyzer_1_6:
