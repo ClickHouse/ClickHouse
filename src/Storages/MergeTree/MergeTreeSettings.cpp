@@ -1758,6 +1758,20 @@ namespace ErrorCodes
     Calculate columns and secondary indices sizes lazily on first request instead
     of on table initialization.
     )", 0) \
+    /** Secondary Index settings. */ \
+    DECLARE(SecondaryIndicesOnColumnsAlter, secondary_indices_on_columns_alter, SecondaryIndicesOnColumnsAlter::THROW, R"(
+    The setting will be only applicable to ALTER (modify column and update), not to lightweight updates.
+    The value throw will prevent doing ALTERs of columns covered by secondary indices.
+    The value drop will drop the dependent secondary indices.
+    The value rebuild acts like dropping and then doing MATERIALIZE INDEX.
+    The value ignore is intended for professional usage. It will leave the indices in an inconsistent state, allowing incorrect query results.
+
+    Possible values:
+    - `ignore`
+    - `throw`
+    - `drop`
+    - `rebuild`
+    )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)

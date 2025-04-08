@@ -38,9 +38,9 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CleanDeletedRows) \
     M(CLASS_NAME, DeduplicateMergeProjectionMode) \
+    M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, Int64) \
-    M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, MaxThreads) \
     M(CLASS_NAME, MergeSelectorAlgorithm) \
     M(CLASS_NAME, Milliseconds) \

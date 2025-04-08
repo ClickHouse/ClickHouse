@@ -247,6 +247,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
+    extern const MergeTreeSettingsSecondaryIndicesOnColumnsAlter secondary_indices_on_columns_alter;
 }
 
 namespace ServerSetting
@@ -3799,11 +3800,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
             if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
             {
-                throw Exception(
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER {} column which is a part of index {}",
-                    backQuoteIfNeed(command.column_name),
-                    it->second);
+                if ((*settings_from_storage)[MergeTreeSetting::secondary_indices_on_columns_alter]
+                    == SecondaryIndicesOnColumnsAlter::THROW)
+                {
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Trying to ALTER {} column which is a part of index {}",
+                        backQuoteIfNeed(command.column_name),
+                        it->second);
+                }
             }
 
             /// Don't check columns in projections here. If required columns of projections get
