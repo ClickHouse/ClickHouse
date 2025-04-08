@@ -3,6 +3,7 @@
 #include <bit>
 #include <base/types.h>
 #include <base/defines.h>
+#include <fmt/format.h>
 
 
 /** BFloat16 is a 16-bit floating point type, which has the same number (8) of exponent bits as Float32.
@@ -318,4 +319,29 @@ requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator/(BFloat16 a, T b)
 {
     return Float32(a) / b;
+}
+
+namespace fmt
+{
+template <>
+struct fmt::formatter<BFloat16>
+{
+    constexpr auto parse(format_parse_context & ctx)
+    {
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
+
+        /// Only support {}.
+        if (it != end && *it != '}')
+            throw format_error("Invalid format for BFloat16");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const BFloat16 & value, FormatContext & ctx) const
+    {
+        return format_to(ctx.out(), "{}", Float32(value));
+    }
+};
 }
