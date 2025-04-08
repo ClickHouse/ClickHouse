@@ -4629,6 +4629,8 @@ class ClickHouseInstance:
         # explicitly requested.
         if self.tag:
             use_old_analyzer = False
+        if self.tag != "latest":
+            use_distributed_plan = False
         # Prefer specified in the test option:
         if self.use_old_analyzer is not None:
             use_old_analyzer = self.use_old_analyzer
