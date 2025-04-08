@@ -237,6 +237,7 @@ def test_check_replicated_table_corruption(
     for node in [node1, node2]:
         node.query_with_retry("DROP TABLE IF EXISTS replicated_mt_1 SYNC")
 
+    for node in [node1, node2]:
         node.query_with_retry(
             """
         CREATE TABLE replicated_mt_1(date Date, id UInt32, value Int32)
