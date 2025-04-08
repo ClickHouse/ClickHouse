@@ -64,8 +64,6 @@ public:
                     ErrorCodes::FORMAT_VERSION_TOO_OLD,
                     "Metadata is not consinsent with the one which was used to infer table schema. Please, retry the query.");
             }
-            if (!supportsFileIterator())
-                BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
         }
     }
 
@@ -80,14 +78,6 @@ public:
         }
         return std::nullopt;
     }
-
-    void implementPartitionPruning(const ActionsDAG & filter_dag) override
-    {
-        if (!current_metadata || !current_metadata->supportsPartitionPruning())
-            return;
-        BaseStorageConfiguration::setPaths(current_metadata->makePartitionPruning(filter_dag));
-    }
-
 
     std::optional<size_t> totalRows() override
     {
@@ -123,25 +113,19 @@ public:
         ContextPtr context) override
     {
         BaseStorageConfiguration::update(object_storage, context);
-        if (updateMetadataObjectIfNeeded(object_storage, context))
-        {
-            if (!supportsFileIterator())
-                BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
-        }
-
+        updateMetadataObjectIfNeeded(object_storage, context);
         return ColumnsDescription{current_metadata->getTableSchema()};
     }
 
-    bool supportsFileIterator() const override
-    {
-        chassert(current_metadata);
-        return current_metadata->supportsFileIterator();
-    }
+    bool supportsFileIterator() const override { return true; }
 
-    ObjectIterator iterate(IDataLakeMetadata::FileProgressCallback callback, size_t list_batch_size) override
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        IDataLakeMetadata::FileProgressCallback callback,
+        size_t list_batch_size) override
     {
         chassert(current_metadata);
-        return current_metadata->iterate(callback, list_batch_size);
+        return current_metadata->iterate(filter_dag, callback, list_batch_size);
     }
 
     /// This is an awful temporary crutch,
