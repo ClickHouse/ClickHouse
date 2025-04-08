@@ -1117,7 +1117,7 @@ const ReplicatedFetchList & Context::getReplicatedFetchList() const { return sha
 RefreshSet & Context::getRefreshSet() { return shared->refresh_set; }
 const RefreshSet & Context::getRefreshSet() const { return shared->refresh_set; }
 ThrottlerPtr & Context::getBackupServerThrottler() { return shared->backups_server_throttler; }
-const ThrottlerPtr & Context::getBackupServerThrottler() const { return shared->refresh_set; }
+const ThrottlerPtr & Context::getBackupServerThrottler() const { return shared->backups_server_throttler; }
 
 
 String Context::resolveDatabase(const String & database_name) const
