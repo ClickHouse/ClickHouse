@@ -399,8 +399,6 @@ struct BackupsWorker::BackupStarter
         if (process_list_element)
             process_list_element_holder = process_list_element->getProcessListEntry();
 
-        backup_create_params.read_settings = getReadSettingsForBackup(backup_context, backup_settings);
-        backup_create_params.write_settings = getWriteSettingsForBackup(context);
         if (!query_context->getSettingsRef()[Setting::s3_disable_checksum] and backup_info.backup_engine_name == "S3")
         {
             UInt64 queryMaxSpeed = query_context->getBackupsThrottler()->getMaxSpeed();
