@@ -749,7 +749,7 @@ String revisionToString(UInt64 revision)
     return std::bitset<64>(revision).to_string();
 }
 
-StoredObjects getStorageObjectsSafely(IMetadataStorage & metadata_storage, const String & path)
+StoredObjects getStorageObjectsSafely(const IMetadataStorage & metadata_storage, const String & path)
 {
     try
     {
