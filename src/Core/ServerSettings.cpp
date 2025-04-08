@@ -594,6 +594,15 @@ namespace DB
     <max_pending_mutations_to_warn>400</max_pending_mutations_to_warn>
     ```
     )", 0) \
+    DECLARE(UInt64, max_pending_mutations_execution_time_to_warn, 86400lu, R"(
+    If any of the pending mutations exceeds the specified value in seconds, clickhouse server will add warning messages to `system.warnings` table.
+
+    **Example**
+
+    ```xml
+    <max_pending_mutations_execution_time_to_warn>10000</max_pending_mutations_execution_time_to_warn>
+    ```
+    )", 0) \
     DECLARE(UInt64, max_view_num_to_warn, 10000lu, R"(
     If the number of attached views exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
 
@@ -1140,6 +1149,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_database_num_to_warn", {std::to_string(context->getMaxDatabaseNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_part_num_to_warn", {std::to_string(context->getMaxPartNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_pending_mutations_to_warn", {std::to_string(context->getMaxPendingMutationsToWarn()), ChangeableWithoutRestart::Yes}},
+            {"max_pending_mutations_execution_time_to_warn", {std::to_string(context->getMaxPendingMutationsExecutionTimeToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_partition_size_to_drop", {std::to_string(context->getMaxPartitionSizeToDrop()), ChangeableWithoutRestart::Yes}},
 
             {"max_concurrent_queries", {std::to_string(context->getProcessList().getMaxSize()), ChangeableWithoutRestart::Yes}},
