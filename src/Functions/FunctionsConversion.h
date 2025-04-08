@@ -5939,11 +5939,27 @@ private:
 
         if (from_type->onlyNull())
         {
+            const auto * nullable_from_type = typeid_cast<const DataTypeNullable *>(from_type.get());
             if (!to_nested->isNullable() && !isVariant(to_type))
             {
                 if (cast_type == CastType::accurateOrNull)
                 {
                     return createToNullableColumnWrapper();
+                }
+                else if (nullable_from_type != nullptr && isNothing(nullable_from_type->getNestedType()))
+                {
+                    /// This patch resolves an issue in Gluten where the `Nothing` type automatically inherits nullable semantics due to
+                    /// ambiguous nullability inference. While this default behavior handles most cases, specific operations like
+                    /// `SELECT ARRAY() AS x UNION ALL SELECT ARRAY(123) AS x` require strict non-nullable `Nothing` typing to ensure query
+                    /// correctness.
+                    return [](ColumnsWithTypeAndName &, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+                    {
+                        // It must be an expression like `array()`, there is no row in the column.
+                        if (input_rows_count > 0)
+                            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert nullable nothing values to non-nullable values");
+                        else
+                            return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
+                    };
                 }
                 else
                 {
