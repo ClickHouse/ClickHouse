@@ -129,7 +129,9 @@ private:
     std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
                                                                size_t max_retries, UInt32 & max_log_ptr) const;
 
+    ASTPtr parseQueryFromMetadata(const String & table_name, const String & query, const String & description) const;
     ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query) const;
+    ASTPtr parseQueryFromMetadataOnDisk(const String & table_name) const;
     String readMetadataFile(const String & table_name) const;
 
     ClusterPtr getClusterImpl(bool all_groups = false) const;
