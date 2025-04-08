@@ -9,6 +9,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -530,6 +531,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
                 const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
 
+                if (const auto * _ = arguments->children[0]->as<ASTAsterisk>())
+                    tuple_arguments_valid = false;
+
                 if (lit_left)
                 {
                     Field::Types::Which type = lit_left->value.getType();
@@ -543,7 +547,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 // is an unsigned integer lineral. We also allow nonnegative
                 // signed integer literals, because the fuzzer sometimes inserts
                 // them, and we want to have consistent formatting.
-                if (tuple_arguments_valid && lit_left && lit_right)
+                if (tuple_arguments_valid && lit_right)
                 {
                     if (isInt64OrUInt64FieldType(lit_right->value.getType())
                         && lit_right->value.safeGet<Int64>() >= 0)
