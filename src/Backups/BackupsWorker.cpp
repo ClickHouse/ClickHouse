@@ -412,8 +412,8 @@ struct BackupsWorker::BackupStarter
                 "Backup from local to remote S3 with checksum enabled "
                 "will make the read-side bandwidth control halved because we will read the disk twice. "
                 "Current max_backup_bandwidth is {}, "
-                "Global max_backup_bandwidth is {}" queryMaxSpeed,
-                serverMaxSpeed)
+                "Global max_backup_bandwidth is {}", queryMaxSpeed,
+                serverMaxSpeed);
         }
 
         backups_worker.addInfo(backup_id,
