@@ -1,16 +1,10 @@
-import io
-import json
 import logging
-import random
-import string
 import time
 import uuid
 from multiprocessing.dummy import Pool
 
 import pytest
-from kazoo.exceptions import NoNodeError
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.s3_queue_common import (
     run_query,
@@ -130,6 +124,7 @@ def test_replicated(started_cluster):
         "ordered",
         files_path,
         additional_settings={
+            "processing_threads_num": 16,
             "keeper_path": keeper_path,
         },
         database_name="r",
@@ -139,7 +134,7 @@ def test_replicated(started_cluster):
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
     )
 
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
@@ -169,10 +164,8 @@ def test_bad_settings(started_cluster):
     node = started_cluster.instances["node_cloud_mode"]
 
     table_name = f"test_bad_settings_{uuid.uuid4().hex[:8]}"
-    dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    files_to_generate = 10
 
     try:
         create_table(
@@ -209,6 +202,7 @@ def test_processing_threads(started_cluster):
         "ordered",
         files_path,
         additional_settings={
+            "processing_threads_num": 16,
             "keeper_path": keeper_path,
         },
     )
@@ -223,7 +217,7 @@ def test_processing_threads(started_cluster):
         )
     )
 
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
@@ -294,7 +288,7 @@ def test_alter_settings(started_cluster):
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
     )
 
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
@@ -586,7 +580,7 @@ def test_registry(started_cluster):
     for elem in expected:
         assert elem in str(registry)
 
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
@@ -621,6 +615,10 @@ def test_registry(started_cluster):
         additional_settings={"keeper_path": keeper_path, "buckets": 3},
         database_name=db_name,
     )
+
+    # ensure that the table is created on node2 before we query the registry as there might be a race between the time
+    # we actually create the table on node2 and when we query the registry.
+    node2.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
 
     registry, stat = zk.get(f"{keeper_path}/registry/")
 
