@@ -25,11 +25,13 @@ TEST(VirtualColumnUtils, getVirtualsForFileLikeStorageEmptyValue)
 
     auto year_column = ColumnDescription("year", std::make_shared<DataTypeString>());
     auto country_column = ColumnDescription("country", std::make_shared<DataTypeString>());
+    auto non_partition_column = ColumnDescription("non_partition", std::make_shared<DataTypeString>());
 
     ColumnsDescription columns;
 
     columns.add(year_column);
     columns.add(country_column);
+    columns.add(non_partition_column);
 
     auto res = VirtualColumnUtils::getVirtualsForFileLikeStorage(columns, context_holder.context, empty_value_path);
 
