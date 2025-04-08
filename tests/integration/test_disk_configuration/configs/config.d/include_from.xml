@@ -1,0 +1,5 @@
+<clickhouse>
+  <include_endpoint>
+    <endpoint>http://minio1:9001/root/data/</endpoint>
+  </include_endpoint>
+</clickhouse>

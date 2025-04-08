@@ -549,12 +549,8 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #if USE_SSL
             ///random generator FIPS complaint
             uint8_t key[32];
-            if (RAND_bytes(key, sizeof(key)) != 1)
-            {
-                char buf[512] = {0};
-                ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
-            }
+            if (!RAND_bytes(key, sizeof(key)))
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
 
             String salt;
             salt.resize(sizeof(key) * 2);
@@ -577,12 +573,8 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #if USE_SSL
             ///random generator FIPS complaint
             uint8_t key[32];
-            if (RAND_bytes(key, sizeof(key)) != 1)
-            {
-                char buf[512] = {0};
-                ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
-            }
+            if (!RAND_bytes(key, sizeof(key)))
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
 
             String salt;
             salt.resize(sizeof(key) * 2);

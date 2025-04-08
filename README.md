@@ -54,6 +54,7 @@ Upcoming meetups
 * [Kuala Lumper Meetup with CNCF](https://www.meetup.com/clickhouse-malaysia-meetup-group/events/306697678/) - April 16, 2025
 * [Jakarta Meetup with AWS](https://www.meetup.com/clickhouse-indonesia-user-group/events/306973747/) - April 22, 2025
 * [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/306047172/) - May 14, 2025
+* [Istanbul Meetup](https://www.meetup.com/clickhouse-turkiye-meetup-group/events/306978337/) - May 15, 2025
 
 Recent meetups
 * [Washington DC Meetup](https://www.meetup.com/clickhouse-dc-user-group/events/306439995) - March 27, 2025

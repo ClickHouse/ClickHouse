@@ -89,7 +89,7 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     const ContextPtr & context_,
     const AliasToName & alias_index_)
     : storage(storage_)
-    , data_parts_info(lazily_read_info_->data_parts_info)
+    , data_part_infos(lazily_read_info_->data_part_infos)
     , storage_snapshot(storage_snapshot_)
     , use_uncompressed_cache(context_->getSettingsRef()[Setting::use_uncompressed_cache])
 {
@@ -124,25 +124,26 @@ void MergeTreeLazilyReader::readLazyColumns(
     {
         auto part_index = it.first;
         const auto & row_offsets = it.second;
-        auto it_part_info = data_parts_info->find(part_index);
-        if (it_part_info == data_parts_info->end())
+
+        auto it_part_info = data_part_infos->find(part_index);
+        if (it_part_info == data_part_infos->end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part index '{}' not found in data parts info", part_index);
 
         const auto & data_part_info = it_part_info->second;
-        const auto & data_part = data_part_info.data_part;
-        const auto & alter_conversions = data_part_info.alter_conversions;
+        const auto & index_granularity = data_part_info->getIndexGranularity();
+
         MarkRanges mark_ranges;
 
         for (const auto & row_offset_with_idx : row_offsets)
         {
             auto row_offset = row_offset_with_idx.row_offset;
-            MarkRange mark_range = data_part->index_granularity->getMarkRangeForRowOffset(row_offset);
+            MarkRange mark_range = index_granularity.getMarkRangeForRowOffset(row_offset);
             mark_ranges.push_back(mark_range);
         }
 
         Names tmp_requested_column_names(requested_column_names.begin(), requested_column_names.end());
         injectRequiredColumns(
-            LoadedMergeTreeDataPartInfoForReader(data_part, alter_conversions),
+            *data_part_info,
             storage_snapshot,
             storage.supportsSubcolumns(),
             tmp_requested_column_names);
@@ -150,18 +151,26 @@ void MergeTreeLazilyReader::readLazyColumns(
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
             .withExtendedObjects()
             .withSubcolumns(storage.supportsSubcolumns());
+
         NamesAndTypesList columns_for_reader = storage_snapshot->getColumnsByNames(options, tmp_requested_column_names);
 
-        MergeTreeReaderPtr reader = data_part->getReader(
-            columns_for_reader, storage_snapshot, mark_ranges, {},
+        MergeTreeReaderPtr reader = createMergeTreeReader(
+            data_part_info,
+            columns_for_reader,
+            storage_snapshot,
+            mark_ranges,
+            /*virtual_fields=*/ {},
             use_uncompressed_cache ? storage.getContext()->getUncompressedCache().get() : nullptr,
-            storage.getContext()->getMarkCache().get(), nullptr, alter_conversions,
-            reader_settings, {}, {});
+            storage.getContext()->getMarkCache().get(),
+            /*deserialization_prefixes_cache=*/ nullptr,
+            reader_settings,
+            ValueSizeMap{},
+            ReadBufferFromFileBase::ProfileCallback{});
 
         size_t idx = 0;
         auto mark_range_iter = mark_ranges.begin();
         auto row_offset = row_offsets[idx].row_offset;
-        size_t next_offset = row_offset - data_part->index_granularity->getMarkStartingRow(mark_range_iter->begin);
+        size_t next_offset = row_offset - index_granularity.getMarkStartingRow(mark_range_iter->begin);
         size_t skipped_rows = next_offset;
         bool continue_reading = false;
 
@@ -205,7 +214,7 @@ void MergeTreeLazilyReader::readLazyColumns(
                     break;
 
                 row_offset = row_offsets[idx].row_offset;
-                next_offset = row_offset - data_part->index_granularity->getMarkStartingRow(mark_range_iter->begin);
+                next_offset = row_offset - index_granularity.getMarkStartingRow(mark_range_iter->begin);
                 skipped_rows = next_offset;
 
                 if (mark_range_iter->begin == prev_mark)

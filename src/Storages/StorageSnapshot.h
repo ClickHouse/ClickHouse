@@ -1,5 +1,4 @@
 #pragma once
-#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
@@ -9,6 +8,9 @@ class IStorage;
 class ICompressionCodec;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Snapshot of storage that fixes set columns that can be read in query.
 /// There are 3 sources of columns: regular columns from metadata,

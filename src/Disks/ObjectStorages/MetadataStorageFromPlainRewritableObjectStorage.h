@@ -45,6 +45,8 @@ public:
 
     bool existsFileOrDirectory(const std::string & path) const override;
 
+    bool supportsPartitionCommand(const PartitionCommand & command) const override;
+
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const String & path) const override;

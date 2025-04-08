@@ -148,6 +148,8 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
             "-DOPENSSL_INCLUDE_DIR=${OPENSSL_BUILD_DIR}/include"
             "-DZLIB_ROOT_DIR=${zlib_source_dir}"
             "-DgRPC_SSL_PROVIDER=package"
+            # TODO: Bump c-ares
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
             "${_gRPC_SOURCE_DIR}"
         WORKING_DIRECTORY "${GRPC_CPP_PLUGIN_BUILD_DIR}"
         COMMAND_ECHO STDOUT

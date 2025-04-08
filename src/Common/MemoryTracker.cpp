@@ -6,6 +6,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/PageCache.h>
 #include <Common/ProfileEvents.h>
@@ -200,28 +201,31 @@ void MemoryTracker::injectFault() const
         description ? " memory tracker" : "Memory tracker");
 }
 
+/// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
+/// Let's find them.
 void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]])
 {
-    /// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
-    /// Let's find them.
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    if (size < 0)
-        return;
+    if constexpr (MemoryTrackerDebugBlockerInThread::isEnabled())
+    {
+        if (size < 0)
+            return;
 
-    constexpr Int64 threshold = 16 * 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
-    if (size < threshold)
-        return;
+        /// The choice is arbitrary (maybe we should decrease it)
+        constexpr Int64 threshold = 16 * 1024 * 1024;
+        if (size < threshold)
+            return;
 
-    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
-    LOG_TEST(
-        getLogger("MemoryTracker"),
-        "Too big allocation ({} bytes) without checking memory limits, "
-        "it may lead to OOM. Stack trace: {}",
-        size,
-        StackTrace().toString());
-#else
-    /// Avoid trash logging in release builds
-#endif
+        if (MemoryTrackerDebugBlockerInThread::isBlocked())
+            return;
+
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        LOG_TEST(
+            getLogger("MemoryTracker"),
+            "Too big allocation ({} bytes) without checking memory limits, "
+            "it may lead to OOM. Stack trace: {}",
+            size,
+            StackTrace().toString());
+    }
 }
 
 AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker, double _sample_probability)

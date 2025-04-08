@@ -1,0 +1,9 @@
+<!-- Increase max possible CPU load in tests -->
+<clickhouse>
+    <profiles>
+        <default>
+            <min_os_cpu_wait_time_ratio_to_throw>10</min_os_cpu_wait_time_ratio_to_throw>
+            <max_os_cpu_wait_time_ratio_to_throw>20</max_os_cpu_wait_time_ratio_to_throw>
+        </default>
+    </profiles>
+</clickhouse>

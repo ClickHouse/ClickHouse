@@ -3,9 +3,9 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Type
+from typing import Any, Dict, List, Optional, Type
 
-from . import Workflow
+from . import Job, Workflow
 from .settings import Settings
 from .utils import MetaClasses, Shell, T
 
@@ -38,6 +38,8 @@ class _Environment(MetaClasses.Serializable):
     LOCAL_RUN: bool = False
     PR_LABELS: List[str] = dataclasses.field(default_factory=list)
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
+    JOB_CONFIG: Optional[Job.Config] = None
+    TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
     name = "environment"
 
     @classmethod

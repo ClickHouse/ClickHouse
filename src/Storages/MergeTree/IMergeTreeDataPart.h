@@ -74,10 +74,6 @@ public:
 
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
-    using ValueSizeMap = std::map<std::string, double>;
-    using VirtualFields = std::unordered_map<String, Field>;
-
-    using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
@@ -95,19 +91,6 @@ public:
         const MutableDataPartStoragePtr & data_part_storage_,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
-
-    virtual MergeTreeReaderPtr getReader(
-        const NamesAndTypesList & columns_,
-        const StorageSnapshotPtr & storage_snapshot,
-        const MarkRanges & mark_ranges,
-        const VirtualFields & virtual_fields,
-        UncompressedCache * uncompressed_cache,
-        MarkCache * mark_cache,
-        DeserializationPrefixesCache * deserialization_prefixes_cache,
-        const AlterConversionsPtr & alter_conversions,
-        const MergeTreeReaderSettings & reader_settings_,
-        const ValueSizeMap & avg_value_size_hints_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;

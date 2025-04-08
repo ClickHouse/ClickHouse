@@ -1,6 +1,7 @@
 #include "Keeper.h"
 
 #include <Common/ClickHouseRevision.h>
+#include <Common/formatReadable.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>

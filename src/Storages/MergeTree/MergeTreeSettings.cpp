@@ -1325,6 +1325,15 @@ namespace ErrorCodes
     The maximum postpone time for failed mutations.
     )", 0) \
     \
+    DECLARE(UInt64, max_postpone_time_for_failed_replicated_fetches_ms, 1ULL * 60 * 1000, R"(
+    The maximum postpone time for failed replicated fetches.
+    )", 0) \
+    DECLARE(UInt64, max_postpone_time_for_failed_replicated_merges_ms, 1ULL * 60 * 1000, R"(
+    The maximum postpone time for failed replicated merges.
+    )", 0) \
+    DECLARE(UInt64, max_postpone_time_for_failed_replicated_tasks_ms, 5ULL * 60 * 1000, R"(
+    The maximum postpone time for failed replicated task. The value is used if the task is not a fetch, merge or mutation.
+    )", 0) \
     /** Compatibility settings */ \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
     Reject primary/secondary indexes and sorting keys with identical expressions
@@ -1566,6 +1575,10 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all string columns of
     the table.
+    )", 0) \
+    DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
+    When enabled, allows summing columns in a SummingMergeTree table to be used in
+    the partition or sorting key.
     )", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \

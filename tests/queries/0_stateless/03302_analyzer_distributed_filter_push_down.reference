@@ -237,44 +237,28 @@ Positions: 1 0
                FUNCTION equals(__table1.x :: 0, 42_UInt8 :: 2) -> equals(__table1.x, 42_UInt8) UInt8 : 1
       Positions: 1 3 4
         ReadFromRemote (Read from remote replica)
-          Expression ((Project names + (Projection + )))
-          Actions: INPUT : 0 -> sum(__table1.y) UInt64 : 0
-                   INPUT : 1 -> __table1.x UInt32 : 1
-                   ALIAS sum(__table1.y) :: 0 -> sum(y) UInt64 : 2
-                   ALIAS __table1.x :: 1 -> x UInt32 : 0
-          Positions: 0 2
-            Aggregating
-            Keys: __table1.x
-            Aggregates:
-                sum(__table1.y)
-                  Function: sum(UInt32) → UInt64
-                  Arguments: __table1.y
-            Skip merging: 0
-              Expression
-              Actions: INPUT : 1 -> y UInt32 : 0
-                       INPUT : 0 -> x UInt32 : 1
-                       ALIAS y :: 0 -> __table1.y UInt32 : 2
-                       ALIAS x :: 1 -> __table1.x UInt32 : 0
-              Positions: 0 2
-                ReadFromMergeTree (default.tab0)
-                ReadType: Default
-                Parts: 1
-                Granules: 1
-                Prewhere info
-                Need filter: 1
-                  Prewhere filter
-                  Prewhere filter column: equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) (removed)
-                  Actions: INPUT : 0 -> x UInt32 : 0
-                           COLUMN Const(UInt8) -> _CAST(42_UInt8, \'UInt8\'_String) UInt8 : 1
-                           FUNCTION equals(x : 0, _CAST(42_UInt8, \'UInt8\'_String) :: 1) -> equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) UInt8 : 2
-                  Positions: 0 2
-                Indexes:
-                  PrimaryKey
-                    Keys: 
-                      x
-                    Condition: (x in [42, 42])
-                    Parts: 1/1
-                    Granules: 1/123
+          Aggregating
+          Keys: __table1.x
+          Aggregates:
+              sum(__table1.y)
+                Function: sum(UInt32) → UInt64
+                Arguments: __table1.y
+          Skip merging: 0
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+            Actions: INPUT : 0 -> x UInt32 : 0
+                     INPUT : 1 -> y UInt32 : 1
+                     ALIAS x :: 0 -> __table1.x UInt32 : 2
+                     ALIAS y :: 1 -> __table1.y UInt32 : 0
+            Positions: 2 0
+              ReadFromMergeTree (default.tab0)
+              ReadType: Default
+              Parts: 1
+              Granules: 123
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 123/123
 ============ in / global in
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))

@@ -40,12 +40,6 @@ public:
         Int32 format_version_,
         const Poco::JSON::Object::Ptr & metadata_object);
 
-
-    /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
-    /// All subsequent calls when the same data snapshot is relevant will return saved list of files (because it cannot be changed
-    /// without changing metadata file). Drops on every snapshot update.
-    Strings getDataFiles() const override { return getDataFilesImpl(nullptr); }
-
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override
     {
@@ -86,12 +80,14 @@ public:
 
     bool update(const ContextPtr & local_context) override;
 
-    Strings makePartitionPruning(const ActionsDAG & filter_dag) override;
-
-    bool supportsPartitionPruning() override { return true; }
-
     std::optional<size_t> totalRows() const override;
     std::optional<size_t> totalBytes() const override;
+
+protected:
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        FileProgressCallback callback,
+        size_t list_batch_size) const override;
 
 private:
     using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFilePtr>;
@@ -121,6 +117,8 @@ private:
 
     mutable std::optional<Strings> cached_unprunned_files_for_last_processed_snapshot;
 
+    Strings getDataFiles(const ActionsDAG * filter_dag) const;
+
     void updateState(const ContextPtr & local_context);
 
     void updateSnapshot();
@@ -139,8 +137,6 @@ private:
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
 
     Poco::JSON::Object::Ptr readJSON(const String & metadata_file_path, const ContextPtr & local_context) const;
-
-    Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
     Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 };
