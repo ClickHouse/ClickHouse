@@ -38,4 +38,3 @@ TEST(VirtualColumnUtils, getVirtualsForFileLikeStorageEmptyValue)
     ASSERT_TRUE(res.has("year"));
     ASSERT_TRUE(res.has("country"));
 }
-
