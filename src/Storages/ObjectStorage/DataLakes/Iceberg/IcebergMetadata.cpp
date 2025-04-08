@@ -51,6 +51,7 @@ namespace Setting
 {
 extern const SettingsInt64 iceberg_timestamp_ms;
 extern const SettingsInt64 iceberg_snapshot_id;
+extern const SettingsBool use_iceberg_partition_pruning;
 }
 
 
@@ -385,11 +386,25 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(
     if (configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_file_path].changed)
     {
         auto explicit_metadata_path = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_file_path].value;
-        LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
-        auto prefix_storage_path = configuration.getPath();
-        if (!explicit_metadata_path.starts_with(prefix_storage_path))
-            explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
-        return getMetadataFileAndVersion(explicit_metadata_path);
+        try
+        {
+            LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
+            std::filesystem::path p(explicit_metadata_path);
+            auto it = p.begin();
+            if (it != p.end())
+            {
+                if (*it == "." || *it == "..")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative paths are not allowed");
+            }
+            auto prefix_storage_path = configuration.getPath();
+            if (!explicit_metadata_path.starts_with(prefix_storage_path))
+                explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
+            return getMetadataFileAndVersion(explicit_metadata_path);
+        }
+        catch (const std::exception & ex)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid path {} specified for iceberg_metadata_file_path: '{}'", explicit_metadata_path, ex.what());
+        }
     }
     else if (configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_table_uuid].changed)
     {
@@ -412,7 +427,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 
     last_metadata_version = metadata_version;
 
-    last_metadata_object = readJSON(metadata_file_path, object_storage, local_context, log);
+    last_metadata_object = ::DB::readJSON(metadata_file_path, object_storage, local_context, log);
 
     chassert(format_version == last_metadata_object->getValue<int>(FORMAT_VERSION_FIELD));
 
@@ -662,18 +677,23 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
     return manifest_list_ptr;
 }
 
-Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
+Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
 {
     if (!relevant_snapshot)
         return {};
 
-    if (!filter_dag && cached_unprunned_files_for_last_processed_snapshot.has_value())
+    bool use_partition_pruning = filter_dag && getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning];
+
+    if (!use_partition_pruning && cached_unprunned_files_for_last_processed_snapshot.has_value())
         return cached_unprunned_files_for_last_processed_snapshot.value();
 
     Strings data_files;
     for (const auto & manifest_file_ptr : *(relevant_snapshot->manifest_list))
     {
-        ManifestFilesPruner pruner(schema_processor, relevant_snapshot_schema_id, filter_dag, *manifest_file_ptr, getContext());
+        ManifestFilesPruner pruner(
+            schema_processor, relevant_snapshot_schema_id,
+            use_partition_pruning ? filter_dag : nullptr,
+            *manifest_file_ptr, getContext());
         const auto & data_files_in_manifest = manifest_file_ptr->getFiles();
         for (const auto & manifest_file_entry : data_files_in_manifest)
         {
@@ -688,23 +708,13 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
         }
     }
 
-    if (!filter_dag)
+    if (!use_partition_pruning)
     {
         cached_unprunned_files_for_last_processed_snapshot = data_files;
         return cached_unprunned_files_for_last_processed_snapshot.value();
     }
 
     return data_files;
-}
-
-Strings IcebergMetadata::makePartitionPruning(const ActionsDAG & filter_dag)
-{
-    auto configuration_ptr = configuration.lock();
-    if (!configuration_ptr)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
-    }
-    return getDataFilesImpl(&filter_dag);
 }
 
 std::optional<size_t> IcebergMetadata::totalRows() const
@@ -767,6 +777,14 @@ std::optional<size_t> IcebergMetadata::totalBytes() const
     }
 
     return result;
+}
+
+ObjectIterator IcebergMetadata::iterate(
+    const ActionsDAG * filter_dag,
+    FileProgressCallback callback,
+    size_t /* list_batch_size */) const
+{
+    return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);
 }
 
 }
