@@ -427,9 +427,9 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(
         readString(metadata_file, *buf);
         if (!metadata_file.ends_with(".metadata.json"))
         {
-            if (std::all_of(metadata_file.begin(), metadata_file.end(), isdigit)) 
+            if (std::all_of(metadata_file.begin(), metadata_file.end(), isdigit))
                 metadata_file = "v" + metadata_file + ".metadata.json";
-            else 
+            else
                 metadata_file = metadata_file + ".metadata.json";
         }
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
