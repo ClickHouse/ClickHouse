@@ -3,7 +3,6 @@
 #include <bit>
 #include <base/types.h>
 #include <base/defines.h>
-#include <fmt/format.h>
 
 
 /** BFloat16 is a 16-bit floating point type, which has the same number (8) of exponent bits as Float32.
@@ -331,30 +330,5 @@ public:
     static constexpr BFloat16 min() noexcept { return BFloat16::fromBits(0b0000000100000000); }
     static constexpr BFloat16 max() noexcept { return BFloat16::fromBits(0b0111111101111111); }
     static constexpr BFloat16 infinity() noexcept { return BFloat16::fromBits(0b0111111110000000); }
-};
-}
-
-namespace fmt
-{
-template <>
-struct fmt::formatter<BFloat16>
-{
-    constexpr auto parse(format_parse_context & ctx)
-    {
-        const auto * it = ctx.begin();
-        const auto * end = ctx.end();
-
-        /// Only support {}.
-        if (it != end && *it != '}')
-            throw format_error("Invalid format for BFloat16");
-
-        return it;
-    }
-
-    template <typename FormatContext>
-    auto format(const BFloat16 & value, FormatContext & ctx) const
-    {
-        return format_to(ctx.out(), "{}", Float32(value));
-    }
 };
 }
