@@ -605,9 +605,6 @@ struct ConvertImplGenericToString
             write_helper.finalize();
         }
 
-        if (auto * col = typeid_cast<ColumnFixedString *>(col_to.get()))
-            col->getChars().resize_exact(col->getN() * size);
-
         if (result_type->isNullable() && null_map)
             return ColumnNullable::create(std::move(col_to), std::move(null_map));
         return col_to;
