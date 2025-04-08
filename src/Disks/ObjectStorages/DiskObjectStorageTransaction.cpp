@@ -749,7 +749,7 @@ String revisionToString(UInt64 revision)
     return std::bitset<64>(revision).to_string();
 }
 
-StoredObjects getStoredObjectsSafely(IMetadataStorage & metadata_storage, const String & path)
+StoredObjects getStorageObjectsSafely(IMetadataStorage & metadata_storage, const String & path)
 {
     try
     {
@@ -816,7 +816,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                 /// Otherwise we will produce lost blobs which nobody points to
                 /// WriteOnce storages are not affected by the issue
                 if (!tx->object_storage.isPlain() && tx->metadata_storage.existsFile(path))
-                    tx->object_storage.removeObjectsIfExist(getStoredObjectsSafely(tx->metadata_storage, path));
+                    tx->object_storage.removeObjectsIfExist(getStorageObjectsSafely(tx->metadata_storage, path));
 
                 tx->metadata_transaction->createMetadataFile(path, key_, count);
             }
@@ -849,7 +849,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                     /// Otherwise we will produce lost blobs which nobody points to
                     /// WriteOnce storages are not affected by the issue
                     if (!object_storage_tx->object_storage.isPlain() && object_storage_tx->metadata_storage.existsFile(path))
-                        object_storage_tx->object_storage.removeObjectsIfExist(getStoredObjectsSafely(object_storage_tx->metadata_storage, path));
+                        object_storage_tx->object_storage.removeObjectsIfExist(getStorageObjectsSafely(object_storage_tx->metadata_storage, path));
 
                     tx->createMetadataFile(path, key_, count);
                 }
