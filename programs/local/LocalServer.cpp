@@ -92,10 +92,6 @@ namespace ServerSetting
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
-    extern const ServerSettingsString vector_similarity_index_cache_policy;
-    extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
-    extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
-    extern const ServerSettingsDouble vector_similarity_index_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
@@ -119,6 +115,7 @@ namespace ServerSetting
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
+    extern const ServerSettingsBool use_legacy_mongodb_integration;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
@@ -572,10 +569,10 @@ try
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions();
+    registerTableFunctions(server_settings[ServerSetting::use_legacy_mongodb_integration]);
     registerDatabases();
-    registerStorages();
-    registerDictionaries();
+    registerStorages(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerDictionaries(server_settings[ServerSetting::use_legacy_mongodb_integration]);
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
@@ -805,17 +802,6 @@ void LocalServer::processConfig()
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 
-    String vector_similarity_index_cache_policy = server_settings[ServerSetting::vector_similarity_index_cache_policy];
-    size_t vector_similarity_index_cache_size = server_settings[ServerSetting::vector_similarity_index_cache_size];
-    size_t vector_similarity_index_cache_max_count = server_settings[ServerSetting::vector_similarity_index_cache_max_entries];
-    double vector_similarity_index_cache_size_ratio = server_settings[ServerSetting::vector_similarity_index_cache_size_ratio];
-    if (vector_similarity_index_cache_size > max_cache_size)
-    {
-        vector_similarity_index_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered vector similarity index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(vector_similarity_index_cache_size));
-    }
-    global_context->setVectorSimilarityIndexCache(vector_similarity_index_cache_policy, vector_similarity_index_cache_size, vector_similarity_index_cache_max_count, vector_similarity_index_cache_size_ratio);
-
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -944,7 +930,7 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
         output_stream << options_description.main_description.value() << "\n";
     output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n\n";
     output_stream << getHelpFooter() << "\n";
-    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parameterized queries.\n";
+    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     output_stream << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
 }
 

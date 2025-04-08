@@ -13,7 +13,6 @@
 #include <Common/callOnce.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
 #include <base/FnTraits.h>
@@ -23,7 +22,7 @@
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm/copy.hpp>
-
+#include <boost/range/algorithm_ext/erase.hpp>
 
 namespace DB
 {
@@ -830,11 +829,6 @@ void IAccessStorage::throwBackupNotAllowed() const
 void IAccessStorage::throwRestoreNotAllowed() const
 {
     throw Exception(ErrorCodes::ACCESS_STORAGE_DOESNT_ALLOW_BACKUP, "Restore of access entities is not allowed in {}", getStorageName());
-}
-
-bool parseAccessStorageName(IParser::Pos & pos, Expected & expected, String & storage_name)
-{
-    return parseIdentifierOrStringLiteral(pos, expected, storage_name);
 }
 
 }

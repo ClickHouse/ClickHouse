@@ -1,6 +1,7 @@
 #include <Backups/BackupIO_AzureBlobStorage.h>
 
 #if USE_AZURE_BLOB_STORAGE
+#include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>

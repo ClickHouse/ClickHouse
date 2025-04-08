@@ -11,7 +11,6 @@
 #    include <Columns/ColumnsCommon.h>
 #    include <Columns/ColumnsDateTime.h>
 #    include <Columns/ColumnsNumber.h>
-#    include <Common/DateLUTImpl.h>
 #    include <DataTypes/DataTypeArray.h>
 #    include <DataTypes/DataTypeDate32.h>
 #    include <DataTypes/DataTypeDateTime64.h>
