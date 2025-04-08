@@ -404,11 +404,8 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
-    auto ordinary_reading_select_result = reading.selectRangesToRead();
-    size_t granules = ordinary_reading_select_result->selected_marks;
-    LOG_DEBUG(getLogger("optimizeUseProjections"), "Granules: {}", granules);
     
-    // If the following MergeTree settings are enabled and there is only one granule, lightweight delete masks can be ignored.
+    // If the following MergeTree settings are enabled, lightweight delete masks can be ignored for minmax_projection.
     bool can_ignore_lwd = ((*reading.getMergeTreeData().getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge]
         && (*reading.getMergeTreeData().getSettings())[MergeTreeSetting::load_existing_rows_count_for_old_parts]);
     
@@ -466,11 +463,14 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
                 minmax.block = std::move(block);
                 minmax.candidate.projection = projection;
                 candidates.minmax_projection.emplace(std::move(minmax));
-                LOG_DEBUG(getLogger("optimizeUseProjections"), "has min max projection");
             }
         }
         else
         {
+            // Since lightweight delete still impact the following granule-based count optimization,
+            // skipping setting the only_count_column.
+            if(reading.getMergeTreeData().has_lightweight_delete_parts.load())
+                return candidates;
             /// Trivial count optimization only applies after @can_use_minmax_projection.
             if (keys.empty() && aggregates.size() == 1 && typeid_cast<const AggregateFunctionCount *>(aggregates[0].function.get()))
                 candidates.only_count_column = aggregates[0].column_name;
@@ -479,7 +479,6 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     if (!candidates.minmax_projection)
     {
-        LOG_DEBUG(getLogger("optimizeUseProjections"), "hasn't min max projection");
         auto it = std::find_if(
             agg_projections.begin(),
             agg_projections.end(),
