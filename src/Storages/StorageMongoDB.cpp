@@ -243,12 +243,23 @@ static const ColumnNode * getColumnNode(const QueryTreeNodePtr & node, const Joi
     return column;
 }
 
-template <typename OnError>
-std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereColumnConst(
+std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereConstant(
+    const ContextPtr & context,
+    const ConstantNode * const_node,
+    const JoinNode * join_node)
+{
+    if (const_node->hasSourceExpression())
+    {
+        if (const auto * func_node = const_node->getSourceExpression()->as<FunctionNode>())
+            return visitWhereFunction(context, func_node, join_node);
+    }
+    return {};
+}
+
+std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArguments(
     const ColumnNode * column_node,
     const ConstantNode * const_node,
     const FunctionNode * func,
-    OnError on_error,
     bool invert_comparison)
 {
     auto func_name = mongoFuncName(func->getFunctionName());
@@ -256,7 +267,6 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereColumnConst(
     if (func_name.empty())
     {
         LOG_DEBUG(log, "MongoDB function name not found for '{}'", func->getFunctionName());
-        on_error(func);
         return {};
     }
 
@@ -265,38 +275,47 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereColumnConst(
         func_name = invertMongoComparison(func_name);
     }
 
-    auto const_source_type = const_node->getResultType();
-    auto const_result_type = column_node->getResultType();
+    auto const_type = const_node->getResultType();
+    auto column_type = column_node->getResultType();
     auto const_value = const_node->getValue();
+
+    bool is_const_number = WhichDataType(const_type).isNumber();
+    bool is_column_number = WhichDataType(column_type).isNumber();
 
     if (func_name == "$in" || func_name == "$nin")
     {
         if (const_value.getType() == Field::Types::Array)
         {
-            const_result_type = std::make_shared<DataTypeArray>(const_result_type);
+            column_type = std::make_shared<DataTypeArray>(column_type);
         }
         else if (const_value.getType() == Field::Types::Tuple)
         {
             auto & value_tuple = const_value.safeGet<Tuple>();
             const_value = Array(value_tuple.begin(), value_tuple.end());
-            const_result_type = std::make_shared<DataTypeArray>(const_result_type);
+            column_type = std::make_shared<DataTypeArray>(column_type);
         }
     }
 
     /// Conversion is required because MongoDB cannot perform implicit cast and the result of WHERE clause may be incorrect.
-    auto converted_value = convertFieldToType(const_value, *const_result_type, const_source_type.get());
-
-    if (converted_value.isNull())
+    /// But implicit conversion between numbers works well and doesn't affect the result of WHERE clause.
+    if (!const_type->equals(*column_type) && (!is_const_number || !is_column_number))
     {
-        auto value_string = applyVisitor(FieldVisitorToString(), const_value);
-        LOG_DEBUG(log, "Cannot convert constant value {} to column type {}", value_string, const_result_type->getName());
-        on_error(func);
-        return {};
+        auto converted_value = convertFieldToType(const_value, *column_type, const_type.get());
+
+        if (converted_value.isNull())
+        {
+            auto value_string = applyVisitor(FieldVisitorToString(), const_value);
+            LOG_DEBUG(log, "Cannot convert constant value {} to column type {}", value_string, column_type->getName());
+            return {};
+        }
+
+        const_type = column_type;
+        const_value = std::move(converted_value);
     }
 
     auto func_value = BSONCXXHelper::fieldAsBSONValue(
-        converted_value,
-        const_result_type,
+        const_value,
+        const_type,
         configuration.isOidColumn(column_node->getColumnName()));
 
     if (func_name == "$in" && func_value.view().type() != bsoncxx::v_noabi::type::k_array)
@@ -307,12 +326,10 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereColumnConst(
     return make_document(kvp(column_node->getColumnName(), make_document(kvp(func_name, std::move(func_value)))));
 }
 
-template <typename OnError>
 std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
     const ContextPtr & context,
     const FunctionNode * func,
-    const JoinNode * join_node,
-    OnError on_error)
+    const JoinNode * join_node)
 {
     const auto & argumnet_nodes = func->getArguments().getNodes();
     if (func->getArguments().getNodes().empty())
@@ -343,46 +360,30 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
         const auto * right_const = func->getArguments().getNodes().at(1)->as<ConstantNode>();
 
         if (left_column && right_const)
-            return visitWhereColumnConst(left_column, right_const, func, on_error, false);
+            return visitWhereFunctionArguments(left_column, right_const, func, false);
 
         /// We cannot invert "in" and "notIn" functions.
         if (func->getFunctionName() == "in" || func->getFunctionName() == "notIn")
-        {
-            on_error(func);
             return {};
-        }
 
         const auto * left_const = func->getArguments().getNodes().at(0)->as<ConstantNode>();
         const auto * right_column = getColumnNode(func->getArguments().getNodes().at(1), join_node, getStorageID());
 
         if (left_const && right_column)
-            return visitWhereColumnConst(right_column, left_const, func, on_error, true);
+            return visitWhereFunctionArguments(right_column, left_const, func, true);
     }
 
     auto func_name = mongoFuncName(func->getFunctionName());
     if (func_name.empty())
-    {
-        on_error(func);
         return {};
-    }
 
     auto arr = bsoncxx::builder::basic::array{};
 
     for (const auto & elem : func->getArguments().getNodes())
     {
-        const auto * elem_func = elem->as<FunctionNode>();
-        if (!elem_func)
-        {
-            on_error(func);
-            return {};
-        }
-
-        auto res_value = visitWhereFunction(context, elem_func, join_node, on_error);
+        auto res_value = visitWhereNode(context, elem, join_node);
         if (!res_value)
-        {
-            on_error(func);
             return {};
-        }
 
         arr.append(*res_value);
     }
@@ -390,11 +391,26 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
     return make_document(kvp(func_name, arr));
 }
 
+std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereNode(
+    const ContextPtr & context,
+    const QueryTreeNodePtr & where_node,
+    const JoinNode * join_node)
+{
+    if (const auto * func = where_node->as<FunctionNode>())
+        return visitWhereFunction(context, func, join_node);
+
+    if (const auto * const_expr = where_node->as<ConstantNode>())
+        return visitWhereConstant(context, const_expr, join_node);
+
+    return {};
+}
+
 bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & context, mongocxx::options::find & options, const SelectQueryInfo & query, const Block & sample_block)
 {
     document projection{};
     for (const auto & column : sample_block)
         projection.append(kvp(column.name, 1));
+
     LOG_DEBUG(log, "MongoDB projection has built: '{}'", bsoncxx::to_json(projection));
     options.projection(projection.extract());
 
@@ -500,6 +516,7 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
         const auto & join_tree = query_tree.getJoinTree();
         const auto * join_node = join_tree->as<JoinNode>();
         bool allow_where = true;
+
         if (join_node)
         {
             if (join_node->getKind() == JoinKind::Left)
@@ -510,30 +527,17 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
                 allow_where = (join_node->getKind() == JoinKind::Inner);
         }
 
-        if (allow_where)
-        {
-            std::optional<bsoncxx::document::value> filter{};
-            if (const auto & func = query_tree.getWhere()->as<FunctionNode>())
-            {
-                filter = visitWhereFunction(context, func, join_node, on_error);
-            }
-            else if (const auto & const_expr = query_tree.getWhere()->as<ConstantNode>())
-            {
-                if (const_expr->hasSourceExpression())
-                {
-                    if (const auto & func_expr = const_expr->getSourceExpression()->as<FunctionNode>())
-                        filter = visitWhereFunction(context, func_expr, join_node, on_error);
-                }
-            }
-
-            if (filter.has_value())
-            {
-                LOG_DEBUG(log, "MongoDB query has built: '{}'.", bsoncxx::to_json(*filter));
-                return std::move(*filter);
-            }
-        }
-        else
+        if (!allow_where)
             on_error(join_node);
+
+        const auto & where_node = query_tree.getWhere();
+        auto filter = visitWhereNode(context, query_tree.getWhere(), join_node);
+
+        if (!filter)
+            on_error(where_node.get());
+
+        LOG_DEBUG(log, "MongoDB query has built: '{}'.", bsoncxx::to_json(*filter));
+        return std::move(*filter);
     }
 
     return make_document();
