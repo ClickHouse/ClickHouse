@@ -404,14 +404,12 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
-    
     // If the following MergeTree settings are enabled, lightweight delete masks can be ignored for minmax_projection.
-    bool can_ignore_lwd = ((*reading.getMergeTreeData().getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge]
-        && (*reading.getMergeTreeData().getSettings())[MergeTreeSetting::load_existing_rows_count_for_old_parts]);
-    
-    bool can_use_minmax_projection = allow_implicit_projections
-        && metadata->minmax_count_projection
-        && (!reading.getMergeTreeData().has_lightweight_delete_parts.load() || can_ignore_lwd);
+    bool can_ignore_lwd = ((*reading.getMergeTreeData().getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] &&
+                       (*reading.getMergeTreeData().getSettings())[MergeTreeSetting::load_existing_rows_count_for_old_parts]);
+
+    bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection &&
+                                 (!reading.getMergeTreeData().has_lightweight_delete_parts.load() || can_ignore_lwd);
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;
