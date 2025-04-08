@@ -574,7 +574,6 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
             ordinary_reading_select_result = reading->selectRangesToRead(find_exact_ranges);
 
         size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
-        LOG_DEBUG(getLogger("optimizeUseProjections"), "after Granules: {}", ordinary_reading_marks);
 
         /// Nothing to read. Ignore projections.
         if (ordinary_reading_marks == 0)
