@@ -694,6 +694,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.5",
+        {
+            {"secondary_indices_on_columns_alter", "throw", "throw", "New setting"}
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
             {"max_merge_delayed_streams_for_parallel_write", 1000, 100, "New setting"},

@@ -14,3 +14,7 @@ INSERT INTO test Values(1, 1);
 ALTER TABLE test MODIFY SETTING secondary_indices_on_columns_alter = 'throw';
 
 ALTER TABLE test MODIFY COLUMN b String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+ALTER TABLE test MODIFY SETTING secondary_indices_on_columns_alter = 'ignore';
+
+ALTER TABLE test MODIFY COLUMN b String;
