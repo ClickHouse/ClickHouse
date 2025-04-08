@@ -177,10 +177,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             if (mut_command->type == MutationCommand::DELETE && isAlwaysTruePredicate(mut_command->predicate))
             {
                 is_truncate = true;
-                continue;
             }
-
-            if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
+            else if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
             {
                 /// TODO: add a check for result query size.
                 auto rewritten_command_ast = replaceNonDeterministicToScalars(*command_ast, getContext());
@@ -204,6 +202,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             && (command_ast->type == ASTAlterCommand::ADD_STATISTICS || command_ast->type == ASTAlterCommand::DROP_STATISTICS
                 || command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTICS))
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is now disabled. Turn on allow_experimental_statistics");
+    }
+
+    if (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty())
+    {
+        if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
+            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
     }
 
     if (is_truncate)
@@ -246,12 +250,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         if (1 < command_types_count || mixed_settings_amd_metadata_alter)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "For Replicated databases it's not allowed "
                                                          "to execute ALTERs of different types (replicated and non replicated) in single query");
-    }
-
-    if (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty())
-    {
-        if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
-            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
     }
 
     if (!alter_commands.empty())
