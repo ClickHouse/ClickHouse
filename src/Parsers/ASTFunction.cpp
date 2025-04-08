@@ -531,7 +531,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
                 const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
 
-                if (const auto * _ = arguments->children[0]->as<ASTAsterisk>())
+                if (arguments->children[0]->as<ASTAsterisk>())
                     tuple_arguments_valid = false;
 
                 if (lit_left)
