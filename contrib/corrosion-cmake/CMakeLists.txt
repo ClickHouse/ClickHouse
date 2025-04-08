@@ -132,6 +132,8 @@ function(clickhouse_import_crate)
         endif()
     endif()
 
+    disable_dummy_launchers_if_needed()
     corrosion_import_crate(${ARGN} NO_STD PROFILE ${profile} CRATE_TYPES staticlib LOCKED FLAGS --offline NO_DEFAULT_FEATURES)
+    enable_dummy_launchers_if_needed()
 
 endfunction()
