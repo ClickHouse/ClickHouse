@@ -48,6 +48,13 @@ public:
     {
     }
 
+    static constexpr BFloat16 fromBits(UInt16 bits) noexcept
+    {
+        BFloat16 res;
+        res.x = bits;
+        return res;
+    }
+
     template <typename T>
     constexpr BFloat16 & operator=(const T & other)
     {
