@@ -39,7 +39,7 @@ for LIB in "${libs[@]}"; do
          echo "LGPL") ||
         (${GREP_CMD} -q -i -F 'The origin of this software must not be misrepresented' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'Altered source versions must be plainly marked as such' "$LIB_LICENSE" &&
-         ${GREP_CMD} -q -i -F 'This notice may not be removed or altered' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i 'This .*notice may not be removed or altered' "$LIB_LICENSE" &&
          echo "zLib") ||
         (${GREP_CMD} -q -i -F 'This program, "bzip2", the associated library "libbzip2"' "$LIB_LICENSE" &&
          echo "bzip2") ||
