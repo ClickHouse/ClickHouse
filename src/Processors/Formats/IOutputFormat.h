@@ -12,6 +12,8 @@ namespace DB
 
 class Block;
 class WriteBuffer;
+class InputPort;
+class OutputPort;
 
 /** Output format have three inputs and no outputs. It writes data from WriteBuffer.
   *

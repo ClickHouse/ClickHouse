@@ -45,7 +45,7 @@ void PngStructWrapper::cleanup()
 {
     if (png_ptr || info_ptr)
     {
-        LOG_INFO(getLogger("PngWriter"), "libpng resources freed in cleanup");
+        // LOG_INFO(getLogger("PngWriter"), "libpng resources freed in cleanup");
         png_destroy_write_struct(&png_ptr, &info_ptr);
     }
 
@@ -87,7 +87,7 @@ void PngWriter::startImage(size_t width_, size_t height_)
     width = width_;
     height = height_;
 
-    LOG_INFO(getLogger("PngWriter"), "Starting new png image with resolution {}x{}", width, height); 
+    // LOG_INFO(getLogger("PngWriter"), "Starting new png image with resolution {}x{}", width, height); 
 
     auto * png_ptr = png_create_write_struct(
         PNG_LIBPNG_VER_STRING,
@@ -97,8 +97,8 @@ void PngWriter::startImage(size_t width_, size_t height_)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error: {}", std::string(msg)); 
         },
         /// Warning handling function
-        [](png_structp, png_const_charp msg) { 
-            LOG_WARNING(getLogger("pngWriter"), "libpng warning: {}", std::string(msg));  
+        [](png_structp, [[maybe_unused]] png_const_charp msg) { 
+            // LOG_WARNING(getLogger("pngWriter"), "libpng warning: {}", std::string(msg));  
         }
     );
 
@@ -142,7 +142,7 @@ void PngWriter::startImage(size_t width_, size_t height_)
         PNG_FILTER_TYPE_DEFAULT
     );
 
-    LOG_INFO(getLogger("PngWriter"), "Image header set: {}x{} with bit_depth {} and color_type RGBA", width, height, bit_depth);
+    // LOG_INFO(getLogger("PngWriter"), "Image header set: {}x{} with bit_depth {} and color_type RGBA", width, height, bit_depth);
 }
 
 void PngWriter::writeEntireImage(const unsigned char * data)
@@ -160,7 +160,7 @@ void PngWriter::writeEntireImage(const unsigned char * data)
     for (size_t y = 0; y < height; ++y)
         row_pointers[y] = const_cast<png_bytep>(data + (y * row_bytes));
 
-    LOG_INFO(getLogger("PngWriter"), "Writing png image data: {} rows", height);
+    // LOG_INFO(getLogger("PngWriter"), "Writing png image data: {} rows", height);
 
     png_write_info(png_resource->getPngPtr(), png_resource->getInfoPtr());
     png_write_image(png_resource->getPngPtr(), row_pointers.data());
@@ -181,7 +181,7 @@ void PngWriter::finishImage()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setjmp triggered an error during finishing to write png image");
     }
 
-    LOG_INFO(getLogger("PngWriter"), "Successfully finished writing png image");
+    // LOG_INFO(getLogger("PngWriter"), "Successfully finished writing png image");
     
     cleanup();
 }

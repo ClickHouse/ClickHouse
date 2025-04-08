@@ -4,11 +4,16 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/PngSerializer.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Chunk.h>
+#include <Processors/Port.h>
+
 #include "base/types.h"
 
 namespace DB
 {
 
+// class InputPort;
+// class OutputPort;
 class PngWriter;
 
 /** A stream for outputting data as PNG image.
@@ -27,6 +32,7 @@ private:
 
     PngPixelFormat validateFormat(const String &);
 
+    int bit_depth;
     size_t max_width;
     size_t max_height;
     

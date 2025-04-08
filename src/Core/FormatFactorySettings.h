@@ -1304,17 +1304,15 @@ Set the quoting style for identifiers in SHOW CREATE query
     DECLARE(String, output_png_image_pixel_format, "RGB", R"(
 Set pixel format for output png image
 )", 0) \
-    \
     DECLARE(UInt64, output_png_image_max_height, 4096, R"(
 Set png image max height
 )", 0) \
-    \
     DECLARE(UInt64, output_png_image_max_width, 4096, R"(
 Set png image max width
 )", 0) \
-    DECLARE(Int32, output_png_image_bit_depth, 8, R"(
+    DECLARE(UInt64, output_png_image_bit_depth, 8, R"(
 Set png image color depth
-)", 0) \    
+)", 0)
 
 // End of FORMAT_FACTORY_SETTINGS
 

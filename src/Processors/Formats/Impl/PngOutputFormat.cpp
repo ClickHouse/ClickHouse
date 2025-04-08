@@ -1,4 +1,3 @@
-
 #include "base/types.h"
 
 #include <Columns/ColumnConst.h>
@@ -37,14 +36,15 @@ PngOutputFormat::PngOutputFormat(WriteBuffer & out_, const Block & header_, cons
     max_width = format_settings.png_image.max_width;
     max_height = format_settings.png_image.max_height;
     output_format = validateFormat(format_settings.png_image.pixel_output_format);
-
+    bit_depth = format_settings.png_image.bit_depth;
     DataTypes data_types = header_.getDataTypes();
     
     png_serializer = PngSerializer::create(data_types, 
         max_width, 
         max_height, 
         output_format, 
-        *writer
+        *writer,
+        bit_depth
     );
 }
 
@@ -117,8 +117,8 @@ void PngOutputFormat::writeSuffix()
     );
     try {
         png_serializer->finalizeWrite(final_width, final_height);
-    } catch (const Poco::Exception & e) { 
-        LOG_ERROR(getLogger("PngOutputFormat"), "Failed to write png image: {}", e.what());
+    } catch ([[maybe_unused]] const Poco::Exception & e) { 
+        // LOG_ERROR(getLogger("PngOutputFormat"), "Failed to write png image: {}", e.what());
         throw ;
     }
 }

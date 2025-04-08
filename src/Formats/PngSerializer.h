@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+/// #include <Columns/IColumn_fwd.h>
 #include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -39,13 +41,14 @@ public:
         size_t width,
         size_t height,
         PngPixelFormat pixel_format,
-        PngWriter & writer);
+        PngWriter & writer,
+        int bit_depth);
 
 protected:
     class SerializerImpl;
     std::unique_ptr<SerializerImpl> impl;
 
-    PngSerializer(size_t width_, size_t height_, PngWriter & writer_);
+    PngSerializer(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_);
 };
 
 }
