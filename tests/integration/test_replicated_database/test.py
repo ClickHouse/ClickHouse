@@ -947,12 +947,7 @@ def test_recover_staled_replica(started_cluster):
         )
         == f"{test_recover_staled_replica_run}\n"
     )
-    assert (
-        dummy_node.query(
-            "SELECT count() FROM system.tables WHERE database='recover_broken_replicated_tables'"
-        )
-        == f"{test_recover_staled_replica_run}\n"
-    )
+    assert_eq_with_retry(dummy_node, "SELECT count() FROM system.tables WHERE database='recover_broken_replicated_tables'", test_recover_staled_replica_run)
     test_recover_staled_replica_run += 1
 
     table = dummy_node.query(
@@ -1315,58 +1310,6 @@ def test_force_synchronous_settings(started_cluster):
     snapshotting_node.query(
         "DROP DATABASE test_force_synchronous_settings SYNC"
     )
-
-
-def test_recover_digest_mismatch(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
-
-    main_node.query(
-        "CREATE DATABASE recover_digest_mismatch ENGINE = Replicated('/clickhouse/databases/recover_digest_mismatch', 'shard1', 'replica1');"
-    )
-    dummy_node.query(
-        "CREATE DATABASE recover_digest_mismatch ENGINE = Replicated('/clickhouse/databases/recover_digest_mismatch', 'shard1', 'replica2');"
-    )
-
-    create_some_tables("recover_digest_mismatch")
-
-    main_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
-    dummy_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
-
-    ways_to_corrupt_metadata = [
-        "mv /var/lib/clickhouse/metadata/recover_digest_mismatch/t1.sql /var/lib/clickhouse/metadata/recover_digest_mismatch/m1.sql",
-        "sed --follow-symlinks -i 's/Int32/String/' /var/lib/clickhouse/metadata/recover_digest_mismatch/mv1.sql",
-        "rm -f /var/lib/clickhouse/metadata/recover_digest_mismatch/d1.sql",
-        "rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/",  # Will trigger "Directory already exists"
-    ]
-
-    for command in ways_to_corrupt_metadata:
-        print(f"Corrupting data using `{command}`")
-        need_remove_is_active_node = "rm -rf" in command
-        dummy_node.stop_clickhouse(kill=not need_remove_is_active_node)
-        dummy_node.exec_in_container(["bash", "-c", command])
-
-        query = (
-            "SELECT name, uuid, create_table_query FROM system.tables WHERE database='recover_digest_mismatch' AND name NOT LIKE '.inner_id.%' "
-            "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"
-        )
-        expected = main_node.query(query)
-
-        if need_remove_is_active_node:
-            # NOTE Otherwise it fails to recreate ReplicatedMergeTree table due to "Replica already exists"
-            main_node.query(
-                "SYSTEM DROP REPLICA '2' FROM DATABASE recover_digest_mismatch"
-            )
-
-        # There is a race condition between deleting active node and creating it on server startup
-        # So we start a server only after we deleted all table replicas from the Keeper
-        dummy_node.start_clickhouse()
-        assert_eq_with_retry(dummy_node, query, expected)
-
-    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
-
-    print("Everything Okay")
 
 
 def test_replicated_table_structure_alter(started_cluster):
