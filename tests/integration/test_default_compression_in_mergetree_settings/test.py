@@ -43,6 +43,7 @@ CODECS_MAPPING = {
 
 
 def test_default_compression_codec_in_mergetree_settings(start_cluster):
+    node.query("DROP TABLE IF EXISTS compression_table SYNC")
     node.query(
         """
     CREATE TABLE compression_table (
