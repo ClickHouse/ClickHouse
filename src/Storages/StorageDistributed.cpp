@@ -981,6 +981,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         }
         else
         {
+            const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+            select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+
             const auto select = std::make_shared<ASTSelectQuery>();
 
             auto expression_list = std::make_shared<ASTExpressionList>();
@@ -988,7 +991,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
             select->setExpression(ASTSelectQuery::Expression::SELECT, expression_list->clone());
             select->addTableFunction(src_distributed.remote_table_function_ptr);
 
-            new_query->select = select;
+            select_with_union_query->list_of_selects->children.push_back(select->clone());
+
+            new_query->select = select_with_union_query;
         }
     }
     else
