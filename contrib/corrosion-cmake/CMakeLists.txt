@@ -131,23 +131,17 @@ function(clickhouse_import_crate)
         endif()
     endif()
 
-    disable_dummy_launchers_if_needed()
-    corrosion_import_crate(${ARGN} NO_STD PROFILE ${profile} CRATE_TYPES staticlib LOCKED FLAGS --offline NO_DEFAULT_FEATURES)
-    enable_dummy_launchers_if_needed()
-endfunction()
-
-function(clickhouse_config_crate target_name)
     # We set manually the cargo config flags via command line `--config` option
     # We have to do it this way because workspaces are built from source folder and we can't place the `config.toml`
     # there, as it would conflict if you have multiple build folders
-    get_property(
-        CRATE_CARGO_FLAGS
-        TARGET "${target_name}"
-        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS
-    )
-
-    set_property(
-        TARGET "${target_name}"
-        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS "${CRATE_CARGO_FLAGS};--config=${RUST_CONFIG_FILE}"
-    )
+    disable_dummy_launchers_if_needed()
+    corrosion_import_crate(${ARGN}
+            FLAGS "--config=${RUST_CONFIG_FILE}"
+            NO_STD
+            PROFILE ${profile}
+            CRATE_TYPES staticlib
+            LOCKED FLAGS --offline
+            NO_DEFAULT_FEATURES
+            )
+    enable_dummy_launchers_if_needed()
 endfunction()

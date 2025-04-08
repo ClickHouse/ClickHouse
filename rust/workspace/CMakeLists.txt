@@ -17,10 +17,8 @@ endif()
 
 clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
 
-clickhouse_config_crate(_ch_rust_prql)
 target_include_directories(_ch_rust_prql INTERFACE prql/include)
 add_library(ch_rust::prql ALIAS _ch_rust_prql)
 
-clickhouse_config_crate(_ch_rust_skim_rust)
 target_include_directories(_ch_rust_skim_rust INTERFACE skim/include)
 add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)

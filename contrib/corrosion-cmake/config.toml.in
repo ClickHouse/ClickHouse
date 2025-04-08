@@ -1,4 +1,5 @@
 [env]
+# Did not find the proper way to do this via corrosion_set_env_vars (https://github.com/ClickHouse/ClickHouse/pull/78590#discussion_r2033848604)
 CFLAGS = "@RUST_CFLAGS@"
 CXXFLAGS = "@RUST_CXXFLAGS@"
 
