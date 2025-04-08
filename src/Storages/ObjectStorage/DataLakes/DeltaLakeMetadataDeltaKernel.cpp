@@ -32,14 +32,12 @@ bool DeltaLakeMetadataDeltaKernel::update(const ContextPtr &)
     return table_snapshot->update();
 }
 
-Strings DeltaLakeMetadataDeltaKernel::getDataFiles() const
+ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
+    const ActionsDAG * filter_dag,
+    FileProgressCallback callback,
+    size_t list_batch_size) const
 {
-    throwNotImplemented("getDataFiles()");
-}
-
-ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(FileProgressCallback callback, size_t list_batch_size) const
-{
-    return table_snapshot->iterate(callback, list_batch_size);
+    return table_snapshot->iterate(filter_dag, callback, list_batch_size);
 }
 
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema() const

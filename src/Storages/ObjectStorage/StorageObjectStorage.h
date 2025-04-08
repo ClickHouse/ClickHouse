@@ -227,8 +227,6 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
-    virtual void implementPartitionPruning(const ActionsDAG &) { }
-
     virtual std::optional<size_t> totalRows() { return {}; }
     virtual std::optional<size_t> totalBytes() { return {}; }
 
@@ -255,7 +253,10 @@ public:
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
     virtual bool supportsFileIterator() const { return false; }
-    virtual ObjectIterator iterate(std::function<void(FileProgress)> /* callback */, size_t /* list_batch_size */)
+    virtual ObjectIterator iterate(
+        const ActionsDAG * /* filter_dag */,
+        std::function<void(FileProgress)> /* callback */,
+        size_t /* list_batch_size */)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
