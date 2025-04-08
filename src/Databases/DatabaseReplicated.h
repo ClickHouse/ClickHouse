@@ -153,8 +153,6 @@ private:
     void assertDigestInTransactionOrInline(const ContextPtr & local_context, const ZooKeeperMetadataTransactionPtr & txn) TSA_REQUIRES(metadata_mutex);
 
     /// For debug purposes only, don't use in production code
-    void dumpLocalTablesForDebugOnly(const ContextPtr & local_context) const;
-    void dumpTablesInZooKeeperForDebugOnly() const;
     void tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const;
 
     void waitDatabaseStarted() const override;

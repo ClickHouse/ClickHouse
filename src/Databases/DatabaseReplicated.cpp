@@ -818,37 +818,6 @@ ASTPtr DatabaseReplicated::tryGetCreateOrAttachTableQuery(const String & name, C
     return res;
 }
 
-void DatabaseReplicated::dumpLocalTablesForDebugOnly(const ContextPtr & local_context) const
-{
-    auto table_names = getAllTableNames(context.lock());
-    for (const auto & table_name : table_names)
-    {
-        auto ast_ptr = tryGetCreateOrAttachTableQuery(table_name, local_context);
-        if (ast_ptr)
-            LOG_DEBUG(log, "[local] Table {} create query is {}", table_name, ast_ptr->formatForLogging());
-        else
-            LOG_DEBUG(log, "[local] Table {} has no create query", table_name);
-    }
-}
-
-void DatabaseReplicated::dumpTablesInZooKeeperForDebugOnly() const
-{
-    UInt32 max_log_ptr{};
-    auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(getZooKeeper(), max_log_ptr);
-    for (const auto & [table_name, create_table_query] : table_name_to_metadata)
-    {
-        auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
-        if (query_ast)
-        {
-            LOG_DEBUG(log, "[zookeeper] Table {} create query is {}", table_name, query_ast->formatForLogging());
-        }
-        else
-        {
-            LOG_DEBUG(log, "[zookeeper] Table {} has no create query", table_name);
-        }
-    }
-}
-
 void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const
 {
     UInt32 max_log_ptr{};
@@ -1054,8 +1023,6 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context) cons
         LOG_ERROR(log, "Digest of local metadata ({}) is not equal to in-memory digest ({})", local_digest, tables_metadata_digest);
 
 #ifndef NDEBUG
-        dumpLocalTablesForDebugOnly(local_context);
-        dumpTablesInZooKeeperForDebugOnly();
         tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(local_context);
 #endif
 
@@ -1076,8 +1043,6 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context) cons
     {
         LOG_ERROR(log, "Digest of local metadata ({}) is not equal to digest in Keeper ({})", local_digest_str, zk_digest);
 #ifndef NDEBUG
-        dumpLocalTablesForDebugOnly(local_context);
-        dumpTablesInZooKeeperForDebugOnly();
         tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(local_context);
 #endif
         return false;
