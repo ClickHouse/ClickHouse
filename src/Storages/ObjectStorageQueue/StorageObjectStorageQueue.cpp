@@ -307,15 +307,6 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     LOG_TRACE(log, "Shut down storage");
 }
 
-void StorageObjectStorageQueue::drop()
-{
-    if (files_metadata)
-    {
-        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID());
-        files_metadata.reset();
-    }
-}
-
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context_, format_settings);
