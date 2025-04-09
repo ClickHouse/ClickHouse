@@ -1546,6 +1546,38 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='2', 'delta.minWriterVersion'='5', '
         == node.query(f"SELECT * FROM {delta_function} ORDER BY all").strip()
     )
 
+    paths = (
+        node.query(f"SELECT _path FROM {delta_function} ORDER BY all")
+        .strip()
+        .splitlines()
+    )
+
+    def s3_function(path):
+        return f""" s3(
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{path}' ,
+            '{minio_access_key}',
+            '{minio_secret_key}')
+        """
+
+    assert len(paths) == 9
+
+    schemas = dict()
+    for path in paths:
+        schema = node.query(f"DESCRIBE TABLE {s3_function(path)}").strip()
+        if schema in schemas:
+            schemas[schema].append(path)
+        else:
+            schemas[schema] = [path]
+
+    assert len(schemas) == 3
+    counts = []
+    for schema, schema_paths in schemas.items():
+        counts.append(len(schema_paths))
+    counts.sort()
+
+    assert counts == [1, 2, 6]
+
+
 
 def test_alter_column_type(started_cluster):
     node = started_cluster.instances["node1"]
