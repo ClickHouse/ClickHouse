@@ -96,7 +96,7 @@ private:
     QueryTreeNodePtr tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
     IdentifierResolveResult tryResolveIdentifierFromStorage(
-        const Identifier & identifier,
+        const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
         const AnalysisTableExpressionData & table_expression_data,
         IdentifierResolveScope & scope,

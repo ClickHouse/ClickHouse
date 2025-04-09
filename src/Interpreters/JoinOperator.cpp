@@ -259,10 +259,11 @@ JoinActionRef::JoinActionRef(std::nullptr_t)
 {
 }
 
-JoinActionRef::JoinActionRef(const ActionsDAG::Node * node_, ActionsDAG * actions_dag_, BaseRelsSet src_rels_)
+JoinActionRef::JoinActionRef(const ActionsDAG::Node * node_, ActionsDAG * actions_dag_, BaseRelsSet src_rels_, String display_column_name_)
     : column_name(node_->result_name)
     , src_rels(src_rels_)
     , actions_dag(actions_dag_)
+    , display_column_name(display_column_name_)
 {
     chassert(checkNodeInOutputs(node_, actions_dag));
 }
@@ -297,6 +298,14 @@ ColumnWithTypeAndName JoinActionRef::getColumn() const
 
 const String & JoinActionRef::getColumnName() const
 {
+    return column_name;
+}
+
+
+const String & JoinActionRef::getDisplayName() const
+{
+    if (!display_column_name.empty())
+        return display_column_name;
     return column_name;
 }
 

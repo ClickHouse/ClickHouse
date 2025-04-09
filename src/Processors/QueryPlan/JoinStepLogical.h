@@ -115,33 +115,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cloning of expression actions is not implemented");
     }
 
-private:
-    struct PhysicalJoinNode
-    {
-        ActionsDAGPtr left_pre_join_actions{nullptr};
-        JoinActionRef left_pre_filter_condition{nullptr};
-
-        ActionsDAGPtr right_pre_join_actions{nullptr};
-        JoinActionRef right_pre_filter_condition{nullptr};
-
-        ActionsDAGPtr post_join_actions{nullptr};
-        JoinActionRef residual_filter_condition{nullptr};
-
-        JoinPtr join_strategy{nullptr};
-    };
-
-    void buildPhysicalJoinNode(
-        BaseRelsSet left_rels,
-        BaseRelsSet right_rels,
-        PhysicalJoinNode & result_node,
-        JoinOperator join_info,
-        const QueryPlanOptimizationSettings & optimization_settings);
-
-    QueryPlan::Node * buildPhysicalPlan(
-        std::vector<const DPJoinEntry *> join_order,
-        std::vector<QueryPlan::Node *> inputs,
-        QueryPlan::Nodes & nodes,
-        const QueryPlanOptimizationSettings & optimization_settings);
+    void setRelationStats(RelationStats, size_t index);
 
 protected:
     void updateOutputHeader() override;

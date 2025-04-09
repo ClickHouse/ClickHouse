@@ -51,7 +51,7 @@ struct DPJoinEntry
 class JoinStepLogical;
 
 DPJoinEntryPtr optimizeJoinOrder(const JoinStepLogical & join_step);
-DPJoinEntryPtr reconstructTrivialTree(const JoinStepLogical & join_step);
+DPJoinEntryPtr constructLeftDeepJoinOrder(const JoinStepLogical & join_step);
 
 
 }

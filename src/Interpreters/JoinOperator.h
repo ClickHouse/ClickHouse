@@ -83,7 +83,11 @@ class JoinActionRef
 {
 public:
     explicit JoinActionRef(std::nullptr_t);
-    explicit JoinActionRef(const ActionsDAG::Node * node_, ActionsDAG * actions_dag_, BaseRelsSet src_rels_ = {});
+    explicit JoinActionRef(
+        const ActionsDAG::Node * node_,
+        ActionsDAG * actions_dag_,
+        BaseRelsSet src_rels_ = {},
+        String display_column_name_ = "");
 
     const ActionsDAG::Node * getNode() const;
     ActionsDAG * getActions() const;
@@ -91,6 +95,8 @@ public:
 
     ColumnWithTypeAndName getColumn() const;
     const String & getColumnName() const;
+    const String & getDisplayName() const;
+
     DataTypePtr getType() const;
 
     operator bool() const { return !column_name.empty(); } /// NOLINT
@@ -110,6 +116,7 @@ private:
     BaseRelsSet src_rels;
 
     ActionsDAG * actions_dag = nullptr;
+    String display_column_name;
 };
 
 inline bool isSubsetOf(const BaseRelsSet & subset, const BaseRelsSet & superset)

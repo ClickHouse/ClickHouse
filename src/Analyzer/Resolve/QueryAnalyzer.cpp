@@ -1225,7 +1225,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
         auto & alias_identifier_node = alias_node->as<IdentifierNode &>();
         auto identifier = alias_identifier_node.getIdentifier();
-        auto lookup_result = tryResolveIdentifier(IdentifierLookup{identifier, identifier_lookup.lookup_context}, *scope_to_resolve_alias_expression, identifier_resolve_context);
+        IdentifierLookup alias_identifier_lookup{identifier, identifier_lookup.lookup_context};
+        if (alias_node->hasOriginalAST())
+            alias_identifier_lookup.original_ast_node = alias_node->getOriginalAST();
+        auto lookup_result = tryResolveIdentifier(alias_identifier_lookup, *scope_to_resolve_alias_expression, identifier_resolve_context);
 
         scope_to_resolve_alias_expression->popExpressionNode();
 
@@ -3688,7 +3691,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         {
             auto & identifier_node = node->as<IdentifierNode &>();
             auto unresolved_identifier = identifier_node.getIdentifier();
-            auto resolve_identifier_expression_result = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::EXPRESSION}, scope);
+            IdentifierLookup identifier_lookup{unresolved_identifier, IdentifierLookupContext::EXPRESSION};
+            if (node->hasOriginalAST())
+                identifier_lookup.original_ast_node = node->getOriginalAST();
+            auto resolve_identifier_expression_result = tryResolveIdentifier(identifier_lookup, scope);
+
             auto resolved_identifier_node = resolve_identifier_expression_result.resolved_identifier;
 
             if (resolved_identifier_node && result_projection_names.empty() &&
@@ -4346,6 +4353,8 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
             {
                 auto & from_table_identifier = current_join_tree_node->as<IdentifierNode &>();
                 auto table_identifier_lookup = IdentifierLookup{from_table_identifier.getIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
+                if (current_join_tree_node->hasOriginalAST())
+                    table_identifier_lookup.original_ast_node = current_join_tree_node->getOriginalAST();
 
                 auto from_table_identifier_alias = from_table_identifier.getAlias();
 

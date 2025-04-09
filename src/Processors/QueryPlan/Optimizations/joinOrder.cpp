@@ -109,6 +109,11 @@ void forEachJoinAction(const JoinExpression & join_expression, F && f)
         forEachJoinAction(join_condition, f);
 }
 
+[[ maybe_unused ]]
+static auto bitsetToPositions(BaseRelsSet s)
+{
+    return std::views::iota(0u, s.size()) | std::views::filter([=](size_t i) { return s.test(i); });
+}
 
 std::pair<BaseRelsSet, BaseRelsSet> extractRelations(const JoinOperator & join_op, BaseRelsSet lsuper, BaseRelsSet rsuper)
 {
@@ -161,20 +166,27 @@ void JoinOrderOptimizer::buildQueryGraph()
 {
     auto & join_operators = original_join_step.getJoinOperators();
 
-    for (size_t i = 0; i < join_operators.size(); ++i) {
+    for (size_t i = 0; i < join_operators.size(); ++i)
+    {
         const auto & join_op = join_operators[i];
 
         JoinEdge edge;
 
         /// In the original order, each join connects tables [0..i] with table [i+1]
-        BaseRelsSet left_rels;
+        BaseRelsSet left_side;
         for (size_t j = 0; j <= i; ++j)
-            left_rels.set(j);
+            left_side.set(j);
 
-        BaseRelsSet right_rels;
-        right_rels.set(i + 1);
+        BaseRelsSet right_side;
+        right_side.set(i + 1);
 
-        auto [extracted_left, extracted_right] = extractRelations(join_op, left_rels, right_rels);
+        /// Non-reorderable joins
+        if (isLeftOrFull(join_op.kind))
+            dependencies.emplace_back(right_side, left_side);
+        if (isRightOrFull(join_op.kind))
+            dependencies.emplace_back(left_side, right_side);
+
+        auto [extracted_left, extracted_right] = extractRelations(join_op, left_side, right_side);
 
         edge.join_operator = &join_op;
         edge.selectivity = estimateJoinSelectivity(join_op, relation_stats);
@@ -182,12 +194,11 @@ void JoinOrderOptimizer::buildQueryGraph()
         edge.right_rels = extracted_right;
 
         join_edges.push_back(std::move(edge));
+    }
 
-        /// Non-reorderable joins
-        if (isLeftOrFull(join_op.kind))
-            dependencies.emplace_back(edge.right_rels, edge.left_rels);
-        if (isRightOrFull(join_op.kind))
-            dependencies.emplace_back(edge.left_rels, edge.right_rels);
+    for (auto dep : dependencies)
+    {
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {} depends on {}", __FILE__, __LINE__, bitsetToPositions(dep.first), bitsetToPositions(dep.second));
     }
 }
 
@@ -239,23 +250,37 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         {
             for (size_t j = i + 1; j < components.size(); j++)
             {
-                const auto & left = components[i];
-                const auto & right = components[j];
+                auto left = components[i];
+                auto right = components[j];
+
+                LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: trying {} {}", __FILE__, __LINE__, bitsetToPositions(left->relations), bitsetToPositions(right->relations));
 
                 if (!isValidJoinOrder(left->relations, right->relations))
+                {
+                    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: non valid", __FILE__, __LINE__);
                     continue;
+                }
 
                 for (auto edge : join_edges)
                 {
+                    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: edge {} {}", __FILE__, __LINE__,
+                        bitsetToPositions(edge.left_rels), bitsetToPositions(edge.right_rels));
+
                     bool connects_left_to_right = (left->relations & edge.left_rels).any() && (right->relations & edge.right_rels).any();
                     bool connects_right_to_left = (left->relations & edge.right_rels).any() && (right->relations & edge.left_rels).any();
 
                     if (!connects_left_to_right && !connects_right_to_left)
+                    {
+                        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: non connectable", __FILE__, __LINE__);
                         continue;
+                    }
 
                     auto current_cost = computeJoinCost(left, right, edge.selectivity);
+                    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: current cost {}", __FILE__, __LINE__, current_cost);
                     if (!best_plan || current_cost < best_plan->cost)
                     {
+                        if (connects_right_to_left)
+                            std::swap(left, right);
                         auto cardinality = estimateJoinCardinality(left, right, edge.selectivity, edge.join_operator->kind);
                         best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, edge.join_operator);
                         best_i = i;
@@ -290,6 +315,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 
             if (best_i == best_j)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find two smallest components");
+            if (!isValidJoinOrder(components[best_i]->relations, components[best_j]->relations))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find two smallest components");
 
             auto cost = computeJoinCost(components[best_i], components[best_j], 1.0);
             auto cardinality = estimateJoinCardinality(components[best_i], components[best_j], 1.0);
@@ -310,16 +337,16 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 
 bool JoinOrderOptimizer::isValidJoinOrder(const BaseRelsSet & lhs, const BaseRelsSet & rhs) const
 {
-    for (const auto & [dep_left, dep_right] : dependencies)
+    /// second depends on first
+    for (const auto & [first, second] : dependencies)
     {
-        // If the dependent left relations are split between lhs and rhs,
-        // and the dependent right relations are in rhs, we can't reorder
-        if ((dep_left & lhs).any() && (dep_left & rhs).any() && (dep_right & rhs).any())
+        auto joined_relations = lhs | rhs;
+        /// If all relations fall into one side, we can reored freely
+        if (isSubsetOf(joined_relations, first) || isSubsetOf(joined_relations, second) || isSubsetOf(first | second, lhs) || isSubsetOf(first | second, rhs))
+            continue;
+        if ((rhs & second).any() && !((lhs & first).any() && isSubsetOf(rhs, second)))
             return false;
-
-        // If the dependent right relations are in lhs, but not all
-        // dependent left relations are in lhs, we can't reorder
-        if ((dep_right & lhs).any() && !(isSubsetOf(dep_left, lhs)))
+        if ((lhs & second).any() && !((rhs & first).any() && isSubsetOf(lhs, second)))
             return false;
     }
 
@@ -339,7 +366,7 @@ DPJoinEntryPtr optimizeJoinOrder(const JoinStepLogical & join_step)
     return best_dp;
 }
 
-DPJoinEntryPtr reconstructTrivialTree(const JoinStepLogical & join_step)
+DPJoinEntryPtr constructLeftDeepJoinOrder(const JoinStepLogical & join_step)
 {
     size_t num_tables = join_step.getNumberOfTables();
     if (num_tables < 2)

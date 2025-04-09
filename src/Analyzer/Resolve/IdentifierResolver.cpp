@@ -455,13 +455,15 @@ bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const Identifie
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
-    const Identifier & identifier,
+    const IdentifierLookup & identifier_lookup,
     const QueryTreeNodePtr & table_expression_node,
     const AnalysisTableExpressionData & table_expression_data,
     IdentifierResolveScope & scope,
     size_t identifier_column_qualifier_parts,
     bool can_be_not_found)
 {
+    const auto & identifier = identifier_lookup.identifier;
+
     auto identifier_without_column_qualifier = identifier;
     identifier_without_column_qualifier.popFirst(identifier_column_qualifier_parts);
 
@@ -606,7 +608,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     }
 
     if (clone_is_needed)
+    {
         result_expression = result_expression->clone();
+        if (!result_expression->hasOriginalAST() && identifier_lookup.original_ast_node)
+            result_expression->setOriginalAST(identifier_lookup.original_ast_node);
+    }
 
     auto qualified_identifier = identifier;
 
@@ -682,7 +688,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
        * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or throw exception.
        */
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)))
-        return tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
+        return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
 
     if (table_expression_data.canBindIdentifier(IdentifierView(identifier)))
     {
@@ -693,7 +699,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
           * Example: `SELECT t.t from (SELECT 1 as t) AS a FULL JOIN (SELECT 1 as t) as t ON a.t = t.t;`
           * Initially, we will try to resolve t.t from `a` because `t.` is bound to `1 as t`. However, as it is not a nested column, we will need to resolve it from the second table expression.
           */
-        auto lookup_result = tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+        auto lookup_result = tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
         if (lookup_result.resolved_identifier)
             return lookup_result;
     }
@@ -703,14 +709,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     const auto & table_name = table_expression_data.table_name;
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
-        return tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
+        return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
     if (identifier.getPartsSize() == 2)
         return {};
 
     const auto & database_name = table_expression_data.database_name;
     if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
-        return tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
+        return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
     return {};
 }

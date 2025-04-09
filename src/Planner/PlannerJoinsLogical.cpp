@@ -171,7 +171,7 @@ struct JoinFlattenContext
     JoinActionRef addExpression(const QueryTreeNodePtr & node, BaseRelsSet sources)
     {
         ActionsDAG & actions_dag = join_step.getExpressionActions();
-        return JoinActionRef(appendExpression(actions_dag, node, planner_context), &actions_dag, sources);
+        return JoinActionRef(appendExpression(actions_dag, node, planner_context), &actions_dag, sources, node->formatASTForErrorMessage());
     }
 
     JoinStepLogical & join_step;
@@ -497,13 +497,12 @@ JoinTreeQueryPlan buildJoinStepLogical(
 {
     auto query_context = planner_context->getQueryContext();
 
-    auto prepared_storage = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
 
     auto * root_node = left_plan.query_plan.getRootNode();
     JoinStepLogical * join_step = root_node ? typeid_cast<JoinStepLogical *>(root_node->step.get()) : nullptr;
 
-    bool can_flatten = join_step && join_step->canFlatten()
-        && !prepared_storage && join_node.getKind() != JoinKind::Full && join_node.getKind() != JoinKind::Paste;
+    bool can_flatten = join_step && join_step->canFlatten();
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {} {}", __FILE__, __LINE__, can_flatten, join_node.formatASTForErrorMessage());
     if (!can_flatten)
         join_step = nullptr;
 
@@ -533,6 +532,7 @@ JoinTreeQueryPlan buildJoinStepLogical(
         {join_node.getKind(), join_node.getStrictness(), join_node.getLocality()},
         right_header);
 
+    auto prepared_storage = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
     join_step->setPreparedJoinStorage(std::move(prepared_storage));
 
     for (const auto * table_expression : extractTableExpressionsSet(join_node.getRightTableExpression()))

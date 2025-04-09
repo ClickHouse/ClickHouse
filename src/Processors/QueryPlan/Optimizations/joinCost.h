@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <base/defines.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -16,8 +17,10 @@ namespace DB
 
 struct RelationStats
 {
-    size_t estimated_rows;
+    size_t estimated_rows = 0;
     // std::unordered_map<String, ColumnStats> column_stats;
+
+    String table_name = "";
 };
 
 struct DPJoinEntry;
