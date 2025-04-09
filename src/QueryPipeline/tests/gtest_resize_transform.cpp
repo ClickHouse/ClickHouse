@@ -112,7 +112,7 @@ TEST(ResizeTransformTest, SplitResizeTest)
         {
             for (size_t min_outstreams_per_resize_after_split : {16, 24, 32})
             {
-                if (outstreams >= 2 * min_outstreams_per_resize_after_split)
+                if (outstreams / min_outstreams_per_resize_after_split > 1)
                 {
                     testSplitResizeTransform(instreams, outstreams, min_outstreams_per_resize_after_split, false /* strict */);
                     testSplitResizeTransform(instreams, outstreams, min_outstreams_per_resize_after_split, true /* strict */);
