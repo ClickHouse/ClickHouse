@@ -3522,14 +3522,4 @@ void ClientBase::showClientVersion()
     output_stream << VERSION_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
 }
 
-std::string ClientBase::getConnectionHostAndPortForFuzzing() const
-{
-    if (!hosts_and_ports.empty())
-    {
-        const HostAndPort & hap = hosts_and_ports[0];
-        return hap.host + (hap.port.has_value() ? (":" + std::to_string(hap.port.value())) : "");
-    }
-    return "127.0.0.{1,2}";
-}
-
 }
