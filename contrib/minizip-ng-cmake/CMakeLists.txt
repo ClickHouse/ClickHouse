@@ -144,6 +144,19 @@ if(UNIX)
          ${_MINIZIP_SOURCE_DIR}/mz_strm_os_posix.c)
 endif()
 
+# Include compatibility layer
+set(MZ_COMPAT ON)
+if(MZ_COMPAT)
+    list(APPEND MINIZIP_SRC
+         ${_MINIZIP_SOURCE_DIR}/compat/zip.c
+         ${_MINIZIP_SOURCE_DIR}/compat/unzip.c)
+
+    list(APPEND MINIZIP_HDR
+         ${_MINIZIP_SOURCE_DIR}/compat/zip.h
+         ${_MINIZIP_SOURCE_DIR}/compat/unzip.h)
+
+    list(APPEND MINIZIP_INC "${_MINIZIP_SOURCE_DIR}/compat")
+endif()
 
 add_library(_minizip ${MINIZIP_SRC} ${MINIZIP_HDR})
 target_include_directories(_minizip PUBLIC ${MINIZIP_INC})
