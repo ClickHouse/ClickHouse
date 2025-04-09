@@ -1,9 +1,9 @@
 SELECT 'totals';
-SELECT number % 3 + 1 AS n, min(n), max(n) FROM numbers(100) GROUP BY n WITH TOTALS;
+SELECT number % 3 + 1 AS n, min(n), max(n) FROM numbers(100) GROUP BY n WITH TOTALS ORDER BY n;
 SELECT 'rollup';
-SELECT number % 3 + 1 AS n, min(n), max(n) FROM numbers(100) GROUP BY n WITH ROLLUP;
+SELECT number % 3 + 1 AS n, min(n), max(n) FROM numbers(100) GROUP BY n WITH ROLLUP ORDER BY n;
 SELECT 'cube';
-SELECT number % 3 + 1 AS n, min(n), max(n) FROM numbers(100) GROUP BY n WITH CUBE;
+SELECT number % 3 + 1 AS n, min(n), max(n) FROM numbers(100) GROUP BY n WITH CUBE ORDER BY n;
 SELECT '=======';
 
 SELECT
@@ -15,4 +15,4 @@ FROM
 (
     SELECT arrayJoin([1, 2]) AS x
 ) 
-GROUP BY x WITH ROLLUP;
+GROUP BY x WITH ROLLUP ORDER BY x;
