@@ -392,7 +392,36 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
 
 REGISTER_FUNCTION(EmptyArrayToSingle)
 {
-    factory.registerFunction<FunctionEmptyArrayToSingle>();
+    FunctionDocumentation::Description description = "Accepts an empty array and returns a one-element array that is equal to the default value.";
+    FunctionDocumentation::Syntax syntax = "emptyArrayToSingle(x)";
+    FunctionDocumentation::Argument argument1 = {"x", "An empty array"};
+    FunctionDocumentation::Arguments arguments = {argument1};
+    FunctionDocumentation::ReturnedValue returned_value = "A one-element array that is equal to the default value.";
+    FunctionDocumentation::Example example1 = {"", R"(
+    CREATE TABLE test
+    (
+        `x` Array(UInt8)
+    )
+    ENGINE = MergeTree
+    ORDER BY tuple();
+
+    INSERT INTO test VALUES ([1, 2]),([]),([3, 4]);
+
+    SELECT
+        *,
+        emptyArrayToSingle(*)
+    FROM test
+    )", R"(
+    ┌─x─────┬─emptyArrayToSingle(x)─┐
+    │ [1,2] │ [1,2]                 │
+    │ []    │ [0]                   │
+    │ [3,4] │ [3,4]                 │
+    └───────┴───────────────────────┘
+    )"};
+    FunctionDocumentation::Examples examples = {example1};
+    FunctionDocumentation::Category categories = {"array"};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    factory.registerFunction<FunctionEmptyArrayToSingle>(documentation);
 }
 
 }
