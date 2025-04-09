@@ -5782,7 +5782,7 @@ Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reserv
 )", 0) \
     \
     DECLARE(Bool, parallelize_output_from_storages, true, R"(
-Parallelize output for reading step from storage. It allows parallelization of  query processing right after reading from storage if possible
+Parallelize output for reading step from storage. It allows parallelization of query processing right after reading from storage if possible
 )", 0) \
     DECLARE(String, insert_deduplication_token, "", R"(
 The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
