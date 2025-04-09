@@ -227,6 +227,8 @@ __attribute__((constructor(0))) void init_je_malloc_message()
         write(STDERR_FILENO, message_view.data(), message_view.size());
 #    endif
     };
+
+    DB::UseSSL();
 }
 #endif
 
