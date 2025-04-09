@@ -1,7 +1,11 @@
+#include <unordered_map>
+#include <vector>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Common/logger_useful.h>
 #include <Common/Logger.h>
+#include "Core/ColumnsWithTypeAndName.h"
+#include "Functions/IFunction.h"
 
 #include <Core/Joins.h>
 
@@ -13,6 +17,198 @@
 
 namespace DB::QueryPlanOptimizations
 {
+
+namespace
+{
+
+auto getInputNodes(const ActionsDAG & filter_dag, const Names & allowed_inputs_names)
+{
+    std::unordered_set<const ActionsDAG::Node *> allowed_nodes;
+
+    std::unordered_map<std::string_view, std::list<const ActionsDAG::Node *>> inputs_map;
+    for (const auto & input_node : filter_dag.getInputs())
+        inputs_map[input_node->result_name].emplace_back(input_node);
+
+    for (const auto & name : allowed_inputs_names)
+    {
+        auto & inputs_list = inputs_map[name];
+        if (inputs_list.empty())
+            continue;
+
+        allowed_nodes.emplace(inputs_list.front());
+        inputs_list.pop_front();
+    }
+
+    return allowed_nodes;
+}
+
+ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
+{
+    /// Parts of predicate in case predicate is conjunction (or just predicate itself).
+    ActionsDAG::NodeRawConstPtrs conjuncts;
+    {
+        std::vector<const ActionsDAG::Node *> stack;
+        std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+        stack.push_back(predicate);
+        visited_nodes.insert(predicate);
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            bool is_conjunction = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and";
+            if (is_conjunction)
+            {
+                for (const auto & child : node->children)
+                {
+                    if (!visited_nodes.contains(child))
+                    {
+                        visited_nodes.insert(child);
+                        stack.push_back(child);
+                    }
+                }
+            }
+            else if (node->type == ActionsDAG::ActionType::ALIAS)
+                stack.push_back(node->children.front());
+            else
+                conjuncts.push_back(node);
+        }
+    }
+    return conjuncts;
+}
+
+enum class ExpressionSide : uint8_t
+{
+    UNKNOWN = 0,
+    LEFT,
+    RIGHT,
+    BOTH,
+};
+
+ExpressionSide getExpressionSide(
+    const ActionsDAG::Node * expr,
+    const std::unordered_set<const ActionsDAG::Node *> & left_allowed_inputs,
+    const std::unordered_set<const ActionsDAG::Node *> & right_allowed_inputs
+)
+{
+    ActionsDAG::NodeRawConstPtrs nodes_to_process = { expr };
+    ExpressionSide side = ExpressionSide::UNKNOWN;
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * current = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (current->type == ActionsDAG::ActionType::INPUT)
+        {
+            bool left_contains = left_allowed_inputs.contains(current);
+            bool right_contains = right_allowed_inputs.contains(current);
+
+            ExpressionSide current_side = ExpressionSide::BOTH;
+            if (left_contains && !right_contains)
+                current_side = ExpressionSide::LEFT;
+            else if (!left_contains && right_contains)
+                current_side = ExpressionSide::RIGHT;
+            else
+                return ExpressionSide::BOTH;
+
+            if (side == ExpressionSide::UNKNOWN)
+                side = current_side;
+            else if (side != current_side)
+                return ExpressionSide::BOTH;
+        }
+    }
+    return side;
+}
+
+struct JoinConditionPart
+{
+    ActionsDAG left;
+    ActionsDAG right;
+};
+
+using JoinConditionParts = std::vector<JoinConditionPart>;
+
+JoinConditionPart createConditionPart(const ActionsDAG::Node * lhs, const ActionsDAG::Node * rhs)
+{
+    auto lhs_dag = ActionsDAG::cloneSubDAG({ lhs }, true);
+    auto rhs_dag = ActionsDAG::cloneSubDAG({ rhs }, true);
+
+    return JoinConditionPart{ .left = std::move(lhs_dag), .right = std::move(rhs_dag) };
+};
+
+
+JoinConditionParts splitActionsForJoinCondition(
+    ActionsDAG & filter_dag,
+    const std::string & filter_name,
+    const Names & left_stream_available_columns,
+    const Names & right_stream_available_columns
+)
+{
+    auto * predicate = const_cast<ActionsDAG::Node *>(filter_dag.tryFindInOutputs(filter_name));
+    if (!predicate)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
+            filter_name,
+            filter_dag.dumpDAG());
+
+    /// If condition is constant let's do nothing.
+    /// It means there is nothing to push down or optimization was already applied.
+    if (predicate->type == ActionsDAG::ActionType::COLUMN)
+        return {};
+
+    auto left_stream_allowed_nodes = getInputNodes(filter_dag, left_stream_available_columns);
+    auto right_stream_allowed_nodes = getInputNodes(filter_dag, right_stream_available_columns);
+
+    auto conjuncts_list = getConjunctsList(predicate);
+    LOG_DEBUG(getLogger(__func__), "Conjuncts list size: {}", conjuncts_list.size());
+
+    JoinConditionParts result;
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> conjuncts_to_replace;
+    for (const auto * conjunct : conjuncts_list)
+    {
+        bool is_equality = conjunct->type == ActionsDAG::ActionType::FUNCTION && conjunct->function_base->getName() == "equals";
+        if (is_equality)
+        {
+            const auto * lhs = conjunct->children[0];
+            const auto * rhs = conjunct->children[1];
+
+            auto lhs_side = getExpressionSide(lhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
+            auto rhs_side = getExpressionSide(rhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
+
+            LOG_DEBUG(getLogger(__func__), "Equality sides: {} {}", static_cast<uint8_t>(lhs_side), static_cast<uint8_t>(rhs_side));
+
+            if (lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
+            {
+                result.emplace_back(createConditionPart(lhs, rhs));
+                conjuncts_to_replace[conjunct] = &filter_dag.addColumn(ColumnWithTypeAndName(
+                    conjunct->result_type->createColumnConst(1, 1),
+                    conjunct->result_type,
+                    conjunct->result_name));
+            }
+            else if (rhs_side == ExpressionSide::LEFT && lhs_side == ExpressionSide::RIGHT)
+            {
+                result.emplace_back(createConditionPart(rhs, lhs));
+                conjuncts_to_replace[conjunct] = &filter_dag.addColumn(ColumnWithTypeAndName(
+                    conjunct->result_type->createColumnConst(1, 1),
+                    conjunct->result_type,
+                    conjunct->result_name));
+            }
+        }
+    }
+
+    for (const auto * & output : filter_dag.getOutputs())
+    {
+        auto it = conjuncts_to_replace.find(output);
+        if (it != conjuncts_to_replace.end())
+        {
+            output = it->second;
+        }
+    }
+
+    return result;
+}
+
+}
 
 size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan::Nodes &  /*nodes*/, const Optimization::ExtraSettings &)
 {
@@ -27,15 +223,19 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     auto * filter_step = typeid_cast<FilterStep *>(parent.get());
     auto * join_step = typeid_cast<JoinStepLogical *>(child.get());
 
+    LOG_DEBUG(getLogger(__func__), "Checking node: {} -> {}", parent->getName(), child->getName());
     if (!filter_step || !join_step)
         return 0;
 
     const auto & join_expressions = join_step->getExpressionActions();
     auto & join_info = join_step->getJoinInfo();
+    LOG_DEBUG(getLogger(__func__), "Checking kind: {}", toString(join_info.kind));
+
     if (join_info.kind == JoinKind::Full)
         return 0;
 
     auto strictness = join_info.strictness;
+    LOG_DEBUG(getLogger(__func__), "Checking strictness: {}", toString(strictness));
     if (strictness == JoinStrictness::Anti || strictness == JoinStrictness::Asof)
         return 0;
 
@@ -70,7 +270,8 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     LOG_DEBUG(getLogger(__func__), "Left header:\n{}", toString(left_stream_available_columns));
     LOG_DEBUG(getLogger(__func__), "Right header:\n{}", toString(right_stream_available_columns));
 
-    auto equality_predicates = filter_step->getExpression().splitActionsForJoinCondition(
+    auto equality_predicates = splitActionsForJoinCondition(
+        filter_step->getExpression(),
         filter_step->getFilterColumnName(),
         left_stream_available_columns,
         right_stream_available_columns);
@@ -79,13 +280,13 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     if (equality_predicates.empty())
         return 0;
 
-    for (auto & predicate :equality_predicates)
+    for (auto & predicate : equality_predicates)
     {
-        auto lhs_node_name = predicate.first.getOutputs()[0]->result_name;
-        auto rhs_node_name = predicate.second.getOutputs()[0]->result_name;
+        auto lhs_node_name = predicate.left.getOutputs()[0]->result_name;
+        auto rhs_node_name = predicate.right.getOutputs()[0]->result_name;
 
-        join_expressions.left_pre_join_actions->mergeNodes(std::move(predicate.first));
-        join_expressions.right_pre_join_actions->mergeNodes(std::move(predicate.second));
+        join_expressions.left_pre_join_actions->mergeNodes(std::move(predicate.left));
+        join_expressions.right_pre_join_actions->mergeNodes(std::move(predicate.right));
 
         join_info.expression.condition.predicates.emplace_back(JoinPredicate{
             .left_node = JoinActionRef(&join_expressions.left_pre_join_actions->findInOutputs(lhs_node_name), join_expressions.left_pre_join_actions.get()),

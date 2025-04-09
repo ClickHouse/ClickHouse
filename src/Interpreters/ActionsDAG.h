@@ -385,12 +385,6 @@ public:
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs);
 
-    std::vector<ActionsDAG::SplitResult> splitActionsForJoinCondition(
-        const std::string & filter_name,
-        const Names & left_stream_available_columns,
-        const Names & right_stream_available_columns
-    );
-
     struct ActionsForJOINFilterPushDown;
 
     /** Split actions for JOIN filter push down.
