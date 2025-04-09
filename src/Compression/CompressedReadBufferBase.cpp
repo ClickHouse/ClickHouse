@@ -340,7 +340,7 @@ void CompressedReadBufferBase::addDiagnostics(Exception & e) const
     UInt8 header_size = ICompressionCodec::getHeaderSize();
     String header_hex = own_compressed_buffer_header_init ?
         hexString(own_compressed_buffer.data(), std::min(own_compressed_buffer.size(), sizeof(Checksum) + header_size)) :
-        String("<uninitialized>");
+        String("<uninitialized>"); // We do not print uninitialized memory because it's a security vulnerability and triggers msan
 
     e.addMessage("While reading or decompressing {} (position: {}, typename: {}, compressed data header: {})",
                  getFileNameFromReadBuffer(*compressed_in),
