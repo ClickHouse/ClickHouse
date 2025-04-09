@@ -1,21 +1,13 @@
+#pragma once
+
+#include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
+#include <limits>
 #include <vector>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Core/Field.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <Interpreters/Context.h>
-#include <base/types.h>
 #include <boost/algorithm/string.hpp>
-#include <Poco/Util/XMLConfiguration.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -26,9 +18,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int FILE_DOESNT_EXIST;
-extern const int NO_ELEMENTS_IN_CONFIG;
 extern const int LOGICAL_ERROR;
-extern const int ILLEGAL_COLUMN;
 extern const int RECEIVED_EMPTY_DATA;
 }
 
@@ -39,7 +29,7 @@ using ClassCountMap = HashMap<UInt32, UInt32, HashCRC32<UInt32>>;
 using NGramMap = HashMap<StringRef, ClassCountMap, StringRefHash>;
 using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 
-class NaiveBayesModel
+class NaiveBayesClassifier
 {
 private:
     /// N-gram size
@@ -72,10 +62,10 @@ private:
     }
 
 public:
-    NaiveBayesModel() = delete;
+    NaiveBayesClassifier() = delete;
 
     /// The model at model_path is expected to be serialized lines of: <class_id> <ngram> <count>
-    NaiveBayesModel(
+    NaiveBayesClassifier(
         const String & model_path,
         ProbabilityMap && priors,
         const UInt32 given_n,
@@ -301,183 +291,6 @@ public:
     }
 };
 
-class FunctionNaiveBayesClassifier : public IFunction
-{
-private:
-    ContextPtr context;
-
-    /// Use static cache to ensure model loading happens only once
-    static std::map<String, NaiveBayesModel> & getModelCache()
-    {
-        static std::map<String, NaiveBayesModel> models;
-        return models;
-    }
-
-public:
-    static constexpr auto name = "naiveBayesClassifier";
-
-    explicit FunctionNaiveBayesClassifier(ContextPtr context_)
-        : context(context_)
-    {
-        auto & models = getModelCache();
-
-        if (!models.empty())
-            return; // already loaded
-
-        const auto & config = context->getConfigRef();
-
-        if (!config.has("nb_models"))
-        {
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing 'nb_models' key in config.");
-        }
-
-        /// Iterate over each <model> element in <nb_models>
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys("nb_models", keys);
-        for (const auto & key : keys)
-        {
-            const String model_name_path = "nb_models." + key + ".name";
-            const String model_data_path = "nb_models." + key + ".path";
-            const String model_n_path = "nb_models." + key + ".n";
-            if (!config.has(model_name_path))
-            {
-                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing model name via 'name' key in <nb_models> for model {}", key);
-            }
-            if (!config.has(model_data_path))
-            {
-                throw Exception(
-                    ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing model data path via 'path' key in <nb_models> for model {}", key);
-            }
-            if (!config.has(model_n_path))
-            {
-                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing model ngram 'n' via 'n' key in <nb_models> for model {}", key);
-            }
-
-            const String model_name = config.getString(model_name_path);
-            const String model_data = config.getString(model_data_path);
-            const UInt32 n = config.getInt(model_n_path);
-
-            if (n == 0)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngram size 'n' must be greater than 0 for model {}", model_name);
-            }
-
-            /// Extract the priors from the config if they exist
-            Poco::Util::AbstractConfiguration::Keys prior_keys;
-
-            const String model_priors_path = "nb_models." + key + ".priors";
-            config.keys(model_priors_path, prior_keys);
-
-            ProbabilityMap priors;
-            for (const auto & prior_key : prior_keys)
-            {
-                const String model_prior_path = model_priors_path + "." + prior_key;
-                if (!config.has(model_prior_path + ".class") or !config.has(model_prior_path + ".value"))
-                {
-                    throw Exception(
-                        ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing 'class' or 'value' key in <priors> for model {}", model_name);
-                }
-                const UInt32 class_id = config.getInt(model_prior_path + ".class");
-                const double prior = config.getDouble(model_prior_path + ".value");
-                priors[class_id] = prior;
-            }
-
-            const String start_token = config.getString("nb_models." + key + ".start_token", "<s>");
-            const String end_token = config.getString("nb_models." + key + ".end_token", "</s>");
-            const double alpha = config.getDouble("nb_models." + key + ".alpha", 1.0);
-
-            if (alpha <= 0.0)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "Laplace smoothing parameter 'alpha' must be greater than 0 for model {}", model_name);
-            }
-
-            models.emplace(
-                std::piecewise_construct,
-                std::make_tuple(model_name),
-                std::make_tuple(model_data, std::move(priors), n, alpha, start_token, end_token));
-        }
-
-        if (models.empty())
-        {
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No models found under <nb_models> in config.");
-        }
-    }
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionNaiveBayesClassifier>(context); }
-
-    String getName() const override { return name; }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-
-    size_t getNumberOfArguments() const override { return 2; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        const auto model_name_input_argument_type = WhichDataType(arguments[0].type);
-        if (!model_name_input_argument_type.isStringOrFixedString())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Function {} first argument type should be String. Actual {}",
-                getName(),
-                arguments[0].type->getName());
-
-        const auto input_string_input_argument_type = WhichDataType(arguments[1].type);
-        if (!input_string_input_argument_type.isStringOrFixedString())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Function {} second argument type should be String. Actual {}",
-                getName(),
-                arguments[1].type->getName());
-
-        return std::make_shared<DataTypeUInt32>();
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        const auto * input_string_column = checkAndGetColumn<ColumnString>(arguments[1].column.get());
-
-        auto result_column = ColumnUInt32::create();
-
-        const auto & models = getModelCache();
-
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            String model_name = "";
-            if (const auto * model_name_col_const = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
-            {
-                model_name = model_name_col_const->getValue<String>();
-            }
-            else
-            {
-                const auto * model_name_col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
-                model_name = model_name_col->getDataAt(i).toString();
-            }
-
-            if (models.find(model_name) == models.end())
-            {
-                String available_models;
-                for (const auto & model : models)
-                    available_models += model.first + ", ";
-
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Model {} not found. Available models: {}", model_name, available_models);
-            }
-
-            const auto & model = models.at(model_name);
-            String input_string = input_string_column->getDataAt(i).toString();
-            UInt32 predicted_class = model.classify(input_string);
-            result_column->insert(predicted_class);
-        }
-
-        return result_column;
-    }
-};
 }
 
-REGISTER_FUNCTION(NaiveBayesClassifier)
-{
-    factory.registerFunction<FunctionNaiveBayesClassifier>();
-}
 }
