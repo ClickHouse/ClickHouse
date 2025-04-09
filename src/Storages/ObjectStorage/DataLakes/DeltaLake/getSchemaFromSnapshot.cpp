@@ -153,7 +153,7 @@ public:
     static void visitTableSchema(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
         auto visitor = createVisitor(data);
-        size_t result = ffi::visit_snapshot_schema(snapshot, &visitor);
+        [[maybe_unused]] size_t result = ffi::visit_snapshot_schema(snapshot, &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
@@ -163,10 +163,10 @@ public:
         SchemaVisitorData & data)
     {
         data.initScanState(snapshot, engine);
-        KernelSharedSchema schema = ffi::get_global_read_schema(data.scan_state.get());
+        KernelSharedSchema schema(ffi::get_global_read_schema(data.scan_state.get()));
 
         auto visitor = createVisitor(data);
-        size_t result = ffi::visit_schema(schema.get(), &visitor);
+        [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
@@ -176,7 +176,7 @@ public:
         SchemaVisitorData & data)
     {
         data.initScanState(snapshot, engine);
-        KernelStringSliceIterator partition_columns_iter = ffi::get_partition_columns(data.scan_state.get());
+        KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(data.scan_state.get()));
         while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitPartitionColumn)) {}
     }
 
@@ -296,7 +296,7 @@ private:
         const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
-        return listBasedTypeVisitor<DB::TypeIndex::Array>(data, sibling_list_id, name, nullable, metadata, child_list_id);
+        listBasedTypeVisitor<DB::TypeIndex::Array>(data, sibling_list_id, name, nullable, metadata, child_list_id);
     }
 
     static void tupleTypeVisitor(
@@ -307,7 +307,7 @@ private:
         const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
-        return listBasedTypeVisitor<DB::TypeIndex::Tuple>(data, sibling_list_id, name, nullable, metadata, child_list_id);
+        listBasedTypeVisitor<DB::TypeIndex::Tuple>(data, sibling_list_id, name, nullable, metadata, child_list_id);
     }
 
     static void mapTypeVisitor(
@@ -318,7 +318,7 @@ private:
         const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
-        return listBasedTypeVisitor<DB::TypeIndex::Map>(data, sibling_list_id, name, nullable, metadata, child_list_id);
+        listBasedTypeVisitor<DB::TypeIndex::Map>(data, sibling_list_id, name, nullable, metadata, child_list_id);
     }
 
     template <DB::TypeIndex type>
