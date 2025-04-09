@@ -257,6 +257,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_partition_size_to_drop;
     extern const ServerSettingsUInt64 max_part_num_to_warn;
     extern const ServerSettingsUInt64 max_pending_mutations_to_warn;
+    extern const ServerSettingsUInt64 max_pending_mutations_execution_time_to_warn;
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
@@ -319,6 +320,9 @@ namespace ServerSetting
     extern const ServerSettingsDouble page_cache_free_memory_ratio;
     extern const ServerSettingsUInt64 page_cache_lookahead_blocks;
     extern const ServerSettingsUInt64 page_cache_shards;
+    extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
+    extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
+    extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
 }
 
 }
@@ -1936,6 +1940,7 @@ try
             global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
             global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
             global_context->setMaxPendingMutationsToWarn(new_server_settings[ServerSetting::max_pending_mutations_to_warn]);
+            global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
 
             size_t read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
@@ -2844,6 +2849,15 @@ void Server::createServers(
     Poco::Util::AbstractConfiguration::Keys protocols;
     config.keys("protocols", protocols);
 
+    const TCPServerConnectionFilter::Ptr & connection_filter = new TCPServerConnectionFilter{[&]()
+    {
+        const auto & server_settings = global_context->getServerSettings();
+        return !ProfileEvents::checkCPUOverload(server_settings[ServerSetting::os_cpu_busy_time_threshold],
+                server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection],
+                server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection],
+                /*should_throw*/ false);
+    }};
+
     for (const auto & protocol : protocols)
     {
         if (!server_type.shouldStart(ServerType::Type::CUSTOM, protocol))
@@ -2887,7 +2901,8 @@ void Server::createServers(
                         stack.release(),
                         server_pool,
                         socket,
-                        new Poco::Net::TCPServerParams));
+                        new Poco::Net::TCPServerParams,
+                        connection_filter));
             });
         }
     }
@@ -2912,7 +2927,7 @@ void Server::createServers(
                     port_name,
                     "http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
             });
         }
 
@@ -2932,7 +2947,7 @@ void Server::createServers(
                     port_name,
                     "https://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
 #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
@@ -2958,7 +2973,8 @@ void Server::createServers(
                         new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
                         server_pool,
                         socket,
-                        new Poco::Net::TCPServerParams));
+                        new Poco::Net::TCPServerParams,
+                        connection_filter));
             });
         }
 
@@ -2980,7 +2996,8 @@ void Server::createServers(
                         new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
                         server_pool,
                         socket,
-                        new Poco::Net::TCPServerParams));
+                        new Poco::Net::TCPServerParams,
+                        connection_filter));
             });
         }
 
@@ -3003,7 +3020,8 @@ void Server::createServers(
                         new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
                         server_pool,
                         socket,
-                        new Poco::Net::TCPServerParams));
+                        new Poco::Net::TCPServerParams,
+                        connection_filter));
     #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
@@ -3034,7 +3052,8 @@ void Server::createServers(
                             new SSHPtyHandlerFactory(*this, config),
                             server_pool,
                             socket,
-                            new Poco::Net::TCPServerParams));
+                            new Poco::Net::TCPServerParams,
+                            connection_filter));
 #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH protocol is disabled for ClickHouse, as it has been either built without libssh or not for Linux");
@@ -3055,7 +3074,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "MySQL compatibility protocol: " + address.toString(),
-                    std::make_unique<TCPServer>(new MySQLHandlerFactory(*this, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
+                    std::make_unique<TCPServer>(new MySQLHandlerFactory(*this, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams, connection_filter));
             });
         }
 
@@ -3073,9 +3092,9 @@ void Server::createServers(
                     port_name,
                     "PostgreSQL compatibility protocol: " + address.toString(),
 #if USE_SSL
-                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, Poco::Net::SSLManager::CFG_SERVER_PREFIX, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
+                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, Poco::Net::SSLManager::CFG_SERVER_PREFIX, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams, connection_filter));
 #else
-                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
+                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams, connection_filter));
 #endif
             });
         }
@@ -3110,7 +3129,7 @@ void Server::createServers(
                     port_name,
                     "Prometheus: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
             });
         }
     }
@@ -3157,6 +3176,7 @@ void Server::createInterserverServers(
                         server_pool,
                         socket,
                         http_params,
+                        nullptr,
                         ProfileEvents::InterfaceInterserverReceiveBytes,
                         ProfileEvents::InterfaceInterserverSendBytes));
             });
@@ -3182,6 +3202,7 @@ void Server::createInterserverServers(
                         server_pool,
                         socket,
                         http_params,
+                        nullptr,
                         ProfileEvents::InterfaceInterserverReceiveBytes,
                         ProfileEvents::InterfaceInterserverSendBytes));
 #else
