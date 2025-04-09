@@ -1554,7 +1554,6 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.emplace_back(Log);
     this->ids.emplace_back(TinyLog);
     this->ids.emplace_back(EmbeddedRocksDB);
-    this->ids.emplace_back(Merge);
     if (has_tables || has_views || has_dictionaries)
     {
         this->ids.emplace_back(Buffer);
@@ -1565,6 +1564,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     }
     if (!b.is_deterministic)
     {
+        this->ids.emplace_back(Merge);
         this->ids.emplace_back(GenerateRandom);
     }
     if (use_external_integrations)
@@ -1599,22 +1599,23 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.clear();
 }
 
-static const std::vector<TableEngineValues> likeEngs
-    = {TableEngineValues::MergeTree,
-       TableEngineValues::ReplacingMergeTree,
-       TableEngineValues::SummingMergeTree,
-       TableEngineValues::AggregatingMergeTree,
-       TableEngineValues::File,
-       TableEngineValues::Null,
-       TableEngineValues::Set,
-       TableEngineValues::Join,
-       TableEngineValues::Memory,
-       TableEngineValues::StripeLog,
-       TableEngineValues::Log,
-       TableEngineValues::TinyLog,
-       TableEngineValues::EmbeddedRocksDB,
-       TableEngineValues::Merge,
-       TableEngineValues::GenerateRandom};
+static const std::vector<TableEngineValues> likeEngs = {/* Deterministic engines */
+                                                        TableEngineValues::MergeTree,
+                                                        TableEngineValues::ReplacingMergeTree,
+                                                        TableEngineValues::SummingMergeTree,
+                                                        TableEngineValues::AggregatingMergeTree,
+                                                        TableEngineValues::File,
+                                                        TableEngineValues::Null,
+                                                        TableEngineValues::Set,
+                                                        TableEngineValues::Join,
+                                                        TableEngineValues::Memory,
+                                                        TableEngineValues::StripeLog,
+                                                        TableEngineValues::Log,
+                                                        TableEngineValues::TinyLog,
+                                                        TableEngineValues::EmbeddedRocksDB,
+                                                        /* Not deterministic engines */
+                                                        TableEngineValues::Merge,
+                                                        TableEngineValues::GenerateRandom};
 
 void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTable * ct)
 {
@@ -1773,7 +1774,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         /// Create table as
         CreateTableAs * cta = ct->mutable_table_as();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(tableLikeLambda));
-        std::uniform_int_distribution<size_t> table_engine(0, rg.nextSmallNumber() < 8 ? 3 : (likeEngs.size() - 1));
+        std::uniform_int_distribution<size_t> table_engine(
+            0, rg.nextSmallNumber() < 8 ? 3 : (likeEngs.size() - (next.is_deterministic ? 3 : 1)));
         TableEngineValues val = likeEngs[table_engine(rg.generator)];
 
         next.teng = val;
