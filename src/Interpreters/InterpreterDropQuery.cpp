@@ -18,7 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 #include <Common/likePatternToRegexp.h>
-#include <Common/re2.h> 
+#include <Common/re2.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -455,7 +455,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         query_for_table.sync = query.sync;
 
         /// If we have a TRUNCATE TABLES .. LIKE, we should not truncate all tables,
-        /// the logic regarding finding suitable tables is a bit below 
+        /// the logic regarding finding suitable tables is a bit below
         if (!truncate || !query.has_tables || query.like.empty())
         {
             /// Flush should not be done if shouldBeEmptyOnDetach() == false,
@@ -571,10 +571,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             }
             tables_to_truncate.push_back(storage_id);
         }
-        
+
         std::mutex mutex_for_uuids;
         ThreadPoolCallbackRunnerLocal<void> runner(
-            getDatabaseCatalogDropTablesThreadPool().get(), 
+            getDatabaseCatalogDropTablesThreadPool().get(),
             "TruncTbls"
         );
 

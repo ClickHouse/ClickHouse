@@ -44,7 +44,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     ASTPtr like;
     bool if_exists = false;
     bool if_empty = false;
-    bool has_tables = false; 
+    bool has_tables = false;
     bool is_like = false;
     bool is_not_like = false;
     bool is_case_insensitive_like = false;
