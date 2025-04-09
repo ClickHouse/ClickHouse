@@ -1,11 +1,16 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/JoinUtils.h>
+
+#ifdef OS_LINUX
+#    include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <type_traits>
@@ -17,6 +22,24 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_JOIN_KEYS;
 extern const int LOGICAL_ERROR;
 }
+
+template <typename Map, typename KeyHolder>
+concept HasPrefetchMemberFunc = requires
+{
+    {std::declval<Map>().prefetch(std::declval<KeyHolder>())};
+};
+
+inline size_t getMinBytesForPrefetchInJoin()
+{
+    size_t l2_size = 0;
+#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
+    if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
+        l2_size = ret;
+#endif
+
+    return 4 * std::max<size_t>(l2_size, 256 * 1024);
+}
+
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
     HashJoin & join,
@@ -494,9 +517,41 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate = IColumn::Offsets(rows);
 
+    using KeyHolderType = decltype(key_getter.getKeyHolder(std::declval<size_t>(), std::declval<Arena &>()));
+    constexpr bool can_prefetch = KeyGetter::has_cheap_key_calculation
+        && HasPrefetchMemberFunc<std::remove_const_t<Map>, KeyHolderType>;
+
+    bool use_prefetch = false;
+    if constexpr (can_prefetch)
+        use_prefetch = added_columns.enable_prefetch && map->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin();
+
+    PrefetchingHelper prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+
     IColumn::Offset current_offset = 0;
     for (size_t i = 0; i < rows; ++i)
     {
+        if constexpr (can_prefetch)
+        {
+            if (use_prefetch)
+            {
+                if (i == PrefetchingHelper::iterationsToMeasure())
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                if (i + prefetch_look_ahead < rows)
+                {
+                    size_t prefetch_ind;
+                    if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Indexes>)
+                        prefetch_ind = selector.getData()[i + prefetch_look_ahead];
+                    else
+                        prefetch_ind = selector.first + (i + prefetch_look_ahead);
+
+                    auto key_holder = key_getter.getKeyHolder(prefetch_ind, pool);
+                    map->prefetch(std::move(key_holder));
+                }
+            }
+        }
+
         size_t ind = 0;
         if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Indexes>)
             ind = selector.getData()[i];
@@ -606,12 +661,45 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         added_columns.offsets_to_replicate.reserve(rows);
     }
 
+    using KeyHolderType = decltype(key_getter_vector[0].getKeyHolder(std::declval<size_t>(), std::declval<Arena &>()));
+    constexpr bool can_prefetch = KeyGetter::has_cheap_key_calculation
+        && HasPrefetchMemberFunc<std::remove_const_t<Map>, KeyHolderType>;
+
+    bool use_prefetch = false;
+    if constexpr (can_prefetch)
+        use_prefetch = added_columns.enable_prefetch && !mapv.empty()
+            && mapv[0]->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin();
+
+    PrefetchingHelper prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+
     size_t max_joined_rows = added_columns.max_joined_block_rows > 0 ? added_columns.max_joined_block_rows : std::numeric_limits<size_t>::max();
 
     IColumn::Offset current_offset = 0;
     size_t i = 0;
     for (; i < rows && current_offset < max_joined_rows; ++i)
     {
+        if constexpr (can_prefetch)
+        {
+            if (use_prefetch)
+            {
+                if (i == PrefetchingHelper::iterationsToMeasure())
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                if (i + prefetch_look_ahead < rows)
+                {
+                    size_t prefetch_ind;
+                    if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Indexes>)
+                        prefetch_ind = selector.getData()[i + prefetch_look_ahead];
+                    else
+                        prefetch_ind = selector.first + (i + prefetch_look_ahead);
+
+                    auto key_holder = key_getter_vector[0].getKeyHolder(prefetch_ind, pool);
+                    mapv[0]->prefetch(std::move(key_holder));
+                }
+            }
+        }
+
         size_t ind = 0;
         if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Indexes>)
             ind = selector.getData()[i];
@@ -870,8 +958,38 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
         pool = std::make_unique<Arena>();
         IColumn::Offset current_added_rows = 0;
 
-        for (auto ind : selector)
+        using KeyHolderType = decltype(key_getter_vector[0].getKeyHolder(std::declval<size_t>(), std::declval<Arena &>()));
+        constexpr bool can_prefetch = KeyGetter::has_cheap_key_calculation
+            && HasPrefetchMemberFunc<std::remove_const_t<Map>, KeyHolderType>;
+
+        bool use_prefetch = false;
+        if constexpr (can_prefetch)
+            use_prefetch = added_columns.enable_prefetch && !mapv.empty()
+                && mapv[0]->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin();
+
+        PrefetchingHelper prefetching;
+        size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+
+        const size_t selector_size = selector.size();
+        for (size_t row_idx = 0; row_idx < selector_size; ++row_idx)
         {
+            if constexpr (can_prefetch)
+            {
+                if (use_prefetch)
+                {
+                    if (row_idx == PrefetchingHelper::iterationsToMeasure())
+                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                    if (row_idx + prefetch_look_ahead < selector_size)
+                    {
+                        size_t prefetch_ind = selector[row_idx + prefetch_look_ahead];
+                        auto key_holder = key_getter_vector[0].getKeyHolder(prefetch_ind, *pool);
+                        mapv[0]->prefetch(std::move(key_holder));
+                    }
+                }
+            }
+
+            auto ind = selector[row_idx];
             KnownRowsHolder<true> all_flag_known_rows;
             KnownRowsHolder<false> single_flag_know_rows;
             for (size_t join_clause_idx = 0; join_clause_idx < added_columns.join_on_keys.size(); ++join_clause_idx)
