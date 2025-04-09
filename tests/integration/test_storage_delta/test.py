@@ -1679,3 +1679,26 @@ deltaLake(
         "1\ta\t2000-01-01\t['aa','aa']\ttrue\t['aaa','aaa']\n214748364\tb\t2000-02-02\t['bb','bb']\tfalse\t['bbb','bbb']\n"
         == node.query(f"SELECT * FROM {delta_function} ORDER BY all")
     )
+
+    paths = (
+        node.query(f"SELECT _path FROM {delta_function} ORDER BY all")
+        .strip()
+        .splitlines()
+    )
+
+    def s3_function(path):
+        return f""" s3(
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{path}' ,
+            '{minio_access_key}',
+            '{minio_secret_key}')
+        """
+
+    assert len(paths) == 2
+
+    assert "Nullable(Int16)" in node.query(
+        f"DESCRIBE TABLE {s3_function(paths[0])}"
+    ) or "Nullable(Int16)" in node.query(f"DESCRIBE TABLE {s3_function(paths[1])}")
+
+    assert "Nullable(Int32)" in node.query(
+        f"DESCRIBE TABLE {s3_function(paths[0])}"
+    ) or "Nullable(Int32)" in node.query(f"DESCRIBE TABLE {s3_function(paths[1])}")
