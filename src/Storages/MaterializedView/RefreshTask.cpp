@@ -926,7 +926,7 @@ void RefreshTask::interruptExecution()
     if (execution.executor)
     {
         execution.executor->cancel();
-        LOG_DEBUG(log, "Cancelling refresh");
+        LOG_DEBUG(log, "Cancelling refresh in {}", set_handle.getID().getFullNameNotQuoted());
     }
 }
 
