@@ -552,7 +552,7 @@ public:
 
     static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr &)
     {
-        if (auto * function_node = parent->as<FunctionNode>(); function_node && function_node->getFunctionName() == "globalIn")
+        if (auto * function_node = parent->as<FunctionNode>(); function_node && function_node->getFunctionName().starts_with("global"))
             return false;
 
         return true;
