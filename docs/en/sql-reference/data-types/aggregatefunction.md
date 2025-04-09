@@ -4,7 +4,6 @@ stores intermediate states of aggregate functions'
 keywords: ['AggregateFunction', 'Type']
 sidebar_label: 'AggregateFunction'
 sidebar_position: 46
-sidebar_label: 'AggregateFunction'
 slug: /sql-reference/data-types/aggregatefunction
 title: 'AggregateFunction Type'
 ---
