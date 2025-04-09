@@ -528,13 +528,19 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
         }
 
         if (!allow_where)
+        {
             on_error(join_node);
+            return make_document();
+        }
 
         const auto & where_node = query_tree.getWhere();
         auto filter = visitWhereNode(context, query_tree.getWhere(), join_node);
 
         if (!filter)
+        {
             on_error(where_node.get());
+            return make_document();
+        }
 
         LOG_DEBUG(log, "MongoDB query has built: '{}'.", bsoncxx::to_json(*filter));
         return std::move(*filter);
