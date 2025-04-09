@@ -262,12 +262,17 @@ using StorageHDFSIcebergConfiguration = DataLakeConfiguration<StorageHDFSConfigu
 using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfiguration, IcebergMetadata>;
 #endif
 
-#if USE_PARQUET && USE_AWS_S3
+#if USE_PARQUET
+#if USE_AWS_S3
 using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
 #endif
 
-#if USE_PARQUET
+#if USE_AZURE_BLOB_STORAGE
+using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureConfiguration, DeltaLakeMetadata>;
+#endif
+
 using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadata>;
+
 #endif
 
 #if USE_AWS_S3

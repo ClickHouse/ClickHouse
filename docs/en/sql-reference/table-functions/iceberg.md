@@ -277,6 +277,10 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
 
 **Note**: While Iceberg Catalogs typically handle metadata resolution, the `iceberg` table function in ClickHouse directly interprets files stored in S3 as Iceberg tables, which is why understanding these resolution rules is important.
 
+## Metadata cache {#metadata-cache}
+
+`Iceberg` table engine and table function support metadata cache storing the information of manifest files, manifest list and metadata json. The cache is stored in memory. This feature is controlled by setting `use_iceberg_metadata_files_cache`, which is enabled by default.
+
 ## Aliases {#aliases}
 
 Table function `iceberg` is an alias to `icebergS3` now.

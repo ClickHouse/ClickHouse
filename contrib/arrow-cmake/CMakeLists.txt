@@ -177,6 +177,8 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/io/InputStream.hh"
         "${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc"
         "${ORC_SOURCE_SRC_DIR}/io/OutputStream.hh"
+        "${ORC_SOURCE_SRC_DIR}/io/Cache.cc"
+        "${ORC_SOURCE_SRC_DIR}/io/Cache.hh"
         "${ORC_SOURCE_SRC_DIR}/sargs/ExpressionTree.cc"
         "${ORC_SOURCE_SRC_DIR}/sargs/ExpressionTree.hh"
         "${ORC_SOURCE_SRC_DIR}/sargs/Literal.cc"

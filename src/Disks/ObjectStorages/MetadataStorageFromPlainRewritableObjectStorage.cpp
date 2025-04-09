@@ -16,6 +16,7 @@
 #include <Poco/Timestamp.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
@@ -24,6 +25,11 @@
 #    include <azure/storage/common/storage_exception.hpp>
 #endif
 
+
+namespace ProfileEvents
+{
+extern const Event DiskPlainRewritableLegacyLayoutDiskCount;
+}
 
 namespace DB
 {
@@ -47,7 +53,7 @@ constexpr auto METADATA_PATH_TOKEN = "__meta/";
 }
 
 
-void MetadataStorageFromPlainRewritableObjectStorage::load()
+void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 {
     ThreadPool & pool = getIOThreadPool().get();
     ThreadPoolCallbackRunnerLocal<void> runner(pool, "PlainRWMetaLoad");
@@ -83,7 +89,25 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
 
     std::set<std::string> set_of_remote_paths;
 
-    if (!object_storage->existsOrHasAnyChild(metadata_key_prefix))
+    bool has_metadata = object_storage->existsOrHasAnyChild(metadata_key_prefix);
+
+    if (is_initial_load)
+    {
+        /// Use iteration to determine if the disk contains data.
+        /// LocalObjectStorage creates an empty top-level directory even when no data is stored,
+        /// unlike blob storage, which has no concept of directories, therefore existsOrHasAnyChild
+        /// is not applicable.
+        auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
+        bool has_data = object_storage->isRemote() ? object_storage->existsOrHasAnyChild(common_key_prefix) : object_storage->iterate(common_key_prefix, 0)->isValid();
+        /// No metadata directory: legacy layout is likely in use.
+        if (has_data && !has_metadata)
+        {
+            ProfileEvents::increment(ProfileEvents::DiskPlainRewritableLegacyLayoutDiskCount, 1);
+            LOG_WARNING(log, "Legacy layout is likely used for disk '{}'", object_storage->getCommonKeyPrefix());
+        }
+    }
+
+    if (!has_metadata)
     {
         LOG_DEBUG(log, "Loaded metadata (empty)");
         return;
@@ -143,7 +167,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
                     /// Assuming that local and the object storage clocks are synchronized.
                     last_modified = object_metadata->last_modified;
 
-                    /// Load the list of files inside the directory
+                    /// Load the list of files inside the directory.
                     fs::path full_remote_path = object_storage->getCommonKeyPrefix() / remote_path;
                     size_t prefix_length = remote_path.string().size() + 1; /// randomlygenerated/
                     for (auto dir_iterator = object_storage->iterate(full_remote_path, 0); dir_iterator->isValid(); dir_iterator->next())
@@ -152,6 +176,12 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
                         String remote_file_path = remote_file->getPath();
                         chassert(remote_file_path.starts_with(full_remote_path.string()));
                         auto filename = fs::path(remote_file_path).filename();
+                        /// Skip metadata files.
+                        if (filename == PREFIX_PATH_FILE_NAME)
+                        {
+                            LOG_WARNING(log, "Legacy layout is in use, ignoring '{}'", remote_file_path);
+                            continue;
+                        }
 
                         /// Check that the file is a direct child.
                         if (remote_file_path.substr(prefix_length) == filename)
@@ -229,7 +259,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
 
 void MetadataStorageFromPlainRewritableObjectStorage::refresh()
 {
-    load();
+    load(/*is_initial_load*/ false);
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(
@@ -246,7 +276,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
             "MetadataStorageFromPlainRewritableObjectStorage is not compatible with write-once storage '{}'",
             object_storage->getName());
 
-    load();
+    load(/*is_initial_load*/ true);
 
     /// Use flat directory structure if the metadata is stored separately from the table data.
     auto keys_gen = std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
