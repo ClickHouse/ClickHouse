@@ -3,6 +3,7 @@ import re
 import time
 
 import pytest
+import logging
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -111,7 +112,7 @@ def do_some_action(
     fake_ephemeral_event = None
 
     def fake_ephemeral_callback(event):
-        print("Fake watch triggered")
+        logging.debug("Fake watch triggered")
         nonlocal fake_ephemeral_event
         fake_ephemeral_event = event
 
@@ -145,7 +146,7 @@ def test_cmd_mntr(started_cluster):
 
         data = keeper_utils.send_4lw_cmd(cluster, leader, cmd="mntr")
 
-        # print(data.decode())
+        # logging.debug(data.decode())
         reader = csv.reader(data.split("\n"), delimiter="\t")
         result = {}
 
@@ -199,7 +200,7 @@ def test_cmd_srst(started_cluster):
     data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="mntr")
     assert len(data) != 0
 
-    # print(data)
+    # logging.debug(data)
     reader = csv.reader(data.split("\n"), delimiter="\t")
     result = {}
 
@@ -222,7 +223,7 @@ def test_cmd_conf(started_cluster):
 
     for row in reader:
         if len(row) != 0:
-            print(row)
+            logging.debug(row)
             result[row[0]] = row[1]
 
     assert result["server_id"] == "1"
@@ -304,8 +305,7 @@ def test_cmd_srvr(started_cluster):
 
         data = keeper_utils.send_4lw_cmd(cluster, leader, cmd="srvr")
 
-        print("srvr output -------------------------------------")
-        print(data)
+        logging.debug(f"srvr output -------------------------------------\n{data}")
 
         reader = csv.reader(data.split("\n"), delimiter=":")
         result = {}
@@ -342,8 +342,7 @@ def test_cmd_stat(started_cluster):
 
         data = keeper_utils.send_4lw_cmd(cluster, leader, cmd="stat")
 
-        print("stat output -------------------------------------")
-        print(data)
+        logging.debug(f"stat output -------------------------------------\n{data}")
 
         # keeper statistics
         stats = [n for n in data.split("\n") if "=" not in n]
@@ -396,8 +395,7 @@ def test_cmd_cons(started_cluster):
 
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="cons")
 
-        print("cons output -------------------------------------")
-        print(data)
+        logging.debug(f"cons output -------------------------------------\n{data}")
 
         # filter connection created by 'cons'
         cons = [n for n in data.split("\n") if "recved=0" not in n and len(n) > 0]
@@ -441,17 +439,15 @@ def test_cmd_crst(started_cluster):
 
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="crst")
 
-        print("crst output -------------------------------------")
-        print(data)
-
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="cons")
-        print("cons output(after crst) -------------------------------------")
-        print(data)
+        logging.debug(f"crst output -------------------------------------\n{data}")
 
         # 2 or 3 connections, 1 for 'crst', 1 for 'cons' command, 1 for zk
         # there can be a case when 'crst' connection is not cleaned before the cons call
-        print("cons output(after crst) -------------------------------------")
-        print(data)
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="cons")
+        logging.debug(
+            f"cons output(after crst) -------------------------------------\n{data}"
+        )
+
         cons = [n for n in data.split("\n") if len(n) > 0]
         assert len(cons) == 2 or len(cons) == 3
 
@@ -500,8 +496,7 @@ def test_cmd_dump(started_cluster):
 
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="dump")
 
-        print("dump output -------------------------------------")
-        print(data)
+        logging.debug(f"dump output -------------------------------------\n{data}")
 
         list_data = data.split("\n")
 
@@ -526,8 +521,7 @@ def test_cmd_wchs(started_cluster):
 
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="wchs")
 
-        print("wchs output -------------------------------------")
-        print(data)
+        logging.debug(f"wchs output -------------------------------------\n{data}")
 
         list_data = [n for n in data.split("\n") if len(n.strip()) > 0]
 
@@ -561,8 +555,7 @@ def test_cmd_wchc(started_cluster):
 
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="wchc")
 
-        print("wchc output -------------------------------------")
-        print(data)
+        logging.debug(f"wchc output -------------------------------------\n{data}")
 
         list_data = [n for n in data.split("\n") if len(n.strip()) > 0]
 
@@ -585,8 +578,7 @@ def test_cmd_wchp(started_cluster):
 
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="wchp")
 
-        print("wchp output -------------------------------------")
-        print(data)
+        logging.debug(f"wchp output -------------------------------------\n{data}")
 
         list_data = [n for n in data.split("\n") if len(n.strip()) > 0]
 
@@ -604,8 +596,7 @@ def test_cmd_csnp(started_cluster):
         zk = get_fake_zk(node1.name, timeout=30.0)
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="csnp")
 
-        print("csnp output -------------------------------------")
-        print(data)
+        logging.debug(f"csnp output -------------------------------------\n{data}")
 
         try:
             int(data)
@@ -627,8 +618,7 @@ def test_cmd_lgif(started_cluster):
 
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgif")
 
-        print("lgif output -------------------------------------")
-        print(data)
+        logging.debug(f"lgif output -------------------------------------\n{data}")
 
         reader = csv.reader(data.split("\n"), delimiter="\t")
         result = {}
@@ -656,8 +646,7 @@ def test_cmd_rqld(started_cluster):
         data = keeper_utils.send_4lw_cmd(cluster, node, cmd="rqld")
         assert data == "Sent leadership request to leader."
 
-        print("rqld output -------------------------------------")
-        print(data)
+        logging.debug(f"rqld output -------------------------------------\n{data}")
 
         if not keeper_utils.is_leader(cluster, node):
             # pull wait to become leader
@@ -667,7 +656,7 @@ def test_cmd_rqld(started_cluster):
                 time.sleep(1)
                 retry += 1
             if retry == 30:
-                print(
+                logging.debug(
                     node.name
                     + " does not become leader after 30s, maybe there is something wrong."
                 )
@@ -721,8 +710,7 @@ def test_cmd_ydld(started_cluster):
         data = keeper_utils.send_4lw_cmd(cluster, node, cmd="ydld")
         assert data == "Sent yield leadership request to leader."
 
-        print("ydld output -------------------------------------")
-        print(data)
+        logging.debug(f"ydld output -------------------------------------\n{data}")
 
         # Whenever there is a leader switch, there is a brief amount of time when any
         # of the 4 letter commands will return empty result. Thus, we need to test for
@@ -735,7 +723,7 @@ def test_cmd_ydld(started_cluster):
                 time.sleep(1)
                 retry += 1
             if retry == 30:
-                print(
+                logging.debug(
                     node.name
                     + " did not become follower after 30s of yielding leadership, maybe there is something wrong."
                 )
