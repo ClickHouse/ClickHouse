@@ -32,7 +32,7 @@ def started_cluster():
         cluster.shutdown()
 
 @pytest.fixture(autouse=True)
-def drop_after_test():
+def cleanup_after_test():
     try:
         yield
     finally:
