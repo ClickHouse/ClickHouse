@@ -156,6 +156,7 @@ if(MZ_COMPAT)
          ${_MINIZIP_SOURCE_DIR}/compat/unzip.h)
 
     list(APPEND MINIZIP_INC "${_MINIZIP_SOURCE_DIR}/compat")
+    list(APPEND MINIZIP_PUBLIC_DEF "-DMZ_COMPAT_VERSION=110")
 endif()
 
 add_library(_minizip ${MINIZIP_SRC} ${MINIZIP_HDR})
