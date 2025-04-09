@@ -58,7 +58,7 @@ private:
     std::shared_ptr<InMemoryDirectoryPathMap> path_map;
     AtomicStopwatch previous_refresh;
 
-    void load();
+    void load(bool is_initial_load);
 
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
     std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const override { return path_map; }
