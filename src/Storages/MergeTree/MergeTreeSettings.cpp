@@ -57,7 +57,7 @@ namespace ErrorCodes
     for this setting.
     )", 0) \
     DECLARE(UInt64, max_compress_block_size, 0, R"(
-    Maximum size of blocks of uncompressed data before compressing for writing
+    The maximum size of blocks of uncompressed data before compressing for writing
     to a table. You can also specify this setting in the global settings
     (see [max_compress_block_size](/operations/settings/merge-tree-settings#max_compress_block_size)
     setting). The value specified when the table is created overrides the global
@@ -1453,7 +1453,7 @@ namespace ErrorCodes
     Possible values:
     - Any positive integer.
 
-    You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max_partitions_to_read)
+    You can also specify a query complexity setting [max_partitions_to_read](/operations/settings/settings#max_partitions_to_read)
     at a query / session / profile level.
     )", 0) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(

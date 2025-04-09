@@ -42,7 +42,7 @@
             --header-background-color: #f4f4f4;
             --link-color: blue;
             --link-hover-color: darkblue;
-            --job-name-color: #654cf0;
+            --job-name-color: var(--text-color);
             --file-link-color: blue;
             --file-link-hover-color: darkblue;
             --table-border-color: #ccc;
@@ -56,7 +56,7 @@
             --pending-bar-color: #595801;
             --skipped-bar-color: #575757;
             --table-border-color: #444;
-            --job-name-color: #ffea00;
+            --job-name-color: var(--text-color);
             --link-color: #ffea00;
             --link-hover-color: #ffaa00;
             --file-link-color: #007efc;
@@ -557,6 +557,138 @@
         addLine(currentSha, { small: true });
 
         statusContainer.appendChild(widget);
+    }
+
+    function addStatisticsWidget(jobName, duration) {
+        const statusContainer = document.getElementById("status-container");
+        const chartWrapper = document.createElement("div");
+        chartWrapper.className = 'status-widget';
+
+        const stats = persistentStorage.statisticsObject?.[jobName]?.["7d"];
+        if (!stats) {
+            console.warn(`No stats found for job: ${jobName}`);
+            return;
+        }
+
+        const quantiles = stats.quantiles;
+        const keys = Object.keys(quantiles).map(Number).sort((a, b) => a - b);
+        const values = keys.map(k => quantiles[k]);
+        values[0] = Math.min(duration, values[0]);
+        values[values.length - 1] = Math.max(duration, values[values.length - 1]);
+
+        const minValue = values[0];
+        const maxValue = values[values.length - 1];
+        const range = maxValue - minValue;
+
+        // --- Density Segments
+        const densitySegments = [];
+        for (let i = 0; i < keys.length - 1; i++) {
+            const q1 = keys[i], q2 = keys[i + 1];
+            const v1 = quantiles[q1], v2 = quantiles[q2];
+
+            const x1 = ((v1 - minValue) / range) * 100;
+            const x2 = ((v2 - minValue) / range) * 100;
+            const dq = q2 - q1;
+            const dv = v2 - v1 || 1e-6;
+
+            const density = dq / dv;
+            densitySegments.push({ x1, x2, density });
+        }
+
+        // --- Normalize densities
+        const allDensities = densitySegments.map(seg => seg.density);
+        const maxDensity = Math.max(...allDensities);
+        const minDensity = Math.min(...allDensities);
+
+        const gradientStops = densitySegments.flatMap((seg, i) => {
+            const next = densitySegments[i + 1] ?? seg;
+
+            const norm1 = (seg.density - minDensity) / (maxDensity - minDensity || 1);
+            const norm2 = (next.density - minDensity) / (maxDensity - minDensity || 1);
+
+            const curved1 = Math.pow(norm1, 0.5);
+            const curved2 = Math.pow(norm2, 0.5);
+
+            const alpha1 = (0.3 + 0.7 * curved1).toFixed(2);
+            const alpha2 = (0.3 + 0.7 * curved2).toFixed(2);
+
+            const color1 = `rgba(0, 123, 255, ${alpha1})`;
+            const color2 = `rgba(0, 123, 255, ${alpha2})`;
+
+            return [
+                `${color1} ${seg.x1.toFixed(2)}%`,
+                `${color2} ${seg.x2.toFixed(2)}%`
+            ];
+        });
+
+        const gradient = `linear-gradient(to right, ${gradientStops.join(', ')})`;
+
+        const clampedDuration = Math.max(minValue, Math.min(duration, maxValue));
+        const durationLeft = ((clampedDuration - minValue) / range) * 100;
+
+        const topLabelBox = document.createElement("div");
+        //topLabelBox.style.fontSize = "10px";
+        topLabelBox.style.marginBottom = "4px";
+
+        const currentLabel = document.createElement("div");
+        currentLabel.style.textAlign = "left";
+        currentLabel.textContent = `duration: ${formatDuration(duration)}`;
+
+        topLabelBox.appendChild(currentLabel);
+
+        topLabelBox.appendChild(currentLabel);
+        chartWrapper.appendChild(topLabelBox);
+
+        // --- Bar
+        const bar = document.createElement("div");
+        bar.style.position = "relative";
+        bar.style.height = "24px";
+        bar.style.background = gradient;
+
+        const durationLine = document.createElement("div");
+        durationLine.style.position = "absolute";
+        durationLine.style.left = `${durationLeft}%`;
+        durationLine.style.top = "0";
+        durationLine.style.bottom = "0";
+        durationLine.style.width = "2px";
+        durationLine.style.background = "red";
+        bar.appendChild(durationLine);
+
+        chartWrapper.appendChild(bar);
+
+        // --- Min / Max labels below bar
+        const bottomLabels = document.createElement("div");
+        bottomLabels.style.display = "flex";
+        bottomLabels.style.justifyContent = "space-between";
+        bottomLabels.style.fontSize = "10px";
+        bottomLabels.style.color = "#444";
+
+        const minLabel = document.createElement("div");
+        minLabel.textContent = formatDuration(minValue);
+
+        const maxLabel = document.createElement("div");
+        maxLabel.textContent = formatDuration(maxValue);
+
+        bottomLabels.appendChild(minLabel);
+        bottomLabels.appendChild(maxLabel);
+        chartWrapper.appendChild(bottomLabels);
+
+        // --- Final assemble
+        statusContainer.appendChild(chartWrapper);
+
+        function formatDuration(ms) {
+            const s = Math.floor(ms / 1000);
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const sec = s % 60;
+
+            const parts = [];
+            if (h > 0) parts.push(`${h}h`);
+            parts.push(`${m}m`);
+            parts.push(`${sec}s`);
+
+            return parts.join(' ');
+        }
     }
 
     function addStorageUsageChartToStatus(usage_data) {
@@ -1286,10 +1418,60 @@
         let statusWidget = addStatusWidget(result.name, result.status, result.start_time, result.duration);
         if (nameParams.length > 1) {
             addFileLinksWidget(result.links);
+            addStatisticsWidget(nameParams[1], result.duration * 1000)
         } else {
             addTimeTraceWidget(result.results, statusWidget, originalWorkflowDetails);
         }
         addStorageUsageChartToStatus(result.ext?.storage_usage)
+    }
+
+    const persistentStorage = {
+        get updatedAt() {
+            const value = localStorage.getItem('updatedAt');
+            return value ? parseInt(value, 10) : null;
+        },
+
+        set updatedAt(timestamp) {
+            localStorage.setItem('updatedAt', timestamp.toString());
+        },
+
+        get statisticsObject() {
+            const value = localStorage.getItem('statisticsObject');
+            return value ? JSON.parse(value) : null;
+        },
+
+        set statisticsObject(obj) {
+            localStorage.setItem('statisticsObject', JSON.stringify(obj));
+        },
+    };
+
+    async function fetchStatistics(name) {
+        const HALF_DAY = 12 * 60 * 60 * 1000;
+        const now = Date.now();
+
+        // Get the first path segment after the domain
+        const pathParts = window.location.pathname.split('/');
+        const bucketName = pathParts.length >= 2 ? pathParts[1] : 'default-bucket';
+
+        if (
+            !persistentStorage.updatedAt ||
+            now > persistentStorage.updatedAt + HALF_DAY
+        ) {
+            const url = `https://s3.amazonaws.com/${bucketName}/statistics/${name.toLowerCase()}.json.gz`;
+
+            try {
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                persistentStorage.statisticsObject = await response.json();
+                persistentStorage.updatedAt = now;
+            } catch (error) {
+                console.error('Error fetching statistics:', error);
+            }
+        }
     }
 
     async function fetchData(PR, REF, sha, nameParams) {
@@ -1408,7 +1590,7 @@
         await renderResults(PR, sha, nameParams);
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
-
+        fetchStatistics(nameParams[0])
         if (
             (nameParams?.length === 1 &&
                 ["running", "pending"].includes(runtimeCache?.json0?.status)) ||

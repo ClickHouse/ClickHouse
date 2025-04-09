@@ -5,7 +5,7 @@ from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
-# `randomize_settings` is set tot `False` to maake result of `SHOW CREATE SETTINGS PROFILE` consistent
+# `randomize_settings` is set tot `False` to make result of `SHOW CREATE SETTINGS PROFILE` consistent
 instance = cluster.add_instance("instance", randomize_settings=False)
 
 
@@ -463,40 +463,29 @@ def test_show_profiles():
         instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE `xyz`\n"
     )
 
-    query_possible_response = [
-        "CREATE SETTINGS PROFILE `default`\n",
-        "CREATE SETTINGS PROFILE `default` SETTINGS enable_analyzer = true\n",
+    query_expected_response = [
+        "CREATE SETTINGS PROFILE `default` SETTINGS min_os_cpu_wait_time_ratio_to_throw = 10., max_os_cpu_wait_time_ratio_to_throw = 20.\n",
     ]
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE default")
-        in query_possible_response
+        in query_expected_response
     )
 
-    query_possible_response = [
-        "CREATE SETTINGS PROFILE `default`\n"
-        "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
-        "CREATE SETTINGS PROFILE `xyz`\n",
-        "CREATE SETTINGS PROFILE `default` SETTINGS enable_analyzer = true\n"
+    query_expected_response = [
+        "CREATE SETTINGS PROFILE `default` SETTINGS min_os_cpu_wait_time_ratio_to_throw = 10., max_os_cpu_wait_time_ratio_to_throw = 20.\n"
         "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE `xyz`\n",
     ]
-    assert instance.query("SHOW CREATE PROFILES") in query_possible_response
+    assert instance.query("SHOW CREATE PROFILES") in query_expected_response
 
     expected_access = (
-        "CREATE SETTINGS PROFILE `default`\n"
-        "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
-        "CREATE SETTINGS PROFILE `xyz`\n"
-    )
-    expected_access_analyzer = (
-        "CREATE SETTINGS PROFILE `default` SETTINGS enable_analyzer = true\n"
+        "CREATE SETTINGS PROFILE `default` SETTINGS min_os_cpu_wait_time_ratio_to_throw = 10., max_os_cpu_wait_time_ratio_to_throw = 20.\n"
         "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE `xyz`\n"
     )
 
     query_response = instance.query("SHOW ACCESS")
-    assert (
-        expected_access in query_response or expected_access_analyzer in query_response
-    )
+    assert expected_access in query_response
 
 
 def test_set_profile():

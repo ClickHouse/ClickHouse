@@ -279,7 +279,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
 
     # checks:
-    if results[-1].is_ok():
+    if not results or results[-1].is_ok():
         result_ = _check_yaml_up_to_date()
         if result_.status != Result.Status.SUCCESS:
             print("ERROR: yaml files are outdated - regenerate, commit and push")
@@ -319,7 +319,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
-    if workflow.workflow_filter_hooks:
+    if results[-1].is_ok() and workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
             for job in workflow.jobs:
@@ -520,4 +520,4 @@ if __name__ == "__main__":
             # info=f"Failed with Exception [{e}]\n{error_traceback}",
         )
 
-    result.dump().complete_job()
+    result.dump().complete_job(with_job_summary_in_info=False)

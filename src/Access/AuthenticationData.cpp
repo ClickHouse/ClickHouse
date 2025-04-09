@@ -549,7 +549,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #if USE_SSL
             ///random generator FIPS complaint
             uint8_t key[32];
-            if (!RAND_bytes(key, sizeof(key)))
+            if (RAND_bytes(key, sizeof(key)) != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
 
             String salt;
@@ -573,7 +573,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #if USE_SSL
             ///random generator FIPS complaint
             uint8_t key[32];
-            if (!RAND_bytes(key, sizeof(key)))
+            if (RAND_bytes(key, sizeof(key)) != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
 
             String salt;

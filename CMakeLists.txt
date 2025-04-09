@@ -34,8 +34,6 @@ endmacro ()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1) # Write compile_commands.json
 set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
-set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
-set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a postfix.")    # To be consistent with CMakeLists from contrib libs.
 
 # Enable the ability to organize targets into hierarchies of "folders" for capable GUI-based IDEs.
 # For more info see https://cmake.org/cmake/help/latest/prop_gbl/USE_FOLDERS.html

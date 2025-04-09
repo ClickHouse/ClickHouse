@@ -7,6 +7,7 @@ from urllib.parse import quote
 
 from ._environment import _Environment
 from .settings import Settings
+from .usage import StorageUsage
 from .utils import MetaClasses, Shell, Utils
 
 
@@ -113,7 +114,14 @@ class S3:
 
     @classmethod
     def copy_file_to_s3(
-        cls, s3_path, local_path, text=False, with_rename=False, no_strict=False
+        cls,
+        s3_path,
+        local_path,
+        text=False,
+        with_rename=False,
+        no_strict=False,
+        content_type="",
+        content_encoding="",
     ):
         assert Path(local_path).exists(), f"Path [{local_path}] does not exist"
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
@@ -125,8 +133,12 @@ class S3:
         if not s3_full_path.endswith(file_name) and not with_rename:
             s3_full_path = f"{s3_path}/{Path(local_path).name}"
         cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
-        if text:
+        if text and not content_type:
             cmd += " --content-type text/plain"
+        elif content_type:
+            cmd += f" --content-type {content_type}"
+        if content_encoding:
+            cmd += f" --content-encoding {content_encoding}"
         _ = cls.run_command_with_retries(cmd, no_strict=no_strict)
         StorageUsage.add_uploaded(local_path)
         bucket = s3_path.split("/")[0]

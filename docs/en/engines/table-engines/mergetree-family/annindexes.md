@@ -188,11 +188,11 @@ As an example, query
 
 ```sql
 EXPLAIN indexes = 1
-WITH [0., 2.] AS reference_vec
+WITH [0.462, 0.084, ..., -0.110] AS reference_vec
 SELECT id, vec
 FROM tab
 ORDER BY L2Distance(vec, reference_vec) ASC
-LIMIT 3;
+LIMIT 10;
 ```
 
 may return
@@ -208,14 +208,18 @@ may return
  7. │           PrimaryKey                                                                            │
  8. │             Condition: true                                                                     │
  9. │             Parts: 1/1                                                                          │
-10. │             Granules: 4/4                                                                       │
+10. │             Granules: 575/575                                                                   │
 11. │           Skip                                                                                  │
 12. │             Name: idx                                                                           │
 13. │             Description: vector_similarity GRANULARITY 100000000                                │
 14. │             Parts: 1/1                                                                          │
-15. │             Granules: 2/4                                                                       │
+15. │             Granules: 10/575                                                                    │
     └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+In this example, 1 million vectors in the [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M), each with dimension 1536, are stored in 575 granules, i.e. 1.7k rows per granule.
+The query asks for 10 neighbours and the vector similarity index finds these 10 neighbours in 10 separate granules.
+These 10 granules will be read during query execution.
 
 Vector similarity indexes are used if the output contains `Skip` and the name and type of the vector index (in the example, `idx` and `vector_similarity`).
 In this case, the vector similarity index dropped two of four granules, i.e. 50% of the data.

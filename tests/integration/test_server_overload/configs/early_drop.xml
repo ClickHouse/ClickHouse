@@ -1,0 +1,5 @@
+<clickhouse>
+    <os_cpu_busy_time_threshold>300000</os_cpu_busy_time_threshold>
+    <min_os_cpu_wait_time_ratio_to_drop_connection>2.0</min_os_cpu_wait_time_ratio_to_drop_connection>
+    <max_os_cpu_wait_time_ratio_to_drop_connection>6.0</max_os_cpu_wait_time_ratio_to_drop_connection>
+</clickhouse>

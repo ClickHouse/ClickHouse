@@ -50,11 +50,15 @@ list(APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake"
 # Define function corrosion_import_crate()
 include ("${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake/Corrosion.cmake")
 
-# NOTE: this can also be done by overriding rustc, but it not trivial with rustup.
-set(RUST_CFLAGS "${CMAKE_C_FLAGS}")
-
 set(CXX_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx/include")
-set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
+
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    set(RUST_CFLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_DEBUG}")
+    set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_DEBUG} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
+else ()
+    set(RUST_CFLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_RELWITHDEBINFO}")
+    set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
+endif()
 
 if (CMAKE_OSX_SYSROOT)
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -isysroot ${CMAKE_OSX_SYSROOT}")
@@ -80,7 +84,7 @@ else()
     set(RUSTCWRAPPER "")
 endif()
 
-set(RUSTFLAGS)
+# Note that RUSTFLAGS is defined in cpu_features.cmake
 if (CMAKE_OSX_DEPLOYMENT_TARGET)
     list(APPEND RUSTFLAGS "-C" "link-arg=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif()
@@ -116,3 +120,18 @@ set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 # This needs to be done for each project using set_property(INTERFACE_CORROSION_CARGO_FLAGS)
 configure_file("config.toml.in" "config.toml" @ONLY)
 set (RUST_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config.toml" CACHE INTERNAL "Rust config")
+
+function(clickhouse_import_crate)
+    if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+        set(profile "")
+    else()
+        if (ENABLE_THINLTO)
+            set(profile "release-thinlto")
+        else()
+            set(profile "release")
+        endif()
+    endif()
+
+    corrosion_import_crate(${ARGN} NO_STD PROFILE ${profile} CRATE_TYPES staticlib LOCKED FLAGS --offline NO_DEFAULT_FEATURES)
+
+endfunction()

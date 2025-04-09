@@ -247,7 +247,7 @@ DOCKERS = [
     ),
     Docker.Config(
         name="clickhouse/docs-builder",
-        path="./docker/docs/builder",
+        path="./ci/docker/docs-builder",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
@@ -283,9 +283,10 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_RELEASE = "arm_release"
     ARM_ASAN = "arm_asan"
 
-    AMD_COVERAGE = "amd_coverage"
+    ARM_COVERAGE = "arm_coverage"
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
+    ARM_TIDY = "arm_tidy"
     AMD_DARWIN = "amd_darwin"
     ARM_DARWIN = "arm_darwin"
     ARM_V80COMPAT = "arm_v80compat"

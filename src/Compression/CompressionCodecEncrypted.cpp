@@ -136,31 +136,31 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
     if (!cipher)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_fetch failed: {}", getOpenSSLErrors());
 
-    if (!EVP_EncryptInit_ex(ctx.get(), cipher.get(), nullptr, nullptr, nullptr))
+    if (EVP_EncryptInit_ex(ctx.get(), cipher.get(), nullptr, nullptr, nullptr) != 1)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_EncryptInit_ex failed: {}", getOpenSSLErrors());
 
-    if (!EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN, static_cast<int32_t>(nonce.size()), nullptr))
+    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN, static_cast<int32_t>(nonce.size()), nullptr) != 1)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_ctrl failed: {}", getOpenSSLErrors());
 
-    if (!EVP_EncryptInit_ex(ctx.get(), nullptr, nullptr,
+    if (EVP_EncryptInit_ex(ctx.get(), nullptr, nullptr,
                             reinterpret_cast<const uint8_t*>(key.data()),
-                            reinterpret_cast<const uint8_t *>(nonce.data())))
+                            reinterpret_cast<const uint8_t *>(nonce.data())) != 1)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_EncryptInit_ex failed: {}", getOpenSSLErrors());
 
-    if (!EVP_EncryptUpdate(ctx.get(),
+    if (EVP_EncryptUpdate(ctx.get(),
                            reinterpret_cast<uint8_t *>(ciphertext_and_tag),
                            &out_len,
                            reinterpret_cast<const uint8_t *>(plaintext.data()),
-                           static_cast<int32_t>(plaintext.size())))
+                           static_cast<int32_t>(plaintext.size())) != 1)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_EncryptUpdate failed: {}", getOpenSSLErrors());
 
     __msan_unpoison(ciphertext_and_tag, out_len); /// OpenSSL uses assembly which evades msan's analysis
 
     ciphertext_len = out_len;
 
-    if (!EVP_EncryptFinal_ex(ctx.get(),
+    if (EVP_EncryptFinal_ex(ctx.get(),
                              reinterpret_cast<uint8_t *>(ciphertext_and_tag) + out_len,
-                             reinterpret_cast<int32_t *>(&out_len)))
+                             reinterpret_cast<int32_t *>(&out_len)) != 1)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_EncryptFinal_ex failed: {}", getOpenSSLErrors());
 
     __msan_unpoison(ciphertext_and_tag, out_len); /// OpenSSL uses assembly which evades msan's analysis
@@ -168,7 +168,7 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
     ciphertext_len += out_len;
 
     /// Get the tag
-    if (!EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_GET_TAG, tag_size, reinterpret_cast<uint8_t *>(ciphertext_and_tag) + plaintext.size()))
+    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_GET_TAG, tag_size, reinterpret_cast<uint8_t *>(ciphertext_and_tag) + plaintext.size()) != 1)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_ctrl failed: {}", getOpenSSLErrors());
 
     return ciphertext_len + tag_size;
@@ -193,37 +193,37 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
     if (!cipher)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_fetch failed: {}", getOpenSSLErrors());
 
-    if (!EVP_DecryptInit_ex(ctx.get(), cipher.get(), nullptr, nullptr, nullptr))
+    if (EVP_DecryptInit_ex(ctx.get(), cipher.get(), nullptr, nullptr, nullptr) != 1)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DecryptInit_ex failed: {}", getOpenSSLErrors());
 
-    if (!EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN, static_cast<int32_t>(nonce.size()), nullptr))
+    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN, static_cast<int32_t>(nonce.size()), nullptr) != 1)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_ctrl failed: {}", getOpenSSLErrors());
 
-    if (!EVP_DecryptInit_ex(ctx.get(), nullptr, nullptr,
+    if (EVP_DecryptInit_ex(ctx.get(), nullptr, nullptr,
                             reinterpret_cast<const uint8_t*>(key.data()),
-                            reinterpret_cast<const uint8_t *>(nonce.data())))
+                            reinterpret_cast<const uint8_t *>(nonce.data())) != 1)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DecryptInit_ex failed: {}", getOpenSSLErrors());
 
-    if (!EVP_CIPHER_CTX_ctrl(ctx.get(),
+    if (EVP_CIPHER_CTX_ctrl(ctx.get(),
                              EVP_CTRL_GCM_SET_TAG,
                              tag_size,
-                             reinterpret_cast<uint8_t *>(const_cast<char *>(ciphertext.data())) + ciphertext.size() - tag_size))
+                             reinterpret_cast<uint8_t *>(const_cast<char *>(ciphertext.data())) + ciphertext.size() - tag_size) != 1)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_ctrl failed: {}", getOpenSSLErrors());
 
-    if (!EVP_DecryptUpdate(ctx.get(),
+    if (EVP_DecryptUpdate(ctx.get(),
                            reinterpret_cast<uint8_t *>(plaintext),
                            reinterpret_cast<int32_t *>(&out_len),
                            reinterpret_cast<const uint8_t *>(ciphertext.data()),
-                           static_cast<int32_t>(ciphertext.size()) - tag_size))
+                           static_cast<int32_t>(ciphertext.size()) - tag_size) != 1)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DecryptUpdate failed: {}", getOpenSSLErrors());
 
     __msan_unpoison(plaintext, out_len); /// OpenSSL uses assembly which evades msan's analysis
 
     plaintext_len = out_len;
 
-    if (!EVP_DecryptFinal_ex(ctx.get(),
+    if (EVP_DecryptFinal_ex(ctx.get(),
                              reinterpret_cast<uint8_t *>(plaintext) + out_len,
-                             reinterpret_cast<int32_t *>(&out_len)))
+                             reinterpret_cast<int32_t *>(&out_len)) != 1)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DecryptFinal_ex failed: {}", getOpenSSLErrors());
 
     __msan_unpoison(plaintext, out_len); /// OpenSSL uses assembly which evades msan's analysis

@@ -64,8 +64,6 @@ public:
                     ErrorCodes::FORMAT_VERSION_TOO_OLD,
                     "Metadata is not consinsent with the one which was used to infer table schema. Please, retry the query.");
             }
-            if (!supportsFileIterator())
-                BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
         }
     }
 
@@ -80,14 +78,6 @@ public:
         }
         return std::nullopt;
     }
-
-    void implementPartitionPruning(const ActionsDAG & filter_dag) override
-    {
-        if (!current_metadata || !current_metadata->supportsPartitionPruning())
-            return;
-        BaseStorageConfiguration::setPaths(current_metadata->makePartitionPruning(filter_dag));
-    }
-
 
     std::optional<size_t> totalRows() override
     {
@@ -123,20 +113,11 @@ public:
         ContextPtr context) override
     {
         BaseStorageConfiguration::update(object_storage, context);
-        if (updateMetadataObjectIfNeeded(object_storage, context))
-        {
-            if (!supportsFileIterator())
-                BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
-        }
-
+        updateMetadataObjectIfNeeded(object_storage, context);
         return ColumnsDescription{current_metadata->getTableSchema()};
     }
 
-    bool supportsFileIterator() const override
-    {
-        chassert(current_metadata);
-        return current_metadata->supportsFileIterator();
-    }
+    bool supportsFileIterator() const override { return true; }
 
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
@@ -281,12 +262,17 @@ using StorageHDFSIcebergConfiguration = DataLakeConfiguration<StorageHDFSConfigu
 using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfiguration, IcebergMetadata>;
 #endif
 
-#if USE_PARQUET && USE_AWS_S3
+#if USE_PARQUET
+#if USE_AWS_S3
 using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
 #endif
 
-#if USE_PARQUET
+#if USE_AZURE_BLOB_STORAGE
+using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureConfiguration, DeltaLakeMetadata>;
+#endif
+
 using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadata>;
+
 #endif
 
 #if USE_AWS_S3

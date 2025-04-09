@@ -40,8 +40,6 @@ public:
 
     bool update(const ContextPtr & context) override;
 
-    Strings getDataFiles() const override;
-
     NamesAndTypesList getTableSchema() const override;
 
     NamesAndTypesList getReadSchema() const override;
@@ -60,8 +58,6 @@ public:
             configuration,
             settings_ref[StorageObjectStorageSetting::delta_lake_read_schema_same_as_table_schema]);
     }
-
-    bool supportsFileIterator() const override { return true; }
 
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,

@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+
 # Actually, so many 3rd party libraries + unit tests need SSL that we cannot disable it
 # without breaking the build ...
 set(ENABLE_SSL 1 CACHE INTERNAL "")

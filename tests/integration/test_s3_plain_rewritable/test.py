@@ -54,6 +54,7 @@ def start_cluster():
 )
 def test(storage_policy, key_prefix):
     def create_insert(node, table_name, insert_values):
+        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
         node.query(
             """
             CREATE TABLE {} (
@@ -130,6 +131,7 @@ def test(storage_policy, key_prefix):
     insert_values_arr = []
     for i in range(NUM_WORKERS):
         node = cluster.instances[f"node{i + 1}"]
+        node.query("OPTIMIZE TABLE test FINAL")
         insert_values_arr.append(
             node.query("SELECT * FROM test ORDER BY id FORMAT Values")
         )
@@ -169,8 +171,8 @@ def test(storage_policy, key_prefix):
 
     for i in range(NUM_WORKERS):
         node = cluster.instances[f"node{i + 1}"]
-        node.query("DROP TABLE IF EXISTS test SYNC")
-        node.query("DROP TABLE IF EXISTS test_dst SYNC")
+        node.query("DROP TABLE test SYNC")
+        node.query("DROP TABLE test_dst SYNC")
 
     it = cluster.minio_client.list_objects(
         cluster.minio_bucket, key_prefix, recursive=True

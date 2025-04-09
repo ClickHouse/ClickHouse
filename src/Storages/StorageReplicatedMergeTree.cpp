@@ -9551,6 +9551,10 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(
 
 std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
+    /// We want to throw and exit as soon as possible to allow part_check_thread to shutdown
+    if (shutdown_called || partial_shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Table shutdown was called");
+
     if (auto part = assert_cast<DataValidationTasks *>(check_task_list.get())->next())
     {
         try

@@ -63,7 +63,7 @@ public:
         if (!ctx_template)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
 
-        if (!EVP_DigestInit_ex(ctx_template.get(), ProviderImpl::provider(), nullptr))
+        if (EVP_DigestInit_ex(ctx_template.get(), ProviderImpl::provider(), nullptr) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
     }
 
@@ -74,13 +74,13 @@ public:
 
         thread_local EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
 
-        if (!EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()))
+        if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
 
-        if (!EVP_DigestUpdate(ctx.get(), begin, size))
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
 
-        if (!EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr))
+        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
     }
 

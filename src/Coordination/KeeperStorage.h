@@ -60,7 +60,7 @@ struct NodeStats
 
     void setEphemeralOwner(int64_t ephemeral_owner)
     {
-        is_ephemeral_and_ctime.is_ephemeral = ephemeral_owner != 0;
+        is_ephemeral_and_ctime.is_ephemeral = true;
         ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
     }
 

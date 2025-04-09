@@ -138,10 +138,19 @@ public:
             std::this_thread::sleep_for(sleep_time);
         });
 
-        IStorage::DataValidationTasksPtr tmp = check_data_tasks;
-        auto result = table->checkDataNext(tmp);
-        is_finished = !result.has_value();
-        return result;
+        try
+        {
+            IStorage::DataValidationTasksPtr tmp = check_data_tasks;
+            auto result = table->checkDataNext(tmp);
+            is_finished = !result.has_value();
+            return result;
+        }
+        catch (const Exception & e)
+        {
+            is_finished = true;
+            CheckResult result{"", false, e.displayText()};
+            return result;
+        }
     }
 
     bool isFinished() const { return is_finished || !table || !check_data_tasks; }
