@@ -120,7 +120,7 @@ if(MZ_WZAES)
 
     list(APPEND MINIZIP_SRC
          ${_MINIZIP_SOURCE_DIR}/mz_strm_wzaes.c)
-    
+
     list(APPEND MINIZIP_HDR
          ${_MINIZIP_SOURCE_DIR}/mz_strm_wzaes.h)
 endif()
@@ -129,10 +129,10 @@ endif()
 set(MZ_PKCRYPT ON)
 if(MZ_PKCRYPT)
     list(APPEND MINIZIP_DEF -DHAVE_PKCRYPT)
-    
+
     list(APPEND MINIZIP_SRC
          ${_MINIZIP_SOURCE_DIR}/mz_strm_pkcrypt.c)
-    
+
     list(APPEND MINIZIP_HDR
          ${_MINIZIP_SOURCE_DIR}/mz_strm_pkcrypt.h)
 endif()
@@ -144,20 +144,6 @@ if(UNIX)
          ${_MINIZIP_SOURCE_DIR}/mz_strm_os_posix.c)
 endif()
 
-# Include compatibility layer
-set(MZ_COMPAT ON)
-if(MZ_COMPAT)
-    list(APPEND MINIZIP_SRC
-         ${_MINIZIP_SOURCE_DIR}/mz_compat.c)
-    
-    list(APPEND MINIZIP_HDR
-         ${_MINIZIP_SOURCE_DIR}/mz_compat.h
-         zip.h
-         unzip.h)
-
-    list(APPEND MINIZIP_INC "${CMAKE_CURRENT_SOURCE_DIR}")
-    list(APPEND MINIZIP_PUBLIC_DEF "-DMZ_COMPAT_VERSION=110")
-endif()
 
 add_library(_minizip ${MINIZIP_SRC} ${MINIZIP_HDR})
 target_include_directories(_minizip PUBLIC ${MINIZIP_INC})
