@@ -44,6 +44,8 @@ protected:
 
     using Widths = PODArray<size_t>;
     using WidthsPerColumn = std::vector<Widths>;
+    using StringsPerCol = std::vector<Strings>;
+    using WidthsPerSubcolumn = std::vector<WidthsPerColumn>;
 
     void write(Chunk chunk, PortKind port_kind);
     virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
@@ -53,14 +55,19 @@ protected:
 
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
+    void findWidth(
+        size_t & width, size_t & max_padded_width, String & serialized_value, bool split_by_lines, bool & out_has_newlines, size_t prefix);
+
     void calculateWidths(
         const Block & header, const Chunk & chunk, bool split_by_lines, bool & out_has_newlines,
-        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names);
+        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names,
+        StringsPerCol & subcolumn_names, WidthsPerSubcolumn & subcolumn_widths, WidthsPerColumn & max_subcolumn_widths, WidthsPerColumn & subcolumn_name_widths);
 
     void writeValueWithPadding(
         const IColumn & column, const ISerialization & serialization, size_t row_num,
         bool split_by_lines, std::optional<String> & serialized_value, size_t & start_from_offset,
         size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number);
+    
 
     void resetFormatterImpl() override
     {

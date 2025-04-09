@@ -322,6 +322,8 @@ struct FormatSettings
         UInt64 fallback_to_vertical_max_rows_per_chunk = 100;
         UInt64 fallback_to_vertical_min_table_width = 250;
 
+        bool display_tuple_as_subcolumns = true;
+
         enum class Charset : uint8_t
         {
             UTF8,

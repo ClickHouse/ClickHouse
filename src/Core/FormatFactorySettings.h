@@ -957,6 +957,13 @@ Result:
     DECLARE(UInt64, output_format_pretty_display_footer_column_names_min_rows, 50, R"(
 Sets the minimum number of rows for which a footer with column names will be displayed if setting [output_format_pretty_display_footer_column_names](#output_format_pretty_display_footer_column_names) is enabled.
 )", 0) \
+DECLARE(Bool, output_format_pretty_display_tuple_as_subcolumns, true, R"(
+    Allows to display tuple columns as subcolumns in pretty formats. For example, SELECT 'hello' AS x, (1 AS a, 'world' AS b) AS t will be displayed as:
+       ┌─x─────┬─t─────────┐
+       ├───────┼─a─┬─────b─┤
+    1. │ hello │ 1 │ world │
+       └───────┴───┴───────┘
+    )", BETA) \
     DECLARE(UInt64, output_format_parquet_row_group_size, 1000000, R"(
 Target row group size in rows.
 )", 0) \

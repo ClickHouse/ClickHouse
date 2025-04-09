@@ -55,15 +55,18 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
     std::call_once(initialized_flag, [&]
     {
         // clang-format off
-        /// History of settings changes that controls some backward incompatible changes
-        /// across all ClickHouse versions. It maps ClickHouse version to settings changes that were done
-        /// in this version. This history contains both changes to existing settings and newly added settings.
-        /// Settings changes is a vector of structs
-        ///     {setting_name, previous_value, new_value, reason}.
-        /// For newly added setting choose the most appropriate previous_value (for example, if new setting
-        /// controls new feature and it's 'true' by default, use 'false' as previous_value).
-        /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
-        /// Note: please check if the key already exists to prevent duplicate entries.
+        // / History of settings changes that controls some backward incompatible changes
+        // / across all ClickHouse versions. It maps ClickHouse version to settings changes that were done
+        // / in this version. This history contains both changes to existing settings and newly added settings.
+        // / Settings changes is a vector of structs
+        // /     {setting_name, previous_value, new_value, reason}.
+        // / For newly added setting choose the most appropriate previous_value (for example, if new setting
+        // / controls new feature and it's 'true' by default, use 'false' as previous_value).
+        // / It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
+        // / Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.4", {
+            {"pretty_display_tuple_as_subcolumns", false, true, "Allows to display tuple columns as subcolumns in pretty formats."},
+        });
         addSettingsChanges(settings_changes_history, "25.1",
         {
             {"allow_not_comparable_types_in_order_by", true, false, "Don't allow not comparable types in order by by default"},
