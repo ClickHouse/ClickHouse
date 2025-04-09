@@ -17,6 +17,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MessageQueueSink.h>
+#include <Storages/NATS/NATSJetStreamConsumer.h>
 #include <Storages/NATS/NATSCoreConsumer.h>
 #include <Storages/NATS/NATSProducer.h>
 #include <Storages/NATS/NATSSettings.h>
@@ -53,6 +54,7 @@ namespace NATSSetting
     extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
     extern const NATSSettingsUInt64 nats_max_block_size;
     extern const NATSSettingsUInt64 nats_max_rows_per_message;
+    extern const NATSSettingsString nats_consumer;
     extern const NATSSettingsUInt64 nats_num_consumers;
     extern const NATSSettingsString nats_password;
     extern const NATSSettingsString nats_queue_group;
@@ -65,6 +67,7 @@ namespace NATSSetting
     extern const NATSSettingsString nats_subjects;
     extern const NATSSettingsString nats_token;
     extern const NATSSettingsString nats_url;
+    extern const NATSSettingsString nats_stream;
     extern const NATSSettingsString nats_username;
 }
 
@@ -531,10 +534,17 @@ INATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 
 INATSConsumerPtr StorageNATS::createConsumer()
 {
-    return std::make_shared<NATSCoreConsumer>(
-        consumers_connection, subjects,
-        (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value : getStorageID().getFullTableName(),
-        log, queue_size, shutdown_called);
+    auto stream_name = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_stream]);
+    
+    if (stream_name.empty())
+    {
+        auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value : getStorageID().getFullTableName();
+        return std::make_shared<NATSCoreConsumer>(consumers_connection, subjects, queue_name, log, queue_size, shutdown_called);
+    }
+
+    auto consumer_name = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_consumer]);
+    auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group].value;
+    return std::make_shared<NATSJetStreamConsumer>(consumers_connection, stream_name, consumer_name, subjects, queue_name, log, queue_size, shutdown_called);
 }
 
 bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)

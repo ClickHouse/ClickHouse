@@ -9,5 +9,15 @@
             <nats_username>click</nats_username>
             <nats_password>house</nats_password>
         </nats1>
+        <nats_push_consumer>
+            <nats_url>nats1:4444</nats_url>
+            <nats_stream>test_stream</nats_stream>
+            <nats_consumer>test_consumer</nats_consumer>
+            <nats_subjects>test_subject</nats_subjects>
+            <nats_format>JSONEachRow</nats_format>
+            <nats_skip_broken_messages>111</nats_skip_broken_messages>
+            <nats_username>click</nats_username>
+            <nats_password>house</nats_password>
+        </nats_push_consumer>
     </named_collections>
 </clickhouse>
