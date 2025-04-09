@@ -16,14 +16,15 @@ INSERT INTO t_03363_parquet VALUES
     (2024, 'Germany', 7),
     (1999, 'Brazil', 8),
     (2100, 'Japan', 9),
-    (2024, 'CN', 10);
+    (2024, 'CN', 10),
+    (2025, '', 11);
 
 -- while reading from object storage partitioned table is not supported, an auxiliary table must be created
 CREATE TABLE t_03363_parquet_read (year UInt16, country String, counter UInt8)
 ENGINE = S3(s3_conn, filename = 't_03363_parquet/**.parquet', format = Parquet);
 
 -- distinct because minio isn't cleaned up
-select distinct on (counter) replaceRegexpAll(_path, '/[0-9]+\\.parquet', '/<snowflakeid>.parquet') AS _path, counter from t_03363_parquet_read order by counter SETTINGS use_hive_partitioning=1, input_format_parquet_use_native_reader=0;
+select distinct on (counter) replaceRegexpAll(_path, '/[0-9]+\\.parquet', '/<snowflakeid>.parquet') AS _path, counter from t_03363_parquet_read order by counter;
 
 -- CSV test
 CREATE TABLE t_03363_csv (year UInt16, country String, counter UInt8)
@@ -40,7 +41,8 @@ INSERT INTO t_03363_csv VALUES
     (2024, 'Germany', 7),
     (1999, 'Brazil', 8),
     (2100, 'Japan', 9),
-    (2024, 'CN', 10);
+    (2024, 'CN', 10),
+    (2025, '', 11);
 
 CREATE TABLE t_03363_csv_read (year UInt16, country String, counter UInt8)
 ENGINE = S3(s3_conn, filename = 't_03363_csv/**.csv', format = CSV);
@@ -56,7 +58,12 @@ select num_columns from s3(s3_conn, filename='t_03363_function/**.parquet', form
 
 INSERT INTO FUNCTION s3(s3_conn, filename='t_03363_function_write_down_partition_columns', format=Parquet, partition_strategy='hive', hive_partition_strategy_write_partition_columns_into_files=1) PARTITION BY (year, country) SELECT country, year, counter FROM t_03363_parquet_read;
 select num_columns from s3(s3_conn, filename='t_03363_function_write_down_partition_columns/**.parquet', format=ParquetMetadata) limit 1;
+
+-- hive partitioning = 0 so we know it is not reading columns from the path
 select * from s3(s3_conn, filename='t_03363_function_write_down_partition_columns/**.parquet', format=Parquet) order by counter limit 1 SETTINGS use_hive_partitioning=0;
+
+-- only partition columns
+INSERT INTO FUNCTION s3(s3_conn, filename='t_03363_parquet', format=Parquet, partition_strategy='hive') PARTITION BY (year, country) SELECT 2020 as year, 'Brazil' as country; -- {serverError BAD_ARGUMENTS};
 
 -- hive with partition id placeholder
 CREATE TABLE t_03363_s3_sink (year UInt16, country String, counter UInt8)

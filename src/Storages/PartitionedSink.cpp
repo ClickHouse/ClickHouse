@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
+    extern const int BAD_ARGUMENTS;
 }
 
 PartitionedSink::PartitionedSink(
@@ -63,6 +64,13 @@ void PartitionedSink::consume(Chunk & input_chunk)
      */
     const auto chunk = partition_strategy->getChunkWithoutPartitionColumnsIfNeeded(input_chunk);
     const auto & columns_to_consume = chunk.getColumns();
+
+    if (columns_to_consume.empty())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "No column to write as all columns are specified as partition columns. "
+                        "Consider setting `hive_partition_strategy_write_partition_columns_into_files=1`");
+    }
 
     size_t chunk_rows = chunk.getNumRows();
     chunk_row_index_to_partition_index.resize(chunk_rows);

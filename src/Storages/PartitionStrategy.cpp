@@ -104,13 +104,15 @@ namespace
                             partition_strategy);
         }
 
-        if (has_partition_wildcard && !partition_strategy_to_wildcard_acceptance.at(partition_strategy))
+        bool partition_strategy_supports_wildcard = partition_strategy_to_wildcard_acceptance.at(partition_strategy);
+
+        if (has_partition_wildcard && !partition_strategy_supports_wildcard)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The {} wildcard can't be used with {} partitioning style",
                             PartitionedSink::PARTITION_ID_WILDCARD, partition_strategy);
         }
 
-        if (!has_partition_wildcard && partition_strategy_to_wildcard_acceptance.at(partition_strategy))
+        if (!has_partition_wildcard && partition_strategy_supports_wildcard)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Partitioning style '{}' requires {} wildcard",
