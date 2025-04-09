@@ -520,6 +520,7 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_part_num_to_warn = 100000lu;
     // these variables are used in inserting warning message into system.warning table based on asynchronous metrics
     size_t max_pending_mutations_to_warn = 500lu;
+    size_t max_pending_mutations_execution_time_to_warn = 86400lu;
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
 
@@ -4435,6 +4436,12 @@ size_t Context::getMaxPendingMutationsToWarn() const
     return shared->max_pending_mutations_to_warn;
 }
 
+size_t Context::getMaxPendingMutationsExecutionTimeToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_pending_mutations_execution_time_to_warn;
+}
+
 size_t Context::getMaxPartNumToWarn() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -4469,6 +4476,12 @@ void Context::setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
     shared->max_pending_mutations_to_warn = max_pending_mutations_to_warn;
+}
+
+void Context::setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_pending_mutations_execution_time_to_warn = max_pending_mutations_execution_time_to_warn;
 }
 
 void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
