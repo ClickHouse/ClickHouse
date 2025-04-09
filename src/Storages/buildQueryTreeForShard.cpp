@@ -520,11 +520,30 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (auto * function_node = node->as<FunctionNode>(); function_node && function_node->getFunctionName() == "in")
+        if (auto * function_node = node->as<FunctionNode>(); function_node && isNameOfLocalInFunction(function_node->getFunctionName()))
         {
-            if (!function_node->getArguments().getNodes()[1]->as<QueryNode>())
+            auto * query = function_node->getArguments().getNodes()[1]->as<QueryNode>();
+            if (!query)
                 return;
-            auto result_function = std::make_shared<FunctionNode>("globalIn");
+            bool no_replace = true;
+            for (const auto & table_node : extractTableExpressions(query->getJoinTree(), false, true))
+            {
+                const StorageDistributed * storage_distributed = nullptr;
+                if (const TableNode * table_node_typed = table_node->as<TableNode>())
+                    storage_distributed = typeid_cast<const StorageDistributed *>(table_node_typed->getStorage().get());
+                else if (const TableFunctionNode * table_function_node_typed = table_node->as<TableFunctionNode>())
+                    storage_distributed = typeid_cast<const StorageDistributed *>(table_function_node_typed->getStorage().get());
+
+                if (!storage_distributed)
+                {
+                    no_replace = false;
+                    break;
+                }
+            }
+            if (no_replace)
+                return;
+
+            auto result_function = std::make_shared<FunctionNode>(getGlobalInFunctionNameForLocalInFunctionName(function_node->getFunctionName()));
             result_function->getArguments().getNodes() = std::move(function_node->getArguments().getNodes());
             resolveOrdinaryFunctionNodeByName(*result_function, result_function->getFunctionName(), getContext());
             node = result_function;
