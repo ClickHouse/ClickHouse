@@ -440,6 +440,35 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::INSTRUMENT_ADD:
+        case Type::INSTRUMENT_REMOVE:
+        {
+            if (!handler.empty()) 
+            {
+                ostr << ' ';
+                print_identifier(handler);
+            }
+ 
+            if (!function.empty()) 
+            {
+                ostr << ' ';
+                print_identifier(function);
+            }
+ 
+            if (!parameters.empty())
+            {
+                bool comma = false;
+                for (const auto & param : parameters)
+                {
+                    if (comma)
+                        ostr << ',';
+                    else
+                        comma = true;
+                    ostr << ' ' << quoteString(param);
+                }
+            }
+            break;
+        }
         case Type::KILL:
         case Type::SHUTDOWN:
         case Type::DROP_DNS_CACHE:

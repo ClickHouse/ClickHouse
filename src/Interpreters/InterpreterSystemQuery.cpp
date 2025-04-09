@@ -847,6 +847,16 @@ BlockIO InterpreterSystemQuery::execute()
             unloadPrimaryKeys();
             break;
         }
+        case Type::INSTRUMENT_ADD:
+        {
+            instrumentWithXRay(true, query);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            instrumentWithXRay(false, query);
+            break;
+	    }
 
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
@@ -1329,6 +1339,20 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     }
 }
 
+void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query) {
+    //TODO
+    // auto handler = query.handler;
+    // auto function = query.function;
+    //temporary PSEUDOCODE
+    // What happens here:
+    // So we need to add/update information in system.instrument 
+    // Also we patch here I think(?)
+    // So we firstly map the function name to its ID(where do we store the mapping though)
+    // After that we need to do something like __xray_set_handler(functionID, handler, params);
+    // and __xray_patch(functionID)/__xray_unpatch(functionID)
+    // But does xray provide this kind of functionality?.. I am afraid it does not
+}
+
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
@@ -1757,6 +1781,16 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::UNLOCK_SNAPSHOT:
         {
             required_access.emplace_back(AccessType::BACKUP);
+            break;
+        }
+        case Type::INSTRUMENT_ADD:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_ADD);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
             break;
         }
         case Type::STOP_THREAD_FUZZER:
