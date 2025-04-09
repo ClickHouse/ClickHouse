@@ -56,19 +56,34 @@ void registerFunction(FunctionFactory & factory, const String & element_type)
 
 REGISTER_FUNCTION(EmptyArray)
 {
-    registerFunction(factory, "UInt8");
-    registerFunction(factory, "UInt16");
-    registerFunction(factory, "UInt32");
-    registerFunction(factory, "UInt64");
-    registerFunction(factory, "Int8");
-    registerFunction(factory, "Int16");
-    registerFunction(factory, "Int32");
-    registerFunction(factory, "Int64");
-    registerFunction(factory, "Float32");
-    registerFunction(factory, "Float64");
-    registerFunction(factory, "Date");
-    registerFunction(factory, "DateTime");
-    registerFunction(factory, "String");
+    const std::vector<std::string> types = {
+        "UInt8", "UInt16", "UInt32", "UInt64",
+        "Int8", "Int16", "Int32", "Int64",
+        "Float32", "Float64", "Date", "DateTime", "String"
+    };
+
+    auto createDocumentation = [](const std::string& type_name) {
+        FunctionDocumentation::Description description = "Returns an empty " + type_name + " array";
+        FunctionDocumentation::Syntax syntax = "empty" + type_name + "()";
+        FunctionDocumentation::ReturnedValue returned_value = "An empty array of type " + type_name;
+
+        FunctionDocumentation::Example example = {
+            "Create an empty " + type_name + " array",
+            "SELECT empty" + type_name + "()",
+            "[]"
+        };
+
+        FunctionDocumentation::Category categories = {"array"};
+
+        return FunctionDocumentation{
+            description, syntax, {}, returned_value, {example}, categories
+        };
+    };
+
+    // Register all functions
+    for (const auto& type : types) {
+        registerFunction(factory, type, createDocumentation(type));
+    }
 }
 
 }
