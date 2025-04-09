@@ -1,5 +1,3 @@
-CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE:Identifier};
-
 CREATE TABLE IF NOT EXISTS truncate_test_set(id UInt64) ENGINE = Set;
 CREATE TABLE IF NOT EXISTS truncate_test_log(id UInt64) ENGINE = Log;
 CREATE TABLE IF NOT EXISTS truncate_test_memory(id UInt64) ENGINE = Memory;
@@ -74,5 +72,3 @@ DROP TABLE truncate_test_memory;
 DROP TABLE truncate_test_tiny_log;
 DROP TABLE truncate_test_stripe_log;
 DROP TABLE truncate_test_merge_tree;
-
-DROP DATABASE d;

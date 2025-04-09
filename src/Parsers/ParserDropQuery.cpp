@@ -76,11 +76,11 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
         if (!s_from.ignore(pos, expected))
             return false;
 
-        if (!name_p.parse(pos, database, expected))
-            return false;
-
         if (s_if_exists.ignore(pos, expected))
             if_exists = true;
+
+        if (!name_p.parse(pos, database, expected))
+            return false;
 
         bool not_like = false;
         if (s_not.ignore(pos, expected))
