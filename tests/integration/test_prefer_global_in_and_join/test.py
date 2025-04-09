@@ -31,6 +31,13 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+@pytest.fixture(autouse=True)
+def drop_after_test():
+    try:
+        yield
+    finally:
+        ch1.query("DROP DATABASE IF EXISTS test_default_database ON CLUSTER 'cluster' SYNC")
+
 
 def test_in_and_join(started_cluster):
     ch1.query(
