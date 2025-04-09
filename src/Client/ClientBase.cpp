@@ -1906,15 +1906,15 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         if (parsed_insert_query->columns)
         {
-            auto columns = processColumnTransformers(columns_for_storage_file, parsed_insert_query->columns, client_context->getCurrentDatabase(), client_context->getInsertionTable());
+            auto columns = processColumnTransformers(client_context->getCurrentDatabase(), client_context->getInsertionTable(), columns_for_storage_file, parsed_insert_query->columns);
             ColumnsDescription reordered_description{};
             for (const auto & col_name : columns->children)
             {
                 auto col = columns_for_storage_file.get(col_name->getColumnName());
-                reordered_description.add(col);
+                reordered_description.add(std::move(col));
             }
 
-            columns_for_storage_file = reordered_description;
+            columns_for_storage_file = std::move(reordered_description);
         }
 
         StorageFile::CommonArguments args{

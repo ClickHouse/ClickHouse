@@ -59,10 +59,10 @@ ASTPtr processColumnTransformers(
 }
 
 ASTPtr processColumnTransformers(
-        const ColumnsDescription & columns,
-        ASTPtr query_columns,
         const String & current_database,
-        const StorageID & table_id)
+        const StorageID & table_id,
+        const ColumnsDescription & columns,
+        ASTPtr query_columns)
 {
     return processColumnTransformersImpl(columns, {}, query_columns, current_database, table_id);
 }
