@@ -684,7 +684,7 @@ void Pipe::addChains(std::vector<Chain> chains)
     max_parallel_streams = std::max(max_parallel_streams, max_parallel_streams_for_chains);
 }
 
-void Pipe::addSplitResizeTransform(size_t num_streams, UInt64 min_outstreams_per_resize_after_split, bool strict)
+void Pipe::addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per_resize_after_split, bool strict)
 {
     OutputPortRawPtrs resize_output_ports(num_streams);
 
