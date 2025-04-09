@@ -45,11 +45,11 @@ SELECT '======Insert Values Again======';
 INSERT INTO truncate_test_merge_tree VALUES('2000-01-01', 1);
 
 SELECT '======Truncate With NOT LIKE Keyword======';
-TRUNCATE TABLES FROM IF EXISTS d NOT LIKE '%merge_tree';
+TRUNCATE TABLES FROM IF EXISTS {CLICKHOUSE_DATABASE:Identifier} NOT LIKE '%merge_tree';
 SELECT * FROM truncate_test_stripe_log;
 SELECT * FROM truncate_test_merge_tree;
 
-TRUNCATE TABLES FROM IF EXISTS d NOT LIKE '%stripe%';
+TRUNCATE TABLES FROM IF EXISTS {CLICKHOUSE_DATABASE:Identifier} NOT LIKE '%stripe%';
 SELECT * FROM truncate_test_stripe_log;
 SELECT * FROM truncate_test_merge_tree;
 
