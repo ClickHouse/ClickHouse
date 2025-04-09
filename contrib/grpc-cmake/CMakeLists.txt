@@ -13,6 +13,8 @@ set(_gRPC_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/grpc")
 
 if(TARGET OpenSSL::SSL)
   set(gRPC_USE_UNSECURE_LIBRARIES FALSE)
+
+  add_definitions(-DOPENSSL_NO_ENGINE)
 else()
   set(gRPC_USE_UNSECURE_LIBRARIES TRUE)
 endif()
