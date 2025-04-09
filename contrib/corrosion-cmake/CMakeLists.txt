@@ -156,9 +156,11 @@ function(clickhouse_config_crate_flags target_name)
     corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTFLAGS=${RUSTFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTDOCFLAGS=${RUSTFLAGS}")
-    if (NOT "${RUSTCWRAPPER}" STREQUAL "")
-        corrosion_set_env_vars(${target_name} "CARGO_BUILD_RUSTC_WRAPPER=${RUSTCWRAPPER}")
-    endif()
+
+    # Disabled because sccache seems to be broken and mixes up builds
+    # if (NOT "${RUSTCWRAPPER}" STREQUAL "")
+    #    corrosion_set_env_vars(${target_name} "CARGO_BUILD_RUSTC_WRAPPER=${RUSTCWRAPPER}")
+    # endif()
 
     if (NOT "${RUST_CARGO_BUILD_STD}" STREQUAL "")
         corrosion_set_cargo_flags(${target_name} "${RUST_CARGO_BUILD_STD}")
