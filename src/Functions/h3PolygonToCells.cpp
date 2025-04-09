@@ -17,10 +17,7 @@
 #include <constants.h>
 #include <h3api.h>
 
-
-// TODO: from h3ToChildren, why this exact number?
 static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
-
 
 namespace DB
 {
@@ -32,6 +29,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+/// Takes a geometry (Ring, Polygon or MultiPolygon) and returnes an array of H3 hexagons that cover this geometry.
+/// The geometry should be in spherical coordinates as it is in GeoJSON.
 class FunctionH3PolygonToCells : public IFunction
 {
 public:
@@ -72,15 +71,15 @@ public:
         auto current_offset = 0;
 
 
-        callOnGeometryDataType<CartesianPoint>(arguments[0].type, [&] (const auto & type)
+        callOnGeometryDataType<SphericalPoint>(arguments[0].type, [&] (const auto & type)
         {
             using TypeConverter = std::decay_t<decltype(type)>;
             using Converter = typename TypeConverter::Type;
 
             // polygonToCells does not work for points and lines
-            if constexpr (std::is_same_v<ColumnToPointsConverter<CartesianPoint>, Converter>)
+            if constexpr (std::is_same_v<ColumnToPointsConverter<SphericalPoint>, Converter>)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument of function {} must not be Point", getName());
-            else if constexpr (std::is_same_v<ColumnToLineStringsConverter<CartesianPoint>, Converter>)
+            else if constexpr (std::is_same_v<ColumnToLineStringsConverter<SphericalPoint>, Converter>)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument of function {} must not be LineString", getName());
 
             // all geometries will be of same kind
@@ -99,38 +98,35 @@ public:
                 auto geometry = geometries[row];
                 boost::geometry::correct(geometry); // TODO: Is this good or bad?
 
-                // always work on multipolygon
-                CartesianMultiPolygon multi_polygon;
-                if constexpr (std::is_same_v<ColumnToMultiPolygonsConverter<CartesianPoint>, Converter>)
-                    multi_polygon = geometry;
-                else if constexpr (std::is_same_v<ColumnToPolygonsConverter<CartesianPoint>, Converter>)
-                    multi_polygon = boost::geometry::model::multi_polygon({ geometry });
-                else if constexpr (std::is_same_v<ColumnToRingsConverter<CartesianPoint>, Converter>)
-                    multi_polygon = boost::geometry::model::multi_polygon({ boost::geometry::model::polygon({ geometry }) });
+                // Convert everything to multipolygon.
+                SphericalMultiPolygon multi_polygon;
+                if constexpr (std::is_same_v<ColumnToMultiPolygonsConverter<SphericalPoint>, Converter>)
+                    multi_polygon = std::move(geometry);
+                else if constexpr (std::is_same_v<ColumnToPolygonsConverter<SphericalPoint>, Converter>)
+                    multi_polygon = boost::geometry::model::multi_polygon({ std::move(geometry) });
+                else if constexpr (std::is_same_v<ColumnToRingsConverter<SphericalPoint>, Converter>)
+                    multi_polygon = boost::geometry::model::multi_polygon({ boost::geometry::model::polygon({ std::move(geometry) }) });
 
-                // will only iterate once for ring and polygon
                 for (auto & polygon : multi_polygon)
                 {
                     std::vector<LatLng> exterior;
+                    exterior.reserve(polygon.outer().size());
                     for (auto & point : polygon.outer())
-                    {
-                        LatLng vert = { degsToRads(point.y()), degsToRads(point.x()) };
-                        exterior.push_back(vert);
-                    }
+                        exterior.push_back(toH3LatLng(toRadianPoint(point)));
 
                     std::vector<std::vector<LatLng>> holes;
+                    holes.reserve(polygon.inners().size());
                     for (auto & inner : polygon.inners())
                     {
                         std::vector<LatLng> hole;
+                        hole.reserve(inner.size());
                         for (auto & point : inner)
-                        {
-                            LatLng vert = { degsToRads(point.y()), degsToRads(point.x()) };
-                            hole.push_back(vert);
-                        }
-                        holes.push_back(hole);
+                            hole.push_back(toH3LatLng(toRadianPoint(point)));
+
+                        holes.emplace_back(std::move(hole));
                     }
 
-                    GeoPolygonContainer polygon_wrapper(exterior, holes);
+                    GeoPolygonContainer polygon_wrapper(std::move(exterior), std::move(holes));
 
                     const size_t vec_size = maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution);
                     if (vec_size > MAX_ARRAY_SIZE)
@@ -179,12 +175,13 @@ private:
 
     public:
         // Constructor to create from C++ data
-        explicit GeoPolygonContainer(const std::vector<LatLng>& mainLoop,
-                            const std::vector<std::vector<LatLng>>& holes = {})
-            : mainLoopVerts(mainLoop), holeVerts(holes) {}
+        explicit GeoPolygonContainer(
+            std::vector<LatLng> && mainLoop,
+            std::vector<std::vector<LatLng>> && holes = {})
+            : mainLoopVerts(std::move(mainLoop)), holeVerts(std::move(holes)) {}
 
         // Method to get C-style GeoPolygon pointer
-        const GeoPolygon* unwrap() const
+        const GeoPolygon * unwrap() const
         {
             // Prepare main loop
             mutableMainLoop = {
