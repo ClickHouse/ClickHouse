@@ -448,7 +448,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
 }
 
 
-void ASTSelectQuery::addTableFunction(ASTPtr & table_function_ptr)
+void ASTSelectQuery::addTableFunction(const ASTPtr & table_function_ptr)
 {
     ASTTableExpression * table_expression = getFirstTableExpression(*this);
 
@@ -526,6 +526,14 @@ bool ASTSelectQuery::hasQueryParameters() const
     }
 
     return  has_query_parameters.value();
+}
+
+NameToNameMap ASTSelectQuery::getQueryParameters() const
+{
+    if (!hasQueryParameters())
+        return {};
+
+    return analyzeReceiveQueryParamsWithType(std::make_shared<ASTSelectQuery>(*this));
 }
 
 }
