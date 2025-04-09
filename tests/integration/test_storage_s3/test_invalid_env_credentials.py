@@ -6,6 +6,7 @@ import pytest
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 
 MINIO_INTERNAL_PORT = 9001
@@ -113,7 +114,7 @@ def test_with_invalid_environment_credentials(started_cluster):
     instance = started_cluster.instances["s3_with_invalid_environment_credentials"]
 
     for bucket, auth in [
-        (started_cluster.minio_restricted_bucket, "'minio', 'minio123'"),
+        (started_cluster.minio_restricted_bucket, f"'minio', '{minio_secret_key}'"),
         (started_cluster.minio_bucket, "NOSIGN"),
     ]:
         instance.query(

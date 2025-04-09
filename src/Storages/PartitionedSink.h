@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
 #include <Common/PODArray.h>

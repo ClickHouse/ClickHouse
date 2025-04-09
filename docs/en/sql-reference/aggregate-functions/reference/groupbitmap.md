@@ -1,15 +1,16 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/groupbitmap
+description: 'Bitmap or Aggregate calculations from a unsigned integer column, return
+  cardinality of type UInt64, if add suffix -State, then return a bitmap object'
 sidebar_position: 148
-title: "groupBitmap"
-description: "Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return a bitmap object"
+slug: /sql-reference/aggregate-functions/reference/groupbitmap
+title: 'groupBitmap'
 ---
 
 # groupBitmap
 
 Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../../sql-reference/functions/bitmap-functions.md).
 
-``` sql
+```sql
 groupBitmap(expr)
 ```
 
@@ -25,7 +26,7 @@ Value of the `UInt64` type.
 
 Test data:
 
-``` text
+```text
 UserID
 1
 1
@@ -35,13 +36,13 @@ UserID
 
 Query:
 
-``` sql
+```sql
 SELECT groupBitmap(UserID) as num FROM t
 ```
 
 Result:
 
-``` text
+```text
 num
 3
 ```

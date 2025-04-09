@@ -1,9 +1,10 @@
 ---
-description: "System table containing information about dictionaries"
+description: 'System table containing information about dictionaries'
+keywords: ['system table', 'dictionaries']
 slug: /operations/system-tables/dictionaries
-title: "system.dictionaries"
-keywords: ["system table", "dictionaries"]
+title: 'system.dictionaries'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
@@ -47,7 +48,7 @@ Columns:
 
 Configure the dictionary:
 
-``` sql
+```sql
 CREATE DICTIONARY dictionary_with_comment
 (
     id UInt64,
@@ -62,11 +63,11 @@ COMMENT 'The temporary dictionary';
 
 Make sure that the dictionary is loaded.
 
-``` sql
+```sql
 SELECT * FROM system.dictionaries LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 database:                    default

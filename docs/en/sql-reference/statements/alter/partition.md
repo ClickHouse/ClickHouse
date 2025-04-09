@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/alter/partition
+description: 'Documentation for Partition'
+sidebar_label: 'PARTITION'
 sidebar_position: 38
-sidebar_label: PARTITION
-title: "Manipulating Partitions and Parts"
+slug: /sql-reference/statements/alter/partition
+title: 'Manipulating Partitions and Parts'
 ---
 
 The following operations with [partitions](/engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:
@@ -28,7 +29,7 @@ The following operations with [partitions](/engines/table-engines/mergetree-fami
 
 ## DETACH PARTITION\|PART {#detach-partitionpart}
 
-``` sql
+```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
 ```
 
@@ -36,7 +37,7 @@ Moves all data for the specified partition to the `detached` directory. The serv
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE mt DETACH PARTITION '2020-11-21';
 ALTER TABLE mt DETACH PART 'all_2_2_0';
 ```
@@ -49,7 +50,7 @@ This query is replicated – it moves the data to the `detached` directory on al
 
 ## DROP PARTITION\|PART {#drop-partitionpart}
 
-``` sql
+```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
 ```
 
@@ -61,14 +62,14 @@ The query is replicated – it deletes data on all replicas.
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE mt DROP PARTITION '2020-11-21';
 ALTER TABLE mt DROP PART 'all_4_4_0';
 ```
 
 ## DROP DETACHED PARTITION\|PART {#drop-detached-partitionpart}
 
-``` sql
+```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
 ```
 
@@ -77,7 +78,7 @@ Read more about setting the partition expression in a section [How to set the pa
 
 ## FORGET PARTITION {#forget-partition}
 
-``` sql
+```sql
 ALTER TABLE table_name FORGET PARTITION partition_expr
 ```
 
@@ -87,19 +88,19 @@ Read about setting the partition expression in a section [How to set the partiti
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE mt FORGET PARTITION '20201121';
 ```
 
 ## ATTACH PARTITION\|PART {#attach-partitionpart}
 
-``` sql
+```sql
 ALTER TABLE table_name [ON CLUSTER cluster] ATTACH PARTITION|PART partition_expr
 ```
 
 Adds data to the table from the `detached` directory. It is possible to add data for an entire partition or for a separate part. Examples:
 
-``` sql
+```sql
 ALTER TABLE visits ATTACH PARTITION 201901;
 ALTER TABLE visits ATTACH PART 201901_2_2_0;
 ```
@@ -116,7 +117,7 @@ You can put data to the `detached` directory on one replica and use the `ALTER .
 
 ## ATTACH PARTITION FROM {#attach-partition-from}
 
-``` sql
+```sql
 ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
 ```
 
@@ -136,7 +137,7 @@ For the query to run successfully, the following conditions must be met:
 
 ## REPLACE PARTITION {#replace-partition}
 
-``` sql
+```sql
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
 ```
 
@@ -156,7 +157,7 @@ For the query to run successfully, the following conditions must be met:
 
 ## MOVE PARTITION TO TABLE {#move-partition-to-table}
 
-``` sql
+```sql
 ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO TABLE table_dest
 ```
 
@@ -172,7 +173,7 @@ For the query to run successfully, the following conditions must be met:
 
 ## CLEAR COLUMN IN PARTITION {#clear-column-in-partition}
 
-``` sql
+```sql
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITION partition_expr
 ```
 
@@ -180,13 +181,13 @@ Resets all values in the specified column in a partition. If the `DEFAULT` claus
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
 
 ## FREEZE PARTITION {#freeze-partition}
 
-``` sql
+```sql
 ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
 ```
 
@@ -228,7 +229,7 @@ For more information about backups and restoring data, see the [Data Backup](/op
 
 ## UNFREEZE PARTITION {#unfreeze-partition}
 
-``` sql
+```sql
 ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
 ```
 
@@ -236,7 +237,7 @@ Removes `freezed` partitions with the specified name from the disk. If the `PART
 
 ## CLEAR INDEX IN PARTITION {#clear-index-in-partition}
 
-``` sql
+```sql
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION partition_expr
 ```
 
@@ -244,7 +245,7 @@ The query works similar to `CLEAR COLUMN`, but it resets an index instead of a c
 
 ## FETCH PARTITION|PART {#fetch-partitionpart}
 
-``` sql
+```sql
 ALTER TABLE table_name [ON CLUSTER cluster] FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
 ```
 
@@ -258,12 +259,12 @@ The query does the following:
 For example:
 
 1. FETCH PARTITION
-``` sql
+```sql
 ALTER TABLE users FETCH PARTITION 201902 FROM '/clickhouse/tables/01-01/visits';
 ALTER TABLE users ATTACH PARTITION 201902;
 ```
 2. FETCH PART
-``` sql
+```sql
 ALTER TABLE users FETCH PART 201901_2_2_0 FROM '/clickhouse/tables/01-01/visits';
 ALTER TABLE users ATTACH PART 201901_2_2_0;
 ```
@@ -281,7 +282,7 @@ Although the query is called `ALTER TABLE`, it does not change the table structu
 
 Moves partitions or data parts to another volume or disk for `MergeTree`-engine tables. See [Using Multiple Block Devices for Data Storage](/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-multiple-volumes).
 
-``` sql
+```sql
 ALTER TABLE table_name [ON CLUSTER cluster] MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
 ```
 
@@ -293,7 +294,7 @@ The `ALTER TABLE t MOVE` query:
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
@@ -304,13 +305,13 @@ Manipulates data in the specifies partition matching the specified filtering exp
 
 Syntax:
 
-``` sql
+```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
 ### Example {#example}
 
-``` sql
+```sql
 -- using partition name
 ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
 
@@ -328,13 +329,13 @@ Deletes data in the specifies partition matching the specified filtering express
 
 Syntax:
 
-``` sql
+```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
 ### Example {#example-1}
 
-``` sql
+```sql
 -- using partition name
 ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
 
@@ -360,7 +361,7 @@ Usage of quotes when specifying the partition depends on the type of partition e
 
 All the rules above are also true for the [OPTIMIZE](/sql-reference/statements/optimize.md) query. If you need to specify the only partition when optimizing a non-partitioned table, set the expression `PARTITION tuple()`. For example:
 
-``` sql
+```sql
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 

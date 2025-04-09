@@ -20,13 +20,12 @@ public:
 
     virtual bool operator==(const IDataLakeMetadata & other) const = 0;
 
-    /// List all data files.
-    /// For better parallelization, iterate() method should be used.
-    virtual Strings getDataFiles() const = 0;
-    /// Whether `iterate()` method is supported for the data lake.
-    virtual bool supportsFileIterator() const { return false; }
     /// Return iterator to `data files`.
-    virtual ObjectIterator iterate() const { throwNotImplemented("iterate()"); }
+    using FileProgressCallback = std::function<void(FileProgress)>;
+    virtual ObjectIterator iterate(
+        const ActionsDAG * /* filter_dag */,
+        FileProgressCallback /* callback */,
+        size_t /* list_batch_size */) const = 0;
 
     /// Table schema from data lake metadata.
     virtual NamesAndTypesList getTableSchema() const = 0;
@@ -34,9 +33,6 @@ public:
     /// which can differ from table schema from data lake metadata.
     /// Return nothing if read schema is the same as table schema.
     virtual NamesAndTypesList getReadSchema() const { return {}; }
-
-    virtual bool supportsPartitionPruning() { return false; }
-    virtual Strings makePartitionPruning(const ActionsDAG &) { throwNotImplemented("makePartitionPrunning()"); }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String &) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String &) const { return {}; }
@@ -50,7 +46,15 @@ public:
     /// Whether schema evolution is supported.
     virtual bool supportsExternalMetadataChange() const { return false; }
 
+    virtual std::optional<size_t> totalRows() const { return {}; }
+    virtual std::optional<size_t> totalBytes() const { return {}; }
+
 protected:
+    ObjectIterator createKeysIterator(
+        Strings && data_files_,
+        ObjectStoragePtr object_storage_,
+        IDataLakeMetadata::FileProgressCallback callback_) const;
+
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method `{}` is not implemented", method);

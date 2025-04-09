@@ -1,16 +1,28 @@
 [env]
+# Used by skim
 CC = "@CMAKE_C_COMPILER@"
+CC_@Rust_CARGO_TARGET@ = "@CMAKE_C_COMPILER@"
 CXX = "@CMAKE_CXX_COMPILER@"
+CXX_@Rust_CARGO_TARGET@ = "@CMAKE_CXX_COMPILER@"
 CFLAGS = "@RUST_CFLAGS@"
 CXXFLAGS = "@RUST_CXXFLAGS@"
 
 [build]
 rustflags = @RUSTFLAGS@
 rustdocflags = @RUSTFLAGS@
-@RUSTCWRAPPER@
+@RUSTWRAPPER@
 
 [unstable]
 @RUST_CARGO_BUILD_STD@
+
+[profile.release]
+debug = false
+strip = true
+
+# We use LTO to slightly decrease binary size
+[profile.release-thinlto]
+inherits = "release"
+lto = true
 
 [source.crates-io]
 registry = 'sparse+https://index.crates.io/'

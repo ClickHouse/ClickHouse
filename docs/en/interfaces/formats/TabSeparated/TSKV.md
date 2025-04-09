@@ -1,10 +1,11 @@
 ---
-title: TSKV
-slug: /interfaces/formats/TSKV
-keywords: [TSKV]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the TSKV format'
+input_format: true
+keywords: ['TSKV']
+output_format: true
+slug: /interfaces/formats/TSKV
+title: 'TSKV'
 ---
 
 | Input | Output | Alias |

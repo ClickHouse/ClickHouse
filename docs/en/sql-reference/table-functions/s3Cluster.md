@@ -1,9 +1,11 @@
 ---
-slug: /sql-reference/table-functions/s3Cluster
+description: 'An extension to the s3 table function, which allows processing files
+  from Amazon S3 and Google Cloud Storage in parallel with many nodes in a specified
+  cluster.'
+sidebar_label: 's3Cluster'
 sidebar_position: 181
-sidebar_label: s3Cluster
-title: "s3Cluster"
-description: "An extension to the s3 table function, which allows processing files from Amazon S3 and Google Cloud Storage in parallel with many nodes in a specified cluster."
+slug: /sql-reference/table-functions/s3Cluster
+title: 's3Cluster'
 ---
 
 # s3Cluster Table Function
@@ -14,7 +16,7 @@ Allows processing files from [Amazon S3](https://aws.amazon.com/s3/) and Google 
 
 **Syntax**
 
-``` sql
+```sql
 s3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers])
 s3Cluster(cluster_name, named_collection[, option=value [,..]])
 ```
@@ -46,12 +48,12 @@ A table with the specified structure for reading or writing data in the specifie
 
 Select the data from all the files in the `/root/data/clickhouse` and `/root/data/database/` folders, using all the nodes in the `cluster_simple` cluster:
 
-``` sql
+```sql
 SELECT * FROM s3Cluster(
     'cluster_simple',
     'http://minio1:9001/root/data/{clickhouse,database}/*',
     'minio',
-    'minio123',
+    'ClickHouse_Minio_P@ssw0rd',
     'CSV',
     'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'
 ) ORDER BY (name, value, polygon);
@@ -64,11 +66,11 @@ If your listing of files contains number ranges with leading zeros, use the cons
 :::
 
 For production use cases, it is recommended to use [named collections](operations/named-collections.md). Here is the example:
-``` sql
+```sql
 
 CREATE NAMED COLLECTION creds AS
         access_key_id = 'minio',
-        secret_access_key = 'minio123';
+        secret_access_key = 'ClickHouse_Minio_P@ssw0rd';
 SELECT count(*) FROM s3Cluster(
     'cluster_simple', creds, url='https://s3-object-url.csv',
     format='CSV', structure='name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'

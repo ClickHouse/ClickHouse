@@ -258,6 +258,7 @@ private:
                         key.second, toString(key.first), session.use_count());
 
                     session->timeout = std::chrono::steady_clock::duration{0};
+                    session->close_time_bucket = std::chrono::steady_clock::time_point{};
                     scheduleCloseSession(*session, lock);
                     continue;
                 }
@@ -368,7 +369,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     try
     {
         auto auth_result =
-            global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedForHost());
+            global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo());
         user_id = auth_result.user_id;
         user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;

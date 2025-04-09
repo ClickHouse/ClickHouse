@@ -1,3 +1,4 @@
+#include <Common/DateLUTImpl.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -35,8 +36,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
-#include <Parsers/queryToString.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -68,6 +67,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <Core/ServerSettings.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -161,6 +161,13 @@ namespace Setting
     extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsMap http_response_headers;
     extern const SettingsBool apply_mutations_on_fly;
+    extern const SettingsFloat min_os_cpu_wait_time_ratio_to_throw;
+    extern const SettingsFloat max_os_cpu_wait_time_ratio_to_throw;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
 }
 
 namespace ErrorCodes
@@ -401,7 +408,7 @@ QueryLogElement logQueryStart(
     UInt64 normalized_query_hash,
     const ASTPtr & query_ast,
     const QueryPipeline & pipeline,
-    const std::unique_ptr<IInterpreter> & interpreter,
+    const IInterpreter * interpreter,
     bool internal,
     const String & query_database,
     const String & query_table,
@@ -420,7 +427,7 @@ QueryLogElement logQueryStart(
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
     if (settings[Setting::log_formatted_queries])
-        elem.formatted_query = queryToString(query_ast);
+        elem.formatted_query = query_ast->formatWithSecretsOneLine();
     elem.normalized_query_hash = normalized_query_hash;
     elem.query_kind = query_ast->getQueryKind();
 
@@ -740,7 +747,7 @@ void logExceptionBeforeStart(
     {
         elem.query_kind = ast->getQueryKind();
         if (settings[Setting::log_formatted_queries])
-            elem.formatted_query = queryToString(ast);
+            elem.formatted_query = ast->formatWithSecretsOneLine();
     }
 
     addPrivilegesInfoToQueryLogElement(elem, context);
@@ -1043,7 +1050,7 @@ static BlockIO executeQueryImpl(
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(out_ast);
             if (visitor.getNumberOfReplacedParameters())
-                query = serializeAST(*out_ast);
+                query = out_ast->formatWithSecretsOneLine();
             else
                 query.assign(begin, query_end);
         }
@@ -1553,7 +1560,7 @@ static BlockIO executeQueryImpl(
                 normalized_query_hash,
                 out_ast,
                 pipeline,
-                interpreter,
+                interpreter.get(),
                 internal,
                 query_database,
                 query_table,
@@ -1622,6 +1629,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     QueryFlags flags,
     QueryProcessingStage::Enum stage)
 {
+    ProfileEvents::checkCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
+            context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw],
+            context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
+            /*should_throw*/ true);
     ASTPtr ast;
     BlockIO res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr, ast);
 
@@ -1664,6 +1675,11 @@ void executeQuery(
     }
 
     size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
+
+    ProfileEvents::checkCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
+            context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw],
+            context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
+            /*should_throw*/ true);
 
     if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {

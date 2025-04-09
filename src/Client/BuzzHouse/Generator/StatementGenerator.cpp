@@ -3,18 +3,43 @@
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
 
+
 namespace BuzzHouse
 {
+
+StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool rs)
+    : fc(fuzzc)
+    , connections(conn)
+    , supports_cloud_features(scf)
+    , replica_setup(rs)
+    , deterministic_funcs_limit(static_cast<size_t>(
+          std::find_if(CHFuncs.begin(), CHFuncs.end(), StatementGenerator::funcNotDeterministicIndexLambda) - CHFuncs.begin()))
+    , deterministic_aggrs_limit(static_cast<size_t>(
+          std::find_if(CHAggrs.begin(), CHAggrs.end(), StatementGenerator::aggrNotDeterministicIndexLambda) - CHAggrs.begin()))
+{
+    chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
+
+    for (size_t i = 0; i < deterministic_funcs_limit; i++)
+    {
+        /// Add single argument functions for non sargable predicates
+        const CHFunction & next = CHFuncs[i];
+
+        if (next.min_lambda_param == 0 && next.min_args == 1)
+        {
+            one_arg_funcs.push_back(next);
+        }
+    }
+}
 
 void StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) const
 {
     store->set_storage(static_cast<Storage_DataStorage>((rg.nextRandomUInt32() % static_cast<uint32_t>(Storage::DataStorage_MAX)) + 1));
-    store->set_storage_name(rg.pickRandomlyFromVector(fc.disks));
+    store->set_storage_name(rg.pickRandomly(fc.disks));
 }
 
 void StatementGenerator::setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SetValue * set)
 {
-    const String & setting = rg.pickKeyRandomlyFromMap(settings);
+    const String & setting = rg.pickRandomly(settings);
 
     set->set_property(setting);
     set->set_value(settings.at(setting).random_func(rg));
@@ -41,15 +66,15 @@ void StatementGenerator::generateSettingList(RandomGenerator & rg, const std::un
 
     for (size_t i = 0; i < nvalues; i++)
     {
-        const String & next = rg.pickKeyRandomlyFromMap(settings);
+        const String & next = rg.pickRandomly(settings);
 
-        if (i == 0)
+        if (sl->has_setting())
         {
-            sl->set_setting(next);
+            sl->add_other_settings(next);
         }
         else
         {
-            sl->add_other_settings(next);
+            sl->set_setting(next);
         }
     }
 }
@@ -71,7 +96,7 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
     {
         this->ids.emplace_back(DBackup);
     }
-    const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomlyFromVector(this->ids));
+    const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomly(this->ids));
     this->ids.clear();
     return res;
 }
@@ -90,18 +115,17 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     }
     else if (next.isBackupDatabase())
     {
-        next.backed_db
-            = "d" + ((databases.empty() || rg.nextSmallNumber() < 3) ? "efault" : std::to_string(rg.pickKeyRandomlyFromMap(databases)));
-        next.backed_disk = rg.pickRandomlyFromVector(fc.disks);
+        next.backed_db = "d" + ((databases.empty() || rg.nextSmallNumber() < 3) ? "efault" : std::to_string(rg.pickRandomly(databases)));
+        next.backed_disk = rg.pickRandomly(fc.disks);
     }
     if (!fc.clusters.empty() && rg.nextSmallNumber() < (next.isReplicatedOrSharedDatabase() ? 9 : 4))
     {
-        next.cluster = rg.pickRandomlyFromVector(fc.clusters);
+        next.cluster = rg.pickRandomly(fc.clusters);
         cd->mutable_cluster()->set_cluster(next.cluster.value());
     }
     next.dname = dname;
     next.finishDatabaseSpecification(deng);
-    cd->mutable_database()->set_database("d" + std::to_string(dname));
+    next.setName(cd->mutable_database());
     if (rg.nextSmallNumber() < 3)
     {
         cd->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
@@ -113,28 +137,25 @@ void StatementGenerator::generateNextCreateFunction(RandomGenerator & rg, Create
 {
     SQLFunction next;
     const uint32_t fname = this->function_counter++;
+    const bool prev_enforce_final = this->enforce_final;
+    const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
     next.fname = fname;
-    next.nargs = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % (rg.nextBool() ? 4 : 10)));
-    if ((next.is_deterministic = rg.nextBool()))
-    {
-        /// If this function is later called by an oracle, then don't call it
-        this->setAllowNotDetermistic(false);
-        this->enforceFinal(true);
-    }
+    next.nargs = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1));
+    next.is_deterministic = rg.nextBool();
+    /// If this function is later called by an oracle, then don't call it
+    this->allow_not_deterministic = !next.is_deterministic;
+    this->enforce_final = next.is_deterministic;
     generateLambdaCall(rg, next.nargs, cf->mutable_lexpr());
     this->levels.clear();
-    if (next.is_deterministic)
-    {
-        this->setAllowNotDetermistic(true);
-        this->enforceFinal(false);
-    }
+    this->enforce_final = prev_enforce_final;
+    this->allow_not_deterministic = prev_allow_not_deterministic;
     if (!fc.clusters.empty() && rg.nextSmallNumber() < 4)
     {
-        next.cluster = rg.pickRandomlyFromVector(fc.clusters);
+        next.cluster = rg.pickRandomly(fc.clusters);
         cf->mutable_cluster()->set_cluster(next.cluster.value());
     }
-    cf->mutable_function()->set_function("f" + std::to_string(fname));
+    next.setName(cf->mutable_function());
     this->staged_functions[fname] = std::move(next);
 }
 
@@ -161,49 +182,47 @@ void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, Refre
 
 static void matchQueryAliases(const SQLView & v, Select * osel, Select * nsel)
 {
-    if (v.has_with_cols)
-    {
-        /// Make sure aliases match
-        uint32_t i = 0;
-        SelectStatementCore * ssc = nsel->mutable_select_core();
+    /// Make sure aliases match
+    uint32_t i = 0;
+    SelectStatementCore * ssc = nsel->mutable_select_core();
 
-        for (const auto & entry : v.cols)
-        {
-            ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
-
-            eca->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(
-                "c" + std::to_string(i));
-            eca->mutable_col_alias()->set_column("c" + std::to_string(entry));
-            i++;
-        }
-        ssc->mutable_from()
-            ->mutable_tos()
-            ->mutable_join_clause()
-            ->mutable_tos()
-            ->mutable_joined_table()
-            ->mutable_tof()
-            ->mutable_select()
-            ->mutable_inner_query()
-            ->mutable_select()
-            ->set_allocated_sel(osel);
-    }
-    else
+    for (const auto & entry : v.cols)
     {
-        nsel->CopyFrom(*osel);
+        ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+
+        eca->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(
+            "a" + std::to_string(i));
+        eca->mutable_col_alias()->set_column("c" + std::to_string(entry));
+        i++;
     }
+    ssc->mutable_from()
+        ->mutable_tos()
+        ->mutable_join_clause()
+        ->mutable_tos()
+        ->mutable_joined_table()
+        ->mutable_tof()
+        ->mutable_select()
+        ->mutable_inner_query()
+        ->mutable_select()
+        ->set_allocated_sel(osel);
 }
 
 void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView * cv)
 {
     SQLView next;
     uint32_t tname = 0;
-    ExprSchemaTable * est = cv->mutable_est();
-    const bool replace = collectionCount<SQLView>(attached_views) > 3 && rg.nextMediumNumber() < 16;
-    const uint32_t view_ncols = (rg.nextMediumNumber() % 5) + 1;
+    const uint32_t view_ncols = (rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1);
+    const bool prev_enforce_final = this->enforce_final;
+    const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
+    SQLBase::setDeterministic(rg, next);
+    this->allow_not_deterministic = !next.is_deterministic;
+    this->enforce_final = next.is_deterministic;
+    const auto replaceViewLambda = [&next](const SQLView & v) { return v.isAttached() && (v.is_deterministic || !next.is_deterministic); };
+    const bool replace = collectionCount<SQLView>(replaceViewLambda) > 3 && rg.nextMediumNumber() < 16;
     if (replace)
     {
-        const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views));
+        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(replaceViewLambda));
 
         next.db = v.db;
         tname = next.tname = v.tname;
@@ -212,20 +231,14 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     {
         if (collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && rg.nextSmallNumber() < 9)
         {
-            next.db = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+            next.db = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
         }
         tname = next.tname = this->table_counter++;
     }
-    const String vname = "v" + std::to_string(next.tname);
-
-    cv->set_replace(replace);
+    cv->set_create_opt(replace ? CreateReplaceOption::Replace : CreateReplaceOption::Create);
     next.is_materialized = rg.nextBool();
     cv->set_materialized(next.is_materialized);
-    if (next.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(next.db->dname));
-    }
-    est->mutable_table()->set_table(vname);
+    next.setName(cv->mutable_est(), false);
     if (next.is_materialized)
     {
         TableEngine * te = cv->mutable_engine();
@@ -238,7 +251,6 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         else
         {
-            next.is_deterministic = true;
             next.teng = TableEngineValues::MergeTree;
         }
         const auto & table_to_lambda = [&view_ncols, &next](const SQLTable & t)
@@ -256,18 +268,18 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         if (!has_to)
         {
-            SQLRelation rel(vname);
+            SQLRelation rel("v" + std::to_string(next.tname));
 
             for (uint32_t i = 0; i < view_ncols; i++)
             {
-                rel.cols.emplace_back(SQLRelationCol(vname, {"c" + std::to_string(i)}));
+                rel.cols.emplace_back(SQLRelationCol(rel.name, {"c" + std::to_string(i)}));
             }
             this->levels[this->current_level].rels.emplace_back(rel);
             this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
             generateEngineDetails(rg, next, true, te);
             this->levels.clear();
         }
-        if (next.isMergeTreeFamily() && rg.nextMediumNumber() < 16)
+        if (next.isMergeTreeFamily() && !next.is_deterministic && rg.nextMediumNumber() < 16)
         {
             generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
         }
@@ -276,16 +288,11 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         if (has_to)
         {
             CreateMatViewTo * cmvt = cv->mutable_to();
-            ExprSchemaTable * to_est = cmvt->mutable_est();
             SQLTable & t = const_cast<SQLTable &>(
-                next.has_with_cols ? rg.pickRandomlyFromVector(filterCollection<SQLTable>(table_to_lambda)).get()
+                next.has_with_cols ? rg.pickRandomly(filterCollection<SQLTable>(table_to_lambda)).get()
                                    : rg.pickValueRandomlyFromMap(this->tables));
 
-            if (t.db)
-            {
-                to_est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-            }
-            to_est->mutable_table()->set_table("t" + std::to_string(t.tname));
+            t.setName(cmvt->mutable_est(), false);
             if (next.has_with_cols)
             {
                 for (const auto & col : t.cols)
@@ -316,12 +323,8 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         else
         {
-            cv->set_populate(!has_to && rg.nextSmallNumber() < 4);
+            cv->set_populate(!has_to && !replace && rg.nextSmallNumber() < 4);
         }
-    }
-    else
-    {
-        next.is_deterministic = rg.nextSmallNumber() < 9;
     }
     if (next.cols.empty())
     {
@@ -330,10 +333,10 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             next.cols.insert(i);
         }
     }
-    if (next.is_deterministic)
+    setClusterInfo(rg, next);
+    if (next.cluster.has_value())
     {
-        this->setAllowNotDetermistic(false);
-        this->enforceFinal(true);
+        cv->mutable_cluster()->set_cluster(next.cluster.value());
     }
     this->levels[this->current_level] = QueryLevel(this->current_level);
     this->allow_in_expression_alias = rg.nextSmallNumber() < 3;
@@ -346,17 +349,14 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         cv->mutable_select());
     this->levels.clear();
     this->allow_in_expression_alias = true;
-    if (next.is_deterministic)
-    {
-        this->setAllowNotDetermistic(true);
-        this->enforceFinal(false);
-    }
+    this->enforce_final = prev_enforce_final;
+    this->allow_not_deterministic = prev_allow_not_deterministic;
     matchQueryAliases(next, cv->release_select(), cv->mutable_select());
     if (rg.nextSmallNumber() < 3)
     {
         cv->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
     }
-    this->staged_views[tname] = next;
+    this->staged_views[tname] = std::move(next);
 }
 
 void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
@@ -364,57 +364,55 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     SQLObjectName * sot = dp->mutable_object();
     const uint32_t drop_table = 10 * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 3);
     const uint32_t drop_view = 10 * static_cast<uint32_t>(collectionCount<SQLView>(attached_views) > 3);
+    const uint32_t drop_dictionary = 10 * static_cast<uint32_t>(collectionCount<SQLDictionary>(attached_dictionaries) > 3);
     const uint32_t drop_database = 2 * static_cast<uint32_t>(collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
     const uint32_t drop_function = 1 * static_cast<uint32_t>(functions.size() > 3);
-    const uint32_t prob_space = drop_table + drop_view + drop_database + drop_function;
+    const uint32_t prob_space = drop_table + drop_view + drop_dictionary + drop_database + drop_function;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     std::optional<String> cluster;
 
     if (drop_table && nopt < (drop_table + 1))
     {
-        ExprSchemaTable * est = sot->mutable_est();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
         cluster = t.getCluster();
         dp->set_is_temp(t.is_temp);
         dp->set_sobject(SQLObject::TABLE);
         dp->set_if_empty(rg.nextSmallNumber() < 4);
-        if (t.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-        }
-        est->mutable_table()->set_table("t" + std::to_string(t.tname));
+        t.setName(sot->mutable_est(), false);
     }
     else if (drop_view && nopt < (drop_table + drop_view + 1))
     {
-        ExprSchemaTable * est = sot->mutable_est();
-        const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views));
+        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
 
         cluster = v.getCluster();
         dp->set_sobject(SQLObject::VIEW);
-        if (v.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(v.db->dname));
-        }
-        est->mutable_table()->set_table("v" + std::to_string(v.tname));
+        v.setName(sot->mutable_est(), false);
     }
-    else if (drop_database && nopt < (drop_table + drop_view + drop_database + 1))
+    else if (drop_dictionary && nopt < (drop_table + drop_view + drop_dictionary + 1))
     {
-        const std::shared_ptr<SQLDatabase> & d
-            = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
+
+        cluster = d.getCluster();
+        dp->set_sobject(SQLObject::DICTIONARY);
+        d.setName(sot->mutable_est(), false);
+    }
+    else if (drop_database && nopt < (drop_table + drop_view + drop_dictionary + drop_database + 1))
+    {
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
         cluster = d->getCluster();
         dp->set_sobject(SQLObject::DATABASE);
-        sot->mutable_database()->set_database("d" + std::to_string(d->dname));
+        d->setName(sot->mutable_database());
     }
-    else if (drop_function)
+    else if (drop_function && nopt < (drop_table + drop_view + drop_dictionary + drop_database + drop_function + 1))
     {
         const SQLFunction & f = rg.pickValueRandomlyFromMap(this->functions);
 
         cluster = f.getCluster();
         dp->set_sobject(SQLObject::FUNCTION);
-        sot->mutable_function()->set_function("f" + std::to_string(f.fname));
+        f.setName(sot->mutable_function());
     }
     else
     {
@@ -467,14 +465,10 @@ static const auto optimize_table_lambda = [](const SQLTable & t) { return t.isAt
 
 void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot)
 {
-    ExprSchemaTable * est = ot->mutable_est();
-    const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(optimize_table_lambda));
+    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(optimize_table_lambda));
+    const std::optional<String> & cluster = t.getCluster();
 
-    if (t.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-    }
-    est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    t.setName(ot->mutable_est(), false);
     if (t.isMergeTreeFamily())
     {
         if (rg.nextBool())
@@ -490,16 +484,14 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
 
         if (noption < 51)
         {
-            ExprColumnList * ecl = noption < 26 ? dde->mutable_col_list() : dde->mutable_ded_star_except();
-            flatTableColumnPath(flat_tuple | flat_nested | skip_nested_node, t, [](const SQLColumn &) { return true; });
+            ColumnPathList * clist = noption < 26 ? dde->mutable_col_list() : dde->mutable_ded_star_except();
+            flatTableColumnPath(flat_tuple | flat_nested | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
             const uint32_t ocols
                 = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(4))) + 1;
             std::shuffle(entries.begin(), entries.end(), rg.generator);
             for (uint32_t i = 0; i < ocols; i++)
             {
-                ExprColumn * col = i == 0 ? ecl->mutable_col() : ecl->add_extra_cols();
-
-                columnPathRef(this->entries[i], col->mutable_path());
+                columnPathRef(entries[i], i == 0 ? clist->mutable_col() : clist->add_other_cols());
             }
             entries.clear();
         }
@@ -507,6 +499,10 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
         {
             dde->set_ded_star(true);
         }
+    }
+    if (cluster.has_value())
+    {
+        ot->mutable_cluster()->set_cluster(cluster.value());
     }
     ot->set_final((t.supportsFinal() || t.isMergeTreeFamily()) && rg.nextSmallNumber() < 3);
     if (rg.nextSmallNumber() < 3)
@@ -517,14 +513,9 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
 
 void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable * ct)
 {
-    ExprSchemaTable * est = ct->mutable_est();
-    const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
+    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
-    if (t.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-    }
-    est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    t.setName(ct->mutable_est(), false);
     if (t.isMergeTreeFamily() && rg.nextBool())
     {
         generateNextTablePartition(rg, true, t, ct->mutable_single_partition()->mutable_partition());
@@ -558,25 +549,15 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
 
     if (desc_table && nopt < (desc_table + 1))
     {
-        ExprSchemaTable * est = dt->mutable_est();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
-        if (t.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-        }
-        est->mutable_table()->set_table("t" + std::to_string(t.tname));
+        t.setName(dt->mutable_est(), false);
     }
     else if (desc_view && nopt < (desc_table + desc_view + 1))
     {
-        ExprSchemaTable * est = dt->mutable_est();
-        const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views));
+        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
 
-        if (v.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(v.db->dname));
-        }
-        est->mutable_table()->set_table("v" + std::to_string(v.tname));
+        v.setName(dt->mutable_est(), false);
     }
     else if (desc_query && nopt < (desc_table + desc_view + desc_query + 1))
     {
@@ -594,7 +575,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
         ExprSchemaTable * est = dt->mutable_est();
 
         est->mutable_database()->set_database("system");
-        est->mutable_table()->set_table(rg.pickKeyRandomlyFromMap(systemTables));
+        est->mutable_table()->set_table(rg.pickRandomly(systemTables));
     }
     else
     {
@@ -617,30 +598,52 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
 
 void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
 {
+    String buf;
+    TableOrFunction * tof = ins->mutable_tof();
     const uint32_t noption = rg.nextLargeNumber();
-    ExprSchemaTable * est = ins->mutable_est();
-    const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
+    const uint32_t noption2 = rg.nextMediumNumber();
+    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+    const std::optional<String> & cluster = t.getCluster();
+    std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
+    std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+    std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
-    if (t.db)
+    if (cluster.has_value() || (!fc.clusters.empty() && noption2 < 11))
     {
-        est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-    }
-    est->mutable_table()->set_table("t" + std::to_string(t.tname));
+        /// If the table is set on cluster, always insert to all replicas/shards
+        ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
 
-    flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+        cdf->set_cname((cluster.has_value() || rg.nextBool()) ? ClusterFunc::clusterAllReplicas : ClusterFunc::cluster);
+        cdf->set_ccluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
+        t.setName(cdf->mutable_tof()->mutable_est(), true);
+        if (rg.nextSmallNumber() < 4)
+        {
+            /// Optional sharding key
+            flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
+            cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
+            this->remote_entries.clear();
+        }
+    }
+    else if (noption2 < 21)
+    {
+        /// Use insert into remote
+        setTableRemote(rg, true, false, t, tof->mutable_tfunc());
+    }
+    else
+    {
+        /// Use insert into table
+        t.setName(tof->mutable_est(), false);
+    }
+    flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
     for (const auto & entry : this->entries)
     {
         columnPathRef(entry, ins->add_cols());
     }
 
-    if (noption < 901)
+    if (noption < 801)
     {
-        String buf;
-        std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
-        std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
         const uint64_t nrows = rows_dist(rg.generator);
-        InsertStringQuery * iquery = ins->mutable_query();
 
         for (uint64_t i = 0; i < nrows; i++)
         {
@@ -684,27 +687,56 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
             }
             buf += ")";
         }
-        iquery->set_query(buf);
-        if (rg.nextSmallNumber() < 3)
-        {
-            generateSettingValues(rg, serverSettings, iquery->mutable_setting_values());
-        }
+        ins->set_query(buf);
     }
     else if (noption < 951)
     {
-        InsertSelect * isel = ins->mutable_insert_select();
+        Select * sel = ins->mutable_select();
 
-        this->levels[this->current_level] = QueryLevel(this->current_level);
-        if (rg.nextMediumNumber() < 13)
+        if (noption < 901)
         {
-            this->addCTEs(rg, std::numeric_limits<uint32_t>::max(), ins->mutable_ctes());
+            /// Use generateRandom
+            bool first = true;
+            SelectStatementCore * ssc = sel->mutable_select_core();
+            GenerateRandomFunc * grf = ssc->mutable_from()
+                                           ->mutable_tos()
+                                           ->mutable_join_clause()
+                                           ->mutable_tos()
+                                           ->mutable_joined_table()
+                                           ->mutable_tof()
+                                           ->mutable_tfunc()
+                                           ->mutable_grandom();
+
+            for (const auto & entry : this->entries)
+            {
+                SQLType * tp = entry.getBottomType();
+                const String & bottomName = entry.getBottomName();
+
+                buf += fmt::format(
+                    "{}{} {}{}{}",
+                    first ? "" : ", ",
+                    bottomName,
+                    entry.path.size() > 1 ? "Array(" : "",
+                    tp->typeName(false),
+                    entry.path.size() > 1 ? ")" : "");
+                ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(bottomName);
+                first = false;
+            }
+            grf->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
+            grf->set_random_seed(rg.nextRandomUInt64());
+            grf->set_max_string_length(string_length_dist(rg.generator));
+            grf->set_max_array_length(nested_rows_dist(rg.generator));
+            ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
         }
-        generateSelect(
-            rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), isel->mutable_select());
-        this->levels.clear();
-        if (rg.nextSmallNumber() < 3)
+        else
         {
-            generateSettingValues(rg, serverSettings, isel->mutable_setting_values());
+            this->levels[this->current_level] = QueryLevel(this->current_level);
+            if (rg.nextMediumNumber() < 13)
+            {
+                this->addCTEs(rg, std::numeric_limits<uint32_t>::max(), ins->mutable_ctes());
+            }
+            generateSelect(rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), sel);
+            this->levels.clear();
         }
     }
     else
@@ -739,12 +771,12 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
             }
         }
         this->levels.clear();
-        if (rg.nextSmallNumber() < 3)
-        {
-            generateSettingValues(rg, serverSettings, vs->mutable_setting_values());
-        }
     }
     this->entries.clear();
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, ins->mutable_setting_values());
+    }
 }
 
 void StatementGenerator::generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr)
@@ -764,15 +796,10 @@ void StatementGenerator::generateUptDelWhere(RandomGenerator & rg, const SQLTabl
 
 void StatementGenerator::generateNextDelete(RandomGenerator & rg, LightDelete * del)
 {
-    ExprSchemaTable * est = del->mutable_est();
-    const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
-    const std::optional<String> cluster = t.getCluster();
+    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+    const std::optional<String> & cluster = t.getCluster();
 
-    if (t.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-    }
-    est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    t.setName(del->mutable_est(), false);
     if (cluster.has_value())
     {
         del->mutable_cluster()->set_cluster(cluster.value());
@@ -801,31 +828,24 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
 
     if (trunc_table && nopt < (trunc_table + 1))
     {
-        ExprSchemaTable * est = trunc->mutable_est();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
         cluster = t.getCluster();
-        if (t.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-        }
-        est->mutable_table()->set_table("t" + std::to_string(t.tname));
+        t.setName(trunc->mutable_est(), false);
     }
     else if (trunc_db_tables && nopt < (trunc_table + trunc_db_tables + 1))
     {
-        const std::shared_ptr<SQLDatabase> & d
-            = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
         cluster = d->getCluster();
-        trunc->mutable_all_tables()->set_database("d" + std::to_string(d->dname));
+        d->setName(trunc->mutable_all_tables());
     }
     else if (trunc_db && nopt < (trunc_table + trunc_db_tables + trunc_db + 1))
     {
-        const std::shared_ptr<SQLDatabase> & d
-            = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
         cluster = d->getCluster();
-        trunc->mutable_database()->set_database("d" + std::to_string(d->dname));
+        d->setName(trunc->mutable_database());
     }
     else
     {
@@ -845,13 +865,11 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
 static const auto exchange_table_lambda = [](const SQLTable & t)
 {
     /// I would need to track the table clusters to do this correctly, ie ensure tables to be exchanged are on same cluster
-    return t.isAttached() && !t.hasDatabasePeer() && !t.getCluster();
+    return t.isAttached() && !t.is_deterministic && !t.getCluster();
 };
 
 void StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et)
 {
-    ExprSchemaTable * est1 = et->mutable_est1();
-    ExprSchemaTable * est2 = et->mutable_est2();
     const auto & input = filterCollection<SQLTable>(exchange_table_lambda);
 
     for (const auto & entry : input)
@@ -862,17 +880,13 @@ void StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, Exchan
     const SQLTable & t1 = this->tables[this->ids[0]];
     const SQLTable & t2 = this->tables[this->ids[1]];
 
-    if (t1.db)
-    {
-        est1->mutable_database()->set_database("d" + std::to_string(t1.db->dname));
-    }
-    est1->mutable_table()->set_table("t" + std::to_string(t1.tname));
-    if (t2.db)
-    {
-        est2->mutable_database()->set_database("d" + std::to_string(t2.db->dname));
-    }
-    est2->mutable_table()->set_table("t" + std::to_string(t2.tname));
+    t1.setName(et->mutable_est1(), false);
+    t2.setName(et->mutable_est2(), false);
     this->ids.clear();
+    if (t1.cluster.has_value() && t2.cluster.has_value() && t1.cluster == t2.cluster)
+    {
+        et->mutable_cluster()->set_cluster(t1.cluster.value());
+    }
     if (rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, et->mutable_setting_values());
@@ -888,17 +902,17 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
     const bool has_tables = collectionHas<SQLTable>(alter_table_lambda);
     const bool has_views = collectionHas<SQLView>(attached_views);
     std::optional<String> cluster;
+    const bool prev_enforce_final = this->enforce_final;
+    const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
     if (has_views && (!has_tables || rg.nextBool()))
     {
-        SQLView & v = const_cast<SQLView &>(rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views)).get());
+        SQLView & v = const_cast<SQLView &>(rg.pickRandomly(filterCollection<SQLView>(attached_views)).get());
 
+        this->allow_not_deterministic = !v.is_deterministic;
+        this->enforce_final = v.is_deterministic;
         cluster = v.getCluster();
-        if (v.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(v.db->dname));
-        }
-        est->mutable_table()->set_table("v" + std::to_string(v.tname));
+        v.setName(est, false);
         for (uint32_t i = 0; i < nalters; i++)
         {
             const uint32_t alter_refresh = 1 * static_cast<uint32_t>(v.is_refreshable);
@@ -914,13 +928,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             }
             else
             {
-                v.staged_ncols = v.has_with_cols ? static_cast<uint32_t>(v.cols.size()) : ((rg.nextMediumNumber() % 5) + 1);
-
-                if (v.is_deterministic)
-                {
-                    this->setAllowNotDetermistic(false);
-                    this->enforceFinal(true);
-                }
+                v.staged_ncols
+                    = v.has_with_cols ? static_cast<uint32_t>(v.cols.size()) : ((rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1));
                 this->levels[this->current_level] = QueryLevel(this->current_level);
                 this->allow_in_expression_alias = rg.nextSmallNumber() < 3;
                 generateSelect(
@@ -932,29 +941,22 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                     ati->mutable_modify_query());
                 this->levels.clear();
                 this->allow_in_expression_alias = true;
-                if (v.is_deterministic)
-                {
-                    this->setAllowNotDetermistic(true);
-                    this->enforceFinal(false);
-                }
                 matchQueryAliases(v, ati->release_modify_query(), ati->mutable_modify_query());
             }
         }
     }
     else if (has_tables)
     {
-        SQLTable & t = const_cast<SQLTable &>(rg.pickRandomlyFromVector(filterCollection<SQLTable>(alter_table_lambda)).get());
+        SQLTable & t = const_cast<SQLTable &>(rg.pickRandomly(filterCollection<SQLTable>(alter_table_lambda)).get());
         const String dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
         const String tname = "t" + std::to_string(t.tname);
         const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
 
+        this->allow_not_deterministic = !t.is_deterministic;
+        this->enforce_final = t.is_deterministic;
         cluster = t.getCluster();
         at->set_is_temp(t.is_temp);
-        if (t.db)
-        {
-            est->mutable_database()->set_database(dname);
-        }
-        est->mutable_table()->set_table(tname);
+        t.setName(est, false);
         for (uint32_t i = 0; i < nalters; i++)
         {
             const uint32_t alter_order_by = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
@@ -980,8 +982,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             const uint32_t column_remove_property = 2;
             const uint32_t column_modify_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
             const uint32_t column_remove_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
-            const uint32_t table_modify_setting = 2 * static_cast<uint32_t>(!allTableSettings.at(t.teng).empty());
-            const uint32_t table_remove_setting = 2 * static_cast<uint32_t>(!allTableSettings.at(t.teng).empty());
+            const uint32_t table_modify_setting = 2;
+            const uint32_t table_remove_setting = 2;
             const uint32_t add_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily());
             const uint32_t remove_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
             const uint32_t materialize_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
@@ -999,8 +1001,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             const uint32_t unfreeze_partition = 7 * static_cast<uint32_t>(!t.frozen_partitions.empty());
             const uint32_t clear_index_partition = 5 * static_cast<uint32_t>(table_has_partitions && !t.idxs.empty());
             const uint32_t move_partition = 5 * static_cast<uint32_t>(table_has_partitions && !fc.disks.empty());
-            const uint32_t modify_ttl = 5 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.hasDatabasePeer());
-            const uint32_t remove_ttl = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.hasDatabasePeer());
+            const uint32_t modify_ttl = 5 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.is_deterministic);
+            const uint32_t remove_ttl = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.is_deterministic);
             const uint32_t comment_table = 2;
             const uint32_t prob_space = alter_order_by + heavy_delete + heavy_update + add_column + materialize_column + drop_column
                 + rename_column + clear_column + modify_column + comment_column + delete_mask + add_stats + mod_stats + drop_stats
@@ -1020,7 +1022,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
 
                 if (rg.nextSmallNumber() < 6)
                 {
-                    flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t, [](const SQLColumn &) { return true; });
+                    flatTableColumnPath(
+                        flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
                     generateTableKey(rg, t.teng, true, tkey);
                     this->entries.clear();
                     this->levels.clear();
@@ -1045,8 +1048,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                     rg, t, t.col_counter++, true, false, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, add_col->mutable_new_col());
                 if (next_option < 4)
                 {
-                    flatTableColumnPath(flat_tuple | flat_nested, t, [](const SQLColumn &) { return true; });
-                    columnPathRef(rg.pickRandomlyFromVector(this->entries), add_col->mutable_add_where()->mutable_col());
+                    flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
+                    columnPathRef(rg.pickRandomly(this->entries), add_col->mutable_add_where()->mutable_col());
                     this->entries.clear();
                 }
                 else if (next_option < 8)
@@ -1058,8 +1061,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 ColInPartition * mcol = ati->mutable_materialize_column();
 
-                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
-                columnPathRef(rg.pickRandomlyFromVector(this->entries), mcol->mutable_col());
+                flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomly(this->entries), mcol->mutable_col());
                 this->entries.clear();
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
@@ -1068,8 +1071,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             }
             else if (drop_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + 1))
             {
-                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
-                columnPathRef(rg.pickRandomlyFromVector(this->entries), ati->mutable_drop_column());
+                flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomly(this->entries), ati->mutable_drop_column());
                 this->entries.clear();
             }
             else if (
@@ -1078,8 +1081,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 const uint32_t ncname = t.col_counter++;
                 RenameCol * rcol = ati->mutable_rename_column();
 
-                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
-                columnPathRef(rg.pickRandomlyFromVector(this->entries), rcol->mutable_old_name());
+                flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomly(this->entries), rcol->mutable_old_name());
                 this->entries.clear();
 
                 rcol->mutable_new_name()->CopyFrom(rcol->old_name());
@@ -1094,8 +1097,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 ColInPartition * ccol = ati->mutable_clear_column();
 
-                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
-                columnPathRef(rg.pickRandomlyFromVector(this->entries), ccol->mutable_col());
+                flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomly(this->entries), ccol->mutable_col());
                 this->entries.clear();
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
@@ -1112,18 +1115,11 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 AddColumn * add_col = ati->mutable_modify_column();
 
                 addTableColumn(
-                    rg,
-                    t,
-                    rg.pickKeyRandomlyFromMap(t.cols),
-                    true,
-                    true,
-                    rg.nextMediumNumber() < 6,
-                    ColumnSpecial::NONE,
-                    add_col->mutable_new_col());
+                    rg, t, rg.pickRandomly(t.cols), true, true, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, add_col->mutable_new_col());
                 if (next_option < 4)
                 {
-                    flatTableColumnPath(flat_tuple | flat_nested, t, [](const SQLColumn &) { return true; });
-                    columnPathRef(rg.pickRandomlyFromVector(this->entries), add_col->mutable_add_where()->mutable_col());
+                    flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
+                    columnPathRef(rg.pickRandomly(this->entries), add_col->mutable_add_where()->mutable_col());
                     this->entries.clear();
                 }
                 else if (next_option < 8)
@@ -1139,8 +1135,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 CommentColumn * ccol = ati->mutable_comment_column();
 
-                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
-                columnPathRef(rg.pickRandomlyFromVector(this->entries), ccol->mutable_col());
+                flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomly(this->entries), ccol->mutable_col());
                 this->entries.clear();
                 ccol->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
             }
@@ -1169,7 +1165,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 {
                     generateNextTablePartition(rg, false, t, upt->mutable_single_partition()->mutable_partition());
                 }
-                flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
+                flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
                 if (this->entries.empty())
                 {
                     UpdateSet * upset = upt->mutable_update();
@@ -1296,7 +1292,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
 
                     if (next_option < 4)
                     {
-                        add_index->mutable_add_where()->mutable_idx()->set_index("i" + std::to_string(rg.pickKeyRandomlyFromMap(t.idxs)));
+                        add_index->mutable_add_where()->mutable_idx()->set_index("i" + std::to_string(rg.pickRandomly(t.idxs)));
                     }
                     else if (next_option < 8)
                     {
@@ -1313,7 +1309,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 IdxInPartition * iip = ati->mutable_materialize_index();
 
-                iip->mutable_idx()->set_index("i" + std::to_string(rg.pickKeyRandomlyFromMap(t.idxs)));
+                iip->mutable_idx()->set_index("i" + std::to_string(rg.pickRandomly(t.idxs)));
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
                     generateNextTablePartition(rg, false, t, iip->mutable_single_partition()->mutable_partition());
@@ -1328,7 +1324,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 IdxInPartition * iip = ati->mutable_clear_index();
 
-                iip->mutable_idx()->set_index("i" + std::to_string(rg.pickKeyRandomlyFromMap(t.idxs)));
+                iip->mutable_idx()->set_index("i" + std::to_string(rg.pickRandomly(t.idxs)));
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
                     generateNextTablePartition(rg, false, t, iip->mutable_single_partition()->mutable_partition());
@@ -1341,7 +1337,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + 1))
             {
-                ati->mutable_drop_index()->set_index("i" + std::to_string(rg.pickKeyRandomlyFromMap(t.idxs)));
+                ati->mutable_drop_index()->set_index("i" + std::to_string(rg.pickRandomly(t.idxs)));
             }
             else if (
                 column_remove_property
@@ -1352,8 +1348,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 RemoveColumnProperty * rcs = ati->mutable_column_remove_property();
 
-                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
-                columnPathRef(rg.pickRandomlyFromVector(this->entries), rcs->mutable_col());
+                flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomly(this->entries), rcs->mutable_col());
                 this->entries.clear();
                 rcs->set_property(static_cast<RemoveColumnProperty_ColumnProperties>(
                     (rg.nextRandomUInt32() % static_cast<uint32_t>(RemoveColumnProperty::ColumnProperties_MAX)) + 1));
@@ -1368,10 +1364,10 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 ModifyColumnSetting * mcp = ati->mutable_column_modify_setting();
                 const auto & csettings = allColumnSettings.at(t.teng);
 
-                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
-                columnPathRef(rg.pickRandomlyFromVector(this->entries), mcp->mutable_col());
+                flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomly(this->entries), mcp->mutable_col());
                 this->entries.clear();
-                generateSettingValues(rg, csettings, mcp->mutable_settings());
+                generateSettingValues(rg, csettings, mcp->mutable_setting_values());
             }
             else if (
                 column_remove_setting
@@ -1384,10 +1380,10 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 RemoveColumnSetting * rcp = ati->mutable_column_remove_setting();
                 const auto & csettings = allColumnSettings.at(t.teng);
 
-                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
-                columnPathRef(rg.pickRandomlyFromVector(this->entries), rcp->mutable_col());
+                flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomly(this->entries), rcp->mutable_col());
                 this->entries.clear();
-                generateSettingList(rg, csettings, rcp->mutable_settings());
+                generateSettingList(rg, csettings, rcp->mutable_setting_values());
             }
             else if (
                 table_modify_setting
@@ -1397,9 +1393,19 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + 1))
             {
-                const auto & tsettings = allTableSettings.at(t.teng);
+                SettingValues * svs = ati->mutable_table_modify_setting();
+                const auto & engineSettings = allTableSettings.at(t.teng);
 
-                generateSettingValues(rg, tsettings, ati->mutable_table_modify_setting());
+                if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
+                {
+                    /// Modify table engine settings
+                    generateSettingValues(rg, engineSettings, svs);
+                }
+                if (!svs->has_set_value() || rg.nextSmallNumber() < 4)
+                {
+                    /// Modify server settings
+                    generateSettingValues(rg, serverSettings, svs);
+                }
             }
             else if (
                 table_remove_setting
@@ -1409,9 +1415,19 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + 1))
             {
-                const auto & tsettings = allTableSettings.at(t.teng);
+                SettingList * sl = ati->mutable_table_remove_setting();
+                const auto & engineSettings = allTableSettings.at(t.teng);
 
-                generateSettingList(rg, tsettings, ati->mutable_table_remove_setting());
+                if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
+                {
+                    /// Remove table engine settings
+                    generateSettingList(rg, engineSettings, sl);
+                }
+                if (!sl->has_setting() || rg.nextSmallNumber() < 4)
+                {
+                    /// Remove server settings
+                    generateSettingList(rg, serverSettings, sl);
+                }
             }
             else if (
                 add_projection
@@ -1431,7 +1447,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection + 1))
             {
-                ati->mutable_remove_projection()->set_projection("p" + std::to_string(rg.pickRandomlyFromSet(t.projs)));
+                ati->mutable_remove_projection()->set_projection("p" + std::to_string(rg.pickRandomly(t.projs)));
             }
             else if (
                 materialize_projection
@@ -1444,7 +1460,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 ProjectionInPartition * pip = ati->mutable_materialize_projection();
 
-                pip->mutable_proj()->set_projection("p" + std::to_string(rg.pickRandomlyFromSet(t.projs)));
+                pip->mutable_proj()->set_projection("p" + std::to_string(rg.pickRandomly(t.projs)));
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
                     generateNextTablePartition(rg, false, t, pip->mutable_single_partition()->mutable_partition());
@@ -1461,7 +1477,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 ProjectionInPartition * pip = ati->mutable_clear_projection();
 
-                pip->mutable_proj()->set_projection("p" + std::to_string(rg.pickRandomlyFromSet(t.projs)));
+                pip->mutable_proj()->set_projection("p" + std::to_string(rg.pickRandomly(t.projs)));
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
                     generateNextTablePartition(rg, false, t, pip->mutable_single_partition()->mutable_partition());
@@ -1487,7 +1503,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + 1))
             {
-                ati->mutable_remove_constraint()->set_constraint("c" + std::to_string(rg.pickRandomlyFromSet(t.constrs)));
+                ati->mutable_remove_constraint()->set_constraint("c" + std::to_string(rg.pickRandomly(t.constrs)));
             }
             else if (
                 detach_partition
@@ -1620,15 +1636,10 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 AttachPartitionFrom * apf = ati->mutable_move_partition_to();
                 PartitionExpr * pexpr = apf->mutable_single_partition()->mutable_partition();
-                ExprSchemaTable * est2 = apf->mutable_est();
-                const SQLTable & t2 = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
+                const SQLTable & t2 = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
                 pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(false, true, dname, tname));
-                if (t2.db)
-                {
-                    est2->mutable_database()->set_database("d" + std::to_string(t2.db->dname));
-                }
-                est2->mutable_table()->set_table("t" + std::to_string(t2.tname));
+                t2.setName(apf->mutable_est(), false);
             }
             else if (
                 clear_column_partition
@@ -1644,8 +1655,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 PartitionExpr * pexpr = ccip->mutable_single_partition()->mutable_partition();
 
                 pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(false, true, dname, tname));
-                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
-                columnPathRef(rg.pickRandomlyFromVector(this->entries), ccip->mutable_col());
+                flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomly(this->entries), ccip->mutable_col());
                 this->entries.clear();
             }
             else if (
@@ -1680,7 +1691,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + freeze_partition + unfreeze_partition + 1))
             {
                 FreezePartition * fp = ati->mutable_unfreeze_partition();
-                const uint32_t fname = rg.pickKeyRandomlyFromMap(t.frozen_partitions);
+                const uint32_t fname = rg.pickRandomly(t.frozen_partitions);
                 const String & partition_id = t.frozen_partitions[fname];
 
                 if (!partition_id.empty())
@@ -1704,7 +1715,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 PartitionExpr * pexpr = ccip->mutable_single_partition()->mutable_partition();
 
                 pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(false, true, dname, tname));
-                ccip->mutable_idx()->set_index("i" + std::to_string(rg.pickKeyRandomlyFromMap(t.idxs)));
+                ccip->mutable_idx()->set_index("i" + std::to_string(rg.pickRandomly(t.idxs)));
             }
             else if (
                 move_partition
@@ -1734,7 +1745,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
                        + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + 1))
             {
-                flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
+                flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
                 generateNextTTL(rg, t, nullptr, ati->mutable_modify_ttl());
                 this->entries.clear();
             }
@@ -1783,6 +1794,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
     {
         generateSettingValues(rg, serverSettings, at->mutable_setting_values());
     }
+    this->enforce_final = prev_enforce_final;
+    this->allow_not_deterministic = prev_allow_not_deterministic;
 }
 
 void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
@@ -1790,46 +1803,44 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     SQLObjectName * sot = att->mutable_object();
     const uint32_t attach_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(detached_tables));
     const uint32_t attach_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(detached_views));
+    const uint32_t attach_dictionary = 10 * static_cast<uint32_t>(collectionHas<SQLDictionary>(detached_dictionaries));
     const uint32_t attach_database = 2 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases));
-    const uint32_t prob_space = attach_table + attach_view + attach_database;
+    const uint32_t prob_space = attach_table + attach_view + attach_dictionary + attach_database;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     std::optional<String> cluster;
 
     if (attach_table && nopt < (attach_table + 1))
     {
-        ExprSchemaTable * est = sot->mutable_est();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(detached_tables));
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(detached_tables));
 
         cluster = t.getCluster();
         att->set_sobject(SQLObject::TABLE);
-        if (t.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-        }
-        est->mutable_table()->set_table("t" + std::to_string(t.tname));
+        t.setName(sot->mutable_est(), false);
     }
     else if (attach_view && nopt < (attach_table + attach_view + 1))
     {
-        ExprSchemaTable * est = sot->mutable_est();
-        const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(detached_views));
+        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(detached_views));
 
         cluster = v.getCluster();
         att->set_sobject(SQLObject::TABLE);
-        if (v.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(v.db->dname));
-        }
-        est->mutable_table()->set_table("v" + std::to_string(v.tname));
+        v.setName(sot->mutable_est(), false);
     }
-    else if (attach_database)
+    else if (attach_dictionary && nopt < (attach_table + attach_view + attach_dictionary + 1))
     {
-        const std::shared_ptr<SQLDatabase> & d
-            = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(detached_databases));
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(detached_dictionaries));
+
+        cluster = d.getCluster();
+        att->set_sobject(SQLObject::DICTIONARY);
+        d.setName(sot->mutable_est(), false);
+    }
+    else if (attach_database && nopt < (attach_table + attach_view + attach_dictionary + attach_database + 1))
+    {
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(detached_databases));
 
         cluster = d->getCluster();
         att->set_sobject(SQLObject::DATABASE);
-        sot->mutable_database()->set_database("d" + std::to_string(d->dname));
+        d->setName(sot->mutable_database());
     }
     else
     {
@@ -1854,46 +1865,44 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     SQLObjectName * sot = det->mutable_object();
     const uint32_t detach_table = 10 * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 3);
     const uint32_t detach_view = 10 * static_cast<uint32_t>(collectionCount<SQLView>(attached_views) > 3);
+    const uint32_t detach_dictionary = 10 * static_cast<uint32_t>(collectionCount<SQLDictionary>(attached_dictionaries) > 3);
     const uint32_t detach_database = 2 * static_cast<uint32_t>(collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
-    const uint32_t prob_space = detach_table + detach_view + detach_database;
+    const uint32_t prob_space = detach_table + detach_view + detach_dictionary + detach_database;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     std::optional<String> cluster;
 
     if (detach_table && nopt < (detach_table + 1))
     {
-        ExprSchemaTable * est = sot->mutable_est();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
         cluster = t.getCluster();
         det->set_sobject(SQLObject::TABLE);
-        if (t.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-        }
-        est->mutable_table()->set_table("t" + std::to_string(t.tname));
+        t.setName(sot->mutable_est(), false);
     }
     else if (detach_view && nopt < (detach_table + detach_view + 1))
     {
-        ExprSchemaTable * est = sot->mutable_est();
-        const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views));
+        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
 
         cluster = v.getCluster();
         det->set_sobject(SQLObject::TABLE);
-        if (v.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(v.db->dname));
-        }
-        est->mutable_table()->set_table("v" + std::to_string(v.tname));
+        v.setName(sot->mutable_est(), false);
     }
-    else if (detach_database)
+    else if (detach_dictionary && nopt < (detach_table + detach_view + detach_dictionary + 1))
     {
-        const std::shared_ptr<SQLDatabase> & d
-            = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
+
+        cluster = d.getCluster();
+        det->set_sobject(SQLObject::DICTIONARY);
+        d.setName(sot->mutable_est(), false);
+    }
+    else if (detach_database && nopt < (detach_table + detach_view + detach_dictionary + detach_database + 1))
+    {
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
         cluster = d->getCluster();
         det->set_sobject(SQLObject::DATABASE);
-        sot->mutable_database()->set_database("d" + std::to_string(d->dname));
+        d->setName(sot->mutable_database());
     }
     else
     {
@@ -1903,7 +1912,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     {
         det->mutable_cluster()->set_cluster(cluster.value());
     }
-    det->set_permanently(!detach_database && rg.nextSmallNumber() < 4);
+    det->set_permanently(det->sobject() != SQLObject::DATABASE && rg.nextSmallNumber() < 4);
     det->set_sync(rg.nextSmallNumber() < 4);
     if (rg.nextSmallNumber() < 3)
     {
@@ -1912,6 +1921,8 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
 }
 
 static const auto has_merge_tree_func = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(); };
+
+static const auto has_distributed_func = [](const SQLTable & t) { return t.isAttached() && t.isDistributedEngine(); };
 
 static const auto has_refreshable_view_func = [](const SQLView & v) { return v.isAttached() && v.is_refreshable; };
 
@@ -1984,8 +1995,14 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
     const uint32_t drop_s3_client_cache = 3;
     const uint32_t flush_async_insert_queue = 3;
     const uint32_t sync_filesystem_cache = 3;
-    const uint32_t drop_cache = 3;
     const uint32_t drop_skip_index_cache = 3;
+    /// for dictionaries
+    const uint32_t reload_dictionary = 8 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
+    /// for distributed tables
+    const uint32_t flush_distributed = 8 * static_cast<uint32_t>(collectionHas<SQLTable>(has_distributed_func));
+    const uint32_t stop_distributed_sends = 8 * static_cast<uint32_t>(collectionHas<SQLTable>(has_distributed_func));
+    const uint32_t start_distributed_sends = 8 * static_cast<uint32_t>(collectionHas<SQLTable>(has_distributed_func));
+    const uint32_t drop_query_condition_cache = 3;
     const uint32_t prob_space = reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
         + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
         + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
@@ -1995,10 +2012,12 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         + drop_filesystem_cache + sync_file_cache + load_pks + load_pk + unload_pks + unload_pk + refresh_views + refresh_view + stop_views
         + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache + prewarm_primary_index_cache
         + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache + drop_index_uncompressed_cache + drop_mmap_cache
-        + drop_page_cache + drop_schema_cache + drop_s3_client_cache + flush_async_insert_queue + sync_filesystem_cache + drop_cache
-        + drop_skip_index_cache;
+        + drop_page_cache + drop_schema_cache + drop_s3_client_cache + flush_async_insert_queue + sync_filesystem_cache
+        + drop_skip_index_cache + reload_dictionary + flush_distributed + stop_distributed_sends + start_distributed_sends
+        + drop_query_condition_cache;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
+    std::optional<String> cluster;
 
     if (reload_embedded_dictionaries && nopt < (reload_embedded_dictionaries + 1))
     {
@@ -2020,9 +2039,10 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         reload_function
         && nopt < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function + 1))
     {
-        const uint32_t & fname = rg.pickKeyRandomlyFromMap(this->functions);
+        const SQLFunction & f = rg.pickValueRandomlyFromMap(this->functions);
 
-        sc->mutable_reload_function()->set_function("f" + std::to_string(fname));
+        f.setName(sc->mutable_reload_function());
+        cluster = f.getCluster();
     }
     else if (
         reload_asynchronous_metrics
@@ -2117,7 +2137,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_merges());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_merges());
     }
     else if (
         start_merges
@@ -2126,7 +2146,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_merges());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_merges());
     }
     else if (
         stop_ttl_merges
@@ -2136,7 +2156,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_ttl_merges());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_ttl_merges());
     }
     else if (
         start_ttl_merges
@@ -2146,7 +2166,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_ttl_merges());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_ttl_merges());
     }
     else if (
         stop_moves
@@ -2156,7 +2176,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_moves());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_moves());
     }
     else if (
         start_moves
@@ -2166,7 +2186,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_moves());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_moves());
     }
     else if (
         wait_loading_parts
@@ -2176,7 +2196,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_wait_loading_parts());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_wait_loading_parts());
     }
     else if (
         stop_fetches
@@ -2186,7 +2206,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_fetches());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_fetches());
     }
     else if (
         start_fetches
@@ -2196,7 +2216,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_fetches());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_fetches());
     }
     else if (
         stop_replicated_sends
@@ -2207,7 +2227,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_replicated_sends());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_replicated_sends());
     }
     else if (
         start_replicated_sends
@@ -2218,7 +2238,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_replicated_sends());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_replicated_sends());
     }
     else if (
         stop_replication_queues
@@ -2229,7 +2249,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_replication_queues());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_replication_queues());
     }
     else if (
         start_replication_queues
@@ -2240,7 +2260,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_replication_queues());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_replication_queues());
     }
     else if (
         stop_pulling_replication_log
@@ -2252,7 +2272,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_pulling_replication_log());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_pulling_replication_log());
     }
     else if (
         start_pulling_replication_log
@@ -2264,7 +2284,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_pulling_replication_log());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_pulling_replication_log());
     }
     else if (
         sync_replica
@@ -2280,7 +2300,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
 
         srep->set_policy(
             static_cast<SyncReplica_SyncPolicy>((rg.nextRandomUInt32() % static_cast<uint32_t>(SyncReplica::SyncPolicy_MAX)) + 1));
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, srep->mutable_est());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, srep->mutable_est());
     }
     else if (
         sync_replicated_database
@@ -2292,10 +2312,10 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + 1))
     {
-        const std::shared_ptr<SQLDatabase> & d
-            = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
-        sc->mutable_sync_replicated_database()->set_database("d" + std::to_string(d->dname));
+        d->setName(sc->mutable_sync_replicated_database());
+        cluster = d->getCluster();
     }
     else if (
         restart_replica
@@ -2308,7 +2328,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_restart_replica());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_restart_replica());
     }
     else if (
         restore_replica
@@ -2321,7 +2341,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_restore_replica());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_restore_replica());
     }
     else if (
         restart_replicas
@@ -2386,7 +2406,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_load_pk());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_load_pk());
     }
     else if (
         unload_pks
@@ -2413,7 +2433,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_unload_pk());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_unload_pk());
     }
     else if (
         refresh_views
@@ -2441,7 +2461,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + 1))
     {
-        setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_refresh_view());
+        cluster = setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_refresh_view());
     }
     else if (
         stop_views
@@ -2469,7 +2489,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + stop_views + stop_view + 1))
     {
-        setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_stop_view());
+        cluster = setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_stop_view());
     }
     else if (
         start_views
@@ -2497,7 +2517,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + 1))
     {
-        setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_start_view());
+        cluster = setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_start_view());
     }
     else if (
         cancel_view
@@ -2511,7 +2531,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + 1))
     {
-        setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_cancel_view());
+        cluster = setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_cancel_view());
     }
     else if (
         wait_view
@@ -2525,7 +2545,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + 1))
     {
-        setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_wait_view());
+        cluster = setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_wait_view());
     }
     else if (
         prewarm_cache
@@ -2540,7 +2560,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
                + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_prewarm_cache());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_prewarm_cache());
     }
     else if (
         prewarm_primary_index_cache
@@ -2555,7 +2575,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
                + prewarm_primary_index_cache + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_prewarm_primary_index_cache());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_prewarm_primary_index_cache());
     }
     else if (
         drop_connections_cache
@@ -2717,23 +2737,6 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         sc->set_sync_filesystem_cache(true);
     }
     else if (
-        drop_cache
-        && nopt
-            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
-               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
-               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
-               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
-               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
-               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
-               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
-               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
-               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
-               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
-               + flush_async_insert_queue + sync_filesystem_cache + drop_cache + 1))
-    {
-        sc->set_drop_cache(true);
-    }
-    else if (
         drop_skip_index_cache
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
@@ -2746,27 +2749,118 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
                + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
-               + flush_async_insert_queue + sync_filesystem_cache + drop_cache + drop_skip_index_cache + 1))
+               + flush_async_insert_queue + sync_filesystem_cache + drop_skip_index_cache + 1))
     {
         sc->set_drop_skip_index_cache(true);
+    }
+    else if (
+        reload_dictionary
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_skip_index_cache + reload_dictionary + 1))
+    {
+        cluster = setTableSystemStatement<SQLDictionary>(rg, attached_dictionaries, sc->mutable_reload_dictionary());
+    }
+    else if (
+        flush_distributed
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_skip_index_cache + reload_dictionary + flush_distributed + 1))
+    {
+        cluster = setTableSystemStatement<SQLTable>(rg, has_distributed_func, sc->mutable_flush_distributed());
+    }
+    else if (
+        stop_distributed_sends
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_skip_index_cache + reload_dictionary + flush_distributed
+               + stop_distributed_sends + 1))
+    {
+        cluster = setTableSystemStatement<SQLTable>(rg, has_distributed_func, sc->mutable_stop_distributed_sends());
+    }
+    else if (
+        start_distributed_sends
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_skip_index_cache + reload_dictionary + flush_distributed
+               + stop_distributed_sends + start_distributed_sends + 1))
+    {
+        cluster = setTableSystemStatement<SQLTable>(rg, has_distributed_func, sc->mutable_start_distributed_sends());
+    }
+    else if (
+        drop_query_condition_cache
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_skip_index_cache + reload_dictionary + flush_distributed
+               + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + 1))
+    {
+        sc->set_drop_query_condition_cache(true);
     }
     else
     {
         chassert(0);
     }
+
+    /// Set cluster option when that's the case
+    if (cluster.has_value())
+    {
+        sc->mutable_cluster()->set_cluster(cluster.value());
+    }
+    else if (!fc.clusters.empty() && rg.nextSmallNumber() < 4)
+    {
+        sc->mutable_cluster()->set_cluster(rg.pickRandomly(fc.clusters));
+    }
 }
 
-static std::optional<String> backupOrRestoreTable(BackupRestoreObject * bro, const SQLObject obj, const SQLBase & b)
+static std::optional<String> backupOrRestoreObject(BackupRestoreObject * bro, const SQLObject obj, const SQLBase & b)
 {
-    ExprSchemaTable * est = bro->mutable_object()->mutable_est();
-
     bro->set_is_temp(b.is_temp);
     bro->set_sobject(obj);
-    if (b.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(b.db->dname));
-    }
-    est->mutable_table()->set_table(((obj == SQLObject::TABLE) ? "t" : "v") + std::to_string(b.tname));
     return b.getCluster();
 }
 
@@ -2782,7 +2876,7 @@ static void backupOrRestoreSystemTable(BackupRestoreObject * bro, const String &
 static std::optional<String> backupOrRestoreDatabase(BackupRestoreObject * bro, const std::shared_ptr<SQLDatabase> & d)
 {
     bro->set_sobject(SQLObject::DATABASE);
-    bro->mutable_object()->mutable_database()->set_database("d" + std::to_string(d->dname));
+    d->setName(bro->mutable_object()->mutable_database());
     return d->getCluster();
 }
 
@@ -2791,10 +2885,11 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     const uint32_t backup_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
     const uint32_t backup_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
     const uint32_t backup_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
+    const uint32_t backup_dictionary = 10 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
     const uint32_t backup_database = 10 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
     const uint32_t all_temporary = 3;
     const uint32_t everything = 3;
-    const uint32_t prob_space = backup_table + backup_system_table + backup_view + backup_database;
+    const uint32_t prob_space = backup_table + backup_system_table + backup_view + backup_dictionary + backup_database;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     BackupRestoreElement * bre = br->mutable_backup_element();
@@ -2804,12 +2899,13 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     if (backup_table && nopt < (backup_table + 1))
     {
         BackupRestoreObject * bro = bre->mutable_bobject();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
         const String dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
         const String tname = "t" + std::to_string(t.tname);
         const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
 
-        cluster = backupOrRestoreTable(bro, SQLObject::TABLE, t);
+        t.setName(bro->mutable_object()->mutable_est(), false);
+        cluster = backupOrRestoreObject(bro, SQLObject::TABLE, t);
         if (table_has_partitions && rg.nextSmallNumber() < 4)
         {
             bro->add_partitions()->set_partition_id(fc.tableGetRandomPartitionOrPart(false, true, dname, tname));
@@ -2817,23 +2913,38 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     }
     else if (backup_system_table && nopt < (backup_table + backup_system_table + 1))
     {
-        backupOrRestoreSystemTable(bre->mutable_bobject(), rg.pickKeyRandomlyFromMap(systemTables));
+        backupOrRestoreSystemTable(bre->mutable_bobject(), rg.pickRandomly(systemTables));
     }
     else if (backup_view && nopt < (backup_table + backup_system_table + backup_view + 1))
     {
-        cluster = backupOrRestoreTable(
-            bre->mutable_bobject(), SQLObject::VIEW, rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views)));
+        BackupRestoreObject * bro = bre->mutable_bobject();
+        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
+
+        v.setName(bro->mutable_object()->mutable_est(), false);
+        cluster = backupOrRestoreObject(bro, SQLObject::VIEW, v);
     }
-    else if (backup_database && nopt < (backup_table + backup_system_table + backup_view + backup_database + 1))
+    else if (backup_dictionary && nopt < (backup_table + backup_system_table + backup_view + backup_dictionary + 1))
+    {
+        BackupRestoreObject * bro = bre->mutable_bobject();
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
+
+        d.setName(bro->mutable_object()->mutable_est(), false);
+        cluster = backupOrRestoreObject(bro, SQLObject::DICTIONARY, d);
+    }
+    else if (backup_database && nopt < (backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + 1))
     {
         cluster = backupOrRestoreDatabase(
-            bre->mutable_bobject(), rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)));
+            bre->mutable_bobject(), rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)));
     }
-    else if (all_temporary && nopt < (backup_table + backup_system_table + backup_view + backup_database + all_temporary + 1))
+    else if (
+        all_temporary
+        && nopt < (backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + all_temporary + 1))
     {
         bre->set_all_temporary(true);
     }
-    else if (everything && nopt < (backup_table + backup_system_table + backup_view + backup_database + all_temporary + everything + 1))
+    else if (
+        everything
+        && nopt < (backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + all_temporary + everything + 1))
     {
         bre->set_all(true);
     }
@@ -2865,23 +2976,23 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     }
     if (nopt2 < (out_to_disk + out_to_file + out_to_s3 + 1) && rg.nextBool())
     {
-        static const DB::Strings & backup_formats = {"tar", "zip", "tzst", "tgz"};
-        const String & nsuffix = rg.pickRandomlyFromVector(backup_formats);
+        static const DB::Strings & backupFormats = {"tar", "zip", "tzst", "tgz"};
+        const String & nsuffix = rg.pickRandomly(backupFormats);
 
         backup_file += ".";
         backup_file += nsuffix;
         if (nsuffix == "tar" && rg.nextBool())
         {
-            static const DB::Strings & tar_suffixes = {"gz", "bz2", "lzma", "zst", "xz"};
+            static const DB::Strings & tarSuffixes = {"gz", "bz2", "lzma", "zst", "xz"};
 
             backup_file += ".";
-            backup_file += rg.pickRandomlyFromVector(tar_suffixes);
+            backup_file += rg.pickRandomly(tarSuffixes);
         }
     }
     if (out_to_disk && (nopt2 < out_to_disk + 1))
     {
         outf = BackupRestore_BackupOutput_Disk;
-        br->add_out_params(rg.pickRandomlyFromVector(fc.disks));
+        br->add_out_params(rg.pickRandomly(fc.disks));
         br->add_out_params(std::move(backup_file));
     }
     else if (out_to_file && (nopt2 < out_to_disk + out_to_file + 1))
@@ -2926,8 +3037,9 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
         const uint32_t restore_table = 10 * static_cast<uint32_t>(!backup.tables.empty());
         const uint32_t restore_system_table = 3 * static_cast<uint32_t>(backup.system_table.has_value());
         const uint32_t restore_view = 10 * static_cast<uint32_t>(!backup.views.empty());
+        const uint32_t restore_dictionary = 10 * static_cast<uint32_t>(!backup.dictionaries.empty());
         const uint32_t restore_database = 10 * static_cast<uint32_t>(!backup.databases.empty());
-        const uint32_t prob_space = restore_table + restore_system_table + restore_view + restore_database;
+        const uint32_t prob_space = restore_table + restore_system_table + restore_view + restore_dictionary + restore_database;
         std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
         const uint32_t nopt = next_dist(rg.generator);
 
@@ -2936,7 +3048,8 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
             BackupRestoreObject * bro = bre->mutable_bobject();
             const SQLTable & t = rg.pickValueRandomlyFromMap(backup.tables);
 
-            cluster = backupOrRestoreTable(bro, SQLObject::TABLE, t);
+            t.setName(bro->mutable_object()->mutable_est(), false);
+            cluster = backupOrRestoreObject(bro, SQLObject::TABLE, t);
             if (backup.partition_id.has_value() && rg.nextSmallNumber() < 4)
             {
                 bro->add_partitions()->set_partition_id(backup.partition_id.value());
@@ -2948,9 +3061,22 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
         }
         else if (restore_view && nopt < (restore_table + restore_system_table + restore_view + 1))
         {
-            cluster = backupOrRestoreTable(bre->mutable_bobject(), SQLObject::VIEW, rg.pickValueRandomlyFromMap(backup.views));
+            BackupRestoreObject * bro = bre->mutable_bobject();
+            const SQLView & v = rg.pickValueRandomlyFromMap(backup.views);
+
+            v.setName(bro->mutable_object()->mutable_est(), false);
+            cluster = backupOrRestoreObject(bro, SQLObject::VIEW, v);
         }
-        else if (restore_database && nopt < (restore_table + restore_system_table + restore_view + restore_database + 1))
+        else if (restore_dictionary && nopt < (restore_table + restore_system_table + restore_view + restore_dictionary + 1))
+        {
+            BackupRestoreObject * bro = bre->mutable_bobject();
+            const SQLDictionary & d = rg.pickValueRandomlyFromMap(backup.dictionaries);
+
+            d.setName(bro->mutable_object()->mutable_est(), false);
+            cluster = backupOrRestoreObject(bro, SQLObject::DICTIONARY, d);
+        }
+        else if (
+            restore_database && nopt < (restore_table + restore_system_table + restore_view + restore_dictionary + restore_database + 1))
         {
             cluster = backupOrRestoreDatabase(bre->mutable_bobject(), rg.pickValueRandomlyFromMap(backup.databases));
         }
@@ -3031,11 +3157,12 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     const bool has_databases = collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases);
     const bool has_tables = collectionHas<SQLTable>(attached_tables);
 
-    const uint32_t create_table = 6 * static_cast<uint32_t>(has_databases && static_cast<uint32_t>(tables.size()) < this->fc.max_tables);
-    const uint32_t create_view = 10 * static_cast<uint32_t>(has_databases && static_cast<uint32_t>(views.size()) < this->fc.max_views);
+    const uint32_t create_table = 6 * static_cast<uint32_t>(static_cast<uint32_t>(tables.size()) < this->fc.max_tables);
+    const uint32_t create_view = 10 * static_cast<uint32_t>(static_cast<uint32_t>(views.size()) < this->fc.max_views);
     const uint32_t drop = 2
         * static_cast<uint32_t>(
                               collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
+                              || collectionCount<SQLDictionary>(attached_dictionaries) > 3
                               || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3);
     const uint32_t insert = 180 * static_cast<uint32_t>(has_tables);
     const uint32_t light_delete = 6 * static_cast<uint32_t>(has_tables);
@@ -3049,18 +3176,21 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     const uint32_t set_values = 5;
     const uint32_t attach = 2
         * static_cast<uint32_t>(collectionHas<SQLTable>(detached_tables) || collectionHas<SQLView>(detached_views)
+                                || collectionHas<SQLDictionary>(detached_dictionaries)
                                 || collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases));
     const uint32_t detach = 2
         * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
+                                || collectionCount<SQLDictionary>(attached_dictionaries) > 3
                                 || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
     const uint32_t create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases);
     const uint32_t create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions);
     const uint32_t system_stmt = 1;
     const uint32_t backup_or_restore = 1;
+    const uint32_t create_dictionary = 10 * static_cast<uint32_t>(static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries);
     const uint32_t select_query = 800;
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt
-        + backup_or_restore + select_query;
+        + backup_or_restore + create_dictionary + select_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -3178,11 +3308,20 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         generateNextBackupOrRestore(rg, sq->mutable_backup_restore());
     }
     else if (
+        create_dictionary
+        && nopt
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
+               + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt
+               + backup_or_restore + create_dictionary + 1))
+    {
+        generateNextCreateDictionary(rg, sq->mutable_create_dictionary());
+    }
+    else if (
         select_query
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
                + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt
-               + backup_or_restore + select_query + 1))
+               + backup_or_restore + create_dictionary + select_query + 1))
     {
         generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
     }
@@ -3206,7 +3345,7 @@ struct ExplainOptValues
 
 static const std::function<uint32_t(RandomGenerator &)> trueOrFalseInt = [](RandomGenerator & rg) { return rg.nextBool() ? 1 : 0; };
 
-static const std::vector<ExplainOptValues> explain_settings{
+static const std::vector<ExplainOptValues> explainSettings{
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_graph, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_optimize, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_oneline, trueOrFalseInt),
@@ -3298,7 +3437,7 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, ExplainQuery 
 
             for (size_t i = 0; i < noptions; i++)
             {
-                const auto & nopt = explain_settings[this->ids[i]];
+                const auto & nopt = explainSettings[this->ids[i]];
                 ExplainOption * eopt = eq->add_opts();
 
                 eopt->set_opt(nopt.opt);
@@ -3382,6 +3521,14 @@ void StatementGenerator::dropDatabase(const uint32_t dname)
             this->views.erase(it);
         }
     }
+    for (auto it = this->dictionaries.cbegin(), next_it = it; it != this->dictionaries.cend(); it = next_it)
+    {
+        ++next_it;
+        if (it->second.db && it->second.db->dname == dname)
+        {
+            this->dictionaries.erase(it);
+        }
+    }
     this->databases.erase(dname);
 }
 
@@ -3397,7 +3544,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
         if (!sq.explain().is_explain() && success)
         {
-            if (query.create_table().create_opt() == CreateTable_CreateTableOption::CreateTable_CreateTableOption_Replace)
+            if (query.create_table().create_opt() == CreateReplaceOption::Replace)
             {
                 dropTable(false, true, tname);
             }
@@ -3411,7 +3558,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
         if (!sq.explain().is_explain() && success)
         {
-            if (query.create_view().replace())
+            if (query.create_view().create_opt() == CreateReplaceOption::Replace)
             {
                 this->views.erase(tname);
             }
@@ -3419,23 +3566,46 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         }
         this->staged_views.erase(tname);
     }
+    else if (sq.has_explain() && query.has_create_dictionary())
+    {
+        const uint32_t dname = static_cast<uint32_t>(std::stoul(query.create_dictionary().est().table().table().substr(1)));
+
+        if (!sq.explain().is_explain() && success)
+        {
+            if (query.create_view().create_opt() == CreateReplaceOption::Replace)
+            {
+                this->dictionaries.erase(dname);
+            }
+            this->dictionaries[dname] = std::move(this->staged_dictionaries[dname]);
+        }
+        this->staged_dictionaries.erase(dname);
+    }
     else if (sq.has_explain() && !sq.explain().is_explain() && query.has_drop() && success)
     {
         const Drop & drp = query.drop();
+        const bool istable = drp.object().has_est() && drp.object().est().table().table()[0] == 't';
+        const bool isview = drp.object().has_est() && drp.object().est().table().table()[0] == 'v';
+        const bool isdictionary = drp.object().has_est() && drp.object().est().table().table()[0] == 'd';
+        const bool isdatabase = drp.object().has_database();
+        const bool isfunction = drp.object().has_function();
 
-        if (drp.sobject() == SQLObject::TABLE)
+        if (istable)
         {
             dropTable(false, true, static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
         }
-        else if (drp.sobject() == SQLObject::VIEW)
+        else if (isview)
         {
             this->views.erase(static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
         }
-        else if (drp.sobject() == SQLObject::DATABASE)
+        else if (isdictionary)
+        {
+            this->dictionaries.erase(static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
+        }
+        else if (isdatabase)
         {
             dropDatabase(static_cast<uint32_t>(std::stoul(drp.object().database().database().substr(1))));
         }
-        else if (drp.sobject() == SQLObject::FUNCTION)
+        else if (isfunction)
         {
             this->functions.erase(static_cast<uint32_t>(std::stoul(drp.object().function().function().substr(1))));
         }
@@ -3659,15 +3829,21 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         const Attach & att = query.attach();
         const bool istable = att.object().has_est() && att.object().est().table().table()[0] == 't';
         const bool isview = att.object().has_est() && att.object().est().table().table()[0] == 'v';
+        const bool isdictionary = att.object().has_est() && att.object().est().table().table()[0] == 'd';
         const bool isdatabase = att.object().has_database();
 
-        if (isview)
+        if (istable)
+        {
+            this->tables[static_cast<uint32_t>(std::stoul(att.object().est().table().table().substr(1)))].attached = DetachStatus::ATTACHED;
+        }
+        else if (isview)
         {
             this->views[static_cast<uint32_t>(std::stoul(att.object().est().table().table().substr(1)))].attached = DetachStatus::ATTACHED;
         }
-        else if (istable)
+        else if (isdictionary)
         {
-            this->tables[static_cast<uint32_t>(std::stoul(att.object().est().table().table().substr(1)))].attached = DetachStatus::ATTACHED;
+            this->dictionaries[static_cast<uint32_t>(std::stoul(att.object().est().table().table().substr(1)))].attached
+                = DetachStatus::ATTACHED;
         }
         else if (isdatabase)
         {
@@ -3688,17 +3864,23 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         const Detach & det = query.detach();
         const bool istable = det.object().has_est() && det.object().est().table().table()[0] == 't';
         const bool isview = det.object().has_est() && det.object().est().table().table()[0] == 'v';
+        const bool isdictionary = det.object().has_est() && det.object().est().table().table()[0] == 'd';
         const bool isdatabase = det.object().has_database();
         const bool is_permanent = det.permanently();
 
-        if (isview)
+        if (istable)
+        {
+            this->tables[static_cast<uint32_t>(std::stoul(det.object().est().table().table().substr(1)))].attached
+                = is_permanent ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED;
+        }
+        else if (isview)
         {
             this->views[static_cast<uint32_t>(std::stoul(det.object().est().table().table().substr(1)))].attached
                 = is_permanent ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED;
         }
-        else if (istable)
+        else if (isdictionary)
         {
-            this->tables[static_cast<uint32_t>(std::stoul(det.object().est().table().table().substr(1)))].attached
+            this->dictionaries[static_cast<uint32_t>(std::stoul(det.object().est().table().table().substr(1)))].attached
                 = is_permanent ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED;
         }
         else if (isdatabase)
@@ -3774,6 +3956,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
                 newb.tables = this->tables;
                 newb.views = this->views;
                 newb.databases = this->databases;
+                newb.dictionaries = this->dictionaries;
                 newb.everything = true;
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::TABLE)
@@ -3801,6 +3984,12 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
                 newb.views[vname] = this->views[vname];
             }
+            else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::DICTIONARY)
+            {
+                const uint32_t dname = static_cast<uint32_t>(std::stoul(bre.bobject().object().est().table().table().substr(1)));
+
+                newb.dictionaries[dname] = this->dictionaries[dname];
+            }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::DATABASE)
             {
                 const uint32_t dname = static_cast<uint32_t>(std::stoul(bre.bobject().object().database().database().substr(1)));
@@ -3809,14 +3998,21 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
                 {
                     if (val.db && val.db->dname == dname)
                     {
-                        newb.tables[key] = this->tables[key];
+                        newb.tables[key] = val;
                     }
                 }
                 for (const auto & [key, val] : this->views)
                 {
                     if (val.db && val.db->dname == dname)
                     {
-                        newb.views[key] = this->views[key];
+                        newb.views[key] = val;
+                    }
+                }
+                for (const auto & [key, val] : this->dictionaries)
+                {
+                    if (val.db && val.db->dname == dname)
+                    {
+                        newb.dictionaries[key] = val;
                     }
                 }
                 newb.databases[dname] = this->databases[dname];
@@ -3829,17 +4025,30 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
             if (!backup.partition_id.has_value())
             {
-                for (const auto & [key, _] : backup.tables)
+                for (const auto & [key, val] : backup.databases)
                 {
-                    this->tables[key] = backup.tables.at(key);
+                    this->databases[key] = val;
                 }
-                for (const auto & [key, _] : backup.views)
+                for (const auto & [key, val] : backup.tables)
                 {
-                    this->views[key] = backup.views.at(key);
+                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    {
+                        this->tables[key] = val;
+                    }
                 }
-                for (const auto & [key, _] : backup.databases)
+                for (const auto & [key, val] : backup.views)
                 {
-                    this->databases[key] = backup.databases.at(key);
+                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    {
+                        this->views[key] = val;
+                    }
+                }
+                for (const auto & [key, val] : backup.dictionaries)
+                {
+                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    {
+                        this->dictionaries[key] = val;
+                    }
                 }
             }
         }

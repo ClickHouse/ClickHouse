@@ -105,8 +105,6 @@ public:
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
     /// Returns true if query succeeded
     bool processTextAsSingleQuery(const String & full_query);
-
-    std::string getConnectionHostAndPortForFuzzing() const;
 protected:
     void runInteractive();
     void runNonInteractive();
@@ -191,6 +189,9 @@ protected:
     bool processQueryText(const String & text);
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
+
+    /// Used to check certain things that are considered unsafe for the embedded client
+    virtual bool isEmbeeddedClient() const = 0;
 
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);

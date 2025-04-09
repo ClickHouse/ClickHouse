@@ -11,7 +11,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
@@ -191,7 +190,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 encryption_codecs_pos.insert(i);
         }
 
-        String codec_description = queryToString(codecs_descriptions);
+        String codec_description = codecs_descriptions->formatWithSecretsOneLine();
 
         if (sanity_check)
         {
@@ -267,7 +266,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         return ast;
     }
 
-    throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", queryToString(ast));
+    throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", ast->formatForErrorMessage());
 }
 
 

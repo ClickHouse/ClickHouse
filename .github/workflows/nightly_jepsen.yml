@@ -55,8 +55,8 @@ jobs:
   dockers_build_arm:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: [config_workflow]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBidWlsZCAoYXJtKQ==') }}
-    name: "Dockers build (arm)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
+    name: "Dockers Build (arm)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -85,16 +85,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers build (arm)' --workflow "NightlyJepsen" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyJepsen" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Dockers build (arm)' --workflow "NightlyJepsen" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyJepsen" --ci |& tee ./ci/tmp/job.log
           fi
 
-  dockers_build_amd:
+  dockers_build_amd_and_merge:
     runs-on: [self-hosted, style-checker]
     needs: [config_workflow, dockers_build_arm]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBidWlsZCAoYW1kKQ==') }}
-    name: "Dockers build (amd)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKSBhbmQgTWVyZ2U=') }}
+    name: "Dockers Build (amd) and Merge"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -123,14 +123,14 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers build (amd)' --workflow "NightlyJepsen" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (amd) and Merge' --workflow "NightlyJepsen" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Dockers build (amd)' --workflow "NightlyJepsen" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (amd) and Merge' --workflow "NightlyJepsen" --ci |& tee ./ci/tmp/job.log
           fi
 
   build_amd_binary:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd]
+    needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
     name: "Build (amd_binary)"
     outputs:
@@ -168,7 +168,7 @@ jobs:
 
   clickhouse_keeper_jepsen:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, build_amd_binary]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_binary]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q2xpY2tIb3VzZSBLZWVwZXIgSmVwc2Vu') }}
     name: "ClickHouse Keeper Jepsen"
     outputs:

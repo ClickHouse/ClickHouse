@@ -74,6 +74,10 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
+    void renameExchange(const std::string & old_path, const std::string & new_path) override;
+
+    bool renameExchangeIfSupported(const std::string & old_path, const std::string & new_path) override;
+
     void removeFile(const String & path) override { removeSharedFile(path, false); }
 
     void removeFileIfExists(const String & path) override { removeSharedFileIfExists(path, false); }
@@ -124,7 +128,11 @@ public:
 
     void removeDirectory(const String & path) override;
 
+    void removeDirectoryIfExists(const String & path) override;
+
     DirectoryIteratorPtr iterateDirectory(const String & path) const override;
+
+    bool isDirectoryEmpty(const String & path) const override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
@@ -206,6 +214,8 @@ public:
     bool isWriteOnce() const override;
 
     bool supportsHardLinks() const override;
+
+    bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)

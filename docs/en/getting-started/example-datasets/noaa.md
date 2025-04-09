@@ -1,9 +1,9 @@
 ---
-description: "2.5 billion rows of climate data for the last 120 yrs"
-slug: /getting-started/example-datasets/noaa
-sidebar_label: NOAA Global Historical Climatology Network 
+description: '2.5 billion rows of climate data for the last 120 yrs'
+sidebar_label: 'NOAA Global Historical Climatology Network '
 sidebar_position: 1
-title: "NOAA Global Historical Climatology Network"
+slug: /getting-started/example-datasets/noaa
+title: 'NOAA Global Historical Climatology Network'
 ---
 
 This dataset contains weather measurements for the last 120 years. Each row is a measurement for a point in time and station.
