@@ -19,6 +19,7 @@
 
 
 #include <openssl/crypto.h>
+#include <openssl/provider.h>
 #include "Poco/AtomicCounter.h"
 #include "Poco/Crypto/Crypto.h"
 #include "Poco/Mutex.h"
@@ -83,6 +84,8 @@ namespace Crypto
     private:
         static Poco::FastMutex * _mutexes;
         static Poco::AtomicCounter _rc;
+
+        static OSSL_PROVIDER * legacy_provider;
     };
 
 

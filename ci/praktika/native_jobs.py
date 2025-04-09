@@ -165,7 +165,7 @@ def _build_dockers(workflow, job_name):
                     config=docker,
                     digests=docker_digests,
                     with_log=True,
-                    add_latest=False,
+                    add_latest=workflow.set_latest_in_dockers_build,
                 )
             )
 
@@ -247,6 +247,21 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         custom_data={},
     ).dump()
 
+    if env.PR_NUMBER > 0:
+        # refresh PR data
+        title, body, labels = GH.get_pr_title_body_labels()
+        if title:
+            if title != env.PR_TITLE:
+                print("PR title has been changed")
+                env.PR_TITLE = title
+            if env.PR_BODY != body:
+                print("PR body has been changed")
+                env.PR_BODY = body
+            if env.PR_LABELS != labels:
+                print("PR labels have been changed")
+                env.PR_LABELS = labels
+            env.dump()
+
     if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
         res_ = []
@@ -264,7 +279,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
 
     # checks:
-    if results[-1].is_ok():
+    if not results or results[-1].is_ok():
         result_ = _check_yaml_up_to_date()
         if result_.status != Result.Status.SUCCESS:
             print("ERROR: yaml files are outdated - regenerate, commit and push")
@@ -304,7 +319,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
-    if workflow.workflow_filter_hooks:
+    if results[-1].is_ok() and workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
             for job in workflow.jobs:
@@ -505,4 +520,4 @@ if __name__ == "__main__":
             # info=f"Failed with Exception [{e}]\n{error_traceback}",
         )
 
-    result.dump().complete_job()
+    result.dump().complete_job(with_job_summary_in_info=False)
