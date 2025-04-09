@@ -38,7 +38,7 @@ class JobConfigs:
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.BUILDER_AMD,
         command="python3 ./ci/jobs/fast_test.py",
-        run_in_docker="clickhouse/fasttest",
+        run_in_docker="clickhouse/fasttest+--network=host",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/fast_test.py",
