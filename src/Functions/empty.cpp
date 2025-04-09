@@ -161,8 +161,61 @@ public:
 
 REGISTER_FUNCTION(Empty)
 {
-    factory.registerFunction<FunctionEmptyOverloadResolver<true, NameNotEmpty>>();
-    factory.registerFunction<FunctionEmptyOverloadResolver<false, NameEmpty>>();
+    FunctionDocumentation::Description description_notEmpty = R"(
+    Checks whether the input array is non-empty.
+
+    - An array is considered non-empty if it contains at least one element.
+    - A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
+    - The UUID is considered empty if it contains all zeros (zero UUID).
+
+    :::note Arrays
+    Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/operations/settings/settings#optimize_functions_to_subcolumns).
+    With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead
+    of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;`
+    transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+    :::
+
+    )";
+    FunctionDocumentation::Syntax syntax_notEmpty = "notEmpty(x)";
+    FunctionDocumentation::Argument argument1_notEmpty = {"x", "Array, string or UUID to check"};
+    FunctionDocumentation::Arguments arguments_notEmpty = {argument1_notEmpty};
+    FunctionDocumentation::ReturnedValue returned_value_notEmpty = "Returns `1` if not empty, otherwise `0`";
+    FunctionDocumentation::Example example1_notEmpty = {"notEmpty with an array", "SELECT notEmpty([1, 2, 3])", "1"};
+    FunctionDocumentation::Example example2_notEmpty = {"notEmpty with a string", "SELECT notEmpty('Hello World')", "1"};
+    FunctionDocumentation::Example example3_notEmpty = {"notEmpty with a uuid", "SELECT notEmpty(generateUUIDv4())", "1"};
+    FunctionDocumentation::Examples examples_notEmpty = {example1_notEmpty, example2_notEmpty, example3_notEmpty};
+    FunctionDocumentation::Category categories_notEmpty = {"array, string, uuid"};
+    FunctionDocumentation documentation_notEmpty = {description_notEmpty, syntax_notEmpty, arguments_notEmpty, returned_value_notEmpty, examples_notEmpty, categories_notEmpty};
+
+    factory.registerFunction<FunctionEmptyOverloadResolver<true, NameNotEmpty>>(documentation_notEmpty);
+
+    FunctionDocumentation::Description description_empty = R"(
+    Checks whether an input array, string or UUID is empty.
+
+    - An array is considered empty if it does not contain any elements.
+    - A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
+    - The UUID is considered empty if it contains all zeros (zero UUID).
+
+    :::note Arrays
+    Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/operations/settings/settings#optimize_functions_to_subcolumns).
+    With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead
+    of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;`
+    transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+    :::
+
+    )";
+    FunctionDocumentation::Syntax syntax_empty = "empty(x)";
+    FunctionDocumentation::Argument argument1_empty = {"x", "Array, string or UUID to check"};
+    FunctionDocumentation::Arguments arguments_empty = {argument1_empty};
+    FunctionDocumentation::ReturnedValue returned_value_empty = "Returns `1` if empty, otherwise `0`";
+    FunctionDocumentation::Example example1_empty = {"empty with an array", "SELECT empty([])", "1"};
+    FunctionDocumentation::Example example2_empty = {"empty with a string", "SELECT empty('')", "1"};
+    FunctionDocumentation::Example example3_empty = {"empty with a uuid", "SELECT empty(generateUUIDv4())", "0"};
+    FunctionDocumentation::Examples examples_empty = {example1_empty, example2_empty, example3_empty};
+    FunctionDocumentation::Category categories_empty = {"array, string, uuid"};
+    FunctionDocumentation documentation_empty = {description_empty, syntax_empty, arguments_empty, returned_value_empty, examples_empty, categories_empty};
+
+    factory.registerFunction<FunctionEmptyOverloadResolver<false, NameEmpty>>(documentation_empty);
 
 }
 
