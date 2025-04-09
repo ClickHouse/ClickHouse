@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: depends on model binary and model details via config files
+
 SELECT naiveBayesClassifier('sentiment3', 'The interface is beautiful and intuitive');
 SELECT naiveBayesClassifier('sentiment3', 'This product is amazing in every way');
 SELECT naiveBayesClassifier('sentiment3', 'I am impressed by the excellent quality');
