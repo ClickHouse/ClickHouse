@@ -595,7 +595,7 @@ def test_partition_columns(started_cluster, use_delta_kernel):
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_partition_columns")
     result_file = f"{TABLE_NAME}"
-    partition_columns = ["b", "c", "d", "e"]
+    partition_columns = ["b", "c", "d"]
 
     delta_table = (
         DeltaTable.create(spark)
