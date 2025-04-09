@@ -390,6 +390,8 @@ void TransposedMetricLog::prepareViewForTable(DatabasePtr system_database, Stora
             {system_database->getDatabaseName(), view_name + "_" + toString(suffix)}, getContext()))
             ++suffix;
 
+        std::string rename_to_name = view_name + "_" + toString(suffix);
+
         ASTRenameQuery::Element elem
         {
             ASTRenameQuery::Table
@@ -400,7 +402,7 @@ void TransposedMetricLog::prepareViewForTable(DatabasePtr system_database, Stora
             ASTRenameQuery::Table
             {
                 std::make_shared<ASTIdentifier>(system_database->getDatabaseName()),
-                std::make_shared<ASTIdentifier>(view_name + "_" + toString(suffix))
+                std::make_shared<ASTIdentifier>(rename_to_name)
             }
         };
 
