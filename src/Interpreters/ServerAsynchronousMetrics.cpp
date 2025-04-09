@@ -465,10 +465,26 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
                 }
 
                 // mutation status
+                const auto max_pending_mutations_execution_time_sec = static_cast<std::chrono::seconds::rep>(getContext()->getMaxPendingMutationsExecutionTimeToWarn());
                 for (const auto & mutation_status : table_merge_tree->getMutationsStatus())
                 {
                     if (!mutation_status.is_done)
+                    {
                         ++current_mutation_stats.pending_mutations;
+                        // Check if the pending mutation is over the setting max_pending_mutations_execution_time_to_warn
+                        // The aim here is to warn the user about mutations that are pending for a very long time (default is 24 hours)
+                        {
+                            if (!mutation_status.parts_to_do_names.empty())
+                            {
+                                auto mutation_create_time = std::chrono::system_clock::from_time_t(mutation_status.create_time);
+                                auto current_time = std::chrono::system_clock::now();
+                                const auto time_elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(current_time - mutation_create_time).count();
+
+                                if (time_elapsed_sec > max_pending_mutations_execution_time_sec)
+                                    ++current_mutation_stats.pending_mutations_over_execution_time;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -521,7 +537,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     new_values["NumberOfDetachedParts"] = { detached_parts_stats.count, "The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts and they can be removed." };
     new_values["NumberOfDetachedByUserParts"] = { detached_parts_stats.detached_by_user, "The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed." };
     new_values["NumberOfPendingMutations"] = { mutation_stats.pending_mutations, "The total number of mutations that are in left to be mutated." };
-    new_values["NumberOfStuckMutations"] = { mutation_stats.stuck_mutations, "The total number of mutations which have data part left to be mutated over the last 1 hour." };
+    new_values["NumberOfPendingMutationsOverExecutionTime"] = { mutation_stats.pending_mutations_over_execution_time, "The total number of mutations which have data part left to be mutated over the specified max_pending_mutations_execution_time_to_warn setting." };
 }
 
 }
