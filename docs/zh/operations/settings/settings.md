@@ -1346,4 +1346,6 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 -   正整数。
 -   0 or 1 — 禁用。 此时`SELECT` 查询单线程执行。
 
-默认值: `16`。
+**默认值：** `auto(N)`（ClickHouse 会根据系统资源自动选择线程数，通常参考可用 CPU 核心数）
+
+ClickHouse 会根据系统硬件情况自动调整此值，以平衡并发性能与资源使用。
