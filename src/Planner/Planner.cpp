@@ -485,7 +485,6 @@ std::optional<std::vector<std::pair<UInt64, SortDirection>>> findOptimizationSub
     if (order_by_nodes.empty())
         return std::nullopt;
 
-    // SortDirection::DESCENDING;
     if (group_by_nodes.size() != 1 || group_by_nodes.size() != 1) // MVP
         return std::nullopt;
 
@@ -539,9 +538,13 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             aggregate_description.argument_names.clear();
     }
 
-    const auto& order_by_nodes = query_node.getOrderBy().getNodes();
-    const auto& group_by_nodes = query_node.getGroupBy().getNodes();
-    auto optimization_indexes = findOptimizationSublistIndexes(group_by_nodes, order_by_nodes);
+    std::optional<std::vector<std::pair<UInt64, SortDirection>>> optimization_indexes;
+    if (!query_node.isGroupByWithTotals())
+    {
+        const auto& group_by_nodes = query_node.getGroupBy().getNodes();
+        const auto& order_by_nodes = query_node.getOrderBy().getNodes();
+        optimization_indexes = findOptimizationSublistIndexes(group_by_nodes, order_by_nodes);
+    }
 
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
