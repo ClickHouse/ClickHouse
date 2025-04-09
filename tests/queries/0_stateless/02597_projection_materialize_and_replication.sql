@@ -14,12 +14,19 @@ set mutations_sync=0;
 
 ALTER TABLE test UPDATE d = d || toString(sleepEachRow(0.3)) where 1;
 
-ALTER TABLE test ADD PROJECTION d_order ( SELECT min(c_id) GROUP BY `d`);
-ALTER TABLE test MATERIALIZE PROJECTION d_order;
-ALTER TABLE test DROP PROJECTION d_order SETTINGS mutations_sync = 2; --{serverError BAD_ARGUMENTS}
+select * from test format Null;
 
--- just to wait prev mutation
+ALTER TABLE test ADD PROJECTION d_order ( SELECT min(c_id) GROUP BY `d`) SETTINGS mutations_sync = 2;
+
+select * from test format Null;
+
 ALTER TABLE test DELETE where d = 'Hello' SETTINGS mutations_sync = 2;
+
+select * from test format Null;
+
+ALTER TABLE test MATERIALIZE PROJECTION d_order SETTINGS mutations_sync = 2;
+
+select * from test format Null;
 
 ALTER TABLE test DROP PROJECTION d_order SETTINGS mutations_sync = 2;
 
