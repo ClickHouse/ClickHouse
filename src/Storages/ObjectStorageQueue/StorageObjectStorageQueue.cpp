@@ -293,7 +293,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     {
         try
         {
-            files_metadata->unregister(getStorageID(), /* active */true);
+            files_metadata->unregister(getStorageID(), /* active */true, /* remove_metadata_if_no_registered */false);
         }
         catch (...)
         {
@@ -544,7 +544,7 @@ void StorageObjectStorageQueue::threadFunc()
         {
             try
             {
-                files_metadata->unregister(storage_id, /* active */true);
+                files_metadata->unregister(storage_id, /* active */true, /* remove_metadata_if_no_registered */false);
             }
             catch (...)
             {
@@ -636,7 +636,7 @@ bool StorageObjectStorageQueue::streamToViews()
         }
         catch (...)
         {
-            commit(/* insert_succeeded */false, rows, sources, getCurrentExceptionMessage(true));
+            commit(/* insert_succeeded */false, rows, sources, getCurrentExceptionMessage(true), getCurrentExceptionCode());
             file_iterator->releaseFinishedBuckets();
             throw;
         }
@@ -654,14 +654,15 @@ void StorageObjectStorageQueue::commit(
     bool insert_succeeded,
     size_t inserted_rows,
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-    const std::string & exception_message) const
+    const std::string & exception_message,
+    int error_code) const
 {
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedRows, inserted_rows);
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
     for (auto & source : sources)
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
+        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message, error_code);
 
     if (requests.empty())
     {

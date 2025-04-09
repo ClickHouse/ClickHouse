@@ -132,7 +132,7 @@ BUILD_TO_REPORT = {
     BuildNames.PACKAGE_DEBUG: "artifact_report_build_amd_debug.json",
     BuildNames.PACKAGE_AARCH64: "artifact_report_build_arm_release.json",
     BuildNames.PACKAGE_AARCH64_ASAN: "artifact_report_build_arm_asan.json",
-    BuildNames.PACKAGE_RELEASE_COVERAGE: "artifact_report_build_amd_coverage.json",
+    BuildNames.PACKAGE_RELEASE_COVERAGE: "artifact_report_build_arm_coverage.json",
     BuildNames.BINARY_RELEASE: "artifact_report_build_amd_binary.json",
     BuildNames.BINARY_TIDY: "artifact_report_build_amd_tidy.json",
     BuildNames.BINARY_DARWIN: "artifact_report_build_amd_darwin.json",
