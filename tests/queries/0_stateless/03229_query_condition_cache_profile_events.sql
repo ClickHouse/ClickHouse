@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
 -- Tag no-parallel: Messes with internal cache
+-- Tag: no-parallel-replicas ... leads to flaky tests #78885 ... investigation TBD
 
 SET allow_experimental_analyzer = 1;
 
