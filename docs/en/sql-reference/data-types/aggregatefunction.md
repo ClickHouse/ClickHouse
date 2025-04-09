@@ -1,6 +1,6 @@
 ---
 description: 'Documentation for the AggregateFunction data type in ClickHouse, which
-  stores intermediate states of aggregate functions'
+stores intermediate states of aggregate functions'
 keywords: ['AggregateFunction', 'Type']
 sidebar_label: 'AggregateFunction'
 sidebar_position: 46
