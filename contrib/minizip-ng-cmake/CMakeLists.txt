@@ -149,11 +149,13 @@ set(MZ_COMPAT ON)
 if(MZ_COMPAT)
     list(APPEND MINIZIP_SRC
          ${_MINIZIP_SOURCE_DIR}/compat/zip.c
-         ${_MINIZIP_SOURCE_DIR}/compat/unzip.c)
+         ${_MINIZIP_SOURCE_DIR}/compat/unzip.c
+         ${_MINIZIP_SOURCE_DIR}/compat/ioapi.c)
 
     list(APPEND MINIZIP_HDR
          ${_MINIZIP_SOURCE_DIR}/compat/zip.h
-         ${_MINIZIP_SOURCE_DIR}/compat/unzip.h)
+         ${_MINIZIP_SOURCE_DIR}/compat/unzip.h
+         ${_MINIZIP_SOURCE_DIR}/compat/ioapi.h)
 
     list(APPEND MINIZIP_INC "${_MINIZIP_SOURCE_DIR}/compat")
     list(APPEND MINIZIP_PUBLIC_DEF "-DMZ_COMPAT_VERSION=110")
