@@ -1,22 +1,23 @@
-#include <unordered_map>
-#include <vector>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Common/logger_useful.h>
 #include <Common/Logger.h>
-#include "Core/ColumnsWithTypeAndName.h"
-#include "Functions/FunctionsLogical.h"
-#include "Functions/IFunction.h"
-#include "Functions/IFunctionAdaptors.h"
-#include "Processors/QueryPlan/ExpressionStep.h"
 
 #include <Core/Joins.h>
+
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinInfo.h>
 
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+
+#include <unordered_map>
+#include <vector>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -84,8 +85,36 @@ enum class ExpressionSide : uint8_t
     UNKNOWN = 0,
     LEFT,
     RIGHT,
-    BOTH,
 };
+
+std::unordered_set<const ActionsDAG::Node *> getExpressionInputs(const ActionsDAG::Node * expr)
+{
+    std::unordered_set<const ActionsDAG::Node *> result;
+
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    ActionsDAG::NodeRawConstPtrs nodes_to_process = { expr };
+    while (!nodes_to_process.empty())
+    {
+        const auto * current = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        visited.insert(current);
+
+        if (current->type == ActionsDAG::ActionType::INPUT)
+        {
+            result.insert(current);
+        }
+        else
+        {
+            for (const auto * child : current->children)
+            {
+                if (!visited.contains(child))
+                    nodes_to_process.push_back(child);
+            }
+        }
+    }
+    return result;
+}
 
 ExpressionSide getExpressionSide(
     const ActionsDAG::Node * expr,
@@ -93,34 +122,34 @@ ExpressionSide getExpressionSide(
     const std::unordered_set<const ActionsDAG::Node *> & right_allowed_inputs
 )
 {
-    ActionsDAG::NodeRawConstPtrs nodes_to_process = { expr };
-    ExpressionSide side = ExpressionSide::UNKNOWN;
+    auto inputs = getExpressionInputs(expr);
 
-    while (!nodes_to_process.empty())
+    bool has_left = false;
+    for (const auto * input : inputs)
     {
-        const auto * current = nodes_to_process.back();
-        nodes_to_process.pop_back();
-
-        if (current->type == ActionsDAG::ActionType::INPUT)
+        if (left_allowed_inputs.contains(input))
         {
-            bool left_contains = left_allowed_inputs.contains(current);
-            bool right_contains = right_allowed_inputs.contains(current);
-
-            ExpressionSide current_side = ExpressionSide::BOTH;
-            if (left_contains && !right_contains)
-                current_side = ExpressionSide::LEFT;
-            else if (!left_contains && right_contains)
-                current_side = ExpressionSide::RIGHT;
-            else
-                return ExpressionSide::BOTH;
-
-            if (side == ExpressionSide::UNKNOWN)
-                side = current_side;
-            else if (side != current_side)
-                return ExpressionSide::BOTH;
+            has_left = true;
+            break;
         }
     }
-    return side;
+
+    bool has_right = false;
+    for (const auto * input : inputs)
+    {
+        if (right_allowed_inputs.contains(input))
+        {
+            has_right = true;
+            break;
+        }
+    }
+
+    if (has_left && !has_right)
+        return ExpressionSide::LEFT;
+    else if (!has_left && has_right)
+        return ExpressionSide::RIGHT;
+
+    return ExpressionSide::UNKNOWN;
 }
 
 struct JoinConditionPart
@@ -266,6 +295,7 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     {
         Names available_input_columns_for_filter;
         const auto & input_columns_names = input_header.getNames();
+        available_input_columns_for_filter.reserve(input_columns_names.size());
 
         for (const auto & name : input_columns_names)
         {
