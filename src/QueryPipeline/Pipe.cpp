@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 static void checkSource(const IProcessor & source)
@@ -769,7 +770,12 @@ void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_res
     /// Benefits:
     /// 1. Mitigates lock contention.
     /// 2. Maintains ResizeProcessor's benefit of balancing data flow among multiple streams.
-    if (output_ports.size() > 1 && num_streams >= 2 * min_outstreams_per_resize_after_split)
+    if (min_outstreams_per_resize_after_split == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "min_outstreams_per_resize_after_split should be greater than zero");
+
+    if (output_ports.size() > 1 && num_streams / min_outstreams_per_resize_after_split > 1)
     {
         addSplitResizeTransform(num_streams, min_outstreams_per_resize_after_split, strict);
         return;
