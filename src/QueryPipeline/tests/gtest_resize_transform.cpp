@@ -71,7 +71,7 @@ static void testSplitResizeTransform(size_t instreams, size_t outstreams, size_t
     size_t null_sink_count = 0;
     for (auto i = 0; i < resize_procs.size(); ++i)
     {
-        auto resize = resize_procs[i];
+        const auto & resize = resize_procs[i];
         EXPECT_EQ(resize->getInputs().size(), instreams_per_group);
         EXPECT_EQ(resize->getOutputs().size(), outstreams_per_group);
         if (groups_with_extra_instream != 0 && i >= groups_with_extra_instream)
