@@ -16,6 +16,8 @@ if (OS_FREEBSD)
 endif()
 
 clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
+clickhouse_config_crate_flags(_ch_rust_prql)
+clickhouse_config_crate_flags(_ch_rust_skim_rust)
 
 target_include_directories(_ch_rust_prql INTERFACE prql/include)
 add_library(ch_rust::prql ALIAS _ch_rust_prql)

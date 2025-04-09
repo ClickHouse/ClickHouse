@@ -119,6 +119,8 @@ set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 # We now prepare a custom config.toml with all the flags and add it to cargo via flags
 configure_file("config.toml.in" "config.toml" @ONLY)
 set (RUST_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config.toml" CACHE INTERNAL "Rust config")
+set(RUST_CFLAGS ${RUST_CFLAGS} CACHE INTERNAL "Rust config")
+set(RUST_CXXFLAGS ${RUST_CXXFLAGS} CACHE INTERNAL "Rust config")
 
 function(clickhouse_import_crate)
     if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
@@ -142,8 +144,13 @@ function(clickhouse_import_crate)
             # We only care about static libraries and want to avoid as much dynamic libs as possible
             CRATE_TYPES staticlib
             LOCKED
-            FLAGS --offline # It's ok to pass FLAGS multiple times
+            FLAGS --offline
             NO_DEFAULT_FEATURES
     )
     enable_dummy_launchers_if_needed()
+endfunction()
+
+function(clickhouse_config_crate_flags target_name)
+    corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS}")
+    corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
 endfunction()

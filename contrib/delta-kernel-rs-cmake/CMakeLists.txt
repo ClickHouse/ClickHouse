@@ -26,6 +26,7 @@ endif()
 clickhouse_import_crate(
         MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml"
         FEATURES "default-engine, delta_kernel/cloud")
+clickhouse_config_crate_flags(delta_kernel_ffi)
 
 # We use our own OpenSSL headers and libs
 if(ARCH_AMD64)
