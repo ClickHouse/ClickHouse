@@ -828,24 +828,35 @@ public:
     }
 };
 
-void rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
+bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
 {
+    bool rewrite = false;
+
     auto * join = join_tree->as<JoinNode>();
     if (!join)
-        return;
+        return rewrite;
 
-    auto table_node = join->getRightTableExpression();
+    auto table_expression = join->getRightTableExpression();
 
-    const StorageDistributed * storage_distributed = nullptr;
-    if (const TableNode * table_node_typed = table_node->as<TableNode>())
-        storage_distributed = typeid_cast<const StorageDistributed *>(table_node_typed->getStorage().get());
-    else if (const TableFunctionNode * table_function_node_typed = table_node->as<TableFunctionNode>())
-        storage_distributed = typeid_cast<const StorageDistributed *>(table_function_node_typed->getStorage().get());
+    if (QueryNode * query = table_expression->as<QueryNode>())
+        rewrite = rewriteJoinToGlobalJoinIfNeeded(query->getJoinTree());
+    else if (const TableNode * table_node_typed = table_expression->as<TableNode>())
+    {
+        if (!typeid_cast<const StorageDistributed *>(table_node_typed->getStorage().get()))
+            rewrite = true;
+    }
+    else if (const TableFunctionNode * table_function_node_typed = table_expression->as<TableFunctionNode>())
+    {
+        if (!typeid_cast<const StorageDistributed *>(table_function_node_typed->getStorage().get()))
+            rewrite = true;
+    }
 
-    if (!storage_distributed)
+    if (rewrite)
         join->setLocality(JoinLocality::Global);
 
     rewriteJoinToGlobalJoinIfNeeded(join->getLeftTableExpression());
+
+    return rewrite;
 }
 
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
