@@ -1,32 +1,21 @@
 -- Tags: no-parallel, no-parallel-replicas
+-- Tag no-parallel: Messes with internal cache
+-- Tag: no-parallel-replicas ... leads to flaky tests #78885 ... investigation TBD
 
 SET allow_experimental_analyzer = 1;
 
-SELECT 'With PREWHERE';
+-- Tests that queries with enabled query condition cache correctly populate profile events
+
+SELECT '--- with move to PREWHERE';
 
 SYSTEM DROP QUERY CONDITION CACHE;
 
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab (a Int64, b Int64) ENGINE = MergeTree ORDER BY a;
-INSERT INTO tab SELECT number, number FROM numbers(1000000);
+INSERT INTO tab SELECT number, number FROM numbers(1_000_000); -- 1 mio rows sounds like a lot but the QCC doesn't cache anything for less data
 
-SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;
-
-SYSTEM FLUSH LOGS query_log;
-SELECT
-    ProfileEvents['QueryConditionCacheHits'],
-    ProfileEvents['QueryConditionCacheMisses'],
-    toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
-FROM system.query_log
-WHERE
-    type = 'QueryFinish'
-    AND current_database = currentDatabase()
-    AND query = 'SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;'
-ORDER BY
-    event_time_microseconds;
-
-SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;
+SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT
@@ -37,15 +26,30 @@ FROM system.query_log
 WHERE
     type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND query = 'SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;'
+    AND query = 'SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;'
 ORDER BY
     event_time_microseconds;
 
-SELECT 'Without PREWHERE';
+SELECT * FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT
+    ProfileEvents['QueryConditionCacheHits'],
+    ProfileEvents['QueryConditionCacheMisses'],
+    toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
+FROM system.query_log
+WHERE
+    type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND query = 'SELECT * FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;'
+ORDER BY
+    event_time_microseconds;
+
+SELECT '--- without move to PREWHERE';
 
 SYSTEM DROP QUERY CONDITION CACHE;
 
-SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;
+SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT
@@ -56,11 +60,11 @@ FROM system.query_log
 WHERE
     type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND query = 'SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;'
+    AND query = 'SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;'
 ORDER BY
     event_time_microseconds;
 
-SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;
+SELECT * FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT
@@ -71,7 +75,7 @@ FROM system.query_log
 WHERE
     type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND query = 'SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;'
+    AND query = 'SELECT * FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;'
 ORDER BY
     event_time_microseconds;
 
