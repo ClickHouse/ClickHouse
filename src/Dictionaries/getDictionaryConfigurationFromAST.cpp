@@ -144,6 +144,8 @@ void buildLayoutConfiguration(
         }
     }
 
+    const auto is_ssd_cache_layout = layout->layout_type == "ssd_cache";
+
     for (const auto & param : layout->parameters->children)
     {
         const ASTPair * pair = param->as<ASTPair>();
@@ -174,12 +176,15 @@ void buildLayoutConfiguration(
                 value_field.getTypeName());
         }
 
-        if (value_field.getType() == Field::Types::UInt64 && value_field.safeGet<UInt64>() == 0)
+        if (is_ssd_cache_layout)
         {
-            throw DB::Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "{} parameter value must be greater than 0.",
-                layout->getID(0));
+            if (value_field.getType() == Field::Types::UInt64 && value_field.safeGet<UInt64>() == 0)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "{} parameter value must be greater than 0.",
+                    layout->getID(0));
+            }
         }
 
         AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
