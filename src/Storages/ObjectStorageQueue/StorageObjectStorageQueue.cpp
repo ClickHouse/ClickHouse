@@ -272,7 +272,7 @@ void StorageObjectStorageQueue::startup()
     }
     catch (...)
     {
-        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID());
+        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), /*remove_metadata_if_no_registered=*/true);
         files_metadata.reset();
         throw;
     }
@@ -301,7 +301,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
             tryLogCurrentException(log);
         }
 
-        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID());
+        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), is_drop);
         files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
