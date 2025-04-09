@@ -81,6 +81,14 @@ void buildLifetimeConfiguration(
     if (!lifetime)
         return;
 
+    if (lifetime->min_sec > lifetime->max_sec)
+    {
+        throw DB::Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "{} parameter 'MIN' must be less than or equal to 'MAX'.",
+            lifetime->getID(0));
+    }
+
     AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
     AutoPtr<Element> min_element(doc->createElement("min"));
     AutoPtr<Element> max_element(doc->createElement("max"));
