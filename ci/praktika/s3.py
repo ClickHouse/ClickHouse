@@ -7,6 +7,7 @@ from urllib.parse import quote
 
 from ._environment import _Environment
 from .settings import Settings
+from .usage import StorageUsage
 from .utils import MetaClasses, Shell, Utils
 
 

@@ -1453,7 +1453,7 @@ namespace ErrorCodes
     Possible values:
     - Any positive integer.
 
-    You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max_partitions_to_read)
+    You can also specify a query complexity setting [max_partitions_to_read](/operations/settings/settings#max_partitions_to_read)
     at a query / session / profile level.
     )", 0) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
