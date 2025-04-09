@@ -66,7 +66,6 @@ static void processFile(const fs::path & file_path, const fs::path & dst_path, b
         std::shared_ptr<WriteBuffer> dst_buf;
 
         /// test mode for integration tests.
-        // todo should this bypass the proxy?
         if (test_mode)
         {
             dst_buf = BuilderWriteBufferFromHTTP(Poco::URI(dst_file_path))
@@ -92,7 +91,6 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
     RE2::FullMatch(data_path.string(), EXTRACT_PATH_PATTERN, &prefix);
 
     std::shared_ptr<WriteBuffer> root_meta;
-    // todo should bypass proxy?
     if (test_mode)
     {
         dst_path /= "store";
@@ -121,7 +119,6 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
             RE2::FullMatch(dir_it->path().string(), EXTRACT_PATH_PATTERN, &directory_prefix);
 
             std::shared_ptr<WriteBuffer> directory_meta;
-            // should bypass proxy?
             if (test_mode)
             {
                 directory_meta = BuilderWriteBufferFromHTTP(Poco::URI(dst_path / directory_prefix / ".index"))
