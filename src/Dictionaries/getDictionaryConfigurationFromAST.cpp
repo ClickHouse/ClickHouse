@@ -166,11 +166,12 @@ void buildLayoutConfiguration(
                 value_field.getTypeName());
         }
 
-        if (value_field.safeGet<UInt64>() == 0)
+        if (value_field.getType() == Field::Types::UInt64 && value_field.safeGet<UInt64>() == 0)
         {
             throw DB::Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary layout parameter value must be greater than 0.");
+                "{} parameter value must be greater than 0.",
+                layout->getID(0));
         }
 
         AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));

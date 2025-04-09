@@ -7,6 +7,18 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --query="DROP DICTIONARY IF EXISTS dx;"
 
+# BLOCK_SIZE negative value
+$CLICKHOUSE_CLIENT --query="
+CREATE DICTIONARY dx
+(
+    col Int64 default null
+)
+PRIMARY KEY (col)
+SOURCE(NULL())
+LAYOUT(SSD_CACHE(BLOCK_SIZE -1))
+LIFETIME(1);
+" 2>&1 | grep -q "Code: 36. DB::Exception: Dictionary layout parameter value must be an UInt64, Float64 or String, got 'Int64' instead. (BAD_ARGUMENTS)" && echo 'OK' || echo 'FAIL'
+
 # BLOCK_SIZE
 $CLICKHOUSE_CLIENT --query="
 CREATE DICTIONARY dx
