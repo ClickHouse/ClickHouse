@@ -1,6 +1,3 @@
-[unstable]
-@RUST_CARGO_BUILD_STD@
-
 [profile.release]
 debug = false
 strip = true
