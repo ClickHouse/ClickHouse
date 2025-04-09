@@ -1,0 +1,5 @@
+SELECT naiveBayesClassifier('sentiment', 3); -- { serverError BAD_ARGUMENTS }
+
+SELECT naiveBayesClassifier(0, 'hello'); -- { serverError BAD_ARGUMENTS }
+
+SELECT naiveBayesClassifier('zzz_nonexistent_model_4ae239f8', 'hello'); -- { serverError BAD_ARGUMENTS }
