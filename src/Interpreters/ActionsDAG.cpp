@@ -24,9 +24,7 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <stack>
-#include <vector>
 #include <base/sort.h>
-#include "Common/logger_useful.h"
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeSet.h>

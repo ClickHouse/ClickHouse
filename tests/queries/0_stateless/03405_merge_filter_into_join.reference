@@ -57,16 +57,14 @@ Positions: 6 0 1 2 3 4
                    INPUT :: 2 -> __table2.age Int16 : 2
                    COLUMN Const(UInt8) -> __lhs_const UInt8 : 3
           Positions: 0 1 2 3
-            Filter (( + Change column names to column identifiers))
-            Filter column: equals(__table2.age, __table2.age) (removed)
+            Expression (Change column names to column identifiers)
             Actions: INPUT : 0 -> uid Int16 : 0
                      INPUT : 1 -> name String : 1
                      INPUT : 2 -> age Int16 : 2
                      ALIAS uid :: 0 -> __table2.uid Int16 : 3
                      ALIAS name :: 1 -> __table2.name String : 0
-                     ALIAS age : 2 -> __table2.age Int16 : 1
-                     FUNCTION equals(age : 2, age :: 2) -> equals(__table2.age, __table2.age) UInt8 : 4
-            Positions: 4 3 0 1
+                     ALIAS age :: 2 -> __table2.age Int16 : 1
+            Positions: 3 0 1
               ReadFromMemoryStorage
           Expression
           Actions: INPUT :: 0 -> __table3.uid Int16 : 0
@@ -74,16 +72,14 @@ Positions: 6 0 1 2 3 4
                    INPUT :: 2 -> __table3.age Int16 : 2
                    COLUMN Const(UInt8) -> __rhs_const UInt8 : 3
           Positions: 0 1 2 3
-            Filter (( + Change column names to column identifiers))
-            Filter column: equals(__table3.age, __table3.age) (removed)
+            Expression (Change column names to column identifiers)
             Actions: INPUT : 0 -> uid Int16 : 0
                      INPUT : 1 -> name String : 1
                      INPUT : 2 -> age Int16 : 2
                      ALIAS uid :: 0 -> __table3.uid Int16 : 3
                      ALIAS name :: 1 -> __table3.name String : 0
-                     ALIAS age : 2 -> __table3.age Int16 : 1
-                     FUNCTION equals(age : 2, age :: 2) -> equals(__table3.age, __table3.age) UInt8 : 4
-            Positions: 4 3 0 1
+                     ALIAS age :: 2 -> __table3.age Int16 : 1
+            Positions: 3 0 1
               ReadFromMemoryStorage
 SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
 1231	John	33	1231	John	33
