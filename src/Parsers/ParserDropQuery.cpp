@@ -44,7 +44,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     ASTPtr like;
     bool if_exists = false;
     bool if_empty = false;
-    bool has_all_tables = false;
+    bool has_tables = false; 
     bool is_like = false;
     bool is_not_like = false;
     bool is_case_insensitive_like = false;
@@ -69,9 +69,10 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
         if (!name_p.parse(pos, database, expected))
             return false;
     }
-    else if((s_tables.ignore(pos, expected) || (s_all.ignore(pos, expected) && s_tables.ignore(pos, expected))) && kind == ASTDropQuery::Kind::Truncate)
-    { /// Either 'TRUNCATE TABLES FROM ..' or 'TRUNCATE ALL TABLES FROM ..'
-        has_all_tables = true;
+    else if ((s_tables.ignore(pos, expected) || (s_all.ignore(pos, expected) && s_tables.ignore(pos, expected))) && kind == ASTDropQuery::Kind::Truncate)
+    {
+        /// Either 'TRUNCATE TABLES FROM ..' or 'TRUNCATE ALL TABLES FROM ..'
+        has_tables = true;
         if (!s_from.ignore(pos, expected))
             return false;
 
@@ -91,8 +92,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
                 is_not_like = true;
             if (!like_p.parse(pos, like, expected))
                 return false;
-            else
-                is_like = true;
+            is_like = true;
         }
 
         if (s_ilike.ignore(pos, expected))
@@ -102,8 +102,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
                 is_not_like = true;
             if (!like_p.parse(pos, like, expected))
                 return false;
-            else
-                is_like = true;
+            is_like = true;
         }
     }
     else
@@ -154,7 +153,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->kind = kind;
     query->if_exists = if_exists;
     query->if_empty = if_empty;
-    query->has_tables = has_all_tables;
+    query->has_tables = has_tables;
     query->has_all = has_all;
     query->temporary = temporary;
     query->is_dictionary = is_dictionary;

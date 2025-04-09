@@ -18,7 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 #include <Common/likePatternToRegexp.h>
-#include <re2/re2.h> 
+#include <Common/re2.h> 
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -384,7 +384,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     return res;
 }
 
-bool matchesLikeWithRE2(const String & haystack,
+bool matchesLikePattern(const String & haystack,
                         const String & like_pattern,
                         bool case_insensitive)
 {
@@ -395,6 +395,7 @@ bool matchesLikeWithRE2(const String & haystack,
 
     /// Sets up RE2 with case insensitivity if needed
     RE2::Options options;
+    options.set_log_errors(false);
     if (case_insensitive)
         options.set_case_sensitive(false);
 
@@ -453,8 +454,9 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         query_for_table.setDatabase(database_name);
         query_for_table.sync = query.sync;
 
-        if (!truncate || !query.has_tables || query.like.empty()) /// If we have a TRUNCATE TABLES .. LIKE, we should not truncate all tables,
-                                                                  /// the logic regarding finding suitable tables is a bit below 
+        /// If we have a TRUNCATE TABLES .. LIKE, we should not truncate all tables,
+        /// the logic regarding finding suitable tables is a bit below 
+        if (!truncate || !query.has_tables || query.like.empty())
         {
             /// Flush should not be done if shouldBeEmptyOnDetach() == false,
             /// since in this case getTablesIterator() may do some additional work,
@@ -546,7 +548,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         }
     }
 
-    if (truncate && query.has_tables && !query.like.empty()) /// In case of TRUNCATE TABLES .. LIKE, we truncate only suitable tables
+    /// In case of TRUNCATE TABLES .. LIKE, we truncate only suitable tables
+    if (truncate && query.has_tables && !query.like.empty())
     {
         auto table_context = Context::createCopy(getContext());
         table_context->setInternalQuery(true);
@@ -560,7 +563,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
             if (!query.like.empty())
             {
-                bool match = matchesLikeWithRE2(tname, query.like, query.case_insensitive_like);
+                bool match = matchesLikePattern(tname, query.like, query.case_insensitive_like);
                 if (query.not_like)
                     match = !match;
                 if (!match)
