@@ -169,7 +169,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            String model_name = "";
+            String model_name;
             if (const auto * model_name_col_const = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
             {
                 model_name = model_name_col_const->getValue<String>();

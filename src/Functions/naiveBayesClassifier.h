@@ -22,9 +22,6 @@ extern const int LOGICAL_ERROR;
 extern const int RECEIVED_EMPTY_DATA;
 }
 
-namespace
-{
-
 using ClassCountMap = HashMap<UInt32, UInt32, HashCRC32<UInt32>>;
 using NGramMap = HashMap<StringRef, ClassCountMap, StringRefHash>;
 using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
@@ -94,13 +91,13 @@ public:
 
             String ngram;
             ngram.resize(ngram_length);
-            in.readStrict(&ngram[0], ngram_length); // read the ngram bytes
+            in.readStrict(ngram.data(), ngram_length); // read the ngram bytes
 
             UInt32 count = 0;
             DB::readBinary(count, in); // read the 4-byte count
 
             StringRef temp(ngram.data(), ngram.size());
-            auto it = ngram_counts.find(temp);
+            auto * it = ngram_counts.find(temp);
 
             if (it == ngram_counts.end())
             {
@@ -134,7 +131,7 @@ public:
             const UInt32 class_id = prior.getKey();
             if (class_totals.find(class_id) == class_totals.end()) /// Class present in config's <priors> not found in model
             {
-                String available_classes = "";
+                String available_classes;
                 for (const auto & class_entry : class_totals)
                 {
                     available_classes += std::to_string(class_entry.getKey()) + ", ";
@@ -256,7 +253,7 @@ public:
         for (const auto & ngram : ngrams)
         {
             StringRef ngram_ref(ngram);
-            auto ref_it = ngram_counts.find(ngram_ref);
+            const auto * ref_it = ngram_counts.find(ngram_ref);
             bool token_exists = (ref_it != ngram_counts.end());
             const auto * token_class_map = token_exists ? &ref_it->getMapped() : nullptr;
             for (const auto & class_entry : class_totals)
@@ -266,7 +263,7 @@ public:
                 double count = 0.0;
                 if (token_exists)
                 {
-                    auto it = token_class_map->find(class_id);
+                    const auto * it = token_class_map->find(class_id);
                     if (it != token_class_map->end())
                         count = static_cast<double>(it->getMapped());
                 }
@@ -290,7 +287,5 @@ public:
         return best_class;
     }
 };
-
-}
 
 }
