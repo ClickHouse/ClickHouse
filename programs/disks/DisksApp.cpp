@@ -27,6 +27,7 @@
 #include "config.h"
 
 #include "Utils.h"
+#include "IO/UseSSL.h"
 #include <Server/CloudPlacementInfo.h>
 #include <IO/SharedThreadPools.h>
 
@@ -465,6 +466,8 @@ String DisksApp::getDefaultConfigFileName()
 
 int DisksApp::main(const std::vector<String> & /*args*/)
 {
+    DB::UseSSL ssl;
+
     std::vector<std::string> keys;
     config().keys(keys);
     if (config().has("config-file") || fs::exists(getDefaultConfigFileName()))
