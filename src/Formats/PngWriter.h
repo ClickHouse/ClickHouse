@@ -4,6 +4,7 @@
 #include <boost/noncopyable.hpp>
 #include "Common/Logger.h"
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -57,7 +58,7 @@ public:
 
     void finishImage();
 
-    void writeEntireImage(const unsigned char * data);
+    void writeEntireImage(const unsigned char * data, size_t data_size);
 
 private:
     static void writeDataCallback(png_struct_def * png_ptr, unsigned char * data, size_t length);

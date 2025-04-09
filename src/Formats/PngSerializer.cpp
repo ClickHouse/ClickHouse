@@ -6,6 +6,8 @@
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 
+#include <boost/endian/conversion.hpp> 
+
 namespace DB
 {
 
@@ -93,7 +95,6 @@ public:
     SerializerImpl(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_)
         : writer(writer_), max_width(width_), max_height(height_), row_count(0), bit_depth(bit_depth_)
     {
-        /// TODO
         if (bit_depth != 8 && bit_depth != 16)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "PNG format currently only supports 8 or 16 bit depth, got {}", bit_depth);
         
@@ -114,9 +115,10 @@ public:
     void commonFinalizeWrite(size_t width, size_t height)
     {
         try {
-            pixels.resize(4 * width * height);
+            const size_t final_byte_size = channels * bytes_per_component * width * height;
+            pixels.resize(final_byte_size);
             writer.startImage(width, height);
-            writer.writeEntireImage(reinterpret_cast<const unsigned char *>(pixels.data()));
+            writer.writeEntireImage(reinterpret_cast<const unsigned char *>(pixels.data()), pixels.size());
             writer.finishImage();
         } catch (...) {
             clear();
@@ -135,7 +137,7 @@ public:
         clear();
     }
 
-    /// Based on bit_depth append data to pixels buffer
+    /// Based on bit depth append data to pixels buffer
     void commonAppendPixelData(UInt16 r, UInt16 g, UInt16 b, UInt16 a)
     {
         if (row_count >= max_height * max_width)

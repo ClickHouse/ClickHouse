@@ -55,9 +55,9 @@ void PngStructWrapper::cleanup()
 
 PngWriter::PngWriter(WriteBuffer & out_, Int32 bit_depth_) : out(out_), bit_depth(bit_depth_)
 {
-    if (bit_depth > 16 || bit_depth < 1)
+    if (bit_depth != 16 && bit_depth != 8)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid bit depth provided ({}). Bit depth must be between 1 and 16", bit_depth);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid bit depth provided ({}). Only 8 or 16 supported by current implementation", bit_depth);
     }
 
     log = getLogger("PngWriter");
@@ -142,20 +142,45 @@ void PngWriter::startImage(size_t width_, size_t height_)
         PNG_FILTER_TYPE_DEFAULT
     );
 
+    if (bit_depth > 8) 
+    {
+        png_set_swap(png_resource->getPngPtr());
+    }
+
     // LOG_INFO(getLogger("PngWriter"), "Image header set: {}x{} with bit_depth {} and color_type RGBA", width, height, bit_depth);
 }
 
-void PngWriter::writeEntireImage(const unsigned char * data)
+void PngWriter::writeEntireImage(const unsigned char * data, size_t data_size)
 {
+   
     if (!png_resource)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write png image data before header is set");
     }
 
+    png_structp png_ptr = png_resource->getPngPtr();
+
+    if (setjmp(png_jmpbuf(png_ptr)))
+    {
+        png_resource.reset();
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error during image write");
+    }
+
+
+    size_t bytes_per_component = (bit_depth == 16) ? 2 : 1;
+    size_t channels = 4; ///< Assuming RGBA
+    size_t row_bytes = channels * width * bytes_per_component;
+    size_t expected_total_size = row_bytes * height;
+
+    if (data_size != expected_total_size)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incorrect data size provided to write entire png image. Expected {} bytes ({}x{}x{}channels x{}bytes/comp), but received {} bytes",
+            expected_total_size, width, height, channels, bytes_per_component, data_size);
+    }
+
     std::vector<png_bytep> row_pointers(height);
-    
-    /// For RGBA
-    size_t row_bytes = 4 * width; 
+
 
     for (size_t y = 0; y < height; ++y)
         row_pointers[y] = const_cast<png_bytep>(data + (y * row_bytes));
@@ -175,6 +200,7 @@ void PngWriter::finishImage()
     }
 
     png_structp png_ptr = png_resource->getPngPtr();
+    
     if (setjmp(png_jmpbuf(png_ptr)))
     {
         cleanup();
