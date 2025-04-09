@@ -26,11 +26,6 @@ static constexpr auto TIME_SCALE = 6;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
@@ -61,13 +56,10 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
             return;
         }
 
-        if (object_storage->hasExternalDynamicMetadata())
+        auto * current_metadata = object_storage->getExternalMetadata();
+
+        if (current_metadata && dynamic_cast<IcebergMetadata *>(current_metadata))
         {
-            auto * current_metadata = object_storage->getExternalDynamicMetadata();
-
-            if (!current_metadata)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "External dynamic metadata not found for table {} in database {} ", it->name(), it->databaseName());
-
             auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(current_metadata);
             IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory();
 

@@ -197,9 +197,9 @@ bool StorageObjectStorage::hasExternalDynamicMetadata() const
     return configuration->hasExternalDynamicMetadata();
 }
 
-IDataLakeMetadata * StorageObjectStorage::getExternalDynamicMetadata() const
+IDataLakeMetadata * StorageObjectStorage::getExternalMetadata() const
 {
-    return configuration->getExternalDynamicMetadata();
+    return configuration->getExternalMetadata();
 }
 
 void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)

@@ -141,7 +141,7 @@ public:
 
     void updateExternalDynamicMetadata(ContextPtr) override;
 
-    IDataLakeMetadata * getExternalDynamicMetadata() const;
+    IDataLakeMetadata * getExternalMetadata() const;
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
@@ -232,7 +232,7 @@ public:
 
     virtual bool hasExternalDynamicMetadata() { return false; }
 
-    virtual IDataLakeMetadata * getExternalDynamicMetadata() const { return nullptr; }
+    virtual IDataLakeMetadata * getExternalMetadata() const { return nullptr; }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String&) const { return {}; }
 
