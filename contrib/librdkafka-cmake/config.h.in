@@ -99,6 +99,8 @@
 //#define WITH_SOCKEM 1
 // libssl
 #cmakedefine WITH_SSL 1
+// OpenSSL engine support is deprecated
+#cmakedefine WITH_SSL_ENGINE 0
 // WITH_SASL_SCRAM
 #cmakedefine WITH_SASL_SCRAM 1
 // WITH_SASL_OAUTHBEARER

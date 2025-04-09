@@ -113,6 +113,7 @@ endif()
 
 message (STATUS "librdkafka with SSL support")
 set(WITH_SSL 1)
+set(WITH_SSL_ENGINE 0)
 if(WITH_SASL_CYRUS)
    set(WITH_SASL_SCRAM 1)
    set(WITH_SASL_OAUTHBEARER 1)
