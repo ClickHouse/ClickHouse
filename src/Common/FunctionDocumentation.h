@@ -63,19 +63,27 @@ struct FunctionDocumentation
     };
     using Examples = std::vector<Example>;
 
-    using Category = std::string;
+    enum class Category
+    {
+        Array,
+        DatesAndTimes,
+        Other,
+        UUID
+        /// TODO add a category for all 41 function categories in the docs
+    };
 
     using Related = std::string;
 
     /// TODO Fields with {} initialization are optional. We should make all fields non-optional.
-    Description description;           /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
-    Syntax syntax {};                  /// E.g. "position(haystack, needle)"
-    Arguments arguments {};            /// E.g. ["haystack — String in which the search is performed. String.", "needle — Substring to be searched. String."]
-    ReturnedValue returned_value {};   /// E.g. "Starting position in bytes and counting from 1, if the substring was found."
-    Examples examples {};              ///
-    Category category {};              /// E.g. "String Search"
+    Description description;               /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
+    Syntax syntax {};                      /// E.g. "position(haystack, needle)"
+    Arguments arguments {};                /// E.g. ["haystack — String in which the search is performed. String.", "needle — Substring to be searched. String."]
+    ReturnedValue returned_value {};       /// E.g. "Starting position in bytes and counting from 1, if the substring was found."
+    Examples examples {};                  ///
+    Category category {Category::Other};   /// E.g. Category::DatesAndTimes
 
     std::string argumentsAsString() const;
+    std::string categoryAsString() const;
     std::string examplesAsString() const;
 };
 
