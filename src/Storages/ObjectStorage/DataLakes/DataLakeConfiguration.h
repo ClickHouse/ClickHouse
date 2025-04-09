@@ -105,7 +105,7 @@ public:
     {
         return BaseStorageConfiguration::getSettingsRef()[StorageObjectStorageSetting::allow_dynamic_metadata_for_data_lakes]
             && current_metadata
-            && current_metadata->supportsExternalMetadataChange();
+            && current_metadata->supportsSchemaEvolution();
     }
 
     ColumnsDescription updateAndGetCurrentSchema(
@@ -154,7 +154,6 @@ private:
         bool supports_subset_of_columns,
         ContextPtr local_context) override
     {
-        auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
         if (!current_metadata)
         {
             current_metadata = DataLakeMetadata::create(
@@ -162,52 +161,7 @@ private:
                 weak_from_this(),
                 local_context);
         }
-        auto read_schema = current_metadata->getReadSchema();
-        if (!read_schema.empty())
-        {
-            /// There is a difference between "table schema" and "read schema".
-            /// "table schema" is a schema from data lake table metadata,
-            /// while "read schema" is a schema from data files.
-            /// In most cases they would be the same.
-            /// TODO: Try to hide this logic inside IDataLakeMetadata.
-
-            const auto read_schema_names = read_schema.getNames();
-            const auto table_schema_names = current_metadata->getTableSchema().getNames();
-            chassert(read_schema_names.size() == table_schema_names.size());
-
-            if (read_schema_names != table_schema_names)
-            {
-                LOG_TEST(log, "Read schema: {}, table schema: {}, requested columns: {}",
-                         fmt::join(read_schema_names, ", "),
-                         fmt::join(table_schema_names, ", "),
-                         fmt::join(info.requested_columns.getNames(), ", "));
-
-                auto column_name_mapping = [&]()
-                {
-                    std::map<std::string, std::string> result;
-                    for (size_t i = 0; i < read_schema_names.size(); ++i)
-                        result[table_schema_names[i]] = read_schema_names[i];
-                    return result;
-                }();
-
-                /// Go through requested columns and change column name
-                /// from table schema to column name from read schema.
-
-                std::vector<NameAndTypePair> read_columns;
-                for (const auto & column_name : info.requested_columns)
-                {
-                    const auto pos = info.format_header.getPositionByName(column_name.name);
-                    auto column = info.format_header.getByPosition(pos);
-                    column.name = column_name_mapping.at(column_name.name);
-                    info.format_header.setColumn(pos, column);
-
-                    read_columns.emplace_back(column.name, column.type);
-                }
-                info.requested_columns = NamesAndTypesList(read_columns.begin(), read_columns.end());
-            }
-        }
-
-        return info;
+        return current_metadata->prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
     }
 
     bool updateMetadataObjectIfNeeded(
@@ -262,12 +216,17 @@ using StorageHDFSIcebergConfiguration = DataLakeConfiguration<StorageHDFSConfigu
 using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfiguration, IcebergMetadata>;
 #endif
 
-#if USE_PARQUET && USE_AWS_S3
+#if USE_PARQUET
+#if USE_AWS_S3
 using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
 #endif
 
-#if USE_PARQUET
+#if USE_AZURE_BLOB_STORAGE
+using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureConfiguration, DeltaLakeMetadata>;
+#endif
+
 using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadata>;
+
 #endif
 
 #if USE_AWS_S3
