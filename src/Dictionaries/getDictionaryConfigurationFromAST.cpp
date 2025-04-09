@@ -85,7 +85,7 @@ void buildLifetimeConfiguration(
     {
         throw DB::Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "{} parameter 'MIN' must be less than or equal to 'MAX'.",
+            "{} parameter 'MIN' must be less than or equal to 'MAX'",
             lifetime->getID(0));
     }
 
@@ -182,7 +182,7 @@ void buildLayoutConfiguration(
             {
                 throw DB::Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "{} parameter value must be greater than 0.",
+                    "{} parameter value must be greater than 0",
                     layout->getID(0));
             }
         }
