@@ -178,11 +178,11 @@ void buildLayoutConfiguration(
 
         if (is_ssd_cache_layout)
         {
-            if (value_field.getType() == Field::Types::UInt64 && value_field.safeGet<UInt64>() == 0)
+            if (value_field.getType() == Field::Types::UInt64 && value_field.safeGet<::UInt64>() == 0)
             {
                 throw DB::Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "{} parameter value must be greater than 0",
+                    "{} parameter value should be positive number",
                     layout->getID(0));
             }
         }
