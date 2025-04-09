@@ -1453,7 +1453,7 @@ namespace ErrorCodes
     Possible values:
     - Any positive integer.
 
-    You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max_partitions_to_read)
+    You can also specify a query complexity setting [max_partitions_to_read](/operations/settings/settings#max_partitions_to_read)
     at a query / session / profile level.
     )", 0) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
@@ -1575,6 +1575,10 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all string columns of
     the table.
+    )", 0) \
+    DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
+    When enabled, allows summing columns in a SummingMergeTree table to be used in
+    the partition or sorting key.
     )", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \

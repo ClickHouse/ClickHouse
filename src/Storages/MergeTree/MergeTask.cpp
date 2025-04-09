@@ -487,7 +487,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             infos.add(part_infos);
         }
 
-        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->metadata_snapshot, global_ctx->context));
+        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context));
     }
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
@@ -1524,7 +1524,7 @@ public:
     MergePartsStep(
         const Header & input_header_,
         const SortDescription & sort_description_,
-        const Names partition_key_columns_,
+        const Names partition_and_sorting_required_columns_,
         const MergeTreeData::MergingParams & merging_params_,
         const String & rows_sources_temporary_file_name_,
         UInt64 merge_block_size_rows_,
@@ -1534,7 +1534,7 @@ public:
         time_t time_of_merge_)
         : ITransformingStep(input_header_, input_header_, getTraits())
         , sort_description(sort_description_)
-        , partition_key_columns(partition_key_columns_)
+        , partition_and_sorting_required_columns(partition_and_sorting_required_columns_)
         , merging_params(merging_params_)
         , rows_sources_temporary_file_name(rows_sources_temporary_file_name_)
         , merge_block_size_rows(merge_block_size_rows_)
@@ -1588,7 +1588,7 @@ public:
 
             case MergeTreeData::MergingParams::Summing:
                 merged_transform = std::make_shared<SummingSortedTransform>(
-                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_key_columns, merge_block_size_rows, merge_block_size_bytes);
+                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes);
                 break;
 
             case MergeTreeData::MergingParams::Aggregating:
@@ -1651,7 +1651,7 @@ private:
     }
 
     const SortDescription sort_description;
-    const Names partition_key_columns;
+    const Names partition_and_sorting_required_columns;
     const MergeTreeData::MergingParams merging_params{};
     const String rows_sources_temporary_file_name;
     const UInt64 merge_block_size_rows;
@@ -1807,7 +1807,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         size_t sort_columns_size = sort_columns.size();
         sort_description.reserve(sort_columns_size);
 
-        Names partition_key_columns = global_ctx->metadata_snapshot->getPartitionKey().column_names;
+        auto partition_and_sorting_required_columns = global_ctx->metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
+        partition_and_sorting_required_columns.append_range(global_ctx->metadata_snapshot->getSortingKey().expression->getRequiredColumns());
 
         for (size_t i = 0; i < sort_columns_size; ++i)
         {
@@ -1829,7 +1830,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentHeader(),
             sort_description,
-            partition_key_columns,
+            partition_and_sorting_required_columns,
             global_ctx->merging_params,
             (is_vertical_merge ? RowsSourcesTemporaryFile::FILE_ID : ""), /// rows_sources' temporary file is used only for vertical merge
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],

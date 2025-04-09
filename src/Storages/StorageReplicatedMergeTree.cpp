@@ -9551,6 +9551,10 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(
 
 std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
+    /// We want to throw and exit as soon as possible to allow part_check_thread to shutdown
+    if (shutdown_called || partial_shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Table shutdown was called");
+
     if (auto part = assert_cast<DataValidationTasks *>(check_task_list.get())->next())
     {
         try
@@ -9635,14 +9639,9 @@ MergeTreeData::MutationsSnapshotPtr StorageReplicatedMergeTree::getMutationsSnap
     return queue.getMutationsSnapshot(params);
 }
 
-UInt64 StorageReplicatedMergeTree::getNumberOnFlyDataMutations() const
+MutationCounters StorageReplicatedMergeTree::getMutationCounters() const
 {
-    return queue.getNumberOnFlyDataMutations();
-}
-
-UInt64 StorageReplicatedMergeTree::getNumberOnFlyMetadataMutations() const
-{
-    return queue.getNumberOnFlyMetadataMutations();
+    return queue.getMutationCounters();
 }
 
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()

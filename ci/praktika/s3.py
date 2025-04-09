@@ -7,6 +7,7 @@ from urllib.parse import quote
 
 from ._environment import _Environment
 from .settings import Settings
+from .usage import StorageUsage
 from .utils import MetaClasses, Shell, Utils
 
 
@@ -112,7 +113,16 @@ class S3:
         return
 
     @classmethod
-    def copy_file_to_s3(cls, s3_path, local_path, text=False, with_rename=False):
+    def copy_file_to_s3(
+        cls,
+        s3_path,
+        local_path,
+        text=False,
+        with_rename=False,
+        no_strict=False,
+        content_type="",
+        content_encoding="",
+    ):
         assert Path(local_path).exists(), f"Path [{local_path}] does not exist"
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         assert Path(
@@ -123,11 +133,13 @@ class S3:
         if not s3_full_path.endswith(file_name) and not with_rename:
             s3_full_path = f"{s3_path}/{Path(local_path).name}"
         cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
-        if text:
+        if text and not content_type:
             cmd += " --content-type text/plain"
-        res = cls.run_command_with_retries(cmd)
-        if not res:
-            raise RuntimeError()
+        elif content_type:
+            cmd += f" --content-type {content_type}"
+        if content_encoding:
+            cmd += f" --content-encoding {content_encoding}"
+        _ = cls.run_command_with_retries(cmd, no_strict=no_strict)
         StorageUsage.add_uploaded(local_path)
         bucket = s3_path.split("/")[0]
         endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
@@ -135,7 +147,25 @@ class S3:
         return quote(f"https://{s3_full_path}".replace(bucket, endpoint), safe=":/?&=")
 
     @classmethod
-    def put(cls, s3_path, local_path, text=False, metadata=None, if_none_matched=False):
+    def put(
+        cls,
+        s3_path,
+        local_path,
+        text=False,
+        metadata=None,
+        if_none_matched=False,
+        no_strict=False,
+    ):
+        """
+        puts object via API PUT request
+        :param s3_path:
+        :param local_path:
+        :param text:
+        :param metadata:
+        :param if_none_matched:
+        :param no_strict:
+        :return:
+        """
         assert Path(local_path).exists(), f"Path [{local_path}] does not exist"
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         assert Path(
@@ -159,15 +189,18 @@ class S3:
 
         if text:
             command += " --content-type text/plain"
-        res = cls.run_command_with_retries(command)
+        res = cls.run_command_with_retries(command, no_strict=no_strict)
         if res:
             StorageUsage.add_uploaded(local_path)
         return res
 
     @classmethod
-    def run_command_with_retries(cls, command, retries=Settings.MAX_RETRIES_S3):
+    def run_command_with_retries(
+        cls, command, retries=Settings.MAX_RETRIES_S3, no_strict=False
+    ):
         i = 0
         res = False
+        stderr = ""
         while not res and i < retries:
             i += 1
             ret_code, stdout, stderr = Shell.get_res_stdout_stderr(
@@ -192,6 +225,8 @@ class S3:
                     f"ERROR: aws s3 cp failed, stdout/stderr err: [{stderr}], out [{stdout}]"
                 )
             res = ret_code == 0
+        if not res and not no_strict:
+            raise RuntimeError(f"s3 command failed: [{stderr}]")
         return res
 
     @classmethod
@@ -202,6 +237,7 @@ class S3:
         recursive=False,
         include_pattern="",
         _skip_download_counter=False,
+        no_strict=False,
     ):
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         if Path(local_path).is_dir():
@@ -215,7 +251,7 @@ class S3:
             cmd += " --recursive"
         if include_pattern:
             cmd += f' --exclude "*" --include "{include_pattern}"'
-        res = cls.run_command_with_retries(cmd)
+        res = cls.run_command_with_retries(cmd, no_strict=no_strict)
         if res and not _skip_download_counter:
             if not recursive:
                 if Path(local_path).is_dir():
@@ -231,7 +267,7 @@ class S3:
 
     @classmethod
     def copy_file_from_s3_matching_pattern(
-        cls, s3_path, local_path, include, exclude="*"
+        cls, s3_path, local_path, include, exclude="*", no_strict=False
     ):
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         assert Path(
@@ -239,7 +275,7 @@ class S3:
         ).is_dir(), f"Path [{local_path}] does not exist or not a directory"
         assert s3_path.endswith("/"), f"s3 path is invalid [{s3_path}]"
         cmd = f'aws s3 cp s3://{s3_path}  {local_path} --exclude "{exclude}" --include "{include}" --recursive'
-        res = cls.run_command_with_retries(cmd)
+        res = cls.run_command_with_retries(cmd, no_strict=no_strict)
         if res:
             print(
                 "TODO: support StorageUsage.add_downloaded with matching pattern download"
