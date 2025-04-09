@@ -19,6 +19,5 @@ using ContextPtr = std::shared_ptr<const Context>;
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify);
 
 void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context);
-void rewriteInToGlobalIn(QueryTreeNodePtr query_tree_to_modify, ContextPtr context);
 
 }

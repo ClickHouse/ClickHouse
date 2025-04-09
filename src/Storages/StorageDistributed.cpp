@@ -58,6 +58,7 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/Utils.h>
 
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
@@ -780,6 +781,73 @@ public:
     }
 };
 
+class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>;
+    using Base::Base;
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        if (auto * function_node = node->as<FunctionNode>(); function_node && isNameOfLocalInFunction(function_node->getFunctionName()))
+        {
+            auto * query = function_node->getArguments().getNodes()[1]->as<QueryNode>();
+            if (!query)
+                return;
+            bool no_replace = true;
+            for (const auto & table_node : extractTableExpressions(query->getJoinTree(), false, true))
+            {
+                const StorageDistributed * storage_distributed = nullptr;
+                if (const TableNode * table_node_typed = table_node->as<TableNode>())
+                    storage_distributed = typeid_cast<const StorageDistributed *>(table_node_typed->getStorage().get());
+                else if (const TableFunctionNode * table_function_node_typed = table_node->as<TableFunctionNode>())
+                    storage_distributed = typeid_cast<const StorageDistributed *>(table_function_node_typed->getStorage().get());
+
+                if (!storage_distributed)
+                {
+                    no_replace = false;
+                    break;
+                }
+            }
+            if (no_replace)
+                return;
+
+            auto result_function = std::make_shared<FunctionNode>(getGlobalInFunctionNameForLocalInFunctionName(function_node->getFunctionName()));
+            result_function->getArguments().getNodes() = std::move(function_node->getArguments().getNodes());
+            resolveOrdinaryFunctionNodeByName(*result_function, result_function->getFunctionName(), getContext());
+            node = result_function;
+        }
+    }
+
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr &)
+    {
+        if (auto * function_node = parent->as<FunctionNode>(); function_node && function_node->getFunctionName().starts_with("global"))
+            return false;
+
+        return true;
+    }
+};
+
+void rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
+{
+    auto * join = join_tree->as<JoinNode>();
+    if (!join)
+        return;
+
+    auto table_node = join->getRightTableExpression();
+
+    const StorageDistributed * storage_distributed = nullptr;
+    if (const TableNode * table_node_typed = table_node->as<TableNode>())
+        storage_distributed = typeid_cast<const StorageDistributed *>(table_node_typed->getStorage().get());
+    else if (const TableFunctionNode * table_function_node_typed = table_node->as<TableFunctionNode>())
+        storage_distributed = typeid_cast<const StorageDistributed *>(table_function_node_typed->getStorage().get());
+
+    if (!storage_distributed)
+        join->setLocality(JoinLocality::Global);
+
+    rewriteJoinToGlobalJoinIfNeeded(join->getLeftTableExpression());
+}
+
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
@@ -838,7 +906,16 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const auto & settings = query_context->getSettingsRef();
 
     if (settings[Setting::prefer_global_in_and_join])
-        rewriteInToGlobalIn(query_tree_to_modify, query_context);
+    {
+        auto & query_node = query_tree_to_modify->as<QueryNode&>();
+        if (query_node.hasWhere())
+        {
+            RewriteInToGlobalInVisitor visitor(query_context);
+            visitor.visit(query_node.getWhere());
+        }
+
+        rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTree());
+    }
 
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
 }
