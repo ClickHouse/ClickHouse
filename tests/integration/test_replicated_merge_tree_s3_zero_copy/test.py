@@ -93,7 +93,7 @@ def create_table(cluster, additional_settings=None):
         create_table_statement += ","
         create_table_statement += additional_settings
 
-    list(cluster.instances.values())[0].query(create_table_statement)
+    list(cluster.instances.values())[0].query_with_retry(create_table_statement)
 
 
 @pytest.fixture(autouse=True)

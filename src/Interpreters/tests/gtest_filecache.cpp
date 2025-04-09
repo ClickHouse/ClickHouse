@@ -110,6 +110,9 @@ void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & exp
     std::cerr << "\nFile segments: ";
     for (const auto & file_segment : *file_segments)
         std::cerr << file_segment->range().toString() << ", ";
+    std::cerr << "\nExpected: ";
+    for (const auto & r : expected_ranges)
+        std::cerr << r.toString() << ", ";
 
     ASSERT_EQ(file_segments->size(), expected_ranges.size());
 
@@ -1413,5 +1416,67 @@ TEST_F(FileCacheTest, SLRUPolicy)
 
         assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
         assertProtected(cache->dumpQueue(), { Range(10, 14), Range(0, 4), Range(5, 9)  });
+    }
+}
+
+TEST_F(FileCacheTest, FileCacheGetOrSet)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 5;
+    settings[FileCacheSetting::max_file_segment_size] = 25;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+
+    const auto user = FileCache::getCommonUser();
+    const auto key = DB::FileCacheKey::fromPath("key1");
+
+    auto cache = DB::FileCache("1", settings);
+    cache.initialize();
+
+    {
+        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */30);
+        assertEqual(holder, { Range(0, 24) }, { State::EMPTY });
+    }
+    {
+        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */22);
+        assertEqual(holder, { Range(0, 21) }, { State::EMPTY });
+    }
+    {
+        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */3);
+        assertEqual(holder, { Range(0, 20) }, { State::EMPTY });
+    }
+    {
+        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */5);
+        assertEqual(holder, { Range(0, 19) }, { State::EMPTY });
+    }
+    {
+        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */1);
+        assertEqual(holder, { Range(0, 19) }, { State::EMPTY });
+    }
+    {
+        auto holder = cache.getOrSet(key, 0, 22, /* file_size */25, {}, 0, user, /* boundary_alignment */7);
+        assertEqual(holder, { Range(0, 24) }, { State::EMPTY });
+
+        auto holder2 = cache.getOrSet(key, 0, 26, /* file_size */27, {}, 0, user, /* boundary_alignment */30);
+        assertEqual(holder2, { Range(0, 24), Range(25, 26) }, { State::EMPTY, State::EMPTY });
+    }
+    {
+        auto holder = cache.getOrSet(key, 0, 22, /* file_size */25, {}, 0, user, /* boundary_alignment */30);
+        assertEqual(holder, { Range(0, 24) }, { State::EMPTY });
+
+        auto holder2 = cache.getOrSet(key, 0, 19, /* file_size */27, {}, 0, user, /* boundary_alignment */30);
+        assertEqual(holder2, { Range(0, 24) }, { State::EMPTY });
+    }
+    {
+        auto holder = cache.getOrSet(key, 0, 25, /* file_size */26, {}, 0, user, /* boundary_alignment */30);
+        assertEqual(holder, { Range(0, 24) }, { State::EMPTY });
+    }
+    {
+        auto holder = cache.getOrSet(key, 0, 25, /* file_size */20, {}, 0, user, /* boundary_alignment */30);
+        assertEqual(holder, { Range(0, 19) }, { State::EMPTY });
     }
 }

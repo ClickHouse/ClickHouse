@@ -34,4 +34,4 @@ slug: /ru/operations/system-tables/quota_usage
 
 ## Смотрите также {#see-also}
 
--   [SHOW QUOTA](../../sql-reference/statements/show.md#show-quota-statement)
+-   [SHOW QUOTA](/sql-reference/statements/show#show-quota))

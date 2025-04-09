@@ -2,7 +2,7 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <Core/QueryLogElementType.h>
-#include <Interpreters/Cache/QueryCacheUsage.h>
+#include <Interpreters/Cache/QueryResultCacheUsage.h>
 #include <Interpreters/ClientInfo.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
@@ -103,7 +103,7 @@ struct QueryLogElement
 
     TransactionID tid;
 
-    QueryCacheUsage query_cache_usage = QueryCacheUsage::Unknown;
+    QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::Unknown;
 
     static std::string name() { return "QueryLog"; }
 

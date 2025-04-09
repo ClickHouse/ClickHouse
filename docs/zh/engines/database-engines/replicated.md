@@ -19,7 +19,7 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 -   `shard_name` — 分片的名字。数据库副本按`shard_name`分组到分片中。
 -   `replica_name` — 副本的名字。同一分片的所有副本的副本名称必须不同。
 
-对于[ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication)表，如果没有提供参数，则使用默认参数:`/clickhouse/tables/{uuid}/{shard}`和`{replica}`。这些可以在服务器设置[default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path)和[default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name)中更改。宏`{uuid}`被展开到表的uuid， `{shard}`和`{replica}`被展开到服务器配置的值，而不是数据库引擎参数。但是在将来，可以使用Replicated数据库的`shard_name`和`replica_name`。
+对于[ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication)表，如果没有提供参数，则使用默认参数:`/clickhouse/tables/{uuid}/{shard}`和`{replica}`。这些可以在服务器设置[default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path)和[default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name)中更改。宏`{uuid}`被展开到表的uuid， `{shard}`和`{replica}`被展开到服务器配置的值，而不是数据库引擎参数。但是在将来，可以使用Replicated数据库的`shard_name`和`replica_name`。
 
 ## 使用方式 {#specifics-and-recommendations}
 

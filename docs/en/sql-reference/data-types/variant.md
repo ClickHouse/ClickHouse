@@ -1,13 +1,12 @@
 ---
-slug: /sql-reference/data-types/variant
+description: 'Documentation for the Variant data type in ClickHouse'
+sidebar_label: 'Variant(T1, T2, ...)'
 sidebar_position: 40
-sidebar_label: Variant(T1, T2, ...)
+slug: /sql-reference/data-types/variant
+title: 'Variant(T1, T2, ...)'
 ---
-import BetaBadge from '@theme/badges/BetaBadge';
 
 # Variant(T1, T2, ...)
-
-<BetaBadge/>
 
 This type represents a union of other data types. Type `Variant(T1, T2, ..., TN)` means that each row of this type 
 has a value of either type `T1` or `T2` or ... or `TN` or none of them (`NULL` value).
@@ -18,10 +17,6 @@ Nested types can be arbitrary types except Nullable(...), LowCardinality(Nullabl
 :::note
 It's not recommended to use similar types as variants (for example different numeric types like `Variant(UInt32, Int64)` or different date types like `Variant(Date, DateTime)`),
 because working with values of such types can lead to ambiguity. By default, creating such `Variant` type will lead to an exception, but can be enabled using setting `allow_suspicious_variant_types`
-:::
-
-:::note
-The Variant data type is a beta feature. To use it, set `enable_variant_type = 1`.
 :::
 
 ## Creating Variant {#creating-variant}

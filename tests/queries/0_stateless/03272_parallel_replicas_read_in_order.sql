@@ -17,7 +17,7 @@ SELECT * from read_in_order_with_parallel_replicas ORDER BY id limit 1
 SETTINGS max_threads=1, log_comment='test read in order asc with parallel replicas';
 
 -- Check we don't read more mark in parallel replicas
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SET parallel_replicas_for_non_replicated_merge_tree=0;
 select count(1) from system.query_log where current_database = currentDatabase() AND log_comment = 'test read in order desc with parallel replicas' and read_rows>2;
 select count(1) from system.query_log where current_database = currentDatabase() AND log_comment = 'test read in order asc with parallel replicas' and read_rows>2;

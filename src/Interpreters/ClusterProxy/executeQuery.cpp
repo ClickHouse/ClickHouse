@@ -15,7 +15,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/queryToString.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -136,7 +135,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
 
             if (log)
                 LOG_TRACE(
-                    log, "force_optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::force_optimize_skip_unused_shards_nesting]);
+                    log, "force_optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::force_optimize_skip_unused_shards_nesting].value);
         }
     }
 
@@ -156,7 +155,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
             new_settings[Setting::optimize_skip_unused_shards_nesting].changed = true;
 
             if (log)
-                LOG_TRACE(log, "optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::optimize_skip_unused_shards_nesting]);
+                LOG_TRACE(log, "optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::optimize_skip_unused_shards_nesting].value);
         }
     }
 
@@ -187,7 +186,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     {
         Tuple tuple;
         tuple.push_back(main_table.getShortName());
-        tuple.push_back(queryToString(additional_filter_ast));
+        tuple.push_back(additional_filter_ast->formatWithSecretsOneLine());
         new_settings[Setting::additional_table_filters].value.push_back(std::move(tuple));
     }
 
@@ -561,7 +560,7 @@ void executeQueryWithParallelReplicas(
             getLogger("ReadFromParallelRemoteReplicasStep"),
             "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
             "Will use the latter number to execute the query.",
-            settings[Setting::max_parallel_replicas],
+            settings[Setting::max_parallel_replicas].value,
             shard.getAllNodeCount());
         max_replicas_to_use = shard.getAllNodeCount();
     }

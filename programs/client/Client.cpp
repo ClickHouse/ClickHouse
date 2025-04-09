@@ -1,15 +1,9 @@
 #include "Client.h"
-#include <cstdlib>
-#include <iomanip>
-#include <iostream>
-#include <optional>
-#include <string>
-#include <fcntl.h>
+#include <Client/ConnectionString.h>
+#include <Core/Protocol.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/ThreadStatus.h>
-#include "Client/ConnectionString.h"
-#include "Core/Protocol.h"
 
 #include <Access/AccessControl.h>
 
@@ -38,9 +32,14 @@
 
 #include <Poco/Util/Application.h>
 
+#include <filesystem>
+
 #include "config.h"
 
-#include <filesystem>
+#if USE_BUZZHOUSE
+#   include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+#   include <Client/BuzzHouse/Generator/FuzzConfig.h>
+#endif
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -65,6 +64,13 @@ namespace ErrorCodes
     extern const int USER_EXPIRED;
 }
 
+Client::Client()
+{
+    fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr);
+}
+
+
+Client::~Client() = default;
 
 void Client::processError(const String & query) const
 {
@@ -656,7 +662,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
         output_stream << options_description.hosts_and_ports_description.value() << "\n";
 
     output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n";
-    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parameterized queries.\n";
     output_stream << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
 
@@ -780,10 +786,8 @@ void Client::processOptions(
 
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
-
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::CLIENT);
-
     global_context->setSettings(cmd_settings);
 
     /// Copy settings-related program options to config.
@@ -840,12 +844,28 @@ void Client::processOptions(
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
     buzz_house_options_path = options.count("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
-    buzz_house = !buzz_house_options_path.empty();
-    if (query_fuzzer_runs || buzz_house)
+    buzz_house = !query_fuzzer_runs && !buzz_house_options_path.empty();
+    if (query_fuzzer_runs || !buzz_house_options_path.empty())
     {
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
         ignore_error = true;
+#if USE_BUZZHOUSE
+        if (!buzz_house_options_path.empty())
+        {
+            fuzz_config = std::make_unique<BuzzHouse::FuzzConfig>(this, buzz_house_options_path);
+            external_integrations = std::make_unique<BuzzHouse::ExternalIntegrations>(*fuzz_config);
+
+            if (query_fuzzer_runs && fuzz_config->seed)
+            {
+                fuzzer.setSeed(fuzz_config->seed);
+            }
+        }
+#endif
+        if (query_fuzzer_runs)
+        {
+            fmt::print(stdout, "Using seed {} for AST fuzzer\n", fuzzer.getSeed());
+        }
     }
 
     if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))

@@ -79,7 +79,7 @@ QueryLogElement logQueryStart(
     UInt64 normalized_query_hash,
     const ASTPtr & query_ast,
     const QueryPipeline & pipeline,
-    const std::unique_ptr<IInterpreter> & interpreter,
+    const IInterpreter * interpreter,
     bool internal,
     const String & query_database,
     const String & query_table,
@@ -92,7 +92,7 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
-    QueryCacheUsage query_cache_usage,
+    QueryResultCacheUsage query_result_cache_usage,
     bool internal);
 
 void logQueryException(

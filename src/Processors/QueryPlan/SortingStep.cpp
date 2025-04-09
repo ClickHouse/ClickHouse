@@ -78,7 +78,7 @@ size_t getMaxBytesBeforeExternalSort(size_t max_bytes_before_external_sort, doub
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
 
         auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value() && !std::isnan(ratio))
+        if (available_system_memory.has_value())
         {
             size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
             if (threshold)
@@ -100,16 +100,14 @@ size_t getMaxBytesBeforeExternalSort(size_t max_bytes_before_external_sort, doub
     return threshold.value_or(0);
 }
 
-SortingStep::Settings::Settings(const Context & context)
+SortingStep::Settings::Settings(const DB::Settings & settings)
 {
-    const auto & settings = context.getSettingsRef();
     max_block_size = settings[Setting::max_block_size];
     size_limits = SizeLimits(settings[Setting::max_rows_to_sort], settings[Setting::max_bytes_to_sort], settings[Setting::sort_overflow_mode]);
     max_bytes_before_remerge = settings[Setting::max_bytes_before_remerge_sort];
     remerge_lowered_memory_bytes_ratio = settings[Setting::remerge_sort_lowered_memory_bytes_ratio];
     max_bytes_before_external_sort = getMaxBytesBeforeExternalSort(settings[Setting::max_bytes_before_external_sort], settings[Setting::max_bytes_ratio_before_external_sort]);
     min_external_sort_block_bytes = settings[Setting::min_external_sort_block_bytes];
-    tmp_data = context.getTempDataOnDisk();
     min_free_disk_space = settings[Setting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
@@ -127,7 +125,6 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     max_bytes_before_remerge = settings[QueryPlanSerializationSetting::max_bytes_before_remerge_sort];
     remerge_lowered_memory_bytes_ratio = settings[QueryPlanSerializationSetting::remerge_sort_lowered_memory_bytes_ratio];
     max_bytes_before_external_sort = settings[QueryPlanSerializationSetting::max_bytes_before_external_sort];
-    tmp_data = Context::getGlobalContextInstance()->getTempDataOnDisk();
     min_free_disk_space = settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
@@ -171,8 +168,6 @@ SortingStep::SortingStep(
     , limit(limit_)
     , sort_settings(settings_)
 {
-    if (sort_settings.max_bytes_before_external_sort && sort_settings.tmp_data == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");
 }
 
 SortingStep::SortingStep(
@@ -354,6 +349,13 @@ void SortingStep::mergeSorting(
 {
     bool increase_sort_description_compile_attempts = true;
 
+    TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
+    if (auto data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk())
+        tmp_data_on_disk = data->childScope(CurrentMetrics::TemporaryFilesForSort);
+
+    if (sort_settings.max_bytes_before_external_sort && tmp_data_on_disk == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");
+
     pipeline.addSimpleTransform(
         [&, increase_sort_description_compile_attempts](
             const Block & header, QueryPipelineBuilder::StreamType stream_type) mutable -> ProcessorPtr
@@ -368,10 +370,6 @@ void SortingStep::mergeSorting(
             if (increase_sort_description_compile_attempts)
                 increase_sort_description_compile_attempts = false;
 
-            TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
-            if (sort_settings.tmp_data)
-                tmp_data_on_disk = sort_settings.tmp_data->childScope(CurrentMetrics::TemporaryFilesForSort);
-
             return std::make_shared<MergeSortingTransform>(
                 header,
                 result_sort_desc,
@@ -383,7 +381,7 @@ void SortingStep::mergeSorting(
                 sort_settings.remerge_lowered_memory_bytes_ratio,
                 sort_settings.min_external_sort_block_bytes,
                 sort_settings.max_bytes_before_external_sort / pipeline.getNumStreams(),
-                std::move(tmp_data_on_disk),
+                tmp_data_on_disk,
                 sort_settings.min_free_disk_space);
         });
 }
@@ -464,6 +462,15 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
+        if (need_finish_sorting)
+            finishSorting(pipeline, prefix_description, result_description, limit);
+
+        return;
+    }
+
+    if (type == Type::PartitionedFinishSorting)
+    {
+        bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 

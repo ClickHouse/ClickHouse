@@ -1,15 +1,16 @@
 ---
-slug: /sql-reference/statements/create/dictionary
+description: 'Documentation for Dictionary'
+sidebar_label: 'DICTIONARY'
 sidebar_position: 38
-sidebar_label: DICTIONARY
-title: "CREATE DICTIONARY"
+slug: /sql-reference/statements/create/dictionary
+title: 'CREATE DICTIONARY'
 ---
 
-Creates a new [dictionary](../../../sql-reference/dictionaries/index.md) with given [structure](../../../sql-reference/dictionaries/index.md#dictionary-key-and-fields), [source](../../../sql-reference/dictionaries/index.md#dictionary-sources), [layout](../../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory) and [lifetime](../../../sql-reference/dictionaries/index.md#dictionary-updates).
+Creates a new [dictionary](../../../sql-reference/dictionaries/index.md) with given [structure](../../../sql-reference/dictionaries/index.md#dictionary-key-and-fields), [source](../../../sql-reference/dictionaries/index.md#dictionary-sources), [layout](/sql-reference/dictionaries#storing-dictionaries-in-memory) and [lifetime](/sql-reference/dictionaries#refreshing-dictionary-data-using-lifetime).
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 CREATE [OR REPLACE] DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 (
     key1 type1  [DEFAULT|EXPRESSION expr1] [IS_OBJECT_ID],
@@ -29,7 +30,7 @@ The dictionary structure consists of attributes. Dictionary attributes are speci
 
 `ON CLUSTER` clause allows creating dictionary on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
-Depending on dictionary [layout](../../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory) one or more attributes can be specified as dictionary keys.
+Depending on dictionary [layout](/sql-reference/dictionaries#storing-dictionaries-in-memory) one or more attributes can be specified as dictionary keys.
 
 ## SOURCE {#source}
 
@@ -43,7 +44,7 @@ The source for a dictionary can be a:
 
 Input table `source_table`:
 
-``` text
+```text
 ┌─id─┬─value──┐
 │  1 │ First  │
 │  2 │ Second │
@@ -52,7 +53,7 @@ Input table `source_table`:
 
 Creating the dictionary:
 
-``` sql
+```sql
 CREATE DICTIONARY id_value_dictionary
 (
     id UInt64,
@@ -66,7 +67,7 @@ LIFETIME(MIN 0 MAX 1000)
 
 Output the dictionary:
 
-``` sql
+```sql
 SHOW CREATE DICTIONARY id_value_dictionary;
 ```
 
@@ -84,7 +85,7 @@ LAYOUT(FLAT())
 
 :::note
 When using the SQL console in [ClickHouse Cloud](https://clickhouse.com), you must specify a user (`default` or any other user with the role `default_role`) and password when creating a dictionary.
-:::note
+:::
 
 ```sql
 CREATE USER IF NOT EXISTS clickhouse_admin
@@ -115,7 +116,7 @@ LIFETIME(MIN 0 MAX 1000);
 
 Input table (in the remote ClickHouse service) `source_table`:
 
-``` text
+```text
 ┌─id─┬─value──┐
 │  1 │ First  │
 │  2 │ Second │
@@ -124,7 +125,7 @@ Input table (in the remote ClickHouse service) `source_table`:
 
 Creating the dictionary:
 
-``` sql
+```sql
 CREATE DICTIONARY id_value_dictionary
 (
     id UInt64,
@@ -154,7 +155,7 @@ LAYOUT(HASHED())
 
 ### Create a dictionary from another database {#create-a-dictionary-from-another-database}
 
-Please see the details in [Dictionary sources](/sql-reference/dictionaries/index.md#dictionary-sources/#dbms).
+Please see the details in [Dictionary sources](/sql-reference/dictionaries#dbms).
 
 **See Also**
 

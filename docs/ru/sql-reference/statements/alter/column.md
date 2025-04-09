@@ -77,7 +77,7 @@ DROP COLUMN [IF EXISTS] name
 Запрос удаляет данные из файловой системы. Так как это представляет собой удаление целых файлов, запрос выполняется почти мгновенно.
 
 :::warning Предупреждение
-Вы не можете удалить столбец, используемый в [материализованном представлениии](../../../sql-reference/statements/create/view.md#materialized). В противном случае будет ошибка.
+Вы не можете удалить столбец, используемый в [материализованном представлениии](/sql-reference/statements/create/view#materialized-view). В противном случае будет ошибка.
 :::
 
 Пример:
@@ -246,7 +246,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 **Смотрите также**
 
-- [MATERIALIZED](../../statements/create/table.md#materialized).
+- [MATERIALIZED](/sql-reference/statements/create/view#materialized-view).
 
 ## Ограничения запроса ALTER {#ogranicheniia-zaprosa-alter}
 

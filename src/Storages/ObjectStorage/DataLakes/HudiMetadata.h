@@ -34,8 +34,7 @@ public:
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
-        ContextPtr local_context,
-        bool)
+        ContextPtr local_context)
     {
         return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
     }

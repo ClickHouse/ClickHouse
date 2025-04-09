@@ -1,8 +1,9 @@
 ---
-slug: /operations/named-collections
+description: 'Documentation for Named collections'
+sidebar_label: 'Named collections'
 sidebar_position: 69
-sidebar_label: "Named collections"
-title: "Named collections"
+slug: /operations/named-collections
+title: 'Named collections'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -51,7 +52,7 @@ In the above example:
 
 ### Permissions to create named collections with DDL {#permissions-to-create-named-collections-with-ddl}
 
-To manage named collections with DDL a user must have the `named_control_collection` privilege.  This can be assigned by adding a file to `/etc/clickhouse-server/users.d/`.  The example gives the user `default` both the `access_management` and `named_collection_control` privileges:
+To manage named collections with DDL a user must have the `named_collection_control` privilege.  This can be assigned by adding a file to `/etc/clickhouse-server/users.d/`.  The example gives the user `default` both the `access_management` and `named_collection_control` privileges:
 
 ```xml title='/etc/clickhouse-server/users.d/user_default.xml'
 <clickhouse>
@@ -570,3 +571,77 @@ BACKUP TABLE default.test to S3(named_collection_s3_backups, 'directory')
     </named_collections>
 </clickhouse>
 ```
+
+## Named collections for accessing MongoDB Table and Dictionary {#named-collections-for-accessing-mongodb-table-and-dictionary}
+
+For the description of parameters see [mongodb](../sql-reference/table-functions/mongodb.md).
+
+### DDL example {#ddl-example-5}
+
+```sql
+CREATE NAMED COLLECTION mymongo AS
+user = '',
+password = '',
+host = '127.0.0.1',
+port = 27017,
+database = 'test',
+collection = 'my_collection',
+options = 'connectTimeoutMS=10000'
+```
+
+### XML example {#xml-example-5}
+
+```xml
+<clickhouse>
+    <named_collections>
+        <mymongo>
+            <user></user>
+            <password></password>
+            <host>127.0.0.1</host>
+            <port>27017</port>
+            <database>test</database>
+            <collection>my_collection</collection>
+            <options>connectTimeoutMS=10000</options>
+        </mymongo>
+    </named_collections>
+</clickhouse>
+```
+
+#### MongoDB table {#mongodb-table}
+
+```sql
+CREATE TABLE mytable(log_type VARCHAR, host VARCHAR, command VARCHAR) ENGINE = MongoDB(mymongo, options='connectTimeoutMS=10000&compressors=zstd')
+SELECT count() FROM mytable;
+
+┌─count()─┐
+│       2 │
+└─────────┘
+```
+
+:::note
+The DDL overrides the named collection setting for options.
+:::
+
+#### MongoDB Dictionary {#mongodb-dictionary}
+
+```sql
+CREATE DICTIONARY dict
+(
+    `a` Int64,
+    `b` String
+)
+PRIMARY KEY a
+SOURCE(MONGODB(NAME mymongo COLLECTION my_dict))
+LIFETIME(MIN 1 MAX 2)
+LAYOUT(HASHED())
+
+SELECT dictGet('dict', 'b', 2);
+
+┌─dictGet('dict', 'b', 2)─┐
+│ two                     │
+└─────────────────────────┘
+```
+
+:::note
+The named collection specifies `my_collection` for the collection name. In the function call it is overwritten by `collection = 'my_dict'` to select another collection.
+:::
