@@ -193,63 +193,48 @@ class Result(MetaClasses.Serializable):
         self.dump()
         return self
 
-    def add_job_summary_to_info(
-        self, with_local_run_command=False, with_test_in_run_command=False
-    ):
-        if not self.is_ok():
-            failed = [r for r in self.results if not r.is_ok()]
-            if failed:
-                if (
-                    len(failed) == 1
-                    and failed[0].name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
-                    and failed[0].info
-                ):
-                    summary_info = failed[0].info
-                else:
-                    failed_str = ",".join([f.name for f in failed])
-                    summary_info = (
-                        f"Failed: {failed_str}"
-                        if len(failed_str) < 80
-                        else f"Failed: {len(failed)} tests"
-                    )
-            else:
-                summary_info = "Failed"
-        else:
-            summary_info = next(
-                (
-                    r.info
-                    for r in self.results
-                    if r.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS and r.info
-                ),
-                "ok",
-            )
+    def _add_job_summary_to_info(self):
+        subresult_with_tests = self
+        with_test_in_run_command = False
 
-        self.set_info(summary_info)
+        # Use a specific sub-result if configured
+        job_config = _Environment.get().JOB_CONFIG or {}
+        result_name_for_cidb = job_config.get("result_name_for_cidb", "")
+        if result_name_for_cidb:
+            for r in self.results:
+                if r.name == result_name_for_cidb:
+                    subresult_with_tests = r
+                    with_test_in_run_command = True
+                    if subresult_with_tests.info:
+                        self.set_info(subresult_with_tests.info)
+                    break
 
-        if with_local_run_command and not self.is_ok():
-            command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
-            first_failed_test = next((r for r in self.results if not r.is_ok()), None)
-            if (
-                first_failed_test
-                and first_failed_test.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
-            ):
-                first_failed_test = next(
-                    (
-                        r
-                        for r in first_failed_test.results
-                        if "fail" in r.status.lower()
-                    ),
-                    None,
-                )
-            if with_test_in_run_command and first_failed_test:
-                command_info += f" --test {first_failed_test.name}"
-            self.set_info(command_info)
+        # If no failures, nothing more to do
+        if self.is_ok():
+            return self
+
+        # Collect failed test case names
+        failed = [r.name for r in subresult_with_tests.results if not r.is_ok()]
+
+        if failed:
+            if len(failed) < 10:
+                failed_tcs = ", ".join(failed)
+                self.set_info(f"Failed: {failed_tcs}")
+
+        # Suggest local command to rerun
+        command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
+        if with_test_in_run_command and failed:
+            command_info += f" --test {failed[0]}"
+        self.set_info(command_info)
 
         return self
 
     @classmethod
     def file_name_static(cls, name):
-        return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
+        if not name:
+            return cls.experimental_file_name_static()
+        else:
+            return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
 
     @classmethod
     def experimental_file_name_static(cls):
@@ -367,12 +352,21 @@ class Result(MetaClasses.Serializable):
         )
 
     @classmethod
-    def from_gtest_run(cls, name, unit_tests_path, with_log=False):
+    def from_gtest_run(cls, unit_tests_path, name="", with_log=False):
+        """
+        Runs gtest and generates praktika Result
+        :param unit_tests_path:
+        :param name: Should be set if executed as a job subtask with name @name.
+        If it's a job itself job.name will be taken as name by default
+        :param with_log:
+        :return:
+        """
         Shell.check(f"rm {ResultTranslator.GTEST_RESULT_FILE}")
         result = Result.from_commands_run(
             name=name,
             command=[
-                f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
+                f"chmod +x {unit_tests_path}",
+                f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'",
             ],
             with_log=with_log,
         )
@@ -459,7 +453,9 @@ class Result(MetaClasses.Serializable):
             files=[log_file] if with_log else None,
         )
 
-    def complete_job(self):
+    def complete_job(self, with_job_summary_in_info=True):
+        if with_job_summary_in_info:
+            self._add_job_summary_to_info()
         self.dump()
         if not self.is_ok():
             print("ERROR: Job Failed")
@@ -525,15 +521,11 @@ class _ResultS3:
         return url
 
     @classmethod
-    def copy_result_from_s3(cls, local_path, lock=False):
+    def copy_result_from_s3(cls, local_path):
         env = _Environment.get()
         file_name = Path(local_path).name
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{file_name}"
-        # if lock:
-        #     cls.lock(s3_path)
-        if not S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path):
-            print(f"ERROR: failed to cp file [{s3_path}] from s3")
-            raise
+        S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path)
 
     @classmethod
     def copy_result_from_s3_with_version(cls, local_path):
@@ -544,11 +536,9 @@ class _ResultS3:
         for file_path in local_dir.glob(file_name_pattern):
             file_path.unlink()
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
-        if not S3.copy_file_from_s3_matching_pattern(
+        S3.copy_file_from_s3_matching_pattern(
             s3_path=s3_path, local_path=local_dir, include=file_name_pattern
-        ):
-            print(f"ERROR: failed to cp file [{s3_path}] from s3")
-            raise
+        )
         result_files = []
         for file_path in local_dir.glob(file_name_pattern):
             result_files.append(file_path)
@@ -559,7 +549,7 @@ class _ResultS3:
         return version
 
     @classmethod
-    def copy_result_to_s3_with_version(cls, result, version):
+    def copy_result_to_s3_with_version(cls, result, version, no_strict=False):
         result.dump()
         filename = Path(result.file_name()).name
         file_name_versioned = f"{filename}_{str(version).zfill(3)}"
@@ -572,10 +562,13 @@ class _ResultS3:
             s3_path=s3_path_versioned,
             local_path=result.file_name(),
             if_none_matched=True,
+            no_strict=no_strict,
         ):
             print("Failed to put versioned Result")
             return False
-        if not S3.put(s3_path=s3_path, local_path=result.file_name()):
+        if not S3.put(
+            s3_path=s3_path, local_path=result.file_name(), no_strict=no_strict
+        ):
             print("Failed to put non-versioned Result")
         return True
 
@@ -633,8 +626,9 @@ class _ResultS3:
         attempt = 1
         prev_status = ""
         new_status = ""
-        done = False
-        while attempt < 50:
+        MAX_ATTEMPTS = 50
+
+        while attempt < MAX_ATTEMPTS:
             version = cls.copy_result_from_s3_with_version(
                 Result.file_name_static(workflow_name)
             )
@@ -656,15 +650,17 @@ class _ResultS3:
                 workflow_result.ext["storage_usage"] = workflow_storage_usage
 
             new_status = workflow_result.status
-            if cls.copy_result_to_s3_with_version(workflow_result, version=version + 1):
-                done = True
+            if cls.copy_result_to_s3_with_version(
+                workflow_result,
+                version=version + 1,
+                no_strict=attempt < MAX_ATTEMPTS - 1,
+            ):
                 break
             print(f"Attempt [{attempt}] to upload workflow result failed")
             attempt += 1
             # random delay (0-2s) to reduce contention and minimize race conditions
             # when multiple concurrent jobs attempt to update the workflow report
             time.sleep(random.uniform(0, 2))
-        assert done
 
         if prev_status != new_status:
             return new_status
@@ -673,7 +669,7 @@ class _ResultS3:
 
 
 class ResultTranslator:
-    GTEST_RESULT_FILE = "./tmp_ci/gtest.json"
+    GTEST_RESULT_FILE = "./ci/tmp/gtest.json"
 
     @classmethod
     def from_gtest(cls):

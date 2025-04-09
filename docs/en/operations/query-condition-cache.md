@@ -64,4 +64,5 @@ Both counters are only updated for `SELECT` queries which run with setting `use_
 
 ## Related Content {#related-content}
 
+- Blog: [Introducing the Query Condition Cache](https://clickhouse.com/blog/introducing-the-clickhouse-query-condition-cache)
 - [Predicate Caching: Query-Driven Secondary Indexing for Cloud Data Warehouses (Schmidt et. al., 2024)](https://doi.org/10.1145/3626246.3653395)
