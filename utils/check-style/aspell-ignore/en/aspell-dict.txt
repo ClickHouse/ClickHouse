@@ -2301,6 +2301,7 @@ mysql
 mysqldump
 mysqljs
 mytable
+naiveBayesClassifier
 namedatabases
 namenetworks
 namenode
