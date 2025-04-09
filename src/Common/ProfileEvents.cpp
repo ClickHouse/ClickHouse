@@ -1,8 +1,15 @@
+#include <Common/LoggingFormatStringHelpers.h>
+#include <Common/thread_local_rng.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <Common/TraceSender.h>
 #include <Interpreters/Context.h>
+#include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
+#include <cfloat>
+#include <random>
 
 // clang-format off
 /// Available events. Add something here as you wish.
@@ -516,6 +523,7 @@ The server successfully detected this situation and will download merged part fr
     M(DiskPlainRewritableLocalDirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for LocalObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
+    M(DiskPlainRewritableLegacyLayoutDiskCount, "Number of the 'plain_rewritable' disks with legacy layout.", ValueType::Number) \
     \
     M(S3Clients, "Number of created S3 clients.", ValueType::Number) \
     M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.", ValueType::Number) \
@@ -993,6 +1001,11 @@ The server successfully detected this situation and will download merged part fr
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M)
 #endif
 
+namespace DB::ErrorCodes
+{
+    extern const int SERVER_OVERLOADED;
+}
+
 namespace ProfileEvents
 {
 
@@ -1112,6 +1125,42 @@ ValueType getValueType(Event event)
 }
 
 Event end() { return END; }
+
+bool checkCPUOverload(Int64 os_cpu_busy_time_threshold, double min_ratio, double max_ratio, bool should_throw)
+{
+    double cpu_load = global_counters.getCPUOverload(os_cpu_busy_time_threshold);
+
+    if (cpu_load > DBL_EPSILON)
+    {
+        double current_ratio = std::min(std::max(min_ratio, cpu_load), max_ratio);
+        double probability_to_throw = (max_ratio <= min_ratio) ? 0.0 : (current_ratio - min_ratio) / (max_ratio - min_ratio);
+
+        const PreformattedMessage error_message = PreformattedMessage::create("CPU is overloaded, CPU is waiting for execution way more than executing, "
+                "ratio of wait time (OSCPUWaitMicroseconds metric) to busy time (OSCPUVirtualTimeMicroseconds metric) is {}. "
+                "Min ratio for error {}{}, max ratio for error {}{}, probability used to decide whether to {} {}.{}",
+                current_ratio,
+                should_throw ? "(min_os_cpu_wait_time_ratio_to_throw setting) " : "",
+                min_ratio,
+                should_throw ? "(max_os_cpu_wait_time_ratio_to_throw setting) " : "",
+                max_ratio,
+                should_throw ? "discard the query" : "drop the connection",
+                probability_to_throw,
+                should_throw ? " Consider reducing the number of queries or increase backoff between retries." : "");
+
+        if (std::bernoulli_distribution server_overloaded(probability_to_throw); server_overloaded(thread_local_rng))
+        {
+            if (should_throw)
+                throw DB::Exception(error_message, DB::ErrorCodes::SERVER_OVERLOADED);
+            else
+            {
+                LOG_ERROR(getLogger("ProfileEvents"), error_message);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
 
 void increment(Event event, Count amount)
 {

@@ -624,6 +624,7 @@ public:
         MAX_ATTACHED_DATABASES,
         MAX_ACTIVE_PARTS,
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
+        MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
         MAX_NUM_THREADS_LOWER_THAN_LIMIT,
         OBSOLETE_SETTINGS,
         PROCESS_USER_MATCHES_DATA_OWNER,
@@ -1002,6 +1003,7 @@ public:
     size_t getMaxDatabaseNumToWarn() const;
     size_t getMaxPartNumToWarn() const;
     size_t getMaxPendingMutationsToWarn() const;
+    size_t getMaxPendingMutationsExecutionTimeToWarn() const;
 
     void setMaxTableNumToWarn(size_t max_table_to_warn);
     void setMaxViewNumToWarn(size_t max_view_to_warn);
@@ -1010,6 +1012,7 @@ public:
     void setMaxPartNumToWarn(size_t max_part_to_warn);
     // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
+    void setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn);
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
