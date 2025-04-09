@@ -5,16 +5,14 @@
 #include <atomic>
 #include <memory>
 #include <unordered_map>
-#include <string>
 #include <vector>
+#include <base/types.h>
 #include <boost/noncopyable.hpp>
 
 namespace DB
 {
 
 class KeeperDispatcher;
-
-using String = std::string;
 
 struct IFourLetterCommand;
 using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;

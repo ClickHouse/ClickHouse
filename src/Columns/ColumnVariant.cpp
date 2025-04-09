@@ -1315,12 +1315,12 @@ void ColumnVariant::reserve(size_t n)
     getOffsets().reserve_exact(n);
 }
 
-void ColumnVariant::prepareForSquashing(const Columns & source_columns)
+void ColumnVariant::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     size_t new_size = size();
     for (const auto & source_column : source_columns)
         new_size += source_column->size();
-    reserve(new_size);
+    reserve(new_size * factor);
 
     for (size_t i = 0; i != variants.size(); ++i)
     {
@@ -1328,7 +1328,7 @@ void ColumnVariant::prepareForSquashing(const Columns & source_columns)
         source_variant_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             source_variant_columns.push_back(assert_cast<const ColumnVariant &>(*source_column).getVariantPtrByGlobalDiscriminator(i));
-        getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns);
+        getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns, factor);
     }
 }
 
