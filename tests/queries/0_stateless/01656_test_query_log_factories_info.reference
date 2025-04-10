@@ -23,5 +23,4 @@ used_database_engines
 ['Atomic']
 
 arraySort(used_data_type_families)	used_storages
-['Int64','datetime']	['Memory']
-
+['Int64','DateTime']	['Memory']
