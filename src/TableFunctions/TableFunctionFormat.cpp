@@ -158,14 +158,13 @@ StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, Con
 
 const FunctionDocumentation format_table_function_documentation =
 {
-    .description=R"(
-Extracts table structure from data and parses it according to specified input format.
-Syntax: `format(format_name, data)`.
-Parameters:
-    - `format_name` - the format of the data.
-    - `data ` - String literal or constant expression that returns a string containing data in specified format.
-Returned value: A table with data parsed from `data` argument according specified format and extracted schema.
-)",
+    .description="Extracts table structure from data and parses it according to specified input format.",
+    .syntax="format(format_name, data)",
+    .arguments={
+        {"format_name", "the format of the data."},
+        {"data", "String literal or constant expression that returns a string containing data in specified format."}
+    },
+    .returned_value="A table with data parsed from `data` argument according specified format and extracted schema.",
     .examples
     {
         {
@@ -217,15 +216,14 @@ Result:
 )", ""
         },
     },
-    .category{""}
+    .category=FunctionDocumentation::Category::TableFunction
 };
-
-}
 
 
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFormat>({format_table_function_documentation, false}, TableFunctionFactory::Case::Insensitive);
-}
+};
 
+}
 }

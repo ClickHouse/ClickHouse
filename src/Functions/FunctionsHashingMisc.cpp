@@ -17,14 +17,24 @@ REGISTER_FUNCTION(Hashing)
     factory.registerFunction<FunctionSipHash128Keyed>();
     factory.registerFunction<FunctionSipHash128Reference>(FunctionDocumentation{
         .description="Like [sipHash128](#hash_functions-siphash128) but implements the 128-bit algorithm from the original authors of SipHash.",
+        .syntax="sipHash128Reference(par1,...)",
+        .arguments={
+            {"","The function takes a variable number of input parameters of any of the supported data types."}
+        },
+        .returned_value="A 128-bit SipHash hash value of type FixedString(16).",
         .examples{{"hash", "SELECT hex(sipHash128Reference('foo', '\\x01', 3))", ""}},
-        .category{"Hash"}
+        .category=FunctionDocumentation::Category::Hash
     });
     factory.registerFunction<FunctionSipHash128ReferenceKeyed>(FunctionDocumentation{
         .description = "Same as [sipHash128Reference](#hash_functions-siphash128reference) but additionally takes an explicit key argument "
                        "instead of using a fixed key.",
+        .syntax="sipHash128ReferenceKeyed((k0, k1), par1,...)",
+        .arguments={
+            {"", "Same as sipHash128Reference, but the first argument is a tuple of two UInt64 values representing the key."}
+        },
+        .returned_value="A 128-bit SipHash hash value of type FixedString(16).",
         .examples{{"hash", "SELECT hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912),'foo', '\\x01', 3));", ""}},
-        .category{"Hash"}});
+        .category=FunctionDocumentation::Category::Hash});
     factory.registerFunction<FunctionCityHash64>();
     factory.registerFunction<FunctionFarmFingerprint64>();
     factory.registerFunction<FunctionFarmHash64>();
@@ -39,8 +49,13 @@ REGISTER_FUNCTION(Hashing)
     factory.registerFunction<FunctionXXH3>(
         FunctionDocumentation{
             .description="Calculates value of XXH3 64-bit hash function. Refer to https://github.com/Cyan4973/xxHash for detailed documentation.",
+            .syntax="xxh3(expr)",
+            .arguments={
+                {"expr", "A list of [expressions](/sql-reference/syntax#expressions) of any data type."}
+            },
+            .returned_value="A 64-bit xxh3 hash value. UInt64.",
             .examples{{"hash", "SELECT xxh3('ClickHouse')", ""}},
-            .category{"Hash"}
+            .category=FunctionDocumentation::Category::Hash
         });
 
     factory.registerFunction<FunctionWyHash64>();

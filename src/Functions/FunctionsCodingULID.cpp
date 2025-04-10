@@ -177,10 +177,16 @@ This function extracts the timestamp from a ULID and returns it as a DateTime64(
 The function expects the ULID to be provided as the first argument, which can be either a String or a FixedString(26) data type.
 An optional second argument can be passed to specify a timezone for the timestamp.
 )",
+            .syntax="ULIDStringToDateTime(ulid[, timezone])",
+            .arguments={
+                {"ulid", "Input ULID. [String](../data-types/string.md) or [FixedString(26)](../data-types/fixedstring.md)."},
+                {"timezone", "[Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). [String](../data-types/string.md)."}
+            },
+            .returned_value="Timestamp with milliseconds precision. DateTime64(3).",
             .examples{
                 {"ulid", "SELECT ULIDStringToDateTime(generateULID())", ""},
                 {"timezone", "SELECT ULIDStringToDateTime(generateULID(), 'Asia/Istanbul')", ""}},
-            .category{"ULID"}
+            .category=FunctionDocumentation::Category::ULID
         });
 }
 

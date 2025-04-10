@@ -141,16 +141,42 @@ namespace DB
     void registerTableFunctionLoop(TableFunctionFactory & factory)
     {
         factory.registerFunction<TableFunctionLoop>(
-                {.documentation
-                = {.description=R"(The table function can be used to continuously output query results in an infinite loop.)",
-                                .examples{{"loop", "SELECT * FROM loop((numbers(3)) LIMIT 7", "0"
-                                                                                              "1"
-                                                                                              "2"
-                                                                                              "0"
-                                                                                              "1"
-                                                                                              "2"
-                                                                                              "0"}}
+                {.documentation={
+                    .description=R"(The table function can be used to continuously output query results in an infinite loop.)",
+                    .syntax=R"(
+SELECT ... FROM loop(database, table);
+SELECT ... FROM loop(database.table);
+SELECT ... FROM loop(table);
+SELECT ... FROM loop(other_table_function(...));                    
+                    )",
+                    .arguments={
+                        {"database", "database name."},
+                        {"table", "table name."},
+                        {"other_table_function(...)", "other table function. \n Example: `SELECT * FROM loop(numbers(10));`\n `other_table_function(...)` here is `numbers(10)`."}
+                    },
+                    .returned_value="Infinite loop to return query results.",
+                    .examples{
+                                {
+                                    "loop",
+                                    "SELECT * FROM loop((numbers(3)) LIMIT 7", 
+                                    R"(
+   ┌─number─┐
+1. │      0 │
+2. │      1 │
+3. │      2 │
+   └────────┘
+   ┌─number─┐
+4. │      0 │
+5. │      1 │
+6. │      2 │
+   └────────┘
+   ┌─number─┐
+7. │      0 │
+   └────────┘                            
+                                    )"
+                                }
+                            },
+                            .category=FunctionDocumentation::Category::TableFunction
                         }});
     }
-
 }

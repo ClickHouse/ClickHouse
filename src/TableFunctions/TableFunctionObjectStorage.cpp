@@ -191,10 +191,48 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
     {
         .documentation =
         {
-            .description=R"(The table function can be used to read the data stored on AWS S3.)",
+            .description=R"(
+Provides a table-like interface to select/insert files in [Amazon S3](https://aws.amazon.com/s3/) and [Google Cloud Storage](https://cloud.google.com/storage/). This table function is similar to the [hdfs function](../../sql-reference/table-functions/hdfs.md), but provides S3-specific features.
+
+If you have multiple replicas in your cluster, you can use the [s3Cluster function](../../sql-reference/table-functions/s3Cluster.md) instead to parallelize inserts.
+
+When using the `s3 table function` with [`INSERT INTO...SELECT`](../../sql-reference/statements/insert-into#inserting-the-results-of-select), data is read and inserted in a streaming fashion. Only a few blocks of data reside in memory while the blocks are continuously read from S3 and pushed into the destination table.
+)
+
+:::tip GCS
+The S3 Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys.  See the [Google interoperability docs]( https://cloud.google.com/storage/docs/interoperability) for more details about the endpoint and HMAC.
+
+For GCS, substitute your HMAC key and HMAC secret where you see `access_key_id` and `secret_access_key`.
+:::
+)",
+            .syntax=R"(
+s3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers])
+s3(named_collection[, option=value [,..]])
+)",
+            .arguments{
+                {"url", R"(
+Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [here](../../engines/table-engines/integrations/s3.md#wildcards-in-path).                    
+:::note GCS
+The GCS url is in this format as the endpoint for the Google XML API is different than the JSON API:
+```text
+https://storage.googleapis.com/<bucket>/<folder>/<filename(s)>
+```
+and not ~~https://storage.cloud.google.com~~.
+:::
+)"},
+                {"NOSIGN", "If this keyword is provided in place of credentials, all the requests will not be signed."},
+                {"access_key_id", "Keys that specify credentials to use with given endpoint. Optional."},
+                {"secret_access_key", "Keys that specify credentials to use with given endpoint. Optional."},
+                {"session_token", "Session token to use with the given keys. Optional when passing keys."},
+                {"format", "The [format](/sql-reference/formats) of the file."},
+                {"structure", "Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`."},
+                {"compression_method", "Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension."},
+                {"headers", "Parameter is optional. Allows headers to be passed in the S3 request. Pass in the format `headers(key=value)` e.g. `headers('x-amz-request-payer' = 'requester')`."}
+            },
+            .returned_value="A table with the specified structure for reading or writing data in the specified file.",
             .examples{{"s3", "SELECT * FROM s3(url, access_key_id, secret_access_key)", ""}
         },
-        .category{""}},
+        .category=FunctionDocumentation::Category::TableFunction},
         .allow_readonly = false
     });
 
@@ -203,9 +241,16 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
         .documentation =
         {
             .description=R"(The table function can be used to read the data stored on GCS.)",
+            .syntax="gcs(url, access_key_id, secret_access_key)",
+            .arguments={
+                {"url", ""},
+                {"access_key_id", ""},
+                {"secret_access_key", ""}
+            },
+            .returned_value="",
             .examples{{"gcs", "SELECT * FROM gcs(url, access_key_id, secret_access_key)", ""}
         },
-        .category{""}},
+        .category=FunctionDocumentation::Category::TableFunction},
         .allow_readonly = false
     });
 
@@ -214,9 +259,16 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
         .documentation =
         {
             .description=R"(The table function can be used to read the data stored on COSN.)",
-            .examples{{"cosn", "SELECT * FROM cosn(url, access_key_id, secret_access_key)", ""}
+            .syntax="cosn(url, access_key_id, secret_access_key)",
+            .arguments={
+                {"url", ""},
+                {"access_key_id", ""},
+                {"secret_access_key", ""}
+            },
+            .returned_value="",
+            .examples{{"cosn", "SELECT * FROM cosn(url, access_key_id, secret_access_key)", ""}},
+            .category=FunctionDocumentation::Category::TableFunction
         },
-        .category{""}},
         .allow_readonly = false
     });
     factory.registerFunction<TableFunctionObjectStorage<OSSDefinition, StorageS3Configuration>>(
@@ -224,9 +276,16 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
         .documentation =
         {
             .description=R"(The table function can be used to read the data stored on OSS.)",
-            .examples{{"oss", "SELECT * FROM oss(url, access_key_id, secret_access_key)", ""}
+            .syntax="oss(url, access_key_id, secret_access_key)",
+            .arguments={
+                {"url",""},
+                {"access_key_id", ""},
+                {"secret_access_key", ""}
+            },
+            .returned_value="",
+            .examples{{"oss", "SELECT * FROM oss(url, access_key_id, secret_access_key)", ""}},
+            .category=FunctionDocumentation::Category::TableFunction
         },
-        .category{""}},
         .allow_readonly = false
     });
 #endif
@@ -237,12 +296,25 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
         .documentation =
         {
             .description=R"(The table function can be used to read the data stored on Azure Blob Storage.)",
+            .syntax="azureBlobStorage(- connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])",
+            .arguments={
+                {"connection_string|storage_account_url", "connection_string includes account name & key ([Create connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)) or you could also provide the storage account url here and account name & account key as separate parameters (see parameters account_name & account_key)"},
+                {"container_name", "Container name"},
+                {"blobpath", "file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings."},
+                {"account_name", "if storage_account_url is used, then account name can be specified here"},
+                {"account_key", "if storage_account_url is used, then account key can be specified here"},
+                {"format", "The [format](/sql-reference/formats) of the file."},
+                {"compression", "Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`)."},
+                {"structure", "Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`."}
+            },
+            .returned_value="A table with the specified structure for reading or writing data in the specified file.",
             .examples{
             {
                 "azureBlobStorage",
                 "SELECT * FROM  azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, "
                 "[account_name, account_key, format, compression, structure])", ""
-            }}
+            }},
+            .category=FunctionDocumentation::Category::TableFunction
         },
         .allow_readonly = false
     });
@@ -253,11 +325,19 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
         .documentation =
         {
             .description=R"(The table function can be used to read the data stored on HDFS virtual filesystem.)",
+            .syntax="hdfs(URI, format, structure)",
+            .arguments={
+                {"URI", "The relative URI to the file in HDFS. Path to file support following globs in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc', 'def'` — strings."},
+                {"format", "The [format](/sql-reference/formats) of the file."},
+                {"structure", "Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`."}
+            },
+            .returned_value="A table with the specified structure for reading or writing data in the specified file.",
             .examples{
             {
                 "hdfs",
                 "SELECT * FROM  hdfs(url, format, compression, structure])", ""
-            }}
+            }},
+            .category=FunctionDocumentation::Category::TableFunction
         },
         .allow_readonly = false
     });
@@ -310,14 +390,37 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionIceberg>(
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store. Alias to icebergS3)",
+            .syntax = "iceberg(url, access_key_id, secret_access_key)",
+            .arguments = {
+                {"url", ""},
+                {"access_key_id", ""},
+                {"secret_access_key", ""}
+            },
+            .returned_value = "A table with the specified structure for reading data in the specified Iceberg table.",
             .examples{{"iceberg", "SELECT * FROM iceberg(url, access_key_id, secret_access_key)", ""}},
-            .category{""}},
+            .category=FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
     factory.registerFunction<TableFunctionIcebergS3>(
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store.)",
+            .syntax = R"(
+icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+icebergS3(named_collection[, option=value [,..]])            
+            )",
+            .arguments={
+                {"url",""},
+                {"NOSIGN",""},
+                {"access_key_id", ""},
+                {"secret_access_key", ""},
+                {"session_token", ""},
+                {"format", ""},
+                {"compression_method", ""},
+                {"named_collection", ""},
+                {"option=value", ""}
+            },
+            .returned_value = "A table with the specified structure for reading data in the specified Iceberg table.",
             .examples{{"icebergS3", "SELECT * FROM icebergS3(url, access_key_id, secret_access_key)", ""}},
-            .category{""}},
+            .category=FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 
 #endif
@@ -325,23 +428,63 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionIcebergAzure>(
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored on Azure object store.)",
+            .syntax=R"(
+icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzure(named_collection[, option=value [,..]])            
+            )",
+            .arguments = {
+                {"connection_string|storage_account_url", ""},
+                {"container_name", ""},
+                {"blobpath", ""},
+                {"account_name", ""},
+                {"account_key", ""},
+                {"format", ""},
+                {"compression_method", ""},
+                {"named_collection", ""},
+                {"option=value", ""}
+            },
+            .returned_value = "A table with the specified structure for reading data in the specified Iceberg table.",
             .examples{{"icebergAzure", "SELECT * FROM icebergAzure(url, access_key_id, secret_access_key)", ""}},
-            .category{""}},
+            .category=FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 #endif
 #if USE_HDFS
     factory.registerFunction<TableFunctionIcebergHDFS>(
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem.)",
+            .syntax=R"(
+icebergHDFS(path_to_table, [,format] [,compression_method])
+icebergHDFS(named_collection[, option=value [,..]])
+)",
+            .arguments = {
+                {"path_to_table", ""},
+                {"format", ""},
+                {"compression_method", ""},
+                {"named_collection", ""},
+                {"option=value", ""},
+            },
+            .returned_value = "A table with the specified structure for reading data in the specified Iceberg table.",
             .examples{{"icebergHDFS", "SELECT * FROM icebergHDFS(url)", ""}},
-            .category{""}},
+            .category=FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 #endif
     factory.registerFunction<TableFunctionIcebergLocal>(
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored locally.)",
+            .syntax = R"(
+icebergLocal(path_to_table, [,format] [,compression_method])
+icebergLocal(named_collection[, option=value [,..]])            
+            )",
+            .arguments = {
+                {"path_to_table", ""},
+                {"format", ""},
+                {"compression_method", ""},
+                {"named_collection", ""},
+                {"option=value", ""},
+            },
+            .returned_value="A table with the specified structure for reading data in the specified Iceberg table.",
             .examples{{"icebergLocal", "SELECT * FROM icebergLocal(filename)", ""}},
-            .category{""}},
+            .category=FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 }
 #endif
@@ -354,8 +497,23 @@ void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionDeltaLake>(
         {.documentation
          = {.description = R"(The table function can be used to read the DeltaLake table stored on object store.)",
+            .syntax=R"(
+deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+
+deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+
+deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+         )",
+            .arguments{
+                {"cluster_name","Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers."},
+                {"path", "The relative path to the file from user_files_path. Path to file also supports globs."},
+                {"format","[Format](/sql-reference/formats) of the files. Type: String."},
+                {"structure","Table structure in `UserID UInt64, Name String` format. Determines column names and types. Type: String."},
+                {"compression_method","Compression method. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`."}
+            },
+            .returned_value="A table with the specified structure for reading data in the specified Delta Lake table."
             .examples{{"deltaLake", "SELECT * FROM deltaLake(url, access_key_id, secret_access_key)", ""}},
-            .category{""}},
+            .category=FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 }
 #endif
@@ -365,8 +523,22 @@ void registerTableFunctionHudi(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionHudi>(
         {.documentation
          = {.description = R"(The table function can be used to read the Hudi table stored on object store.)",
+            .syntax="hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])",
+            .arguments={
+                {"url", "Bucket url with the path to an existing Hudi table in S3."},
+                {"aws_access_key_id, aws_secret_access_key", "Long-term credentials for the AWS account user. You can use these to authenticate your requests. These parameters are optional. If credentials are not specified, they are used from the ClickHouse configuration. For more information see Using S3 for Data Storage."},
+                {"format", "The format of the file."},
+                {"structure", "Structure of the table. Format `column1_name column1_type, column2_name column2_type, ...`."},
+                {"compression", "Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, compression will be autodetected by the file extension."}
+            },
+            .returned_value="A table with the specified structure for reading data in the specified Hudi table in S3.",
             .examples{{"hudi", "SELECT * FROM hudi(url, access_key_id, secret_access_key)", ""}},
-            .category{""}},
+            .category=FunctionDocumentation::Category::TableFunction,
+            .related{
+                "[Hudi engine](/engines/table-engines/integrations/hudi)",
+                "[Hudi cluster table function](/sql-reference/table-functions/hudiCluster)"
+            }
+            },
          .allow_readonly = false});
 }
 

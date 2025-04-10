@@ -419,8 +419,8 @@ REGISTER_FUNCTION(EmptyArrayToSingle)
     └───────┴───────────────────────┘
     )"};
     FunctionDocumentation::Examples examples = {example1};
-    FunctionDocumentation::Category categories = {"array"};
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, category};
     factory.registerFunction<FunctionEmptyArrayToSingle>(documentation);
 }
 

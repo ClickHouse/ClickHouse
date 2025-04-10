@@ -445,12 +445,18 @@ the number of columns in the result structure (random by default) and random see
 The maximum number of columns is 128.
 The function returns a value of type String.
 )",
+            .syntax="generateRandomStructure([number_of_columns, seed])",
+            .arguments={
+                {"number_of_columns", "The desired number of columns in the result table structure. If set to 0 or `Null`, the number of columns will be random from 1 to 128. Default value: `Null`."}
+                {"seed", "Random seed to produce stable results. If seed is not specified or set to `Null`, it is randomly generated."}
+            },
+            .returned_value="Randomly generated table structure. String.",
             .examples{
                 {"random", "SELECT generateRandomStructure()", "c1 UInt32, c2 FixedString(25)"},
                 {"with specified number of columns", "SELECT generateRandomStructure(3)", "c1 String, c2 Array(Int32), c3 LowCardinality(String)"},
                 {"with specified seed", "SELECT generateRandomStructure(1, 42)", "c1 UInt128"},
             },
-            .category{"Random Numbers"}
+            .category=FunctionDocumentation::Category::RandomNumber
         });
 }
 

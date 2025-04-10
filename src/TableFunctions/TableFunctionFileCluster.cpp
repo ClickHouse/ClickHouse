@@ -59,8 +59,18 @@ void registerTableFunctionFileCluster(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionFileCluster>(
         {.documentation = {
             .description=R"(This table function is used for distributed reading of files in cluster nodes filesystems.)",
+            .syntax="fileCluster(cluster_name, path[, format, structure, compression_method])",
+            .arguments{
+                {"cluster_name","Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers."},
+                {"path", "The relative path to the file from user_files_path. Path to file also supports globs."},
+                {"format","[Format](/sql-reference/formats) of the files. Type: String."},
+                {"structure","Table structure in `UserID UInt64, Name String` format. Determines column names and types. Type: String."},
+                {"compression_method","Compression method. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`."}
+            },
+            .returned_value="A table with the specified format and structure and with data from files matching the specified path.",
             .examples{{"fileCluster", "SELECT * from fileCluster('my_cluster', 'file{1,2}.csv');", ""}},
-            .category{""}},
+            .category=FunctionDocumentation::Category::TableFunction
+        },
         .allow_readonly = false});
 }
 

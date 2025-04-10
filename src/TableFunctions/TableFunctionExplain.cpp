@@ -205,10 +205,13 @@ void registerTableFunctionExplain(TableFunctionFactory & factory)
                 Returns result of EXPLAIN query.
                 The function should not be called directly but can be invoked via `SELECT * FROM (EXPLAIN <query>)`.
                 You can use this query to process the result of EXPLAIN further using SQL (e.g., in tests).
-                Example:
-                [example:1]
                 )",
-            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}}
+            .syntax="SELECT * FROM (EXPLAIN <query>)",
+            .arguments={{"query", "The query to invoke EXPLAIN on."}},
+            .returned_value="Result of EXPLAIN query.",
+            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""},
+            .category=FunctionDocumentation::TableFunction
+            }
         }});
 }
 

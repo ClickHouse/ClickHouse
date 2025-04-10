@@ -18,15 +18,32 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<detail::FunctionToInt128>();
     factory.registerFunction<detail::FunctionToInt256>();
 
-    factory.registerFunction<detail::FunctionToBFloat16>(FunctionDocumentation{.description=R"(
+    FunctionDocumentation::Description description_toBFloat16 = R"(
 Converts Float32 to BFloat16 with losing the precision.
 
-Example:
-[example:typical]
-)",
-        .examples{
-            {"typical", "SELECT toBFloat16(12.3::Float32);", "12.3125"}},
-        .category{"Type Conversion"}});
+Supported arguments:
+
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including NaN and Inf.
+- String representations of Float32/64, including NaN and Inf (case-insensitive).
+
+)";
+    FunctionDocumentation::Syntax syntax_toBFloat16 = "toBFloat16(expr)";
+    FunctionDocumentation::Arguments arguments_toBFloat16 = {{"expr", "Expression returning a number or a string representation of a number. Expression."}};
+    FunctionDocumentation::ReturnedValue returned_value_toBFloat16 = "16-bit brain-float value. BFloat16.";
+    FunctionDocumentation::Examples examples_toBFloat16 = {{"typical", "SELECT toBFloat16(12.3::Float32);", "12.3125"}};
+    FunctionDocumentation::Category categories_toBFloat16 = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation_toBFloat16 = {
+        description_toBFloat16, 
+        syntax_toBFloat16, 
+        arguments_toBFloat16, 
+        returned_value_toBFloat16, 
+        examples_toBFloat16, 
+        categories_toBFloat16
+    };
+
+    factory.registerFunction<detail::FunctionToBFloat16>(documentation_toBFloat16);
 
     factory.registerFunction<detail::FunctionToFloat32>();
     factory.registerFunction<detail::FunctionToFloat64>();
@@ -67,29 +84,27 @@ Example:
     factory.registerFunction<detail::FunctionToInt128OrZero>();
     factory.registerFunction<detail::FunctionToInt256OrZero>();
 
-    factory.registerFunction<detail::FunctionToBFloat16OrZero>(FunctionDocumentation{.description=R"(
-Converts String to BFloat16.
+    factory.registerFunction<detail::FunctionToBFloat16OrZero>(FunctionDocumentation{
+        .description = R"(
+Converts a String input value to a value of type BFloat16. If the string does not represent a floating point value, the function returns zero.
 
-If the string does not represent a floating point value, the function returns zero.
+Supported arguments:
 
-The function allows a silent loss of precision while converting from the string representation. In that case, it will return the truncated result.
-
-Example of successful conversion:
-[example:typical]
-
-Examples of not successful conversion:
-[example:invalid1]
-[example:invalid2]
-
-Example of a loss of precision:
-[example:precision]
+- String representations of numeric values.
+- Unsupported arguments (return 0):
+- String representations of binary and hexadecimal values.
+- Numeric values.
 )",
+        .syntax="toBFloat16OrZero(x)",
+        .arguments = {{"x", "A String representation of a number. String."}},
+        .returned_value = "16-bit brain-float value, otherwise 0. BFloat16.",
         .examples{
-            {"typical", "SELECT toBFloat16OrZero('12.3');", "12.3125"},
-            {"invalid1", "SELECT toBFloat16OrZero('abc');", "0"},
-            {"invalid2", "SELECT toBFloat16OrZero(' 1');", "0"},
-            {"precision", "SELECT toBFloat16OrZero('12.3456789');", "12.375"}},
-        .category{"Type Conversion"}});
+            {"Typical example", "SELECT toBFloat16OrZero('12.3');", "12.3125"},
+            {"Invalid example 1", "SELECT toBFloat16OrZero('abc');", "0"},
+            {"Invalid example 2", "SELECT toBFloat16OrZero(' 1');", "0"},
+            {"Precision example", "SELECT toBFloat16OrZero('12.3456789');", "12.375"}},
+        .category=FunctionDocumentation::Category::TypeConversion}
+    );
 
     factory.registerFunction<detail::FunctionToFloat32OrZero>();
     factory.registerFunction<detail::FunctionToFloat64OrZero>();
@@ -120,29 +135,36 @@ Example of a loss of precision:
     factory.registerFunction<detail::FunctionToInt128OrNull>();
     factory.registerFunction<detail::FunctionToInt256OrNull>();
 
-    factory.registerFunction<detail::FunctionToBFloat16OrNull>(FunctionDocumentation{.description=R"(
-Converts String to Nullable(BFloat16).
+    FunctionDocumentation::Description description_toBFloat16OrNull = R"(
+Converts a String input value to a value of type `BFloat16` but if the string does not represent a floating point value, the function returns `NULL`.
 
-If the string does not represent a floating point value, the function returns NULL.
-
-The function allows a silent loss of precision while converting from the string representation. In that case, it will return the truncated result.
-
-Example of successful conversion:
-[example:typical]
-
-Examples of not successful conversion:
-[example:invalid1]
-[example:invalid2]
-
-Example of a loss of precision:
-[example:precision]
-)",
-    .examples{
+Supported arguments:
+- String representations of numeric values.
+- Unsupported arguments (return NULL):
+- String representations of binary and hexadecimal values.
+- Numeric values.
+)";
+    FunctionDocumentation::Syntax syntax_toBFloat16OrNull = "toBFloat16OrNull(expr)";
+    FunctionDocumentation::Arguments arguments_toBFloat16OrNull = {
+        {"expr", "Expression returning a number or a string representation of a number. Expression."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toBFloat16OrNull = "16-bit brain-float value. BFloat16.";
+    FunctionDocumentation::Examples examples_toBFloat16OrNull = {
         {"typical", "SELECT toBFloat16OrNull('12.3');", "12.3125"},
         {"invalid1", "SELECT toBFloat16OrNull('abc');", "NULL"},
         {"invalid2", "SELECT toBFloat16OrNull(' 1');", "NULL"},
-        {"precision", "SELECT toBFloat16OrNull('12.3456789');", "12.375"}},
-    .category{"Type Conversion"}});
+        {"precision", "SELECT toBFloat16OrNull('12.3456789');", "12.375"}
+    };
+    FunctionDocumentation::Category category_toBFloat16OrNull = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation_toBFloat16OrNull = {
+        description_toBFloat16OrNull,
+        syntax_toBFloat16OrNull,
+        arguments_toBFloat16OrNull,
+        returned_value_toBFloat16OrNull,
+        examples_toBFloat16OrNull,
+        category_toBFloat16OrNull
+    };
+    factory.registerFunction<detail::FunctionToBFloat16OrNull>(documentation_toBFloat16OrNull);
 
     factory.registerFunction<detail::FunctionToFloat32OrNull>();
     factory.registerFunction<detail::FunctionToFloat64OrNull>();

@@ -128,11 +128,23 @@ void registerTableFunctionMongoDB(TableFunctionFactory & factory)
             .documentation =
             {
                     .description = "Allows get data from MongoDB collection.",
+                    .syntax="mongodb(host:port, database, collection, user, password, structure[, options[, oid_columns]])",
+                    .arguments={
+                        {"host:port", "MongoDB server address."},
+                        {"database", "Remote database name."},
+                        {"collection", "Remote collection name."},
+                        {"user", "MongoDB user."},
+                        {"password", "User password."},
+                        {"structure", "The schema for the ClickHouse table returned from this function."},
+                        {"options", "MongoDB connection string options (optional parameter)."},
+                        {"oid_columns", "Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default."}
+                    },
+                    .returned_value="A table object with the same columns as the original MongoDB table.",
                     .examples = {
                         {"Fetch collection by URI", "SELECT * FROM mongodb('mongodb://root:clickhouse@localhost:27017/database', 'example_collection', 'key UInt64, data String')", ""},
                         {"Fetch collection over TLS", "SELECT * FROM mongodb('localhost:27017', 'database', 'example_collection', 'root', 'clickhouse', 'key UInt64, data String', 'tls=true')", ""},
                     },
-                    .category = {""},
+                    .category = FunctionDocumentation::Category::TableFunction,
             },
     });
 }

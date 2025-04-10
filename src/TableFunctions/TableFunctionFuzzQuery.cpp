@@ -47,7 +47,14 @@ void registerTableFunctionFuzzQuery(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionFuzzQuery>(
         {.documentation
          = {.description = "Perturbs a query string with random variations.",
+            .syntax="fuzzQuery(query[, max_query_length[, random_seed]])",
+            .arguments={
+                {"query", "The source query to perform the fuzzing on. String"},
+                {"max_query_length", "A maximum length the query can get during the fuzzing process. UInt64"},
+                {"random_seed", "A random seed for producing stable results. UInt64"}
+            },
             .returned_value = "A table object with a single column containing perturbed query strings."},
+            .category=FunctionDocumentation::Category::TableFunction
          .allow_readonly = true});
 }
 

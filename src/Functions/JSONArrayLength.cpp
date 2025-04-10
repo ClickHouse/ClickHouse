@@ -102,7 +102,13 @@ REGISTER_FUNCTION(JSONArrayLength)
 {
     factory.registerFunction<FunctionJSONArrayLength>(FunctionDocumentation{
         .description="Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid."});
-
+        .syntax="JSONArrayLength(json)",
+        .arguments={
+            {"json", "String with valid JSON."}
+        },
+        .returned_value="If `json` is a valid JSON array string, returns the number of array elements, otherwise returns `NULL`. Nullable(UInt64).",
+        .examples={{"","",""}},
+        .category=FunctionDocumentation::Category::Dictionary
     /// For Spark compatibility.
     factory.registerAlias("JSON_ARRAY_LENGTH", "JSONArrayLength", FunctionFactory::Case::Insensitive);
 }
