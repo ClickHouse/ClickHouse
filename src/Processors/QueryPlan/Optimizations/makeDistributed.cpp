@@ -78,26 +78,26 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     {
         const auto & actions = join_step->getExpressionActions();
 
-        /// Adds all columns from header to inputs and outputs without any transformations
-        auto add_pass_through_actions = [](ActionsDAG & actions_dag, const Block & header)
+        /// Replaces the internals of ActionsDAG with no-op actions that just pass specified columns without any transformations
+        /// This is done in-place because JoinActionRef-s store column names and pointers to ActionsDAG-s
+        auto replace_with_pass_through_actions = [](ActionsDAG & actions_dag, const Block & header)
         {
+            actions_dag = ActionsDAG(); /// Clear the actions DAG
             for (const auto & column : header.getColumnsWithTypeAndName())
-            {
                 actions_dag.addOrReplaceInOutputs(actions_dag.addInput(column));
-            }
         };
 
         if (actions.left_pre_join_actions)
         {
             source_a = makeExpressionNodeOnTopOf(source_a, std::move(*actions.left_pre_join_actions), {}, nodes);
-            add_pass_through_actions(*actions.left_pre_join_actions, source_a->step->getOutputHeader());
+            replace_with_pass_through_actions(*actions.left_pre_join_actions, source_a->step->getOutputHeader());
             join_step->updateInputHeader(source_a->step->getOutputHeader(), 0);
         }
 
         if (actions.right_pre_join_actions)
         {
             source_b = makeExpressionNodeOnTopOf(source_b, std::move(*actions.right_pre_join_actions), {}, nodes);
-            add_pass_through_actions(*actions.right_pre_join_actions, source_b->step->getOutputHeader());
+            replace_with_pass_through_actions(*actions.right_pre_join_actions, source_b->step->getOutputHeader());
             join_step->updateInputHeader(source_b->step->getOutputHeader(), 1);
         }
     }
