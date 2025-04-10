@@ -255,7 +255,7 @@ using ExchangeDescriptions = std::unordered_map<String, ExchangeDescription>;
 
 /// Stores named parameters for query plan.
 /// This is aimed to share the same plan with different values of parameters like bucket id for shuffle.
-struct QueryPlanParamaters
+struct QueryPlanParameters
 {
     std::unordered_map<String, Field> parameters;
 };
@@ -264,7 +264,7 @@ struct QueryPlanParamaters
 struct DistributedQueryTask
 {
     String task_id;
-    QueryPlanParamaters parameters;
+    QueryPlanParameters parameters;
     std::vector<String> input_exchange_streams;
     std::vector<String> output_exchange_streams;
 };

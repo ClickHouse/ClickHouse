@@ -56,7 +56,7 @@ namespace ErrorCodes
 class TaskParameters : public IParameterLookup
 {
 public:
-    explicit TaskParameters(const QueryPlanParamaters & parameters_)
+    explicit TaskParameters(const QueryPlanParameters & parameters_)
         : parameters(parameters_)
     {
     }
@@ -70,7 +70,7 @@ public:
     }
 
 private:
-    const QueryPlanParamaters parameters;
+    const QueryPlanParameters parameters;
 };
 
 
