@@ -50,6 +50,11 @@ NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema() const
     return table_snapshot->getTableSchema();
 }
 
+void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_settings) const
+{
+    format_settings.parquet.allow_missing_columns = true;
+}
+
 DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const Strings & requested_columns,
     const DB::StorageSnapshotPtr & storage_snapshot,

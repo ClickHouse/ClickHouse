@@ -50,6 +50,8 @@ public:
 
     virtual bool supportsSchemaEvolution() const { return false; }
 
+    virtual void modifyFormatSettings(FormatSettings &) const {}
+
     virtual std::optional<size_t> totalRows() const { return {}; }
     virtual std::optional<size_t> totalBytes() const { return {}; }
 

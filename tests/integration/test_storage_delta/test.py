@@ -1832,5 +1832,5 @@ deltaLake(
     )
     assert (
         "1\ta\t2000-01-01\t['aa','aa']\ttrue\t['aaa','aaa']\n123\td\t2000-04-04\t['ddd','dd']\tfalse\t['ddd','ddd']\n214748364\tb\t2000-02-02\t['bb','bb']\tfalse\t['bbb','bbb']\n\\N\tc\t2000-03-03\t['cc','cc']\tfalse\t['ccc','ccc']\n"
-        == node.query(f"SELECT * FROM {delta_function} ORDER BY all")
+        == node.query(f"SELECT * FROM {delta_function} ORDER BY all settings input_format_parquet_allow_missing_columns=0 ")
     )
