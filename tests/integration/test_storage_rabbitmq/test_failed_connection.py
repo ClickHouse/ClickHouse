@@ -111,16 +111,11 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     )
 
     messages_num = 200000
-    values = []
-    for i in range(messages_num):
-        values.append("({i}, {i})".format(i=i))
-    values = ",".join(values)
-
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         try:
             instance.query(
-                "INSERT INTO test.producer_reconnect VALUES {}".format(values)
+                f"INSERT INTO test.producer_reconnect SELECT number, number FROM numbers({messages_num})"
             )
             break
         except QueryRuntimeException as e:
@@ -194,17 +189,11 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     )
 
     messages_num = 200000
-
-    messages = []
-    for i in range(messages_num):
-        messages.append("({i}, {i})".format(i=i))
-    messages = ",".join(messages)
-
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         try:
             instance.query(
-                "INSERT INTO test.consumer_reconnect VALUES {}".format(messages)
+                f"INSERT INTO test.consumer_reconnect SELECT number, number FROM numbers({messages_num})"
             )
             break
         except QueryRuntimeException as e:
