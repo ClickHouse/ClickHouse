@@ -284,7 +284,7 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     const auto & join_expressions = join_step->getExpressionActions();
     auto & join_info = join_step->getJoinInfo();
 
-    if (join_info.kind == JoinKind::Full)
+    if (join_info.kind == JoinKind::Full || join_info.kind == JoinKind::Left || join_info.kind == JoinKind::Right)
         return 0;
 
     auto strictness = join_info.strictness;
