@@ -19,6 +19,13 @@
 #include <unordered_map>
 #include <vector>
 
+namespace DB::ErrorCodes
+{
+
+extern const int LOGICAL_ERROR;
+
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
