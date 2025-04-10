@@ -170,7 +170,7 @@ jobs:
           fi
 
   docs_check:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd_and_merge, style_check]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9jcyBjaGVjaw==') }}
     name: "Docs check"
