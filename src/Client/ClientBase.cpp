@@ -2255,7 +2255,7 @@ void ClientBase::processParsedSingleQuery(
         /// Send part of the query without data, because data will be sent separately.
         /// But for asynchronous inserts we don't extract data, because it's needed
         /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
-        if (insert && !is_async_insert_with_inlined_data)
+        if (insert && insert->data && !is_async_insert_with_inlined_data)
         {
             chassert(full_query.data() <= insert->data && insert->end <= full_query.data() + full_query.size() && "INSERT query points to full_query");
             query_to_execute = full_query.substr(0, insert->data - full_query.data());
