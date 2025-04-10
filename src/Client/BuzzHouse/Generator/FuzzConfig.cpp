@@ -222,6 +222,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
             min_nested_rows,
             max_nested_rows);
     }
+    if (allow_infinite_tables && fail_on_timeout)
+    {
+        LOG_WARNING(log, "Setting both \"allow_infinite_tables\" and \"fail_on_timeout\" is not recommended");
+    }
     for (const auto & entry : std::views::values(metrics))
     {
         measure_performance |= entry.enabled;
