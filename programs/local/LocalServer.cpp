@@ -101,6 +101,10 @@ namespace ServerSetting
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
     extern const ServerSettingsDouble mark_cache_size_ratio;
+    extern const ServerSettingsString iceberg_metadata_files_cache_policy;
+    extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
+    extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
+    extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_size;
@@ -837,6 +841,19 @@ void LocalServer::processConfig()
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
+#if USE_AVRO
+    String iceberg_metadata_files_cache_policy = server_settings[ServerSetting::iceberg_metadata_files_cache_policy];
+    size_t iceberg_metadata_files_cache_size = server_settings[ServerSetting::iceberg_metadata_files_cache_size];
+    size_t iceberg_metadata_files_cache_max_entries = server_settings[ServerSetting::iceberg_metadata_files_cache_max_entries];
+    double iceberg_metadata_files_cache_size_ratio = server_settings[ServerSetting::iceberg_metadata_files_cache_size_ratio];
+    if (iceberg_metadata_files_cache_size > max_cache_size)
+    {
+        iceberg_metadata_files_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(iceberg_metadata_files_cache_size));
+    }
+    global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
+#endif
+
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
 
@@ -965,7 +982,7 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
         output_stream << options_description.main_description.value() << "\n";
     output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n\n";
     output_stream << getHelpFooter() << "\n";
-    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parameterized queries.\n";
     output_stream << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
 }
 

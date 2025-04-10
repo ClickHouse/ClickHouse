@@ -11,6 +11,7 @@
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/MemoryTracker.h>
+#include <Common/formatReadable.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
@@ -60,6 +61,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/processColumnTransformers.h>
 #include <IO/Ask.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -1902,6 +1904,19 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             columns_for_storage_file.add(std::move(column));
         }
 
+        if (parsed_insert_query->columns)
+        {
+            auto columns = processColumnTransformers(client_context->getCurrentDatabase(), client_context->getInsertionTable(), columns_for_storage_file, parsed_insert_query->columns);
+            ColumnsDescription reordered_description{};
+            for (const auto & col_name : columns->children)
+            {
+                auto col = columns_for_storage_file.get(col_name->getColumnName());
+                reordered_description.add(std::move(col));
+            }
+
+            columns_for_storage_file = std::move(reordered_description);
+        }
+
         StorageFile::CommonArguments args{
             WithContext(client_context),
             parsed_insert_query->table_id,
@@ -3196,32 +3211,6 @@ void ClientBase::runInteractive()
             home_path = home_path_cstr;
     }
 
-    /// Load command history if present.
-    if (getClientConfiguration().has("history_file"))
-        history_file = getClientConfiguration().getString("history_file");
-    else
-    {
-        auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
-        if (history_file_from_env)
-            history_file = history_file_from_env;
-        else if (!home_path.empty())
-            history_file = home_path + "/.clickhouse-client-history";
-    }
-
-    if (!history_file.empty() && !fs::exists(history_file))
-    {
-        /// Avoid TOCTOU issue.
-        try
-        {
-            FS::createFile(history_file);
-        }
-        catch (const ErrnoException & e)
-        {
-            if (e.getErrno() != EEXIST)
-                error_stream << getCurrentExceptionMessage(false) << '\n';
-        }
-    }
-
     history_max_entries = getClientConfiguration().getUInt("history_max_entries", 1000000);
 
     LineReader::Patterns query_extenders = {"\\"};
@@ -3243,7 +3232,35 @@ void ClientBase::runInteractive()
     /// Don't allow embedded client to read from and write to any file on the server's filesystem.
     String actual_history_file_path;
     if (!isEmbeeddedClient())
+    {
+        /// Load command history if present.
+        if (getClientConfiguration().has("history_file"))
+            history_file = getClientConfiguration().getString("history_file");
+        else
+        {
+            auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
+            if (history_file_from_env)
+                history_file = history_file_from_env;
+            else if (!home_path.empty())
+                history_file = home_path + "/.clickhouse-client-history";
+        }
+
+        if (!history_file.empty() && !fs::exists(history_file))
+        {
+            /// Avoid TOCTOU issue.
+            try
+            {
+                FS::createFile(history_file);
+            }
+            catch (const ErrnoException & e)
+            {
+                if (e.getErrno() != EEXIST)
+                    error_stream << getCurrentExceptionMessage(false) << '\n';
+            }
+        }
+
         actual_history_file_path = history_file;
+    }
 
     auto options = ReplxxLineReader::Options
     {
@@ -3517,16 +3534,6 @@ void ClientBase::clearTerminal()
 void ClientBase::showClientVersion()
 {
     output_stream << VERSION_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
-}
-
-std::string ClientBase::getConnectionHostAndPortForFuzzing() const
-{
-    if (!hosts_and_ports.empty())
-    {
-        const HostAndPort & hap = hosts_and_ports[0];
-        return hap.host + (hap.port.has_value() ? (":" + std::to_string(hap.port.value())) : "");
-    }
-    return "127.0.0.{1,2}";
 }
 
 }

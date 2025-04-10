@@ -38,6 +38,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -257,6 +258,7 @@ namespace Setting
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
+    extern const SettingsBool enable_hdfs_pread;
 }
 
 namespace MergeTreeSetting
@@ -446,6 +448,9 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+#if USE_AVRO
+    mutable IcebergMetadataFilesCachePtr iceberg_metadata_files_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized iceberg metadata files.
+#endif
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
     ProcessList process_list;                                   /// Executing queries at the moment.
@@ -519,6 +524,7 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_part_num_to_warn = 100000lu;
     // these variables are used in inserting warning message into system.warning table based on asynchronous metrics
     size_t max_pending_mutations_to_warn = 500lu;
+    size_t max_pending_mutations_execution_time_to_warn = 86400lu;
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
 
@@ -2305,7 +2311,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         {
             auto query = table->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
             NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
-            StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
+            StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
 
             ASTCreateQuery create;
             create.select = query->as<ASTSelectWithUnionQuery>();
@@ -2507,7 +2513,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 }
 
 
-StoragePtr Context::buildParametrizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values)
+StoragePtr Context::buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values)
 {
     if (table_name.empty())
         return nullptr;
@@ -2521,7 +2527,7 @@ StoragePtr Context::buildParametrizedViewStorage(const String & database_name, c
 
     auto original_view_metadata = original_view->getInMemoryMetadataPtr();
     auto query = original_view_metadata->getSelectQuery().inner_query->clone();
-    StorageView::replaceQueryParametersIfParametrizedView(query, param_values);
+    StorageView::replaceQueryParametersIfParameterizedView(query, param_values);
 
     ASTCreateQuery create;
     create.select = query->as<ASTSelectWithUnionQuery>();
@@ -3621,6 +3627,46 @@ void Context::clearMMappedFileCache() const
         cache->clear();
 }
 
+#if USE_AVRO
+void Context::setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->iceberg_metadata_files_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg metadata cache has been already created.");
+
+    shared->iceberg_metadata_files_cache = std::make_shared<IcebergMetadataFilesCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->iceberg_metadata_files_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg metadata cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("iceberg_metadata_files_cache_size", DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("iceberg_metadata_files_cache_max_entries", DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES);
+    shared->iceberg_metadata_files_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->iceberg_metadata_files_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<IcebergMetadataFilesCache> Context::getIcebergMetadataFilesCache() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->iceberg_metadata_files_cache;
+}
+
+void Context::clearIcebergMetadataFilesCache() const
+{
+    auto cache = getIcebergMetadataFilesCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+#endif
+
 void Context::setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
@@ -4434,6 +4480,12 @@ size_t Context::getMaxPendingMutationsToWarn() const
     return shared->max_pending_mutations_to_warn;
 }
 
+size_t Context::getMaxPendingMutationsExecutionTimeToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_pending_mutations_execution_time_to_warn;
+}
+
 size_t Context::getMaxPartNumToWarn() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -4468,6 +4520,12 @@ void Context::setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
     shared->max_pending_mutations_to_warn = max_pending_mutations_to_warn;
+}
+
+void Context::setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_pending_mutations_execution_time_to_warn = max_pending_mutations_execution_time_to_warn;
 }
 
 void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
@@ -4758,6 +4816,16 @@ std::shared_ptr<MetricLog> Context::getMetricLog() const
         return {};
 
     return shared->system_logs->metric_log;
+}
+
+std::shared_ptr<TransposedMetricLog> Context::getTransposedMetricLog() const
+{
+     SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->transposed_metric_log;
 }
 
 
@@ -6231,6 +6299,7 @@ ReadSettings Context::getReadSettings() const
     res.http_make_head_request = settings_ref[Setting::http_make_head_request];
 
     res.mmap_cache = getMMappedFileCache().get();
+    res.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
 
     return res;
 }

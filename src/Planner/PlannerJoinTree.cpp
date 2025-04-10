@@ -333,7 +333,7 @@ bool applyTrivialCountIfPossible(
     select_query_info.optimize_trivial_count = true;
 
     /// Get number of rows
-    std::optional<UInt64> num_rows = storage->totalRows(settings);
+    std::optional<UInt64> num_rows = storage->totalRows(query_context);
     if (!num_rows)
         return false;
 
@@ -771,9 +771,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     "Setting 'max_block_size' cannot be zero");
         }
 
-        if (max_streams == 0)
-            max_streams = 1;
-
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads
         if (max_streams > 1 && !is_sync_remote)
         {
@@ -786,6 +783,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     "Make sure that `max_streams * max_streams_to_max_threads_ratio` is in some reasonable boundaries, current value: {}",
                     streams_with_ratio);
         }
+
+        if (max_streams == 0)
+            max_streams = 1;
 
         if (table_node)
             table_expression_query_info.table_expression_modifiers = table_node->getTableExpressionModifiers();
@@ -1156,12 +1156,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             else
             {
                 /// Create step which reads from empty source if storage has no data.
-                const auto & column_names = table_expression_data.getSelectedColumnsNames();
+                const auto & column_names = table_expression_data.getColumnNames();
                 auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
                 Pipe pipe(std::make_shared<NullSource>(source_header));
                 auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
                 read_from_pipe->setStepDescription("Read from NullSource");
                 query_plan.addStep(std::move(read_from_pipe));
+
+                auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
+                if (!alias_column_expressions.empty())
+                {
+                    auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
+                    query_plan.addStep(std::move(alias_column_step));
+                }
             }
         }
     }

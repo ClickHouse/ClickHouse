@@ -26,9 +26,11 @@
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = 20lu;
+constexpr UInt64 default_distributed_cache_read_request_max_tries = 20lu;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
+constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
 #endif
 
 namespace DB
@@ -581,6 +583,8 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
+    DECLARE(Bool, enable_hdfs_pread, true, R"(
+Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -1579,7 +1583,7 @@ Lower values mean higher priority. Threads with low `nice` priority values are e
     DECLARE(Bool, log_queries, true, R"(
 Setting up query logging.
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#query-log) server configuration parameter.
+Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#query_log) server configuration parameter.
 
 Example:
 
@@ -1711,8 +1715,8 @@ Possible values:
 - 1 — Enabled.
 
 By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
-For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
-For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
+For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated_deduplication_window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated_deduplication_window_seconds)).
+For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non_replicated_deduplication_window).
 )", 0) \
     DECLARE(Bool, async_insert_deduplicate, false, R"(
 For async INSERT queries in the replicated table, specifies that deduplication of inserting blocks should be performed
@@ -2396,46 +2400,127 @@ If enable, remove duplicated rows during FINAL by marking rows as deleted and fi
       */ \
     \
     DECLARE(UInt64, max_rows_to_read, 0, R"(
-Limit on read rows from the most 'deep' sources. That is, only in the deepest subquery. When reading from a remote server, it is only checked on a remote server.
+The maximum number of rows that can be read from a table when running a query.
+The restriction is checked for each processed chunk of data, applied only to the
+deepest table expression and when reading from a remote server, checked only on
+the remote server.
 )", 0) \
     DECLARE(UInt64, max_bytes_to_read, 0, R"(
-Limit on read bytes (after decompression) from the most 'deep' sources. That is, only in the deepest subquery. When reading from a remote server, it is only checked on a remote server.
+The maximum number of bytes (of uncompressed data) that can be read from a table when running a query.
+The restriction is checked for each processed chunk of data, applied only to the
+deepest table expression and when reading from a remote server, checked only on
+the remote server.
 )", 0) \
     DECLARE(OverflowMode, read_overflow_mode, OverflowMode::THROW, R"(
 What to do when the limit is exceeded.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_to_read_leaf, 0, R"(
-Limit on read rows on the leaf nodes for distributed queries. Limit is applied for local reads only, excluding the final merge stage on the root node. Note, the setting is unstable with prefer_localhost_replica=1.
+The maximum number of rows that can be read from a local table on a leaf node when
+running a distributed query. While distributed queries can issue multiple sub-queries
+to each shard (leaf) - this limit will be checked only on the read stage on the
+leaf nodes and ignored on the merging of results stage on the root node.
+
+For example, a cluster consists of 2 shards and each shard contains a table with
+100 rows. The distributed query which is supposed to read all the data from both
+tables with setting `max_rows_to_read=150` will fail, as in total there will be
+200 rows. A query with `max_rows_to_read_leaf=150` will succeed, since leaf nodes
+will read at max 100 rows.
+
+The restriction is checked for each processed chunk of data.
+
+:::note
+This setting is unstable with `prefer_localhost_replica=1`.
+:::
 )", 0) \
     DECLARE(UInt64, max_bytes_to_read_leaf, 0, R"(
-Limit on read bytes (after decompression) on the leaf nodes for distributed queries. Limit is applied for local reads only, excluding the final merge stage on the root node. Note, the setting is unstable with prefer_localhost_replica=1.
+The maximum number of bytes (of uncompressed data) that can be read from a local
+table on a leaf node when running a distributed query. While distributed queries
+can issue a multiple sub-queries to each shard (leaf) - this limit will
+be checked only on the read stage on the leaf nodes and will be ignored on the
+merging of results stage on the root node.
+
+For example, a cluster consists of 2 shards and each shard contains a table with
+100 bytes of data. A distributed query which is supposed to read all the data
+from both tables with setting `max_bytes_to_read=150` will fail as in total it
+will be 200 bytes. A query with `max_bytes_to_read_leaf=150` will succeed since
+leaf nodes will read 100 bytes at max.
+
+The restriction is checked for each processed chunk of data.
+
+:::note
+This setting is unstable with `prefer_localhost_replica=1`.
+:::
 )", 0) \
     DECLARE(OverflowMode, read_overflow_mode_leaf, OverflowMode::THROW, R"(
-What to do when the leaf limit is exceeded.
+Sets what happens when the volume of data read exceeds one of the leaf limits.
+
+Possible options:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_to_group_by, 0, R"(
-If aggregation during GROUP BY is generating more than the specified number of rows (unique GROUP BY keys), the behavior will be determined by the 'group_by_overflow_mode' which by default is - throw an exception, but can be also switched to an approximate GROUP BY mode.
+The maximum number of unique keys received from aggregation. This setting lets
+you limit memory consumption when aggregating.
+
+If aggregation during GROUP BY is generating more than the specified number of
+rows (unique GROUP BY keys), the behavior will be determined by the
+'group_by_overflow_mode' which by default is `throw`, but can be also switched
+to an approximate GROUP BY mode.
 )", 0) \
     DECLARE(OverflowModeGroupBy, group_by_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what happens when the number of unique keys for aggregation exceeds the limit:
+- `throw`: throw an exception
+- `break`: stop executing the query and return the partial result
+- `any`: continue aggregation for the keys that got into the set, but do not add new keys to the set.
+
+Using the 'any' value lets you run an approximation of GROUP BY. The quality of
+this approximation depends on the statistical nature of the data.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_group_by, 0, R"(
-If memory usage during GROUP BY operation is exceeding this threshold in bytes, activate the 'external aggregation' mode (spill data to disk). Recommended value is half of the available system memory.
+Cloud default value: half the memory amount per replica.
+
+Enables or disables execution of `GROUP BY` clauses in external memory.
+(See [GROUP BY in external memory](/sql-reference/statements/select/group-by#group-by-in-external-memory))
+
+Possible values:
+
+- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](/sql-reference/statements/select/group-by) operation.
+- `0` — `GROUP BY` in external memory disabled.
+
+:::note
+If memory usage during GROUP BY operations is exceeding this threshold in bytes,
+activate the 'external aggregation' mode (spill data to disk).
+
+The recommended value is half of the available system memory.
+:::
 )", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_group_by, 0.5, R"(
-Ratio of used memory before enabling external GROUP BY. If you set it to 0.6 the external GROUP BY will be used once the memory usage will reach 60% of allowed memory for query.
+The ratio of available memory that is allowed for `GROUP BY`. Once reached,
+external memory is used for aggregation.
+
+For example, if set to `0.6`, `GROUP BY` will allow using 60% of the available memory
+(to server/user/merges) at the beginning of the execution, after that, it will
+start using external aggregation.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_to_sort, 0, R"(
-If more than the specified amount of records have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception
+The maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
+If more than the specified amount of records have to be processed for the ORDER BY operation,
+the behavior will be determined by the `sort_overflow_mode` which by default is set to `throw`.
 )", 0) \
     DECLARE(UInt64, max_bytes_to_sort, 0, R"(
-If more than the specified amount of (uncompressed) bytes have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception
+The maximum number of bytes before sorting. If more than the specified amount of
+uncompressed bytes have to be processed for ORDER BY operation, the behavior will
+be determined by the `sort_overflow_mode` which by default is set to `throw`.
 )", 0) \
     DECLARE(OverflowMode, sort_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what happens if the number of rows received before sorting exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception.
+- `break`: stop executing the query and return the partial result.
 )", 0) \
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
 Prefer maximum block bytes for external sort, reduce the memory usage during merging.
@@ -2444,10 +2529,24 @@ Prefer maximum block bytes for external sort, reduce the memory usage during mer
 Minimal block size in bytes for external sort that will be dumped to disk, to avoid too many files.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
-If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of the available system memory.
+Cloud default value: half the memory amount per replica.
+
+Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](../../sql-reference/statements/select/order-by.md#implementation-details)
+If memory usage during ORDER BY operation exceeds this threshold in bytes, the 'external sorting' mode (spill data to disk) is activated.
+
+Possible values:
+
+- Maximum volume of RAM (in bytes) that can be used by the single [ORDER BY](../../sql-reference/statements/select/order-by.md) operation.
+  The recommended value is half of available system memory
+- `0` — `ORDER BY` in external memory disabled.
 )", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
-Ratio of used memory before enabling external ORDER BY. If you set it to 0.6 the external ORDER BY will be used once the memory usage will reach 60% of allowed memory for query.
+The ratio of available memory that is allowed for `ORDER BY`. Once reached,
+external sort is used.
+
+For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory
+(to server/user/merges) at the beginning of the execution, after that,
+it will start using external sort.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
 In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
@@ -2457,73 +2556,255 @@ If memory usage after remerge does not reduced by this ratio, remerge will be di
 )", 0) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
-Limit on result size in rows. The query will stop after processing a block of data if the threshold is met, but it will not cut the last block of the result, therefore the result size can be larger than the threshold.
+Cloud default value: `0`.
+
+Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
+No limit is applied when the value is `0`.
+
+The query will stop after processing a block of data if the threshold is met, but
+it will not cut the last block of the result, therefore the result size can be
+larger than the threshold.
 )", 0) \
     DECLARE(UInt64, max_result_bytes, 0, R"(
-Limit on result size in bytes (uncompressed).  The query will stop after processing a block of data if the threshold is met, but it will not cut the last block of the result, therefore the result size can be larger than the threshold. Caveats: the result size in memory is taken into account for this threshold. Even if the result size is small, it can reference larger data structures in memory, representing dictionaries of LowCardinality columns, and Arenas of AggregateFunction columns, so the threshold can be exceeded despite the small result size. The setting is fairly low level and should be used with caution.
+Limits the result size in bytes (uncompressed). The query will stop after processing a block of data if the threshold is met,
+but it will not cut the last block of the result, therefore the result size can be larger than the threshold.
+
+**Caveats**
+
+The result size in memory is taken into account for this threshold.
+Even if the result size is small, it can reference larger data structures in memory,
+representing dictionaries of LowCardinality columns, and Arenas of AggregateFunction columns,
+so the threshold can be exceeded despite the small result size.
+
+:::warning
+The setting is fairly low level and should be used with caution
+:::
 )", 0) \
     DECLARE(OverflowMode, result_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Cloud default value: `throw`
+
+Sets what to do if the volume of the result exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+           source data ran out.
+
+Using 'break' is similar to using LIMIT. `Break` interrupts execution only at the
+block level. This means that amount of returned rows is greater than
+[`max_result_rows`](/operations/settings/settings#max_result_rows), multiple of [`max_block_size`](/operations/settings/settings#max_block_size)
+and depends on [`max_threads`](/operations/settings/settings#max_threads).
+
+**Example**
+
+```sql title="Query"
+SET max_threads = 3, max_block_size = 3333;
+SET max_result_rows = 3334, result_overflow_mode = 'break';
+
+SELECT *
+FROM numbers_mt(100000)
+FORMAT Null;
+```
+
+```text title="Result"
+6666 rows in set. ...
+```
 )", 0) \
     \
     /* TODO: Check also when merging and finalizing aggregate functions. */ \
     DECLARE(Seconds, max_execution_time, 0, R"(
-If query runtime exceeds the specified number of seconds, the behavior will be determined by the 'timeout_overflow_mode', which by default is - throw an exception. Note that the timeout is checked and the query can stop only in designated places during data processing. It currently cannot stop during merging of aggregation states or during query analysis, and the actual run time will be higher than the value of this setting.
+The maximum query execution time in seconds.
+
+The `max_execution_time` parameter can be a bit tricky to understand.
+It operates based on interpolation relative to the current query execution speed
+(this behaviour is controlled by [`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)).
+
+ClickHouse will interrupt a query if the projected execution time exceeds the
+specified `max_execution_time`. By default, the `timeout_before_checking_execution_speed`
+is set to 10 seconds. This means that after 10 seconds of query execution, ClickHouse
+will begin estimating the total execution time. If, for example, `max_execution_time`
+is set to 3600 seconds (1 hour), ClickHouse will terminate the query if the estimated
+time exceeds this 3600-second limit. If you set `timeout_before_checking_execution_speed`
+to 0, ClickHouse will use the clock time as the basis for `max_execution_time`.
+
+If query runtime exceeds the specified number of seconds, the behavior will be
+determined by the 'timeout_overflow_mode', which by default is set to `throw`.
+
+:::note
+The timeout is checked and the query can stop only in designated places during data processing.
+It currently cannot stop during merging of aggregation states or during query analysis,
+and the actual run time will be higher than the value of this setting.
+:::
 )", 0) \
     DECLARE(OverflowMode, timeout_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what to do if the query is run longer than the `max_execution_time` or the
+estimated running time is longer than `max_estimated_execution_time`.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     DECLARE(Seconds, max_execution_time_leaf, 0, R"(
-Similar semantic to max_execution_time but only apply on leaf node for distributed queries, the time out behavior will be determined by 'timeout_overflow_mode_leaf' which by default is - throw an exception
+Similar semantically to [`max_execution_time`](#max_execution_time) but only
+applied on leaf nodes for distributed or remote queries.
+
+For example, if we want to limit the execution time on a leaf node to `10s` but
+have no limit on the initial node, instead of having `max_execution_time` in the
+nested subquery settings:
+
+```sql
+SELECT count()
+FROM cluster(cluster, view(SELECT * FROM t SETTINGS max_execution_time = 10));
+```
+
+We can use `max_execution_time_leaf` as the query settings:
+
+```sql
+SELECT count()
+FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 10;
+```
 )", 0) \
     DECLARE(OverflowMode, timeout_overflow_mode_leaf, OverflowMode::THROW, R"(
-What to do when the leaf limit is exceeded.
+Sets what happens when the query in leaf node run longer than `max_execution_time_leaf`.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, min_execution_speed, 0, R"(
-Minimum number of execution rows per second.
+Minimal execution speed in rows per second. Checked on every data block when
+[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires. If the execution speed is lower, an exception is thrown.
 )", 0) \
     DECLARE(UInt64, max_execution_speed, 0, R"(
-Maximum number of execution rows per second.
+The maximum number of execution rows per second. Checked on every data block when
+[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires. If the execution speed is high, the execution speed will be reduced.
 )", 0) \
     DECLARE(UInt64, min_execution_speed_bytes, 0, R"(
-Minimum number of execution bytes per second.
+The minimum number of execution bytes per second. Checked on every data block when
+[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires. If the execution speed is lower, an exception is thrown.
 )", 0) \
     DECLARE(UInt64, max_execution_speed_bytes, 0, R"(
-Maximum number of execution bytes per second.
+The maximum number of execution bytes per second. Checked on every data block when
+[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires. If the execution speed is high, the execution speed will be reduced.
 )", 0) \
     DECLARE(Seconds, timeout_before_checking_execution_speed, 10, R"(
-Check that the speed is not too low after the specified time has elapsed.
+Checks that execution speed is not too slow (no less than `min_execution_speed`),
+after the specified time in seconds has expired.
 )", 0) \
     DECLARE(Seconds, max_estimated_execution_time, 0, R"(
-Maximum query estimate execution time in seconds.
+Maximum query estimate execution time in seconds. Checked on every data block
+when [`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires.
 )", 0) \
     \
     DECLARE(UInt64, max_columns_to_read, 0, R"(
-If a query requires reading more than specified number of columns, exception is thrown. Zero value means unlimited. This setting is useful to prevent too complex queries.
+The maximum number of columns that can be read from a table in a single query.
+If a query requires reading more than the specified number of columns, an exception
+is thrown.
+
+:::tip
+This setting is useful for preventing overly complex queries.
+:::
+
+`0` value means unlimited.
 )", 0) \
     DECLARE(UInt64, max_temporary_columns, 0, R"(
-If a query generates more than the specified number of temporary columns in memory as a result of intermediate calculation, the exception is thrown. Zero value means unlimited. This setting is useful to prevent too complex queries.
+The maximum number of temporary columns that must be kept in RAM simultaneously
+when running a query, including constant columns. If a query generates more than
+the specified number of temporary columns in memory as a result of intermediate
+calculation, then an exception is thrown.
+
+:::tip
+This setting is useful for preventing overly complex queries.
+:::
+
+`0` value means unlimited.
 )", 0) \
     DECLARE(UInt64, max_temporary_non_const_columns, 0, R"(
-Similar to the 'max_temporary_columns' setting but applies only to non-constant columns. This makes sense because constant columns are cheap and it is reasonable to allow more of them.
+Like `max_temporary_columns`, the maximum number of temporary columns that must
+be kept in RAM simultaneously when running a query, but without counting constant
+columns.
+
+:::note
+Constant columns are formed fairly often when running a query, but they require
+approximately zero computing resources.
+:::
 )", 0) \
     \
     DECLARE(UInt64, max_sessions_for_user, 0, R"(
-Maximum number of simultaneous sessions for a user.
+Maximum number of simultaneous sessions per authenticated user to the ClickHouse server.
+
+Example:
+
+```xml
+<profiles>
+    <single_session_profile>
+        <max_sessions_for_user>1</max_sessions_for_user>
+    </single_session_profile>
+    <two_sessions_profile>
+        <max_sessions_for_user>2</max_sessions_for_user>
+    </two_sessions_profile>
+    <unlimited_sessions_profile>
+        <max_sessions_for_user>0</max_sessions_for_user>
+    </unlimited_sessions_profile>
+</profiles>
+<users>
+    <!-- User Alice can connect to a ClickHouse server no more than once at a time. -->
+    <Alice>
+        <profile>single_session_user</profile>
+    </Alice>
+    <!-- User Bob can use 2 simultaneous sessions. -->
+    <Bob>
+        <profile>two_sessions_profile</profile>
+    </Bob>
+    <!-- User Charles can use arbitrarily many of simultaneous sessions. -->
+    <Charles>
+        <profile>unlimited_sessions_profile</profile>
+    </Charles>
+</users>
+```
+
+Possible values:
+- Positive integer
+- `0` - infinite count of simultaneous sessions (default)
 )", 0) \
     \
     DECLARE(UInt64, max_subquery_depth, 100, R"(
-If a query has more than the specified number of nested subqueries, throw an exception. This allows you to have a sanity check to protect the users of your cluster from going insane with their queries.
+If a query has more than the specified number of nested subqueries, throws an
+exception.
+
+:::tip
+This allows you to have a sanity check to protect against the users of your
+cluster from writing overly complex queries.
+:::
 )", 0) \
     DECLARE(UInt64, max_analyze_depth, 5000, R"(
 Maximum number of analyses performed by interpreter.
 )", 0) \
     DECLARE(UInt64, max_ast_depth, 1000, R"(
-Maximum depth of query syntax tree. Checked after parsing.
+The maximum nesting depth of a query syntactic tree. If exceeded, an exception is thrown.
+
+:::note
+At this time, it isn't checked during parsing, but only after parsing the query.
+This means that a syntactic tree that is too deep can be created during parsing,
+but the query will fail.
+:::
 )", 0) \
     DECLARE(UInt64, max_ast_elements, 50000, R"(
-Maximum size of query syntax tree in number of nodes. Checked after parsing.
+The maximum number of elements in a query syntactic tree. If exceeded, an exception is thrown.
+
+:::note
+At this time, it isn't checked during parsing, but only after parsing the query.
+This means that a syntactic tree that is too deep can be created during parsing,
+but the query will fail.
+:::
 )", 0) \
     DECLARE(UInt64, max_expanded_ast_elements, 500000, R"(
 Maximum size of query syntax tree in number of nodes after expansion of aliases and the asterisk.
@@ -2534,23 +2815,70 @@ Maximum size of query syntax tree in number of nodes after expansion of aliases 
 )", 0) \
     \
     DECLARE(UInt64, max_rows_in_set, 0, R"(
-Maximum size of the set (in number of elements) resulting from the execution of the IN section.
+The maximum number of rows for a data set in the IN clause created from a subquery.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_set, 0, R"(
-Maximum size of the set (in bytes in memory) resulting from the execution of the IN section.
+The maximum number of bytes (of uncompressed data) used by a set in the IN clause
+created from a subquery.
 )", 0) \
     DECLARE(OverflowMode, set_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what happens when the amount of data exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_in_join, 0, R"(
-Maximum size of the hash table for JOIN (in number of rows).
+Limits the number of rows in the hash table that is used when joining tables.
+
+This settings applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
+operations and the [Join](/engines/table-engines/special/join) table engine.
+
+If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
+
+ClickHouse can proceed with different actions when the limit is reached. Use the
+[`join_overflow_mode`](/operations/settings/settings#join_overflow_mode) setting to choose the action.
+
+Possible values:
+
+- Positive integer.
+- `0` — Unlimited number of rows.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, R"(
-Maximum size of the hash table for JOIN (in number of bytes in memory).
+The maximum size in number of bytes of the hash table used when joining tables.
+
+This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
+operations and the [Join table engine](/engines/table-engines/special/join).
+
+If the query contains joins, ClickHouse checks this setting for every intermediate result.
+
+ClickHouse can proceed with different actions when the limit is reached. Use
+the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) settings to choose the action.
+
+Possible values:
+
+- Positive integer.
+- 0 — Memory control is disabled.
 )", 0) \
     DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Defines what action ClickHouse performs when any of the following join limits is reached:
+
+- [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
+- [max_rows_in_join](/operations/settings/settings#max_rows_in_join)
+
+Possible values:
+
+- `THROW` — ClickHouse throws an exception and breaks operation.
+- `BREAK` — ClickHouse breaks operation and does not throw an exception.
+
+Default value: `THROW`.
+
+**See Also**
+
+- [JOIN clause](/sql-reference/statements/select/join)
+- [Join table engine](/engines/table-engines/special/join)
 )", 0) \
     DECLARE(Bool, join_any_take_last_row, false, R"(
 Changes the behaviour of join operations with `ANY` strictness.
@@ -2581,7 +2909,7 @@ Possible values:
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/query-complexity#settings-max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
+ The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
 
  Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -2636,7 +2964,7 @@ Minimal count of rows to compress block in CROSS JOIN. Zero value means - disabl
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 )", 0) \
     DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(
-Maximum size of right-side table if limit is required but max_bytes_in_join is not set.
+Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.
 )", 0) \
     DECLARE(UInt64, partial_merge_join_left_table_buffer_bytes, 0, R"(
 If not 0 group left table blocks in bigger ones for left-side table in partial merge join. It uses up to 2x of specified memory per joining thread.
@@ -2686,27 +3014,62 @@ Possible values:
 )", 0) \
     \
     DECLARE(UInt64, max_rows_to_transfer, 0, R"(
-Maximum size (in rows) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.
+Maximum size (in rows) that can be passed to a remote server or saved in a
+temporary table when the GLOBAL IN/JOIN section is executed.
 )", 0) \
     DECLARE(UInt64, max_bytes_to_transfer, 0, R"(
-Maximum size (in uncompressed bytes) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.
+The maximum number of bytes (uncompressed data) that can be passed to a remote
+server or saved in a temporary table when the GLOBAL IN/JOIN section is executed.
 )", 0) \
     DECLARE(OverflowMode, transfer_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what happens when the amount of data exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_in_distinct, 0, R"(
-Maximum number of elements during execution of DISTINCT.
+The maximum number of different rows when using DISTINCT.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_distinct, 0, R"(
-Maximum total size of the state (in uncompressed bytes) in memory for the execution of DISTINCT.
+The maximum number of bytes of the state (in uncompressed bytes) in memory, which
+is used by a hash table when using DISTINCT.
 )", 0) \
     DECLARE(OverflowMode, distinct_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what happens when the amount of data exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, max_memory_usage, 0, R"(
-Maximum memory usage for processing of single query. Zero means unlimited.
+Cloud default value: depends on the amount of RAM on the replica.
+
+The maximum amount of RAM to use for running a query on a single server.
+A value of `0` means unlimited.
+
+This setting does not consider the volume of available memory or the total volume
+of memory on the machine. The restriction applies to a single query within a
+single server.
+
+You can use `SHOW PROCESSLIST` to see the current memory consumption for each query.
+Peak memory consumption is tracked for each query and written to the log.
+
+Memory usage is not fully tracked for states of the following aggregate functions
+from `String` and `Array` arguments:
+- `min`
+- `max`
+- `any`
+- `anyLast`
+- `argMin`
+- `argMax`
+
+Memory consumption is also restricted by the parameters [`max_memory_usage_for_user`](/operations/settings/settings#max_memory_usage_for_user)
+and [`max_server_memory_usage`](/operations/server-configuration-parameters/settings#max_server_memory_usage).
 )", 0) \
     DECLARE(UInt64, memory_overcommit_ratio_denominator, 1_GiB, R"(
 It represents the soft memory limit when the hard limit is reached on the global level.
@@ -2715,7 +3078,23 @@ Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 )", 0) \
     DECLARE(UInt64, max_memory_usage_for_user, 0, R"(
-Maximum memory usage for processing all concurrently running queries for the user. Zero means unlimited.
+The maximum amount of RAM to use for running a user's queries on a single server. Zero means unlimited.
+
+By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
+
+Also see the description of [`max_memory_usage`](/operations/settings/settings#max_memory_usage).
+
+For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
+
+```sql
+ALTER USER clickhouse_read SETTINGS max_memory_usage_for_user = 1000;
+```
+
+You can verify it worked by logging out of your client, logging back in, then use the `getSetting` function:
+
+```sql
+SELECT getSetting('max_memory_usage_for_user');
+```
 )", 0) \
     DECLARE(UInt64, memory_overcommit_ratio_denominator_for_user, 1_GiB, R"(
 It represents the soft memory limit when the hard limit is reached on the user level.
@@ -2793,10 +3172,22 @@ Possible values:
 )", 0) \
     \
     DECLARE(UInt64, max_temporary_data_on_disk_size_for_user, 0, R"(
-The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running user queries. Zero means unlimited.
+The maximum amount of data consumed by temporary files on disk in bytes for all
+concurrently running user queries.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
 )", 0)\
     DECLARE(UInt64, max_temporary_data_on_disk_size_for_query, 0, R"(
-The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running queries. Zero means unlimited.
+The maximum amount of data consumed by temporary files on disk in bytes for all
+concurrently running queries.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
 )", 0)\
     \
     DECLARE(UInt64, backup_restore_keeper_max_retries, 1000, R"(
@@ -3223,13 +3614,57 @@ If enabled, functions 'least' and 'greatest' return NULL if one of their argumen
 Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 )", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
-Limit maximum number of partitions in the single INSERTed block. Zero means unlimited. Throw an exception if the block contains too many partitions. This setting is a safety threshold because using a large number of partitions is a common misconception.
+Limits the maximum number of partitions in a single inserted block
+and an exception is thrown if the block contains too many partitions.
+
+- Positive integer.
+- `0` — Unlimited number of partitions.
+
+**Details**
+
+When inserting data, ClickHouse calculates the number of partitions in the
+inserted block. If the number of partitions is more than
+`max_partitions_per_insert_block`, ClickHouse either logs a warning or throws an
+exception based on `throw_on_max_partitions_per_insert_block`. Exceptions have
+the following text:
+
+> "Too many partitions for a single INSERT block (`partitions_count` partitions, limit is " + toString(max_partitions) + ").
+  The limit is controlled by the 'max_partitions_per_insert_block' setting.
+  A large number of partitions is a common misconception. It will lead to severe
+  negative performance impact, including slow server startup, slow INSERT queries
+  and slow SELECT queries. Recommended total number of partitions for a table is
+  under 1000..10000. Please note, that partitioning is not intended to speed up
+  SELECT queries (ORDER BY key is sufficient to make range queries fast).
+  Partitions are intended for data manipulation (DROP PARTITION, etc)."
+
+:::note
+This setting is a safety threshold because using a large number of partitions is a common misconception.
+:::
 )", 0) \
     DECLARE(Bool, throw_on_max_partitions_per_insert_block, true, R"(
-Used with max_partitions_per_insert_block. If true (default), an exception will be thrown when max_partitions_per_insert_block is reached. If false, details of the insert query reaching this limit with the number of partitions will be logged. This can be useful if you're trying to understand the impact on users when changing max_partitions_per_insert_block.
+Allows you to control the behaviour when `max_partitions_per_insert_block` is reached.
+
+Possible values:
+- `true`  - When an insert block reaches `max_partitions_per_insert_block`, an exception is raised.
+- `false` - Logs a warning when `max_partitions_per_insert_block` is reached.
+
+:::tip
+This can be useful if you're trying to understand the impact on users when changing [`max_partitions_per_insert_block`](/operations/settings/settings#max_partitions_per_insert_block).
+:::
 )", 0) \
     DECLARE(Int64, max_partitions_to_read, -1, R"(
-Limit the max number of partitions that can be accessed in one query. &lt;= 0 means unlimited.
+Limits the maximum number of partitions that can be accessed in a single query.
+
+The setting value specified when the table is created can be overridden via query-level setting.
+
+Possible values:
+
+- Positive integer
+- `-1` - unlimited (default)
+
+:::note
+You can also specify the MergeTree setting [`max_partitions_to_read`](/operations/settings/settings#max_partitions_to_read) in tables' setting.
+:::
 )", 0) \
     DECLARE(Bool, check_query_single_value_result, true, R"(
 Defines the level of detail for the [CHECK TABLE](/sql-reference/statements/check-table) query result for `MergeTree` family engines .
@@ -3674,7 +4109,7 @@ Allows to ignore errors for MATERIALIZED VIEW, and deliver original block to the
     DECLARE(Bool, ignore_materialized_views_with_dropped_target_table, false, R"(
 Ignore MVs with dropped target table during pushing to views
 )", 0) \
-    DECLARE(Bool, allow_materialized_view_with_bad_select, true, R"(
+    DECLARE(Bool, allow_materialized_view_with_bad_select, false, R"(
 Allow CREATE MATERIALIZED VIEW with SELECT query that references nonexistent tables or columns. It must still be syntactically valid. Doesn't apply to refreshable MVs. Doesn't apply if the MV schema needs to be inferred from the SELECT query (i.e. if the CREATE has no column list and no TO table). Can be used for creating MV before its source table.
 )", 0) \
     DECLARE(Bool, use_compact_format_in_distributed_parts_names, true, R"(
@@ -4272,6 +4707,10 @@ The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELE
 The probability of a fault injection during table creation after creating metadata in ZooKeeper
 )", 0) \
     \
+    DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
+If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
+)", 0) \
+    \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
 and [enable_writes_to_query_cache](#enable_writes_to_query_cache) control in more detail how the cache is used.
@@ -4387,7 +4826,7 @@ Possible values:
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \
     DECLARE(Bool, use_query_condition_cache, false, R"(
-Enable the query condition cache. The cache stores ranges of granules in data parts which satisfy the condition in `WHERE` clause,
+Enable the [query condition cache](/operations/query-condition-cache). The cache stores ranges of granules in data parts which do not satisfy the condition in the `WHERE` clause,
 and reuse this information as an ephemeral index for subsequent queries.
 
 Possible values:
@@ -4541,7 +4980,7 @@ Possible values:
 - 0 — Unlimited.
 )", 0) \
     DECLARE(Bool, database_replicated_enforce_synchronous_settings, false, R"(
-Enforces synchronous waiting for some queries (see also database_atomic_wait_for_drop_and_detach_synchronously, mutation_sync, alter_sync). Not recommended to enable these settings.
+Enforces synchronous waiting for some queries (see also database_atomic_wait_for_drop_and_detach_synchronously, mutations_sync, alter_sync). Not recommended to enable these settings.
 )", 0) \
     DECLARE(UInt64, max_distributed_depth, 5, R"(
 Limits the maximum depth of recursive queries for [Distributed](../../engines/table-engines/special/distributed.md) tables.
@@ -4745,6 +5184,9 @@ Possible values:
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
 )", 0) \
+    DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
+Allow to convert JOIN to subquery with IN if output columns tied to only left table
+)", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages
 )", 0) \
@@ -4854,6 +5296,11 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
 Enable multithreading after evaluating window functions to allow parallel stream processing
+)", 0) \
+    DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
+Use query plan for lazy materialization optimization
+)", 0) \
+    DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit
 )", 0) \
     DECLARE(Bool, query_plan_use_new_logical_join_step, true, "Use new logical join step in query plan", 0) \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
@@ -5298,6 +5745,9 @@ Only has an effect in ClickHouse Cloud. Fetch metrics only from current availabi
     DECLARE(UInt64, distributed_cache_connect_max_tries, default_distributed_cache_connect_max_tries, R"(
 Only has an effect in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful
 )", 0) \
+    DECLARE(UInt64, distributed_cache_read_request_max_tries, default_distributed_cache_read_request_max_tries, R"(
+Only has an effect in ClickHouse Cloud. Number of tries to do distributed cache request if unsuccessful
+)", 0) \
     DECLARE(UInt64, distributed_cache_receive_response_wait_milliseconds, 60000, R"(
 Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive data for request from distributed cache
 )", 0) \
@@ -5336,7 +5786,7 @@ Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reserv
 )", 0) \
     \
     DECLARE(Bool, parallelize_output_from_storages, true, R"(
-Parallelize output for reading step from storage. It allows parallelization of  query processing right after reading from storage if possible
+Parallelize output for reading step from storage. It allows parallelization of query processing right after reading from storage if possible
 )", 0) \
     DECLARE(String, insert_deduplication_token, "", R"(
 The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
@@ -5350,8 +5800,8 @@ Possible values:
 
 `insert_deduplication_token` is used for deduplication _only_ when not empty.
 
-For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
-For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
+For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated_deduplication_window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated_deduplication_window_seconds)).
+For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non_replicated_deduplication_window).
 
 :::note
 `insert_deduplication_token` works on a partition level (the same as `insert_deduplication` checksum). Multiple partitions can have the same `insert_deduplication_token`.
@@ -5970,7 +6420,12 @@ This only affects operations performed on the client side, in particular parsing
 Normally this setting should be set in user profile (users.xml or queries like `ALTER USER`), not through the client (client command line arguments, `SET` query, or `SETTINGS` section of `SELECT` query). Through the client it can be changed to false, but can't be changed to true (because the server won't send the settings if user profile has `apply_settings_from_server = false`).
 
 Note that initially (24.12) there was a server setting (`send_settings_to_client`), but latter it got replaced with this client setting, for better usability.
-)", 0) \
+)", 0)                                  \
+    DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
+Wait time in milliseconds when lower priority query meets higher priority query.
+)", BETA) \
+    DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 2.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
+    DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 6.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -6006,7 +6461,7 @@ Allow experimental vector similarity index
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_shared_set_join, false, R"(
+    DECLARE(Bool, allow_experimental_shared_set_join, true, R"(
 Only has an effect in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
 )", EXPERIMENTAL) \
     DECLARE(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
