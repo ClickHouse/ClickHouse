@@ -64,6 +64,7 @@ class Result(MetaClasses.Serializable):
         files=None,
         info: Union[List[str], str] = "",
         with_info_from_results=False,
+        links=None,
     ) -> "Result":
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
@@ -121,6 +122,7 @@ class Result(MetaClasses.Serializable):
             info="\n".join(infos) if infos else "",
             results=results or [],
             files=files or [],
+            links=links or [],
         )
 
     @staticmethod
