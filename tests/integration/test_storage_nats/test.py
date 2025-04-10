@@ -61,7 +61,7 @@ def wait_nats_paused(nats_port, ssl_ctx=None, timeout=180):
             logging.debug("NATS is paused")
             return
         except Exception as ex:
-            logging.warning("Detect NATS status failed, error:" + str(ex))
+            logging.warning("Detect NATS status failed with error \"" + str(ex) + "\" - continue waiting for proper status...")
             time.sleep(0.5)
     
     assert False, "NATS is not paused"
