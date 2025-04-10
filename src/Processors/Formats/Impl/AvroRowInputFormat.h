@@ -132,6 +132,7 @@ private:
     private:
         Action(Type type_, std::vector<Action> actions_)
             : type(type_)
+            , target_column_idx(target_column_idx_)
             , actions(actions_) {}
 
         void deserializeNested(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
