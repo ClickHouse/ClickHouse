@@ -248,7 +248,7 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/docs-builder",
         path="./ci/docker/docs-builder",
-        platforms=Docker.Platforms.arm_amd,
+        platforms=Docker.Platforms.ARM,
         depends_on=[],
     ),
     Docker.Config(
