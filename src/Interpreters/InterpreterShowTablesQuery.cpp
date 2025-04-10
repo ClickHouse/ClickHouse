@@ -58,7 +58,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         return rewritten_query.str();
     }
 
-    /// SHOW CLUSTER/CLUSTERS
+    /// SHOW CLUSTERS
     if (query.clusters)
     {
         WriteBufferFromOwnString rewritten_query;
@@ -81,12 +81,16 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
         return rewritten_query.str();
     }
+
+    /// SHOW CLUSTER
     if (query.cluster)
     {
         WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT * FROM system.clusters";
-
-        rewritten_query << " WHERE cluster = " << DB::quote << query.cluster_str;
+        
+        auto cluster_name_expanded = getContext()->getMacros()->expand(query.cluster_str);
+        
+        rewritten_query << " WHERE cluster = " << DB::quote << cluster_name_expanded;
 
         /// (*)
         rewritten_query << " ORDER BY cluster, shard_num, replica_num, host_name, host_address, port";
