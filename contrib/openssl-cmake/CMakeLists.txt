@@ -1439,6 +1439,11 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/statem/statem_srvr.c
 )
 
+# Disable all deprecated API
+add_definitions(-DOPENSSL_NO_DEPRECATED)
+add_definitions(-DOPENSSL_NO_ENGINE)
+add_definitions(-DOPENSSL_NO_SRP)
+
 if(ENABLE_OPENSSL_DYNAMIC)
     add_library(crypto SHARED ${CRYPTO_SRC})
     set_target_properties(crypto PROPERTIES VERSION "${LIB_VERSION}" SOVERSION "${LIB_SOVERSION}")
@@ -1451,9 +1456,6 @@ else()
     # Enable legacy crypto support for OpenSSL 3.+
     # to avoid `dlopen(legacy.so)`.
     add_definitions(-DSTATIC_LEGACY)
-    add_definitions(-DOPENSSL_NO_DEPRECATED)
-    add_definitions(-DOPENSSL_NO_ENGINE)
-    add_definitions(-DOPENSSL_NO_SRP)
 
     add_library(crypto ${CRYPTO_SRC})
     add_library(ssl ${SSL_SRC})
