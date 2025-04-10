@@ -1267,24 +1267,24 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
 ;
     "
 
-    if ! [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
-    then
-        echo Database for test results is not specified, will not upload them.
-        return 0
-    fi
+#    if ! [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
+#    then
+#        echo Database for test results is not specified, will not upload them.
+#        return 0
+#    fi
 
-    set +x # Don't show password in the log
-    client=(clickhouse-client
-        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
-        # so I have to extract host and port with clickhouse-local. I tried to use
-        # Poco URI parser to support this in the client, but it's broken and can't
-        # parse host:port.
-        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
-        --secure
-        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
-        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
-        --config "right/config/client_config.xml"
-        --date_time_input_format=best_effort)
+#    set +x # Don't show password in the log
+#    client=(clickhouse-client
+#        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
+#        # so I have to extract host and port with clickhouse-local. I tried to use
+#        # Poco URI parser to support this in the client, but it's broken and can't
+#        # parse host:port.
+#        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+#        --secure
+#        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
+#        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
+#        --config "right/config/client_config.xml"
+#        --date_time_input_format=best_effort)
 
     # CREATE TABLE IF NOT EXISTS query_metrics_v2 (
     #     `event_date` Date,
@@ -1311,57 +1311,57 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
     # ) ENGINE = ReplicatedMergeTree
     # ORDER BY (old_sha, new_sha)
 
-    "${client[@]}" --query "
-            insert into query_metrics_v2
-            select
-                toDate(event_time) event_date,
-                toDateTime('$(git -C right/ch log -1 --format=%cd --date=iso "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
-                $PR_TO_TEST pr_number,
-                '$REF_SHA' old_sha,
-                '$SHA_TO_TEST' new_sha,
-                test,
-                query_index,
-                query_display_name,
-                metric_name as metric,
-                old_value,
-                new_value,
-                diff,
-                stat_threshold
-            from input('metric_name text, old_value float, new_value float, diff float,
-                    ratio_display_text text, stat_threshold float,
-                    test text, query_index int, query_display_name text')
-            format TSV
-" < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
+#    "${client[@]}" --query "
+#            insert into query_metrics_v2
+#            select
+#                toDate(event_time) event_date,
+#                toDateTime('$(git -C right/ch log -1 --format=%cd --date=iso "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
+#                $PR_TO_TEST pr_number,
+#                '$REF_SHA' old_sha,
+#                '$SHA_TO_TEST' new_sha,
+#                test,
+#                query_index,
+#                query_display_name,
+#                metric_name as metric,
+#                old_value,
+#                new_value,
+#                diff,
+#                stat_threshold
+#            from input('metric_name text, old_value float, new_value float, diff float,
+#                    ratio_display_text text, stat_threshold float,
+#                    test text, query_index int, query_display_name text')
+#            format TSV
+#" < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
 
     # Upload some run attributes. I use this weird form because it is the same
     # form that can be used for historical data when you only have compare.log.
-    cat compare.log \
-        | sed -n '
-            s/.*Model name:[[:space:]]\+\(.*\)$/metric	lscpu-model-name	\1/p;
-            s/.*L1d cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1d-cache	\1/p;
-            s/.*L1i cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1i-cache	\1/p;
-            s/.*L2 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l2-cache	\1/p;
-            s/.*L3 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l3-cache	\1/p;
-            s/.*left_sha=\(.*\)$/old-sha	\1/p;
-            s/.*right_sha=\(.*\)/new-sha	\1/p' \
-        | awk '
-            BEGIN { FS = "\t"; OFS = "\t" }
-            /^old-sha/ { old_sha=$2 }
-            /^new-sha/ { new_sha=$2 }
-            /^metric/ { print old_sha, new_sha, $2, $3 }' \
-        | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
+#    cat compare.log \
+#        | sed -n '
+#            s/.*Model name:[[:space:]]\+\(.*\)$/metric	lscpu-model-name	\1/p;
+#            s/.*L1d cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1d-cache	\1/p;
+#            s/.*L1i cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1i-cache	\1/p;
+#            s/.*L2 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l2-cache	\1/p;
+#            s/.*L3 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l3-cache	\1/p;
+#            s/.*left_sha=\(.*\)$/old-sha	\1/p;
+#            s/.*right_sha=\(.*\)/new-sha	\1/p' \
+#        | awk '
+#            BEGIN { FS = "\t"; OFS = "\t" }
+#            /^old-sha/ { old_sha=$2 }
+#            /^new-sha/ { new_sha=$2 }
+#            /^metric/ { print old_sha, new_sha, $2, $3 }' \
+#        | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
 
     # Grepping numactl results from log is too crazy, I'll just call it again.
-    "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
-$REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
-$REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
-EOF
+#    "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
+#$REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
+#$REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
+#EOF
+#
+#    # Also insert some data about the check into the CI checks table.
+#    "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
+#        < ci-checks.tsv
 
-    # Also insert some data about the check into the CI checks table.
-    "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
-        < ci-checks.tsv
-
-    set -x
+#    set -x
 }
 
 # Check that local and client are in PATH
@@ -1438,9 +1438,9 @@ case "$stage" in
     time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
     time "$script_dir/report.py" > report.html
     ;&
-#"upload_results")
-#    time upload_results ||:
-#    ;&
+"upload_results")
+    time upload_results ||:
+    ;&
 esac
 
 # Print some final debug info to help debug Weirdness, of which there is plenty.

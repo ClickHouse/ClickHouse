@@ -2850,7 +2850,11 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     {
         for (size_t i = row_begin; i < row_end; i++)
         {
-            auto emplace_result = state.emplaceKey(data, i, *arena_for_keys);
+            /// clang-tidy complains wrongly about this one when running the analysis from an ARM host.
+            /// The same thing does not fail when cross-compiling from a x86_64 host.
+            /// Furthermore, arena_for_keys is set to be a pointer to the last member of aggregates_pools,
+            /// which is always initialized to have at least 1 arena.
+            auto emplace_result = state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
             if (!emplace_result.isInserted())
                 places[i] = emplace_result.getMapped();
             else
