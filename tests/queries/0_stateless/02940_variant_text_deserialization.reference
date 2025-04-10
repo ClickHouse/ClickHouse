@@ -164,7 +164,7 @@ FixedString
 "abcd","abcd"
 Bool
 \N,\N
-"Truee",\N
+"truee",\N
 true,true
 Integers
 \N,\N
@@ -336,7 +336,7 @@ string	\N
 abcd	abcd
 Bool
 \N	\N
-Truee	\N
+truee	\N
 true	true
 Integers
 \N	\N
