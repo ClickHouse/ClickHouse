@@ -47,6 +47,10 @@ mkdir -p $DEST_SERVER_PATH/config.d/
 mkdir -p $DEST_SERVER_PATH/users.d/
 mkdir -p $DEST_CLIENT_PATH
 
+### WHEN ADDING A NEW CONFIG OR CHANGING THE EXISTING ONE,
+### YOU SHOULD CHECK CLICKHOUSE VERSION SO THAT YOU WON'T
+### BREAK VALIDATIONS USING PREVIOUS CH VERSION (LIKE BUGFIX VALIDATION).
+
 ln -sf $SRC_PATH/config.d/tmp.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_write.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_num_to_warn.xml $DEST_SERVER_PATH/config.d/
