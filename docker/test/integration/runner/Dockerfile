@@ -27,6 +27,7 @@ RUN apt-get update \
     libicu-dev \
     bsdutils \
     curl \
+    openssh-client \
     liblua5.1-dev \
     luajit \
     libssl-dev \
