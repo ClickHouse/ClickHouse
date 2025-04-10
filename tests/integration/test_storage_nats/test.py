@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import math
+import nats
 import os.path as p
 import random
 import subprocess
@@ -53,12 +54,13 @@ def wait_nats_paused(nats_port, ssl_ctx=None, timeout=180):
     start = time.time()
     while time.time() - start < timeout:
         try:
-            if not asyncio.run(check_nats_is_available(nats_port, ssl_ctx=ssl_ctx)):
-                logging.debug("NATS is unavailable")
-                return
+            asyncio.run(check_nats_is_available(nats_port, ssl_ctx=ssl_ctx))
             time.sleep(0.5)
+        except nats.errors.NoServersError as ex:
+            logging.debug("NATS is unavailable: connect failed. error:" + str(ex))
+            return
         except Exception as ex:
-            logging.debug("Check NATS status failed. error:" + str(ex))
+            logging.debug("Can't connect to NATS " + str(ex))
             time.sleep(0.5)
     
     assert False, "NATS available"
