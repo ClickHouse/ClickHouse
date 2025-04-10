@@ -253,13 +253,13 @@ struct HalfMD5Impl
         if (!ctx)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
 
-        if (!EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr))
+        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
 
-        if (!EVP_DigestUpdate(ctx.get(), begin, size))
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
 
-        if (!EVP_DigestFinal_ex(ctx.get(), buf.char_data, nullptr))
+        if (EVP_DigestFinal_ex(ctx.get(), buf.char_data, nullptr) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
 
         /// Compatibility with existing code. Cast is necessary for old poco AND macos where UInt64 != uint64_t

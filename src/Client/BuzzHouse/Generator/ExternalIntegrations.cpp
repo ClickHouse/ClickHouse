@@ -206,8 +206,8 @@ bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const 
     if (is_clickhouse && t.isMergeTreeFamily())
     {
         /// Sometimes the optimize step doesn't have to do anything, then throws error. Ignore it
-        auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
-        auto v = performQueryOnServerOrRemote(
+        const auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
+        const auto v = performQueryOnServerOrRemote(
             pt, fmt::format("OPTIMIZE TABLE {}{};", getTableName(t.db, t.tname), t.supportsFinal() ? " FINAL" : ""));
         UNUSED(u);
         UNUSED(v);
@@ -345,7 +345,7 @@ bool PostgreSQLIntegration::performQuery(const String & query)
 
         out_file << query << std::endl;
         /// Ignore the query result set
-        auto u = w.exec(query);
+        const auto u = w.exec(query);
         UNUSED(u);
         w.commit();
         return true;
@@ -1387,7 +1387,7 @@ void ExternalIntegrations::setDefaultSettings(const PeerTableDatabase pt, const 
     for (const auto & entry : settings)
     {
         /// Some settings may not exist in earlier ClickHouse versions, so we can ignore the errors here
-        auto u = clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = 1;", entry));
+        const auto u = clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = 1;", entry));
         UNUSED(u);
     }
 }
