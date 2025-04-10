@@ -1,8 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
-#include <Common/logger_useful.h>
-#include <Common/Logger.h>
-
 #include <Core/Joins.h>
 
 #include <Functions/FunctionsLogical.h>
@@ -322,10 +319,6 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     auto left_stream_available_columns = get_available_columns(left_stream_header);
     auto right_stream_available_columns = get_available_columns(right_stream_header);
 
-    LOG_DEBUG(getLogger(__func__), "Trying to merge into JOIN({}):\n{}", join_step->getStepDescription(), filter_step->getExpression().dumpDAG());
-    LOG_DEBUG(getLogger(__func__), "Left header:\n{}", toString(left_stream_available_columns));
-    LOG_DEBUG(getLogger(__func__), "Right header:\n{}", toString(right_stream_available_columns));
-
     auto & filter_dag = filter_step->getExpression();
     auto [equality_predicates, trivial_filter] = extractActionsForJoinCondition(
         filter_dag,
@@ -333,7 +326,6 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
         left_stream_available_columns,
         right_stream_available_columns);
 
-    LOG_DEBUG(getLogger(__func__), "Equalities: {}", equality_predicates.size());
     if (equality_predicates.empty())
         return 0;
 
