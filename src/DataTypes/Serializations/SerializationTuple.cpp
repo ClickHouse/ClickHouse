@@ -35,7 +35,7 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
 
 void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto & tuple = field.safeGet<Tuple>();
+    const auto & tuple = field.safeGet<const Tuple &>();
     for (size_t element_index = 0; element_index < elems.size(); ++element_index)
     {
         const auto & serialization = elems[element_index];
@@ -48,7 +48,7 @@ void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr, con
     const size_t size = elems.size();
 
     field = Tuple();
-    Tuple & tuple = field.safeGet<Tuple>();
+    Tuple & tuple = field.safeGet<Tuple &>();
     tuple.reserve(size);
     for (size_t i = 0; i < size; ++i)
         elems[i]->deserializeBinary(tuple.emplace_back(), istr, settings);
@@ -654,16 +654,6 @@ struct SerializeBinaryBulkStateTuple : public ISerialization::SerializeBinaryBul
 struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinaryBulkState
 {
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
-
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
-    {
-        auto new_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
-        new_state->states.reserve(states.size());
-        for (const auto & state : states)
-            new_state->states.push_back(state ? state->clone() : nullptr);
-
-        return new_state;
-    }
 };
 
 void SerializationTuple::enumerateStreams(
@@ -766,7 +756,6 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -782,9 +771,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
         else if (ReadBuffer * stream = settings.getter(settings.path))
         {
             auto mutable_column = column->assumeMutable();
-            auto ignored_size = stream->tryIgnore(rows_offset + limit);
-            auto delta = ignored_size < rows_offset ? 0 : ignored_size - rows_offset;
-            typeid_cast<ColumnTuple &>(*mutable_column).addSize(delta);
+            typeid_cast<ColumnTuple &>(*mutable_column).addSize(stream->tryIgnore(limit));
             column = std::move(mutable_column);
             addToSubstreamsCache(cache, settings.path, column);
         }
@@ -799,7 +786,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
 
     settings.avg_value_size_hint = 0;
     for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->deserializeBinaryBulkWithMultipleStreams(column_tuple.getColumnPtr(i), rows_offset, limit, settings, tuple_state->states[i], cache);
+        elems[i]->deserializeBinaryBulkWithMultipleStreams(column_tuple.getColumnPtr(i), limit, settings, tuple_state->states[i], cache);
 
     typeid_cast<ColumnTuple &>(*mutable_column).addSize(column_tuple.getColumn(0).size());
 }

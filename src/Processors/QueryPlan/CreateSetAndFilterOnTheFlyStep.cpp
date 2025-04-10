@@ -3,7 +3,6 @@
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
-#include <Interpreters/SetWithState.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
 #include <Core/ColumnWithTypeAndName.h>

@@ -1,5 +1,4 @@
 #include "CassandraDictionarySource.h"
-#include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>

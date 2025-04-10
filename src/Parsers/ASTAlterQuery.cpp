@@ -161,7 +161,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << " " << (settings.hilite ? hilite_none : "");
         comment->format(ostr, settings, state, frame);
     }
-    else if (type == ASTAlterCommand::MODIFY_COMMENT || type == ASTAlterCommand::MODIFY_DATABASE_COMMENT)
+    else if (type == ASTAlterCommand::MODIFY_COMMENT)
     {
         ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY COMMENT" << (settings.hilite ? hilite_none : "");
         ostr << " " << (settings.hilite ? hilite_none : "");
@@ -248,13 +248,6 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
             partition->format(ostr, settings, state, frame);
         }
-    }
-    else if (type == ASTAlterCommand::UNLOCK_SNAPSHOT)
-    {
-        ostr << (settings.hilite ? hilite_keyword : "") << "UNLOCK SNAPSHOT " << (settings.hilite ? hilite_none : "");
-        ostr << quoteString(snapshot_name);
-        ostr << (settings.hilite ? hilite_keyword : "") << "FROM " << (settings.hilite ? hilite_none : "");
-        snapshot_desc->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)
     {
@@ -573,11 +566,6 @@ bool ASTAlterQuery::isFreezeAlter() const
 {
     return isOneCommandTypeOnly(ASTAlterCommand::FREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::FREEZE_ALL)
         || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_ALL);
-}
-
-bool ASTAlterQuery::isUnlockSnapshot() const
-{
-    return isOneCommandTypeOnly(ASTAlterCommand::UNLOCK_SNAPSHOT);
 }
 
 bool ASTAlterQuery::isAttachAlter() const

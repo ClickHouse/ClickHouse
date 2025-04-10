@@ -1,6 +1,4 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
-
-#include <Processors/Port.h>
 #include <Common/Exception.h>
 
 namespace DB

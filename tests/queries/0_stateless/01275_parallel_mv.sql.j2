@@ -41,7 +41,7 @@ insert into testX select number from numbers(200) settings
     parallel_view_processing={{ parallel_view_processing }},
     optimize_trivial_insert_select={{ optimize_trivial_insert_select }},
     max_insert_threads={{ max_insert_threads }};
-system flush logs system.query_log;
+system flush logs;
 select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and

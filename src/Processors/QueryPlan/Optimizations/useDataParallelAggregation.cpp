@@ -6,8 +6,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Interpreters/ExpressionActions.h>
 
+#include <stack>
 #include <unordered_map>
 
 using namespace DB;

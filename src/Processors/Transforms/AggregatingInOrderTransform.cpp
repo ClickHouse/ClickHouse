@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
-#include <Columns/ColumnAggregateFunction.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/sortBlock.h>

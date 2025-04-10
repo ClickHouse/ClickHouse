@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>

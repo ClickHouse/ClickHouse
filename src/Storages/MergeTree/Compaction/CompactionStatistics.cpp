@@ -1,4 +1,3 @@
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 

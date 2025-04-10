@@ -15,10 +15,8 @@
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 #include <Core/Settings.h>
-#include <Common/RemoteHostFilter.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -96,7 +94,7 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
 
     return std::make_unique<AzureObjectStorage>(
         "AzureBlobStorage",
-        std::move(client),
+        connection_params.createForContainer(),
         std::move(settings),
         connection_params.getContainer(),
         connection_params.getConnectionURL());
@@ -314,10 +312,8 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
 
         auto structure_literal = std::make_shared<ASTLiteral>(structure_);
         auto format_literal = std::make_shared<ASTLiteral>(format_);
-        auto is_format_arg = [] (const std::string & s) -> bool
-        {
-            return s == "auto" || FormatFactory::instance().getAllFormats().contains(Poco::toLower(s));
-        };
+        auto is_format_arg
+            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
 
         /// (connection_string, container_name, blobpath)
         if (args.size() == 3)

@@ -18,7 +18,7 @@ SYSTEM PREWARM MARK CACHE t_prewarm_cache;
 
 SELECT count() FROM t_prewarm_cache WHERE NOT ignore(*);
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT ProfileEvents['LoadedMarksCount'] > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT count() FROM t_prewarm_cache%'

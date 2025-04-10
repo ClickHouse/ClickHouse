@@ -85,10 +85,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
             # Wait twice to make sure we wait for a refresh that started after we adjusted the clock.
             # Otherwise another refresh may start right after (because clock moved far forward).
             node.query(
-                f"system wait view re.{name};\
-                system refresh view re.{name};\
-                system wait view re.{name};\
-                system sync replica re.{name};"
+                f"system wait view re.{name}; system refresh view re.{name}; system wait view re.{name};"
             )
         rows_before = int(nodes[randint(0, 1)].query(f"select count() from re.{name}"))
         # Advance the clocks.
@@ -181,11 +178,10 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
 
     # Drop all tables and check that coordination znodes were deleted.
     for name, uuid, coordinated in tables:
-        sync = randint(0, 1) == 0
-        nodes[randint(0, 1)].query(f"drop table re.{name}{' sync' if sync else ''}")
+        maybe_sync = " sync" if randint(0, 1) == 0 else ""
+        nodes[randint(0, 1)].query(f"drop table re.{name}{maybe_sync}")
         # TODO: After https://github.com/ClickHouse/ClickHouse/issues/61065 is done (for MVs, not ReplicatedMergeTree), check the parent znode instead.
-        if sync:
-            assert not znode_exists(uuid)
+        assert not znode_exists(uuid)
 
     # A little stress test dropping MV while it's refreshing, hoping to hit various cases where the
     # drop happens while creating/exchanging/dropping the inner table.
@@ -273,27 +269,4 @@ def test_refresh_vs_shutdown_smoke(started_cluster):
 
     node1.start_clickhouse()
     node1.query("drop database re sync")
-    node2.query("drop database re sync")
-
-def test_replicated_db_startup_race(started_cluster):
-    for node in nodes:
-        node.query(
-            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
-        )
-    node1.query(
-            "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2);\
-            system wait view re.a"
-        )
-
-    # Drop a database before it's loaded.
-    # We stall DatabaseReplicated::startupDatabaseAsync task and expect the server to become responsive without waiting for it.
-    node1.replace_in_config("/etc/clickhouse-server/config.d/config.xml", "<database_replicated_startup_pause>false</database_replicated_startup_pause>", "<database_replicated_startup_pause>true</database_replicated_startup_pause>")
-    node1.restart_clickhouse()
-    node1.replace_in_config("/etc/clickhouse-server/config.d/config.xml", "<database_replicated_startup_pause>true</database_replicated_startup_pause>", "<database_replicated_startup_pause>false</database_replicated_startup_pause>")
-    drop_query_handle = node1.get_query_request("drop database re sync") # this will get stuck until we unpause loading
-    time.sleep(2)
-    node1.query("system disable failpoint database_replicated_startup_pause")
-    _, err = drop_query_handle.get_answer_and_error()
-    assert err == ""
-
     node2.query("drop database re sync")

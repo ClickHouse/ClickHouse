@@ -142,7 +142,7 @@ void ColumnTuple::get(size_t n, Field & res) const
     const size_t tuple_size = columns.size();
 
     res = Tuple();
-    Tuple & res_tuple = res.safeGet<Tuple>();
+    Tuple & res_tuple = res.safeGet<Tuple &>();
     res_tuple.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
@@ -192,7 +192,7 @@ void ColumnTuple::insertData(const char *, size_t)
 
 void ColumnTuple::insert(const Field & x)
 {
-    const auto & tuple = x.safeGet<Tuple>();
+    const auto & tuple = x.safeGet<const Tuple &>();
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -208,7 +208,7 @@ bool ColumnTuple::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Tuple)
         return false;
 
-    const auto & tuple = x.safeGet<Tuple>();
+    const auto & tuple = x.safeGet<const Tuple &>();
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -657,16 +657,16 @@ size_t ColumnTuple::capacity() const
     return getColumn(0).capacity();
 }
 
-void ColumnTuple::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnTuple::prepareForSquashing(const Columns & source_columns)
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
     {
         Columns nested_columns;
-        nested_columns.reserve(source_columns.size() * factor);
+        nested_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             nested_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).getColumnPtr(i));
-        getColumn(i).prepareForSquashing(nested_columns, factor);
+        getColumn(i).prepareForSquashing(nested_columns);
     }
 }
 
@@ -728,36 +728,20 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     max = max_tuple;
 }
 
-void ColumnTuple::forEachMutableSubcolumn(MutableColumnCallback callback)
+void ColumnTuple::forEachSubcolumn(MutableColumnCallback callback)
 {
     for (auto & column : columns)
         callback(column);
 }
 
-void ColumnTuple::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnTuple::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
     for (auto & column : columns)
-    {
-        callback(*column);
-        column->forEachMutableSubcolumnRecursively(callback);
-    }
-}
-
-void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const
-{
-    for (const auto & column : columns)
-        callback(column);
-}
-
-void ColumnTuple::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
-{
-    for (const auto & column : columns)
     {
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
     }
 }
-
 
 bool ColumnTuple::structureEquals(const IColumn & rhs) const
 {

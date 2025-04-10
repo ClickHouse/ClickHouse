@@ -77,8 +77,6 @@ public:
         return ObjectStorageKey::createAsRelative(path);
     }
 
-    bool areObjectKeysRandom() const override { return false; }
-
     bool isRemote() const override { return true; }
 
     bool isReadOnly() const override { return true; }

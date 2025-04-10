@@ -8,7 +8,6 @@
 #include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
 #include <boost/algorithm/string/replace.hpp>
 

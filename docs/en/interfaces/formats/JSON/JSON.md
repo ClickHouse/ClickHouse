@@ -1,18 +1,17 @@
 ---
-alias: []
-description: 'Documentation for the JSON format'
+title : JSON
+slug : /en/interfaces/formats/JSON
+keywords : [JSON]
 input_format: true
-keywords: ['JSON']
 output_format: true
-slug: /interfaces/formats/JSON
-title: 'JSON'
+alias: []
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description
 
 The `JSON` format reads and outputs data in the JSON format. 
 
@@ -35,11 +34,11 @@ The `JSON` type is compatible with JavaScript. To ensure this, some characters a
 - Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. 
 
 For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double quotes by default. 
-To remove the quotes, you can set the configuration parameter [`output_format_json_quote_64bit_integers`](/operations/settings/settings-formats.md/#output_format_json_quote_64bit_integers) to `0`.
+To remove the quotes, you can set the configuration parameter [`output_format_json_quote_64bit_integers`](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_64bit_integers) to `0`.
 
-ClickHouse supports [NULL](/sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](/operations/settings/settings-formats.md/#output_format_json_quote_denormals) to `1`.
+ClickHouse supports [NULL](/docs/en/sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_denormals) to `1`.
 
-## Example Usage {#example-usage}
+## Example Usage
 
 Example:
 
@@ -97,12 +96,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-## Format Settings {#format-settings}
+## Format Settings
 
-For JSON input format, if setting [`input_format_json_validate_types_from_metadata`](/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to `1`,
+For JSON input format, if setting [`input_format_json_validate_types_from_metadata`](/docs/en/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to `1`,
 the types from metadata in input data will be compared with the types of the corresponding columns from the table.
 
-## See Also {#see-also}
+## See Also
 
-- [JSONEachRow](/interfaces/formats/JSONEachRow) format
-- [output_format_json_array_of_rows](/operations/settings/settings-formats.md/#output_format_json_array_of_rows) setting
+- [JSONEachRow](/docs/en/interfaces/formats/JSONEachRow) format
+- [output_format_json_array_of_rows](/docs/en/operations/settings/settings-formats.md/#output_format_json_array_of_rows) setting

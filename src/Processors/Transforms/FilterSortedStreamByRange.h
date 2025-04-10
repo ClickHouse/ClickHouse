@@ -2,6 +2,7 @@
 
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/ISimpleTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 
 namespace DB

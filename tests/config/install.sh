@@ -26,21 +26,6 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-function check_clickhouse_version()
-{
-    local required_version=$1 && shift
-    # ClickHouse local version 25.4.1.1.
-    # ClickHouse local version 25.4.1.1 (official build).
-    current_version=$(clickhouse --version | awk '{print $4}')
-
-    if [ "$(printf '%s\n' "$required_version" "$current_version" | sort -V | head -n1)" = "$required_version" ]; then
-        echo "ClickHouse version $current_version is OK (>= $required_version)"
-    else
-        echo "ClickHouse version $current_version is too old. Required >= $required_version"
-        return 1
-    fi
-}
-
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
 
 mkdir -p $DEST_SERVER_PATH/config.d/
@@ -65,10 +50,7 @@ ln -sf $SRC_PATH/config.d/grpc_protocol.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_atomic.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_concurrent_queries.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree_settings.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/backoff_policy.xml $DEST_SERVER_PATH/config.d/
-if check_clickhouse_version 25.4; then
-    ln -sf $SRC_PATH/config.d/backoff_policy_25_4.xml $DEST_SERVER_PATH/config.d/
-fi
+ln -sf $SRC_PATH/config.d/backoff_failed_mutation.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree_old_dirs_cleanup.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
@@ -102,7 +84,6 @@ ln -sf $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/validate_tcp_client_information.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 
@@ -130,7 +111,6 @@ ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
-ln -sf $SRC_PATH/users.d/max_cpu_load.xml $DEST_SERVER_PATH/users.d/
 
 if [[ -n "$USE_OLD_ANALYZER" ]] && [[ "$USE_OLD_ANALYZER" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
@@ -244,7 +224,6 @@ fi
 if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
-    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
     rm /etc/clickhouse-server/config.d/zookeeper.xml
     rm /etc/clickhouse-server/config.d/keeper_port.xml
 

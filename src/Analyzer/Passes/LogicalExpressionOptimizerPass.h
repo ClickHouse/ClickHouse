@@ -41,7 +41,7 @@ namespace DB
  *
  * 3. Replaces AND chains with a single constant.
  * The replacement is done if:
- *  - one of the operands of the equality function is a constant
+ *  - one of the operands  of the equality function is a constant
  *  - constants are different for same expression
  * -------------------------------
  * SELECT *
@@ -124,16 +124,6 @@ namespace DB
  * SELECT * FROM t1 WHERE a AND b AND (c OR d AND e)
  * SELECT * FROM t1 WHERE a AND b AND (c OR d)
  * SELECT * FROM t1 WHERE a AND b
- * -------------------------------
- *
- * 9. Populate constant comparison in AND chains. Support operators <, <=, >, >=, = and mix of them.
- * -------------------------------
- * SELECT * FROM table WHERE a < b AND b < c AND c < 5;
- *
- * will be transformed into
- *
- * SELECT * FROM table WHERE a < b AND b < c AND c < 5 AND b < 5 AND a < 5;
- * -------------------------------
  */
 
 class LogicalExpressionOptimizerPass final : public IQueryTreePass

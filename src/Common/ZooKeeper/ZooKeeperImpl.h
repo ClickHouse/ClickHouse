@@ -9,7 +9,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ShuffleHost.h>
 #include <Coordination/KeeperConstants.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 
@@ -26,10 +25,13 @@
 #include <map>
 #include <mutex>
 #include <chrono>
+#include <vector>
 #include <memory>
+#include <thread>
 #include <atomic>
 #include <cstdint>
 #include <optional>
+#include <functional>
 #include <random>
 
 

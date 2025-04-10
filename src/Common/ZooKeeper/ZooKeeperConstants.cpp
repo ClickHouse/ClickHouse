@@ -1,5 +1,5 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <unordered_set>
 
 namespace Coordination

@@ -1,4 +1,3 @@
-#include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/Impl/FormRowInputFormat.h>
 #include "Formats/EscapingRuleUtils.h"
 #include <Formats/FormatFactory.h>

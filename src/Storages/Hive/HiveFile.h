@@ -11,7 +11,7 @@
 #include <parquet/arrow/reader.h>
 
 #include <Core/Field.h>
-#include <Common/CacheBase.h>
+#include <Core/Block.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 

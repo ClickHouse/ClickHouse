@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Core/Block.h>
 
 #include <Core/PostgreSQLProtocol.h>
 #include <Formats/FormatSettings.h>

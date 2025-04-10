@@ -1,10 +1,11 @@
 ---
-description: '2.5 billion rows of climate data for the last 120 yrs'
-sidebar_label: 'NOAA Global Historical Climatology Network '
+slug: /en/getting-started/example-datasets/noaa
+sidebar_label: NOAA Global Historical Climatology Network 
 sidebar_position: 1
-slug: /getting-started/example-datasets/noaa
-title: 'NOAA Global Historical Climatology Network'
+description: 2.5 billion rows of climate data for the last 120 yrs
 ---
+
+# NOAA Global Historical Climatology Network 
 
 This dataset contains weather measurements for the last 120 years. Each row is a measurement for a point in time and station.
 
@@ -22,12 +23,12 @@ More precisely and according to the [origin of this data](https://github.com/aws
 
 The sections below give a brief overview of the steps that were involved in bringing this dataset into ClickHouse. If you're interested in reading about each step in more detail, we recommend to take a look at our blog post titled ["Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse"](https://clickhouse.com/blog/real-world-data-noaa-climate-data).
 
-## Downloading the data {#downloading-the-data}
+## Downloading the data
 
 - A [pre-prepared version](#pre-prepared-data) of the data for ClickHouse, which has been cleansed, re-structured, and enriched. This data covers the years 1900 to 2022.
 - [Download the original data](#original-data) and convert to the format required by ClickHouse. Users wanting to add their own columns may wish to explore this approach.
 
-### Pre-prepared data {#pre-prepared-data}
+### Pre-prepared data
 
 More specifically, rows have been removed that did not fail any quality assurance checks by Noaa. The data has also been restructured from a measurement per line to a row per station id and date, i.e.
 
@@ -49,11 +50,11 @@ To download:
 wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/noaa/noaa_enriched.parquet
 ```
 
-### Original data {#original-data}
+### Original data
 
 The following details the steps to download and transform the original data in preparation for loading into ClickHouse.
 
-#### Download {#download}
+#### Download
 
 To download the original data:
 
@@ -61,7 +62,7 @@ To download the original data:
 for i in {1900..2023}; do wget https://noaa-ghcn-pds.s3.amazonaws.com/csv.gz/${i}.csv.gz; done
 ```
 
-#### Sampling the data {#sampling-the-data}
+#### Sampling the data
 
 ```bash
 $ clickhouse-local --query "SELECT * FROM '2021.csv.gz' LIMIT 10" --format PrettyCompact
@@ -98,14 +99,14 @@ Summarizing the format documentation and the columns in order:
     - WSFG - Peak gust wind speed (tenths of meters per second)
     - WT** = Weather Type where ** defines the weather type. Full list of weather types here.
 - DATA VALUE = 5 character data value for ELEMENT i.e. the value of the measurement.
-- M-FLAG = 1 character Measurement Flag. This has 10 possible values. Some of these values indicate questionable data accuracy. We accept data where this is set to "P" - identified as missing presumed zero, as this is only relevant to the PRCP, SNOW and SNWD measurements.
+- M-FLAG = 1 character Measurement Flag. This has 10 possible values. Some of these values indicate questionable data accuracy. We accept data where this is set to “P” - identified as missing presumed zero, as this is only relevant to the PRCP, SNOW and SNWD measurements.
 - Q-FLAG is the measurement quality flag with 14 possible values. We are only interested in data with an empty value i.e. it did not fail any quality assurance checks.
 - S-FLAG is the source flag for the observation. Not useful for our analysis and ignored.
 - OBS-TIME = 4-character time of observation in hour-minute format (i.e. 0700 =7:00 am). Typically not present in older data. We ignore this for our purposes.
 
 A measurement per line would result in a sparse table structure in ClickHouse. We should transform to a row per time and station, with measurements as columns. First, we limit the dataset to those rows without issues i.e. where `qFlag` is equal to an empty string.
 
-#### Clean the data {#clean-the-data}
+#### Clean the data
 
 Using [ClickHouse local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local) we can filter rows that represent measurements of interest and pass our quality requirements:
 
@@ -116,10 +117,10 @@ FROM file('*.csv.gz', CSV, 'station_id String, date String, measurement String, 
 2679264563
 ```
 
-With over 2.6 billion rows, this isn't a fast query since it involves parsing all the files. On our 8 core  machine, this takes around 160 seconds.
+With over 2.6 billion rows, this isn’t a fast query since it involves parsing all the files. On our 8 core  machine, this takes around 160 seconds.
 
 
-### Pivot data {#pivot-data}
+### Pivot data
 
 While the measurement per line structure can be used with ClickHouse, it will unnecessarily complicate future queries. Ideally, we need a row per station id and date, where each measurement type and associated value are a column i.e.
 
@@ -157,7 +158,7 @@ done
 
 This query produces a single 50GB file `noaa.csv`.
 
-### Enriching the data {#enriching-the-data}
+### Enriching the data
 
 The data has no indication of location aside from a station id, which includes a prefix country code. Ideally, each station would have a latitude and longitude associated with it. To achieve this, NOAA conveniently provides the details of each station as a separate [ghcnd-stations.txt](https://github.com/awslabs/open-data-docs/tree/main/docs/noaa/noaa-ghcn#format-of-ghcnd-stationstxt-file). This file has [several columns](https://github.com/awslabs/open-data-docs/tree/main/docs/noaa/noaa-ghcn#format-of-ghcnd-stationstxt-file), of which five are useful to our future analysis: id, latitude, longitude, elevation, and name.
 
@@ -188,7 +189,7 @@ FROM file('noaa.csv', CSV,
 ```
 This query takes a few minutes to run and produces a 6.4 GB file, `noaa_enriched.parquet`.
 
-## Create table {#create-table}
+## Create table
 
 Create a MergeTree table in ClickHouse (from the ClickHouse client).
 
@@ -214,9 +215,9 @@ CREATE TABLE noaa
 
 ```
 
-## Inserting into ClickHouse {#inserting-into-clickhouse}
+## Inserting into ClickHouse
 
-### Inserting from local file {#inserting-from-local-file}
+### Inserting from local file
 
 Data can be inserted from a local file as follows (from the ClickHouse client):
 
@@ -228,7 +229,7 @@ where `<path>` represents the full path to the local file on disk.
 
 See [here](https://clickhouse.com/blog/real-world-data-noaa-climate-data#load-the-data) for how to speed this load up.
 
-### Inserting from S3 {#inserting-from-s3}
+### Inserting from S3
 
 ```sql
 INSERT INTO noaa SELECT *
@@ -237,9 +238,9 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/noaa/noaa_enr
 ```
 For how to speed this up, see our blog post on [tuning large data loads](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part2).
 
-## Sample queries {#sample-queries}
+## Sample queries
 
-### Highest temperature ever {#highest-temperature-ever}
+### Highest temperature ever
 
 ```sql
 SELECT
@@ -267,9 +268,9 @@ LIMIT 5
 
 Reassuringly consistent with the [documented record](https://en.wikipedia.org/wiki/List_of_weather_records#Highest_temperatures_ever_recorded) at [Furnace Creek](https://www.google.com/maps/place/36%C2%B027'00.0%22N+116%C2%B052'00.1%22W/@36.1329666,-116.1104099,8.95z/data=!4m5!3m4!1s0x0:0xf2ed901b860f4446!8m2!3d36.45!4d-116.8667) as of 2023.
 
-### Best ski resorts {#best-ski-resorts}
+### Best ski resorts
 
-Using a [list of ski resorts](https://gist.githubusercontent.com/gingerwizard/dd022f754fd128fdaf270e58fa052e35/raw/622e03c37460f17ef72907afe554cb1c07f91f23/ski_resort_stats.csv) in the united states and their respective locations, we join these against the top 1000 weather stations with the most in any month in the last 5 yrs. Sorting this join by [geoDistance](/sql-reference/functions/geo/coordinates/#geodistance) and restricting the results to those where the distance is less than 20km, we select the top result per resort and sort this by total snow. Note we also restrict resorts to those above 1800m, as a broad indicator of good skiing conditions.
+Using a [list of ski resorts](https://gist.githubusercontent.com/gingerwizard/dd022f754fd128fdaf270e58fa052e35/raw/622e03c37460f17ef72907afe554cb1c07f91f23/ski_resort_stats.csv) in the united states and their respective locations, we join these against the top 1000 weather stations with the most in any month in the last 5 yrs. Sorting this join by [geoDistance](https://clickhouse.com/docs/en/sql-reference/functions/geo/coordinates/#geodistance) and restricting the results to those where the distance is less than 20km, we select the top result per resort and sort this by total snow. Note we also restrict resorts to those above 1800m, as a broad indicator of good skiing conditions.
 
 ```sql
 SELECT
@@ -336,7 +337,7 @@ LIMIT 5
 Peak memory usage: 67.66 MiB.
 ```
 
-## Credits {#credits}
+## Credits
 
 We would like to acknowledge the efforts of the Global Historical Climatology Network for preparing, cleansing, and distributing this data. We appreciate your efforts.
 
