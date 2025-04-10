@@ -1,6 +1,9 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
+ -- w/o local plan for parallel replicas the test will fail in ParallelReplicas CI run since filter steps will be executed as part of remote queries
+set parallel_replicas_local_plan=1;
+
 SET allow_experimental_analyzer = 1;
 
 -- Tests that queries with enabled query condition cache correctly populate profile events
