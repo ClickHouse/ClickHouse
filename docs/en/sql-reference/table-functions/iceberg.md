@@ -239,6 +239,10 @@ The second one is that while doing time travel you can't get state of table befo
 
 In Clickhouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with Clickhouse Select queries and it will work the same way.
 
+## Metadata cache {#metadata-cache}
+
+`Iceberg` table engine and table function support metadata cache storing the information of manifest files, manifest list and metadata json. The cache is stored in memory. This feature is controlled by setting `use_iceberg_metadata_files_cache`, which is enabled by default.
+
 ## Aliases {#aliases}
 
 Table function `iceberg` is an alias to `icebergS3` now.

@@ -110,7 +110,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     """
     )
 
-    messages_num = 100000
+    messages_num = 150000
     values = []
     for i in range(messages_num):
         values.append("({i}, {i})".format(i=i))
@@ -152,6 +152,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
         result = instance.query("SELECT count(DISTINCT key) FROM test.view")
         if int(result) == messages_num:
             break
+        logging.debug(f"Result: {result} / {messages_num}")
         time.sleep(1)
     else:
         pytest.fail(
@@ -171,7 +172,6 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
 
 
 def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
-    logging.getLogger("pika").propagate = False
     instance.query(
         """
         DROP TABLE IF EXISTS test.consumer_reconnect;
