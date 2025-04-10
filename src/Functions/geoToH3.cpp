@@ -98,7 +98,8 @@ public:
         if (geotoh3_lon_lat_input_order)
         {
             col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
-            col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());        }
+            col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
+        }
         else
         {
             col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
@@ -106,21 +107,22 @@ public:
         }
 
         if (!col_lat)
-        throw Exception(
+            throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal type {} of argument {} of function {}. Must be Float64.",
                 arguments[1].type->getName(),
                 2,
                 getName());
+
         const auto & data_lat = col_lat->getData();
 
         if (!col_lon)
             throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal type {} of argument {} of function {}. Must be Float64.",
-                    arguments[0].type->getName(),
-                    1,
-                    getName());
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be Float64.",
+                arguments[0].type->getName(),
+                1,
+                getName());
         const auto & data_lon = col_lon->getData();
 
         const auto * col_res = checkAndGetColumn<ColumnUInt8>(non_const_arguments[2].column.get());
