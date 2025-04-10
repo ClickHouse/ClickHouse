@@ -53,11 +53,22 @@ void PngStructWrapper::cleanup()
     info_ptr = nullptr;
 }
 
-PngWriter::PngWriter(WriteBuffer & out_, Int32 bit_depth_) : out(out_), bit_depth(bit_depth_)
+PngWriter::PngWriter(WriteBuffer & out_, int bit_depth_, int color_type_) : out(out_), bit_depth(bit_depth_), color_type(color_type_)
 {
     if (bit_depth != 16 && bit_depth != 8)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid bit depth provided ({}). Only 8 or 16 supported by current implementation", bit_depth);
+    }
+
+    switch (color_type)
+    {
+        case PNG_COLOR_TYPE_GRAY:
+        case PNG_COLOR_TYPE_RGB:
+        case PNG_COLOR_TYPE_RGBA:
+            break;
+
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported PNG color type ({}) requested", color_type);
     }
 
     log = getLogger("PngWriter");
@@ -128,8 +139,6 @@ void PngWriter::startImage(size_t width_, size_t height_)
         &PngWriter::flushDataCallback
     );
 
-    int color_type = PNG_COLOR_TYPE_RGBA;
-
     png_set_IHDR(
         png_ptr,
         info_ptr,
@@ -138,15 +147,17 @@ void PngWriter::startImage(size_t width_, size_t height_)
         bit_depth,
         color_type,
         PNG_INTERLACE_NONE,
-        PNG_COMPRESSION_TYPE_DEFAULT,
+        PNG_COMPRESSION_TYPE_DEFAULT, ///< TODO: Setting to control compression type
         PNG_FILTER_TYPE_DEFAULT
     );
 
+    #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
     if (bit_depth > 8) 
     {
-        png_set_swap(png_resource->getPngPtr());
+        png_set_swap(png_ptr);
     }
-
+    #endif
+    
     // LOG_INFO(getLogger("PngWriter"), "Image header set: {}x{} with bit_depth {} and color_type RGBA", width, height, bit_depth);
 }
 
@@ -168,7 +179,15 @@ void PngWriter::writeEntireImage(const unsigned char * data, size_t data_size)
 
 
     size_t bytes_per_component = (bit_depth == 16) ? 2 : 1;
-    size_t channels = 4; ///< Assuming RGBA
+    size_t channels;
+    switch (color_type)
+    {
+        case PNG_COLOR_TYPE_GRAY:      channels = 1; break;
+        case PNG_COLOR_TYPE_RGB:       channels = 3; break;
+        case PNG_COLOR_TYPE_RGBA:      channels = 4; break;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid color type ({}) encountered", color_type);
+    }
     size_t row_bytes = channels * width * bytes_per_component;
     size_t expected_total_size = row_bytes * height;
 

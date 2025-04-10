@@ -12,8 +12,6 @@
 namespace DB
 {
 
-// class InputPort;
-// class OutputPort;
 class PngWriter;
 
 /** A stream for outputting data as PNG image.
@@ -30,9 +28,6 @@ private:
     void writeSuffix() override;
     void consume(Chunk) override;
 
-    PngPixelFormat validateFormat(const String &);
-
-    int bit_depth;
     size_t max_width;
     size_t max_height;
     

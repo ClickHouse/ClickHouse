@@ -5,8 +5,7 @@
 #include <Formats/PngWriter.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
-
-#include <boost/endian/conversion.hpp> 
+#include <Columns/ColumnLowCardinality.h>
 
 namespace DB
 {
@@ -75,13 +74,17 @@ inline UInt16 extractPixelComponentImpl(const IColumn & data_col, size_t row_num
 * then delegates the actual data conversion to extractUInt8Impl */
 inline UInt16 extractPixelComponent(const IColumn & col, size_t row_num, int bit_depth)
 {
-    /// Assume that value for NULL pixel component is black
-    if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(&col))
+    if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(&col)) [[unlikely]]
     {        
         if (nullable_col->isNullAt(row_num))        
-            return 0; 
+            return 0; ///< Assume default value for NULL is black 
 
         return extractPixelComponent(nullable_col->getNestedColumn(), row_num, bit_depth);
+    }
+
+    if ([[maybe_unused]] const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(&col)) [[unlikely]]
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LowCardinality column support is not implemented yet for PNG format (numeric component)");
     }
 
     return extractPixelComponentImpl(col, row_num, bit_depth);
@@ -92,8 +95,8 @@ inline UInt16 extractPixelComponent(const IColumn & col, size_t row_num, int bit
 class PngSerializer::SerializerImpl
 {
 public:
-    SerializerImpl(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_)
-        : writer(writer_), max_width(width_), max_height(height_), row_count(0), bit_depth(bit_depth_)
+    SerializerImpl(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_, size_t channels_)
+        : writer(writer_), max_width(width_), max_height(height_), row_count(0), bit_depth(bit_depth_), channels(channels_)
     {
         if (bit_depth != 8 && bit_depth != 16)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "PNG format currently only supports 8 or 16 bit depth, got {}", bit_depth);
@@ -137,34 +140,33 @@ public:
         clear();
     }
 
-    /// Based on bit depth append data to pixels buffer
-    void commonAppendPixelData(UInt16 r, UInt16 g, UInt16 b, UInt16 a)
+    void appendPixelRow(const UInt16 *components, size_t count)
     {
+        if (count != channels)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Provided component count {} does not match expected channel count {}", count, channels);
+
+
         if (row_count >= max_height * max_width)
-        {
             throw Exception(ErrorCodes::TOO_MANY_ROWS, "Exceeded maximum image resolution: {}x{}", max_width, max_height);
-        }
 
         size_t current_offset = pixels.size();
-        pixels.resize(current_offset + channels * bytes_per_component);
+        size_t bytes_to_add = channels * bytes_per_component;
+        pixels.resize(current_offset + bytes_to_add);
         std::byte * ptr = &pixels[current_offset];
 
         if (bit_depth == 16)
         {
-            std::array<UInt16, 4> comps = {r, g, b, a}; 
-            memcpy(ptr, comps.data(), sizeof(comps));
+            memcpy(ptr, components, bytes_to_add);
         }
-
         else if (bit_depth == 8)
         {
-            ptr[0] = static_cast<std::byte>(static_cast<UInt8>(r));
-            ptr[1] = static_cast<std::byte>(static_cast<UInt8>(g));
-            ptr[2] = static_cast<std::byte>(static_cast<UInt8>(b));
-            ptr[3] = static_cast<std::byte>(static_cast<UInt8>(a));
+            for (size_t i = 0; i < channels; ++i)
+                ptr[i] = static_cast<std::byte>(static_cast<UInt8>(components[i]));
         }
 
         ++row_count;
     }
+
 
     PngWriter & writer;
 
@@ -174,15 +176,15 @@ public:
     
     int bit_depth;              
     size_t bytes_per_component; 
-    size_t channels = 4; ///< Assuming RGBA for now, could be configurable later
+    size_t channels;
 
     PODArray<std::byte> pixels;
 
     std::vector<ColumnPtr> src_columns;
 };
 
-PngSerializer::PngSerializer(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_)
-    : impl(std::make_unique<SerializerImpl>(width_, height_, writer_, bit_depth_))
+PngSerializer::PngSerializer(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_, size_t channels_)
+    : impl(std::make_unique<SerializerImpl>(width_, height_, writer_, bit_depth_, channels_))
 {
 }
 
@@ -206,7 +208,7 @@ size_t PngSerializer::getRowCount() const
 class PngSerializerBinary : public PngSerializer
 {
 public:
-    PngSerializerBinary(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_) : PngSerializer(width_, height_, writer_, bit_depth_) 
+    PngSerializerBinary(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_, size_t channels_) : PngSerializer(width_, height_, writer_, bit_depth_, channels_) 
     {
         if (impl->bit_depth != 8)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Binary serialization for png images currently only supports 8-bit depth");
@@ -217,59 +219,59 @@ public:
     void writeRow(size_t row_num) override
     {
         bool val = extractBool(*impl->src_columns[0], row_num);
-        UInt16 value_component = val ? 255 : 0;
-        UInt16 alpha_component = 255; 
-        impl->commonAppendPixelData(value_component, value_component, value_component, alpha_component);
+        UInt16 comps[] = { static_cast<UInt16>(val ? 255 : 0) };
+        impl->appendPixelRow(comps, 1);
     }
 };
 
 class PngSerializerGrayscale : public PngSerializer
 {
 public:
-    PngSerializerGrayscale(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_) : PngSerializer(width_, height_, writer_, bit_depth_) { }
+    PngSerializerGrayscale(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_, size_t channels_) : PngSerializer(width_, height_, writer_, bit_depth_, channels_) { }
 
     void setColumns(const ColumnPtr * columns, size_t num_columns) override { impl->commonSetColumns(columns, num_columns, 1); }
 
     void writeRow(size_t row_num) override
     {
-        const UInt16 val = extractPixelComponent(*impl->src_columns[0], row_num,  impl->bit_depth);
-        const UInt16 max_alpha = (impl->bit_depth == 16) ? 65535 : 255;
-        impl->commonAppendPixelData(val, val, val, max_alpha);
+        UInt16 comps[] = { extractPixelComponent(*impl->src_columns[0], row_num,  impl->bit_depth) };
+        impl->appendPixelRow(comps, 1);
     }
 };
 
 class PngSerializerRGB : public PngSerializer
 {
 public:
-    PngSerializerRGB(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_) : PngSerializer(width_, height_, writer_, bit_depth_) { }
+    PngSerializerRGB(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_, size_t channels_) : PngSerializer(width_, height_, writer_, bit_depth_, channels_) { }
 
     void setColumns(const ColumnPtr * columns, size_t num_columns) override { impl->commonSetColumns(columns, num_columns, 3); }
 
     void writeRow(size_t row_num) override
     {
-        const UInt16 r = extractPixelComponent(*impl->src_columns[0], row_num, impl->bit_depth);
-        const UInt16 g = extractPixelComponent(*impl->src_columns[1], row_num, impl->bit_depth);
-        const UInt16 b = extractPixelComponent(*impl->src_columns[2], row_num, impl->bit_depth);
-        const UInt16 max_alpha = (impl->bit_depth == 16) ? 65535 : 255;
-        impl->commonAppendPixelData(r, g, b, max_alpha);
-
+        UInt16 comps[] = {
+            extractPixelComponent(*impl->src_columns[0], row_num, impl->bit_depth),
+            extractPixelComponent(*impl->src_columns[1], row_num, impl->bit_depth),
+            extractPixelComponent(*impl->src_columns[2], row_num, impl->bit_depth)
+        };
+        impl->appendPixelRow(comps, 3);
     }
 };
 
 class PngSerializerRGBA : public PngSerializer
 {
 public:
-    PngSerializerRGBA(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_) : PngSerializer(width_, height_, writer_, bit_depth_) { }
+    PngSerializerRGBA(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_, size_t channels_) : PngSerializer(width_, height_, writer_, bit_depth_, channels_) { }
 
     void setColumns(const ColumnPtr * columns, size_t num_columns) override { impl->commonSetColumns(columns, num_columns, 4); }
 
     void writeRow(size_t row_num) override
     {
-        const UInt16 r = extractPixelComponent(*impl->src_columns[0], row_num, impl->bit_depth);
-        const UInt16 g = extractPixelComponent(*impl->src_columns[1], row_num, impl->bit_depth);
-        const UInt16 b = extractPixelComponent(*impl->src_columns[2], row_num, impl->bit_depth);
-        const UInt16 a = extractPixelComponent(*impl->src_columns[3], row_num, impl->bit_depth);
-        impl->commonAppendPixelData(r, g, b, a);
+        UInt16 comps[] = {
+            extractPixelComponent(*impl->src_columns[0], row_num, impl->bit_depth),
+            extractPixelComponent(*impl->src_columns[1], row_num, impl->bit_depth),
+            extractPixelComponent(*impl->src_columns[2], row_num, impl->bit_depth),
+            extractPixelComponent(*impl->src_columns[3], row_num, impl->bit_depth)
+        };
+        impl->appendPixelRow(comps, 4);
     }
 };
 
@@ -282,17 +284,21 @@ std::unique_ptr<PngSerializer> PngSerializer::create(
     int bit_depth)
 {
     size_t required_columns = 0;
+    size_t channels = 3; ///< RGB is set by default
     switch (pixel_format)
     {
         case PngPixelFormat::BINARY:
         case PngPixelFormat::GRAYSCALE:
             required_columns = 1;
+            channels = 1;
             break;
         case PngPixelFormat::RGB:
             required_columns = 3;
+            channels = 3;
             break;
         case PngPixelFormat::RGBA:
             required_columns = 4;
+            channels = 4;
             break;
     }
 
@@ -316,7 +322,8 @@ std::unique_ptr<PngSerializer> PngSerializer::create(
                 width, 
                 height,
                 writer,
-                bit_depth
+                bit_depth,
+                channels
             );
             break;
         case PngPixelFormat::GRAYSCALE:
@@ -324,7 +331,8 @@ std::unique_ptr<PngSerializer> PngSerializer::create(
                 width, 
                 height, 
                 writer,
-                bit_depth
+                bit_depth,
+                channels
             );
             break;
         case PngPixelFormat::RGB:
@@ -332,7 +340,8 @@ std::unique_ptr<PngSerializer> PngSerializer::create(
                 width, 
                 height,
                 writer,
-                bit_depth
+                bit_depth,
+                channels
             );
             break;
         case PngPixelFormat::RGBA:
@@ -340,7 +349,8 @@ std::unique_ptr<PngSerializer> PngSerializer::create(
                 width, 
                 height, 
                 writer,
-                bit_depth
+                bit_depth,
+                channels
             );
             break;
     }

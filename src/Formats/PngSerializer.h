@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Columns/IColumn.h>
-/// #include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Common/logger_useful.h>
@@ -48,7 +47,7 @@ protected:
     class SerializerImpl;
     std::unique_ptr<SerializerImpl> impl;
 
-    PngSerializer(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_);
+    PngSerializer(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_, size_t channels);
 };
 
 }
