@@ -734,20 +734,21 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
     String new_query_str;
     {
+        InterpreterSelectQueryAnalyzer analyzer(query_ast.select, context, {});
+        const auto & query_tree = analyzer.getQueryTree();
+        auto select_ast = query_tree->toAST();
+
+        auto new_query_ast = query_ast.clone();
+        auto * insert_ast = new_query_ast->as<ASTInsertQuery>();
+        insert_ast->select = std::move(select_ast);
+
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
             /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
-        query_ast.IAST::format(buf, ast_format_settings);
+        insert_ast->IAST::format(buf, ast_format_settings);
         new_query_str = buf.str();
     }
     LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Formatted insert select query: {}", new_query_str);
-    {
-        WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(
-            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
-        query_ast.select->IAST::format(buf, ast_format_settings);
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Formatted select query: {}", buf.str());
-    }
 
     const bool skip_local_replica = local_pipeline.has_value();
     QueryPipeline pipeline;
