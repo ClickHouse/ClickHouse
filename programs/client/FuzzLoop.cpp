@@ -106,7 +106,7 @@ std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, 
 }
 
 /// Returns false when server is not available.
-bool Client::processWithFuzzing(const String & full_query)
+bool Client::processWithFuzzing(const std::string_view & full_query)
 {
     ASTPtr orig_ast;
 

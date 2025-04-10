@@ -115,7 +115,7 @@ protected:
     /// This is the analogue of Poco::Application::config()
     virtual Poco::Util::LayeredConfiguration & getClientConfiguration() = 0;
 
-    virtual bool processWithFuzzing(const String &)
+    virtual bool processWithFuzzing(const std::string_view &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }
@@ -126,14 +126,15 @@ protected:
     }
 
     virtual void connect() = 0;
-    virtual void processError(const String & query) const = 0;
+    virtual void processError(const std::string_view & query) const = 0;
     virtual String getName() const = 0;
 
     void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
     void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
 
+    /// Note, data that @parsed_query may refer to (in case of INSERT) should point to the same memory as full_query
     void processParsedSingleQuery(
-        const String & full_query,
+        const std::string_view & full_query,
         ASTPtr parsed_query,
         bool & is_async_insert_with_inlined_data,
         std::optional<bool> echo_query_ = {},

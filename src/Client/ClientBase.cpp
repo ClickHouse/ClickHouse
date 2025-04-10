@@ -2150,7 +2150,7 @@ void ClientBase::cancelQuery()
 }
 
 void ClientBase::processParsedSingleQuery(
-    const String & full_query,
+    const std::string_view & full_query,
     ASTPtr parsed_query,
     bool & is_async_insert_with_inlined_data,
     std::optional<bool> echo_query_,
@@ -2256,7 +2256,10 @@ void ClientBase::processParsedSingleQuery(
         /// But for asynchronous inserts we don't extract data, because it's needed
         /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
         if (insert && !is_async_insert_with_inlined_data)
-            query_to_execute = full_query.substr(0, full_query.length() - (insert->end - insert->data));
+        {
+            chassert(full_query.data() <= insert->data && insert->end <= full_query.data() + full_query.size() && "INSERT query points to full_query");
+            query_to_execute = full_query.substr(0, insert->data - full_query.data());
+        }
         else
             query_to_execute = full_query;
 
@@ -2532,7 +2535,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     UInt32 script_query_number = 0;
     UInt32 script_line_number = 0;
 
-    String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
+    std::string_view full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
     ASTPtr parsed_query;
     std::unique_ptr<Exception> current_exception;
     size_t retries_count = 0;
@@ -2596,7 +2599,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             case MultiQueryProcessingStage::EXECUTE_QUERY:
             {
                 is_first = false;
-                full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
+                full_query = std::string_view(all_queries_text).substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
 
                 ++script_query_number;
                 script_line_number += std::count(prev_query_begin, this_query_begin, '\n');
