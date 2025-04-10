@@ -480,12 +480,12 @@ void addFilterStep(
 // if the first one is a subset of the second one.
 // Example: (GROUP BY a, b, c ORDER BY c, a) => {2, 0}.
 // The second elements of pairs are sort directions.
-std::optional<std::vector<std::pair<UInt64, SortDirection>>> findOptimizationSublistIndexes(const auto& group_by_nodes, const auto& order_by_nodes)
+std::optional<std::vector<std::pair<UInt64, SortDirection>>> findOptimizationSublistIndexes(const QueryTreeNodes& group_by_nodes, const QueryTreeNodes& order_by_nodes)
 {
     if (order_by_nodes.empty())
         return std::nullopt;
 
-    if (group_by_nodes.size() != 1 || group_by_nodes.size() != 1) // MVP
+    if (group_by_nodes.size() != 1) // MVP. TODO allow more than one expression
         return std::nullopt;
 
     std::vector<std::pair<UInt64, SortDirection>> result(order_by_nodes.size());
@@ -594,7 +594,6 @@ void addAggregationStep(QueryPlan & query_plan,
     const QueryNode & query_node)
 {
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-
     auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result, select_query_info, query_node);
 
     SortDescription sort_description_for_merging;

@@ -356,9 +356,9 @@ protected:
         const auto & lhs_key = keyHolderGetKey(lhs);
         const auto & rhs_key = keyHolderGetKey(rhs);
 
-        chassert(optimization_indexes.size() == 1);
+        assert(optimization_indexes.size() == 1); // MVP. TODO remove after supporting several expressions in findOptimizationSublistIndexes
 
-        if (optimization_indexes[0].second == SortDirection::ASCENDING) { // MVP. Support only numeric types (int, float)
+        if (optimization_indexes[0].second == SortDirection::ASCENDING) { // MVP. TODO support all types. Now only numeric types (int, float) are supported.
             return lhs_key < rhs_key;
         }
         return rhs_key < lhs_key;
@@ -392,21 +392,22 @@ protected:
                        && !std::is_same_v<KeyHolder, Int128>
                        && !std::is_same_v<KeyHolder, UInt128>
                        && !std::is_same_v<KeyHolder, Int256>
-                       && !std::is_same_v<KeyHolder, UInt256>) { // MVP. Support only basic types
+                       && !std::is_same_v<KeyHolder, UInt256>) { // MVP. TODO support all types
                 if (optimization_indexes && data.size() > limit_length)
                 {
-                    chassert(optimization_indexes->size() == 1 && (*optimization_indexes)[0].first == 0);
+                    assert(optimization_indexes->size() == 1 && (*optimization_indexes)[0].first == 0); // TODO support arbitrary number of expressions in findOptimizationSublistIndexes
                     if constexpr (HasBegin<Data>::value)
                     {
                         if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>)
                         {
+                            // TODO Remove after support more types
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), StringRef>));
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), Int128>));
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt128>));
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), Int256>));
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt256>));
 
-                            // find the minimal element of data
+                            // find the maximum element of data
                             auto max_key_holder = key_holder;
                             for (const auto& data_el : data)
                             {
@@ -419,6 +420,7 @@ protected:
                                         max_key_holder = data_el.getKey();
                             }
                             const auto& max_key = keyHolderGetKey(max_key_holder);
+
                             // erase found element
                             if constexpr (HasErase<Data, decltype(keyHolderGetKey(max_key_holder))>::value)
                             {
@@ -435,8 +437,6 @@ protected:
                 }
             }
         }
-
-        // TODO could the iterator become invalid after deleting another key?
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)
