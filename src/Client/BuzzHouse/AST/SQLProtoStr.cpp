@@ -1853,7 +1853,8 @@ CONV_FN(RemoteFunc, rfunc)
 {
     const TableOrFunction & tof = rfunc.tof();
 
-    ret += "remote('";
+    ret += RemoteFunc_RName_Name(rfunc.rname());
+    ret += "('";
     ret += rfunc.address();
     ret += "', ";
     TableOrFunctionToString(ret, true, tof);
