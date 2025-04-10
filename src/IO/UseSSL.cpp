@@ -19,6 +19,7 @@ namespace ErrorCodes
 }
 
 #if USE_SSL
+std::atomic<uint8_t> DB::UseSSL::ref_count{0};
 OSSL_PROVIDER * DB::UseSSL::default_provider = nullptr;
 OSSL_PROVIDER * DB::UseSSL::legacy_provider = nullptr;
 #endif

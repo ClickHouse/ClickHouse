@@ -231,9 +231,9 @@ __attribute__((constructor(0))) void init_je_malloc_message()
 #endif
 
 /// OpenSSL early initialization.
-__attribute__((constructor(0))) void init_ssl()
+__attribute__((constructor(202))) void init_ssl()
 {
-    DB::UseSSL();
+    DB::UseSSL::instance();
 }
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
