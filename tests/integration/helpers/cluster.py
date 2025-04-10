@@ -563,6 +563,10 @@ class ClickHouseCluster:
         self.coredns_host = "coredns"
 
         self.kafka_sasl_host = "kafka_sasl"
+        self.kafka_sasl_dir = os.path.join(self.instances_dir, "kafka_sasl")
+        self._kafka_sasl_port = 0
+        self.kafka_sasl_docker_id = None
+        self.kafka_sasl_docker_id = self.get_instance_docker_id(self.kafka_sasl_host)
 
         # available when with_kerberozed_kafka == True
         # reuses kafka_dir
@@ -777,6 +781,13 @@ class ClickHouseCluster:
             return self._schema_registry_auth_port
         self._schema_registry_auth_port = self.port_pool.get_port()
         return self._schema_registry_auth_port
+
+    @property
+    def kafka_sasl_port(self):
+        if self._kafka_sasl_port:
+            return self._kafka_sasl_port
+        self._kafka_sasl_port = self.port_pool.get_port()
+        return self._kafka_sasl_port
 
     @property
     def kerberized_kafka_port(self):
@@ -1232,18 +1243,18 @@ class ClickHouseCluster:
     def setup_kafka_sasl_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_kafka_sasl = True
         env_variables["KAFKA_HOST"] = self.kafka_sasl_host
-        env_variables["KAFKA_EXTERNAL_PORT"] = str(self.kafka_port)
+        env_variables["KAFKA_EXTERNAL_PORT"] = str(self.kafka_sasl_port)
         env_variables["KAFKA_DIR"] = instance.path + "/"
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka_sasl.yml")]
         )
-        self.base_kafka_cmd = self.compose_cmd(
+        self.base_kafka_sasl_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_kafka_sasl.yml"),
         )
-        return self.base_kafka_cmd
+        return self.base_kafka_sasl_cmd
 
     def setup_kerberized_kafka_cmd(
         self, instance, env_variables, docker_compose_yml_dir
@@ -2935,12 +2946,11 @@ class ClickHouseCluster:
 
             if self.with_kafka_sasl and self.base_kafka_sasl_cmd:
                 logging.debug("Setup Kafka with SASL")
-                os.mkdir(self.kafka_dir)
+                os.mkdir(self.kafka_sasl_dir)
                 subprocess_check_call(
                     self.base_kafka_sasl_cmd + common_opts + ["--renew-anon-volumes"]
                 )
                 self.up_called = True
-                self.wait_kafka_is_available(self.kafka_docker_id, self.kafka_port)
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 logging.debug("Setup kerberized kafka")

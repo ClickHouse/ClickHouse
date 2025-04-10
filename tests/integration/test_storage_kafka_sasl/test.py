@@ -41,7 +41,7 @@ def get_kafka_producer(port):
 def kafka_cluster():
     try:
         cluster.start()
-        kafka_id = instance.cluster.kafka_docker_id
+        kafka_id = instance.cluster.kafka_sasl_docker_id
         print(("kafka_id is {}".format(kafka_id)))
         yield cluster
     finally:
@@ -76,7 +76,7 @@ def test_kafka_sasl(kafka_cluster):
         """
     )
     
-    producer = get_kafka_producer(kafka_cluster.kafka_port)
+    producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
     producer.send(topic="topic1", value='{"key":1, "value":"test123"}')
     producer.flush()
 

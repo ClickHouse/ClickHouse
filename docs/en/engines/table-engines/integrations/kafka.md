@@ -71,7 +71,7 @@ Optional parameters:
 
 - `kafka_security_protocol` - Protocol used to communicate with brokers. Possible values: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
 - `kafka_sasl_mechanism` - SASL mechanism to use for authentication. Possible values: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
-- `kafka_sasl_username` - SASL username for use with the `PLAIN` and  `SASL-SCRAM-..` mechanisms.
+- `kafka_sasl_username` - SASL username for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
 - `kafka_sasl_password` - SASL password for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
 - `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `kafka_num_consumers` — The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed. Default: `1`.
