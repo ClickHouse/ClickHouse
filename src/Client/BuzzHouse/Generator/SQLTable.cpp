@@ -1565,7 +1565,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     if (!b.is_deterministic)
     {
         this->ids.emplace_back(Merge);
-        this->ids.emplace_back(GenerateRandom);
+        if (fc.allow_infinite_tables)
+        {
+            this->ids.emplace_back(GenerateRandom);
+        }
     }
     if (use_external_integrations)
     {
@@ -1774,8 +1777,9 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         /// Create table as
         CreateTableAs * cta = ct->mutable_table_as();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(tableLikeLambda));
-        std::uniform_int_distribution<size_t> table_engine(
-            0, rg.nextSmallNumber() < 8 ? 3 : (likeEngs.size() - (next.is_deterministic ? 3 : 1)));
+        const uint32_t limit
+            = rg.nextSmallNumber() < 8 ? 3 : (likeEngs.size() - (next.is_deterministic ? 3 : (fc.allow_infinite_tables ? 2 : 1)));
+        std::uniform_int_distribution<size_t> table_engine(0, limit);
         TableEngineValues val = likeEngs[table_engine(rg.generator)];
 
         next.teng = val;
