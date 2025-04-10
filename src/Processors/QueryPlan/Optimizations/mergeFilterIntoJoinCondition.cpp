@@ -291,7 +291,7 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
         return 0;
 
     auto strictness = join_info.strictness;
-    if (strictness == JoinStrictness::Anti || strictness == JoinStrictness::Asof)
+    if (strictness == JoinStrictness::Anti || strictness == JoinStrictness::Asof || strictness == JoinStrictness::Any)
         return 0;
 
     const auto & join_header = child->getOutputHeader();
