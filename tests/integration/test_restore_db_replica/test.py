@@ -117,6 +117,7 @@ def fill_table(node, table_name: str, amount: int):
 
 
 def check_contains_table(node, table_name: str, amount: int):
+    node.query(f"SYSTEM SYNC REPLICA {table_name}")
     assert [f"{amount}"] == node.query(f"SELECT count(*) FROM {table_name}").split()
 
 
