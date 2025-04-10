@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 
 DROP TABLE IF EXISTS test03392_zero_copy_replication_r1;
 DROP TABLE IF EXISTS test03392_zero_copy_replication_r2;
