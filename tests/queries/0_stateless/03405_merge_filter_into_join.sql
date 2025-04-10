@@ -7,6 +7,7 @@ INSERT INTO users VALUES (8888, 'Alice', 50);
 -- For some reason planner sometimes decides to swap tables.
 -- It breaks test because it prints query plan with actions.
 set query_plan_join_swap_table = 0;
+set enable_analyzer = 1; -- Optimization requires LogicalJoinStep
 
 -- { echoOn }
 
