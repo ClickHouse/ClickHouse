@@ -294,7 +294,7 @@ struct FormatSettings
         std::unordered_set<int> skip_row_groups = {};
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
-        ParquetVersion output_version;
+        ParquetVersion output_version = ParquetVersion::V2_LATEST;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
