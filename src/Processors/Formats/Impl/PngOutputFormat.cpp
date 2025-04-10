@@ -88,7 +88,9 @@ PngOutputFormat::PngOutputFormat(WriteBuffer & out_, const Block & header_, cons
     max_width = format_settings.png_image.max_width;
     max_height = format_settings.png_image.max_height;
 
-    writer = std::make_unique<PngWriter>(out_, bit_depth, png_color_type);
+    auto compression_level = format_settings.png_image.compression_level;
+    
+    writer = std::make_unique<PngWriter>(out_, bit_depth, png_color_type, compression_level);
 
     png_serializer = PngSerializer::create(data_types, 
         max_width, 

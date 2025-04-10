@@ -1312,7 +1312,16 @@ Set png image max width
 )", 0) \
     DECLARE(UInt64, output_png_image_bit_depth, 8, R"(
 Set png image color depth
-)", 0)
+)", 0) \
+    DECLARE(Int64, output_png_image_compression_level, -1, R"(
+values: {
+    -1: default (usually level 6),
+    0: no compression,
+    1: "fastest/least compression,
+    9: "slowest/best compression
+  },
+valid_range: [-1, 9]
+)", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 

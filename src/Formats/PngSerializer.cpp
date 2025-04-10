@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnConst.h>
 
 namespace DB
 {
@@ -71,7 +72,7 @@ inline UInt16 extractPixelComponentImpl(const IColumn & data_col, size_t row_num
 }
 
 /* Handles wrapper columns like Nullable, Const, and LowCardinality (TODO),
-* then delegates the actual data conversion to extractUInt8Impl */
+* then delegates the actual data conversion */
 inline UInt16 extractPixelComponent(const IColumn & col, size_t row_num, int bit_depth)
 {
     if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(&col)) [[unlikely]]
@@ -84,7 +85,13 @@ inline UInt16 extractPixelComponent(const IColumn & col, size_t row_num, int bit
 
     if ([[maybe_unused]] const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(&col)) [[unlikely]]
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LowCardinality column support is not implemented yet for PNG format (numeric component)");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LowCardinality column support is not implemented yet for PNG format");
+    }
+
+
+    if ([[maybe_unused]] const auto * const_col = typeid_cast<const ColumnConst *>(&col)) [[unlikely]]
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Const column support is not implemented yet for PNG format");
     }
 
     return extractPixelComponentImpl(col, row_num, bit_depth);

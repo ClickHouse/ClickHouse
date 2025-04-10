@@ -53,12 +53,17 @@ void PngStructWrapper::cleanup()
     info_ptr = nullptr;
 }
 
-PngWriter::PngWriter(WriteBuffer & out_, int bit_depth_, int color_type_) : out(out_), bit_depth(bit_depth_), color_type(color_type_)
+PngWriter::PngWriter(WriteBuffer & out_, int bit_depth_, int color_type_, int compression_level_) 
+    : out(out_), bit_depth(bit_depth_), color_type(color_type_), compression_level(compression_level_)
 {
     if (bit_depth != 16 && bit_depth != 8)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid bit depth provided ({}). Only 8 or 16 supported by current implementation", bit_depth);
     }
+
+    if (compression_level < -1 || compression_level > 9)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid compression level ({}). Must be between -1 and 9.", compression_level);
 
     switch (color_type)
     {
@@ -150,6 +155,8 @@ void PngWriter::startImage(size_t width_, size_t height_)
         PNG_COMPRESSION_TYPE_DEFAULT, ///< TODO: Setting to control compression type
         PNG_FILTER_TYPE_DEFAULT
     );
+
+    png_set_compression_level(png_ptr, compression_level);
 
     #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
     if (bit_depth > 8) 

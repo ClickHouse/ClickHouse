@@ -50,7 +50,7 @@ private:
 class PngWriter : private boost::noncopyable
 {
 public:
-    explicit PngWriter(WriteBuffer &, int, int);
+    explicit PngWriter(WriteBuffer &, int, int, int);
 
     ~PngWriter();
 
@@ -71,6 +71,7 @@ private:
 
     int bit_depth;
     int color_type;
+    int compression_level;
     
     size_t width = 0;
     size_t height = 0;
