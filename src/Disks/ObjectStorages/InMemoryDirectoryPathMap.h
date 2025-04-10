@@ -87,8 +87,8 @@ public:
             metric_files.sub(old_it->second->second.files.size());
             metric_directories.sub(1);
 
-            remote_directories.erase(info.path);
             map.erase(old_it->second->first);
+            remote_directories.erase(old_it);
         }
 
         auto res = map.emplace(std::move(path), std::move(info));
