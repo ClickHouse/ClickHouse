@@ -4,7 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
-#include <IO/UseSSL.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
 
 #if defined(SANITIZE_COVERAGE)
 #    include <Common/Coverage.h>
@@ -233,7 +233,7 @@ __attribute__((constructor(0))) void init_je_malloc_message()
 /// OpenSSL early initialization.
 __attribute__((constructor(202))) void init_ssl()
 {
-    DB::UseSSL::instance();
+    DB::OpenSSLInitializer::initialize();
 }
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.

@@ -1,4 +1,4 @@
-#include "UseSSL.h"
+#include <Common/Crypto/OpenSSLInitializer.h>
 
 #include "config.h"
 
@@ -19,12 +19,17 @@ namespace ErrorCodes
 }
 
 #if USE_SSL
-std::atomic<uint8_t> DB::UseSSL::ref_count{0};
-OSSL_PROVIDER * DB::UseSSL::default_provider = nullptr;
-OSSL_PROVIDER * DB::UseSSL::legacy_provider = nullptr;
+std::atomic<uint8_t> DB::OpenSSLInitializer::ref_count{0};
+OSSL_PROVIDER * DB::OpenSSLInitializer::default_provider = nullptr;
+OSSL_PROVIDER * DB::OpenSSLInitializer::legacy_provider = nullptr;
 #endif
 
-UseSSL::UseSSL()
+OpenSSLInitializer::OpenSSLInitializer()
+{
+    initialize();
+}
+
+void OpenSSLInitializer::initialize()
 {
 #if USE_SSL
     if (ref_count++ == 0)
@@ -44,23 +49,24 @@ UseSSL::UseSSL()
 #endif
 }
 
-UseSSL::~UseSSL()
+OpenSSLInitializer::~OpenSSLInitializer()
 {
 #if USE_SSL
     if (--ref_count == 0)
     {
         if (legacy_provider)
         {
-            OSSL_PROVIDER_unload(legacy_provider);
+            chassert(OSSL_PROVIDER_unload(legacy_provider));
             legacy_provider = nullptr;
         }
 
         if (default_provider)
         {
-            OSSL_PROVIDER_unload(default_provider);
+            chassert(OSSL_PROVIDER_unload(default_provider));
             default_provider = nullptr;
         }
     }
 #endif
 }
+
 }

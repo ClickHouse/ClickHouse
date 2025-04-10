@@ -23,7 +23,7 @@ private:
     LoggerPtr log;
 
 #if USE_SSL
-    KeyPair private_key;
+    KeyPair keypair;
 
     bool ssl_enabled = true;
 #else

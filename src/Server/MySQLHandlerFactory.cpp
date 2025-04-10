@@ -20,7 +20,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, const ProfileEvents:
     : server(server_)
     , log(getLogger("MySQLHandlerFactory"))
 #if USE_SSL
-    , private_key(KeyPair::generateRSA())
+    , keypair(KeyPair::generateRSA())
 #endif
     , read_event(read_event_)
     , write_event(write_event_)
@@ -44,14 +44,14 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, const ProfileEvents:
         String private_key_file_property = "openSSL.server.privateKeyFile";
         String private_key_file = config.getString(private_key_file_property);
 
-        private_key = KeyPair::fromFile(private_key_file);
+        keypair = KeyPair::fromFile(private_key_file);
     }
     catch (...)
     {
         LOG_TRACE(log, "Failed to read RSA key pair from server certificate. Error: {}", getCurrentExceptionMessage(false));
         LOG_TRACE(log, "Generating new RSA key pair.");
 
-        private_key = KeyPair::generateRSA();
+        keypair = KeyPair::generateRSA();
     }
 #endif
 }
@@ -67,7 +67,7 @@ Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poc
         socket,
         ssl_enabled,
         connection_id,
-        private_key
+        keypair
     );
 #else
     return new MySQLHandler(server, tcp_server, socket, ssl_enabled, connection_id);

@@ -17,7 +17,6 @@
 #include "Poco/Net/Utility.h"
 #include "Poco/Net/PrivateKeyPassphraseHandler.h"
 #include "Poco/Net/RejectCertificateHandler.h"
-// #include "Poco/Crypto/OpenSSLInitializer.h"
 #include "Poco/Net/SSLException.h"
 #include "Poco/SingletonHolder.h"
 #include "Poco/Delegate.h"
@@ -60,10 +59,6 @@ const std::string SSLManager::CFG_REQUIRE_TLSV1_2("requireTLSv1_2");
 const std::string SSLManager::CFG_DISABLE_PROTOCOLS("disableProtocols");
 const std::string SSLManager::CFG_DH_PARAMS_FILE("dhParamsFile");
 const std::string SSLManager::CFG_ECDH_CURVE("ecdhCurve");
-#ifdef OPENSSL_FIPS
-const std::string SSLManager::CFG_FIPS_MODE("openSSL.fips");
-const bool        SSLManager::VAL_FIPS_MODE(false);
-#endif
 
 
 SSLManager::SSLManager()
@@ -453,16 +448,9 @@ Poco::Util::AbstractConfiguration& SSLManager::appConfig()
 }
 
 
-void initializeSSL()
-{
-	// Poco::Crypto::initializeCrypto();
-}
-
-
 void uninitializeSSL()
 {
 	SSLManager::instance().shutdown();
-	// Poco::Crypto::uninitializeCrypto();
 }
 
 

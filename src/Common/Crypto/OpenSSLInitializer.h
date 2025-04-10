@@ -11,19 +11,21 @@
 
 namespace DB
 {
-// http://stackoverflow.com/questions/18315472/https-request-in-c-using-poco
-struct UseSSL : private boost::noncopyable
+
+struct OpenSSLInitializer : private boost::noncopyable
 {
 public:
-    static UseSSL & instance()
+    static OpenSSLInitializer & instance()
     {
-        static UseSSL instance;
+        static OpenSSLInitializer instance;
         return instance;
     }
 
+    static void initialize();
+
 private:
-    UseSSL();
-    ~UseSSL();
+    OpenSSLInitializer();
+    ~OpenSSLInitializer();
 
 #if USE_SSL
     static std::atomic<uint8_t> ref_count;
@@ -31,4 +33,5 @@ private:
     static OSSL_PROVIDER * default_provider;
 #endif
 };
+
 }

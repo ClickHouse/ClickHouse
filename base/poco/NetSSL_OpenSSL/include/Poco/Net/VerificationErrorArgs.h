@@ -19,7 +19,6 @@
 
 
 #include "Poco/Net/NetSSL.h"
-// #include "Poco/Net/X509Certificate.h"
 
 
 namespace Poco
@@ -38,9 +37,6 @@ namespace Net
         ~VerificationErrorArgs();
         /// Destroys the VerificationErrorArgs.
 
-        // const X509Certificate & certificate() const;
-        /// Returns the certificate that caused the error.
-
         int errorDepth() const;
         /// Returns the position of the certificate in the certificate chain.
 
@@ -57,21 +53,11 @@ namespace Net
         /// returns the value of _ignoreError
 
     private:
-        // X509Certificate _cert;
         int _errorDepth;
         int _errorNumber;
         std::string _errorMessage; /// Textual representation of the _errorNumber
         bool _ignoreError;
     };
-
-
-    //
-    // inlines
-    //
-    // inline const X509Certificate & VerificationErrorArgs::certificate() const
-    // {
-    //     return _cert;
-    // }
 
 
     inline int VerificationErrorArgs::errorDepth() const
