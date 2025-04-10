@@ -142,9 +142,13 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path) c
 {
     ObjectMetadata object_metadata;
     LOG_TEST(log, "Getting metadata for path: {}", path);
+
+    auto time = fs::last_write_time(path);
+
     object_metadata.size_bytes = fs::file_size(path);
+    object_metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
     object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
-        std::chrono::duration_cast<std::chrono::seconds>(fs::last_write_time(path).time_since_epoch()).count());
+        std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
     return object_metadata;
 }
 
