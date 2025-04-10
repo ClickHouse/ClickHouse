@@ -1149,6 +1149,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if (!emplace_result.has_value())
             {
+                assert(false); // TODO Allow state.emplaceKey return nullopt if new key is not emplaced
                 places[i] = nullptr;
                 continue;
             }
