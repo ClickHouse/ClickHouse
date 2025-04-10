@@ -175,16 +175,6 @@ public:
     }
 };
 
-String NamedCollection::sourceIdToString(NamedCollection::SourceId id)
-{
-    switch (id)
-    {
-        case NamedCollection::SourceId::NONE: return "NONE";
-        case NamedCollection::SourceId::CONFIG: return "CONFIG";
-        case NamedCollection::SourceId::SQL: return "SQL";
-    }
-}
-
 NamedCollection::NamedCollection(
     ImplPtr pimpl_,
     const std::string & collection_name_,
@@ -345,7 +335,7 @@ NamedCollectionFromConfig::NamedCollectionFromConfig(
     const std::string & collection_name_,
     const std::string & collection_path_,
     const Keys & keys_)
-    : NamedCollection(Impl::create(config_, collection_name_, collection_path_, keys_), collection_name_, false)
+    : NamedCollection(Impl::create(config_, collection_name_, collection_path_, keys_), collection_name_, /* is_mutable */ false)
 {
 }
 

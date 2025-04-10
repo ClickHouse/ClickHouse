@@ -524,7 +524,7 @@ ASTCreateNamedCollectionQuery NamedCollectionsMetadataStorage::readCreateQuery(c
     return create_query;
 }
 
-void NamedCollectionsMetadataStorage::writeCreateQuery(const String& collection_name, const String& create_statement, bool replace)
+void NamedCollectionsMetadataStorage::writeCreateQuery(const String & collection_name, const String & create_statement, bool replace)
 {
     storage->write(getFileName(collection_name), create_statement, replace);
 }

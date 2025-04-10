@@ -15,6 +15,7 @@ namespace ErrorCodes
     extern const int NAMED_COLLECTION_DOESNT_EXIST;
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
+    extern const int LOGICAL_ERROR;
 }
 
 NamedCollectionFactory & NamedCollectionFactory::instance()
@@ -335,7 +336,13 @@ void NamedCollectionFactory::updateFromSQL(const ASTAlterNamedCollectionQuery & 
     auto updated_collection_ptr = metadata_storage->update(query);
 
     auto it = loaded_named_collections.find(collection_name);
-    chassert(it != loaded_named_collections.end());
+    if (it == loaded_named_collections.end())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "The named collection {} unexpectedly does not exist.",
+            collection_name);
+    }
 
     if (!it->second->isMutable())
     {

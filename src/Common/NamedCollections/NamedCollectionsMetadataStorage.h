@@ -46,7 +46,7 @@ private:
 
     ASTCreateNamedCollectionQuery readCreateQuery(const std::string & collection_name) const;
 
-    void writeCreateQuery(const String& collection_name, const String& create_statement, bool replace = false);
+    void writeCreateQuery(const String & collection_name, const String & create_statement, bool replace = false);
 };
 
 

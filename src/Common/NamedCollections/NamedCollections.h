@@ -27,12 +27,12 @@ public:
     using Keys = std::set<Key, std::less<>>;
     enum class SourceId : uint8_t
     {
+        /// None source_id is possible only if the object is a
+        /// duplicate of some named collection. See `duplicate` method.
         NONE = 0,
         CONFIG = 1,
         SQL = 2,
     };
-
-    static String sourceIdToString(SourceId id);
 
     bool has(const Key & key) const;
 
@@ -76,7 +76,7 @@ public:
 
     virtual SourceId getSourceId() const { return SourceId::NONE; }
 
-    virtual String getCreateStatement(bool /*show_secrects*/) { return  " "; }
+    virtual String getCreateStatement(bool /*show_secrects*/) { return  {}; }
 
     virtual void update(const ASTAlterNamedCollectionQuery & query);
 
@@ -127,7 +127,7 @@ public:
         const std::string & collection_path,
         const Keys & keys);
 
-    String getCreateStatement(bool /*show_secrects*/) override { return " "; }
+    String getCreateStatement(bool /*show_secrects*/) override { return {}; }
 
     void update(const ASTAlterNamedCollectionQuery & /*query*/) override { NamedCollection::assertMutable(); }
 

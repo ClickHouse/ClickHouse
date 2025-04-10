@@ -842,7 +842,7 @@ def test_system_named_collection(cluster, instance_name, show_secrets):
                 node.query(
                     f"SELECT create_query FROM system.named_collections WHERE name='{collection_name}'"
                 )
-                == " \n"
+                == "\n"
             )
         else:
             hidden_str = "\\'[HIDDEN]\\'"
