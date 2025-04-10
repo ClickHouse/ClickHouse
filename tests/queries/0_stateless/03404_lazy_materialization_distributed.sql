@@ -11,6 +11,6 @@ SELECT
     query_kind,
     type
 FROM clusterAllReplicas(test_cluster_one_shard_three_replicas_localhost, system.query_log)
-WHERE log_comment = '42809e74-efe7-412f-8326-7569039feecb' AND type != 'QueryStart' and current_database = currentDatabase()
+WHERE log_comment = '42809e74-efe7-412f-8326-7569039feecb' AND type != 'QueryStart' and current_database = currentDatabase() and event_date >= yesterday()
 ORDER BY event_time ASC
 LIMIT 1;
