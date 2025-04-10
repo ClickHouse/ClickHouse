@@ -792,15 +792,9 @@ class JobConfigs:
     )
     buzz_fuzzer_jobs = Job.Config(
         name=JobNames.BUZZHOUSE,
-        runs_on=[],  # from parametrize()
-        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/docker/fuzzer",
-                "./tests/ci/ci_fuzzer_check.py",
-                "./ci/docker/fuzzer",
-            ],
-        ),
+        runs_on=[],
+        command=f"python3 ./ci/jobs/buzzhouse_job.py",
+        run_in_docker="clickhouse/stateless-test",
         allow_merge_on_failure=True,
     ).parametrize(
         Job.ParamSet(
