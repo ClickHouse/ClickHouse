@@ -159,6 +159,18 @@ def test_table_rotation(start_cluster):
     assert "SystemMetricLogView" not in node1.query("SHOW CREATE TABLE system.metric_log_4")
     assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log_4")
 
+    node1.query("DROP TABLE system.transposed_metric_log_0")
+    node1.query("CREATE TABLE system.transposed_metric_log_2 as system.transposed_metric_log")
+    node1.query("CREATE TABLE system.transposed_metric_log_3 as system.transposed_metric_log")
+    node1.query("INSERT INTO system.transposed_metric_log_3 SELECT * FROM system.transposed_metric_log")
+    node1.query("SYSTEM FLUSH LOGS")
+
+    assert "SystemMetricLogView" in node1.query("SHOW CREATE TABLE system.metric_log_3")
+    assert int(node1.query("SELECT count() FROM system.metric_log_3 WHERE not ignore(*)").strip()) > 0
+    node1.query("DROP TABLE system.transposed_metric_log_3 SYNC")
+    # still works, return 0
+    assert int(node1.query("SELECT count() FROM system.metric_log_3 WHERE not ignore(*)").strip()) == 0
+
 
 def insert_into_transposed_metric_log(node, table_name, size):
     INGEST_INTO_TRANSPOSED_LOG = f"""
