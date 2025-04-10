@@ -2762,7 +2762,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // , where the inline data is delimited by semicolon and not by a
                 // newline.
                 auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-                if (insert_ast && !is_async_insert_with_inlined_data)
+                if (insert_ast && insert_ast->data && !is_async_insert_with_inlined_data)
                 {
                     this_query_end = insert_ast->end;
                     adjustQueryEnd(
