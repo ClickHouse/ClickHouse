@@ -21,6 +21,7 @@ from pyspark.sql.functions import (
     current_timestamp,
     monotonically_increasing_id,
     row_number,
+    col,
 )
 from pyspark.sql.types import (
     ArrayType,
@@ -1578,8 +1579,16 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='2', 'delta.minWriterVersion'='5', '
     assert counts == [1, 2, 6]
 
 
-
 def test_alter_column_type(started_cluster):
+    ## Delta lake supports a very limited set of type changes:
+    ## https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-ddl-alter-table-manage-column#parameters-1
+    ## What is done in this test:
+    ## Alter Short -> Int
+    ## Alter Int -> Nullable(Int)
+    ##
+    ## Complex type changes are supported only with data overwrite
+    ## https://docs.delta.io/latest/delta-batch.html#change-column-type-or-name
+
     node = started_cluster.instances["node1"]
     table_name = randomize_table_name("test_rename_column")
     spark = started_cluster.spark_session
@@ -1616,7 +1625,7 @@ deltaLake(
         DeltaTable.create(spark)
         .tableName(table_name)
         .location(path)
-        .addColumn("a", "SHORT", nullable=True)
+        .addColumn("a", "SHORT", nullable=False)
         .addColumn("b", "STRING", nullable=False)
         .addColumn("c", "DATE", nullable=False)
         .addColumn("d", "ARRAY<STRING>", nullable=False)
@@ -1658,7 +1667,7 @@ deltaLake(
 
     check_schema(
         [
-            ["a", "Nullable(Int16)"],
+            ["a", "Int16"],
             ["b", "String"],
             ["c", "Date32"],
             ["d", "Array(Nullable(String))"],
@@ -1669,7 +1678,7 @@ deltaLake(
 
     schema = StructType(
         [
-            StructField("a", IntegerType(), nullable=True),
+            StructField("a", IntegerType(), nullable=False),
             StructField("b", StringType(), nullable=False),
             StructField("c", DateType(), nullable=False),
             StructField("d", ArrayType(StringType())),
@@ -1698,7 +1707,7 @@ deltaLake(
 
     check_schema(
         [
-            ["a", "Nullable(Int32)"],
+            ["a", "Int32"],
             ["b", "String"],
             ["c", "Date32"],
             ["d", "Array(Nullable(String))"],
@@ -1709,6 +1718,50 @@ deltaLake(
 
     assert (
         "1\ta\t2000-01-01\t['aa','aa']\ttrue\t['aaa','aaa']\n214748364\tb\t2000-02-02\t['bb','bb']\tfalse\t['bbb','bbb']\n"
+        == node.query(f"SELECT * FROM {delta_function} ORDER BY all")
+    )
+
+    spark.sql(f"ALTER TABLE {table_name} CHANGE COLUMN a DROP NOT NULL;")
+    schema = StructType(
+        [
+            StructField("a", IntegerType(), nullable=True),
+            StructField("b", StringType(), nullable=False),
+            StructField("c", DateType(), nullable=False),
+            StructField("d", ArrayType(StringType())),
+            StructField("e", BooleanType(), nullable=False),
+            StructField("f", ArrayType(StringType(), containsNull=False)),
+        ]
+    )
+
+    data = [
+        (
+            None,
+            "c",
+            datetime.strptime("2000-03-03", "%Y-%m-%d"),
+            ["cc", "cc"],
+            False,
+            ["ccc", "ccc"],
+        )
+    ]
+
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.write.option("mergeSchema", "true").mode("append").format("delta").partitionBy(
+        "c"
+    ).save(path)
+
+    upload_directory(minio_client, bucket, path, "")
+    check_schema(
+        [
+            ["a", "Nullable(Int32)"],
+            ["b", "String"],
+            ["c", "Date32"],
+            ["d", "Array(Nullable(String))"],
+            ["e", "Nullable(Bool)"],
+            ["f", "Array(String)"],
+        ]
+    )
+    assert (
+        "1\ta\t2000-01-01\t['aa','aa']\ttrue\t['aaa','aaa']\n214748364\tb\t2000-02-02\t['bb','bb']\tfalse\t['bbb','bbb']\n\\N\tc\t2000-03-03\t['cc','cc']\tfalse\t['ccc','ccc']\n"
         == node.query(f"SELECT * FROM {delta_function} ORDER BY all")
     )
 
@@ -1725,7 +1778,7 @@ deltaLake(
             '{minio_secret_key}')
         """
 
-    assert len(paths) == 2
+    assert len(paths) == 3
 
     assert "Nullable(Int16)" in node.query(
         f"DESCRIBE TABLE {s3_function(paths[0])}"
@@ -1734,3 +1787,50 @@ deltaLake(
     assert "Nullable(Int32)" in node.query(
         f"DESCRIBE TABLE {s3_function(paths[0])}"
     ) or "Nullable(Int32)" in node.query(f"DESCRIBE TABLE {s3_function(paths[1])}")
+
+    schema = StructType(
+        [
+            StructField("a", StringType(), nullable=True),
+            StructField("b", StringType(), nullable=False),
+            StructField("c", DateType(), nullable=False),
+            StructField("d", ArrayType(StringType())),
+            StructField("e", BooleanType(), nullable=False),
+            StructField("f", ArrayType(StringType(), containsNull=False)),
+        ]
+    )
+
+    data = [
+        (
+            "123",
+            "d",
+            datetime.strptime("2000-04-04", "%Y-%m-%d"),
+            ["ddd", "dd"],
+            False,
+            ["ddd", "ddd"],
+        )
+    ]
+
+    spark.read.table(table_name).withColumn("a", col("a").cast("String")).write.format(
+        "delta"
+    ).mode("overwrite").option("overwriteSchema", "true").partitionBy("c").save(path)
+
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.write.mode("append").format("delta").partitionBy("c").save(path)
+
+    upload_directory(minio_client, bucket, path, "")
+
+    # spark.read.table(table_name).printSchema()
+    check_schema(
+        [
+            ["a", "Nullable(String)"],
+            ["b", "Nullable(String)"],
+            ["c", "Nullable(Date32)"],
+            ["d", "Array(Nullable(String))"],
+            ["e", "Nullable(Bool)"],
+            ["f", "Array(Nullable(String))"],
+        ]
+    )
+    assert (
+        "1\ta\t2000-01-01\t['aa','aa']\ttrue\t['aaa','aaa']\n123\td\t2000-04-04\t['ddd','dd']\tfalse\t['ddd','ddd']\n214748364\tb\t2000-02-02\t['bb','bb']\tfalse\t['bbb','bbb']\n\\N\tc\t2000-03-03\t['cc','cc']\tfalse\t['ccc','ccc']\n"
+        == node.query(f"SELECT * FROM {delta_function} ORDER BY all")
+    )
