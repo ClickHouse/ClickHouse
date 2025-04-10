@@ -110,7 +110,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     """
     )
 
-    messages_num = 150000
+    messages_num = 200000
     values = []
     for i in range(messages_num):
         values.append("({i}, {i})".format(i=i))
@@ -193,7 +193,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     """
     )
 
-    messages_num = 150000
+    messages_num = 200000
 
     messages = []
     for i in range(messages_num):
