@@ -75,6 +75,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_hdfs_pread", true, true, "New setting."},
             {"low_priority_query_wait_time_ms", 1000, 1000, "New setting."},
             {"allow_experimental_shared_set_join", 0, 1, "A setting for ClickHouse Cloud to enable SharedSet and SharedJoin"},
+            {"allow_special_bool_values_inside_variant", true, false, "Don't allow special bool values during Variant type parsing"},
+            {"cast_string_to_variant_use_inference", true, true, "New setting to enable/disable types inference during CAST from String to Variant"},
             {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
             {"min_os_cpu_wait_time_ratio_to_throw", 0, 2, "New setting"},
             {"max_os_cpu_wait_time_ratio_to_throw", 0, 6, "New setting"},
