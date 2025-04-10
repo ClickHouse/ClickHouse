@@ -115,7 +115,7 @@ protected:
     /// This is the analogue of Poco::Application::config()
     virtual Poco::Util::LayeredConfiguration & getClientConfiguration() = 0;
 
-    virtual bool processWithFuzzing(const std::string_view &)
+    virtual bool processWithFuzzing(std::string_view)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }
@@ -126,15 +126,18 @@ protected:
     }
 
     virtual void connect() = 0;
-    virtual void processError(const std::string_view & query) const = 0;
+    virtual void processError(std::string_view query) const = 0;
     virtual String getName() const = 0;
 
-    void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
-    void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
+    void processOrdinaryQuery(String query, ASTPtr parsed_query);
+    void processInsertQuery(String query, ASTPtr parsed_query);
 
-    /// Note, data that @parsed_query may refer to (in case of INSERT) should point to the same memory as full_query
+    /// @full_query - query including trailing comments, INSERT inline data, used for echo and for handling INSERTs w/o async_insert
+    /// @query_to_execute - query for execution (without trailing comments and inline data), but in case of INSERT w/o async_insert calculated based on the full_query
+    /// @parsed_query should point to the same memory as full_query (in case of INSERT)
     void processParsedSingleQuery(
-        const std::string_view & full_query,
+        std::string_view full_query,
+        std::string_view query_to_execute,
         ASTPtr parsed_query,
         bool & is_async_insert_with_inlined_data,
         std::optional<bool> echo_query_ = {},

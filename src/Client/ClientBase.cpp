@@ -1115,7 +1115,7 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
 
     try
     {
-        processParsedSingleQuery(full_query, parsed_query, echo_queries);
+        processParsedSingleQuery(full_query, full_query, parsed_query, echo_queries);
     }
     catch (Exception & e)
     {
@@ -1131,10 +1131,8 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     return !have_error;
 }
 
-void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
+void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 {
-    auto query = query_to_execute;
-
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
@@ -1736,9 +1734,8 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
 }
 
 
-void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
+void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
 {
-    auto query = query_to_execute;
     if (!query_parameters.empty()
         && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
@@ -2150,7 +2147,8 @@ void ClientBase::cancelQuery()
 }
 
 void ClientBase::processParsedSingleQuery(
-    const std::string_view & full_query,
+    std::string_view full_query,
+    std::string_view query_to_execute,
     ASTPtr parsed_query,
     bool & is_async_insert_with_inlined_data,
     std::optional<bool> echo_query_,
@@ -2250,7 +2248,6 @@ void ClientBase::processParsedSingleQuery(
                     "Processing async inserts with both inlined and external data (from stdin or infile) is not supported");
         }
 
-        String query_to_execute;
         /// An INSERT query may have the data that follows query text.
         /// Send part of the query without data, because data will be sent separately.
         /// But for asynchronous inserts we don't extract data, because it's needed
@@ -2260,8 +2257,8 @@ void ClientBase::processParsedSingleQuery(
             chassert(full_query.data() <= insert->data && insert->end <= full_query.data() + full_query.size() && "INSERT query points to full_query");
             query_to_execute = full_query.substr(0, insert->data - full_query.data());
         }
-        else
-            query_to_execute = full_query;
+
+        String query(query_to_execute.data(), query_to_execute.size());
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
         if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function))
@@ -2269,10 +2266,10 @@ void ClientBase::processParsedSingleQuery(
             if (input_function && insert->format.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
 
-            processInsertQuery(query_to_execute, parsed_query);
+            processInsertQuery(query, parsed_query);
         }
         else
-            processOrdinaryQuery(query_to_execute, parsed_query);
+            processOrdinaryQuery(query, parsed_query);
     }
 
     /// Do not change context (current DB, settings) in case of an exception.
@@ -2489,13 +2486,6 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         insert_ast->end = this_query_end;
     }
 
-    // Try to include the trailing comment with test hints. It is just
-    // a guess for now, because we don't yet know where the query ends
-    // if it is an INSERT query with inline data. We will do it again
-    // after we have processed the query. But even this guess is
-    // beneficial so that we see proper trailing comments in "echo" and
-    // server log.
-    adjustQueryEnd(this_query_end, all_queries_end, max_parser_depth, max_parser_backtracks);
     return MultiQueryProcessingStage::EXECUTE_QUERY;
 }
 
@@ -2535,7 +2525,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     UInt32 script_query_number = 0;
     UInt32 script_line_number = 0;
 
-    std::string_view full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
     ASTPtr parsed_query;
     std::unique_ptr<Exception> current_exception;
     size_t retries_count = 0;
@@ -2599,7 +2588,23 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             case MultiQueryProcessingStage::EXECUTE_QUERY:
             {
                 is_first = false;
-                full_query = std::string_view(all_queries_text).substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
+
+                // Save query without trailing comment
+                auto query_to_execute = std::string_view(all_queries_text).substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
+
+                // Try to include the trailing comment with test hints. It is just
+                // a guess for now, because we don't yet know where the query ends
+                // if it is an INSERT query with inline data. We will do it again
+                // after we have processed the query. But even this guess is
+                // beneficial so that we see proper trailing comments in "echo" and
+                // server log.
+                {
+                    unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]);
+                    unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]);
+                    adjustQueryEnd(this_query_end, all_queries_end, max_parser_depth, max_parser_backtracks);
+                }
+                // query + inline INSERT data + trailing comments (the latter is our best guess for now).
+                auto full_query = std::string_view(all_queries_text).substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
 
                 ++script_query_number;
                 script_line_number += std::count(prev_query_begin, this_query_begin, '\n');
@@ -2629,7 +2634,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 try
                 {
-                    processParsedSingleQuery(full_query, parsed_query, is_async_insert_with_inlined_data, echo_query, false);
+                    processParsedSingleQuery(full_query, query_to_execute, parsed_query, is_async_insert_with_inlined_data, echo_query, false);
                 }
                 catch (...)
                 {

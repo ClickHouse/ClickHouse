@@ -151,7 +151,7 @@ Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
     return config();
 }
 
-void LocalServer::processError(const std::string_view &) const
+void LocalServer::processError(std::string_view) const
 {
     if (ignore_error)
         return;

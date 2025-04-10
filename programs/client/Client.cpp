@@ -72,7 +72,7 @@ Client::Client()
 
 Client::~Client() = default;
 
-void Client::processError(const std::string_view & query) const
+void Client::processError(std::string_view query) const
 {
     if (server_exception)
     {
