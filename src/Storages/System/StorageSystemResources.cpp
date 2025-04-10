@@ -1,7 +1,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Parsers/queryToString.h>
 #include <Storages/System/StorageSystemResources.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Parsers/ASTCreateResourceQuery.h>
@@ -17,6 +17,7 @@ ColumnsDescription StorageSystemResources::getColumnsDescription()
         {"name", std::make_shared<DataTypeString>(), "The name of the resource."},
         {"read_disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of disk names that uses this resource for read operations."},
         {"write_disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of disk names that uses this resource for write operations."},
+        {"unit", std::make_shared<DataTypeString>(), "Resource unit used for cost measurements."},
         {"create_query", std::make_shared<DataTypeString>(), "CREATE query of the resource."},
     };
 }
@@ -27,7 +28,10 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & resource_names = storage.getAllEntityNames(WorkloadEntityType::Resource);
     for (const auto & resource_name : resource_names)
     {
-        auto ast = storage.get(resource_name);
+        auto ast = storage.tryGet(resource_name);
+        if (!ast)
+            /// It might be modified in the meantime, but it's ok to not show those removed resources
+            continue;
         auto & resource = typeid_cast<ASTCreateResourceQuery &>(*ast);
         res_columns[0]->insert(resource_name);
         {
@@ -37,22 +41,24 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
             {
                 switch (mode)
                 {
-                    case DB::ASTCreateResourceQuery::AccessMode::Read:
+                    case DB::ASTCreateResourceQuery::AccessMode::DiskRead:
                     {
                         read_disks.emplace_back(disk ? *disk : "ANY");
                         break;
                     }
-                    case DB::ASTCreateResourceQuery::AccessMode::Write:
+                    case DB::ASTCreateResourceQuery::AccessMode::DiskWrite:
                     {
                         write_disks.emplace_back(disk ? *disk : "ANY");
                         break;
                     }
+                    default: // Ignore
                 }
             }
             res_columns[1]->insert(read_disks);
             res_columns[2]->insert(write_disks);
         }
-        res_columns[3]->insert(queryToString(ast));
+        res_columns[3]->insert(DB::ASTCreateResourceQuery::unitToString(resource.unit));
+        res_columns[4]->insert(ast->formatForLogging());
     }
 }
 

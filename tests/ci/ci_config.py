@@ -174,7 +174,6 @@ class CI:
                 compiler="clang-19",
                 debug_build=True,
                 package_type="binary",
-                static_binary_name="debug-amd64",
                 tidy=True,
                 comment="clang-tidy is used for static analysis",
             ),
@@ -327,7 +326,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=3, release_only=True
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN], num_batches=3, release_only=True
         ),
         JobNames.STATELESS_TEST_S3_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
@@ -340,7 +339,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_TSAN],
         ),
         JobNames.STRESS_TEST_ASAN: CommonJobConfigs.STRESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN],
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
             random_bucket="stress_with_sanitizer",
         ),
         JobNames.STRESS_TEST_UBSAN: CommonJobConfigs.STRESS_TEST.with_properties(
@@ -358,7 +357,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_MSAN], release_only=True
         ),
         JobNames.UPGRADE_TEST_ASAN: CommonJobConfigs.UPGRADE_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN],
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
             random_bucket="upgrade_with_sanitizer",
             pr_only=True,
         ),
@@ -435,7 +434,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_DEBUG],
         ),
         JobNames.AST_FUZZER_TEST_ASAN: CommonJobConfigs.ASTFUZZER_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN],
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
         ),
         JobNames.AST_FUZZER_TEST_MSAN: CommonJobConfigs.ASTFUZZER_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_MSAN],
@@ -450,7 +449,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_DEBUG],
         ),
         JobNames.BUZZHOUSE_TEST_ASAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN],
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
         ),
         JobNames.BUZZHOUSE_TEST_MSAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_MSAN],
@@ -617,6 +616,7 @@ class CI:
     @classmethod
     def get_job_config(cls, check_name: str) -> JobConfig:
         # remove job batch if it exists in check name (hack for migration to praktika)
+        check_name = check_name.replace("arm_", "").replace("amd_", "")  # hack for new names in praktika
         check_name = re.sub(r",\s*\d+/\d+\)", ")", check_name)
         return cls.JOB_CONFIGS[check_name]
 
@@ -747,7 +747,7 @@ BUILD_NAMES_MAPPING = {
     "Build (amd_ubsan)": BuildNames.PACKAGE_UBSAN,
     "Build (arm_release)": BuildNames.PACKAGE_AARCH64,
     "Build (arm_asan)": BuildNames.PACKAGE_AARCH64_ASAN,
-    "Build (amd_coverage)": BuildNames.PACKAGE_RELEASE_COVERAGE,
+    "Build (arm_coverage)": BuildNames.PACKAGE_RELEASE_COVERAGE,
     "Build (arm_binary)": BuildNames.BINARY_AARCH64,
     "Build (amd_tidy)": BuildNames.BINARY_TIDY,
     "Build (amd_darwin)": BuildNames.BINARY_DARWIN,

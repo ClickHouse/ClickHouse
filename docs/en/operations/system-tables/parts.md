@@ -1,8 +1,11 @@
 ---
+description: 'System table containing information about parts of MergeTree'
+keywords: ['system table', 'parts']
 slug: /operations/system-tables/parts
-title: "system.parts"
-keywords: ["system table", "parts"]
+title: 'system.parts'
 ---
+
+# system.parts
 
 Contains information about parts of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -129,11 +132,11 @@ The `move_ttl_info.expression` array is kept mostly for backward compatibility, 
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.parts LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 partition:                             tuple()

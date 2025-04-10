@@ -835,7 +835,7 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
 {
     const auto & object_checkpoint = assert_cast<const ColumnObjectCheckpoint &>(checkpoint);
 
-    auto rollback_columns = [&](auto & columns_map, const auto & checkpoints_map)
+    auto rollback_columns = [&](auto & columns_map, const auto & checkpoints_map, bool is_dynamic_paths)
     {
         NameSet names_to_remove;
 
@@ -850,11 +850,19 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
         }
 
         for (const auto & name : names_to_remove)
+        {
+            if (is_dynamic_paths)
+            {
+                dynamic_paths_ptrs.erase(name);
+                sorted_dynamic_paths.erase(name);
+            }
+
             columns_map.erase(name);
+        }
     };
 
-    rollback_columns(typed_paths, object_checkpoint.typed_paths);
-    rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths);
+    rollback_columns(typed_paths, object_checkpoint.typed_paths, false);
+    rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths, true);
     shared_data->rollback(*object_checkpoint.shared_data);
 }
 
@@ -1412,7 +1420,7 @@ void ColumnObject::getExtremes(DB::Field & min, DB::Field & max) const
     }
 }
 
-void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_columns)
+void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_columns, size_t factor)
 {
     if (source_columns.empty())
         return;
@@ -1511,10 +1519,10 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
         }
     }
 
-    shared_data->prepareForSquashing(shared_data_source_columns);
+    shared_data->prepareForSquashing(shared_data_source_columns, factor);
 
     for (const auto & [path, source_typed_columns] : typed_paths_source_columns)
-        typed_paths[path]->prepareForSquashing(source_typed_columns);
+        typed_paths[path]->prepareForSquashing(source_typed_columns, factor);
 
     for (const auto & [path, source_dynamic_columns] : dynamic_paths_source_columns)
     {
@@ -1524,7 +1532,7 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
         /// discriminators and offsets and ColumnDynamic::prepareVariantsForSquashing to preallocate memory
         /// for all variants inside Dynamic.
         dynamic_paths_ptrs[path]->reserve(total_size);
-        dynamic_paths_ptrs[path]->prepareVariantsForSquashing(source_dynamic_columns);
+        dynamic_paths_ptrs[path]->prepareVariantsForSquashing(source_dynamic_columns, factor);
     }
 }
 

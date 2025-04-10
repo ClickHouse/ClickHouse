@@ -3,6 +3,7 @@
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/ThreadPool.h>
 #include <Common/Jemalloc.h>
+#include <Common/PageCache.h>
 
 #include <filesystem>
 
@@ -37,7 +38,7 @@ struct ICgroupsReader
 class MemoryWorker
 {
 public:
-    explicit MemoryWorker(uint64_t period_ms_, bool correct_tracker_);
+    MemoryWorker(uint64_t period_ms_, bool correct_tracker_, bool use_cgroup, std::shared_ptr<PageCache> page_cache_);
 
     enum class MemoryUsageSource : uint8_t
     {
@@ -70,6 +71,8 @@ private:
     MemoryUsageSource source{MemoryUsageSource::None};
 
     std::shared_ptr<ICgroupsReader> cgroups_reader;
+
+    std::shared_ptr<PageCache> page_cache;
 
 #if USE_JEMALLOC
     JemallocMibCache<uint64_t> epoch_mib{"epoch"};

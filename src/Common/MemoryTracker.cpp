@@ -6,7 +6,9 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
+#include <Common/PageCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
@@ -118,6 +120,7 @@ void AllocationTrace::onFreeImpl(void * ptr, size_t size) const
 namespace ProfileEvents
 {
     extern const Event QueryMemoryLimitExceeded;
+    extern const Event PageCacheOvercommitResize;
 }
 
 using namespace std::chrono_literals;
@@ -198,28 +201,31 @@ void MemoryTracker::injectFault() const
         description ? " memory tracker" : "Memory tracker");
 }
 
+/// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
+/// Let's find them.
 void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]])
 {
-    /// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
-    /// Let's find them.
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    if (size < 0)
-        return;
+    if constexpr (MemoryTrackerDebugBlockerInThread::isEnabled())
+    {
+        if (size < 0)
+            return;
 
-    constexpr Int64 threshold = 16 * 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
-    if (size < threshold)
-        return;
+        /// The choice is arbitrary (maybe we should decrease it)
+        constexpr Int64 threshold = 16 * 1024 * 1024;
+        if (size < threshold)
+            return;
 
-    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
-    LOG_TEST(
-        getLogger("MemoryTracker"),
-        "Too big allocation ({} bytes) without checking memory limits, "
-        "it may lead to OOM. Stack trace: {}",
-        size,
-        StackTrace().toString());
-#else
-    /// Avoid trash logging in release builds
-#endif
+        if (MemoryTrackerDebugBlockerInThread::isBlocked())
+            return;
+
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        LOG_TEST(
+            getLogger("MemoryTracker"),
+            "Too big allocation ({} bytes) without checking memory limits, "
+            "it may lead to OOM. Stack trace: {}",
+            size,
+            StackTrace().toString());
+    }
 }
 
 AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker, double _sample_probability)
@@ -295,11 +301,11 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             const auto * description = description_ptr.load(std::memory_order_relaxed);
             throw DB::Exception(
                 DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                "{}{}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
+                "{}{}: fault injected. Would use {} (attempt to allocate chunk of {}), maximum: {}",
                 description ? description : "",
                 description ? " memory tracker" : "Memory tracker",
                 formatReadableSizeWithBinarySuffix(will_be),
-                size,
+                formatReadableSizeWithBinarySuffix(size),
                 formatReadableSizeWithBinarySuffix(current_hard_limit));
         }
 
@@ -310,10 +316,28 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     if (unlikely(
             current_hard_limit && (will_be > current_hard_limit || (level == VariableContext::Global && will_be_rss > current_hard_limit))))
     {
+        /// Try to evict from userspace page cache or kill a lower-priority query to free up memory.
+        /// These operations are relatively slow, so we do them only if memoryTrackerCanThrow;
+        /// otherwise all allocations may get slow when above memory limit.
         if (memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
         {
             OvercommitResult overcommit_result = OvercommitResult::NONE;
-            if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed); overcommit_tracker_ptr != nullptr && query_tracker != nullptr)
+
+            /// Try to shrink the userspace page cache.
+            DB::PageCache * page_cache_ptr = nullptr;
+            if (level == VariableContext::Global && will_be_rss > current_hard_limit && ((page_cache_ptr = page_cache.load(std::memory_order_relaxed))))
+            {
+                ProfileEvents::increment(ProfileEvents::PageCacheOvercommitResize);
+                page_cache_ptr->autoResize(will_be_rss, current_hard_limit);
+                will_be = amount.load(std::memory_order_relaxed);
+                will_be_rss = rss.load(std::memory_order_relaxed);
+                if (will_be <= current_hard_limit && will_be_rss <= current_hard_limit)
+                    overcommit_result = OvercommitResult::MEMORY_FREED;
+            }
+
+            /// If that wasn't enough, try to stop some query.
+            OvercommitTracker * overcommit_tracker_ptr;
+            if (overcommit_result == OvercommitResult::NONE && ((overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))) && query_tracker != nullptr)
                 overcommit_result = overcommit_tracker_ptr->needToStopQuery(query_tracker, size);
 
             if (overcommit_result != OvercommitResult::MEMORY_FREED)
@@ -331,13 +355,14 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                 throw DB::Exception(
                     DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
                     "{}{} exceeded: "
-                    "would use {} (attempt to allocate chunk of {} bytes){}, maximum: {}."
+                    "would use {} (attempt to allocate chunk of {} bytes){}{}, maximum: {}."
                     "{}{}",
                     description ? description : "",
                     description ? " memory limit" : "Memory limit",
                     formatReadableSizeWithBinarySuffix(will_be),
-                    size,
-                    level == VariableContext::Global ? fmt::format(", current RSS: {}", formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed))) : "",
+                    formatReadableSizeWithBinarySuffix(size),
+                    (level == VariableContext::Global) ? fmt::format(", current RSS: {}", formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed))) : "",
+                    (level == VariableContext::Global && page_cache_ptr) ? ", userspace page cache " + formatReadableSizeWithBinarySuffix(page_cache_ptr->sizeInBytes()) : "",
                     formatReadableSizeWithBinarySuffix(current_hard_limit),
                     overcommit_result_ignore ? "" : " OvercommitTracker decision: ",
                     overcommit_result_ignore ? "" : toDescription(overcommit_result));

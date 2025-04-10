@@ -1,8 +1,9 @@
 ---
-slug: /development/building_and_benchmarking_deflate_qpl
+description: 'How to build Clickhouse and run benchmark with DEFLATE_QPL Codec'
+sidebar_label: 'Building and Benchmarking DEFLATE_QPL'
 sidebar_position: 73
-sidebar_label: Building and Benchmarking DEFLATE_QPL
-description: How to build Clickhouse and run benchmark with DEFLATE_QPL Codec
+slug: /development/building_and_benchmarking_deflate_qpl
+title: 'Build Clickhouse with DEFLATE_QPL'
 ---
 
 # Build Clickhouse with DEFLATE_QPL
@@ -27,7 +28,7 @@ The folders `benchmark_sample` under [qpl-cmake](https://github.com/ClickHouse/C
 
 ## Run benchmark automatically for Star Schema: {#run-benchmark-automatically-for-star-schema}
 
-``` bash
+```bash
 $ cd ./benchmark_sample/client_scripts
 $ sh run_ssb.sh
 ```
@@ -47,18 +48,18 @@ In case you run into failure, please manually run benchmark as below sections.
 - IAA Setup refer to [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration)
 - Install python modules:
 
-``` bash
+```bash
 pip3 install clickhouse_driver numpy
 ```
 
 [Self-check for IAA]
 
-``` bash
+```bash
 $ accel-config list | grep -P 'iax|state'
 ```
 
 Expected output like this:
-``` bash
+```bash
     "dev":"iax1",
     "state":"enabled",
             "state":"enabled",
@@ -68,7 +69,7 @@ If you see nothing output, it means IAA is not ready to work. Please check IAA s
 
 ## Generate raw data {#generate-raw-data}
 
-``` bash
+```bash
 $ cd ./benchmark_sample
 $ mkdir rawdata_dir && cd rawdata_dir
 ```
@@ -82,7 +83,7 @@ The files like `*.tbl` are expected to output under `./benchmark_sample/rawdata_
 
 Set up database with LZ4 codec
 
-``` bash
+```bash
 $ cd ./database_dir/lz4
 $ [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
 $ [CLICKHOUSE_EXE] client
@@ -97,7 +98,7 @@ Complete below three steps mentioned in [Star Schema Benchmark](/getting-started
 
 Set up database with IAA Deflate codec
 
-``` bash
+```bash
 $ cd ./database_dir/deflate
 $ [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
 $ [CLICKHOUSE_EXE] client
@@ -106,7 +107,7 @@ Complete three steps same as lz4 above
 
 Set up database with ZSTD codec
 
-``` bash
+```bash
 $ cd ./database_dir/zstd
 $ [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
 $ [CLICKHOUSE_EXE] client
@@ -140,7 +141,7 @@ That means IAA devices is not ready, you need check IAA setup again.
 
 - Before start benchmark, Please disable C6 and set CPU frequency governor to be `performance`
 
-``` bash
+```bash
 $ cpupower idle-set -d 3
 $ cpupower frequency-set -g performance
 ```
@@ -152,7 +153,7 @@ Now run benchmark for LZ4/Deflate/ZSTD respectively:
 
 LZ4:
 
-``` bash
+```bash
 $ cd ./database_dir/lz4 
 $ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
 $ cd ./client_scripts
@@ -161,7 +162,7 @@ $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > lz4.log
 
 IAA deflate:
 
-``` bash
+```bash
 $ cd ./database_dir/deflate
 $ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
 $ cd ./client_scripts
@@ -170,7 +171,7 @@ $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > deflate
 
 ZSTD:
 
-``` bash
+```bash
 $ cd ./database_dir/zstd
 $ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
 $ cd ./client_scripts
@@ -203,21 +204,21 @@ Here we assume there are 60 cores per socket and take 2 instances for example.
 Launch server for first instance
 LZ4:
 
-``` bash
+```bash
 $ cd ./database_dir/lz4
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
 ```
 
 ZSTD:
 
-``` bash
+```bash
 $ cd ./database_dir/zstd
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
 ```
 
 IAA Deflate:
 
-``` bash
+```bash
 $ cd ./database_dir/deflate
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
 ```
@@ -226,7 +227,7 @@ $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/n
 
 LZ4:
 
-``` bash
+```bash
 $ cd ./database_dir && mkdir lz4_s2 && cd lz4_s2
 $ cp ../../server_config/config_lz4_s2.xml ./
 $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_lz4_s2.xml >&/dev/null&
@@ -234,7 +235,7 @@ $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_lz4_s2.xml >&/dev/n
 
 ZSTD:
 
-``` bash
+```bash
 $ cd ./database_dir && mkdir zstd_s2 && cd zstd_s2
 $ cp ../../server_config/config_zstd_s2.xml ./
 $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_zstd_s2.xml >&/dev/null&
@@ -242,7 +243,7 @@ $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_zstd_s2.xml >&/dev/
 
 IAA Deflate:
 
-``` bash
+```bash
 $ cd ./database_dir && mkdir deflate_s2 && cd deflate_s2
 $ cp ../../server_config/config_deflate_s2.xml ./
 $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_deflate_s2.xml >&/dev/null&
@@ -252,13 +253,13 @@ Creating tables && Inserting data for second instance
 
 Creating tables:
 
-``` bash
+```bash
 $ [CLICKHOUSE_EXE] client -m --port=9001 
 ```
 
 Inserting data:
 
-``` bash
+```bash
 $ [CLICKHOUSE_EXE] client --query "INSERT INTO [TBL_FILE_NAME] FORMAT CSV" < [TBL_FILE_NAME].tbl  --port=9001
 ```
 
@@ -269,7 +270,7 @@ Benchmarking with 2 instances
 
 LZ4:
 
-``` bash
+```bash
 $ cd ./database_dir/lz4
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
 $ cd ./database_dir/lz4_s2
@@ -280,7 +281,7 @@ $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2  > lz4_2i
 
 ZSTD:
 
-``` bash
+```bash
 $ cd ./database_dir/zstd
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
 $ cd ./database_dir/zstd_s2
@@ -291,7 +292,7 @@ $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2 > zstd_2i
 
 IAA deflate
 
-``` bash
+```bash
 $ cd ./database_dir/deflate
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
 $ cd ./database_dir/deflate_s2
@@ -304,7 +305,7 @@ Here the last argument: `2` of client_stressing_test.py stands for the number of
 
 Now three logs should be output as expected:
 
-``` text
+```text
 lz4_2insts.log
 deflate_2insts.log
 zstd_2insts.log
@@ -320,7 +321,7 @@ We recommend use 2 instances benchmark data as final report for review.
 
 Each time before launch new clickhouse server, please make sure no background clickhouse process running, please check and kill old one:
 
-``` bash
+```bash
 $ ps -aux| grep clickhouse
 $ kill -9 [PID]
 ```

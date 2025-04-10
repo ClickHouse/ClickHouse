@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for UNION Clause'
+sidebar_label: 'UNION'
 slug: /sql-reference/statements/select/union
-sidebar_label: UNION
+title: 'UNION Clause'
 ---
 
 # UNION Clause
@@ -11,7 +13,7 @@ If you don't specify `ALL` or `DISTINCT`, it will depend on the `union_default_m
 
 You can use `UNION` to combine any number of `SELECT` queries by extending their results. Example:
 
-``` sql
+```sql
 SELECT CounterID, 1 AS table, toInt64(count()) AS c
     FROM test.hits
     GROUP BY CounterID
@@ -30,7 +32,7 @@ Type casting is performed for unions. For example, if two queries being combined
 
 Queries that are parts of `UNION` can be enclosed in round brackets. [ORDER BY](../../../sql-reference/statements/select/order-by.md) and [LIMIT](../../../sql-reference/statements/select/limit.md) are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with `UNION` in a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
 
-If you use `UNION` without explicitly specifying `UNION ALL` or `UNION DISTINCT`, you can specify the union mode using the [union_default_mode](../../../operations/settings/settings.md#union-default-mode) setting. The setting values can be `ALL`, `DISTINCT` or an empty string. However, if you use `UNION` with `union_default_mode` setting to empty string, it will throw an exception. The following examples demonstrate the results of queries with different values setting.
+If you use `UNION` without explicitly specifying `UNION ALL` or `UNION DISTINCT`, you can specify the union mode using the [union_default_mode](/operations/settings/settings#union_default_mode) setting. The setting values can be `ALL`, `DISTINCT` or an empty string. However, if you use `UNION` with `union_default_mode` setting to empty string, it will throw an exception. The following examples demonstrate the results of queries with different values setting.
 
 Query:
 
@@ -82,4 +84,4 @@ Queries that are parts of `UNION/UNION ALL/UNION DISTINCT` can be run simultaneo
 **See Also**
 
 - [insert_null_as_default](../../../operations/settings/settings.md#insert_null_as_default) setting.
-- [union_default_mode](../../../operations/settings/settings.md#union-default-mode) setting.
+- [union_default_mode](/operations/settings/settings#union_default_mode) setting.

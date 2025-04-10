@@ -124,8 +124,9 @@ struct RestoreSettings
     /// How the RESTORE command will handle if a user-defined function which it's going to restore already exists.
     RestoreUDFCreationMode create_function = RestoreUDFCreationMode::kCreateIfNotExists;
 
-    /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
-    bool allow_s3_native_copy = true;
+    /// Whether S3 native copy is allowed.
+    /// If not set, then S3 native copy will be allowed only if the source and destination credentials are the same.
+    std::optional<bool> allow_s3_native_copy;
 
     /// Whether base backup from S3 should inherit credentials from the RESTORE query.
     bool use_same_s3_credentials_for_base_backup = false;

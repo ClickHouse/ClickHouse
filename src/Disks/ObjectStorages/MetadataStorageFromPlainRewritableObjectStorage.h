@@ -45,6 +45,8 @@ public:
 
     bool existsFileOrDirectory(const std::string & path) const override;
 
+    bool supportsPartitionCommand(const PartitionCommand & command) const override;
+
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const String & path) const override;
@@ -55,7 +57,7 @@ private:
     const std::string metadata_key_prefix;
     std::shared_ptr<InMemoryDirectoryPathMap> path_map;
 
-    void load();
+    void load(bool is_initial_load);
 
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
     std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const override { return path_map; }

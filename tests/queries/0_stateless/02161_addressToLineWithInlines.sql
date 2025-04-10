@@ -1,4 +1,4 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest
 
 SET allow_introspection_functions = 0;
 SELECT addressToLineWithInlines(1); -- { serverError FUNCTION_NOT_ALLOWED }
@@ -10,7 +10,7 @@ SET log_queries = 1, max_rows_to_read = 0;
 SELECT count() FROM numbers_mt(10000000000) SETTINGS log_comment='02161_test_case';
 SET log_queries = 0;
 SET query_profiler_cpu_time_period_ns = 0;
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS query_log, trace_log;
 
 WITH
     lineWithInlines AS
