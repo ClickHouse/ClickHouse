@@ -1201,6 +1201,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 Scalars{},
                 Tables{},
                 QueryProcessingStage::Complete,
+                nullptr,
                 extension);
 
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
