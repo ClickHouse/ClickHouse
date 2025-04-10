@@ -56,14 +56,14 @@ def wait_nats_paused(nats_port, ssl_ctx=None, timeout=180):
         try:
             asyncio.run(check_nats_is_available(nats_port, ssl_ctx=ssl_ctx))
             time.sleep(0.5)
-        except nats.errors.NoServersError as ex:
-            logging.debug("NATS is unavailable: connect failed. error:" + str(ex))
+        except nats.errors.NoServersError:
+            logging.debug("NATS is paused")
             return
         except Exception as ex:
-            logging.debug("Can't connect to NATS " + str(ex))
+            logging.warning("Detect NATS status failed, error:" + str(ex))
             time.sleep(0.5)
     
-    assert False, "NATS available"
+    assert False, "NATS is not paused"
 
 def nats_check_query_result(query, time_limit_sec = 60):
     query_result = ""
