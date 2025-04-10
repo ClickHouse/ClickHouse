@@ -24,3 +24,4 @@ used_database_engines
 
 arraySort(used_data_type_families)	used_storages
 ['DateTime','Int64']	['Memory']
+
