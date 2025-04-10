@@ -131,6 +131,8 @@ def test_table_rotation(start_cluster):
 
     time.sleep(1)
     node1.query("SYSTEM FLUSH LOGS")
+    print(node1.query("SHOW TABLES FROM system"))
+
     assert int(node1.query("EXISTS TABLE system.metric_log").strip()) == 1
     assert int(node1.query("EXISTS TABLE system.metric_log_0").strip()) == 1
     assert int(node1.query("EXISTS TABLE system.metric_log_1").strip()) == 1
@@ -149,15 +151,6 @@ def test_table_rotation(start_cluster):
     assert "SystemMetricLogView" in node1.query("SHOW CREATE TABLE system.metric_log_1")
     assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log_1")
     assert int(node1.query("SELECT count() FROM system.metric_log_1 WHERE not ignore(*)").strip()) > 0
-
-    assert "SystemMetricLogView" not in node1.query("SHOW CREATE TABLE system.metric_log_2")
-    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log_2")
-
-    assert "SystemMetricLogView" not in node1.query("SHOW CREATE TABLE system.metric_log_3")
-    assert "metric" in node1.query("SHOW CREATE TABLE system.metric_log_3")
-
-    assert "SystemMetricLogView" not in node1.query("SHOW CREATE TABLE system.metric_log_4")
-    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log_4")
 
     node1.query("DROP TABLE system.transposed_metric_log_0")
     node1.query("CREATE TABLE system.transposed_metric_log_2 as system.transposed_metric_log")

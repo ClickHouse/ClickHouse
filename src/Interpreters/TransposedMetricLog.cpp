@@ -453,27 +453,30 @@ void TransposedMetricLog::prepareTable()
         auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
         if (database)
         {
-            int suffix = 0;
-            while (true)
+            auto filter = [] (const String & name) { return name.starts_with(TABLE_NAME_WITH_VIEW); };
+            auto iterator = database->getTablesIterator(getContext(), filter);
+            while (iterator->isValid())
             {
                 /// Do for all existing transposed metric logs
-                auto log_table = database->tryGetTable(std::string{TABLE_NAME_WITH_VIEW} + "_" + toString(suffix), getContext());
+                const auto & name = iterator->name();
 
-                if (log_table != nullptr)
+                std::vector<std::string> name_parts;
+                splitInto<'_'>(name_parts, name);
+                // ['transposed', 'metric', 'log', 'X']
+                if (name_parts.size() > 3)
                 {
-                    prepareViewForTable(database, log_table->getStorageID(), view_name + "_" + toString(suffix), suffix);
+                    int suffix;
+                    if (tryParse<Int32>(suffix, name_parts.back()))
+                        prepareViewForTable(database, iterator->table()->getStorageID(), view_name + "_" + toString(suffix), suffix);
                 }
-                else if (suffix > 0) /// just in case
+                else
                 {
-                    break;
+                    prepareViewForTable(database, storage_id, view_name, 0);
                 }
 
-                suffix++;
+                iterator->next();
             }
-
-            prepareViewForTable(database, storage_id, view_name, 0);
         }
-
     }
 }
 
