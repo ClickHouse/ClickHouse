@@ -1993,7 +1993,7 @@ CONV_FN(ClusterFunc, cluster)
     ret += ClusterFunc_CName_Name(cluster.cname());
     ret += "('";
     ret += cluster.ccluster();
-    ret += "',";
+    ret += "', ";
     TableOrFunctionToString(ret, true, tof);
     if (tof.has_est() && cluster.has_sharding_key())
     {
