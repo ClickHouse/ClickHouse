@@ -94,6 +94,7 @@ public:
     bool has(const std::string & name, bool case_insensitive = false) const;
 
     size_t getPositionByName(const std::string & name, bool case_insensitive = false) const;
+    std::optional<size_t> findPositionByName(const std::string & name, bool case_insensitive = false) const;
 
     const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
     NamesAndTypesList getNamesAndTypesList() const;

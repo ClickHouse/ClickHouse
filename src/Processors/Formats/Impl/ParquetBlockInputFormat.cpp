@@ -29,6 +29,8 @@
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Processors/Formats/Impl/ParquetMk4BlockInputFormat.h>
+#include <IO/SharedThreadPools.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -912,6 +914,8 @@ void ParquetBlockInputFormat::threadFunction(size_t row_group_batch_idx)
 
         if (row_group_batch.status == RowGroupBatchState::Status::Done)
             return;
+
+        CurrentThread::updatePerformanceCountersIfNeeded();
     }
 }
 bool ParquetBlockInputFormat::supportPrefetch() const
@@ -1152,12 +1156,12 @@ const BlockMissingValues * ParquetBlockInputFormat::getMissingValues() const
     return &previous_block_missing_values;
 }
 
-ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+ArrowParquetSchemaReader::ArrowParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : ISchemaReader(in_), format_settings(format_settings_)
 {
 }
 
-void ParquetSchemaReader::initializeIfNeeded()
+void ArrowParquetSchemaReader::initializeIfNeeded()
 {
     if (arrow_file)
         return;
@@ -1167,7 +1171,7 @@ void ParquetSchemaReader::initializeIfNeeded()
     metadata = parquet::ReadMetaData(arrow_file);
 }
 
-NamesAndTypesList ParquetSchemaReader::readSchema()
+NamesAndTypesList ArrowParquetSchemaReader::readSchema()
 {
     initializeIfNeeded();
 
@@ -1185,7 +1189,7 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     return header.getNamesAndTypesList();
 }
 
-std::optional<size_t> ParquetSchemaReader::readNumberOrRows()
+std::optional<size_t> ArrowParquetSchemaReader::readNumberOrRows()
 {
     initializeIfNeeded();
     return metadata->num_rows();
@@ -1201,16 +1205,46 @@ void registerInputFormatParquet(FormatFactory & factory)
                const ReadSettings & read_settings,
                bool is_remote_fs,
                size_t max_download_threads,
-               size_t max_parsing_threads)
+               size_t max_parsing_threads) -> InputFormatPtr
             {
                 size_t min_bytes_for_seek = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
-                return std::make_shared<ParquetBlockInputFormat>(
-                    buf,
-                    sample,
-                    settings,
-                    max_parsing_threads,
-                    max_download_threads,
-                    min_bytes_for_seek);
+                if (settings.parquet.use_native_reader_v3)
+                {
+                    //TODO: actually share the shared pool, fill out its fields using settings
+                    auto pool = std::make_shared<Parquet::SharedParsingThreadPool>();
+                    if (settings.parquet.enable_row_group_prefetch && max_download_threads > 0)
+                        pool->io_runner.initThreadPool(
+                            getFormatParsingThreadPool().get(), max_download_threads, "ParquetPrefetch", CurrentThread::getGroup());
+
+                    /// Unfortunately max_parsing_threads setting doesn't have a value for
+                    /// "do parsing in the same thread as the rest of query processing
+                    /// (inside IInputFormat::read()), with no thread pool". But such mode seems
+                    /// useful, at least for testing performance. So we use max_parsing_threads = 1
+                    /// as a signal to disable thread pool altogether, sacrificing the ability to
+                    /// use thread pool with 1 thread. We could subtract 1 instead, but then the
+                    /// by default the thread pool will use `num_cores - 1` threads, also bad.
+                    if (max_parsing_threads <= 1)
+                        pool->parsing_runner.initManual();
+                    else
+                        pool->parsing_runner.initThreadPool(
+                            getFormatParsingThreadPool().get(), max_parsing_threads, "ParquetDecoder", CurrentThread::getGroup());
+
+                    pool->total_memory_target = settings.parquet.memory_target;
+                    return std::make_shared<ParquetMk4BlockInputFormat>(
+                        buf,
+                        sample,
+                        settings,
+                        pool,
+                        min_bytes_for_seek);
+                }
+                else
+                    return std::make_shared<ParquetBlockInputFormat>(
+                        buf,
+                        sample,
+                        settings,
+                        max_parsing_threads,
+                        max_download_threads,
+                        min_bytes_for_seek);
             });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
 }
@@ -1219,15 +1253,18 @@ void registerParquetSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
         "Parquet",
-        [](ReadBuffer & buf, const FormatSettings & settings)
+        [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
-            return std::make_shared<ParquetSchemaReader>(buf, settings);
+            if (settings.parquet.use_native_reader_v3)
+                return std::make_shared<NativeParquetSchemaReader>(buf, settings);
+            else
+                return std::make_shared<ArrowParquetSchemaReader>(buf, settings);
         }
         );
 
     factory.registerAdditionalInfoForSchemaCacheGetter("Parquet", [](const FormatSettings & settings)
     {
-        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+        return fmt::format("schema_inference_make_columns_nullable={}, use_native_reader_v3={}", settings.schema_inference_make_columns_nullable, settings.parquet.use_native_reader_v3);
     });
 }
 

@@ -281,6 +281,7 @@ struct FormatSettings
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
         bool use_native_reader = false;
+        bool use_native_reader_v3 = false;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         bool output_datetime_as_uint32 = false;
@@ -302,6 +303,8 @@ struct FormatSettings
         size_t local_read_min_bytes_for_seek = 8192;
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
+        size_t max_dictionary_size = 1024 * 1024;
+        size_t memory_target = 4ul << 30;
     } parquet{};
 
     struct Pretty

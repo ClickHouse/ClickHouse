@@ -1148,6 +1148,14 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
     return res;
 }
 
+template <typename T>
+std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
+{
+    size_t start = data.size();
+    data.resize(start + count);
+    return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
+}
+
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;

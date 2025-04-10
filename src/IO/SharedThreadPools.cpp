@@ -35,6 +35,9 @@ namespace CurrentMetrics
     extern const Metric MergeTreeSubcolumnsReaderThreads;
     extern const Metric MergeTreeSubcolumnsReaderThreadsActive;
     extern const Metric MergeTreeSubcolumnsReaderThreadsScheduled;
+    extern const Metric FormatParsingThreads;
+    extern const Metric FormatParsingThreadsActive;
+    extern const Metric FormatParsingThreadsScheduled;
 }
 
 namespace DB
@@ -196,6 +199,12 @@ StaticThreadPool & getDatabaseCatalogDropTablesThreadPool()
 StaticThreadPool & getMergeTreePrefixesDeserializationThreadPool()
 {
     static StaticThreadPool instance("MergeTreePrefixesDeserializationThreadPool", CurrentMetrics::MergeTreeSubcolumnsReaderThreads, CurrentMetrics::MergeTreeSubcolumnsReaderThreadsActive, CurrentMetrics::MergeTreeSubcolumnsReaderThreadsScheduled);
+    return instance;
+}
+
+StaticThreadPool & getFormatParsingThreadPool()
+{
+    static StaticThreadPool instance("FormatParsingThreadPool", CurrentMetrics::FormatParsingThreads, CurrentMetrics::FormatParsingThreadsActive, CurrentMetrics::FormatParsingThreadsScheduled);
     return instance;
 }
 

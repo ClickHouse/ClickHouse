@@ -108,6 +108,8 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
         options.write_bloom_filter = format_settings.parquet.write_bloom_filter;
         options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
         options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
+        options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
+        options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
         schema = convertSchema(header_, options);
     }

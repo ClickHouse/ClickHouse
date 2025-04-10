@@ -24,6 +24,12 @@ struct WriteOptions
     bool output_fixed_string_as_fixed_byte_array = true;
     bool output_datetime_as_uint32 = false;
 
+    /// Note: the meaning of some compression methods here is different from
+    /// wrapReadBufferWithCompressionMethod:
+    ///  * Lz4 here lz4 block format, while in Lz4InflatingReadBuffer uses lz4 framed format,
+    ///  * Snappy here doesn't have extra headers, while HadoopSnappyReadBuffer does.
+    /// TODO: There's no reason to use CompressionMethod enum here, change this field type to
+    ///       parquet::format::CompressionCodec::type.
     CompressionMethod compression = CompressionMethod::Lz4;
     int compression_level = 3;
 
@@ -31,10 +37,10 @@ struct WriteOptions
     size_t write_batch_size = 1024;
 
     bool use_dictionary_encoding = true;
-    size_t dictionary_size_limit = 1024 * 1024;
+    size_t max_dictionary_size = 1024 * 1024;
     /// If using dictionary, this encoding is used as a fallback when dictionary gets too big.
     /// Otherwise, this is used for everything.
-    parquet::format::Encoding::type encoding = parquet::format::Encoding::PLAIN;
+    parq::Encoding::type encoding = parq::Encoding::PLAIN;
 
     bool write_column_chunk_statistics = true;
     bool write_page_statistics = true;
@@ -65,9 +71,9 @@ struct WriteOptions
 
 struct ColumnChunkIndexes
 {
-    parquet::format::ColumnIndex column_index; // if write_page_index
-    parquet::format::OffsetIndex offset_index; // if write_page_index
-    parquet::format::BloomFilterHeader bloom_filter_header;
+    parq::ColumnIndex column_index; // if write_page_index
+    parq::OffsetIndex offset_index; // if write_page_index
+    parq::BloomFilterHeader bloom_filter_header;
     PODArray<UInt32> bloom_filter_data; // if write_bloom_filter, and not flushed yet
 };
 
@@ -76,7 +82,7 @@ struct ColumnChunkWriteState
 {
     /// After writeColumnChunkBody(), offsets in this struct are relative to the start of column chunk.
     /// Then finalizeColumnChunkAndWriteFooter fixes them up before writing to file.
-    parquet::format::ColumnChunk column_chunk;
+    parq::ColumnChunk column_chunk;
 
     ColumnPtr primitive_column;
     CompressionMethod compression; // must match what's inside column_chunk
@@ -107,7 +113,7 @@ struct ColumnChunkWriteState
 
 struct RowGroupWithIndexes
 {
-    parquet::format::RowGroup row_group;
+    parq::RowGroup row_group;
     std::vector<ColumnChunkIndexes> column_indexes;
 };
 
@@ -120,7 +126,7 @@ struct FileWriteState
     size_t offset = 0;
 };
 
-using SchemaElements = std::vector<parquet::format::SchemaElement>;
+using SchemaElements = std::vector<parq::SchemaElement>;
 using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
 
 /// Parquet file consists of row groups, which consist of column chunks.
