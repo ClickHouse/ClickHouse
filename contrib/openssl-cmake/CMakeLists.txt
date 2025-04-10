@@ -565,28 +565,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/encoder_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/encoder_meth.c
     ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/encoder_pkey.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_all.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_cnf.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_ctrl.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_dyn.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_err.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_fat.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_init.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_lib.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_list.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_openssl.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_pkey.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_rdrand.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_table.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_asnmth.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_cipher.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_dh.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_digest.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_dsa.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_eckey.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_pkmeth.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_rand.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_rsa.c
     ${OPENSSL_SOURCE_DIR}/crypto/err/err.c
     ${OPENSSL_SOURCE_DIR}/crypto/err/err_all.c
     ${OPENSSL_SOURCE_DIR}/crypto/err/err_all_legacy.c
@@ -862,7 +840,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/store/store_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/store/store_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/store/store_meth.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/store/store_register.c
     ${OPENSSL_SOURCE_DIR}/crypto/store/store_result.c
     ${OPENSSL_SOURCE_DIR}/crypto/store/store_strings.c
     ${OPENSSL_SOURCE_DIR}/crypto/thread/api.c
@@ -968,7 +945,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509name.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509rset.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509spki.c
-    # ${OPENSSL_SOURCE_DIR}/crypto/x509/x509type.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x_all.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x_attrib.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x_crl.c
