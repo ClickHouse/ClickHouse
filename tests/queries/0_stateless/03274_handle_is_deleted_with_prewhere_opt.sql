@@ -19,6 +19,6 @@ select count() from 03274_prewhere_is_deleted final prewhere number > 100 SETTIN
 system flush logs;
 
 -- should be zero in case the optimization worked
-SELECT ProfileEvents['ReplacingSortedMilliseconds'] FROM system.query_log WHERE event_time > now() - 600 and log_comment = 'final_query';
+SELECT ProfileEvents['ReplacingSortedMilliseconds'] FROM system.query_log WHERE current_database = currentDatabase() AND event_time > now() - 600 and log_comment = 'final_query';
 
 drop table if exists 03274_prewhere_is_deleted;
