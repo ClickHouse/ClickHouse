@@ -14,7 +14,6 @@ class JobConfigs:
             ],
         ),
         command="python3 ./tests/ci/docker_images_check.py --suffix aarch64",
-        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/build_post_hook.py"],
     )
     docker_build_amd = Job.Config(
         name=JobNames.DOCKER_BUILDS_AMD,
@@ -27,7 +26,6 @@ class JobConfigs:
         ),
         command="python3 ./tests/ci/docker_images_check.py --suffix amd64 --multiarch-manifest",
         requires=[JobNames.DOCKER_BUILDS_ARM],
-        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
@@ -906,6 +904,7 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
@@ -920,6 +919,7 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     sqlancer_master_jobs = Job.Config(
         name=JobNames.SQLANCER,

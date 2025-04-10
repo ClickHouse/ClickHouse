@@ -9,10 +9,11 @@ def check():
 
     print("Clean up non-latest images per each Repository")
     Shell.check(
-        "docker images --format '{{.Repository}} {{.Tag}} {{.ID}}' "
-        " | sort -u -k1,1 | awk '{print $3}' "
-        " | xargs -r -I {} docker images --filter 'before={}' --quiet "
-        " | sort -u | xargs -r docker rmi",
+        "docker images --format '{{.Repository}} {{.ID}} {{.CreatedAt}}' "
+        " | sort -k1,1 -k3,3M -k4,4n -k5,5n "
+        " | tac "
+        " | awk '!seen[$1]++ {next} {print $2}' "
+        " | xargs -r docker rmi",
         verbose=True,
     )
     return True
