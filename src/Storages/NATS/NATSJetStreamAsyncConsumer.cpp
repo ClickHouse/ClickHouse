@@ -1,4 +1,4 @@
-#include <Storages/NATS/NATSJetStreamPushConsumer.h>
+#include <Storages/NATS/NATSJetStreamAsyncConsumer.h>
 
 namespace DB
 {
@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int INVALID_STATE;
 }
 
-NATSJetStreamPushConsumer::NATSJetStreamConsumer(
+NATSJetStreamAsyncConsumer::NATSJetStreamAsyncConsumer(
     NATSConnectionPtr connection,
     String stream_name_,
     String consumer_name_,
@@ -25,7 +25,7 @@ NATSJetStreamPushConsumer::NATSJetStreamConsumer(
 {
 }
 
-void NATSJetStreamPushConsumer::subscribe()
+void NATSJetStreamAsyncConsumer::subscribe()
 {
     if (isSubscribed())
         return;

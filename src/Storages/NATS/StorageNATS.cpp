@@ -17,7 +17,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MessageQueueSink.h>
-#include <Storages/NATS/NATSJetStreamConsumer.h>
+#include <Storages/NATS/NATSJetStreamAsyncConsumer.h>
 #include <Storages/NATS/NATSCoreConsumer.h>
 #include <Storages/NATS/NATSProducer.h>
 #include <Storages/NATS/NATSSettings.h>
@@ -544,7 +544,7 @@ INATSConsumerPtr StorageNATS::createConsumer()
 
     auto consumer_name = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_consumer]);
     auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group].value;
-    return std::make_shared<NATSJetStreamConsumer>(consumers_connection, stream_name, consumer_name, subjects, queue_name, log, queue_size, shutdown_called);
+    return std::make_shared<NATSJetStreamAsyncConsumer>(consumers_connection, stream_name, consumer_name, subjects, queue_name, log, queue_size, shutdown_called);
 }
 
 bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)

@@ -10,10 +10,10 @@ class Logger;
 namespace DB
 {
 
-class NATSJetStreamPushConsumer : public INATSConsumer
+class NATSJetStreamAsyncConsumer : public INATSConsumer
 {
 public:
-    NATSJetStreamPushConsumer(
+    NATSJetStreamAsyncConsumer(
         NATSConnectionPtr connection,
         String stream_name_,
         String consumer_name_,
