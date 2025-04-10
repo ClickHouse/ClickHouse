@@ -50,6 +50,7 @@ def wait_nats_to_start(nats_port, ssl_ctx=None, timeout=180):
     
     assert False, "NATS is unavailable"
 
+# function to check if nats is paused, because in some cases we successfully connected to it after calling pause_container
 def wait_nats_paused(nats_port, ssl_ctx=None, timeout=180):
     start = time.time()
     while time.time() - start < timeout:
