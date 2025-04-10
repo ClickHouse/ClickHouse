@@ -64,6 +64,8 @@ struct SelectQueryOptions
       */
     bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
 
+    size_t analysis_depth = 0;
+
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
         size_t depth = 0,
