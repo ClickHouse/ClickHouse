@@ -118,6 +118,8 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
                 return std::make_shared<DataTypeUInt8>();
             else if (type_name == "Double")
                 return std::make_shared<DataTypeFloat64>();
+            else if (type_name == "FileCachePolicy")
+                return std::make_shared<DataTypeString>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", type_name);
         }();
