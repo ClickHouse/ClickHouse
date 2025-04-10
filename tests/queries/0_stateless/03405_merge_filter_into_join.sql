@@ -4,6 +4,10 @@ INSERT INTO users VALUES (1231, 'John', 33);
 INSERT INTO users VALUES (6666, 'Ksenia', 48);
 INSERT INTO users VALUES (8888, 'Alice', 50);
 
+-- For some reason planner sometimes decides to swap tables.
+-- It breaks test because it prints query plan with actions.
+set query_plan_join_swap_table = 0;
+
 -- { echoOn }
 
 EXPLAIN PLAN actions = 1
