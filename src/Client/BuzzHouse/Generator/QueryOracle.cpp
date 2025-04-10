@@ -369,7 +369,8 @@ void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
     nsettings.clear();
     for (uint32_t i = 0; i < nsets; i++)
     {
-        const String & setting = rg.pickRandomly(queryOracleSettings);
+        const auto & toPickFrom = rg.nextMediumNumber() < 5 ? hotSettings : queryOracleSettings;
+        const String & setting = rg.pickRandomly(toPickFrom);
         const CHSetting & chs = queryOracleSettings.at(setting);
         SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
 
