@@ -134,10 +134,17 @@ bool ReadBufferFromRemoteFSGather::readImpl()
 
 void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
 {
+    LOG_TEST(
+        log,
+        "Set read until to {}, file_offset_of_buffer_end {}, working buffer size {}, working buffer available {}",
+        position,
+        file_offset_of_buffer_end,
+        working_buffer.size(),
+        available());
     if (position == read_until_position)
         return;
 
-    if (position < file_offset_of_buffer_end)
+    if (!use_external_buffer && position < file_offset_of_buffer_end)
     {
         /// file has been read beyond new read until position already
         if (available() >= file_offset_of_buffer_end - position)
