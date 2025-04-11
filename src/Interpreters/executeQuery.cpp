@@ -545,6 +545,31 @@ void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id,
     }
 }
 
+static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pulling_pipeline, const ProgressCallback & progress_callback, QueryStatusPtr process_list_elem)
+{
+    ResultProgress res(0, 0);
+
+    if (pulling_pipeline)
+    {
+        pipeline.tryGetResultRowsAndBytes(res.result_rows, res.result_bytes);
+    }
+    else if (process_list_elem) /// will be used only for ordinary INSERT queries
+    {
+        auto progress_out = process_list_elem->getProgressOut();
+        res.result_rows = progress_out.written_rows;
+        res.result_bytes = progress_out.written_bytes;
+    }
+
+    if (progress_callback)
+    {
+        Progress p;
+        p.incrementPiecewiseAtomically(Progress{res});
+        progress_callback(p);
+    }
+
+    return res;
+}
+
 void logQueryFinish(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
@@ -571,24 +596,9 @@ void logQueryFinish(
 
         addStatusInfoToQueryLogElement(elem, info, query_ast, context);
 
-        if (pulling_pipeline)
-        {
-            query_pipeline.tryGetResultRowsAndBytes(elem.result_rows, elem.result_bytes);
-        }
-        else /// will be used only for ordinary INSERT queries
-        {
-            auto progress_out = process_list_elem->getProgressOut();
-            elem.result_rows = progress_out.written_rows;
-            elem.result_bytes = progress_out.written_bytes;
-        }
-
-        auto progress_callback = context->getProgressCallback();
-        if (progress_callback)
-        {
-            Progress p;
-            p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
-            progress_callback(p);
-        }
+        auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
+        elem.result_rows = result_progress.result_rows;
+        elem.result_bytes = result_progress.result_bytes;
 
         if (elem.read_rows != 0)
         {
@@ -1618,6 +1628,7 @@ static BlockIO executeQueryImpl(
                                     internal,
                                     implicit_txn_control,
                                     execute_implicit_tcl_query,
+                                    // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
@@ -1871,6 +1882,7 @@ void executeQuery(
     }
 
     auto & pipeline = streams.pipeline;
+    bool pulling_pipeline = pipeline.pulling();
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
     try
@@ -1979,6 +1991,9 @@ void executeQuery(
     std::exception_ptr exception_ptr;
     if (query_finish_callback)
     {
+        /// Dump result_rows/result_bytes, since query_finish_callback() will send final http header.
+        flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
+
         try
         {
             query_finish_callback();
