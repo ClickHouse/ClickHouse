@@ -551,7 +551,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
             failed_counter += load_result.error_count;
         }
         new_values["DictionaryMaxUpdateDelay"] = {
-            max_update_delay.count(), "The maximum delay (in seconds) of dictionary update"};
+            std::chrono::duration_cast<std::chrono::seconds>(max_update_delay).count(), "The maximum delay (in seconds) of dictionary update"};
         new_values["DictionaryTotalFailedUpdates"] = {failed_counter, "Sum of sequantially failed updates in all dictionaries"};
     }
 
