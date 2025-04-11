@@ -1591,6 +1591,7 @@ class ClickHouseCluster:
         handle_prometheus_remote_write=False,
         handle_prometheus_remote_read=False,
         use_old_analyzer=None,
+        use_distributed_plan=None,
         hostname=None,
         env_variables=None,
         instance_env_variables=False,
@@ -1707,6 +1708,7 @@ class ClickHouseCluster:
             with_iceberg_catalog=with_iceberg_catalog,
             with_glue_catalog=with_glue_catalog,
             use_old_analyzer=use_old_analyzer,
+            use_distributed_plan=use_distributed_plan,
             server_bin_path=self.server_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
             with_odbc_drivers=with_odbc_drivers,
@@ -3403,6 +3405,7 @@ class ClickHouseInstance:
         with_iceberg_catalog,
         with_glue_catalog,
         use_old_analyzer,
+        use_distributed_plan,
         server_bin_path,
         clickhouse_path_dir,
         with_odbc_drivers,
@@ -3499,6 +3502,7 @@ class ClickHouseInstance:
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
         self.use_old_analyzer = use_old_analyzer
+        self.use_distributed_plan = use_distributed_plan
         self.randomize_settings = randomize_settings
 
         self.main_config_name = main_config_name
@@ -4618,16 +4622,26 @@ class ClickHouseInstance:
             write_embedded_config("0_common_max_cpu_load.xml", users_d_dir)
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
+        use_distributed_plan = os.environ.get("CLICKHOUSE_USE_DISTRIBUTED_PLAN") is not None
+
         # If specific version was used there can be no
         # enable_analyzer setting, so do this only if it was
         # explicitly requested.
         if self.tag:
             use_old_analyzer = False
+        if self.tag != "latest":
+            use_distributed_plan = False
         # Prefer specified in the test option:
         if self.use_old_analyzer is not None:
             use_old_analyzer = self.use_old_analyzer
+        if self.use_distributed_plan is not None:
+            use_distributed_plan = self.use_distributed_plan
+
         if use_old_analyzer:
             write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
+
+        if use_distributed_plan:
+            write_embedded_config("0_common_enable_distributed_plan.xml", users_d_dir)
 
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)

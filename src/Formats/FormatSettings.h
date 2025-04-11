@@ -156,6 +156,8 @@ struct FormatSettings
 
     String bool_true_representation = "true";
     String bool_false_representation = "false";
+    bool allow_special_bool_values = true;
+    bool allow_special_bool_values_inside_variant = false;
 
     struct CSV
     {

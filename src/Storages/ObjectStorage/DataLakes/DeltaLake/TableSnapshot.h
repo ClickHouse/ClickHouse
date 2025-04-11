@@ -55,33 +55,32 @@ public:
     /// Therefore "table schema" would contain partition columns,
     /// but "read schema" would not.
     const DB::Names & getPartitionColumns() const;
+    const DB::NameToNameMap & getPhysicalNamesMap() const;
 
 private:
     class Iterator;
     using KernelExternEngine = KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
     using KernelSnapshot = KernelPointerWrapper<ffi::SharedSnapshot, ffi::free_snapshot>;
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
+    using KernelGlobalScanState = KernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
 
     const KernelHelperPtr helper;
     const DB::ObjectStoragePtr object_storage;
-    const bool read_schema_same_as_table_schema;
     const LoggerPtr log;
 
     mutable KernelExternEngine engine;
     mutable KernelSnapshot snapshot;
     mutable KernelScan scan;
+    mutable KernelGlobalScanState scan_state;
     mutable size_t snapshot_version;
 
-    mutable std::optional<DB::NamesAndTypesList> table_schema;
-    mutable std::optional<DB::NamesAndTypesList> read_schema;
-    mutable std::optional<DB::Names> partition_columns;
+    mutable DB::NamesAndTypesList table_schema;
+    mutable DB::NameToNameMap physical_names_map;
+    mutable DB::NamesAndTypesList read_schema;
+    mutable DB::Names partition_columns;
 
     void initSnapshot() const;
     void initSnapshotImpl() const;
-    /// Both read schema and partition columns are loaded with the same data scan object,
-    /// therefore we load them together.
-    void loadReadSchemaAndPartitionColumns() const;
-    ffi::SharedSnapshot * getSnapshot() const;
 };
 
 /// TODO; Enable event tracing in DeltaKernel.

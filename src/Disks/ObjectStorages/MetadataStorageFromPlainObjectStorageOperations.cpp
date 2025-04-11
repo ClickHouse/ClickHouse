@@ -366,7 +366,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute(std::unique
     object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
 
     copied = true;
-    bool added = path_map.addFile(path_to);
+    [[maybe_unused]] bool added = path_map.addFile(path_to);
     chassert(added);
 }
 

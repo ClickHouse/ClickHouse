@@ -4,6 +4,7 @@
 #include <boost/noncopyable.hpp>
 #include "Interpreters/ActionsDAG.h"
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/prepareReadingFromFormat.h>
 
 namespace DB
 {
@@ -32,10 +33,14 @@ public:
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
     /// Return nothing if read schema is the same as table schema.
-    virtual NamesAndTypesList getReadSchema() const { return {}; }
+    virtual DB::ReadFromFormatInfo prepareReadingFromFormat(
+        const Strings & requested_columns,
+        const DB::StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context,
+        bool supports_subset_of_columns);
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String &) const { return {}; }
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String &) const { return {}; }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & /* path */) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & /* path */) const { return {}; }
 
     /// Whether metadata is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
@@ -43,8 +48,7 @@ public:
     /// Update metadata to the latest version.
     virtual bool update(const ContextPtr &) { return false; }
 
-    /// Whether schema evolution is supported.
-    virtual bool supportsExternalMetadataChange() const { return false; }
+    virtual bool supportsSchemaEvolution() const { return false; }
 
     virtual std::optional<size_t> totalRows() const { return {}; }
     virtual std::optional<size_t> totalBytes() const { return {}; }

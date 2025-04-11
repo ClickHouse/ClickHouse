@@ -160,7 +160,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
     log_settings.queue_settings.database = config.getString(config_prefix + ".database", default_database_name);
 
-    if (default_table_name != "transposed_metric_log")
+    if (default_table_name != TransposedMetricLog::TABLE_NAME_WITH_VIEW)
         log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
     else
         log_settings.queue_settings.table = default_table_name;
@@ -218,26 +218,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
         if (!ttl.empty())
             log_settings.engine += " TTL " + ttl;
 
-        if (std::is_same_v<TSystemLog, TransposedMetricLog>)
-        {
-            auto schema = config.getString(config_prefix + ".schema_type", "wide");
-            /// NOTE, fixed schema, it's not allowed to change order by for efficiency reasons
-            if (schema == "transposed_with_wide_view")
-            {
-                log_settings.engine += std::string{" ORDER BY ("} + TSystemLog::getDefaultOrderBy() + ")";
-            }
-            else
-            {
-                String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
-                log_settings.engine += " ORDER BY (" + order_by + ")";
-            }
-        }
-        else
-        {
-            /// ORDER BY expr is necessary.
-            String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
-            log_settings.engine += " ORDER BY (" + order_by + ")";
-        }
+        /// ORDER BY expr is necessary.
+        String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
+        log_settings.engine += " ORDER BY (" + order_by + ")";
 
         /// SETTINGS expr is not necessary.
         ///   https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#settings
@@ -366,7 +349,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     else if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view")
     {
         transposed_metric_log = createSystemLog<TransposedMetricLog>(
-            global_context, "system", "transposed_metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
+            global_context, "system", TransposedMetricLog::TABLE_NAME_WITH_VIEW, config, "metric_log", TransposedMetricLog::DESCRIPTION);
     }
 
 
@@ -546,16 +529,9 @@ void SystemLog<LogElement>::shutdown()
 {
     Base::stopFlushThread();
 
-    try
-    {
-        auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-        if (table)
-            table->flushAndShutdown();
-    }
-    catch (Exception &)
-    {
-        tryLogCurrentException(log, "Final log flush failed", LogsLevel::warning);
-    }
+    auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    if (table)
+        table->flushAndShutdown();
 }
 
 
@@ -799,6 +775,15 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
+
+    if constexpr (std::is_same_v<LogElement, TransposedMetricLogElement>)
+    {
+        if (table_id.table_name == TransposedMetricLog::TABLE_NAME_WITH_VIEW)
+        {
+            auto * storage = storage_with_comment.storage->as<ASTStorage>();
+            storage->set(storage->order_by, TransposedMetricLog::getDefaultOrderByAST());
+        }
+    }
 
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);

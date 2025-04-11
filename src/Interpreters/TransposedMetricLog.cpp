@@ -31,6 +31,7 @@
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/FilterStep.h>
 
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -370,62 +371,92 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
 }
 
 
+ASTPtr TransposedMetricLog::getDefaultOrderByAST()
+{
+    /// Always use default ORDER BY because it's the most effective for view
+    std::string order_by_str = std::string{"("} + getDefaultOrderBy() + ")";
+    ParserStorageOrderByClause order_by_p(/*allow_order_*/ false);
+    return parseQuery(order_by_p, order_by_str, "Order by for transposed metric log", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+}
+
+void TransposedMetricLog::prepareViewForTable(DatabasePtr system_database, StorageID log_table_storage_id, const std::string & view_table_name, size_t view_table_suffix)
+{
+    auto table = system_database->tryGetTable(view_table_name, getContext());
+    if (table && table->getName() != "SystemMetricLogView")
+    {
+        /// Rename the existing table.
+        int suffix = view_table_suffix;
+        while (DatabaseCatalog::instance().isTableExist(
+            {system_database->getDatabaseName(), view_name + "_" + toString(suffix)}, getContext()))
+            ++suffix;
+
+        std::string rename_to_name = view_name + "_" + toString(suffix);
+
+        ASTRenameQuery::Element elem
+        {
+            ASTRenameQuery::Table
+            {
+                std::make_shared<ASTIdentifier>(system_database->getDatabaseName()),
+                std::make_shared<ASTIdentifier>(view_table_name)
+            },
+            ASTRenameQuery::Table
+            {
+                std::make_shared<ASTIdentifier>(system_database->getDatabaseName()),
+                std::make_shared<ASTIdentifier>(rename_to_name)
+            }
+        };
+
+        auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
+
+        ActionLock merges_lock;
+        if (DatabaseCatalog::instance().getDatabase(system_database->getDatabaseName())->getUUID() == UUIDHelpers::Nil)
+            merges_lock = table->getActionLock(ActionLocks::PartsMerge);
+
+        auto query_context = Context::createCopy(context);
+        query_context->makeQueryContext();
+        /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
+        query_context->setSetting("check_table_dependencies", Field{false});
+        query_context->setSetting("check_referential_table_dependencies", Field{false});
+
+        InterpreterRenameQuery(rename, query_context).execute();
+
+        attachNoDescription<StorageSystemMetricLogView>(getContext(), *system_database, view_table_name, "Metric log view", log_table_storage_id);
+    }
+    else if (!table)
+    {
+        attachNoDescription<StorageSystemMetricLogView>(getContext(), *system_database, view_table_name, "Metric log view", log_table_storage_id);
+    }
+}
+
 void TransposedMetricLog::prepareTable()
 {
     SystemLog<TransposedMetricLogElement>::prepareTable();
 
-    /// Now we need to create a view and potentially rotate old
-    /// system.metric_log if it existed
+    /// Now we need to create a view for every system.transposed_metric_X and potentially rotate old
+    /// system.metric_log_X if it existed
     if (!view_name.empty())
     {
         auto storage_id = getTableID();
         auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
         if (database)
         {
-            auto table = database->tryGetTable(view_name, getContext());
-            if (table && table->getName() != "SystemMetricLogView")
+            int suffix = 0;
+            while (true)
             {
-                /// Rename the existing table.
-                int suffix = 0;
-                while (DatabaseCatalog::instance().isTableExist(
-                    {database->getDatabaseName(), view_name + "_" + toString(suffix)}, getContext()))
-                    ++suffix;
+                /// Do for all existing transposed metric logs
+                auto log_table = database->tryGetTable(std::string{TABLE_NAME_WITH_VIEW} + "_" + toString(suffix), getContext());
 
-                ASTRenameQuery::Element elem
-                {
-                    ASTRenameQuery::Table
-                    {
-                        std::make_shared<ASTIdentifier>(database->getDatabaseName()),
-                        std::make_shared<ASTIdentifier>(view_name)
-                    },
-                    ASTRenameQuery::Table
-                    {
-                        std::make_shared<ASTIdentifier>(database->getDatabaseName()),
-                        std::make_shared<ASTIdentifier>(view_name + "_" + toString(suffix))
-                    }
-                };
+                if (log_table != nullptr)
+                    prepareViewForTable(database, log_table->getStorageID(), view_name + "_" + toString(suffix), suffix);
+                else
+                    break;
 
-                auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
-
-                ActionLock merges_lock;
-                if (DatabaseCatalog::instance().getDatabase(database->getDatabaseName())->getUUID() == UUIDHelpers::Nil)
-                    merges_lock = table->getActionLock(ActionLocks::PartsMerge);
-
-                auto query_context = Context::createCopy(context);
-                query_context->makeQueryContext();
-                /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
-                query_context->setSetting("check_table_dependencies", Field{false});
-                query_context->setSetting("check_referential_table_dependencies", Field{false});
-
-                InterpreterRenameQuery(rename, query_context).execute();
-
-                attachNoDescription<StorageSystemMetricLogView>(getContext(), *database, "metric_log", "Metric log view", storage_id);
+                suffix++;
             }
-            else if (!table)
-            {
-                attachNoDescription<StorageSystemMetricLogView>(getContext(), *database, "metric_log", "Metric log view", storage_id);
-            }
+
+            prepareViewForTable(database, storage_id, view_name, 0);
         }
+
     }
 }
 

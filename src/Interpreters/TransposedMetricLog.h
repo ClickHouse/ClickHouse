@@ -13,6 +13,9 @@
 namespace DB
 {
 
+class IDatabase;
+using DatabasePtr = std::shared_ptr<IDatabase>;
+
 struct TransposedMetricLogElement
 {
     UInt16 event_date;
@@ -26,14 +29,19 @@ struct TransposedMetricLogElement
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
+
 };
 
 /// Transposed version of system.metric_log
 class TransposedMetricLog : public PeriodicLog<TransposedMetricLogElement>
 {
+private:
     /// Optionally creates "wide" schema view for compatibility
     std::string view_name;
+
+    void prepareViewForTable(DatabasePtr system_database, StorageID log_table_storage_id, const std::string & view_table_name, size_t view_table_suffix);
 public:
+    static constexpr auto TABLE_NAME_WITH_VIEW = "transposed_metric_log";
     static constexpr auto DESCRIPTION = R"(
         Contains history of metrics values from tables system.metrics and system.events.
         Periodically flushed to disk. Transposed form of system.metric_log.)";
@@ -43,6 +51,7 @@ public:
     static constexpr auto EVENT_TIME_MICROSECONDS_NAME = "event_time_microseconds";
     static constexpr auto METRIC_NAME = "metric";
     static constexpr auto VALUE_NAME = "value";
+
 
     static constexpr std::string_view PROFILE_EVENT_PREFIX = "ProfileEvent_";
     static constexpr std::string_view CURRENT_METRIC_PREFIX = "CurrentMetric_";
@@ -57,6 +66,8 @@ public:
 
     /// This table is usually queried by time range + some fixed metric name.
     static const char * getDefaultOrderBy() { return "event_date, toStartOfHour(event_time), metric"; }
+
+    static ASTPtr getDefaultOrderByAST();
 
     void prepareTable() override;
 

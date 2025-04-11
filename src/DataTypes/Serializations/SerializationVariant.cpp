@@ -920,7 +920,8 @@ bool SerializationVariant::tryDeserializeImpl(
     IColumn & column,
     const String & field,
     std::function<bool(ReadBuffer &)> check_for_null,
-    std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &)> try_deserialize_nested) const
+    std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
+    const FormatSettings & settings) const
 {
     auto & column_variant = assert_cast<ColumnVariant &>(column);
     ReadBufferFromString null_buf(field);
@@ -930,12 +931,14 @@ bool SerializationVariant::tryDeserializeImpl(
         return true;
     }
 
+    FormatSettings modified_settings = settings;
+    modified_settings.allow_special_bool_values = settings.allow_special_bool_values_inside_variant;
     for (size_t global_discr : deserialize_text_order)
     {
         ReadBufferFromString variant_buf(field);
         auto & variant_column = column_variant.getVariantByGlobalDiscriminator(global_discr);
         size_t prev_size = variant_column.size();
-        if (try_deserialize_nested(variant_column, variants[global_discr], variant_buf) && variant_buf.eof())
+        if (try_deserialize_nested(variant_column, variants[global_discr], variant_buf, modified_settings) && variant_buf.eof())
         {
             column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(global_discr));
             column_variant.getOffsets().push_back(prev_size);
@@ -981,12 +984,12 @@ bool SerializationVariant::tryDeserializeTextEscapedImpl(DB::IColumn & column, c
     {
         return SerializationNullable::tryDeserializeNullEscaped(buf, settings);
     };
-    auto try_deserialize_variant =[&](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf)
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
-        return variant_serialization->tryDeserializeTextEscaped(variant_column, buf, settings);
+        return variant_serialization->tryDeserializeTextEscaped(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant);
+    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
 }
 
 void SerializationVariant::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -1020,12 +1023,12 @@ bool SerializationVariant::tryDeserializeTextRawImpl(DB::IColumn & column, const
     {
         return SerializationNullable::tryDeserializeNullRaw(buf, settings);
     };
-    auto try_deserialize_variant =[&](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf)
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
-        return variant_serialization->tryDeserializeTextRaw(variant_column, buf, settings);
+        return variant_serialization->tryDeserializeTextRaw(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant);
+    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
 }
 
 void SerializationVariant::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -1060,12 +1063,12 @@ bool SerializationVariant::tryDeserializeTextQuotedImpl(DB::IColumn & column, co
     {
         return SerializationNullable::tryDeserializeNullQuoted(buf);
     };
-    auto try_deserialize_variant =[&](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf)
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
-        return variant_serialization->tryDeserializeTextQuoted(variant_column, buf, settings);
+        return variant_serialization->tryDeserializeTextQuoted(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant);
+    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
 }
 
 void SerializationVariant::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -1099,12 +1102,12 @@ bool SerializationVariant::tryDeserializeTextCSVImpl(DB::IColumn & column, const
     {
         return SerializationNullable::tryDeserializeNullCSV(buf, settings);
     };
-    auto try_deserialize_variant =[&](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf)
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
-        return variant_serialization->tryDeserializeTextCSV(variant_column, buf, settings);
+        return variant_serialization->tryDeserializeTextCSV(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant);
+    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
 }
 
 void SerializationVariant::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -1138,12 +1141,12 @@ bool SerializationVariant::tryDeserializeWholeTextImpl(DB::IColumn & column, con
     {
         return SerializationNullable::tryDeserializeNullText(buf);
     };
-    auto try_deserialize_variant =[&](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf)
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
-        return variant_serialization->tryDeserializeWholeText(variant_column, buf, settings);
+        return variant_serialization->tryDeserializeWholeText(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant);
+    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
 }
 
 void SerializationVariant::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -1188,12 +1191,12 @@ bool SerializationVariant::tryDeserializeTextJSONImpl(DB::IColumn & column, cons
     {
         return SerializationNullable::tryDeserializeNullJSON(buf);
     };
-    auto try_deserialize_variant =[&](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf)
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
-        return variant_serialization->tryDeserializeTextJSON(variant_column, buf, settings);
+        return variant_serialization->tryDeserializeTextJSON(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant);
+    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
 }
 
 void SerializationVariant::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

@@ -64,6 +64,7 @@ public:
     Iterator(
         const KernelExternEngine & engine_,
         const KernelSnapshot & snapshot_,
+        KernelScan & scan_,
         const std::string & data_prefix_,
         const DB::NamesAndTypesList & schema_,
         const DB::Names & partition_columns_,
@@ -74,6 +75,7 @@ public:
         LoggerPtr log_)
         : engine(engine_)
         , snapshot(snapshot_)
+        , scan(scan_)
         , data_prefix(data_prefix_)
         , schema(schema_)
         , partition_columns(partition_columns_)
@@ -268,10 +270,9 @@ private:
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
     using KernelScanDataIterator = KernelPointerWrapper<ffi::SharedScanDataIterator, ffi::free_kernel_scan_data>;
 
-
     const KernelExternEngine & engine;
     const KernelSnapshot & snapshot;
-    KernelScan scan;
+    KernelScan & scan;
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
 
@@ -307,11 +308,10 @@ private:
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,
-    bool read_schema_same_as_table_schema_,
+    bool,
     LoggerPtr log_)
     : helper(helper_)
     , object_storage(object_storage_)
-    , read_schema_same_as_table_schema(read_schema_same_as_table_schema_)
     , log(log_)
 {
 }
@@ -350,15 +350,20 @@ void TableSnapshot::initSnapshotImpl() const
     snapshot = KernelUtils::unwrapResult(
         ffi::snapshot(KernelUtils::toDeltaString(helper->getTableLocation()), engine.get()), "snapshot");
     snapshot_version = ffi::version(snapshot.get());
-
     LOG_TRACE(log, "Snapshot version: {}", snapshot_version);
-}
 
-ffi::SharedSnapshot * TableSnapshot::getSnapshot() const
-{
-    if (!snapshot.get())
-        initSnapshot();
-    return snapshot.get();
+    scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
+    scan_state = ffi::get_global_scan_state(scan.get());
+    LOG_TRACE(log, "Initialized scan state");
+
+    std::tie(table_schema, physical_names_map) = getTableSchemaFromSnapshot(snapshot.get());
+    LOG_TRACE(log, "Table schema: {}", fmt::join(table_schema.getNames(), ", "));
+
+    read_schema = getReadSchemaFromSnapshot(scan_state.get());
+    LOG_TRACE(log, "Read schema: {}", fmt::join(read_schema.getNames(), ", "));
+
+    partition_columns = getPartitionColumnsFromSnapshot(scan_state.get());
+    LOG_TRACE(log, "Partition columns: {}", fmt::join(partition_columns, ", "));
 }
 
 DB::ObjectIterator TableSnapshot::iterate(
@@ -370,6 +375,7 @@ DB::ObjectIterator TableSnapshot::iterate(
     return std::make_shared<TableSnapshot::Iterator>(
         engine,
         snapshot,
+        scan,
         helper->getDataPath(),
         getTableSchema(),
         getPartitionColumns(),
@@ -382,52 +388,26 @@ DB::ObjectIterator TableSnapshot::iterate(
 
 const DB::NamesAndTypesList & TableSnapshot::getTableSchema() const
 {
-    if (!table_schema.has_value())
-    {
-        table_schema = getTableSchemaFromSnapshot(getSnapshot());
-        LOG_TRACE(log, "Fetched table schema");
-        LOG_TEST(log, "Table schema: {}", table_schema->toString());
-    }
-    return table_schema.value();
+    initSnapshot();
+    return table_schema;
 }
 
 const DB::NamesAndTypesList & TableSnapshot::getReadSchema() const
 {
-    if (read_schema_same_as_table_schema)
-        return getTableSchema();
-    if (!read_schema.has_value())
-        loadReadSchemaAndPartitionColumns();
-    return read_schema.value();
+    initSnapshot();
+    return read_schema;
 }
 
 const DB::Names & TableSnapshot::getPartitionColumns() const
 {
-    if (!partition_columns.has_value())
-        loadReadSchemaAndPartitionColumns();
-    return partition_columns.value();
+    initSnapshot();
+    return partition_columns;
 }
 
-void TableSnapshot::loadReadSchemaAndPartitionColumns() const
+const DB::NameToNameMap & TableSnapshot::getPhysicalNamesMap() const
 {
-    auto * current_snapshot = getSnapshot();
-    chassert(engine.get());
-    if (read_schema_same_as_table_schema)
-    {
-        partition_columns = getPartitionColumnsFromSnapshot(current_snapshot, engine.get());
-        LOG_TRACE(
-            log, "Fetched partition columns: {}",
-            fmt::join(partition_columns.value(), ", "));
-    }
-    else
-    {
-        std::tie(read_schema, partition_columns) = getReadSchemaAndPartitionColumnsFromSnapshot(current_snapshot, engine.get());
-        LOG_TRACE(
-            log, "Fetched read schema and partition columns: {}",
-            fmt::join(partition_columns.value(), ", "));
-
-        LOG_TEST(log, "Read schema: {}", read_schema->toString());
-    }
-
+    initSnapshot();
+    return physical_names_map;
 }
 
 }

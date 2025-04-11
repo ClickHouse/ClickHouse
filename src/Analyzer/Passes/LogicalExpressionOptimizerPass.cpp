@@ -470,7 +470,7 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
 
 void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr & context)
 {
-    auto * root_node = node->as<FunctionNode>();
+    [[maybe_unused]] auto * root_node = node->as<FunctionNode>();
     chassert(root_node && root_node->getFunctionName() == "or");
 
     QueryTreeNodePtr new_root_node{};

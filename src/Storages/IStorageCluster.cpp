@@ -219,6 +219,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             scalars,
             Tables(),
             processed_stage,
+            nullptr,
             extension);
 
         remote_query_executor->setLogger(log);
