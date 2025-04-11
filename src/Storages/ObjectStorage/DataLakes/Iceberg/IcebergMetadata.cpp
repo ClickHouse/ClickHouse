@@ -1,3 +1,4 @@
+#include "Disks/ObjectStorages/StoredObject.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -27,6 +28,7 @@
 namespace ProfileEvents
 {
     extern const Event IcebergTrivialCountOptimizationApplied;
+    extern const Event IcebegerVersionHintUsed;
 }
 
 namespace DB
@@ -37,6 +39,7 @@ namespace StorageObjectStorageSetting
     extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
     extern const StorageObjectStorageSettingsString iceberg_metadata_table_uuid;
     extern const StorageObjectStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
+    extern const StorageObjectStorageSettingsBool iceberg_use_version_hint;
 }
 
 namespace ErrorCodes
@@ -414,12 +417,30 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(
         std::optional<String> table_uuid = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_table_uuid].value;
         return getLatestMetadataFileAndVersion(object_storage, configuration, local_context, table_uuid);
     }
+    else if (configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_use_version_hint].value)
+    {
+        auto prefix_storage_path = configuration.getPath();
+        auto version_hint_path = std::filesystem::path(prefix_storage_path) / "metadata" / "version-hint.text";
+        std::string metadata_file;
+        StoredObject version_hint(version_hint_path);
+        auto buf = object_storage->readObject(version_hint, ReadSettings{});
+        readString(metadata_file, *buf);
+        if (!metadata_file.ends_with(".metadata.json"))
+        {
+            if (std::all_of(metadata_file.begin(), metadata_file.end(), isdigit))
+                metadata_file = "v" + metadata_file + ".metadata.json";
+            else
+                metadata_file = metadata_file + ".metadata.json";
+        }
+        LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
+        ProfileEvents::increment(ProfileEvents::IcebegerVersionHintUsed);
+        return getMetadataFileAndVersion(std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file);
+    }
     else
     {
         return getLatestMetadataFileAndVersion(object_storage, configuration, local_context, std::nullopt);
     }
 }
-
 
 bool IcebergMetadata::update(const ContextPtr & local_context)
 {
