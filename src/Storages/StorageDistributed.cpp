@@ -545,20 +545,47 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
     {
         std::unordered_set<std::string> expr_columns;
+        bool is_injective = true;
+
+        std::function<void(const QueryTreeNodePtr &)> get_columns = [&](const QueryTreeNodePtr & node) -> void
+        {
+            if (!is_injective)
+                return;
+            if (const auto * func = node->as<FunctionNode>())
+            {
+                auto function = func->getFunctionOrThrow();
+                if (!function->isInjective(func->getArgumentColumns()))
+                {
+                    is_injective = false;
+                    return;
+                }
+                for (const auto & arg : func->getArguments())
+                    get_columns(arg);
+            }
+            else if (const auto * id = node->as<ColumnNode>())
+            {
+                if (!id)
+                    return;
+
+                auto source = id->getColumnSourceOrNull();
+                if (!source)
+                    return;
+
+                if (source.get() != query_info.table_expression.get())
+                    return;
+
+                expr_columns.emplace(id->getColumnName());
+            }
+        };
+
+        if (!is_injective)
+            return false;
+
         for (const auto & expr : exprs)
         {
-            const auto * id = expr->as<const ColumnNode>();
-            if (!id)
-                continue;
-            auto source = id->getColumnSourceOrNull();
-            if (!source)
-                continue;
-
-            if (source.get() != query_info.table_expression.get())
-                continue;
-
-            expr_columns.emplace(id->getColumnName());
+            get_columns(expr);
         }
+
         for (const auto & column : sharding_key_expr->getRequiredColumns())
         {
             if (!expr_columns.contains(column))
