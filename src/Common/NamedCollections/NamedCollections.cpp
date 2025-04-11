@@ -5,6 +5,7 @@
 #include <IO/Operators.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <fmt/ranges.h>
 
@@ -16,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Configuration = NamedCollectionConfiguration;
@@ -176,27 +178,14 @@ public:
 NamedCollection::NamedCollection(
     ImplPtr pimpl_,
     const std::string & collection_name_,
-    SourceId source_id_,
-    bool is_mutable_)
+    const bool is_mutable_)
     : pimpl(std::move(pimpl_))
     , collection_name(collection_name_)
-    , source_id(source_id_)
     , is_mutable(is_mutable_)
 {
 }
 
-MutableNamedCollectionPtr NamedCollection::create(
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & collection_name,
-    const std::string & collection_path,
-    const Keys & keys,
-    SourceId source_id,
-    bool is_mutable)
-{
-    auto impl = Impl::create(config, collection_name, collection_path, keys);
-    return std::unique_ptr<NamedCollection>(
-        new NamedCollection(std::move(impl), collection_name, source_id, is_mutable));
-}
+NamedCollection::~NamedCollection() = default;
 
 bool NamedCollection::has(const Key & key) const
 {
@@ -297,8 +286,7 @@ MutableNamedCollectionPtr NamedCollection::duplicate() const
     std::lock_guard lock(mutex);
     auto impl = pimpl->createCopy(collection_name);
     return std::unique_ptr<NamedCollection>(
-        new NamedCollection(
-            std::move(impl), collection_name, SourceId::NONE, true));
+        new NamedCollection(std::move(impl), collection_name, true));
 }
 
 NamedCollection::Keys NamedCollection::getKeys(ssize_t depth, const std::string & prefix) const
@@ -332,6 +320,136 @@ std::string NamedCollection::dumpStructure() const
 std::unique_lock<std::mutex> NamedCollection::lock()
 {
     return std::unique_lock(mutex);
+}
+
+
+void NamedCollection::update(const ASTAlterNamedCollectionQuery & /*query*/)
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "update() not implemented for NamedCollection base class.");
+}
+
+NamedCollectionFromConfig::NamedCollectionFromConfig(
+    const Poco::Util::AbstractConfiguration & config_,
+    const std::string & collection_name_,
+    const std::string & collection_path_,
+    const Keys & keys_)
+    : NamedCollection(Impl::create(config_, collection_name_, collection_path_, keys_), collection_name_, /* is_mutable */ false)
+{
+}
+
+MutableNamedCollectionPtr NamedCollectionFromConfig::create(
+    const Poco::Util::AbstractConfiguration & config_,
+    const std::string & collection_name_,
+    const std::string & collection_path_,
+    const Keys & keys_)
+{
+    return std::unique_ptr<NamedCollection>(
+        new NamedCollectionFromConfig(config_, collection_name_, collection_path_, keys_));
+}
+
+
+MutableNamedCollectionPtr NamedCollectionFromSQL::create(const ASTCreateNamedCollectionQuery & query)
+{
+    return std::unique_ptr<NamedCollection>(new NamedCollectionFromSQL(query));
+}
+
+NamedCollectionFromSQL::NamedCollectionFromSQL(const ASTCreateNamedCollectionQuery & query_)
+    : NamedCollection(nullptr, query_.collection_name, true)
+    , create_query_ptr(query_.clone()->as<ASTCreateNamedCollectionQuery &>())
+{
+    const auto config = NamedCollectionConfiguration::createConfiguration(collection_name, create_query_ptr.changes, create_query_ptr.overridability);
+
+    std::set<std::string, std::less<>> keys;
+    for (const auto & [name, _] : create_query_ptr.changes)
+        keys.insert(name);
+
+    pimpl = Impl::create(*config, collection_name, "", keys);
+}
+
+String NamedCollectionFromSQL::getCreateStatement(bool show_secrects)
+{
+    auto & changes = create_query_ptr.changes;
+    std::sort(
+        changes.begin(), changes.end(),
+        [](const SettingChange & lhs, const SettingChange & rhs) { return lhs.name < rhs.name; });
+
+    return create_query_ptr.formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/true,
+        /*show_secrets=*/show_secrects,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+}
+
+void NamedCollectionFromSQL::update(const ASTAlterNamedCollectionQuery & alter_query)
+{
+    std::lock_guard lock(mutex);
+
+    std::unordered_map<std::string, Field> result_changes_map;
+    for (const auto & [name, value] : alter_query.changes)
+    {
+        auto [it, inserted] = result_changes_map.emplace(name, value);
+        if (!inserted)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Value with key `{}` is used twice in the SET query (collection name: {})",
+                name, alter_query.collection_name);
+        }
+    }
+
+    for (const auto & [name, value] : create_query_ptr.changes)
+        result_changes_map.emplace(name, value);
+
+    std::unordered_map<std::string, bool> result_overridability_map;
+    for (const auto & [name, value] : alter_query.overridability)
+        result_overridability_map.emplace(name, value);
+    for (const auto & [name, value] : create_query_ptr.overridability)
+        result_overridability_map.emplace(name, value);
+
+    for (const auto & delete_key : alter_query.delete_keys)
+    {
+        auto it = result_changes_map.find(delete_key);
+        if (it == result_changes_map.end())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot delete key `{}` because it does not exist in collection",
+                delete_key);
+        }
+
+        result_changes_map.erase(it);
+        auto it_override = result_overridability_map.find(delete_key);
+        if (it_override != result_overridability_map.end())
+            result_overridability_map.erase(it_override);
+    }
+
+    create_query_ptr.changes.clear();
+    for (const auto & [name, value] : result_changes_map)
+        create_query_ptr.changes.emplace_back(name, value);
+    create_query_ptr.overridability = std::move(result_overridability_map);
+
+    if (create_query_ptr.changes.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Named collection cannot be empty (collection name: {})",
+            collection_name);
+
+    chassert(create_query_ptr.collection_name == alter_query.collection_name);
+    for (const auto & [name, value] : alter_query.changes)
+    {
+        auto it_override = alter_query.overridability.find(name);
+        if (it_override != alter_query.overridability.end())
+            setOrUpdate<String, true>(name, convertFieldToString(value), it_override->second);
+        else
+            setOrUpdate<String, true>(name, convertFieldToString(value), {});
+    }
+
+    for (const auto & key : alter_query.delete_keys)
+        remove<true>(key);
 }
 
 template String NamedCollection::get<String>(const NamedCollection::Key & key) const;
