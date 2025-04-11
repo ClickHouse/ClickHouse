@@ -1,3 +1,4 @@
+#include <memory>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/ProjectionsDescription.h>
@@ -24,6 +25,15 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <base/range.h>
+#include <Core/Settings.h>
+#include "Core/QueryProcessingStage.h"
+#include "Interpreters/InterpreterSelectQueryAnalyzer.h"
+#include <Interpreters/StorageID.h>
+#include "Common/Logger.h"
+#include "Common/StackTrace.h"
+#include "Common/logger_useful.h"
+#include "Storages/ColumnsDescription.h"
+#include "Storages/StorageValues.h"
 
 
 namespace DB
@@ -35,6 +45,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_PROJECTION;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
@@ -88,8 +103,10 @@ bool ProjectionDescription::operator==(const ProjectionDescription & other) cons
     return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
 }
 
-ProjectionDescription
-ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context)
+ProjectionDescription ProjectionDescription::getProjectionFromAST(
+    const ASTPtr & definition_ast,
+    const ColumnsDescription & columns,
+    ContextPtr query_context)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -111,82 +128,78 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
     auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
     StoragePtr storage = external_storage_holder->getTable();
-    InterpreterSelectQuery select(
-        result.query_ast,
-        query_context,
-        storage,
-        {},
-        /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}
-            .modify()
-            .ignoreAlias()
-            .ignoreASTOptimizations()
-            .ignoreSettingConstraints());
 
-    result.required_columns = select.getRequiredColumns();
-    result.sample_block = select.getSampleBlock();
+    LOG_DEBUG(getLogger(__func__), "Query (analyzer: {}):\n{}",
+        query_context->getSettingsRef()[Setting::allow_experimental_analyzer],
+        result.query_ast->formatForLogging());
+    StackTrace stacktrace;
+    LOG_DEBUG(getLogger(__func__), "Trace:\n{}",
+        stacktrace.toString());
 
-    StorageInMemoryMetadata metadata;
-    metadata.partition_key = KeyDescription::buildEmptyKey();
-
-    const auto & query_select = result.query_ast->as<const ASTSelectQuery &>();
-    if (select.hasAggregation())
+    if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        if (query.orderBy())
-            throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
+        auto fake_table = std::make_shared<TableNode>(storage, query_context);
 
-        result.type = ProjectionDescription::Type::Aggregate;
-        if (const auto & group_expression_list = query_select.groupBy())
-        {
-            ASTPtr order_expression;
-            if (group_expression_list->children.size() == 1)
-            {
-                result.key_size = 1;
-                order_expression = std::make_shared<ASTIdentifier>(group_expression_list->children.front()->getColumnName());
-            }
-            else
-            {
-                auto function_node = std::make_shared<ASTFunction>();
-                function_node->name = "tuple";
-                function_node->arguments = group_expression_list->clone();
-                result.key_size = function_node->arguments->children.size();
-                for (auto & child : function_node->arguments->children)
-                    child = std::make_shared<ASTIdentifier>(child->getColumnName());
-                function_node->children.push_back(function_node->arguments);
-                order_expression = function_node;
-            }
-            auto columns_with_state = ColumnsDescription(result.sample_block.getNamesAndTypesList());
-            metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_expression, columns_with_state, query_context, {});
-            metadata.primary_key = KeyDescription::getKeyFromAST(order_expression, columns_with_state, query_context);
-            metadata.primary_key.definition_ast = nullptr;
-        }
-        else
-        {
-            metadata.sorting_key = KeyDescription::buildEmptyKey();
-            metadata.primary_key = KeyDescription::buildEmptyKey();
-        }
-        for (const auto & key : select.getQueryAnalyzer()->aggregationKeys())
+        InterpreterSelectQueryAnalyzer interpreter(
+            result.query_ast,
+            query_context,
+            fake_table,
+            /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
+            SelectQueryOptions{QueryProcessingStage::WithMergeableState}
+                .modify()
+                .ignoreAlias()
+                .ignoreASTOptimizations()
+                .ignoreSettingConstraints()
+        );
+
+        result.required_columns = interpreter.getRequiredColumns();
+        result.sample_block = interpreter.getSampleBlock();
+
+        const auto & expression_analysis = interpreter.getExpressionAnalysisResult();
+
+        if (expression_analysis.hasSort())
+            result.sample_block = expression_analysis.getSort().before_order_by_actions->dag.getResultColumns();
+
+        buildMetadataAndFillProjectionKeys(
+            result,
+            query_context,
+            query,
+            columns,
+            expression_analysis.hasAggregation());
+
+        for (const auto & key : expression_analysis.getAggregation().aggregation_keys)
             result.sample_block_for_keys.insert({nullptr, key.type, key.name});
     }
     else
     {
-        result.type = ProjectionDescription::Type::Normal;
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns, query_context);
-        metadata.primary_key.definition_ast = nullptr;
+        InterpreterSelectQuery select(
+            result.query_ast,
+            query_context,
+            storage,
+            {},
+            /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
+            SelectQueryOptions{QueryProcessingStage::WithMergeableState}
+                .modify()
+                .ignoreAlias()
+                .ignoreASTOptimizations()
+                .ignoreSettingConstraints());
+
+        result.required_columns = select.getRequiredColumns();
+        result.sample_block = select.getSampleBlock();
+
+        LOG_DEBUG(getLogger("ProjDesc"), "Interpreter Sample block:\n{}", result.sample_block.dumpStructure());
+
+        buildMetadataAndFillProjectionKeys(
+            result,
+            query_context,
+            query,
+            columns,
+            select.hasAggregation());
+
+        for (const auto & key : select.getQueryAnalyzer()->aggregationKeys())
+            result.sample_block_for_keys.insert({nullptr, key.type, key.name});
     }
 
-    auto block = result.sample_block;
-    for (const auto & [name, type] : metadata.sorting_key.expression->getRequiredColumnsWithTypes())
-        block.insertUnique({nullptr, type, name});
-    for (const auto & column_with_type_name : block)
-    {
-        if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
-    }
-
-    metadata.setColumns(ColumnsDescription(block.getNamesAndTypesList()));
-    result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
     return result;
 }
 
@@ -226,54 +239,88 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.name = MINMAX_COUNT_PROJECTION_NAME;
     result.query_ast = select_query->cloneToASTSelect();
 
-    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
-    StoragePtr storage = external_storage_holder->getTable();
-    InterpreterSelectQuery select(
-        result.query_ast,
-        query_context,
-        storage,
-        {},
-        /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}
-            .modify()
-            .ignoreAlias()
-            .ignoreASTOptimizations()
-            .ignoreSettingConstraints());
-    result.required_columns = select.getRequiredColumns();
-    result.sample_block = select.getSampleBlock();
-
-    std::set<size_t> constant_positions;
-    for (size_t i = 0; i < result.sample_block.columns(); ++i)
+    auto fill_common_data = [&result, &primary_key_asts, &minmax_columns]
+    (
+        bool has_aggregation,
+        std::ranges::range auto & aggregation_keys
+    )
     {
-        if (typeid_cast<const ColumnConst *>(result.sample_block.getByPosition(i).column.get()))
-            constant_positions.insert(i);
-    }
-    result.sample_block.erase(constant_positions);
-
-    const auto & analysis_result = select.getAnalysisResult();
-    if (analysis_result.need_aggregate)
-    {
-        for (const auto & key : select.getQueryAnalyzer()->aggregationKeys())
+        std::set<size_t> constant_positions;
+        for (size_t i = 0; i < result.sample_block.columns(); ++i)
         {
-            if (result.sample_block.has(key.name))
+            if (typeid_cast<const ColumnConst *>(result.sample_block.getByPosition(i).column.get()))
+                constant_positions.insert(i);
+        }
+        result.sample_block.erase(constant_positions);
+
+        if (has_aggregation)
+        {
+            for (const auto & key : aggregation_keys)
             {
                 result.sample_block_for_keys.insert({nullptr, key.type, key.name});
                 result.partition_value_indices.push_back(result.sample_block.getPositionByName(key.name));
             }
         }
+
+        /// If we have primary key and it's not in minmax_columns, it will be used as one additional minmax columns.
+        if (!primary_key_asts.empty()
+            && result.sample_block.columns()
+                == 2 * (minmax_columns.size() + 1) /* minmax columns */ + 1 /* count() */
+                    + result.partition_value_indices.size() /* partition_columns */)
+        {
+            /// partition_expr1, partition_expr2, ..., min(p1), max(p1), min(p2), max(p2), ..., min(k1), max(k1), count()
+            ///                                                                                              ^
+            ///                                                                                           size - 2
+            result.primary_key_max_column_name = *(result.sample_block.getNames().cend() - 2);
+        }
+    };
+
+    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
+    StoragePtr storage = external_storage_holder->getTable();
+    if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        auto fake_table = std::make_shared<TableNode>(storage, query_context);
+
+        InterpreterSelectQueryAnalyzer interpreter(
+            result.query_ast,
+            query_context,
+            fake_table,
+            /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
+            SelectQueryOptions{QueryProcessingStage::WithMergeableState}
+                .modify()
+                .ignoreAlias()
+                .ignoreASTOptimizations()
+                .ignoreSettingConstraints()
+        );
+
+        result.required_columns = interpreter.getRequiredColumns();
+        result.sample_block = interpreter.getSampleBlock();
+
+        auto expression_analysis = interpreter.getExpressionAnalysisResult();
+
+        fill_common_data(expression_analysis.hasAggregation(), expression_analysis.getAggregation().aggregation_keys);
+    }
+    else
+    {
+        InterpreterSelectQuery select(
+            result.query_ast,
+            query_context,
+            storage,
+            {},
+            /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
+            SelectQueryOptions{QueryProcessingStage::WithMergeableState}
+                .modify()
+                .ignoreAlias()
+                .ignoreASTOptimizations()
+                .ignoreSettingConstraints());
+        result.required_columns = select.getRequiredColumns();
+        result.sample_block = select.getSampleBlock();
+
+        const auto & analysis_result = select.getAnalysisResult();
+
+        fill_common_data(analysis_result.need_aggregate, select.getQueryAnalyzer()->aggregationKeys());
     }
 
-    /// If we have primary key and it's not in minmax_columns, it will be used as one additional minmax columns.
-    if (!primary_key_asts.empty()
-        && result.sample_block.columns()
-            == 2 * (minmax_columns.size() + 1) /* minmax columns */ + 1 /* count() */
-                + result.partition_value_indices.size() /* partition_columns */)
-    {
-        /// partition_expr1, partition_expr2, ..., min(p1), max(p1), min(p2), max(p2), ..., min(k1), max(k1), count()
-        ///                                                                                              ^
-        ///                                                                                           size - 2
-        result.primary_key_max_column_name = *(result.sample_block.getNames().cend() - 2);
-    }
     result.type = ProjectionDescription::Type::Aggregate;
     StorageInMemoryMetadata metadata;
     metadata.setColumns(ColumnsDescription(result.sample_block.getNamesAndTypesList()));
@@ -311,16 +358,46 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
             makeASTFunction("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
     }
 
-    auto builder = InterpreterSelectQuery(
-                       query_ast_copy ? query_ast_copy : query_ast,
-                       mut_context,
-                       Pipe(std::make_shared<SourceFromSingleChunk>(block)),
-                       SelectQueryOptions{
-                           type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
-                                                                       : QueryProcessingStage::WithMergeableState}
-                           .ignoreASTOptimizations()
-                           .ignoreSettingConstraints())
-                       .buildQueryPipeline();
+    auto select_query_options = SelectQueryOptions{
+        type == ProjectionDescription::Type::Normal
+        ? QueryProcessingStage::FetchColumns
+        : QueryProcessingStage::WithMergeableState}
+        .ignoreASTOptimizations()
+        .ignoreSettingConstraints();
+    auto query_ast_to_use = query_ast_copy ? query_ast_copy : query_ast;
+
+    TemporaryTableHolderPtr external_storage_holder;
+    QueryPipelineBuilder builder;
+    if (mut_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        external_storage_holder = std::make_shared<TemporaryTableHolder>(
+            mut_context,
+            [&block](const StorageID & table_id)
+            {
+                return std::make_shared<StorageValues>(
+                    table_id,
+                    ColumnsDescription::fromNamesAndTypes(block.getNamesAndTypes()),
+                    block);
+            });
+        StoragePtr storage = external_storage_holder->getTable();
+        auto fake_table = std::make_shared<TableNode>(storage, mut_context);
+
+        builder = InterpreterSelectQueryAnalyzer(
+            query_ast_to_use,
+            mut_context,
+            fake_table,
+            select_query_options)
+            .buildQueryPipeline();
+    }
+    else
+    {
+        builder = InterpreterSelectQuery(
+                        query_ast_to_use,
+                        mut_context,
+                        Pipe(std::make_shared<SourceFromSingleChunk>(block)),
+                        select_query_options)
+                        .buildQueryPipeline();
+    }
     builder.resize(1);
     // Generate aggregated blocks with rows less or equal than the original block.
     // There should be only one output block after this transformation.
@@ -335,6 +412,78 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     if (executor.pull(ret))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection cannot increase the number of rows in a block. It's a bug");
     return ret;
+}
+
+void ProjectionDescription::buildMetadataAndFillProjectionKeys(
+    ProjectionDescription & current,
+    const ContextPtr & context,
+    const ASTProjectionSelectQuery & projection_query,
+    const ColumnsDescription & columns,
+    bool has_aggregation)
+{
+    StorageInMemoryMetadata metadata;
+    metadata.partition_key = KeyDescription::buildEmptyKey();
+
+    const auto & query_select = current.query_ast->as<const ASTSelectQuery &>();
+    if (has_aggregation)
+    {
+        if (projection_query.orderBy())
+            throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
+
+        current.type = ProjectionDescription::Type::Aggregate;
+        if (const auto & group_expression_list = query_select.groupBy())
+        {
+            ASTPtr order_expression;
+            if (group_expression_list->children.size() == 1)
+            {
+                current.key_size = 1;
+                order_expression = std::make_shared<ASTIdentifier>(group_expression_list->children.front()->getColumnName());
+            }
+            else
+            {
+                auto function_node = std::make_shared<ASTFunction>();
+                function_node->name = "tuple";
+                function_node->arguments = group_expression_list->clone();
+                current.key_size = function_node->arguments->children.size();
+                for (auto & child : function_node->arguments->children)
+                    child = std::make_shared<ASTIdentifier>(child->getColumnName());
+                function_node->children.push_back(function_node->arguments);
+                order_expression = function_node;
+            }
+            auto columns_with_state = ColumnsDescription(current.sample_block.getNamesAndTypesList());
+            metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_expression, columns_with_state, context, {});
+            metadata.primary_key = KeyDescription::getKeyFromAST(order_expression, columns_with_state, context);
+            metadata.primary_key.definition_ast = nullptr;
+        }
+        else
+        {
+            metadata.sorting_key = KeyDescription::buildEmptyKey();
+            metadata.primary_key = KeyDescription::buildEmptyKey();
+        }
+    }
+    else
+    {
+        current.type = ProjectionDescription::Type::Normal;
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(projection_query.orderBy(), columns, context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(projection_query.orderBy(), columns, context);
+        metadata.primary_key.definition_ast = nullptr;
+    }
+
+    auto block = current.sample_block;
+    LOG_DEBUG(getLogger("ProjDesc"), "Block before sorting:\n{}", block.dumpStructure());
+
+    for (const auto & [name, type] : metadata.sorting_key.expression->getRequiredColumnsWithTypes())
+        block.insertUnique({nullptr, type, name});
+    for (const auto & column_with_type_name : block)
+    {
+        if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
+    }
+
+    LOG_DEBUG(getLogger("ProjDesc"), "Block:\n{}", block.dumpStructure());
+
+    metadata.setColumns(ColumnsDescription(block.getNamesAndTypesList()));
+    current.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
 }
 
 
