@@ -264,7 +264,12 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
         if (!buffered_mark_ranges_info)
             return;
 
-        query_condition_cache_writer->buffer(buffered_mark_ranges_info);
+        query_condition_cache_writer->buffer(
+            buffered_mark_ranges_info->table_uuid,
+            buffered_mark_ranges_info->part_name,
+            buffered_mark_ranges_info->mark_ranges,
+            buffered_mark_ranges_info->marks_count,
+            buffered_mark_ranges_info->has_final_mark);
 
         buffered_mark_ranges_info = nullptr;
 
@@ -282,8 +287,13 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
 
         if (buffered_mark_ranges_info->table_uuid != mark_ranges_info->table_uuid || buffered_mark_ranges_info->part_name != mark_ranges_info->part_name)
         {
-            query_condition_cache_writer->buffer(buffered_mark_ranges_info);
-
+            query_condition_cache_writer->buffer(
+                buffered_mark_ranges_info->table_uuid,
+                buffered_mark_ranges_info->part_name,
+                buffered_mark_ranges_info->mark_ranges,
+                buffered_mark_ranges_info->marks_count,
+                buffered_mark_ranges_info->has_final_mark);
+    
             buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
         }
         else
