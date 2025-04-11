@@ -155,7 +155,7 @@ void StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, 
     }
 }
 
-void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool complex, Expr * expr)
+void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, const bool complex, Expr * expr)
 {
     const uint32_t noption = rg.nextLargeNumber();
     LiteralValue * lv = expr->mutable_lit_val();
@@ -316,6 +316,26 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool c
         lv->set_special_val(SpecialVal::VAL_NULL);
     }
     addFieldAccess(rg, expr, nested_prob);
+}
+
+void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool complex, Expr * expr)
+{
+    if (this->width < this->fc.max_width && rg.nextMediumNumber() < 16)
+    {
+        /// Generate a few arrays/tuples with literal values
+        ExprList * elist = rg.nextBool() ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
+        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 8);
+
+        for (uint32_t i = 0; i < nvalues; i++)
+        {
+            /// There are no recursive calls here, so don't bother about width and depth
+            this->generateLiteralValueInternal(rg, complex, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+        }
+    }
+    else
+    {
+        this->generateLiteralValueInternal(rg, complex, expr);
+    }
 }
 
 void StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
