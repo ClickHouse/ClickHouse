@@ -83,7 +83,7 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
 
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto & elem = block.getByPosition(i);
+        const auto & elem = block.getByPosition(i);
 
         ISerialization::SerializeBinaryBulkSettings settings;
         settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
