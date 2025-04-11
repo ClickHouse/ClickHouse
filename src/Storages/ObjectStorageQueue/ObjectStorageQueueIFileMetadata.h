@@ -132,7 +132,7 @@ protected:
 
     virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl() is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl is not implemented");
     }
     void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
 
