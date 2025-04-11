@@ -5,6 +5,8 @@ import traceback
 from pathlib import Path
 from typing import Dict
 
+from ci.praktika.info import Info
+
 from . import Job, Workflow
 from ._environment import _Environment
 from .cidb import CIDB
@@ -347,6 +349,23 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
+    if results[-1].is_ok():
+        print("Check affected jobs")
+
+        def check():
+            # TODO: make get changed_files built-in praktika method
+            changed_files = Info().get_custom_data("changed_files")
+            for job in workflow.jobs:
+                res = job.is_affected_by(changed_files)
+                if not res:
+                    print(f"Job [{job}] is not affected by the change")
+
+        results.append(
+            Result.from_commands_run(
+                name="Check affected", command=check, with_info=True
+            )
+        )
+
     if results[-1].is_ok() and workflow.enable_cache:
         print("Cache Lookup")
         stop_watch = Utils.Stopwatch()
@@ -446,8 +465,10 @@ def _finish_workflow(workflow, job_name):
             result.status = Result.Status.ERROR
             # dump workflow result after update - to have an updated result in post
             workflow_result.dump()
-            # add error into env - should apper in the report
+            # add error into env - should appear in the report on the main page
             env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
+            # add error info to job info as well
+            result.set_info(ResultInfo.NOT_FINALIZED)
             update_final_report = True
         job = workflow.get_job(result.name)
         if not job or not job.allow_merge_on_failure:
