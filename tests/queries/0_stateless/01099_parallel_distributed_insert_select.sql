@@ -169,6 +169,17 @@ DROP TABLE local_01099_b;
 DROP TABLE distributed_01099_a;
 DROP TABLE distributed_01099_b;
 
+--- https://github.com/ClickHouse/ClickHouse/issues/78464
+CREATE TABLE local_01099_c (n UInt64) ENGINE = Log;
+CREATE TABLE distributed_01099_c AS local_01099_c ENGINE = Distributed('test_shard_localhost', currentDatabase(), local_01099_c, rand());
+
+INSERT INTO TABLE FUNCTION clusterAllReplicas('test_shard_localhost', currentDatabase(), 'distributed_01099_c') (n) SELECT number FROM remote('localhost', numbers(5)) tx;
+
+SELECT * FROM distributed_01099_c;
+
+DROP TABLE local_01099_c;
+DROP TABLE distributed_01099_c;
+
 --
 -- test_cluster_two_shards_localhost
 --

@@ -42,7 +42,11 @@ public:
 
     NamesAndTypesList getTableSchema() const override;
 
-    NamesAndTypesList getReadSchema() const override;
+    DB::ReadFromFormatInfo prepareReadingFromFormat(
+        const Strings & requested_columns,
+        const DB::StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context,
+        bool supports_subset_of_columns) override;
 
     bool operator ==(const IDataLakeMetadata &) const override;
 
