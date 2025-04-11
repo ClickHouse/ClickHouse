@@ -272,7 +272,8 @@ void StorageObjectStorageQueue::startup()
     }
     catch (...)
     {
-        files_metadata->shutdown();
+        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), /*remove_metadata_if_no_registered=*/true);
+        files_metadata.reset();
         throw;
     }
     startup_finished = true;
@@ -293,22 +294,17 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     {
         try
         {
-            files_metadata->unregister(getStorageID(), /* active */true);
+            files_metadata->unregister(getStorageID(), /* active */true, /* remove_metadata_if_no_registered */false);
         }
         catch (...)
         {
             tryLogCurrentException(log);
         }
 
-        files_metadata->shutdown();
+        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), is_drop);
         files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
-}
-
-void StorageObjectStorageQueue::drop()
-{
-    ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -544,7 +540,7 @@ void StorageObjectStorageQueue::threadFunc()
         {
             try
             {
-                files_metadata->unregister(storage_id, /* active */true);
+                files_metadata->unregister(storage_id, /* active */true, /* remove_metadata_if_no_registered */false);
             }
             catch (...)
             {
