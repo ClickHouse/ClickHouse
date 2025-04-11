@@ -239,8 +239,9 @@ void FunctionArrayEnumerateExtended<Derived>::executeMethodImpl(
                 }
 
                 auto emplace_result = method.emplaceKey(indices, j, pool);
-                auto idx = emplace_result.getMapped() + 1;
-                emplace_result.setMapped(idx);
+                assert(emplace_result.has_value());
+                auto idx = emplace_result->getMapped() + 1;
+                emplace_result->setMapped(idx);
 
                 res_values[j] = idx;
             }
@@ -270,12 +271,13 @@ void FunctionArrayEnumerateExtended<Derived>::executeMethodImpl(
                 }
 
                 auto emplace_result = method.emplaceKey(indices, j, pool);
-                auto idx = emplace_result.getMapped();
+                assert(emplace_result.has_value());
+                auto idx = emplace_result->getMapped();
 
                 if (!idx)
                 {
                     idx = ++rank;
-                    emplace_result.setMapped(idx);
+                    emplace_result->setMapped(idx);
                 }
 
                 res_values[j] = idx;

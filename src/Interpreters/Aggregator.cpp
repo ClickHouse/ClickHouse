@@ -200,7 +200,9 @@ Aggregator::Params::Params(
     bool only_merge_, // true for projections
     bool optimize_group_by_constant_keys_,
     float min_hit_rate_to_use_consecutive_keys_optimization_,
-    const StatsCollectingParams & stats_collecting_params_)
+    const StatsCollectingParams & stats_collecting_params_,
+    size_t limit_length_,
+    std::optional<std::vector<std::pair<UInt64, SortDirection>>> optimization_indexes_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -223,6 +225,8 @@ Aggregator::Params::Params(
     , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
+    , limit_length(limit_length_)
+    , optimization_indexes(std::move(optimization_indexes_))
 {
 }
 
@@ -1031,7 +1035,9 @@ void NO_INLINE Aggregator::executeImplBatch(
         AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
         if (all_keys_are_const)
         {
-            state.emplaceKey(method.data, 0, *aggregates_pool).setMapped(place);
+            auto emplace_result = state.emplaceKey(method.data, 0, *aggregates_pool, params.optimization_indexes, params.limit_length);
+            assert(emplace_result.has_value());
+            emplace_result->setMapped(place);
         }
         else
         {
@@ -1050,7 +1056,9 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
                 }
 
-                state.emplaceKey(method.data, i, *aggregates_pool).setMapped(place);
+                auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_length);
+                assert(emplace_result.has_value());
+                emplace_result->setMapped(place);
             }
         }
         return;
@@ -1137,13 +1145,20 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
             }
 
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_length);
+
+            if (!emplace_result.has_value())
+            {
+                assert(false); // TODO Allow state.emplaceKey return nullopt if new key is not emplaced
+                places[i] = nullptr;
+                continue;
+            }
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
-            if (emplace_result.isInserted())
+            if (emplace_result->isInserted())
             {
                 /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
-                emplace_result.setMapped(nullptr);
+                emplace_result->setMapped(nullptr);
 
                 aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
 
@@ -1164,10 +1179,10 @@ void NO_INLINE Aggregator::executeImplBatch(
                     createAggregateStates(aggregate_data);
                 }
 
-                emplace_result.setMapped(aggregate_data);
+                emplace_result->setMapped(aggregate_data);
             }
             else
-                aggregate_data = emplace_result.getMapped();
+                aggregate_data = emplace_result->getMapped();
 
             assert(aggregate_data != nullptr);
             places[i] = aggregate_data;
@@ -2855,16 +2870,17 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             /// Furthermore, arena_for_keys is set to be a pointer to the last member of aggregates_pools,
             /// which is always initialized to have at least 1 arena.
             auto emplace_result = state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
-            if (!emplace_result.isInserted())
-                places[i] = emplace_result.getMapped();
+            assert(emplace_result.has_value());
+            if (!emplace_result->isInserted())
+                places[i] = emplace_result->getMapped();
             else
             {
-                emplace_result.setMapped(nullptr);
+                emplace_result->setMapped(nullptr);
 
                 AggregateDataPtr aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
                 createAggregateStates(aggregate_data);
 
-                emplace_result.setMapped(aggregate_data);
+                emplace_result->setMapped(aggregate_data);
                 places[i] = aggregate_data;
             }
         }
