@@ -55,7 +55,7 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     , metadata_key_prefix(metadata_key_prefix_)
     , object_key_prefix(object_storage->generateObjectKeyPrefixForDirectoryPath(path, "" /* object_key_prefix */).serialize())
 {
-    chassert(path.empty() || path.string().ends_with('/'));
+    chassert(path.string().ends_with('/'));
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
@@ -91,8 +91,9 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
     auto event = object_storage->getMetadataStorageMetrics().directory_created;
     ProfileEvents::increment(event);
-    auto metadata = object_storage->getObjectMetadata(metadata_object.remote_path);
-    path_map.addOrReplacePath(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, metadata.etag, metadata.last_modified.epochTime(), {}});
+    [[maybe_unused]] auto result
+        = path_map.addPathIfNotExists(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, Poco::Timestamp{}.epochTime(), {}});
+    chassert(result.second);
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
@@ -116,8 +117,8 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
     , object_storage(object_storage_)
     , metadata_key_prefix(metadata_key_prefix_)
 {
-    chassert(path_from.empty() || path_from.string().ends_with('/'));
-    chassert(path_to.empty() || path_to.string().ends_with('/'));
+    chassert(path_from.string().ends_with('/'));
+    chassert(path_to.string().ends_with('/'));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::createWriteBuf(
@@ -218,7 +219,7 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
     const std::string & metadata_key_prefix_)
     : path(std::move(path_)), path_map(path_map_), object_storage(object_storage_), metadata_key_prefix(metadata_key_prefix_)
 {
-    chassert(path.empty() || path.string().ends_with('/'));
+    chassert(path.string().ends_with('/'));
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std::unique_lock<SharedMutex> & /* metadata_lock */)
@@ -251,7 +252,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
         return;
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory removal for '{}'", path);
-    path_map.addOrReplacePath(path.parent_path(), info);
+    path_map.addPathIfNotExists(path.parent_path(), info);
 
     auto metadata_object_key = createMetadataObjectKey(info.path, metadata_key_prefix);
     auto metadata_object = StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
