@@ -138,7 +138,7 @@ Total entries in the cache of JIT-compiled code.
 
 ### DictionaryMaxUpdateDelay {#dictionarymaxlastsuccessfulupdatetime}
 
-The maximum delay(in seconds) of dictionary update.
+The maximum delay (in seconds) of dictionary update.
 
 ### DictionaryTotalFailedUpdates {#dictionaryloadfailed}
 

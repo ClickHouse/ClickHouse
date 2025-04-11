@@ -222,20 +222,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["FilesystemLogsPathUsedINodes"] = { stat.f_files - stat.f_favail,
             "The number of used inodes on the volume where ClickHouse logs path is mounted." };
     }
-    {
-        Duration max_update_delay;
-        size_t failed_counter = 0;
-        const auto & external_dictionaries = getContext()->getExternalDictionariesLoader();
 
-        for (const auto & load_result : external_dictionaries.getLoadResults()) {
-            if (load_result.error_count > 0 && load_result.last_successful_update_time.time_since_epoch().count() > 0) {
-                max_update_delay = std::max(max_update_delay, std::chrono::duration_cast<Duration>(current_time - load_result.last_successful_update_time));
-            }
-            failed_counter += load_result.error_count;
-        }
-        new_values["DictionaryMaxUpdateDelay"] = {max_update_delay.count(), "The maximum delay(in seconds) of dictionary update"};
-        new_values["DictionaryTotalFailedUpdates"] = {failed_counter, "Sum of sequantially failed updates in all dictionaries"};
-    }
 
     /// Free and total space on every configured disk.
     {
@@ -549,6 +536,25 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
                  watch.elapsedSeconds());
 
     }
+
+    {
+        Duration max_update_delay{0};
+        size_t failed_counter = 0;
+        const auto & external_dictionaries = getContext()->getExternalDictionariesLoader();
+
+        for (const auto & load_result : external_dictionaries.getLoadResults())
+        {
+            if (load_result.error_count > 0 && load_result.last_successful_update_time.time_since_epoch().count() > 0)
+            {
+                max_update_delay = std::max(max_update_delay, std::chrono::duration_cast<Duration>(current_time - load_result.last_successful_update_time));
+            }
+            failed_counter += load_result.error_count;
+        }
+        new_values["DictionaryMaxUpdateDelay"] = {
+            max_update_delay.count(), "The maximum delay (in seconds) of dictionary update"};
+        new_values["DictionaryTotalFailedUpdates"] = {failed_counter, "Sum of sequantially failed updates in all dictionaries"};
+    }
+
     new_values["AsynchronousHeavyMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous heavy (tables related) metrics (this is the overhead of asynchronous metrics)." };
 
     new_values["AsynchronousHeavyMetricsUpdateInterval"] = { heavy_update_interval, "Heavy (tables related) metrics update interval" };
