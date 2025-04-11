@@ -1168,6 +1168,9 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_pending_mutations_execution_time_to_warn", {std::to_string(context->getMaxPendingMutationsExecutionTimeToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_partition_size_to_drop", {std::to_string(context->getMaxPartitionSizeToDrop()), ChangeableWithoutRestart::Yes}},
 
+            {"min_os_cpu_wait_time_ratio_to_drop_connection", {std::to_string(context->getMinOSCPUWaitTimeRatioToDropConnection()), ChangeableWithoutRestart::Yes}},
+            {"max_os_cpu_wait_time_ratio_to_drop_connection", {std::to_string(context->getMaxOSCPUWaitTimeRatioToDropConnection()), ChangeableWithoutRestart::Yes}},
+
             {"max_concurrent_queries", {std::to_string(context->getProcessList().getMaxSize()), ChangeableWithoutRestart::Yes}},
             {"max_concurrent_insert_queries",
             {std::to_string(context->getProcessList().getMaxInsertQueriesAmount()), ChangeableWithoutRestart::Yes}},
