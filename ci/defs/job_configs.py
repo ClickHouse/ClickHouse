@@ -879,7 +879,7 @@ class JobConfigs:
     )
     docs_job = Job.Config(
         name=JobNames.Docs,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/docs_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
