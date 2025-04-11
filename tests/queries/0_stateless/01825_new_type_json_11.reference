@@ -1,0 +1,13 @@
+('id','Int64')
+('key_1','Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))')
+('key_2','Int64')
+('key_3','Array(JSON(max_dynamic_types=8, max_dynamic_paths=64))')
+('key_4','Array(JSON(max_dynamic_types=4, max_dynamic_paths=16))')
+('key_7','Int64')
+('key_5','Int64')
+{"obj":{"id":"1","key_1":[{"key_2":"100","key_3":[{"key_4":[{"key_5":"-2"}],"key_7":"257"}]},{"key_2":"65536"}]}}
+{"obj":{"id":"2","key_1":[{"key_2":"101","key_3":[{"key_4":[{"key_5":"-2"}]}]},{"key_2":"102","key_3":[{"key_7":"257"}]},{"key_2":"65536"}]}}
+{"obj.key_1.:`Array(JSON)`.key_3":[[{"key_4":[{"key_5":"-2"}],"key_7":"257"}],null]}
+{"obj.key_1.:`Array(JSON)`.key_3":[[{"key_4":[{"key_5":"-2"}]}],[{"key_7":"257"}],null]}
+[[[-2]],[]]	[[257],[]]
+[[[-2]],[[]],[]]	[[NULL],[257],[]]

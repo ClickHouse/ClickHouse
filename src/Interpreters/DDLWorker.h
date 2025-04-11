@@ -1,21 +1,23 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage_fwd.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Storages/IStorage_fwd.h>
-#include <Parsers/IAST_fwd.h>
-#include <Interpreters/Context.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Interpreters/Context_fwd.h>
+#include <Poco/Event.h>
 
 #include <atomic>
-#include <chrono>
-#include <condition_variable>
+#include <list>
 #include <mutex>
 #include <shared_mutex>
-#include <thread>
 #include <unordered_set>
+
 
 namespace zkutil
 {
@@ -46,16 +48,27 @@ struct DDLTaskBase;
 using DDLTaskPtr = std::unique_ptr<DDLTaskBase>;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 class AccessRightsElements;
+struct ZooKeeperRetriesInfo;
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 class DDLWorker
 {
 public:
-    DDLWorker(int pool_size_, const std::string & zk_root_dir, ContextPtr context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
-              const String & logger_name = "DDLWorker", const CurrentMetrics::Metric * max_entry_metric_ = nullptr, const CurrentMetrics::Metric * max_pushed_entry_metric_ = nullptr);
+    DDLWorker(
+        int pool_size_,
+        const std::string & zk_queue_dir,
+        const std::string & zk_replicas_dir,
+        ContextPtr context_,
+        const Poco::Util::AbstractConfiguration * config,
+        const String & prefix,
+        const String & logger_name = "DDLWorker",
+        const CurrentMetrics::Metric * max_entry_metric_ = nullptr,
+        const CurrentMetrics::Metric * max_pushed_entry_metric_ = nullptr);
     virtual ~DDLWorker();
 
     /// Pushes query into DDL queue, returns path to created node
-    virtual String enqueueQuery(DDLLogEntry & entry);
+    virtual String enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & retries_info);
 
     /// Host ID (name:port) for logging purposes
     /// Note that in each task hosts are identified individually by name:port from initiator server cluster config
@@ -68,6 +81,8 @@ public:
     {
         return queue_dir;
     }
+
+    std::string getReplicasDir() const { return replicas_dir; }
 
     void startup();
     virtual void shutdown();
@@ -108,6 +123,9 @@ protected:
         mutable std::shared_mutex mtx;
     };
 
+    /// Pushes query into DDL queue, returns path to created node
+    String enqueueQueryAttempt(DDLLogEntry & entry);
+
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
     void scheduleTasks(bool reinitialized);
 
@@ -115,9 +133,10 @@ protected:
 
     /// Reads entry and check that the host belongs to host list of the task
     /// Returns non-empty DDLTaskPtr if entry parsed and the check is passed
-    virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
+    /// If dry_run = false, the task will be processed right after this call.
+    virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run);
 
-    void processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
+    void processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal_query);
     void updateMaxDDLEntryID(const String & entry_name);
 
     /// Check that query should be executed on leader replica only
@@ -135,7 +154,7 @@ protected:
         const ZooKeeperPtr & zookeeper,
         std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock);
 
-    bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
+    bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal);
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
@@ -146,6 +165,10 @@ protected:
 
     /// Return false if the worker was stopped (stop_flag = true)
     virtual bool initializeMainThread();
+    virtual void initializeReplication();
+
+    virtual void createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids);
+    virtual void markReplicasActive(bool reinitialized);
 
     void runMainThread();
     void runCleanupThread();
@@ -157,7 +180,8 @@ protected:
 
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port
-    std::string queue_dir;      /// dir with queue of queries
+    std::string queue_dir; /// dir with queue of queries
+    std::string replicas_dir;
 
     mutable std::mutex zookeeper_mutex;
     ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(zookeeper_mutex);
@@ -199,6 +223,8 @@ protected:
 
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;
+
+    std::unordered_map<String, std::pair<ZooKeeperPtr, zkutil::EphemeralNodeHolderPtr>> active_node_holders;
 };
 
 

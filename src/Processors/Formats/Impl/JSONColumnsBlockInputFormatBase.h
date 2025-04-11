@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/BlockNameMap.h>
 #include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -52,7 +53,7 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override;
 
-    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
@@ -64,7 +65,7 @@ protected:
     const FormatSettings format_settings;
     const NamesAndTypes fields;
     /// Maps column names and their positions in header.
-    Block::NameMap name_to_index;
+    BlockNameMap name_to_index;
     Serializations serializations;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     BlockMissingValues block_missing_values;

@@ -1,4 +1,6 @@
--- Tags: no-random-settings, no-s3-storage
+-- Tags: no-random-settings, no-object-storage, no-parallel
+-- no-parallel: Running `DROP MARK CACHE` can have a big impact on other concurrent tests
+-- Tag no-object-storage: this test relies on the number of opened files in MergeTree that can differ in object storages
 
 SET allow_experimental_dynamic_type = 1;
 DROP TABLE IF EXISTS test_dynamic;
@@ -9,7 +11,7 @@ SYSTEM DROP MARK CACHE;
 SELECT d.String FROM test_dynamic SETTINGS allow_experimental_analyzer = 1;
 SYSTEM DROP MARK CACHE;
 SELECT d.String FROM test_dynamic SETTINGS allow_experimental_analyzer = 0;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['FileOpen']
 FROM system.query_log

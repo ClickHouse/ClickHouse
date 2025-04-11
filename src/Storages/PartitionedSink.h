@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
+#include <Common/PODArray.h>
 #include <absl/container/flat_hash_map.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -18,9 +20,11 @@ public:
 
     PartitionedSink(const ASTPtr & partition_by, ContextPtr context_, const Block & sample_block_);
 
+    ~PartitionedSink() override;
+
     String getName() const override { return "PartitionedSink"; }
 
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
 
     void onException(std::exception_ptr exception) override;
 

@@ -21,7 +21,7 @@ Expression (Projection)
     Union
       Expression ((Before LIMIT BY + (Before ORDER BY + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Projection + Before ORDER BY))))))
         ReadFromSystemNumbers
-      Expression
+      Expression (Before LIMIT BY)
         ReadFromRemote (Read from remote replica)
 explain select distinct on (k1, k2) v from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v from numbers(2)), cityHash64(k1, k2)); -- optimized
 Union
@@ -71,7 +71,7 @@ Expression (Projection)
             Expression ((Before ORDER BY + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Projection + Before ORDER BY)))))
               ReadFromSystemNumbers
       ReadFromRemote (Read from remote replica)
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 explain select distinct k1 from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v from numbers(2)), cityHash64(k1, k2)); -- not optimized
 Expression (Project names)
   Distinct (DISTINCT)
@@ -96,7 +96,7 @@ Expression (Project names)
         LimitBy
           Expression ((Before LIMIT BY + (Projection + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))))
             ReadFromSystemNumbers
-      Expression
+      Expression (Before LIMIT BY)
         ReadFromRemote (Read from remote replica)
 explain select distinct on (k1, k2) v from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v from numbers(2)), cityHash64(k1, k2)); -- optimized
 Union

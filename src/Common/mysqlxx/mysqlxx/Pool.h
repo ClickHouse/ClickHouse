@@ -13,9 +13,11 @@
 #include <mysqlxx/Connection.h>
 
 
+/// NOLINTBEGIN(modernize-macro-to-enum)
 #define MYSQLXX_POOL_DEFAULT_START_CONNECTIONS 1
 #define MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS 16
 #define MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL 1
+/// NOLINTEND(modernize-macro-to-enum)
 
 
 namespace mysqlxx
@@ -103,8 +105,7 @@ public:
         {
             if (pool)
                 return pool->getDescription();
-            else
-                return "pool is null";
+            return "pool is null";
         }
 
         void disconnect();
@@ -154,6 +155,9 @@ public:
          const std::string & user_,
          const std::string & password_,
          unsigned port_,
+         const std::string & ssl_ca_ = "",
+         const std::string & ssl_cert_ = "",
+         const std::string & ssl_key_ = "",
          const std::string & socket_ = "",
          unsigned connect_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
          unsigned rw_timeout_ = MYSQLXX_DEFAULT_RW_TIMEOUT,
@@ -169,6 +173,7 @@ public:
           user{other.user}, password{other.password},
           port{other.port}, socket{other.socket},
           connect_timeout{other.connect_timeout}, rw_timeout{other.rw_timeout},
+          ssl_ca(other.ssl_ca), ssl_cert(other.ssl_cert), ssl_key(other.ssl_key),
           enable_local_infile{other.enable_local_infile}, opt_reconnect(other.opt_reconnect)
     {}
 
@@ -187,10 +192,16 @@ public:
     /// Get description of database.
     std::string getDescription() const
     {
-        return description;
+        std::lock_guard lock(mutex);
+        return getDescriptionImpl();
     }
 
     void removeConnection(Connection * connection);
+
+    bool isOnline()
+    {
+        return online;
+    }
 
 protected:
     LoggerPtr log = getLogger("mysqlxx::Pool");
@@ -208,7 +219,7 @@ private:
     /// List of connections.
     Connections connections;
     /// Lock for connections list access
-    std::mutex mutex;
+    mutable std::mutex mutex;
     /// Description of connection.
     std::string description;
 
@@ -233,8 +244,16 @@ private:
     /// Initialises class if it wasn't.
     void initialize();
 
+    /// Pool is online.
+    std::atomic<bool> online{true};
+
     /** Create new connection. */
     Connection * allocConnection(bool dont_throw_if_failed_first_time = false);
+
+    std::string getDescriptionImpl() const
+    {
+        return description;
+    }
 };
 
 }

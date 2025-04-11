@@ -50,6 +50,8 @@ public:
         return QueryTreeNodeType::INTERPOLATE;
     }
 
+    const std::string & getExpressionName() const { return expression_name; }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:

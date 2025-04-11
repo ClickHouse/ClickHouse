@@ -4,6 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Processors/Formats/Impl/BinaryRowOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
 
@@ -70,6 +71,10 @@ void registerOutputFormatRowBinary(FormatFactory & factory)
     };
 
     registerWithNamesAndTypes("RowBinary", register_func);
+
+    factory.markOutputFormatNotTTYFriendly("RowBinary");
+    factory.markOutputFormatNotTTYFriendly("RowBinaryWithNames");
+    factory.markOutputFormatNotTTYFriendly("RowBinaryWithNamesAndTypes");
 }
 
 }

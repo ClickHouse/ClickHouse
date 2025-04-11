@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-QUOTA="2884_quota_$$"
-USER="2884_user_$$"
-ROLE="2884_role_$$"
+QUOTA="2884_quota_${CLICKHOUSE_DATABASE}"
+USER="2884_user_${CLICKHOUSE_DATABASE}"
+ROLE="2884_role_${CLICKHOUSE_DATABASE}"
 
 
 function login_test()
@@ -26,10 +25,10 @@ function login_test()
 
     echo "> Alter the quota with MAX FAILED SEQUENTIAL AUTHENTICATIONS = 4"
     ${CLICKHOUSE_CLIENT} -q "ALTER QUOTA ${QUOTA} FOR INTERVAL 100 YEAR MAX FAILED SEQUENTIAL AUTHENTICATIONS = 4 TO ${USER}"
-    
+
     echo "> Try to login to the user account with correct password"
     ${CLICKHOUSE_CLIENT} --user ${USER} --password "pass" --query "select 1 format Null"
-    
+
     echo "> Successfull login should reset failed authentications counter. Check the failed_sequential_authentications, max_failed_sequential_authentications fields."
     ${CLICKHOUSE_CLIENT} -q "SELECT failed_sequential_authentications, max_failed_sequential_authentications FROM system.quotas_usage WHERE quota_name = '${QUOTA}'"
 
@@ -39,7 +38,7 @@ function login_test()
     ${CLICKHOUSE_CLIENT} --user ${USER} --password "wrong_pass" --query "select 1 format Null" 2>&1 | grep -m1 -o 'password is incorrect'
     ${CLICKHOUSE_CLIENT} --user ${USER} --password "wrong_pass" --query "select 1 format Null" 2>&1 | grep -m1 -o 'password is incorrect'
     ${CLICKHOUSE_CLIENT} --user ${USER} --password "wrong_pass" --query "select 1 format Null" 2>&1 | grep -m1 -o 'QUOTA_EXCEEDED'
-    
+
     echo "> Also try to login with correct password. Quota should stay exceeded."
     ${CLICKHOUSE_CLIENT} --user ${USER} --password "pass" --query "select 1 format Null" 2>&1 | grep -m1 -o 'QUOTA_EXCEEDED'
 

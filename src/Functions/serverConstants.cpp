@@ -9,6 +9,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/DNSResolver.h>
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/ClickHouseRevision.h>
 
 #include <Poco/Environment.h>
@@ -179,7 +180,7 @@ Can be changed with SET timezone = 'New/Tz'
 [example:timezone]
     )",
     .examples{{"timezone", "SELECT timezone();", ""}},
-    .categories{"Constant", "Miscellaneous"}
+    .category{"Other"}
 });
 factory.registerAlias("timeZone", "timezone");
 }
@@ -194,7 +195,7 @@ Returns the timezone name in which server operates.
 [example:serverTimezone]
     )",
      .examples{{"serverTimezone", "SELECT serverTimezone();", ""}},
-     .categories{"Constant", "Miscellaneous"}
+     .category{"Other"}
 });
     factory.registerAlias("serverTimeZone", "serverTimezone");
 }
@@ -206,12 +207,12 @@ REGISTER_FUNCTION(Uptime)
 
 REGISTER_FUNCTION(Version)
 {
-    factory.registerFunction<FunctionVersion>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionVersion>({}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(Revision)
 {
-    factory.registerFunction<FunctionRevision>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRevision>({}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(ZooKeeperSessionUptime)
@@ -236,9 +237,8 @@ Returns the value of `display_name` from config or server FQDN if not set.
 [example:displayName]
 )",
             .examples{{"displayName", "SELECT displayName();", ""}},
-            .categories{"Constant", "Miscellaneous"}
-        },
-        FunctionFactory::CaseSensitive);
+            .category{"Other"}
+        });
 }
 
 

@@ -49,27 +49,28 @@ void resolveSchemaAndFormat(
     ObjectStoragePtr object_storage,
     const StorageObjectStorage::ConfigurationPtr & configuration,
     std::optional<FormatSettings> format_settings,
+    std::string & sample_path,
     const ContextPtr & context)
 {
     if (columns.empty())
     {
         if (format == "auto")
             std::tie(columns, format) =
-                StorageObjectStorage::resolveSchemaAndFormatFromData(object_storage, configuration, format_settings, context);
+                StorageObjectStorage::resolveSchemaAndFormatFromData(object_storage, configuration, format_settings, sample_path, context);
         else
-            columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, context);
+            columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
     }
     else if (format == "auto")
     {
-        format = StorageObjectStorage::resolveFormatFromData(object_storage, configuration, format_settings, context);
+        format = StorageObjectStorage::resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context);
     }
 
     if (!columns.hasOnlyOrdinary())
     {
         /// We don't allow special columns.
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Special columns are not supported for {} storage"
-                        "like MATERIALIZED, ALIAS or EPHEMERAL", configuration->getTypeName());
+            "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for {} storage.",
+            configuration->getTypeName());
     }
 }
 

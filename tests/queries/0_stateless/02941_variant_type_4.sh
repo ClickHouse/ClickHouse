@@ -2,8 +2,6 @@
 # Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# reset --log_comment
-CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -19,7 +17,7 @@ function test6_insert()
 function test6_select()
 {
     echo "test6 select"
-    $CH_CLIENT -nmq "select v from test format Null;
+    $CH_CLIENT -mq "select v from test format Null;
     select count() from test where isNotNull(v);
     select v.String from test format Null;
     select count() from test where isNotNull(v.String);

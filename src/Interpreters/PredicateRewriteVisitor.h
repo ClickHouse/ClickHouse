@@ -32,6 +32,8 @@ public:
         bool optimize_final_,
         bool optimize_with_);
 
+    bool rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns);
+
 private:
     const ASTs & predicates;
     const TableWithColumnNamesAndTypes & table_columns;
@@ -43,8 +45,6 @@ private:
     void visitOtherInternalSelect(ASTSelectQuery & select_query, ASTPtr &);
 
     void visit(ASTSelectIntersectExceptQuery & intersect_except_query, ASTPtr &);
-
-    bool rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns);
 
     void visitInternalSelect(size_t index, ASTSelectQuery & select_node, ASTPtr & node);
 };

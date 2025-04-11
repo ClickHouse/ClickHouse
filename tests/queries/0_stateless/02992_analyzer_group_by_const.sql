@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 -- Illegal column String of first argument of function concatWithSeparator. Must be a constant String.
 SELECT concatWithSeparator('a', 'b') GROUP BY 'a';

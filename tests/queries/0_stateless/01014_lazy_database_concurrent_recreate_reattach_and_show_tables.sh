@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -83,7 +83,7 @@ export -f recreate_lazy_func4;
 export -f show_tables_func;
 
 
-${CLICKHOUSE_CLIENT} -n -q "
+${CLICKHOUSE_CLIENT} -q "
     DROP DATABASE IF EXISTS $CURR_DATABASE;
     CREATE DATABASE $CURR_DATABASE ENGINE = Lazy(1);
 "

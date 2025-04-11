@@ -1,8 +1,11 @@
 -- Tags: distributed
 
+-- <Warning> ConnectionPoolWithFailover: Connection failed at try №1 - is not a problem
+SET send_logs_level = 'fatal';
+
 -- set distributed_foreground_insert = 1;  -- see https://github.com/ClickHouse/ClickHouse/issues/18971
 
-SET allow_experimental_parallel_reading_from_replicas = 0; -- see https://github.com/ClickHouse/ClickHouse/issues/34525
+SET enable_parallel_replicas = 0; -- see https://github.com/ClickHouse/ClickHouse/issues/34525
 SET prefer_localhost_replica = 1;
 
 DROP TABLE IF EXISTS local_01099_a;
@@ -165,6 +168,17 @@ DROP TABLE local_01099_a;
 DROP TABLE local_01099_b;
 DROP TABLE distributed_01099_a;
 DROP TABLE distributed_01099_b;
+
+--- https://github.com/ClickHouse/ClickHouse/issues/78464
+CREATE TABLE local_01099_c (n UInt64) ENGINE = Log;
+CREATE TABLE distributed_01099_c AS local_01099_c ENGINE = Distributed('test_shard_localhost', currentDatabase(), local_01099_c, rand());
+
+INSERT INTO TABLE FUNCTION clusterAllReplicas('test_shard_localhost', currentDatabase(), 'distributed_01099_c') (n) SELECT number FROM remote('localhost', numbers(5)) tx;
+
+SELECT * FROM distributed_01099_c;
+
+DROP TABLE local_01099_c;
+DROP TABLE distributed_01099_c;
 
 --
 -- test_cluster_two_shards_localhost

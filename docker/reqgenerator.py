@@ -2,19 +2,38 @@
 # To run this script you must install docker and piddeptree python package
 #
 
-import subprocess
 import os
+import subprocess
 import sys
 
 
-def build_docker_deps(image_name, imagedir):
-    cmd = f"""docker run  --entrypoint "/bin/bash" {image_name} -c "pip install pipdeptree 2>/dev/null 1>/dev/null && pipdeptree --freeze  --warn silence | sed 's/ \+//g' | sort | uniq" > {imagedir}/requirements.txt"""
+def build_docker_deps(image_name: str, imagedir: str) -> None:
+    print("Get the directory of packages installed by `pip`")
+    cmd = (
+        rf"docker run --network=host --rm --entrypoint 'python3' {image_name} -c "
+        """'import sys; print([p for p in sys.path if "/usr/local/lib/python" in p][0])'"""
+    )
+    # We freeze only python packages installed by pip.
+    # Mixing distributive managed packages into the requirements.txt is disastrous
+    dist_dir = str(subprocess.check_output(cmd, shell=True, encoding="utf-8").strip())
+    pip_cmd = (
+        "pip install pipdeptree 2>/dev/null 1>/dev/null && "
+        f"pipdeptree --freeze --warn silence --exclude pipdeptree --path {dist_dir}"
+    )
+    # /=/!d - remove dependencies without pin
+    # \s - remove spaces
+    sed = r"sed '/==/!d; s/\s//g'"
+    cmd = (
+        rf"docker run --network=host --rm --entrypoint '/bin/bash' {image_name} "
+        rf'-c "{pip_cmd} | {sed} | sort -u" > {imagedir}/requirements.txt'
+    )
+    print("Running the command:", cmd)
     subprocess.check_call(cmd, shell=True)
 
 
 def check_docker_file_install_with_pip(filepath):
     image_name = None
-    with open(filepath, "r") as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         for line in f:
             if "docker build" in line:
                 arr = line.split(" ")
@@ -25,7 +44,7 @@ def check_docker_file_install_with_pip(filepath):
     return image_name, False
 
 
-def process_affected_images(images_dir):
+def process_affected_images(images_dir: str) -> None:
     for root, _dirs, files in os.walk(images_dir):
         for f in files:
             if f == "Dockerfile":

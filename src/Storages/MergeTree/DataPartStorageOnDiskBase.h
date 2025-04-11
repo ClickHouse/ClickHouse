@@ -20,6 +20,7 @@ public:
     std::string getRelativePath() const override;
     std::string getPartDirectory() const override;
     std::string getFullRootPath() const override;
+    std::string getParentDirectory() const override;
 
     Poco::Timestamp getLastModified() const override;
     UInt64 calculateTotalSizeOnDisk() const override;
@@ -55,7 +56,6 @@ public:
         const NameSet & files_without_checksums,
         const String & path_in_backup,
         const BackupSettings & backup_settings,
-        const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs,
@@ -148,6 +148,9 @@ private:
     /// Actual file name may be the same as expected
     /// or be the name of the file with packed data.
     virtual NameSet getActualFileNamesOnDisk(const NameSet & file_names) const = 0;
+
+    /// Returns the destination path for the part directory while copying a detached part.
+    String getPartDirForPrefix(const String & prefix, bool detached, int try_no) const;
 };
 
 }

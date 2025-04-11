@@ -60,7 +60,7 @@ struct IsOperation
 
     static constexpr bool bit_hamming_distance = IsSameOperation<Op, BitHammingDistanceImpl>::value;
 
-    static constexpr bool division = div_floating || int_div || int_div_or_zero || modulo;
+    static constexpr bool division = div_floating || int_div || int_div_or_zero || modulo || positive_modulo;
     // NOTE: allow_decimal should not fully contain `division` because of divInt
     static constexpr bool allow_decimal = plus || minus || multiply || division || least || greatest;
 };

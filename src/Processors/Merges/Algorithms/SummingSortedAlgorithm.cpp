@@ -99,7 +99,7 @@ struct SummingSortedAlgorithm::AggregateDescription
 };
 
 
-static bool isInPrimaryKey(const SortDescription & description, const std::string & name)
+static bool isInSortingKey(const SortDescription & description, const std::string & name)
 {
     for (const auto & desc : description)
         if (desc.column_name == name)
@@ -108,10 +108,10 @@ static bool isInPrimaryKey(const SortDescription & description, const std::strin
     return false;
 }
 
-static bool isInPartitionKey(const std::string & column_name, const Names & partition_key_columns)
+static bool isInNames(const std::string & column_name, const Names & names)
 {
-    auto is_in_partition_key = std::find(partition_key_columns.begin(), partition_key_columns.end(), column_name);
-    return is_in_partition_key != partition_key_columns.end();
+    auto is_in_partition_key = std::find(names.begin(), names.end(), column_name);
+    return is_in_partition_key != names.end();
 }
 
 
@@ -127,14 +127,14 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
     Row right(left.size());
 
     for (size_t col_num : desc.key_col_nums)
-        right[col_num] = (*raw_columns[col_num])[row_number].template get<Array>();
+        right[col_num] = (*raw_columns[col_num])[row_number].template safeGet<Array>();
 
     for (size_t col_num : desc.val_col_nums)
-        right[col_num] = (*raw_columns[col_num])[row_number].template get<Array>();
+        right[col_num] = (*raw_columns[col_num])[row_number].template safeGet<Array>();
 
     auto at_ith_column_jth_row = [&](const Row & matrix, size_t i, size_t j) -> const Field &
     {
-        return matrix[i].get<Array>()[j];
+        return matrix[i].safeGet<Array>()[j];
     };
 
     auto tuple_of_nth_columns_at_jth_row = [&](const Row & matrix, const ColumnNumbers & col_nums, size_t j) -> Array
@@ -160,7 +160,7 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
 
     auto merge = [&](const Row & matrix)
     {
-        size_t rows = matrix[desc.key_col_nums[0]].get<Array>().size();
+        size_t rows = matrix[desc.key_col_nums[0]].safeGet<Array>().size();
 
         for (size_t j = 0; j < rows; ++j)
         {
@@ -190,10 +190,10 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
     for (const auto & key_value : merged)
     {
         for (size_t col_num_index = 0, size = desc.key_col_nums.size(); col_num_index < size; ++col_num_index)
-            row[desc.key_col_nums[col_num_index]].get<Array>()[row_num] = key_value.first[col_num_index];
+            row[desc.key_col_nums[col_num_index]].safeGet<Array>()[row_num] = key_value.first[col_num_index];
 
         for (size_t col_num_index = 0, size = desc.val_col_nums.size(); col_num_index < size; ++col_num_index)
-            row[desc.val_col_nums[col_num_index]].get<Array>()[row_num] = key_value.second[col_num_index];
+            row[desc.val_col_nums[col_num_index]].safeGet<Array>()[row_num] = key_value.second[col_num_index];
 
         ++row_num;
     }
@@ -205,7 +205,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header,
     const SortDescription & description,
     const Names & column_names_to_sum,
-    const Names & partition_key_columns)
+    const Names & partition_and_sorting_required_columns)
 {
     size_t num_columns = header.columns();
     SummingSortedAlgorithm::ColumnsDefinition def;
@@ -254,16 +254,14 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 continue;
             }
 
-            /// Are they inside the primary key or partition key?
-            if (isInPrimaryKey(description, column.name) || isInPartitionKey(column.name, partition_key_columns))
+            /// Are they inside the sorting key or partition key? Check both to ignore columns with order expression.
+            if (isInSortingKey(description, column.name) || isInNames(column.name, partition_and_sorting_required_columns))
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
             }
 
-            if (column_names_to_sum.empty()
-                || column_names_to_sum.end() !=
-                   std::find(column_names_to_sum.begin(), column_names_to_sum.end(), column.name))
+            if (column_names_to_sum.empty() || isInNames(column.name, column_names_to_sum))
             {
                 // Create aggregator to sum this column
                 SummingSortedAlgorithm::AggregateDescription desc;
@@ -311,7 +309,8 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         /// no elements of map could be in primary key
         auto column_num_it = map.second.begin();
         for (; column_num_it != map.second.end(); ++column_num_it)
-            if (isInPrimaryKey(description, header.safeGetByPosition(*column_num_it).name))
+            if (isInSortingKey(description, header.safeGetByPosition(*column_num_it).name)
+                || isInNames(header.safeGetByPosition(*column_num_it).name, partition_and_sorting_required_columns))
                 break;
         if (column_num_it != map.second.end())
         {
@@ -690,11 +689,12 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     size_t num_inputs,
     SortDescription description_,
     const Names & column_names_to_sum,
-    const Names & partition_key_columns,
+    const Names & partition_and_sorting_required_columns,
     size_t max_block_size_rows,
     size_t max_block_size_bytes)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
-    , columns_definition(defineColumns(header_, description, column_names_to_sum, partition_key_columns))
+    , columns_definition(
+          defineColumns(header_, description, column_names_to_sum, partition_and_sorting_required_columns))
     , merged_data(max_block_size_rows, max_block_size_bytes, columns_definition)
 {
 }

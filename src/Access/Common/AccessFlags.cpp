@@ -247,8 +247,7 @@ namespace
                 const auto & unused_node = *(owned_nodes.begin()->second);
                 if (unused_node.node_type == UNKNOWN)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent group '{}' not found", unused_node.keyword);
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Access type '{}' should have parent group", unused_node.keyword);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Access type '{}' should have parent group", unused_node.keyword);
             }
         }
 

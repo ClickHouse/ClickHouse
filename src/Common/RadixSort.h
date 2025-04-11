@@ -91,7 +91,7 @@ struct RadixSortFloatTraits
     using CountType = uint32_t;
 
     /// The type to which the key is transformed to do bit operations. This UInt is the same size as the key.
-    using KeyBits = std::conditional_t<sizeof(Key) == 8, uint64_t, uint32_t>;
+    using KeyBits = std::conditional_t<sizeof(Key) == 8, uint64_t, std::conditional_t<sizeof(Key) == 4, uint32_t, uint16_t>>;
 
     static constexpr size_t PART_SIZE_BITS = 8;    /// With what pieces of the key, in bits, to do one pass - reshuffle of the array.
 
@@ -599,16 +599,12 @@ public:
 
             if (destination)
                 return executeLSDWithTrySortInternal<true>(arr, size, reverse, GreaterComparator(), destination);
-            else
-                return executeLSDWithTrySortInternal<false>(arr, size, reverse, GreaterComparator(), destination);
+            return executeLSDWithTrySortInternal<false>(arr, size, reverse, GreaterComparator(), destination);
         }
-        else
-        {
-            if (destination)
-                return executeLSDWithTrySortInternal<true>(arr, size, reverse, LessComparator(), destination);
-            else
-                return executeLSDWithTrySortInternal<false>(arr, size, reverse, LessComparator(), destination);
-        }
+
+        if (destination)
+            return executeLSDWithTrySortInternal<true>(arr, size, reverse, LessComparator(), destination);
+        return executeLSDWithTrySortInternal<false>(arr, size, reverse, LessComparator(), destination);
     }
 
     /* Most significant digit radix sort

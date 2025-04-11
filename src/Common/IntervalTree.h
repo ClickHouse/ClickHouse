@@ -633,7 +633,7 @@ private:
     static const Interval & getInterval(const IntervalWithValue & interval_with_value)
     {
         if constexpr (is_empty_value)
-            return interval_with_value;
+            return interval_with_value;  /// NOLINT(bugprone-return-const-ref-from-parameter)
         else
             return interval_with_value.first;
     }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-fasttest
+# Tags: zookeeper, no-fasttest, long, no-parallel
 
 set -e
 

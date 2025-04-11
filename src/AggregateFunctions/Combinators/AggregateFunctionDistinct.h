@@ -2,13 +2,10 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
-#include <Columns/ColumnArray.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/SipHash.h>
 #include <IO/ReadHelpersArena.h>
 
 
@@ -150,7 +147,7 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
   * Adding -Distinct suffix to aggregate function
 **/
 template <typename Data>
-class AggregateFunctionDistinct : public IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct<Data>>
+class AggregateFunctionDistinct final : public IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct<Data>>
 {
 private:
     AggregateFunctionPtr nested_func;

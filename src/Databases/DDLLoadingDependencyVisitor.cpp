@@ -22,7 +22,7 @@ namespace DB
 
 using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast)
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw)
 {
     assert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
@@ -30,6 +30,7 @@ TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, c
     data.create_query = ast;
     data.global_context = global_context;
     data.table_name = table;
+    data.can_throw = can_throw;
     TableLoadingDependenciesVisitor visitor{data};
     visitor.visit(ast);
     data.dependencies.erase(table);
@@ -125,7 +126,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments &
     {
         /// We don't have a table name, we have a select query instead that will be executed during dictionary loading.
         /// We need to find all tables used in this select query and add them to dependencies.
-        auto select_query_dependencies = getDependenciesFromDictionaryNestedSelectQuery(data.global_context, data.table_name, data.create_query, info->query, data.default_database);
+        auto select_query_dependencies = getDependenciesFromDictionaryNestedSelectQuery(data.global_context, data.table_name, data.create_query, info->query, data.default_database, data.can_throw);
         data.dependencies.merge(select_query_dependencies);
     }
 }
@@ -183,7 +184,7 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
         if (name->value.getType() != Field::Types::String)
             return;
 
-        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(name->value.get<String>());
+        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(name->value.safeGet<String>());
         if (!maybe_qualified_name)
             return;
 
@@ -194,7 +195,7 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
         if (literal->value.getType() != Field::Types::String)
             return;
 
-        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.get<String>());
+        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
         /// Just return if name if invalid
         if (!maybe_qualified_name)
             return;

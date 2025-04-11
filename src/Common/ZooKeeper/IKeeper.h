@@ -1,9 +1,7 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/Exception.h>
-#include <Coordination/KeeperFeatureFlags.h>
-#include <Poco/Net/SocketAddress.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 
 #include <vector>
 #include <memory>
@@ -11,20 +9,14 @@
 #include <span>
 #include <functional>
 
+#include <fmt/format.h>
+
 /** Generic interface for ZooKeeper-like services.
   * Possible examples are:
   * - ZooKeeper client itself;
   * - fake ZooKeeper client for testing;
   * - ZooKeeper emulation layer on top of Etcd, FoundationDB, whatever.
   */
-
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int KEEPER_EXCEPTION;
-}
-}
 
 namespace Coordination
 {
@@ -248,6 +240,23 @@ struct RemoveResponse : virtual Response
 {
 };
 
+struct RemoveRecursiveRequest : virtual Request
+{
+    String path;
+
+    /// strict limit for number of deleted nodes
+    uint32_t remove_nodes_limit = 1;
+
+    void addRootPath(const String & root_path) override;
+    String getPath() const override { return path; }
+
+    size_t bytesSize() const override { return path.size() + sizeof(remove_nodes_limit); }
+};
+
+struct RemoveRecursiveResponse : virtual Response
+{
+};
+
 struct ExistsRequest : virtual Request
 {
     String path;
@@ -391,11 +400,17 @@ struct ReconfigResponse : virtual Response
     size_t bytesSize() const override { return value.size() + sizeof(stat); }
 };
 
+template <typename T>
 struct MultiRequest : virtual Request
 {
-    Requests requests;
+    std::vector<T> requests;
 
-    void addRootPath(const String & root_path) override;
+    void addRootPath(const String & root_path) override
+    {
+        for (auto & request : requests)
+            request->addRootPath(root_path);
+    }
+
     String getPath() const override { return {}; }
 
     size_t bytesSize() const override
@@ -430,6 +445,7 @@ struct ErrorResponse : virtual Response
 
 using CreateCallback = std::function<void(const CreateResponse &)>;
 using RemoveCallback = std::function<void(const RemoveResponse &)>;
+using RemoveRecursiveCallback = std::function<void(const RemoveRecursiveResponse &)>;
 using ExistsCallback = std::function<void(const ExistsResponse &)>;
 using GetCallback = std::function<void(const GetResponse &)>;
 using SetCallback = std::function<void(const SetResponse &)>;
@@ -459,61 +475,6 @@ enum Event
     CHILD = 4,
     SESSION = -1,
     NOTWATCHING = -2
-};
-
-
-class Exception : public DB::Exception
-{
-private:
-    /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
-    Exception(const std::string & msg, Error code_, int); /// NOLINT
-    Exception(PreformattedMessage && msg, Error code_);
-
-    /// Message must be a compile-time constant
-    template <typename T>
-    requires std::is_convertible_v<T, String>
-    Exception(T && message, Error code_) : DB::Exception(std::forward<T>(message), DB::ErrorCodes::KEEPER_EXCEPTION, /* remote_= */ false), code(code_)
-    {
-        incrementErrorMetrics(code);
-    }
-
-    static void incrementErrorMetrics(Error code_);
-
-public:
-    explicit Exception(Error code_); /// NOLINT
-    Exception(const Exception & exc);
-
-    template <typename... Args>
-    Exception(Error code_, FormatStringHelper<Args...> fmt, Args &&... args)
-        : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::move(fmt), std::forward<Args>(args)...)
-        , code(code_)
-    {
-        incrementErrorMetrics(code);
-    }
-
-    static Exception createDeprecated(const std::string & msg, Error code_)
-    {
-        return Exception(msg, code_, 0);
-    }
-
-    static Exception fromPath(Error code_, const std::string & path)
-    {
-        return Exception(code_, "Coordination error: {}, path {}", errorMessage(code_), path);
-    }
-
-    /// Message must be a compile-time constant
-    template <typename T>
-    requires std::is_convertible_v<T, String>
-    static Exception fromMessage(Error code_, T && message)
-    {
-        return Exception(std::forward<T>(message), code_);
-    }
-
-    const char * name() const noexcept override { return "Coordination::Exception"; }
-    const char * className() const noexcept override { return "Coordination::Exception"; }
-    Exception * clone() const override { return new Exception(*this); }
-
-    const Error code;
 };
 
 class SimpleFaultInjection
@@ -548,13 +509,13 @@ public:
     virtual bool isExpired() const = 0;
 
     /// Get the current connected node idx.
-    virtual Int8 getConnectedNodeIdx() const = 0;
+    virtual std::optional<int8_t> getConnectedNodeIdx() const = 0;
 
     /// Get the current connected host and port.
     virtual String getConnectedHostPort() const = 0;
 
     /// Get the xid of current connection.
-    virtual int32_t getConnectionXid() const = 0;
+    virtual int64_t getConnectionXid() const = 0;
 
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
@@ -586,6 +547,11 @@ public:
         const String & path,
         int32_t version,
         RemoveCallback callback) = 0;
+
+    virtual void removeRecursive(
+        const String & path,
+        uint32_t remove_nodes_limit,
+        RemoveRecursiveCallback callback) = 0;
 
     virtual void exists(
         const String & path,

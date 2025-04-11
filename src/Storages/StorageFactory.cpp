@@ -1,6 +1,7 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -10,6 +11,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -24,11 +29,11 @@ namespace ErrorCodes
 
 
 /// Some types are only for intermediate values of expressions and cannot be used in tables.
-static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
+void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 {
     for (const auto & elem : names_and_types)
         if (elem.type->cannotBeStoredInTables())
-            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} cannot be used in tables", elem.type->getName());
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} of column '{}' cannot be used in tables", elem.type->getName(), elem.name);
 }
 
 
@@ -51,8 +56,11 @@ ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
 
 void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features)
 {
+    if (features.supports_settings && !features.has_builtin_setting_fn)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "StorageFactory: Storage '{}' supports settings but has_builtin_setting_fn is not provided", name);
     if (!storages.emplace(name, Creator{std::move(creator_fn), features}).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: the table function name '{}' is not unique", name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageFactory: the storage '{}' is not unique", name);
 }
 
 
@@ -65,7 +73,8 @@ StoragePtr StorageFactory::get(
     const ConstraintsDescription & constraints,
     LoadingStrictnessLevel mode) const
 {
-    String name, comment;
+    String name;
+    String comment;
 
     ASTStorage * storage_def = query.storage;
 
@@ -128,23 +137,30 @@ StoragePtr StorageFactory::get(
             {
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE View is not supported, use CREATE VIEW statement");
             }
-            else if (name == "MaterializedView")
+            if (name == "Loop")
             {
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Direct creation of tables with ENGINE MaterializedView "
-                                "is not supported, use CREATE MATERIALIZED VIEW statement");
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE Loop is not supported, use Loop as a table function only");
             }
-            else if (name == "LiveView")
+            if (name == "MaterializedView")
             {
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Direct creation of tables with ENGINE LiveView "
-                                "is not supported, use CREATE LIVE VIEW statement");
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE MaterializedView "
+                    "is not supported, use CREATE MATERIALIZED VIEW statement");
             }
-            else if (name == "WindowView")
+            if (name == "LiveView")
             {
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Direct creation of tables with ENGINE WindowView "
-                                "is not supported, use CREATE WINDOW VIEW statement");
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE LiveView "
+                    "is not supported, use CREATE LIVE VIEW statement");
+            }
+            if (name == "WindowView")
+            {
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE WindowView "
+                    "is not supported, use CREATE WINDOW VIEW statement");
             }
 
             auto it = storages.find(name);
@@ -153,8 +169,7 @@ StoragePtr StorageFactory::get(
                 auto hints = getHints(name);
                 if (!hints.empty())
                     throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}. Maybe you meant: {}", name, toString(hints));
-                else
-                    throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", name);
+                throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", name);
             }
 
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
@@ -203,7 +218,7 @@ StoragePtr StorageFactory::get(
     }
 
     if (query.comment)
-        comment = query.comment->as<ASTLiteral &>().value.get<String>();
+        comment = query.comment->as<ASTLiteral &>().value.safeGet<String>();
 
     ASTs empty_engine_args;
     Arguments arguments{
@@ -227,12 +242,12 @@ StoragePtr StorageFactory::get(
     {
         /// Storage creator modified empty arguments list, so we should modify the query
         assert(storage_def && storage_def->engine && !storage_def->engine->arguments);
-        storage_def->engine->arguments = std::make_shared<ASTExpressionList>();
+        storage_def->engine->arguments = std::make_shared<ASTExpressionList>();  /// NOLINT(clang-analyzer-core.NullDereference)
         storage_def->engine->children.push_back(storage_def->engine->arguments);
         storage_def->engine->arguments->children = empty_engine_args;
     }
 
-    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
+    if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries])
         local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, name);
 
     return res;

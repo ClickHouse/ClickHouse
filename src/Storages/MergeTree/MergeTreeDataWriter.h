@@ -75,6 +75,7 @@ public:
 
         void cancel();
         void finalize();
+        void prewarmCaches();
     };
 
     /** All rows must correspond to same partition.
@@ -109,8 +110,8 @@ public:
 
     static Block mergeBlock(
         Block && block,
+        const StorageMetadataPtr & metadata_snapshot,
         SortDescription sort_description,
-        const Names & partition_key_columns,
         IColumn::Permutation *& permutation,
         const MergeTreeData::MergingParams & merging_params);
 

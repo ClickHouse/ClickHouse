@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include "ParquetColumnReader.h"
@@ -17,7 +17,10 @@ class ColumnDescriptor;
 namespace DB
 {
 
-template <typename TColumn>
+struct ParquetByteArrayTypeStub {};
+struct ParquetInt96TypeStub {};
+
+template <typename TColumn, typename ParquetType>
 class ParquetLeafColReader : public ParquetColumnReader
 {
 public:
@@ -54,6 +57,10 @@ private:
     void readPage();
     void readPageV1(const parquet::DataPageV1 & page);
     void readPageV2(const parquet::DataPageV2 & page);
+    void initDataReader(parquet::Encoding::type enconding_type,
+                        const uint8_t * buffer,
+                        std::size_t max_size,
+                        std::unique_ptr<RleValuesReader> && def_level_reader);
 
     std::unique_ptr<ParquetDataValuesReader> createDictReader(
         std::unique_ptr<RleValuesReader> def_level_reader, std::unique_ptr<RleValuesReader> rle_data_reader);

@@ -7,7 +7,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <Core/callOnTypeIndex.h>
 #include <Columns/ColumnVector.h>
+#include <Common/intExp10.h>
 #include <Interpreters/castColumn.h>
 #include "IFunction.h"
 #include <Common/intExp.h>
@@ -268,6 +270,19 @@ inline double roundWithMode(double x, RoundingMode mode)
     std::unreachable();
 }
 
+inline BFloat16 roundWithMode(BFloat16 x, RoundingMode mode)
+{
+    switch (mode)
+    {
+        case RoundingMode::Round: return BFloat16(nearbyintf(Float32(x)));
+        case RoundingMode::Floor: return BFloat16(floorf(Float32(x)));
+        case RoundingMode::Ceil: return BFloat16(ceilf(Float32(x)));
+        case RoundingMode::Trunc: return BFloat16(truncf(Float32(x)));
+    }
+
+    std::unreachable();
+}
+
 template <typename T>
 class FloatRoundingComputationBase<T, Vectorize::No>
 {
@@ -285,8 +300,13 @@ public:
 
     static VectorType prepare(size_t scale)
     {
-        return load1(scale);
+        return load1(ScalarType(scale));
     }
+};
+
+template <>
+class FloatRoundingComputationBase<BFloat16, Vectorize::Yes> : public FloatRoundingComputationBase<BFloat16, Vectorize::No>
+{
 };
 
 
@@ -500,7 +520,7 @@ inline Scale getScaleArg(const ColumnConst* scale_col)
 {
     const auto & scale_field = scale_col->getField();
 
-    Int64 scale64 = scale_field.get<Int64>();
+    Int64 scale64 = scale_field.safeGet<Int64>();
     validateScale(scale64);
 
     return scale64;
@@ -511,7 +531,7 @@ template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_m
 struct Dispatcher
 {
     template <ScaleMode scale_mode>
-    using FunctionRoundingImpl = std::conditional_t<std::is_floating_point_v<T>,
+    using FunctionRoundingImpl = std::conditional_t<is_floating_point<T>,
         FloatRoundingImpl<T, rounding_mode, scale_mode>,
         IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 
@@ -632,7 +652,7 @@ public:
                         Scale raw_scale = scale64;
 
                         DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::applyOne(value_col_typed->getElement(i), value_col_typed->getScale(),
-                            reinterpret_cast<ColumnDecimal<T>::NativeT&>(col_res->getElement(i)), raw_scale);
+                            reinterpret_cast<typename ColumnDecimal<T>::NativeT&>(col_res->getElement(i)), raw_scale);
                     }
                 }
             }
@@ -854,7 +874,7 @@ private:
         using ValueType = typename Container::value_type;
         std::vector<ValueType> boundary_values(boundaries.size());
         for (size_t i = 0; i < boundaries.size(); ++i)
-            boundary_values[i] = static_cast<ValueType>(boundaries[i].get<ValueType>());
+            boundary_values[i] = static_cast<ValueType>(boundaries[i].safeGet<ValueType>());
 
         ::sort(boundary_values.begin(), boundary_values.end());
         boundary_values.erase(std::unique(boundary_values.begin(), boundary_values.end()), boundary_values.end());

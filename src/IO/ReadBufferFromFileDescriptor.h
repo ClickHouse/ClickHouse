@@ -69,7 +69,7 @@ public:
     /// Seek to the beginning, discarding already read data if any. Useful to reread file that changes on every read.
     void rewind();
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
 
     bool checkIfActuallySeekable() override;
 

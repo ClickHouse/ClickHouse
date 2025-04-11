@@ -1,5 +1,9 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+
+#include <Columns/ColumnSparse.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
@@ -10,14 +14,15 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
-
-Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation)
+Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation)
 {
     Block result;
     for (size_t i = 0, size = names.size(); i < size; ++i)
     {
-        const auto & name = names[i];
-        result.insert(i, block.getByName(name));
+        auto src_column = block.getColumnOrSubcolumnByName(names[i]);
+        src_column.column = recursiveRemoveSparse(src_column.column);
+        src_column.column = src_column.column->convertToFullColumnIfConst();
+        result.insert(i, src_column);
 
         /// Reorder primary key columns in advance and add them to `primary_key_columns`.
         if (permutation)
@@ -30,7 +35,7 @@ Block getBlockAndPermute(const Block & block, const Names & names, const IColumn
     return result;
 }
 
-Block permuteBlockIfNeeded(const Block & block, const IColumn::Permutation * permutation)
+Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation)
 {
     Block result;
     for (size_t i = 0; i < block.columns(); ++i)
@@ -55,7 +60,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const StorageMetadataPtr & metadata_snapshot_,
     const VirtualsDescriptionPtr & virtual_columns_,
     const MergeTreeWriterSettings & settings_,
-    const MergeTreeIndexGranularity & index_granularity_)
+    MergeTreeIndexGranularityPtr index_granularity_)
     : data_part_name(data_part_name_)
     , serializations(serializations_)
     , index_granularity_info(index_granularity_info_)
@@ -66,12 +71,15 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     , settings(settings_)
     , with_final_mark(settings.can_use_adaptive_granularity)
     , data_part_storage(data_part_storage_)
-    , index_granularity(index_granularity_)
+    , index_granularity(std::move(index_granularity_))
 {
 }
 
-Columns IMergeTreeDataPartWriter::releaseIndexColumns()
+std::optional<Columns> IMergeTreeDataPartWriter::releaseIndexColumns()
 {
+    if (!settings.save_primary_index_in_memory)
+        return {};
+
     /// The memory for index was allocated without thread memory tracker.
     /// We need to deallocate it in shrinkToFit without memory tracker as well.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
@@ -87,6 +95,13 @@ Columns IMergeTreeDataPartWriter::releaseIndexColumns()
 
     index_columns.clear();
     return result;
+}
+
+PlainMarksByName IMergeTreeDataPartWriter::releaseCachedMarks()
+{
+    PlainMarksByName res;
+    std::swap(cached_marks, res);
+    return res;
 }
 
 SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & column_name) const
@@ -136,7 +151,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity);
+        MergeTreeIndexGranularityPtr computed_index_granularity);
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         const String & data_part_name_,
@@ -153,8 +168,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity);
-
+        MergeTreeIndexGranularityPtr computed_index_granularity);
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         MergeTreeDataPartType part_type,
@@ -173,18 +187,44 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity)
+        MergeTreeIndexGranularityPtr computed_index_granularity)
 {
     if (part_type == MergeTreeDataPartType::Compact)
-        return createMergeTreeDataPartCompactWriter(data_part_name_, logger_name_, serializations_, data_part_storage_,
-            index_granularity_info_, storage_settings_, columns_list, column_positions, metadata_snapshot, virtual_columns, indices_to_recalc, stats_to_recalc_,
-            marks_file_extension_, default_codec_, writer_settings, computed_index_granularity);
-    else if (part_type == MergeTreeDataPartType::Wide)
-        return createMergeTreeDataPartWideWriter(data_part_name_, logger_name_, serializations_, data_part_storage_,
-            index_granularity_info_, storage_settings_, columns_list, metadata_snapshot, virtual_columns, indices_to_recalc, stats_to_recalc_,
-            marks_file_extension_, default_codec_, writer_settings, computed_index_granularity);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type: {}", part_type.toString());
+        return createMergeTreeDataPartCompactWriter(
+            data_part_name_,
+            logger_name_,
+            serializations_,
+            data_part_storage_,
+            index_granularity_info_,
+            storage_settings_,
+            columns_list,
+            column_positions,
+            metadata_snapshot,
+            virtual_columns,
+            indices_to_recalc,
+            stats_to_recalc_,
+            marks_file_extension_,
+            default_codec_,
+            writer_settings,
+            std::move(computed_index_granularity));
+    if (part_type == MergeTreeDataPartType::Wide)
+        return createMergeTreeDataPartWideWriter(
+            data_part_name_,
+            logger_name_,
+            serializations_,
+            data_part_storage_,
+            index_granularity_info_,
+            storage_settings_,
+            columns_list,
+            metadata_snapshot,
+            virtual_columns,
+            indices_to_recalc,
+            stats_to_recalc_,
+            marks_file_extension_,
+            default_codec_,
+            writer_settings,
+            std::move(computed_index_granularity));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type: {}", part_type.toString());
 }
 
 }

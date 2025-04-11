@@ -25,14 +25,14 @@ public:
 
     String getName() const override { return "ArrowBlockInputFormat"; }
 
-    const BlockMissingValues & getMissingValues() const override;
+    const BlockMissingValues * getMissingValues() const override;
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 private:
     Chunk read() override;
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         is_stopped = 1;
     }

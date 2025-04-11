@@ -104,7 +104,7 @@ REGISTER_FUNCTION(JSONArrayLength)
         .description="Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid."});
 
     /// For Spark compatibility.
-    factory.registerAlias("JSON_ARRAY_LENGTH", "JSONArrayLength", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("JSON_ARRAY_LENGTH", "JSONArrayLength", FunctionFactory::Case::Insensitive);
 }
 
 }

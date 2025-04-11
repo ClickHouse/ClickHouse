@@ -12,6 +12,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_nlp_functions;
+}
+
 /// Functions for text classification with different result types
 
 namespace ErrorCodes
@@ -29,7 +34,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        if (!context->getSettingsRef().allow_experimental_nlp_functions)
+        if (!context->getSettingsRef()[Setting::allow_experimental_nlp_functions])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Natural language processing function '{}' is experimental. "
                             "Set `allow_experimental_nlp_functions` setting to enable it", name);
@@ -55,7 +60,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
         const ColumnString * col = checkAndGetColumn<ColumnString>(column.get());
@@ -65,7 +70,7 @@ public:
                 arguments[0].column->getName(), getName());
 
         auto col_res = ColumnString::create();
-        Impl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
+        Impl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), input_rows_count);
         return col_res;
     }
 };
@@ -78,7 +83,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        if (!context->getSettingsRef().allow_experimental_nlp_functions)
+        if (!context->getSettingsRef()[Setting::allow_experimental_nlp_functions])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Natural language processing function '{}' is experimental. "
                             "Set `allow_experimental_nlp_functions` setting to enable it", name);
@@ -104,7 +109,7 @@ public:
         return std::make_shared<DataTypeFloat32>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
         const ColumnString * col = checkAndGetColumn<ColumnString>(column.get());
@@ -115,9 +120,9 @@ public:
 
         auto col_res = ColumnVector<Float32>::create();
         ColumnVector<Float32>::Container & vec_res = col_res->getData();
-        vec_res.resize(col->size());
+        vec_res.resize(input_rows_count);
 
-        Impl::vector(col->getChars(), col->getOffsets(), vec_res);
+        Impl::vector(col->getChars(), col->getOffsets(), vec_res, input_rows_count);
         return col_res;
     }
 };

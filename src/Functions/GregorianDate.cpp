@@ -54,10 +54,9 @@ namespace
         const auto y_cast = static_cast<I>(y);
         if (x > 0 && y_cast < 0)
             return ((x - 1) / y_cast) - 1;
-        else if (x < 0 && y_cast > 0)
+        if (x < 0 && y_cast > 0)
             return ((x + 1) / y_cast) - 1;
-        else
-            return x / y_cast;
+        return x / y_cast;
     }
 
     /** Integer modulus, satisfying div(x, y)*y + mod(x, y) == x.
@@ -69,8 +68,7 @@ namespace
         const auto r = x % y_cast;
         if ((x > 0 && y_cast < 0) || (x < 0 && y_cast > 0))
             return r == 0 ? static_cast<I>(0) : r + y_cast;
-        else
-            return r;
+        return r;
     }
 
     /** Like std::min(), but the type of operands may differ.
@@ -87,10 +85,9 @@ namespace
         char c;
         if (!in.read(c))
             throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected a digit at the end of stream");
-        else if (c < '0' || c > '9')
+        if (c < '0' || c > '9')
             throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot read input: expected a digit but got something else");
-        else
-            return c - '0';
+        return c - '0';
     }
 
     inline bool tryReadDigit(ReadBuffer & in, char & c)
@@ -284,12 +281,12 @@ void OrdinalDate::init(int64_t modified_julian_day)
 
 bool OrdinalDate::tryInit(int64_t modified_julian_day)
 {
-    /// This function supports day number from -678941 to 2973119 (which represent 0000-01-01 and 9999-12-31 respectively).
+    /// This function supports day number from -678941 to 2973483 (which represent 0000-01-01 and 9999-12-31 respectively).
 
     if (modified_julian_day < -678941)
         return false;
 
-    if (modified_julian_day > 2973119)
+    if (modified_julian_day > 2973483)
         return false;
 
     const auto a         = modified_julian_day + 678575;

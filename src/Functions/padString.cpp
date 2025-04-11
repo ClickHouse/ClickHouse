@@ -192,6 +192,11 @@ namespace
             return std::make_shared<DataTypeString>();
         }
 
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        {
+            return std::make_shared<DataTypeString>();
+        }
+
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto column_string = arguments[0].column;
@@ -335,8 +340,8 @@ REGISTER_FUNCTION(PadString)
     factory.registerFunction<FunctionPadString<true, false>>();  /// rightPad
     factory.registerFunction<FunctionPadString<true, true>>();   /// rightPadUTF8
 
-    factory.registerAlias("lpad", "leftPad", FunctionFactory::CaseInsensitive);
-    factory.registerAlias("rpad", "rightPad", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("lpad", "leftPad", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("rpad", "rightPad", FunctionFactory::Case::Insensitive);
 }
 
 }

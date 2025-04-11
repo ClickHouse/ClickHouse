@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-fasttest
+# no-fasttest: Requires libraries
 
 set -e
 

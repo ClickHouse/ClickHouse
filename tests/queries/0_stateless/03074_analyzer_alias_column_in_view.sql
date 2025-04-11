@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/28687
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 create view alias (dummy int, n alias dummy) as select * from system.one;
 
 select n from alias;

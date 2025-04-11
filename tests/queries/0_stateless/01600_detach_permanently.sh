@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-fasttest
+# no-fasttest: It's a bit demanding
 
 # Creation of a database with Ordinary engine emits a warning.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
@@ -9,16 +10,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 ## tests with real clickhouse restart would be a bit to heavy,
-## to ensure the table will not reappear back clickhose-local is enough.
+## to ensure the table will not reappear back clickhouse-local is enough.
 
-WORKING_FOLDER_01600="${CLICKHOUSE_TMP}/01600_detach_permanently"
+WORKING_FOLDER_01600="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -rf "${WORKING_FOLDER_01600}"
 mkdir -p "${WORKING_FOLDER_01600}"
 
 clickhouse_local() {
     local query="$1"
     shift
-    ${CLICKHOUSE_LOCAL} --allow_deprecated_database_ordinary=1 --multiquery --query "$query" "$@" --path="${WORKING_FOLDER_01600}"
+    ${CLICKHOUSE_LOCAL} --allow_deprecated_database_ordinary=1 --query "$query" "$@" --path="${WORKING_FOLDER_01600}"
 }
 
 test_detach_attach_sequence() {
@@ -111,8 +112,8 @@ clickhouse_local "INSERT INTO db_ordinary.src SELECT * FROM numbers(10)"
 clickhouse_local "SELECT if(count() = 10, 'MV is working', 'MV failed') FROM db_ordinary.src_mv_with_inner"
 
 clickhouse_local "DETACH VIEW db_ordinary.src_mv_with_inner PERMANENTLY; INSERT INTO db_ordinary.src SELECT * FROM numbers(10)" --stacktrace
-clickhouse_local "SELECT if(count() = 10, 'MV can be detached permanently', 'MV detach failed') FROM db_ordinary.src_mv_with_inner SETTINGS allow_experimental_analyzer = 0" 2>&1 | grep -c "db_ordinary.src_mv_with_inner does not exist"
-clickhouse_local "SELECT if(count() = 10, 'MV can be detached permanently', 'MV detach failed') FROM db_ordinary.src_mv_with_inner SETTINGS allow_experimental_analyzer = 1" 2>&1 | grep -c "Unknown table expression identifier 'db_ordinary.src_mv_with_inner'"
+clickhouse_local "SELECT if(count() = 10, 'MV can be detached permanently', 'MV detach failed') FROM db_ordinary.src_mv_with_inner SETTINGS enable_analyzer = 0" 2>&1 | grep -c "db_ordinary.src_mv_with_inner does not exist"
+clickhouse_local "SELECT if(count() = 10, 'MV can be detached permanently', 'MV detach failed') FROM db_ordinary.src_mv_with_inner SETTINGS enable_analyzer = 1" 2>&1 | grep -c "Unknown table expression identifier 'db_ordinary.src_mv_with_inner'"
 
 ## Quite silly: ATTACH MATERIALIZED VIEW don't work with short syntax (w/o select), but i can attach it using ATTACH TABLE ...
 clickhouse_local "ATTACH TABLE db_ordinary.src_mv_with_inner"
