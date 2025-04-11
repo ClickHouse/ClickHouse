@@ -106,7 +106,6 @@ private:
 
     void startup() override;
     void shutdown(bool is_drop) override;
-    void drop() override;
 
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
     bool supportsSubcolumns() const override { return true; }
@@ -138,7 +137,8 @@ private:
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-        const std::string & exception_message = {}) const;
+        const std::string & exception_message = {},
+        int error_code = 0) const;
 };
 
 }

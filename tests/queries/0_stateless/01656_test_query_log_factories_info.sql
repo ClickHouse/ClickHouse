@@ -68,7 +68,7 @@ WHERE current_database = currentDatabase() AND type == 'QueryFinish' AND (query 
 ORDER BY query_start_time DESC LIMIT 1 FORMAT TabSeparatedWithNames;
 SELECT '';
 
-CREATE OR REPLACE TABLE test_query_log_factories_info1.memory_table (id BIGINT, date DATETIME) ENGINE=Memory();
+CREATE OR REPLACE TABLE test_query_log_factories_info1.memory_table (id BIGINT, date DATETIME, date2 DateTime) ENGINE=Memory();
 
 SYSTEM FLUSH LOGS query_log;
 SELECT arraySort(used_data_type_families), used_storages

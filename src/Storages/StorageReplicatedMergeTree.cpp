@@ -5656,6 +5656,9 @@ void StorageReplicatedMergeTree::shutdown(bool)
 
     LOG_TRACE(log, "Shutdown started");
 
+    if (refresh_parts_task)
+        refresh_parts_task->deactivate();
+
     flushAndPrepareForShutdown();
 
     if (!shutdown_deadline.has_value())
@@ -5950,6 +5953,10 @@ void StorageReplicatedMergeTree::assertNotStaticStorage() const
 
 SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
 {
+    /// We need to check it explicitly since someone may write to table explicitly (bypassing InterpreterInsertQuery, which has this check)
+    if (local_context->getCurrentTransaction())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} (table {}) does not support transactions", getName(), getStorageID().getNameForLogs());
+
     if (!initialization_done)
         throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
 
@@ -6028,7 +6035,8 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
                 SSHKey(), /*jwt*/"", node.quota_key, node.cluster, node.cluster_secret,
                 "ParallelInsertSelectInititiator",
                 node.compression,
-                node.secure
+                node.secure,
+                node.bind_host
             );
 
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
@@ -8029,7 +8037,6 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
         Int64 block_number = pair.second;
         getContext()->getMergeList().cancelPartMutations(getStorageID(), partition_id, block_number);
     }
-    mutation_backoff_policy.resetMutationFailures();
     return CancellationCode::CancelSent;
 }
 
@@ -9276,6 +9283,10 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         if (shutdown_called || partial_shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "Cannot drop part because shutdown called");
 
+        /// Ensure that the merge predicate will use the most recent state of the queue
+        /// (in particular the list of virtual parts).
+        queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);
+
         auto merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{part_info.partition_id});
 
         auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});
@@ -9543,6 +9554,10 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(
 
 std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
+    /// We want to throw and exit as soon as possible to allow part_check_thread to shutdown
+    if (shutdown_called || partial_shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Table shutdown was called");
+
     if (auto part = assert_cast<DataValidationTasks *>(check_task_list.get())->next())
     {
         try
@@ -9627,14 +9642,9 @@ MergeTreeData::MutationsSnapshotPtr StorageReplicatedMergeTree::getMutationsSnap
     return queue.getMutationsSnapshot(params);
 }
 
-UInt64 StorageReplicatedMergeTree::getNumberOnFlyDataMutations() const
+MutationCounters StorageReplicatedMergeTree::getMutationCounters() const
 {
-    return queue.getNumberOnFlyDataMutations();
-}
-
-UInt64 StorageReplicatedMergeTree::getNumberOnFlyMetadataMutations() const
-{
-    return queue.getNumberOnFlyMetadataMutations();
+    return queue.getMutationCounters();
 }
 
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()

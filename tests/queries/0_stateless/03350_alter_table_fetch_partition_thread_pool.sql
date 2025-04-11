@@ -1,6 +1,6 @@
 -- Tags: no-parallel, no-replicated-database, no-shared-merge-tree
 -- Tag: no-parallel - to avoid polluting FETCH PARTITION thread pool with other fetches
--- Tag: no-database-replicated - replica_path is different
+-- Tag: no-replicated-database - replica_path is different
 
 drop table if exists data1;
 drop table if exists data2;
