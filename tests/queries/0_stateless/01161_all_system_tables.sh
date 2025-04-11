@@ -16,6 +16,8 @@ LIMIT=10000
 
 function run_selects()
 {
+    local tables_arr
+
     thread_num=$1
     readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} -q "SELECT database || '.' || name FROM system.tables
     WHERE database in ('system', 'information_schema', 'INFORMATION_SCHEMA') and name != 'zookeeper' and name != 'models'
