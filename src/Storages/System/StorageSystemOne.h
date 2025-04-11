@@ -6,9 +6,6 @@
 namespace DB
 {
 
-class Context;
-
-
 /** Implements storage for the system table One.
   * The table contains a single column of dummy UInt8 and a single row with a value of 0.
   * Used when the table is not specified in the query.
@@ -29,6 +26,8 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
+
+    std::optional<UInt64> totalRows(ContextPtr) const override { return 1; }
 
     bool isSystemStorage() const override { return true; }
 

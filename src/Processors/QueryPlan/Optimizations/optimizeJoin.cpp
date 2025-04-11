@@ -7,8 +7,10 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Storages/StorageMemory.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Core/Settings.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -92,12 +94,28 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filt
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_diplay_name};
     }
 
+    if (const auto * reading = typeid_cast<const ReadFromSystemNumbersStep *>(step))
+    {
+        UInt64 estimated_rows = reading->getNumberOfRows();
+        return RelationStats{.estimated_rows = estimated_rows, .table_name = ""};
+    }
+
     if (node.children.size() != 1)
         return {};
 
-    if (typeid_cast<ExpressionStep *>(step))
+    if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
+    {
+        auto estimated = estimateReadRowsCount(*node.children.front(), has_filter);
+        auto limit = limit_step->getLimit();
+        if (estimated.estimated_rows == 0 || estimated.estimated_rows > limit)
+            estimated.estimated_rows = limit;
+        return estimated;
+    }
+
+    if (typeid_cast<const ExpressionStep *>(step))
         return estimateReadRowsCount(*node.children.front(), has_filter);
-    if (typeid_cast<FilterStep *>(step))
+
+    if (typeid_cast<const FilterStep *>(step))
         return estimateReadRowsCount(*node.children.front(), true);
 
     return {};

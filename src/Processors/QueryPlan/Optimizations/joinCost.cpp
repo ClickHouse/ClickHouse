@@ -12,28 +12,22 @@ size_t estimateJoinCardinality(
     double selectivity,
     JoinKind join_kind)
 {
-    // Basic cardinality estimation for different join types
-    double joined_rows = left->estimated_rows * right->estimated_rows * selectivity;
+    double joined_rows = std::max(left->estimated_rows * right->estimated_rows * selectivity, 1.0);
 
     switch (join_kind)
     {
         case JoinKind::Inner:
+            [[fallthrough]];
+        case JoinKind::Comma:
+            [[fallthrough]];
         case JoinKind::Cross:
             return static_cast<size_t>(joined_rows);
-
         case JoinKind::Left:
-            // For LEFT JOIN, we have at least as many rows as the left side
-            return static_cast<size_t>(std::max(joined_rows, static_cast<double>(left->estimated_rows)));
-
+            return static_cast<size_t>(std::max<double>(joined_rows, left->estimated_rows));
         case JoinKind::Right:
-            // For RIGHT JOIN, we have at least as many rows as the right side
-            return static_cast<size_t>(std::max(joined_rows, static_cast<double>(right->estimated_rows)));
-
+            return static_cast<size_t>(std::max<double>(joined_rows, right->estimated_rows));
         case JoinKind::Full:
-            // For FULL JOIN, we have at least as many rows as both sides combined
-            return static_cast<size_t>(std::max(joined_rows,
-                    static_cast<double>(left->estimated_rows + right->estimated_rows)));
-
+            return static_cast<size_t>(std::max<double>(joined_rows, left->estimated_rows + right->estimated_rows));
         default:
             return static_cast<size_t>(joined_rows);
     }
@@ -55,7 +49,7 @@ double estimateJoinSelectivity(
     UNUSED(join_operator);
     UNUSED(relation_stats);
     /// TODO
-    return 0.8;
+    return 0.1;
 }
 
 }

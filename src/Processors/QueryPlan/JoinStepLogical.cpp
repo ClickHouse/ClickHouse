@@ -283,7 +283,7 @@ void describeJoinNode(ActionsDescrtiptionBuilder<ResultType> builder, const DPJo
     }
     if (node->join_operator)
     {
-        builder.add("NodeType", fmt::format("{} rows={} cost={}", node->join_method, node->estimated_rows, node->cost));
+        builder.add("NodeType", fmt::format("{} rows={} cost={:.3f}", node->join_method, node->estimated_rows, node->cost));
         const auto & join_info = *node->join_operator;
 
         if (join_info.strictness != JoinStrictness::All)
@@ -922,28 +922,28 @@ void appendRequiredOutputsToActions(JoinActionRef & post_filter, const ActionsTr
     dags.post_join_actions->removeUnusedActions();
 }
 
-template <typename F>
-void forEachJoinAction(JoinCondition & join_condition, F && f)
-{
-    for (auto & pred : join_condition.predicates)
-    {
-        f(pred.left_node);
-        f(pred.right_node);
-    }
-
-    for (auto & node : join_condition.restrict_conditions)
-    {
-        f(node);
-    }
-}
 
 
 template <typename F>
-void forEachJoinAction(JoinExpression & join_expression, F && f)
+void forEachJoinAction(auto && join_expression, F && f)
 {
-    forEachJoinAction(join_expression.condition, f);
-    for (auto & join_condition : join_expression.disjunctive_conditions)
-        forEachJoinAction(join_condition, f);
+    auto forEachCondition = [&](auto && join_condition)
+    {
+        for (auto && pred : join_condition.predicates)
+        {
+            f(pred.left_node);
+            f(pred.right_node);
+        }
+
+        for (auto && node : join_condition.restrict_conditions)
+        {
+            f(node);
+        }
+    };
+
+    forEachCondition(join_expression.condition);
+    for (auto && join_condition : join_expression.disjunctive_conditions)
+        forEachCondition(join_condition);
 }
 
 void projectMissingInpus(ActionsDAG & actions_dag)
@@ -963,19 +963,12 @@ void cloneExpressionActions(const std::vector<JoinActionRef *> & actions, Action
     auto out_nodes_set = std::ranges::to<std::unordered_set>(actions | std::views::transform([](const auto & action) { return action->getNode(); }));
     ActionsDAG::NodeRawConstPtrs out_nodes(out_nodes_set.begin(), out_nodes_set.end());
 
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: dag>\n{}", __FILE__, __LINE__, actions_dag->dumpDAG());
     auto second_dag = ActionsDAG::cloneSubDAG(out_nodes, true);
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: dag+\n{}", __FILE__, __LINE__, second_dag.dumpDAG());
-
     // *actions_dag = ActionsDAG::merge(std::move(*actions_dag), std::move(second_dag));
     actions_dag->mergeInplace(std::move(second_dag));
     actions_dag->removeUnusedActions(false);
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: dag={}\n{}", __FILE__, __LINE__,
-        fmt::join(actions_dag->getInputs() | std::views::transform([](const auto & x) { return fmt::ptr(x); }), ", "),
-        actions_dag->dumpDAG());
 
     projectMissingInpus(*actions_dag);
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: dag==\n{}", __FILE__, __LINE__, actions_dag->dumpDAG());
 
     for (auto & action : actions)
         action->setActions(actions_dag);
@@ -1069,9 +1062,6 @@ static void buildPhysicalJoinNode(
         .right_pre_join_actions = right_pre_join_actions,
         .post_join_actions = post_join_actions,
     };
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: post_join_actions:\n {}", __FILE__, __LINE__, actions.post_join_actions->dumpDAG());
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: left_pre_join_actions:\n {}", __FILE__, __LINE__, actions.left_pre_join_actions->dumpDAG());
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: right_pre_join_actions:\n {}", __FILE__, __LINE__, actions.right_pre_join_actions->dumpDAG());
 
     auto & join_expression = join_info.expression;
 
@@ -1250,10 +1240,6 @@ static void buildPhysicalJoinNode(
         join_context.hash_table_key_hash);
 
     result_node.join_strategy = join_algorithm_ptr;
-
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: post_join_actions:\n {}", __FILE__, __LINE__, actions.post_join_actions->dumpDAG());
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: left_pre_join_actions:\n {}", __FILE__, __LINE__, actions.left_pre_join_actions->dumpDAG());
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: right_pre_join_actions:\n {}", __FILE__, __LINE__, actions.right_pre_join_actions->dumpDAG());
 }
 
 static void addSortingForMergeJoin(
@@ -1365,6 +1351,33 @@ static QueryPlan::Node * buildPhysicalPlan(
     const NameSet & required_output_columns,
     const std::vector<UInt64> & hash_table_key_hashes)
 {
+    std::vector<NameSet> required_output_columns_sets;
+    required_output_columns_sets.reserve(join_order.size());
+    required_output_columns_sets.push_back(required_output_columns);
+
+    for (const auto & dp_node : std::ranges::views::reverse(join_order))
+    {
+        if (dp_node->isLeaf())
+            continue;
+
+        const auto & previous_required_names = required_output_columns_sets.back();
+        auto & current_required_names = required_output_columns_sets.emplace_back();
+        current_required_names = previous_required_names;
+
+        std::unordered_map<const ActionsDAG * , ActionsDAG::NodeRawConstPtrs> used_expressions;
+        forEachJoinAction(dp_node->join_operator->expression, [&](const JoinActionRef & action)
+        {
+            const auto * actions = action.getActions();
+            used_expressions[actions].push_back(action.getNode());
+        });
+
+        for (const auto & [actions, used_nodes] : used_expressions)
+        {
+            for (const auto * node : actions->getRequiredInputs(used_nodes))
+                current_required_names.insert(node->result_name);
+        }
+    }
+
     std::stack<QueryPlan::Node *> nodeStack;
     for (const auto & dp_node : join_order)
     {
@@ -1404,6 +1417,9 @@ static QueryPlan::Node * buildPhysicalPlan(
             auto joined_expression_header = concatHeaders(left_rels | right_rels, use_nulls_mask, input_headers);
             physical_node.post_join_actions = std::make_unique<ActionsDAG>(joined_expression_header);
 
+            if (required_output_columns_sets.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: required_output_columns_sets.empty()");
+
             buildPhysicalJoinNode(
                 left_rels,
                 right_rels,
@@ -1413,9 +1429,11 @@ static QueryPlan::Node * buildPhysicalPlan(
                 join_settings,
                 prepared_join_storage,
                 use_nulls,
-                required_output_columns,
+                required_output_columns_sets.back(),
                 hash_table_key_hashes);
 
+            // FIXME: use required set from corresponding level to drop unused columns earlier
+            // required_output_columns_sets.pop_back();
 
             auto join_ptr = physical_node.join_strategy;
             auto * new_join_node = &nodes.emplace_back();
@@ -1474,7 +1492,7 @@ static QueryPlan::Node * buildPhysicalPlan(
         }
         else
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have either input or join_strategy");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join node should be input or have join operator");
         }
     }
 
@@ -1561,13 +1579,6 @@ bool JoinStepLogical::hasPreparedJoinStorage() const
 
 bool JoinStepLogical::canFlatten() const
 {
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {}", __FILE__, __LINE__, bool(join_operators.at(0).strictness != JoinStrictness::All));
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {}", __FILE__, __LINE__, bool(join_operators.at(0).kind == JoinKind::Paste));
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {}", __FILE__, __LINE__, bool(prepared_join_storage));
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {}", __FILE__, __LINE__, bool(getNumberOfTables() >= BaseRelsSet().size()));
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {}", __FILE__, __LINE__, bool(join_operators.at(0).expression.is_using));
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {}", __FILE__, __LINE__, bool(use_nulls));
-
     bool forbid_flatten = join_operators.at(0).strictness != JoinStrictness::All
         || join_operators.at(0).kind == JoinKind::Paste
         || prepared_join_storage
@@ -1577,13 +1588,21 @@ bool JoinStepLogical::canFlatten() const
     return !forbid_flatten;
 }
 
-void JoinStepLogical::setRelationStats(RelationStats, size_t index)
+static String toString(const RelationStats & stats)
+{
+    if (stats.estimated_rows == 0)
+        return "unknown";
+    return fmt::format("rows: {}", stats.estimated_rows);
+}
+
+void JoinStepLogical::setRelationStats(RelationStats new_stats, size_t index)
 {
     if (index >= getNumberOfTables())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index out of bounds");
     if (index >= relation_stats.size())
         relation_stats.resize(index + 1);
-    relation_stats[index] = std::move(relation_stats[index]);
+    relation_stats[index] = std::move(new_stats);
+    LOG_TRACE(log, "Estimated stats for relation {}: {}", index, toString(relation_stats[index]));
 }
 
 std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, String & filter_column_name)

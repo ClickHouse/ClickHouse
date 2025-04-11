@@ -633,4 +633,38 @@ void ReadFromSystemNumbersStep::checkLimits(size_t rows)
     }
 }
 
+const StorageSystemNumbers & ReadFromSystemNumbersStep::getStorage() const
+{
+    const auto * numbers_storage = storage->as<StorageSystemNumbers>();
+    if (!numbers_storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage is not StorageSystemNumbers");
+    return *numbers_storage;
+}
+
+UInt64 ReadFromSystemNumbersStep::getNumberOfRows() const
+{
+    const auto & numbers_storage = getStorage();
+
+    UInt64 estimated_rows = 0;
+
+    if (numbers_storage.limit.has_value())
+    {
+        estimated_rows = itemCountInRange(
+            numbers_storage.offset,
+            numbers_storage.offset + numbers_storage.limit.value(),
+            numbers_storage.step);
+    }
+
+    auto [limit_length, limit_offset] = limit_length_and_offset;
+    if (should_pushdown_limit && limit_length > 0)
+    {
+        UInt64 query_limit = limit_length + limit_offset;
+        if (estimated_rows == 0 || query_limit < estimated_rows)
+            estimated_rows = query_limit;
+    }
+
+    return estimated_rows;
+}
+
+
 }

@@ -70,7 +70,7 @@ private:
     std::shared_ptr<DPJoinEntry> solveDP();
     std::shared_ptr<DPJoinEntry> solveGreedy();
 
-    bool isValidJoinOrder(const BaseRelsSet & lhs, const BaseRelsSet & rhs) const;
+    std::optional<JoinKind> isValidJoinOrder(const BaseRelsSet & lhs, const BaseRelsSet & rhs) const;
 
     constexpr static auto APPLY_DP_THRESHOLD = 10;
 
@@ -78,8 +78,8 @@ private:
     std::vector<RelationStats> relation_stats;
     std::vector<JoinEdge> join_edges;
 
-    // Dependencies that must be respected (e.g., LEFT JOIN constraints)
-    std::vector<std::pair<BaseRelsSet, BaseRelsSet>> dependencies;
+    /// OUTER JOIN constraints
+    std::vector<std::tuple<BaseRelsSet, BaseRelsSet, JoinKind>> dependencies;
 
     std::unordered_map<BaseRelsSet, std::shared_ptr<DPJoinEntry>> memo;
 
@@ -113,6 +113,22 @@ void forEachJoinAction(const JoinExpression & join_expression, F && f)
 static auto bitsetToPositions(BaseRelsSet s)
 {
     return std::views::iota(0u, s.size()) | std::views::filter([=](size_t i) { return s.test(i); });
+}
+
+static JoinKind flipJoinKind(JoinKind kind)
+{
+    switch (kind)
+    {
+        case JoinKind::Left:
+            return JoinKind::Right;
+        case JoinKind::Right:
+            return JoinKind::Left;
+        case JoinKind::Inner: [[ fallthrough ]];
+        case JoinKind::Full:
+            return kind;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported join kind: {}", toString(kind));
+    }
 }
 
 std::pair<BaseRelsSet, BaseRelsSet> extractRelations(const JoinOperator & join_op, BaseRelsSet lsuper, BaseRelsSet rsuper)
@@ -150,14 +166,9 @@ JoinOrderOptimizer::JoinOrderOptimizer(const JoinStepLogical & join_step)
 {
     // Initialize relation statistics
     size_t num_tables = original_join_step.getNumberOfTables();
-    relation_stats.reserve(num_tables);
-
-    for (size_t i = 0; i < num_tables; ++i)
-    {
-        RelationStats stats;
-        stats.estimated_rows = 1000; // FIXME Default estimation, should be improved
-        relation_stats.push_back(std::move(stats));
-    }
+    relation_stats = original_join_step.getRelationStats();
+    if (relation_stats.size() < num_tables)
+        relation_stats.resize(num_tables);
 
     buildQueryGraph();
 }
@@ -182,9 +193,9 @@ void JoinOrderOptimizer::buildQueryGraph()
 
         /// Non-reorderable joins
         if (isLeftOrFull(join_op.kind))
-            dependencies.emplace_back(right_side, left_side);
+            dependencies.emplace_back(right_side, left_side, join_op.kind);
         if (isRightOrFull(join_op.kind))
-            dependencies.emplace_back(left_side, right_side);
+            dependencies.emplace_back(left_side, right_side, flipJoinKind(join_op.kind));
 
         auto [extracted_left, extracted_right] = extractRelations(join_op, left_side, right_side);
 
@@ -195,11 +206,6 @@ void JoinOrderOptimizer::buildQueryGraph()
 
         join_edges.push_back(std::move(edge));
     }
-
-    for (auto dep : dependencies)
-    {
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {} depends on {}", __FILE__, __LINE__, bitsetToPositions(dep.first), bitsetToPositions(dep.second));
-    }
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
@@ -209,10 +215,18 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 
     std::shared_ptr<DPJoinEntry> best_plan;
     if (relation_stats.size() <= APPLY_DP_THRESHOLD)
+    {
+        LOG_TRACE(log, "Solving join order using dynamic programming");
         best_plan = solveDP();
+        if (!best_plan)
+            LOG_TRACE(log, "Dynamic programming failed to find a valid join order");
+    }
 
     if (!best_plan)
+    {
+        LOG_TRACE(log, "Solving join order using greedy algorithm");
         best_plan = solveGreedy();
+    }
 
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
@@ -222,15 +236,12 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDP()
 {
-    LOG_TRACE(log, "Solving join order using dynamic programming");
     // This is a placeholder that will be properly implemented later
     return nullptr;
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 {
-    LOG_TRACE(log, "Solving join order using greedy algorithm");
-
     std::vector<std::shared_ptr<DPJoinEntry>> components;
     for (size_t i = 0; i < relation_stats.size(); ++i)
     {
@@ -253,30 +264,24 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                 auto left = components[i];
                 auto right = components[j];
 
-                LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: trying {} {}", __FILE__, __LINE__, bitsetToPositions(left->relations), bitsetToPositions(right->relations));
-
-                if (!isValidJoinOrder(left->relations, right->relations))
-                {
-                    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: non valid", __FILE__, __LINE__);
+                auto join_kind_restrction = isValidJoinOrder(left->relations, right->relations);
+                if (!join_kind_restrction)
                     continue;
-                }
 
                 for (auto edge : join_edges)
                 {
-                    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: edge {} {}", __FILE__, __LINE__,
-                        bitsetToPositions(edge.left_rels), bitsetToPositions(edge.right_rels));
-
                     bool connects_left_to_right = (left->relations & edge.left_rels).any() && (right->relations & edge.right_rels).any();
                     bool connects_right_to_left = (left->relations & edge.right_rels).any() && (right->relations & edge.left_rels).any();
 
                     if (!connects_left_to_right && !connects_right_to_left)
-                    {
-                        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: non connectable", __FILE__, __LINE__);
                         continue;
-                    }
+
+                    if ((connects_left_to_right && join_kind_restrction != edge.join_operator->kind)
+                     || (connects_right_to_left && join_kind_restrction != flipJoinKind(edge.join_operator->kind)))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Join order is not valid, expected {} but got {}", toString(join_kind_restrction.value()), toString(edge.join_operator->kind));
 
                     auto current_cost = computeJoinCost(left, right, edge.selectivity);
-                    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: current cost {}", __FILE__, __LINE__, current_cost);
                     if (!best_plan || current_cost < best_plan->cost)
                     {
                         if (connects_right_to_left)
@@ -335,22 +340,26 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     return components.at(0);
 }
 
-bool JoinOrderOptimizer::isValidJoinOrder(const BaseRelsSet & lhs, const BaseRelsSet & rhs) const
+std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BaseRelsSet & lhs, const BaseRelsSet & rhs) const
 {
-    /// second depends on first
-    for (const auto & [first, second] : dependencies)
-    {
-        auto joined_relations = lhs | rhs;
-        /// If all relations fall into one side, we can reored freely
-        if (isSubsetOf(joined_relations, first) || isSubsetOf(joined_relations, second) || isSubsetOf(first | second, lhs) || isSubsetOf(first | second, rhs))
-            continue;
-        if ((rhs & second).any() && !((lhs & first).any() && isSubsetOf(rhs, second)))
-            return false;
-        if ((lhs & second).any() && !((rhs & first).any() && isSubsetOf(lhs, second)))
-            return false;
-    }
+    JoinKind join_type = JoinKind::Inner;
 
-    return true;
+    for (const auto & [first, second, join_type_bound] : dependencies)
+    {
+        if (lhs == first)
+            join_type = flipJoinKind(join_type_bound);
+        if (rhs == first)
+            join_type = join_type_bound;
+
+        auto check = [&](auto a, auto b)
+        {
+            return ((a & first).none() || (a == first && (b & second).any()) || (a & second).any() || isSubsetOf(b, first));
+        };
+
+        if (!check(lhs, rhs) || !check(rhs, lhs))
+            return {};
+    }
+    return join_type;
 }
 
 DPJoinEntryPtr optimizeJoinOrder(const JoinStepLogical & join_step)

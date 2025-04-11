@@ -36,4 +36,9 @@ ReadFromStorageStep::ReadFromStorageStep(
         processor->setStorageLimits(query_info.storage_limits);
 }
 
+std::optional<UInt64> ReadFromStorageStep::totalRows() const
+{
+    return storage->totalRows(context);
+}
+
 }

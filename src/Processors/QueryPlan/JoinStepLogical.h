@@ -115,7 +115,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cloning of expression actions is not implemented");
     }
 
-    void setRelationStats(RelationStats, size_t index);
+    void setRelationStats(RelationStats new_stats, size_t index);
+    const std::vector<RelationStats> & getRelationStats() const { return relation_stats; }
 
 protected:
     void updateOutputHeader() override;

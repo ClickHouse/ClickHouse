@@ -1406,7 +1406,7 @@ void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression, cons
 #endif
 
 /// Returns the list of inputs required to compute the target node.
-ActionsDAG::NodeRawConstPtrs ActionsDAG::getRequiredInputs(const Node * target_node) const
+ActionsDAG::NodeRawConstPtrs ActionsDAG::getRequiredInputs(const ActionsDAG::NodeRawConstPtrs & target_nodes) const
 {
     std::unordered_map<const Node *, bool> input_map;
     for (const auto * input : inputs)
@@ -1415,7 +1415,9 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::getRequiredInputs(const Node * target_n
     std::unordered_set<const Node *> visited_nodes;
     std::stack<const Node *> stack;
 
-    stack.push(target_node);
+    for (const auto * target_node : target_nodes)
+        stack.push(target_node);
+
     while (!stack.empty())
     {
         const auto * node = stack.top();

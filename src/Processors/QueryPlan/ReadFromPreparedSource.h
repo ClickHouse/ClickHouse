@@ -30,6 +30,8 @@ public:
 
     const StoragePtr & getStorage() const { return storage; }
 
+    std::optional<UInt64> totalRows() const;
+
 private:
     StoragePtr storage;
 

@@ -451,7 +451,7 @@ public:
     void updateHash(SipHash & hash_state) const;
 
     /// Returns the list of inputs required to compute the target node.
-    NodeRawConstPtrs getRequiredInputs(const Node * target_node) const;
+    NodeRawConstPtrs getRequiredInputs(const NodeRawConstPtrs & target_node) const;
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;

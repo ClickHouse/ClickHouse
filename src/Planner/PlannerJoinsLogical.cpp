@@ -502,7 +502,6 @@ JoinTreeQueryPlan buildJoinStepLogical(
     JoinStepLogical * join_step = root_node ? typeid_cast<JoinStepLogical *>(root_node->step.get()) : nullptr;
 
     bool can_flatten = join_step && join_step->canFlatten();
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {} {}", __FILE__, __LINE__, can_flatten, join_node.formatASTForErrorMessage());
     if (!can_flatten)
         join_step = nullptr;
 
@@ -535,6 +534,7 @@ JoinTreeQueryPlan buildJoinStepLogical(
     auto prepared_storage = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
     join_step->setPreparedJoinStorage(std::move(prepared_storage));
 
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: RIGHT TABLE {}", __FILE__, __LINE__, join_node.getRightTableExpression()->formatASTForErrorMessage());
     for (const auto * table_expression : extractTableExpressionsSet(join_node.getRightTableExpression()))
         table_expression_to_join_input_mapping.emplace(table_expression, join_step->getNumberOfTables() - 1);
 
