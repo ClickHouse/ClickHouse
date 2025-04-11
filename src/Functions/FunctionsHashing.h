@@ -1179,6 +1179,18 @@ private:
                         key = Impl::getKey(key_cols, i);
                 ColumnArray::Offset next_offset = offsets[i];
 
+                /// There are two bugs here, affecting hashes of empty arrays:
+                ///  1. If ToType is UInt128, we produce a 32-bit hash,
+                ///  2. `hash` doesn't depend on key.
+                ///
+                /// SELECT reinterpret(sipHash128Keyed((number, number), []), 'UInt128') FROM numbers(2)
+                ///
+                ///    ┌─reinterpret(⋯ 'UInt128')─┐
+                /// 1. │               4249604106 │
+                /// 2. │               4249604106 │
+                ///    └──────────────────────────┘
+                ///
+                /// There's no way to fix this without breaking compatibility.
                 ToType hash;
                 if constexpr (std::is_same_v<ToType, UInt64>)
                     hash = IntHash64Impl::apply(next_offset - current_offset);
