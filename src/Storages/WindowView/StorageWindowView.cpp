@@ -499,8 +499,6 @@ void StorageWindowView::alter(
     create_interpreter.setInternal(true);
     create_interpreter.execute();
 
-    DatabaseCatalog::instance().addViewDependency(select_table_id, table_id);
-
     shutdown_called = false;
 
     clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
@@ -1702,8 +1700,6 @@ void StorageWindowView::startup()
 {
     if (disabled_due_to_analyzer)
         return;
-
-    DatabaseCatalog::instance().addViewDependency(select_table_id, getStorageID());
 
     fire_task->activate();
     clean_cache_task->activate();

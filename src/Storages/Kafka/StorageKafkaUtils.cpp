@@ -498,7 +498,6 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
     return result;
 }
 
-
 bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
 {
     // Check if all dependencies are attached
@@ -525,7 +524,6 @@ bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
 
     return true;
 }
-
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
