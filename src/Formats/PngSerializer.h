@@ -31,17 +31,12 @@ public:
 
     void finalizeWrite(size_t width, size_t height);
 
-    size_t getRowCount() const ;
+    size_t getRowCount() const;
 
     void reset();
 
-    static std::unique_ptr<PngSerializer> create(
-        const DataTypes & data_types,
-        size_t width,
-        size_t height,
-        PngPixelFormat pixel_format,
-        PngWriter & writer,
-        int bit_depth);
+    static std::unique_ptr<PngSerializer>
+    create(const DataTypes & data_types, size_t width, size_t height, PngPixelFormat pixel_format, PngWriter & writer, int bit_depth);
 
 protected:
     class SerializerImpl;

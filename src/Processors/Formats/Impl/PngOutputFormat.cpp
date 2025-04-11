@@ -5,9 +5,9 @@
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/PngWriter.h>
 #include <Interpreters/ProcessList.h>
 #include <Common/Exception.h>
-#include <Formats/PngWriter.h>
 #include "PngOutputFormat.h"
 
 #include <absl/strings/match.h>
@@ -39,13 +39,11 @@ struct FormatNameMapping
     bool force_8bit = false;
 };
 
-constexpr std::array<FormatNameMapping, 4> format_mappings =
-{{
-    {"BINARY", PngPixelFormat::BINARY, PNG_COLOR_TYPE_GRAY, 1, /* force_8bit */ true},
-    {"GRAYSCALE", PngPixelFormat::GRAYSCALE, PNG_COLOR_TYPE_GRAY, 1},
-    {"RGB", PngPixelFormat::RGB, PNG_COLOR_TYPE_RGB, 3},
-    {"RGBA", PngPixelFormat::RGBA, PNG_COLOR_TYPE_RGBA, 4}
-}};
+constexpr std::array<FormatNameMapping, 4> format_mappings
+    = {{{"BINARY", PngPixelFormat::BINARY, PNG_COLOR_TYPE_GRAY, 1, /* force_8bit */ true},
+        {"GRAYSCALE", PngPixelFormat::GRAYSCALE, PNG_COLOR_TYPE_GRAY, 1},
+        {"RGB", PngPixelFormat::RGB, PNG_COLOR_TYPE_RGB, 3},
+        {"RGBA", PngPixelFormat::RGBA, PNG_COLOR_TYPE_RGBA, 4}}};
 
 const FormatNameMapping & lookupFormat(const String & mode_str)
 {
@@ -56,16 +54,18 @@ const FormatNameMapping & lookupFormat(const String & mode_str)
             return mapping;
     }
 
-    throw Exception(ErrorCodes::UNKNOWN_FORMAT,
+    throw Exception(
+        ErrorCodes::UNKNOWN_FORMAT,
         "Invalid pixel mode: '{}'. \
-        Supported modes are BINARY, GRAYSCALE, RGB, RGBA (case-insensitive)", mode_str);
+        Supported modes are BINARY, GRAYSCALE, RGB, RGBA (case-insensitive)",
+        mode_str);
 }
 }
 
 PngOutputFormat::PngOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
-    : IOutputFormat(header_, out_), 
-    format_settings{settings_}, 
-    serializations(header_.getSerializations())
+    : IOutputFormat(header_, out_)
+    , format_settings{settings_}
+    , serializations(header_.getSerializations())
 {
     const auto & mapping = lookupFormat(format_settings.png_image.pixel_output_format);
 
@@ -75,9 +75,9 @@ PngOutputFormat::PngOutputFormat(WriteBuffer & out_, const Block & header_, cons
 
     int requested_bit_depth = format_settings.png_image.bit_depth;
     int bit_depth = mapping.force_8bit ? 8 : requested_bit_depth;
-    
+
     if (bit_depth != 8 && bit_depth != 16)
-         throw Exception(ErrorCodes::LOGICAL_ERROR, "Currently supported only 8 or 16 bit depth, got {}", bit_depth);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Currently supported only 8 or 16 bit depth, got {}", bit_depth);
 
     if (mapping.force_8bit && requested_bit_depth != 8) [[unlikely]]
     {
@@ -89,16 +89,10 @@ PngOutputFormat::PngOutputFormat(WriteBuffer & out_, const Block & header_, cons
     max_height = format_settings.png_image.max_height;
 
     auto compression_level = format_settings.png_image.compression_level;
-    
+
     writer = std::make_unique<PngWriter>(out_, bit_depth, png_color_type, compression_level);
 
-    png_serializer = PngSerializer::create(data_types, 
-        max_width, 
-        max_height, 
-        output_format, 
-        *writer,
-        bit_depth
-    );
+    png_serializer = PngSerializer::create(data_types, max_width, max_height, output_format, *writer, bit_depth);
 }
 
 void PngOutputFormat::writePrefix()
@@ -120,10 +114,7 @@ void PngOutputFormat::consume(Chunk chunk)
     for (const auto & c : cols)
         column_ptrs.push_back(c);
 
-    png_serializer->setColumns(
-        column_ptrs.data(), 
-        column_ptrs.size()
-    );
+    png_serializer->setColumns(column_ptrs.data(), column_ptrs.size());
 
     for (size_t i = 0; i < num_rows; ++i)
     {
@@ -135,30 +126,30 @@ void PngOutputFormat::writeSuffix()
 {
     size_t total_row = png_serializer->getRowCount();
 
-    if (total_row > max_height * max_width) 
+    if (total_row > max_height * max_width)
     {
-        throw Exception(ErrorCodes::TOO_MANY_ROWS, "The number of pixels ({}) exceeds the maximum allowed resolution ({}x{} = {}). "
-            "Adjust your query or the maximum allowed resolution in settings", total_row, max_width, max_height, max_width * max_height);
+        throw Exception(
+            ErrorCodes::TOO_MANY_ROWS,
+            "The number of pixels ({}) exceeds the maximum allowed resolution ({}x{} = {}). "
+            "Adjust your query or the maximum allowed resolution in settings",
+            total_row,
+            max_width,
+            max_height,
+            max_width * max_height);
     }
-    
-    size_t ideal_width = static_cast<size_t>(std::floor(
-        std::sqrt(static_cast<double>(total_row)))
-    );
-    size_t final_width = std::clamp(
-        ideal_width, 
-        static_cast<size_t>(1), 
-        max_width
-    );
 
-    size_t final_height = std::min(
-        max_height, 
-        (total_row + final_width - 1) / final_width
-    );
-    try {
+    size_t ideal_width = static_cast<size_t>(std::floor(std::sqrt(static_cast<double>(total_row))));
+    size_t final_width = std::clamp(ideal_width, static_cast<size_t>(1), max_width);
+
+    size_t final_height = std::min(max_height, (total_row + final_width - 1) / final_width);
+    try
+    {
         png_serializer->finalizeWrite(final_width, final_height);
-    } catch ([[maybe_unused]] const Poco::Exception & e) { 
+    }
+    catch ([[maybe_unused]] const Poco::Exception & e)
+    {
         // LOG_ERROR(getLogger("PngOutputFormat"), "Failed to write png image: {}", e.what());
-        throw ;
+        throw;
     }
 }
 

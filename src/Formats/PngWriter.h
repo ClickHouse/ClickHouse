@@ -72,10 +72,10 @@ private:
     int bit_depth;
     int color_type;
     int compression_level;
-    
+
     size_t width = 0;
     size_t height = 0;
-    
+
     std::unique_ptr<PngStructWrapper> png_resource;
 
     LoggerPtr log;

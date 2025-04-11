@@ -3,8 +3,8 @@
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/PngSerializer.h>
-#include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Chunk.h>
+#include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Port.h>
 
 #include "base/types.h"
@@ -30,7 +30,7 @@ private:
 
     size_t max_width;
     size_t max_height;
-    
+
     FormatSettings format_settings;
     Serializations serializations;
     std::unique_ptr<PngWriter> writer;
