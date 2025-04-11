@@ -59,6 +59,7 @@ def test_table_rotation(start_cluster):
 
     assert int(node1.query("select count() from system.metric_log").strip()) > 0
     assert "metric" in node1.query("SHOW CREATE TABLE system.metric_log")
+    assert "ORDER BY (event_date, event_time)" in node1.query("SHOW CREATE TABLE system.metric_log")
 
     assert int(node1.query("select countDistinct(metric) from system.metric_log").strip()) > 1000
 
@@ -85,6 +86,8 @@ def test_table_rotation(start_cluster):
     assert int(node1.query("select count() from system.transposed_metric_log").strip()) > 0
 
     assert "metric" in node1.query("SHOW CREATE TABLE system.transposed_metric_log")
+    # ignores specified ORDER BY
+    assert "ORDER BY (event_date, toStartOfHour(event_time), metric)" in node1.query("SHOW CREATE TABLE system.transposed_metric_log")
     assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log")
 
     in_old_metric_log_again = int(node1.query("select count() from system.metric_log_0").strip())
@@ -116,6 +119,45 @@ def test_table_rotation(start_cluster):
     assert int(node1.query("select count() from system.transposed_metric_log").strip()) == transposed_counter
 
     assert int(node1.query("EXISTS TABLE system.metric_log_2").strip()) == 0
+
+    # now complex trick, let's test that views work for multiple transposed tables
+    node1.query("CREATE TABLE system.transposed_metric_log_0 as system.transposed_metric_log")
+    node1.query("INSERT INTO system.transposed_metric_log_0 SELECT * FROM system.transposed_metric_log")
+    node1.query("CREATE TABLE system.transposed_metric_log_1 as system.transposed_metric_log")
+    node1.query("INSERT INTO system.transposed_metric_log_1 SELECT * FROM system.transposed_metric_log")
+
+    node1.replace_in_config(LOG_PATH, ">wide<",  ">transposed_with_wide_view<")
+    node1.restart_clickhouse()
+
+    time.sleep(1)
+    node1.query("SYSTEM FLUSH LOGS")
+    assert int(node1.query("EXISTS TABLE system.metric_log").strip()) == 1
+    assert int(node1.query("EXISTS TABLE system.metric_log_0").strip()) == 1
+    assert int(node1.query("EXISTS TABLE system.metric_log_1").strip()) == 1
+    assert int(node1.query("EXISTS TABLE system.metric_log_2").strip()) == 1
+    assert int(node1.query("EXISTS TABLE system.metric_log_3").strip()) == 1
+    assert int(node1.query("EXISTS TABLE system.metric_log_4").strip()) == 1
+
+    assert "SystemMetricLogView" in node1.query("SHOW CREATE TABLE system.metric_log")
+    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log")
+    assert int(node1.query("SELECT count() FROM system.metric_log WHERE not ignore(*)").strip()) > 0
+
+    assert "SystemMetricLogView" in node1.query("SHOW CREATE TABLE system.metric_log_0")
+    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log_0")
+    assert int(node1.query("SELECT count() FROM system.metric_log_0 WHERE not ignore(*)").strip()) > 0
+
+    assert "SystemMetricLogView" in node1.query("SHOW CREATE TABLE system.metric_log_1")
+    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log_1")
+    assert int(node1.query("SELECT count() FROM system.metric_log_1 WHERE not ignore(*)").strip()) > 0
+
+    assert "SystemMetricLogView" not in node1.query("SHOW CREATE TABLE system.metric_log_2")
+    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log_2")
+
+    assert "SystemMetricLogView" not in node1.query("SHOW CREATE TABLE system.metric_log_3")
+    assert "metric" in node1.query("SHOW CREATE TABLE system.metric_log_3")
+
+    assert "SystemMetricLogView" not in node1.query("SHOW CREATE TABLE system.metric_log_4")
+    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log_4")
 
 
 def insert_into_transposed_metric_log(node, table_name, size):
