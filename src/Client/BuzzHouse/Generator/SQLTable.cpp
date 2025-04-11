@@ -1988,6 +1988,16 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         sv->set_property("PATH");
         sv->set_value("'" + nfile.generic_string() + "'");
     }
+    else if (dl == COMPLEX_KEY_CACHE || dl == CACHE)
+    {
+        /// needs size_in_cells
+        svs = svs ? svs : layout->mutable_setting_values();
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+        sv->set_property("SIZE_IN_CELLS");
+        sv->set_value(std::to_string(
+            rg.thresholdGenerator<uint32_t>(0.25, 0.25, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
+    }
 
     /// Add Primary Key
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
