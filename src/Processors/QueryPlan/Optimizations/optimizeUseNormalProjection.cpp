@@ -72,18 +72,6 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     return dag;
 }
 
-static bool hasAllRequiredColumns(const ProjectionDescription * projection, const Names & required_columns)
-{
-    for (const auto & col : required_columns)
-    {
-        if (!projection->sample_block.has(col))
-            return false;
-    }
-
-    return true;
-}
-
-
 std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 {
     const auto & frame = stack.back();
@@ -124,7 +112,8 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     auto it = std::find_if(
         normal_projections.begin(),
         normal_projections.end(),
-        [&](const auto * projection) { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
+        [&](const auto * projection)
+        { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
 
     if (it != normal_projections.end())
     {
@@ -168,9 +157,21 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
 
     auto logger = getLogger("optimizeUseNormalProjections");
 
+    auto projection_virtuals = reading->getMergeTreeData().getProjectionVirtualsPtr();
+    auto has_all_required_columns = [&](const ProjectionDescription * projection)
+    {
+        for (const auto & col : required_columns)
+        {
+            if (!projection->sample_block.has(col) && !projection_virtuals->has(col))
+                return false;
+        }
+
+        return true;
+    };
+
     for (const auto * projection : normal_projections)
     {
-        if (!hasAllRequiredColumns(projection, required_columns))
+        if (!has_all_required_columns(projection))
             continue;
 
         auto & candidate = candidates.emplace_back();

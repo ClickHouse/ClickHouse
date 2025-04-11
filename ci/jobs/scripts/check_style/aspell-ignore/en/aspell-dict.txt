@@ -2230,6 +2230,7 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
+mergeTreeProjection
 mergeable
 mergetree
 messageID
