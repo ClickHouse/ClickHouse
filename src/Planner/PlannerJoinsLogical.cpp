@@ -488,6 +488,21 @@ JoinTreeQueryPlan mergeJoinTreePlans(
     };
 }
 
+
+static std::string_view getQueryDisplayLabel(const QueryTreeNodePtr & node)
+{
+    const auto & printable_alias = node->getOriginalAlias();
+    if (printable_alias.empty())
+        return {};
+
+    const auto & internal_alias = node->getAlias();
+    if (printable_alias == internal_alias)
+        /// Probably we do not have alias in the original AST
+        return {};
+
+    return printable_alias;
+}
+
 JoinTreeQueryPlan buildJoinStepLogical(
     JoinTreeQueryPlan left_plan,
     JoinTreeQueryPlan right_plan,
@@ -520,6 +535,8 @@ JoinTreeQueryPlan buildJoinStepLogical(
             settings[Setting::join_use_nulls],
             JoinSettings(settings),
             SortingStep::Settings(settings));
+        if (auto label = getQueryDisplayLabel(join_node.getLeftTableExpression()); !label.empty())
+            join_step_holder->setRelationLabel(label, 0);
         join_step = join_step_holder.get();
         left_plan.query_plan.addStep(std::move(join_step_holder));
     }
@@ -531,10 +548,13 @@ JoinTreeQueryPlan buildJoinStepLogical(
         {join_node.getKind(), join_node.getStrictness(), join_node.getLocality()},
         right_header);
 
+
+    if (auto label = getQueryDisplayLabel(join_node.getRightTableExpression()); !label.empty())
+        join_step->setRelationLabel(label, join_step->getNumberOfTables() - 1);
+
     auto prepared_storage = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
     join_step->setPreparedJoinStorage(std::move(prepared_storage));
 
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: RIGHT TABLE {}", __FILE__, __LINE__, join_node.getRightTableExpression()->formatASTForErrorMessage());
     for (const auto * table_expression : extractTableExpressionsSet(join_node.getRightTableExpression()))
         table_expression_to_join_input_mapping.emplace(table_expression, join_step->getNumberOfTables() - 1);
 

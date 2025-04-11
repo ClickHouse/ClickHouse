@@ -1595,12 +1595,28 @@ static String toString(const RelationStats & stats)
     return fmt::format("rows: {}", stats.estimated_rows);
 }
 
+void JoinStepLogical::setRelationLabel(std::string_view label, size_t index)
+{
+    if (index >= getNumberOfTables())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index out of bounds");
+    if (index >= relation_stats.size())
+        relation_stats.resize(index + 1);
+
+    relation_stats[index].table_name = label;
+}
+
+
 void JoinStepLogical::setRelationStats(RelationStats new_stats, size_t index)
 {
     if (index >= getNumberOfTables())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index out of bounds");
     if (index >= relation_stats.size())
         relation_stats.resize(index + 1);
+
+    if (!relation_stats[index].table_name.empty())
+        /// Keep initially set name
+        new_stats.table_name = relation_stats[index].table_name;
+
     relation_stats[index] = std::move(new_stats);
     LOG_TRACE(log, "Estimated stats for relation {}: {}", index, toString(relation_stats[index]));
 }
