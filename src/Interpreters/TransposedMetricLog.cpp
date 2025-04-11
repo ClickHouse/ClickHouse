@@ -474,7 +474,7 @@ void TransposedMetricLog::prepareTable()
                 {
                     prepareViewForTable(database, storage_id, view_name, 0);
                 }
-                /// All other non-standard names are itentionaly ignored
+                /// All other non-standard names are intentionally ignored
 
                 iterator->next();
             }
