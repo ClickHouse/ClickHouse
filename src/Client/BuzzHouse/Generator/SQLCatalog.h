@@ -160,6 +160,8 @@ public:
     String file_comp;
     InOutFormat file_format;
 
+    static void setDeterministic(RandomGenerator & rg, SQLBase & b) { b.is_deterministic = rg.nextSmallNumber() < 8; }
+
     bool isMergeTreeFamily() const
     {
         return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;

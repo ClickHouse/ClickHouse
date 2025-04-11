@@ -26,9 +26,11 @@
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = 20lu;
+constexpr UInt64 default_distributed_cache_read_request_max_tries = 20lu;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
+constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
 #endif
 
 namespace DB
@@ -4705,6 +4707,10 @@ The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELE
 The probability of a fault injection during table creation after creating metadata in ZooKeeper
 )", 0) \
     \
+    DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
+If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
+)", 0) \
+    \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
 and [enable_writes_to_query_cache](#enable_writes_to_query_cache) control in more detail how the cache is used.
@@ -4822,6 +4828,16 @@ Allow sharing set objects build for IN subqueries between different tasks of the
     DECLARE(Bool, use_query_condition_cache, false, R"(
 Enable the [query condition cache](/operations/query-condition-cache). The cache stores ranges of granules in data parts which do not satisfy the condition in the `WHERE` clause,
 and reuse this information as an ephemeral index for subsequent queries.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(Bool, query_condition_cache_store_conditions_as_plaintext, false, R"(
+Stores the filter condition for the [query condition cache](/operations/query-condition-cache) in plaintext.
+If enabled, system.query_condition_cache shows the verbatim filter condition which makes it easier to debug issues with the cache.
+Disabled by default because plaintext filter conditions may expose sensitive information.
 
 Possible values:
 
@@ -5297,6 +5313,10 @@ Use query plan for lazy materialization optimization
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit
 )", 0) \
     DECLARE(Bool, query_plan_use_new_logical_join_step, true, "Use new logical join step in query plan", 0) \
+    DECLARE(Bool, serialize_query_plan, false, R"(
+Serialize query plan for distributed processing
+)", 0) \
+    \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractallgroupshorizontal) function.
 
@@ -5739,6 +5759,9 @@ Only has an effect in ClickHouse Cloud. Fetch metrics only from current availabi
     DECLARE(UInt64, distributed_cache_connect_max_tries, default_distributed_cache_connect_max_tries, R"(
 Only has an effect in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful
 )", 0) \
+    DECLARE(UInt64, distributed_cache_read_request_max_tries, default_distributed_cache_read_request_max_tries, R"(
+Only has an effect in ClickHouse Cloud. Number of tries to do distributed cache request if unsuccessful
+)", 0) \
     DECLARE(UInt64, distributed_cache_receive_response_wait_milliseconds, 60000, R"(
 Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive data for request from distributed cache
 )", 0) \
@@ -5777,7 +5800,7 @@ Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reserv
 )", 0) \
     \
     DECLARE(Bool, parallelize_output_from_storages, true, R"(
-Parallelize output for reading step from storage. It allows parallelization of  query processing right after reading from storage if possible
+Parallelize output for reading step from storage. It allows parallelization of query processing right after reading from storage if possible
 )", 0) \
     DECLARE(String, insert_deduplication_token, "", R"(
 The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
@@ -6065,6 +6088,9 @@ Allow to use the function `getClientHTTPHeader` which lets to obtain a value of 
 )", 0) \
     DECLARE(Bool, cast_string_to_dynamic_use_inference, false, R"(
 Use types inference during String to Dynamic conversion
+)", 0) \
+    DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
+Use types inference during String to Variant conversion.
 )", 0) \
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
@@ -6415,6 +6441,8 @@ Note that initially (24.12) there was a server setting (`send_settings_to_client
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 Wait time in milliseconds when lower priority query meets higher priority query.
 )", BETA) \
+    DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 2.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
+    DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 6.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
