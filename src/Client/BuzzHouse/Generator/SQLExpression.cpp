@@ -992,43 +992,28 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         this->width--;
         this->depth--;
     }
-    else if (this->width < this->fc.max_width && noption < 751)
+    else if (this->width < this->fc.max_width && noption < 801)
     {
-        ArraySequence * arr = expr->mutable_comp_expr()->mutable_array();
+        ArraySequence * arr = nullptr;
+        TupleSequence * tupl = nullptr;
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 8);
 
+        if (rg.nextBool())
+        {
+            arr = expr->mutable_comp_expr()->mutable_array();
+        }
+        else
+        {
+            tupl = expr->mutable_comp_expr()->mutable_tuple();
+        }
         this->depth++;
         for (uint32_t i = 0; i < nvalues; i++)
         {
-            this->generateExpression(rg, arr->add_values());
+            this->generateExpression(rg, arr ? arr->add_values() : tupl->add_values());
             this->width++;
         }
         this->depth--;
         this->width -= nvalues;
-    }
-    else if (this->width < this->fc.max_width && noption < 801)
-    {
-        TupleSequence * tupl = expr->mutable_comp_expr()->mutable_tuple();
-        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 8);
-        const uint32_t ncols = std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 4) + 1);
-
-        this->depth++;
-        for (uint32_t i = 0; i < ncols; i++)
-        {
-            ExprList * elist = tupl->add_values();
-
-            for (uint32_t j = 0; j < nvalues; j++)
-            {
-                Expr * el = j == 0 ? elist->mutable_expr() : elist->add_extra_exprs();
-
-                this->generateExpression(rg, el);
-                this->width++;
-            }
-            this->width -= nvalues;
-            this->width++;
-        }
-        this->width -= ncols;
-        this->depth--;
     }
     else if (!this->levels[this->current_level].allow_window_funcs || this->levels[this->current_level].inside_aggregate || noption < 951)
     {

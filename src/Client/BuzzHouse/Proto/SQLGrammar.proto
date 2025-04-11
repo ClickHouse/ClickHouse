@@ -1937,7 +1937,7 @@ message ArraySequence {
 }
 
 message TupleSequence {
-    repeated ExprList values = 1;
+    repeated Expr values = 1;
 }
 
 message LambdaExpr {

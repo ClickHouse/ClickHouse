@@ -1589,9 +1589,7 @@ CONV_FN(ComplicatedExpr, expr)
                 {
                     ret += ",";
                 }
-                ret += "(";
-                ExprListToString(ret, vals.values(i));
-                ret += ")";
+                ExprToString(ret, vals.values(i));
             }
             ret += ")";
         }
