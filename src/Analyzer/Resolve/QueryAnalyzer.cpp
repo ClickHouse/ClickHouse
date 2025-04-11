@@ -604,6 +604,35 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             replaceStorageInQueryTree(query_tree, subquery_context, storage);
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_tree, subquery_context, options);
 
+        auto wrap_with_nullable_or_tuple = [](Block & block)
+        {
+            block = materializeBlock(block);
+            if (block.columns() == 1)
+            {
+                auto & column = block.getByPosition(0);
+                /// Here we wrap type to nullable if we can.
+                /// It is needed cause if subquery return no rows, it's result will be Null.
+                /// In case of many columns, do not check it cause tuple can't be nullable.
+                if (!column.type->isNullable() && column.type->canBeInsideNullable())
+                {
+                    column.type = makeNullable(column.type);
+                    column.column = makeNullable(column.column);
+                }
+            } else
+            {
+                /** Make unique column names for tuple.
+                *
+                * Example: SELECT (SELECT 2 AS x, x)
+                */
+                makeUniqueColumnNamesInBlock(block);
+                block = Block({{
+                        ColumnTuple::create(block.getColumns()),
+                        std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
+                        "tuple"
+                    }});
+            }
+        };
+
         if (only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
@@ -617,6 +646,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                     column.column = std::move(mut_col);
                 }
             }
+
+            wrap_with_nullable_or_tuple(scalar_block);
         }
         else
         {
@@ -666,36 +697,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 if (tmp_block.rows() != 0)
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
-                block = materializeBlock(block);
-                size_t columns = block.columns();
-
-                if (columns == 1)
-                {
-                    auto & column = block.getByPosition(0);
-                    /// Here we wrap type to nullable if we can.
-                    /// It is needed cause if subquery return no rows, it's result will be Null.
-                    /// In case of many columns, do not check it cause tuple can't be nullable.
-                    if (!column.type->isNullable() && column.type->canBeInsideNullable())
-                    {
-                        column.type = makeNullable(column.type);
-                        column.column = makeNullable(column.column);
-                    }
-
-                    scalar_block = block;
-                }
-                else
-                {
-                    /** Make unique column names for tuple.
-                      *
-                      * Example: SELECT (SELECT 2 AS x, x)
-                      */
-                    makeUniqueColumnNamesInBlock(block);
-
-                    scalar_block.insert({
-                        ColumnTuple::create(block.getColumns()),
-                        std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
-                        "tuple"});
-                }
+                wrap_with_nullable_or_tuple(block);
+                scalar_block = std::move(block);
             }
 
             logProcessorProfile(context, io.pipeline.getProcessors());
