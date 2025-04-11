@@ -1,4 +1,6 @@
 -- This tests will show the difference in data with use_skip_indexes_if_final and w/o
+-- Tags: no-random-settings
+-- EDIT: Correct result with be seen with use_skip_indexes_if_final=1 and use_skip_indexes_if_final_exact_mode=1
 
 CREATE TABLE data_02201 (
     key Int,
