@@ -70,7 +70,7 @@ public:
 
 private:
     template <typename Parser>
-    ASTPtr tryParseQueryForFuzzedTables(const String & full_query)
+    ASTPtr tryParseQueryForFuzzedTables(const std::string_view & full_query)
     {
         String message;
         const char * pos = full_query.data();
@@ -112,7 +112,7 @@ private:
 
 public:
     template <typename ParsedAST, typename Parser>
-    ASTs getQueriesForFuzzedTables(const String & full_query)
+    ASTs getQueriesForFuzzedTables(const std::string_view & full_query)
     {
         auto parsed_query = tryParseQueryForFuzzedTables<Parser>(full_query);
         if (!parsed_query)
