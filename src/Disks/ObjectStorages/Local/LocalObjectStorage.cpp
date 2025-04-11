@@ -121,6 +121,9 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path) c
 
 void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
 {
+    if (!fs::exists(path))
+        return;
+
     for (const auto & entry : fs::directory_iterator(path))
     {
         if (entry.is_directory())
