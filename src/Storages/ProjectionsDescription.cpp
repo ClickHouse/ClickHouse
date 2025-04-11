@@ -73,6 +73,7 @@ ProjectionDescription ProjectionDescription::clone() const
     other.key_size = key_size;
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
+    other.with_parent_part_offset = with_parent_part_offset;
 
     return other;
 }
@@ -146,6 +147,11 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
     result.query_ast = query.cloneToASTSelect();
 
+    /// Prevent normal projection from storing parent part offset if the parent table defines `_parent_part_offset` or
+    /// `_part_offset` as physical columns, which would cause a conflict. Parent table cannot defines `_part_index` as
+    /// physical column either because it's used to build part offset mapping during merge.
+    bool cannot_hold_parent_part_offset = columns.has("_part_index") || columns.has("_part_offset") || columns.has("_parent_part_offset");
+
     StoragePtr storage = std::make_shared<StorageProjectionSource>(columns);
     InterpreterSelectQuery select(
         result.query_ast,
@@ -168,11 +174,11 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     const auto & query_select = result.query_ast->as<const ASTSelectQuery &>();
     if (select.hasAggregation())
     {
+        /// Aggregate projections cannot hold parent part offset.
+        cannot_hold_parent_part_offset = true;
+
         if (query.orderBy())
             throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
-
-        if (std::find(result.required_columns.begin(), result.required_columns.end(), "_part_offset") != result.required_columns.end())
-            throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, _part_offset cannot be specified");
 
         result.type = ProjectionDescription::Type::Aggregate;
         if (const auto & group_expression_list = query_select.groupBy())
@@ -213,6 +219,16 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns, query_context, {});
         metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns, query_context);
         metadata.primary_key.definition_ast = nullptr;
+    }
+
+    /// Rename parent _part_offset to _parent_part_offset column
+    if (!cannot_hold_parent_part_offset && result.sample_block.has("_part_offset"))
+    {
+        auto new_column = result.sample_block.getByName("_part_offset");
+        new_column.name = "_parent_part_offset";
+        result.sample_block.erase("_part_offset");
+        result.sample_block.insert(std::move(new_column));
+        result.with_parent_part_offset = true;
     }
 
     auto block = result.sample_block;
@@ -350,8 +366,11 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
     }
 
     Block source_block = block;
-    if (sample_block.has("_part_offset"))
+    /// Prepare _part_offset column for projection with _parent_part_offset
+    if (with_parent_part_offset)
     {
+        chassert(!source_block.has("_part_offset"));
+        chassert(sample_block.has("_parent_part_offset"));
         auto uint64 = std::make_shared<DataTypeUInt64>();
         auto column = uint64->createColumn();
         auto & offset = assert_cast<ColumnUInt64 &>(*column).getData();
@@ -388,11 +407,24 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
-    Block ret;
-    executor.pull(ret);
-    if (executor.pull(ret))
+    Block projection_block;
+    executor.pull(projection_block);
+    if (executor.pull(projection_block))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection cannot increase the number of rows in a block. It's a bug");
-    return ret;
+
+    /// Rename parent _part_offset to _parent_part_offset column
+    if (with_parent_part_offset)
+    {
+        chassert(projection_block.has("_part_offset"));
+        chassert(!projection_block.has("_parent_part_offset"));
+
+        auto new_column = projection_block.getByName("_part_offset");
+        new_column.name = "_parent_part_offset";
+        projection_block.erase("_part_offset");
+        projection_block.insert(std::move(new_column));
+    }
+
+    return projection_block;
 }
 
 

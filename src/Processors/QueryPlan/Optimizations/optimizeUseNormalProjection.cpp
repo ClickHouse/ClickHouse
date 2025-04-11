@@ -158,13 +158,21 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     auto logger = getLogger("optimizeUseNormalProjections");
 
     auto projection_virtuals = reading->getMergeTreeData().getProjectionVirtualsPtr();
-    for (const auto * projection : normal_projections)
+    auto has_all_required_columns = [&](const ProjectionDescription * projection)
     {
         for (const auto & col : required_columns)
         {
             if (!projection->sample_block.has(col) && !projection_virtuals->has(col))
-                continue;
+                return false;
         }
+
+        return true;
+    };
+
+    for (const auto * projection : normal_projections)
+    {
+        if (!has_all_required_columns(projection))
+            continue;
 
         auto & candidate = candidates.emplace_back();
         candidate.projection = projection;

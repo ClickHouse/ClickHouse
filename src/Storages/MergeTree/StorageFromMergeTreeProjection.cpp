@@ -17,7 +17,7 @@ StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
     , projection(projection_)
 {
     setInMemoryMetadata(*projection->metadata);
-    setVirtuals(MergeTreeData::createProjectionVirtuals(*parent_metadata));
+    setVirtuals(MergeTreeData::createVirtuals(*parent_metadata));
 }
 
 void StorageFromMergeTreeProjection::read(

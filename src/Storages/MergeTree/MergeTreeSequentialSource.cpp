@@ -219,28 +219,18 @@ try
         const auto & name = result_header.safeGetByPosition(i).name;
         auto pos = reader_header.getPositionByName(name);
         auto & result_column = result_columns.emplace_back(std::move(read_result.columns[pos]));
-        if (name == "_part_offset" && read_task_info->merged_part_offsets)
+
+        /// When read_task_info->merged_part_offsets we need to adjust parent part offset in projection because it will
+        /// be different when parent has order by column and merge will change order of rows.
+        if (read_task_info->merged_part_offsets && read_task_info->data_part->isProjectionPart() && name == "_parent_part_offset")
         {
-            if (read_task_info->merged_part_offsets->isFinalized())
-            {
-                /// Projection part
+            chassert(read_task_info->merged_part_offsets->isFinalized());
 
-                result_column = result_column->convertToFullColumnIfSparse();
-                auto & column = result_column->assumeMutableRef();
-                auto & offset_data = assert_cast<ColumnUInt64 &>(column).getData();
-                for (auto & offset : offset_data)
-                    offset = (*read_task_info->merged_part_offsets)[offset + read_task_info->starting_offset];
-            }
-            else if (read_task_info->starting_offset > 0)
-            {
-                /// Parent part
-
-                result_column = result_column->convertToFullColumnIfSparse();
-                auto & column = result_column->assumeMutableRef();
-                auto & offset_data = assert_cast<ColumnUInt64 &>(column).getData();
-                for (auto & offset : offset_data)
-                    offset += read_task_info->starting_offset;
-            }
+            result_column = result_column->convertToFullColumnIfSparse();
+            auto & column = result_column->assumeMutableRef();
+            auto & offset_data = assert_cast<ColumnUInt64 &>(column).getData();
+            for (auto & offset : offset_data)
+                offset = (*read_task_info->merged_part_offsets)[read_task_info->part_index_in_query, offset];
         }
         result_column->assumeMutableRef().shrinkToFit();
     }
@@ -282,7 +272,7 @@ Pipe createMergeTreeSequentialSource(
     MergeTreeData::DataPartPtr data_part,
     AlterConversionsPtr alter_conversions,
     MergedPartOffsetsPtr merged_part_offsets,
-    size_t starting_offset,
+    size_t part_index,
     Names columns_to_read,
     std::optional<MarkRanges> mark_ranges,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
@@ -294,7 +284,8 @@ Pipe createMergeTreeSequentialSource(
     info->data_part = std::move(data_part);
     info->alter_conversions = std::move(alter_conversions);
     info->merged_part_offsets = std::move(merged_part_offsets);
-    info->starting_offset = starting_offset;
+    info->part_index_in_query = part_index;
+    info->const_virtual_fields.emplace("_part_index", info->part_index_in_query);
 
     /// The part might have some rows masked by lightweight deletes
     const bool need_to_filter_deleted_rows = apply_deleted_mask && info->hasLightweightDelete();
@@ -355,7 +346,7 @@ public:
         MergeTreeData::DataPartPtr data_part_,
         AlterConversionsPtr alter_conversions_,
         MergedPartOffsetsPtr merged_part_offsets_,
-        size_t starting_offset_,
+        size_t part_index_,
         Names columns_to_read_,
         std::shared_ptr<std::atomic<size_t>> filtered_rows_count_,
         bool apply_deleted_mask_,
@@ -371,7 +362,7 @@ public:
         , data_part(std::move(data_part_))
         , alter_conversions(std::move(alter_conversions_))
         , merged_part_offsets(std::move(merged_part_offsets_))
-        , starting_offset(starting_offset_)
+        , part_index(part_index_)
         , columns_to_read(std::move(columns_to_read_))
         , filtered_rows_count(std::move(filtered_rows_count_))
         , apply_deleted_mask(apply_deleted_mask_)
@@ -421,7 +412,7 @@ public:
             data_part,
             alter_conversions,
             merged_part_offsets,
-            starting_offset,
+            part_index,
             columns_to_read,
             std::move(mark_ranges),
             filtered_rows_count,
@@ -439,7 +430,7 @@ private:
     const MergeTreeData::DataPartPtr data_part;
     const AlterConversionsPtr alter_conversions;
     const MergedPartOffsetsPtr merged_part_offsets;
-    const size_t starting_offset;
+    const size_t part_index;
     const Names columns_to_read;
     const std::shared_ptr<std::atomic<size_t>> filtered_rows_count;
     const bool apply_deleted_mask;
@@ -458,7 +449,7 @@ void createReadFromPartStep(
     MergeTreeData::DataPartPtr data_part,
     AlterConversionsPtr alter_conversions,
     MergedPartOffsetsPtr merged_part_offsets,
-    size_t starting_offset,
+    size_t part_index,
     Names columns_to_read,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
@@ -475,7 +466,7 @@ void createReadFromPartStep(
         std::move(data_part),
         std::move(alter_conversions),
         std::move(merged_part_offsets),
-        starting_offset,
+        part_index,
         std::move(columns_to_read),
         filtered_rows_count,
         apply_deleted_mask,

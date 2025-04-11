@@ -321,160 +321,58 @@ TEST(PackedPartOffsetsTest, MemoryAllocation)
 // MergedPartOffsets Tests
 //////////////////////////
 
-TEST(MergedPartOffsetsTest, BasicFunctionality)
+TEST(MergedPartOffsetsTest, SinglePart)
 {
-    std::vector<UInt64> starting_offsets = {0, 2};
-    std::vector<UInt64> offsets = {0, 1, 2, 3};
-    MergedPartOffsets merged_offsets(starting_offsets, offsets.size());
-    merged_offsets.insert(offsets.data(), offsets.data() + offsets.size());
+    std::vector<UInt64> part_indices(4);
+    MergedPartOffsets merged_offsets(1);
+    merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size());
     merged_offsets.flush();
 
-    EXPECT_EQ(merged_offsets[0], 0);
-    EXPECT_EQ(merged_offsets[1], 1);
-    EXPECT_EQ(merged_offsets[2], 2);
-    EXPECT_EQ(merged_offsets[3], 3);
+    EXPECT_EQ((merged_offsets[0, 0]), 0);
+    EXPECT_EQ((merged_offsets[0, 1]), 1);
+    EXPECT_EQ((merged_offsets[0, 2]), 2);
+    EXPECT_EQ((merged_offsets[0, 3]), 3);
 }
 
 TEST(MergedPartOffsetsTest, MultipleParts)
 {
-    std::vector<UInt64> starting_offsets = {0, 3, 6};
-    std::vector<UInt64> offsets = {0, 3, 6, 1, 4, 7, 2, 5, 8};
-    MergedPartOffsets merged_offsets(starting_offsets, offsets.size());
-    merged_offsets.insert(offsets.data(), offsets.data() + offsets.size());
+    std::vector<UInt64> part_indices = {0, 1, 2, 0, 1, 2, 0, 1, 2};
+    MergedPartOffsets merged_offsets(3);
+    merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size());
     merged_offsets.flush();
 
-    EXPECT_EQ(merged_offsets[0], 0);
-    EXPECT_EQ(merged_offsets[3], 1);
-    EXPECT_EQ(merged_offsets[6], 2);
-    EXPECT_EQ(merged_offsets[1], 3);
-    EXPECT_EQ(merged_offsets[4], 4);
-    EXPECT_EQ(merged_offsets[7], 5);
-    EXPECT_EQ(merged_offsets[2], 6);
-    EXPECT_EQ(merged_offsets[5], 7);
-    EXPECT_EQ(merged_offsets[8], 8);
-}
-
-TEST(MergedPartOffsetsTest, SinglePart)
-{
-    std::vector<UInt64> starting_offsets = {0};
-    std::vector<UInt64> offsets = {0, 1, 2, 3, 4};
-    MergedPartOffsets merged_offsets(starting_offsets, offsets.size());
-    merged_offsets.insert(offsets.data(), offsets.data() + offsets.size());
-    merged_offsets.flush();
-
-    EXPECT_EQ(merged_offsets[0], 0);
-    EXPECT_EQ(merged_offsets[1], 1);
-    EXPECT_EQ(merged_offsets[2], 2);
-    EXPECT_EQ(merged_offsets[3], 3);
-    EXPECT_EQ(merged_offsets[4], 4);
-}
-
-TEST(MergedPartOffsetsTest, EmptyMapping)
-{
-    MergedPartOffsets merged_offsets;
-
-    EXPECT_TRUE(merged_offsets.empty());
-    EXPECT_EQ(merged_offsets.size(), 0);
-
-    merged_offsets.flush();
-
-    EXPECT_TRUE(merged_offsets.empty());
-}
-
-TEST(MergedPartOffsetsTest, ManyValues)
-{
-    const size_t values_per_part = 5000;
-    std::vector<UInt64> starting_offsets = {0, values_per_part};
-    const size_t total_rows = values_per_part * 2;
-    MergedPartOffsets merged_offsets(starting_offsets, total_rows);
-
-    // Generate two separate series of monotonically increasing values
-    std::vector<UInt64> part1_offsets;
-    std::vector<UInt64> part2_offsets;
-
-    for (size_t i = 0; i < values_per_part; ++i)
-        part1_offsets.push_back(i); // First series [0..5000)
-
-    for (size_t i = 0; i < values_per_part; ++i)
-        part2_offsets.push_back(i + values_per_part); // Second series [5000..10000)
-
-    // Randomly interleave the two series while preserving their internal order
-    std::vector<UInt64> all_offsets;
-    size_t idx1 = 0;
-    size_t idx2 = 0;
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<> dis(0, 1);
-
-    while (idx1 < values_per_part && idx2 < values_per_part)
-    {
-        // Randomly choose which series to pull from next
-        if (dis(gen) < 0.5)
-            all_offsets.push_back(part1_offsets[idx1++]);
-        else
-            all_offsets.push_back(part2_offsets[idx2++]);
-    }
-
-    // Add any remaining elements
-    while (idx1 < values_per_part)
-        all_offsets.push_back(part1_offsets[idx1++]);
-
-    while (idx2 < values_per_part)
-        all_offsets.push_back(part2_offsets[idx2++]);
-
-    // Now process the interleaved offsets
-    merged_offsets.insert(all_offsets.data(), all_offsets.data() + all_offsets.size());
-    merged_offsets.flush();
-
-    EXPECT_EQ(merged_offsets.size(), total_rows);
-
-    // Test that the merge correctly maps original offsets to new positions
-    for (size_t i = 0; i < total_rows; ++i)
-        EXPECT_EQ(merged_offsets[all_offsets[i]], i);
-}
-
-// Test too many insertions (should fail assertion on flush)
-TEST(MergedPartOffsetsTest, DISABLED_TooManyInsertions)
-{
-    // Note: This test is disabled because it should trigger an assertion failure
-    // Enable with caution for debugging
-
-    // Setup merged_offsets
-    std::vector<UInt64> starting_offsets = {0, 100};
-    const size_t total_rows = 5; // Deliberately less than we'll insert
-    MergedPartOffsets merged_offsets(starting_offsets, total_rows);
-
-    // Insert more than total_rows
-    std::vector<UInt64> offsets = {10, 20, 30, 40, 50, 110, 120};
-    merged_offsets.insert(offsets.data(), offsets.data() + offsets.size());
-
-    // This should trigger assertion
-    merged_offsets.flush();
+    EXPECT_EQ((merged_offsets[0, 0]), 0);
+    EXPECT_EQ((merged_offsets[1, 0]), 1);
+    EXPECT_EQ((merged_offsets[2, 0]), 2);
+    EXPECT_EQ((merged_offsets[0, 1]), 3);
+    EXPECT_EQ((merged_offsets[1, 1]), 4);
+    EXPECT_EQ((merged_offsets[2, 1]), 5);
+    EXPECT_EQ((merged_offsets[0, 2]), 6);
+    EXPECT_EQ((merged_offsets[1, 2]), 7);
+    EXPECT_EQ((merged_offsets[2, 2]), 8);
 }
 
 // Test size() and empty() methods
 TEST(MergedPartOffsetsTest, SizeAndEmpty)
 {
     // Setup merged_offsets
-    std::vector<UInt64> starting_offsets = {0, 100};
-    const size_t total_rows = 5;
-    MergedPartOffsets merged_offsets(starting_offsets, total_rows);
+    MergedPartOffsets merged_offsets(2);
 
     // Initially empty
     EXPECT_TRUE(merged_offsets.empty());
     EXPECT_EQ(merged_offsets.size(), 0);
 
     // Insert some offsets
-    std::vector<UInt64> offsets = {0, 1, 2};
-    merged_offsets.insert(offsets.data(), offsets.data() + offsets.size());
+    std::vector<UInt64> part_indices = {0, 0, 1};
+    merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size());
 
     // Not empty now
     EXPECT_FALSE(merged_offsets.empty());
     EXPECT_EQ(merged_offsets.size(), 3);
 
     // Insert more
-    std::vector<UInt64> more_offsets = {3, 4};
-    merged_offsets.insert(more_offsets.data(), more_offsets.data() + more_offsets.size());
+    std::vector<UInt64> more_part_indices = {1, 0};
+    merged_offsets.insert(more_part_indices.data(), more_part_indices.data() + more_part_indices.size());
 
     // Size should increase
     EXPECT_EQ(merged_offsets.size(), 5);
@@ -482,4 +380,36 @@ TEST(MergedPartOffsetsTest, SizeAndEmpty)
     // Flush should not change size
     merged_offsets.flush();
     EXPECT_EQ(merged_offsets.size(), 5);
+}
+
+TEST(MergedPartOffsetsTest, ManyValues)
+{
+    MergedPartOffsets merged_offsets(3);
+    std::vector<UInt64> part_indices;
+
+    part_indices.reserve(15000);
+
+    for (int i = 0; i < 5000; ++i)
+        part_indices.push_back(0);
+    for (int i = 0; i < 5000; ++i)
+        part_indices.push_back(1);
+    for (int i = 0; i < 5000; ++i)
+        part_indices.push_back(2);
+
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(part_indices.begin(), part_indices.end(), g);
+
+    merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size());
+    merged_offsets.flush();
+
+    EXPECT_EQ(merged_offsets.size(), 15000);
+
+    std::vector<UInt64> offsets(3);
+    for (size_t i = 0; i < 15000; ++i)
+    {
+        auto part = part_indices[i];
+        EXPECT_EQ((merged_offsets[part, offsets[part]]), i);
+        ++offsets[part];
+    }
 }

@@ -938,7 +938,7 @@ void MergeTreeData::setProperties(
         local_context);
     setInMemoryMetadata(new_metadata);
     setVirtuals(createVirtuals(new_metadata));
-    projection_virtuals.set(std::make_unique<VirtualColumnsDescription>(createVirtuals(new_metadata)));
+    projection_virtuals.set(std::make_unique<VirtualColumnsDescription>(createProjectionVirtuals(new_metadata)));
 }
 
 namespace
