@@ -31,7 +31,22 @@ using FunctionGCD = BinaryArithmeticOverloadResolver<GCDImpl, NameGCD, false, fa
 
 REGISTER_FUNCTION(GCD)
 {
-    factory.registerFunction<FunctionGCD>();
+    FunctionDocumentation::Description description = R"(
+    Returns the greatest common divisor of two values a and b.
+
+    An exception is thrown when dividing by zero or when dividing a minimal
+    negative number by minus one.
+    )";
+    FunctionDocumentation::Syntax syntax = "gcd(a, b)";
+    FunctionDocumentation::Argument argument1 = {"a", "First integer"};
+    FunctionDocumentation::Argument argument2 = {"b", "Second integer"};
+    FunctionDocumentation::Arguments arguments = {argument1, argument2};
+    FunctionDocumentation::ReturnedValue returned_value = "The greatest common divisor of `a` and `b`.";
+    FunctionDocumentation::Example example1 = {"", "SELECT gcd(12, 18)", "6"};
+    FunctionDocumentation::Examples examples = {example1};
+    FunctionDocumentation::Category categories = {"arithmetic"};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    factory.registerFunction<FunctionGCD>(documentation);
 }
 
 }

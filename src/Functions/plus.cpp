@@ -50,7 +50,23 @@ using FunctionPlus = BinaryArithmeticOverloadResolver<PlusImpl, NamePlus>;
 
 REGISTER_FUNCTION(Plus)
 {
-    factory.registerFunction<FunctionPlus>();
+    FunctionDocumentation::Description description = R"(
+    Calculates the sum of two values `a` and `b`. Alias: `a + b` (operator).
+    It is possible to add an integer and a date or date with time. The former
+    operation increments the number of days in the date, the latter operation
+    increments the number of seconds in the date with time.
+    )";
+    FunctionDocumentation::Syntax syntax = "plus(a, b)";
+    FunctionDocumentation::Argument argument1 = {"a", "Left hand operand."};
+    FunctionDocumentation::Argument argument2 = {"b", "Right hand operand."};
+    FunctionDocumentation::Arguments arguments = {argument1, argument2};
+    FunctionDocumentation::ReturnedValue returned_value = "The sum of a and b";
+    FunctionDocumentation::Example example1 = {"Adding two numbers", "SELECT plus(5,5)", "10"};
+    FunctionDocumentation::Example example2 = {"Adding an integer and a date", "SELECT plus(toDate('2025-01-01'),5)", "2025-01-06"};
+    FunctionDocumentation::Examples examples = {example1, example2};
+    FunctionDocumentation::Category categories = {"arithmetic"};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    factory.registerFunction<FunctionPlus>(documentation);
 }
 
 }

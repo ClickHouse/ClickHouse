@@ -63,7 +63,21 @@ using FunctionLCM = BinaryArithmeticOverloadResolver<LCMImpl, NameLCM, false, fa
 
 REGISTER_FUNCTION(LCM)
 {
-    factory.registerFunction<FunctionLCM>();
+    FunctionDocumentation::Description description = R"(
+    Returns the least common multiple of two values `a` and `b`.
+
+    An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
+    )";
+    FunctionDocumentation::Syntax syntax = "lcm(a, b)";
+    FunctionDocumentation::Argument argument1 = {"a", "First integer"};
+    FunctionDocumentation::Argument argument2 = {"b", "Second integer"};
+    FunctionDocumentation::Arguments arguments = {argument1, argument2};
+    FunctionDocumentation::ReturnedValue returned_value = "The least common multiple of `a` and `b`.";
+    FunctionDocumentation::Example example1 = {"", "SELECT lcm(6, 8)", "24"};
+    FunctionDocumentation::Examples examples = {example1};
+    FunctionDocumentation::Category categories = {"arithmetic"};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    factory.registerFunction<FunctionLCM>(documentation);
 }
 
 }
