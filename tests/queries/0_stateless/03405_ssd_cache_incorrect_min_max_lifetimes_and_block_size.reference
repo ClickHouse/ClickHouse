@@ -1,6 +1,3 @@
-SSD_CACHE: BLOCK_SIZE is a negative value.
-SSD_CACHE: BLOCK_SIZE is zero.
-SSD_CACHE: WRITE_BUFFER_SIZE is zero.
-COMPLEX_KEY_SSD_CACHE: BLOCK_SIZE is a negative value.
-COMPLEX_KEY_SSD_CACHE: BLOCK_SIZE is zero.
-COMPLEX_KEY_SSD_CACHE: WRITE_BUFFER_SIZE is zero.
+BLOCK_SIZE is a negative value.
+BLOCK_SIZE is zero.
+WRITE_BUFFER_SIZE is zero.
