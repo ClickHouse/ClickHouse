@@ -901,9 +901,9 @@ static const auto alter_table_lambda = [](const SQLTable & t) { return t.isAttac
 void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
 {
     SQLObjectName * sot = at->mutable_object();
-    const uint32_t alter_view = 3 * static_cast<uint32_t>(collectionHas<SQLTable>(alter_table_lambda));
-    const uint32_t alter_table = 20 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
-    const uint32_t alter_database = 3 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
+    const uint32_t alter_view = 5 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
+    const uint32_t alter_table = 15 * static_cast<uint32_t>(collectionHas<SQLTable>(alter_table_lambda));
+    const uint32_t alter_database = 2 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
     const uint32_t prob_space2 = alter_view + alter_table + alter_database;
     std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
     const uint32_t nopt2 = next_dist2(rg.generator);
