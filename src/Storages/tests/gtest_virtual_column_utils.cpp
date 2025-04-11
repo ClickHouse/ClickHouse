@@ -39,18 +39,16 @@ TEST(ParseHivePartitioningTest, ExtractKVP_MultiplePartitions)
 
 TEST(ParseHivePartitioningTest, ExtractKVP_EmptyValue)
 {
-    // country=  is empty
     std::string path = "/output_data/year=2022/country=/data_0.parquet";
 
     auto result = parseHivePartitioningKeysAndValuesWithExtractKvp(path);
     ASSERT_EQ(result.size(), 2u);
     EXPECT_EQ(result["year"], "2022");
-    EXPECT_EQ(result["country"], ""); // empty string
+    EXPECT_EQ(result["country"], "");
 }
 
 TEST(ParseHivePartitioningTest, ExtractKVP_NoPartitions)
 {
-    // No key=value segments
     std::string path = "/no/partitions/here/file.parquet";
 
     auto result = parseHivePartitioningKeysAndValuesWithExtractKvp(path);
@@ -59,7 +57,6 @@ TEST(ParseHivePartitioningTest, ExtractKVP_NoPartitions)
 
 TEST(ParseHivePartitioningTest, ExtractKVP_DuplicateKeyDifferentValue)
 {
-    // year=2022 and then year=2023 => that should throw
     std::string path = "/folder/year=2022/year=2023/file.parquet";
 
     EXPECT_ANY_THROW(parseHivePartitioningKeysAndValuesWithExtractKvp(path));
