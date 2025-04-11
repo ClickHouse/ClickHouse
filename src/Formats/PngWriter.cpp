@@ -129,7 +129,7 @@ void PngWriter::startImage(size_t width_, size_t height_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create libpng info_struct");
     }
 
-    if (setjmp(png_jmpbuf(png_ptr)))
+    if (setjmp(png_jmpbuf(png_ptr))) // NOLINT(cert-err52-cpp)
     {
         cleanup();
         throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error during startImage");
@@ -178,7 +178,7 @@ void PngWriter::writeEntireImage(const unsigned char * data, size_t data_size)
 
     png_structp png_ptr = png_resource->getPngPtr();
 
-    if (setjmp(png_jmpbuf(png_ptr)))
+    if (setjmp(png_jmpbuf(png_ptr))) // NOLINT(cert-err52-cpp)
     {
         png_resource.reset();
         throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error during image write");
@@ -227,7 +227,7 @@ void PngWriter::finishImage()
 
     png_structp png_ptr = png_resource->getPngPtr();
     
-    if (setjmp(png_jmpbuf(png_ptr)))
+    if (setjmp(png_jmpbuf(png_ptr))) // NOLINT(cert-err52-cpp)
     {
         cleanup();
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setjmp triggered an error during finishing to write png image");

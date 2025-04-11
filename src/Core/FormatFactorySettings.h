@@ -1317,8 +1317,8 @@ Set png image color depth
 values: {
     -1: default (usually level 6),
     0: no compression,
-    1: "fastest/least compression,
-    9: "slowest/best compression
+    1: fastest/least compression,
+    9: slowest/best compression
   },
 valid_range: [-1, 9]
 )", 0) \

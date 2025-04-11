@@ -34,21 +34,26 @@ inline bool extractBool(const IColumn & col, size_t row_num)
 inline UInt16 extractPixelComponentImpl(const IColumn & data_col, size_t row_num, int bit_depth)
 {
     auto type_id = data_col.getDataType();
-    auto max_val_int = (bit_depth == 16) ? 65535 : 255;
-    Float64 max_val_float = static_cast<Float64>(max_val_int);
+    auto max_val_u16 = (bit_depth == 16) ? 65535 : 255;
+    Float64 max_val_float = static_cast<Float64>(max_val_u16);
     switch (type_id)
     {
         case TypeIndex::UInt8:
         case TypeIndex::UInt16:
         case TypeIndex::UInt32:
         case TypeIndex::UInt64:
+        {
+            UInt64 val = data_col.getUInt(row_num);
+            return static_cast<UInt16>(std::min(val, static_cast<UInt64>(max_val_u16)));
+        }
+        
         case TypeIndex::Int8:
         case TypeIndex::Int16:
         case TypeIndex::Int32:
         case TypeIndex::Int64:
         {
             Int64 val = data_col.getInt(row_num);
-            return static_cast<UInt16>(std::clamp(val, INT64_C(0), static_cast<Int64>(max_val_int)));
+            return static_cast<UInt16>(std::clamp(val, INT64_C(0), static_cast<Int64>(max_val_u16)));
         }
 
         case TypeIndex::Float32:
