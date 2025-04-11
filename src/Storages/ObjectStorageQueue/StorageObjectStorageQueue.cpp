@@ -543,10 +543,16 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     if (!shutdown_called)
     {
-        LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_processing_interval_ms);
-        task->scheduleAfter(reschedule_processing_interval_ms);
+        UInt64 reschedule_interval_ms;
+        {
+            std::lock_guard lock(mutex);
+            reschedule_interval_ms = reschedule_processing_interval_ms;
+        }
 
-        if (reschedule_processing_interval_ms > 5000) /// TODO: Add a setting
+        LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_interval_ms);
+        task->scheduleAfter(reschedule_interval_ms);
+
+        if (reschedule_interval_ms > 5000) /// TODO: Add a setting
         {
             try
             {

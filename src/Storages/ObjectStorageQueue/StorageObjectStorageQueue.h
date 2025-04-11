@@ -10,6 +10,7 @@
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
+#include <base/defines.h>
 
 
 namespace DB
@@ -93,7 +94,7 @@ private:
 
     const std::optional<FormatSettings> format_settings;
 
-    UInt64 reschedule_processing_interval_ms;
+    UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
 
     std::atomic<bool> mv_attached = false;
     std::atomic<bool> shutdown_called = false;
