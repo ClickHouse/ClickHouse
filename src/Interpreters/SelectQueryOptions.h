@@ -37,7 +37,6 @@ struct SelectQueryOptions
     /// Otherwise, keys for GROUP BY may be removed as constants.
     bool ignore_ast_optimizations = false;
     bool ignore_alias = false;
-    bool no_aliasing = false; /// don't create unique aliases for table expressions and array join expressions
     bool is_internal = false;
     bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
     bool with_all_cols = false; /// asterisk include materialized and aliased columns
@@ -127,12 +126,6 @@ struct SelectQueryOptions
     SelectQueryOptions & ignoreAlias(bool value = true)
     {
         ignore_alias = value;
-        return *this;
-    }
-
-    SelectQueryOptions & noAliasing(bool value = true)
-    {
-        no_aliasing = value;
         return *this;
     }
 

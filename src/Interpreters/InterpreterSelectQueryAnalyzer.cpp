@@ -153,7 +153,7 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze, select_query_options.no_aliasing);
+    addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze);
 
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
