@@ -156,7 +156,7 @@ def test_parallel_inserts_with_failures(started_cluster, parallel_inserts):
             "keeper_path": keeper_path,
             "parallel_inserts": parallel_inserts,
             "s3queue_processing_threads_num": 16,
-            "s3queue_loading_retries": 2,
+            "s3queue_loading_retries": 20,
             "s3queue_max_processed_files_before_commit": max_processed_files_before_commit,
         },
     )
