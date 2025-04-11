@@ -1086,6 +1086,7 @@ class SettingsRandomizer:
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
+        "use_query_condition_cache": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
@@ -1631,7 +1632,9 @@ class TestCase:
                 description,
             )
 
-        if "Exception" in stdout and "X-ClickHouse-Exception-Code" not in stdout:
+        # "X-ClickHouse-Exception-Code" included in "Access-Control-Expose-Headers"
+        # "Exception" may be included into i.e. metric name
+        if re.search(r'(^|\W)(Net|Errno|)Exception(\W|$)', stdout) and "X-ClickHouse-Exception-Code" not in stdout:
             description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
             if debug_log:
                 description += "\n"
@@ -1737,9 +1740,7 @@ class TestCase:
         return TestResult(self.name, TestStatus.OK, None, total_time, description)
 
     def print_test_time(self, test_time) -> str:
-        if self.args.print_time:
-            return f" {test_time:.2f} sec."
-        return ""
+        return f" {test_time:.2f} sec."
 
     def process_result(self, result: TestResult, messages):
         args = self.args
@@ -1850,6 +1851,10 @@ class TestCase:
                 + database
                 + "_1"
             )
+            for env_to_param in ["CLICKHOUSE_USER_FILES", "CLICKHOUSE_USER_FILES_UNIQUE"]:
+                value = os.environ.get(env_to_param, None)
+                if value:
+                    query_params += f" --param_{env_to_param}={value}"
 
         params = {
             "client": client + " --database=" + database + query_params,
@@ -2265,7 +2270,7 @@ class TestSuite:
                 try:
                     if filepath.endswith(".sql"):
                         for line in lines:
-                            if "{CLICKHOUSE_DATABASE" in line:
+                            if "{CLICKHOUSE_" in line:
                                 need_query_params = True
                 except UnicodeDecodeError:
                     pass
@@ -3570,9 +3575,6 @@ def parse_args():
     )
     parser.add_argument(
         "--client-option", nargs="+", help="Specify additional client argument"
-    )
-    parser.add_argument(
-        "--print-time", action="store_true", dest="print_time", help="Print test time"
     )
     parser.add_argument(
         "--check-zookeeper-session",

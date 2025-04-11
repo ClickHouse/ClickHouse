@@ -28,6 +28,8 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 
+#include <fmt/ranges.h>
+
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
@@ -125,18 +127,28 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     bool distributed_processing,
     const ContextPtr & local_context,
     const ActionsDAG::Node * predicate,
+    const std::optional<ActionsDAG> & filter_actions_dag,
     const NamesAndTypesList & virtual_columns,
     ObjectInfos * read_keys,
-    std::function<void(FileProgress)> file_progress_callback)
+    std::function<void(FileProgress)> file_progress_callback,
+    bool ignore_archive_globs,
+    bool skip_object_metadata)
 {
+    const bool is_archive = configuration->isArchive();
+
     if (distributed_processing)
-        return std::make_shared<ReadTaskIterator>(local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
+    {
+        auto distributed_iterator = std::make_unique<ReadTaskIterator>(local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
+
+        if (is_archive)
+            return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(distributed_iterator), local_context, nullptr);
+
+        return distributed_iterator;
+    }
 
     if (configuration->isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Expression can not have wildcards inside {} name", configuration->getNamespaceType());
-
-    const bool is_archive = configuration->isArchive();
 
     std::unique_ptr<IObjectIterator> iterator;
     if (configuration->isPathWithGlobs())
@@ -150,7 +162,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             copy_configuration->setPaths(paths);
             iterator = std::make_unique<KeysIterator>(
                 object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
-                query_settings.ignore_non_existent_file, file_progress_callback);
+                query_settings.ignore_non_existent_file, skip_object_metadata, file_progress_callback);
         }
         else
             /// Iterate through disclosed globs and make a source for each file
@@ -161,7 +173,10 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else if (configuration->supportsFileIterator())
     {
-        return configuration->iterate();
+        return configuration->iterate(
+            filter_actions_dag.has_value() ? &filter_actions_dag.value() : nullptr,
+            file_progress_callback,
+            query_settings.list_object_keys_size);
     }
     else
     {
@@ -183,12 +198,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
         iterator = std::make_unique<KeysIterator>(
             object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
-            query_settings.ignore_non_existent_file, file_progress_callback);
+            query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, file_progress_callback);
     }
 
     if (is_archive)
     {
-        return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(iterator), local_context, read_keys);
+        return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(iterator), local_context, read_keys, ignore_archive_globs);
     }
 
     return iterator;
@@ -207,6 +222,7 @@ void StorageObjectStorageSource::lazyInitialize()
 
 Chunk StorageObjectStorageSource::generate()
 {
+
     lazyInitialize();
 
     while (true)
@@ -232,6 +248,11 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto & object_info = reader.getObjectInfo();
             const auto & filename = object_info->getFileName();
+            std::string full_path = object_info->getPath();
+
+            if (!full_path.starts_with(configuration->getPath()))
+                full_path = fs::path(configuration->getPath()) / object_info->getPath();
+
             chassert(object_info->metadata);
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -277,38 +298,44 @@ Chunk StorageObjectStorageSource::generate()
                     /// because the code will be removed ASAP anyway)
                     if (configuration->isDataLakeConfiguration())
                     {
-                        /// Delta lake supports only s3.
                         /// A terrible crutch, but it this code will be removed next month.
-                        if (auto * delta_conf = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
+                        DeltaLakePartitionColumns partition_columns;
+                        if (auto * delta_conf_s3 = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
                         {
-                            auto partition_columns = delta_conf->getDeltaLakePartitionColumns();
-                            if (!partition_columns.empty())
+                            partition_columns = delta_conf_s3->getDeltaLakePartitionColumns();
+                        }
+                        else if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
+                        {
+                            partition_columns = delta_conf_local->getDeltaLakePartitionColumns();
+                        }
+                        if (!partition_columns.empty())
+                        {
+                            auto partition_values = partition_columns.find(full_path);
+                            if (partition_values != partition_columns.end())
                             {
-                                auto partition_values = partition_columns.find(filename);
-                                if (partition_values != partition_columns.end())
+                                for (const auto & [name_and_type, value] : partition_values->second)
                                 {
-                                    for (const auto & [name_and_type, value] : partition_values->second)
-                                    {
-                                        if (!read_from_format_info.source_header.has(name_and_type.name))
-                                            continue;
+                                    if (!read_from_format_info.source_header.has(name_and_type.name))
+                                        continue;
 
-                                        const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
-                                        auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
-                                        /// This column is filled with default value now, remove it.
-                                        chunk.erase(column_pos);
-                                        /// Add correct values.
-                                        if (column_pos < chunk.getNumColumns())
-                                            chunk.addColumn(column_pos, std::move(partition_column));
-                                        else
-                                            chunk.addColumn(std::move(partition_column));
-                                    }
+                                    const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
+                                    auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+                                    /// This column is filled with default value now, remove it.
+                                    chunk.erase(column_pos);
+                                    /// Add correct values.
+                                    if (column_pos < chunk.getNumColumns())
+                                        chunk.addColumn(column_pos, std::move(partition_column));
+                                    else
+                                        chunk.addColumn(std::move(partition_column));
                                 }
                             }
                         }
+
                     }
 #endif
                 }
             }
+
             return chunk;
         }
 
@@ -386,7 +413,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (!object_info->metadata)
         {
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
-            object_info->metadata = object_storage->getObjectMetadata(path);
+
+            if (query_settings.ignore_non_existent_file)
+            {
+                auto metadata = object_storage->tryGetObjectMetadata(path);
+                if (!metadata)
+                    return {};
+
+                object_info->metadata = metadata;
+            }
+            else
+                object_info->metadata = object_storage->getObjectMetadata(path);
         }
     }
     while (query_settings.skip_empty_files && object_info->metadata->size_bytes == 0);
@@ -537,9 +574,8 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     if (!object_info.metadata)
     {
         if (!use_cache)
-        {
             return object_storage->readObject(StoredObject(object_info.getPath()), read_settings);
-        }
+
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath());
     }
 
@@ -644,6 +680,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
     }
+
     return impl;
 }
 
@@ -801,6 +838,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     const NamesAndTypesList & virtual_columns_,
     ObjectInfos * read_keys_,
     bool ignore_non_existent_files_,
+    bool skip_object_metadata_,
     std::function<void(FileProgress)> file_progress_callback_)
     : object_storage(object_storage_)
     , configuration(configuration_)
@@ -808,6 +846,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , file_progress_callback(file_progress_callback_)
     , keys(configuration->getPaths())
     , ignore_non_existent_files(ignore_non_existent_files_)
+    , skip_object_metadata(skip_object_metadata_)
 {
     if (read_keys_)
     {
@@ -826,20 +865,23 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::ne
     {
         size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
         if (current_index >= keys.size())
-            return {};
+            return nullptr;
 
         auto key = keys[current_index];
 
         ObjectMetadata object_metadata{};
-        if (ignore_non_existent_files)
+        if (!skip_object_metadata)
         {
-            auto metadata = object_storage->tryGetObjectMetadata(key);
-            if (!metadata)
-                continue;
-            object_metadata = *metadata;
+            if (ignore_non_existent_files)
+            {
+                auto metadata = object_storage->tryGetObjectMetadata(key);
+                if (!metadata)
+                    continue;
+                object_metadata = *metadata;
+            }
+            else
+                object_metadata = object_storage->getObjectMetadata(key);
         }
-        else
-            object_metadata = object_storage->getObjectMetadata(key);
 
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
@@ -896,8 +938,10 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     for (auto & key_future : keys)
     {
         auto key = key_future.get();
-        if (!key.empty())
-            buffer.emplace_back(std::make_shared<ObjectInfo>(key, std::nullopt));
+        if (key.empty())
+            continue;
+
+        buffer.emplace_back(std::make_shared<ObjectInfo>(key, std::nullopt));
     }
 }
 
@@ -905,7 +949,13 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= buffer.size())
-        return std::make_shared<ObjectInfo>(callback());
+    {
+        auto key = callback();
+        if (key.empty())
+            return nullptr;
+
+        return std::make_shared<ObjectInfo>(key, std::nullopt);
+    }
 
     return buffer[current_index];
 }
@@ -936,7 +986,8 @@ StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
     ConfigurationPtr configuration_,
     std::unique_ptr<IObjectIterator> archives_iterator_,
     ContextPtr context_,
-    ObjectInfos * read_keys_)
+    ObjectInfos * read_keys_,
+    bool ignore_archive_globs_)
     : WithContext(context_)
     , object_storage(object_storage_)
     , is_path_in_archive_with_globs(configuration_->isPathInArchiveWithGlobs())
@@ -945,6 +996,7 @@ StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
     , log(getLogger("ArchiveIterator"))
     , path_in_archive(is_path_in_archive_with_globs ? "" : configuration_->getPathInArchive())
     , read_keys(read_keys_)
+    , ignore_archive_globs(ignore_archive_globs_)
 {
 }
 
@@ -975,12 +1027,15 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                 if (!archive_object)
                     return {};
 
+                if (!archive_object->metadata)
+                    archive_object->metadata = object_storage->getObjectMetadata(archive_object->getPath());
+
                 archive_reader = createArchiveReader(archive_object);
                 file_enumerator = archive_reader->firstFile();
                 if (!file_enumerator)
                     continue;
             }
-            else if (!file_enumerator->nextFile())
+            else if (!file_enumerator->nextFile() || ignore_archive_globs)
             {
                 file_enumerator.reset();
                 continue;

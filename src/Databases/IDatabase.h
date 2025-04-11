@@ -3,7 +3,7 @@
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/executeQuery.h>
+#include <Interpreters/QueryFlags.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Storages/IStorage_fwd.h>
@@ -21,12 +21,14 @@
 namespace DB
 {
 
+
 struct Settings;
 struct ConstraintsDescription;
 struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
+struct AlterCommand;
 class AlterCommands;
 class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
@@ -258,6 +260,13 @@ public:
     /// Wait for all tables to be loaded and started up. If `skip_not_loaded` is true, then not yet loaded or not yet started up (at the moment of iterator creation) tables are excluded.
     virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const = 0; /// NOLINT
 
+    /// Same as above, but may return non-fully initialized StoragePtr objects which are not suitable for reading.
+    /// Useful for queries like "SHOW TABLES"
+    virtual DatabaseTablesIteratorPtr getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const /// NOLINT
+    {
+        return getTablesIterator(context, filter_by_table_name, skip_not_loaded);
+    }
+
     virtual DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
         ContextPtr /*context*/, const FilterByNameFunction & /*filter_by_table_name = {}*/, bool /*skip_not_loaded = false*/) const;
 
@@ -363,6 +372,9 @@ public:
         std::lock_guard lock{mutex};
         return database_name;
     }
+
+    // Alter comment of database.
+    virtual void alterDatabaseComment(const AlterCommand &);
 
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }

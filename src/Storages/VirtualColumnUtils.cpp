@@ -144,9 +144,9 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
-static std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path)
+std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path)
 {
-    std::string pattern = "([^/]+)=([^/]+)/";
+    std::string pattern = "([^/]+)=([^/]*)/";
     re2::StringPiece input_piece(path);
 
     std::unordered_map<std::string, std::string> key_values;
@@ -354,6 +354,23 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allo
         for (const auto * child : cur->children)
             nodes.push(child);
     }
+
+    return true;
+}
+
+bool isDeterministic(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+    {
+        if (!isDeterministic(child))
+            return false;
+    }
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+
+    if (!node->function_base->isDeterministic())
+        return false;
 
     return true;
 }

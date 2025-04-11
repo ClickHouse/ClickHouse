@@ -239,7 +239,7 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_group_by should be >= 0 and < 1 ({})", ratio);
 
         auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value() && !std::isnan(ratio))
+        if (available_system_memory.has_value())
         {
             size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
             if (threshold)
@@ -248,9 +248,9 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
                 threshold = ratio_in_bytes;
 
             LOG_TRACE(getLogger("Aggregator"), "Adjusting memory limit before external aggregation with {} (ratio: {}, available system memory: {})",
-                    formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-                    ratio,
-                    formatReadableSizeWithBinarySuffix(*available_system_memory));
+                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
+                ratio,
+                formatReadableSizeWithBinarySuffix(*available_system_memory));
         }
         else
         {
@@ -2078,7 +2078,7 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
     data.forEachValue(
         [&](const auto & key, auto & mapped)
         {
-            if (!out_cols.has_value())
+            if (unlikely(!out_cols.has_value()))
                 init_out_cols();
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
@@ -2850,7 +2850,11 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     {
         for (size_t i = row_begin; i < row_end; i++)
         {
-            auto emplace_result = state.emplaceKey(data, i, *arena_for_keys);
+            /// clang-tidy complains wrongly about this one when running the analysis from an ARM host.
+            /// The same thing does not fail when cross-compiling from a x86_64 host.
+            /// Furthermore, arena_for_keys is set to be a pointer to the last member of aggregates_pools,
+            /// which is always initialized to have at least 1 arena.
+            auto emplace_result = state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
             if (!emplace_result.isInserted())
                 places[i] = emplace_result.getMapped();
             else

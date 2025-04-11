@@ -51,7 +51,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
             return table_function_ptr->getActualTableStructure(context, /*is_insert_query*/ true);
         }
 
-        auto table_func_name = queryToString(table_func_ptr);
+        auto table_func_name = table_func_ptr->formatWithSecretsOneLine();
         query = "DESC TABLE " + table_func_name;
     }
     else
@@ -201,7 +201,6 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     {
         /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
         RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
-
         executor.setPoolMode(PoolMode::GET_ONE);
         executor.setMainTable(remote_table_id);
 

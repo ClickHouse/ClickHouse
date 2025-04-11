@@ -1,10 +1,11 @@
 ---
-title : Pretty
-slug: /interfaces/formats/Pretty
-keywords : [Pretty]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the Pretty format'
+input_format: false
+keywords: ['Pretty']
+output_format: true
+slug: /interfaces/formats/Pretty
+title: 'Pretty'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
@@ -21,7 +22,7 @@ A full grid of the table is drawn, and each row occupies two lines in the termin
 Each result block is output as a separate table. 
 This is necessary so that blocks can be output without buffering results (buffering would be necessary to pre-calculate the visible width of all the values).
 
-[NULL](/docs/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
+[NULL](/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
 ## Example Usage {#example-usage}
 

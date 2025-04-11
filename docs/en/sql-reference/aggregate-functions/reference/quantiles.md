@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiles
+description: 'quantiles, quantilesExactExclusive, quantilesExactInclusive, quantilesGK'
 sidebar_position: 177
-title: "quantiles Functions"
-description: "quantiles, quantilesExactExclusive, quantilesExactInclusive, quantilesGK"
+slug: /sql-reference/aggregate-functions/reference/quantiles
+title: 'quantiles Functions'
 ---
 
 # quantiles Functions
@@ -25,13 +25,13 @@ Works more efficiently with sets of levels than [quantileExactExclusive](../../.
 
 **Syntax**
 
-``` sql
+```sql
 quantilesExactExclusive(level1, level2, ...)(expr)
 ```
 
 **Arguments**
 
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Parameters**
 
@@ -51,7 +51,7 @@ Type of array values:
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE num AS numbers(1000);
 
 SELECT quantilesExactExclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(x) FROM (SELECT number AS x FROM num);
@@ -59,7 +59,7 @@ SELECT quantilesExactExclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(x) FROM 
 
 Result:
 
-``` text
+```text
 ┌─quantilesExactExclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(x)─┐
 │ [249.25,499.5,749.75,899.9,949.9499999999999,989.99,998.999]        │
 └─────────────────────────────────────────────────────────────────────┘
@@ -77,13 +77,13 @@ Works more efficiently with sets of levels than [quantileExactInclusive](../../.
 
 **Syntax**
 
-``` sql
+```sql
 quantilesExactInclusive(level1, level2, ...)(expr)
 ```
 
 **Arguments**
 
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Parameters**
 
@@ -103,7 +103,7 @@ Type of array values:
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE num AS numbers(1000);
 
 SELECT quantilesExactInclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(x) FROM (SELECT number AS x FROM num);
@@ -111,7 +111,7 @@ SELECT quantilesExactInclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(x) FROM 
 
 Result:
 
-``` text
+```text
 ┌─quantilesExactInclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(x)─┐
 │ [249.75,499.5,749.25,899.1,949.05,989.01,998.001]                   │
 └─────────────────────────────────────────────────────────────────────┘
@@ -123,7 +123,7 @@ Result:
 
 **Syntax**
 
-``` sql
+```sql
 quantilesGK(accuracy, level1, level2, ...)(expr)
 ```
 
@@ -142,7 +142,7 @@ Type of array values:
 Query:
 
 
-``` sql
+```sql
 SELECT quantilesGK(1, 0.25, 0.5, 0.75)(number + 1)
 FROM numbers(1000)
 

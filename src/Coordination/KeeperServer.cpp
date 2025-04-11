@@ -559,6 +559,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     nuraft::raft_server::limits raft_limits;
     raft_limits.reconnect_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::raft_limits_reconnect_limit], "raft_limits_reconnect_limit", log);
     raft_limits.response_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::raft_limits_response_limit], "response_limit", log);
+    raft_limits.busy_connection_limit_ = 0;
     KeeperRaftServer::set_raft_limits(raft_limits);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
@@ -583,7 +584,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;
-    LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk);
+    LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk.load());
     if (state_machine->last_commit_index() >= last_log_idx_on_disk)
         keeper_context->setLocalLogsPreprocessed();
 
@@ -1191,7 +1192,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
 
     throw Exception(ErrorCodes::RAFT_ERROR,
         "Configuration change {} was not accepted by Raft after {} retries",
-        action, coordination_settings[CoordinationSetting::configuration_change_tries_count]);
+        action, coordination_settings[CoordinationSetting::configuration_change_tries_count].value);
 }
 
 bool KeeperServer::waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action)

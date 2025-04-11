@@ -72,6 +72,8 @@ using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
 
 using ObjectAttributes = std::map<std::string, std::string>;
 
+struct PartitionCommand;
+
 /**
  * Provide interface for reservation.
  */
@@ -171,7 +173,7 @@ public:
     virtual DirectoryIteratorPtr iterateDirectory(const String & path) const = 0;
 
     /// Return `true` if the specified directory is empty.
-    bool isDirectoryEmpty(const String & path) const;
+    virtual bool isDirectoryEmpty(const String & path) const;
 
     /// Create empty file at `path`.
     virtual void createFile(const String & path) = 0;
@@ -443,6 +445,8 @@ public:
     virtual bool isWriteOnce() const { return false; }
 
     virtual bool supportsHardLinks() const { return true; }
+
+    virtual bool supportsPartitionCommand(const PartitionCommand & command) const;
 
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }

@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/mergetree-family/custom-partitioning-key
+description: 'Learn how to add a custom partitioning key to MergeTree tables.'
+sidebar_label: 'Custom Partitioning Key'
 sidebar_position: 30
-sidebar_label: Custom Partitioning Key
-title: "Custom Partitioning Key"
-description: "Learn how to add a custom partitioning key to MergeTree tables."
+slug: /engines/table-engines/mergetree-family/custom-partitioning-key
+title: 'Custom Partitioning Key'
 ---
 
 # Custom Partitioning Key
@@ -14,13 +14,13 @@ In most cases you do not need a partition key, and in most other cases you do no
 You should never use too granular of partitioning. Don't partition your data by client identifiers or names. Instead, make a client identifier or name the first column in the ORDER BY expression.
 :::
 
-Partitioning is available for the [MergeTree family tables](../../../engines/table-engines/mergetree-family/mergetree.md), including [replicated tables](../../../engines/table-engines/mergetree-family/replication.md) and [materialized views](../../../sql-reference/statements/create/view.md#materialized-view).
+Partitioning is available for the [MergeTree family tables](../../../engines/table-engines/mergetree-family/mergetree.md), including [replicated tables](../../../engines/table-engines/mergetree-family/replication.md) and [materialized views](/sql-reference/statements/create/view#materialized-view).
 
 A partition is a logical combination of records in a table by a specified criterion. You can set a partition by an arbitrary criterion, such as by month, by day, or by event type. Each partition is stored separately to simplify manipulations of this data. When accessing the data, ClickHouse uses the smallest subset of partitions possible. Partitions improve performance for queries containing a partitioning key because ClickHouse will filter for that partition before selecting the parts and granules within the partition.
 
 The partition is specified in the `PARTITION BY expr` clause when [creating a table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table). The partition key can be any expression from the table columns. For example, to specify partitioning by month, use the expression `toYYYYMM(date_column)`:
 
-``` sql
+```sql
 CREATE TABLE visits
 (
     VisitDate Date,
@@ -34,7 +34,7 @@ ORDER BY Hour;
 
 The partition key can also be a tuple of expressions (similar to the [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries)). For example:
 
-``` sql
+```sql
 ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
 PARTITION BY (toMonday(StartDate), EventType)
 ORDER BY (CounterID, StartDate, intHash32(UserID));
@@ -52,7 +52,7 @@ A merge only works for data parts that have the same value for the partitioning 
 
 Use the [system.parts](../../../operations/system-tables/parts.md) table to view the table parts and partitions. For example, let's assume that we have a `visits` table with partitioning by month. Let's perform the `SELECT` query for the `system.parts` table:
 
-``` sql
+```sql
 SELECT
     partition,
     name,
@@ -61,7 +61,7 @@ FROM system.parts
 WHERE table = 'visits'
 ```
 
-``` text
+```text
 ┌─partition─┬─name──────────────┬─active─┐
 │ 201901    │ 201901_1_3_1      │      0 │
 │ 201901    │ 201901_1_9_2_11   │      1 │
@@ -75,7 +75,7 @@ WHERE table = 'visits'
 
 The `partition` column contains the names of the partitions. There are two partitions in this example: `201901` and `201902`. You can use this column value to specify the partition name in [ALTER ... PARTITION](../../../sql-reference/statements/alter/partition.md) queries.
 
-The `name` column contains the names of the partition data parts. You can use this column to specify the name of the part in the [ALTER ATTACH PART](../../../sql-reference/statements/alter/partition.md#alter_attach-partition) query.
+The `name` column contains the names of the partition data parts. You can use this column to specify the name of the part in the [ALTER ATTACH PART](/sql-reference/statements/alter/partition#attach-partitionpart) query.
 
 Let's break down the name of the part: `201901_1_9_2_11`:
 
@@ -93,11 +93,11 @@ The `active` column shows the status of the part. `1` is active; `0` is inactive
 
 As you can see in the example, there are several separated parts of the same partition (for example, `201901_1_3_1` and `201901_1_9_2`). This means that these parts are not merged yet. ClickHouse merges the inserted parts of data periodically, approximately 15 minutes after inserting. In addition, you can perform a non-scheduled merge using the [OPTIMIZE](../../../sql-reference/statements/optimize.md) query. Example:
 
-``` sql
+```sql
 OPTIMIZE TABLE visits PARTITION 201902;
 ```
 
-``` text
+```text
 ┌─partition─┬─name─────────────┬─active─┐
 │ 201901    │ 201901_1_3_1     │      0 │
 │ 201901    │ 201901_1_9_2_11  │      1 │
@@ -114,7 +114,7 @@ Inactive parts will be deleted approximately 10 minutes after merging.
 
 Another way to view a set of parts and partitions is to go into the directory of the table: `/var/lib/clickhouse/data/<database>/<table>/`. For example:
 
-``` bash
+```bash
 /var/lib/clickhouse/data/default/visits$ ls -l
 total 40
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 201901_1_3_1
@@ -130,11 +130,11 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 The folders '201901_1_1_0', '201901_1_7_1' and so on are the directories of the parts. Each part relates to a corresponding partition and contains data just for a certain month (the table in this example has partitioning by month).
 
-The `detached` directory contains parts that were detached from the table using the [DETACH](../../../sql-reference/statements/alter/partition.md#alter_detach-partition) query. The corrupted parts are also moved to this directory, instead of being deleted. The server does not use the parts from the `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter/partition.md#alter_attach-partition) query.
+The `detached` directory contains parts that were detached from the table using the [DETACH](/sql-reference/statements/detach) query. The corrupted parts are also moved to this directory, instead of being deleted. The server does not use the parts from the `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](/sql-reference/statements/alter/partition#attach-partitionpart) query.
 
 Note that on the operating server, you cannot manually change the set of parts or their data on the file system, since the server will not know about it. For non-replicated tables, you can do this when the server is stopped, but it isn't recommended. For replicated tables, the set of parts cannot be changed in any case.
 
-ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](../../../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
+ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](/sql-reference/statements/alter/partition).
 
 ## Group By optimisation using partition key {#group-by-optimisation-using-partition-key}
 
@@ -144,7 +144,7 @@ because we provided with the guarantee that each group by key value cannot appea
 
 The typical example is:
 
-``` sql
+```sql
 CREATE TABLE session_log
 (
     UserID UInt64,

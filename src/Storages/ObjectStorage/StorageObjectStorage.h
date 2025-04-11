@@ -4,7 +4,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -18,6 +17,8 @@ namespace DB
 class ReadBufferIterator;
 class SchemaCache;
 class NamedCollection;
+struct StorageObjectStorageSettings;
+using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 
 namespace ErrorCodes
 {
@@ -69,6 +70,7 @@ public:
         LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
+        bool is_table_function_ = false,
         bool lazy_init = false);
 
     String getName() const override;
@@ -138,6 +140,8 @@ public:
 
     void updateExternalDynamicMetadata(ContextPtr) override;
 
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 protected:
     String getPathSample(ContextPtr context);
 
@@ -153,6 +157,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const ASTPtr partition_by;
     const bool distributed_processing;
+    bool update_configuration_on_read;
 
     LoggerPtr log;
 };
@@ -168,11 +173,11 @@ public:
     using Paths = std::vector<Path>;
 
     static void initialize(
-        Configuration & configuration,
+        Configuration & configuration_to_initialize,
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        StorageObjectStorageSettings * settings);
+        StorageObjectStorageSettingsPtr settings);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -219,7 +224,8 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
-    virtual void implementPartitionPruning(const ActionsDAG &) { }
+    virtual std::optional<size_t> totalRows() { return {}; }
+    virtual std::optional<size_t> totalBytes() { return {}; }
 
     virtual bool hasExternalDynamicMetadata() { return false; }
 
@@ -242,7 +248,10 @@ public:
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
     virtual bool supportsFileIterator() const { return false; }
-    virtual ObjectIterator iterate()
+    virtual ObjectIterator iterate(
+        const ActionsDAG * /* filter_dag */,
+        std::function<void(FileProgress)> /* callback */,
+        size_t /* list_batch_size */)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
@@ -253,6 +262,7 @@ public:
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 
+    const StorageObjectStorageSettings & getSettingsRef() const;
 
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
@@ -262,8 +272,7 @@ protected:
 
     bool initialized = false;
 
-    bool allow_dynamic_metadata_for_data_lakes = false;
-    bool allow_experimental_delta_kernel_rs = false;
+    StorageObjectStorageSettingsPtr storage_settings;
 };
 
 }

@@ -13,7 +13,6 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/obfuscateQueries.h>
 #include <Parsers/parseQuery.h>
 #include <Common/ErrorCodes.h>
@@ -35,6 +34,8 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+
+#include <boost/algorithm/string/split.hpp>
 
 namespace DB
 {
@@ -192,9 +193,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             registerInterpreters();
             registerFunctions();
             registerAggregateFunctions();
-            registerTableFunctions(false);
+            registerTableFunctions();
             registerDatabases();
-            registerStorages(false);
+            registerStorages();
             registerFormats();
 
             std::unordered_set<std::string> additional_names;

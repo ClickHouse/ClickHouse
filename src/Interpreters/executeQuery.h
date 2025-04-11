@@ -4,6 +4,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/QueryFlags.h>
 #include <Interpreters/QueryLogElement.h>
 #include <QueryPipeline/BlockIO.h>
 
@@ -18,6 +19,7 @@ class ReadBuffer;
 class WriteBuffer;
 class IOutputFormat;
 struct QueryStatusInfo;
+struct QueryPlanAndSets;
 
 struct QueryResultDetails
 {
@@ -30,12 +32,6 @@ struct QueryResultDetails
 
 using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
 using HandleExceptionInOutputFormatFunc = std::function<void(IOutputFormat & output_format, const String & format_name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings)>;
-
-struct QueryFlags
-{
-    bool internal = false; /// If true, this query is caused by another query and thus needn't be registered in the ProcessList.
-    bool distributed_backup_restore = false; /// If true, this query is a part of backup restore.
-};
 
 
 /// Parse and execute a query.
@@ -66,7 +62,7 @@ void executeQuery(
 /// Correctly formatting the results (according to INTO OUTFILE and FORMAT sections)
 /// must be done separately.
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const String & query,     /// Query text without INSERT data. The latter must be written to BlockIO::out.
+    const String & query, /// Query text without INSERT data. The latter must be written to BlockIO::out.
     ContextMutablePtr context,       /// DB, tables, data types, storage engines, functions, aggregate functions...
     QueryFlags flags = {},
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
@@ -84,7 +80,7 @@ QueryLogElement logQueryStart(
     UInt64 normalized_query_hash,
     const ASTPtr & query_ast,
     const QueryPipeline & pipeline,
-    const std::unique_ptr<IInterpreter> & interpreter,
+    const IInterpreter * interpreter,
     bool internal,
     const String & query_database,
     const String & query_table,
@@ -97,7 +93,7 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
-    QueryCacheUsage query_cache_usage,
+    QueryResultCacheUsage query_result_cache_usage,
     bool internal);
 
 void logQueryException(

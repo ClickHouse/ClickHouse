@@ -9,7 +9,6 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/queryToString.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
@@ -35,7 +34,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -46,6 +44,7 @@
 #include <Storages/WindowView/StorageWindowView.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
@@ -206,7 +205,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
-    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw];
+    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
     if (db_num_limit > 0 && !internal)
     {
         size_t db_count = DatabaseCatalog::instance().getDatabases().size();
@@ -276,7 +275,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                   || (create.columns_list->projections && !create.columns_list->projections->children.empty()))))
     {
         /// Currently, there are no database engines, that support any arguments.
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->formatForErrorMessage());
     }
 
     if (create.storage && !create.storage->engine)
@@ -351,7 +350,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.if_not_exists = false;
 
         WriteBufferFromOwnString statement_buf;
-        formatAST(create, statement_buf, false);
+        IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite=*/false);
+        create.format(statement_buf, format_settings);
         writeChar('\n', statement_buf);
         String statement = statement_buf.str();
 
@@ -881,7 +881,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS with tables of the MergeTree family");
 
                 /// Ensure that as_storage and the new storage has the same primary key, sorting key and partition key
-                auto query_to_string = [](const IAST * ast) { return ast ? queryToString(*ast) : ""; };
+                auto query_to_string = [](const IAST * ast) { return ast ? ast->formatWithSecretsOneLine() : ""; };
 
                 const String as_storage_sorting_key_str = query_to_string(as_storage_metadata->getSortingKeyAST().get());
                 const String as_storage_primary_key_str = query_to_string(as_storage_metadata->getPrimaryKeyAST().get());
@@ -1062,11 +1062,22 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     NamesAndTypesList all_output_columns;
     bool check_columns = false;
     if (create.hasTargetTableID(ViewTarget::To))
-     {
-        if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
-                create.getTargetTableID(ViewTarget::To), getContext()))
+    {
+        StoragePtr to_table;
+        try
         {
-            all_output_columns = to_table->getInMemoryMetadataPtr()->getSampleBlock().getNamesAndTypesList();
+            to_table = DatabaseCatalog::instance().getTable(
+                create.getTargetTableID(ViewTarget::To), getContext());
+        }
+        catch (...)
+        {
+            if (!getContext()->getSettingsRef()[Setting::allow_materialized_view_with_bad_select])
+                throw;
+        }
+
+        if (to_table)
+        {
+            all_output_columns = to_table->getInMemoryMetadataPtr()->getSampleBlockInsertable().getNamesAndTypesList();
             check_columns = true;
         }
     }
@@ -1129,25 +1140,14 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 input_columns.push_back(input_column.cloneEmpty());
                 output_columns.push_back(ColumnWithTypeAndName(it->second->createColumn(), it->second, input_column.name));
             }
-            else if (create.refresh_strategy)
+            else if (create.refresh_strategy || !getContext()->getSettingsRef()[Setting::allow_materialized_view_with_bad_select])
             {
-                /// Unrecognized columns produced by SELECT query are allowed by regular materialized
-                /// views, but not by refreshable ones. This is in part because it was easier to
-                /// implement, in part because refreshable views have less concern about ALTERing target
-                /// tables.
-                ///
-                /// The motivating scenario for allowing this in regular MV is ALTERing the table+query.
-                /// Suppose the user removes a column from target table, then a minute later
-                /// correspondingly updates the view's query to not produce that column.
-                /// If MV didn't allow unrecognized columns then during that minute all INSERTs into the
-                /// source table would fail - unacceptable.
-                /// For refreshable views, during that minute refreshes will fail - acceptable.
-                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "SELECT query outputs column with name '{}', which is not found in the target table. Use 'AS' to assign alias that matches a column name.", input_column.name);
+                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "SELECT query outputs column with name '{}', which is not found in the target table. Use 'AS' to assign alias that matches a column name", input_column.name);
             }
         }
 
         if (input_columns.empty())
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "None of the columns produced by the SELECT query are present in the target table. Use 'AS' to assign aliases that match column names.");
+            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "None of the columns produced by the SELECT query are present in the target table. Use 'AS' to assign aliases that match column names");
 
         ActionsDAG::makeConvertingActions(
             input_columns,
@@ -1445,10 +1445,10 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
                             "3. ATTACH {} {} FROM '/path/to/data/' <table definition>;\n"
                             "4. ATTACH {} {} UUID '<uuid>' <table definition>;",
                             kind_upper,
-                            kind_upper, create.table,
-                            kind_upper, create.table,
-                            kind_upper, create.table,
-                            kind_upper, create.table);
+                            kind_upper, create.table->formatForErrorMessage(),
+                            kind_upper, create.table->formatForErrorMessage(),
+                            kind_upper, create.table->formatForErrorMessage(),
+                            kind_upper, create.table->formatForErrorMessage());
         }
 
         create.generateRandomUUIDs();
@@ -1844,9 +1844,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     data_path = database->getTableDataPath(create);
-    auto db_disk = getContext()->getDatabaseDisk();
+    // When creating a table, when checking if the data path exists, it should use the local disk to check, not the database disk. Because the database disk stores metadata files only.
+    auto full_data_path = fs::path{getContext()->getPath()} / data_path;
 
-    if (!create.attach && !data_path.empty() && db_disk->existsDirectory(data_path))
+    if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
     {
         if (getContext()->getZooKeeperMetadataTransaction() &&
             !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery() &&
@@ -1858,11 +1859,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// We don't have a table with this UUID (and all metadata is loaded),
             /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
 
-            fs::path trash_path = fs::path("trash") / data_path / getHexUIntLowercase(thread_local_rng());
+            fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
             LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
-            db_disk->createDirectories(trash_path.parent_path());
-            db_disk->moveFile(data_path, trash_path);
+            fs::create_directories(trash_path.parent_path());
+            renameNoReplace(full_data_path, trash_path);
         }
         else
         {
@@ -1911,6 +1912,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// Before actually creating the table, check if it will lead to cyclic dependencies.
     checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, getContext());
 
+    /// Initial queries in Replicated database at this point have query_kind = ClientInfo::QueryKind::SECONNDARY_QUERY,
+    /// so we need to check whether the query is initial through getZooKeeperMetadataTransaction()->isInitialQuery()
+    bool is_initial_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY ||
+                            (getContext()->getZooKeeperMetadataTransaction() && getContext()->getZooKeeperMetadataTransaction()->isInitialQuery());
+    bool is_predefined_database = DatabaseCatalog::isPredefinedDatabase(create.getDatabase());
+    if (!internal && is_initial_query && !is_predefined_database)
+        throwIfTooManyEntities(create);
+
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
@@ -1924,7 +1933,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
         /// and because storage lifetime is bigger than query context lifetime.
-        res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true);
+        res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
     }
     else
@@ -1992,9 +2001,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    if (!internal)
-        throwIfTooManyEntities(create, res);
-
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
     /// Move table data to the proper place. Wo do not move data earlier to avoid situations
@@ -2020,7 +2026,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 }
 
 
-void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create, StoragePtr storage) const
+void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create) const
 {
     auto check_and_throw = [&](auto setting, CurrentMetrics::Metric metric, String setting_name, String entity_name)
         {
@@ -2033,12 +2039,15 @@ void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create, Sto
                                 entity_name, setting_name, num_limit, attached_count);
         };
 
-    if (typeid_cast<StorageReplicatedMergeTree *>(storage.get()) != nullptr)
-        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
-    else if (create.is_dictionary)
+    String engine_name = create.storage && create.storage->engine ? create.storage->engine->name : "";
+    bool is_replicated = engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree");
+
+    if (create.is_dictionary)
         check_and_throw(ServerSetting::max_dictionary_num_to_throw, CurrentMetrics::AttachedDictionary, "max_dictionary_num_to_throw", "dictionaries");
     else if (create.isView())
         check_and_throw(ServerSetting::max_view_num_to_throw, CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
+    else if (is_replicated)
+        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
     else
         check_and_throw(ServerSetting::max_table_num_to_throw, CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
 }
@@ -2172,7 +2181,14 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (created && !renamed)
         {
             auto drop_context = make_drop_context();
-            InterpreterDropQuery(ast_drop, drop_context).execute();
+            try
+            {
+                InterpreterDropQuery(ast_drop, drop_context).execute();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("InterpreterCreateQuery", "Cannot DROP temporary table");
+            }
         }
         throw;
     }
@@ -2255,7 +2271,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     if (cluster->maybeCrossReplication())
     {
-        auto on_cluster_version = local_context->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
+        auto on_cluster_version = local_context->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value;
         if (DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION <= on_cluster_version)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Value {} of setting distributed_ddl_entry_format_version "
                                                          "is incompatible with cross-replication", on_cluster_version);

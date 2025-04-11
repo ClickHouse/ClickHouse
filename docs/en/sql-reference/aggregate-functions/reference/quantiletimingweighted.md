@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiletimingweighted
+description: 'With the determined precision computes the quantile of a numeric data
+  sequence according to the weight of each sequence member.'
 sidebar_position: 181
-title: "quantileTimingWeighted"
-description: "With the determined precision computes the quantile of a numeric data sequence according to the weight of each sequence member."
+slug: /sql-reference/aggregate-functions/reference/quantiletimingweighted
+title: 'quantileTimingWeighted'
 ---
 
 # quantileTimingWeighted
@@ -15,7 +16,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 **Syntax**
 
-``` sql
+```sql
 quantileTimingWeighted(level)(expr, weight)
 ```
 
@@ -25,7 +26,7 @@ Alias: `medianTimingWeighted`.
 
 - `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 
-- `expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) over a column values returning a [Float\*](../../../sql-reference/data-types/float.md)-type number.
+- `expr` — [Expression](/sql-reference/syntax#expressions) over a column values returning a [Float\*](../../../sql-reference/data-types/float.md)-type number.
 
         - If negative values are passed to the function, the behavior is undefined.
         - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
@@ -42,7 +43,7 @@ The calculation is accurate if:
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
 :::note    
-For calculating page loading time quantiles, this function is more effective and accurate than [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
+For calculating page loading time quantiles, this function is more effective and accurate than [quantile](/sql-reference/aggregate-functions/reference/quantile).
 :::
 
 **Returned value**
@@ -52,14 +53,14 @@ For calculating page loading time quantiles, this function is more effective and
 Type: `Float32`.
 
 :::note    
-If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../../../sql-reference/statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
+If no values are passed to the function (when using `quantileTimingIf`), [NaN](/sql-reference/data-types/float#nan-and-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](/sql-reference/statements/select/order-by) for notes on sorting `NaN` values.
 :::
 
 **Example**
 
 Input table:
 
-``` text
+```text
 ┌─response_time─┬─weight─┐
 │            68 │      1 │
 │           104 │      2 │
@@ -72,13 +73,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT quantileTimingWeighted(response_time, weight) FROM t
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantileTimingWeighted(response_time, weight)─┐
 │                                           112 │
 └───────────────────────────────────────────────┘
@@ -93,7 +94,7 @@ Same as `quantileTimingWeighted`, but accept multiple parameters with quantile l
 
 Input table:
 
-``` text
+```text
 ┌─response_time─┬─weight─┐
 │            68 │      1 │
 │           104 │      2 │
@@ -106,13 +107,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT quantilesTimingWeighted(0,5, 0.99)(response_time, weight) FROM t
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantilesTimingWeighted(0.5, 0.99)(response_time, weight)─┐
 │ [112,162]                                                 │
 └───────────────────────────────────────────────────────────┘
@@ -120,5 +121,5 @@ Result:
 
 **See Also**
 
-- [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
+- [median](/sql-reference/aggregate-functions/reference/median)
 - [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

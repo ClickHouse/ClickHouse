@@ -22,6 +22,7 @@
 
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -95,7 +96,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <base/map.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
@@ -189,6 +190,9 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ServerSetting
@@ -1317,16 +1321,16 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
     else
         descr.fill_step = order_by_elem.direction;
 
-    if (applyVisitor(FieldVisitorAccurateEquals(), descr.fill_step, Field{0}))
+    if (accurateEquals(descr.fill_step, Field{0}))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be zero");
 
     if (order_by_elem.direction == 1)
     {
-        if (applyVisitor(FieldVisitorAccurateLess(), descr.fill_step, Field{0}))
+        if (accurateLess(descr.fill_step, Field{0}))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be negative for sorting in ascending direction");
 
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
-            applyVisitor(FieldVisitorAccurateLess(), descr.fill_to, descr.fill_from))
+            accurateLess(descr.fill_to, descr.fill_from))
         {
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                             "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
@@ -1334,11 +1338,11 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
     }
     else
     {
-        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, descr.fill_step))
+        if (accurateLess(Field{0}, descr.fill_step))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be positive for sorting in descending direction");
 
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
-            applyVisitor(FieldVisitorAccurateLess(), descr.fill_from, descr.fill_to))
+            accurateLess(descr.fill_from, descr.fill_to))
         {
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                             "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");
@@ -1825,7 +1829,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         for (const auto & key_name : key_names)
                             order_descr.emplace_back(key_name);
 
-                        SortingStep::Settings sort_settings(*context);
+                        SortingStep::Settings sort_settings(context->getSettingsRef());
 
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentHeader(),
@@ -2463,7 +2467,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         /// require reading some data (but much faster than reading columns).
         /// Set a special flag in query info so the storage will see it and optimize count in read() method.
         query_info.optimize_trivial_count = optimize_trivial_count;
-        return storage->totalRows(settings);
+        return storage->totalRows(context);
     }
 
     // It's possible to optimize count() given only partition predicates
@@ -2568,7 +2572,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             ErrorCodes::TOO_MANY_COLUMNS,
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
             required_columns.size(),
-            settings[Setting::max_columns_to_read]);
+            settings[Setting::max_columns_to_read].value);
 
     /// General limit for the number of threads.
     size_t max_threads_execute_query = settings[Setting::max_threads];
@@ -2648,8 +2652,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     else if (storage)
     {
         /// Table.
-        if (max_streams == 0)
-            max_streams = 1;
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_sync_remote)
@@ -2663,6 +2665,9 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                     "Make sure that `max_streams * max_streams_to_max_threads_ratio` is in some reasonable boundaries, current value: {}",
                     streams_with_ratio);
         }
+
+        if (max_streams == 0)
+            max_streams = 1;
 
         auto & prewhere_info = analysis_result.prewhere_info;
 
@@ -3051,7 +3056,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         }
         if (need_sort)
         {
-            SortingStep::Settings sort_settings(*context);
+            SortingStep::Settings sort_settings(context->getSettingsRef());
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
@@ -3108,7 +3113,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         return;
     }
 
-    SortingStep::Settings sort_settings(*context);
+    SortingStep::Settings sort_settings(context->getSettingsRef());
 
     /// Merge the sorted blocks.
     auto sorting_step = std::make_unique<SortingStep>(
@@ -3338,10 +3343,15 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_p
 
     if (!subqueries.empty())
     {
+        const auto & settings = context->getSettingsRef();
+        SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+        auto prepared_sets_cache = context->getPreparedSetsCache();
+
         auto step = std::make_unique<DelayedCreatingSetsStep>(
                 query_plan.getCurrentHeader(),
                 std::move(subqueries),
-                context);
+                network_transfer_limits,
+                prepared_sets_cache);
 
         query_plan.addStep(std::move(step));
     }

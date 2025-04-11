@@ -390,7 +390,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             return processors;
         });
 
-        pipeline.resize(params.max_threads, /* force = */ true);
+        pipeline.resize(params.max_threads);
 
         aggregating = collector.detachProcessors(0);
         return;
@@ -495,7 +495,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// Add resize transform to uniformly distribute data between aggregating streams.
         /// But not if we execute aggregation over partitioned data in which case data streams shouldn't be mixed.
         if (!storage_has_evenly_distributed_read && !skip_merging)
-            pipeline.resize(pipeline.getNumStreams(), true, true);
+            pipeline.resize(pipeline.getNumStreams(), true);
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
 
@@ -514,7 +514,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     skip_merging);
             });
 
-        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, true /* force */);
+        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads);
 
         aggregating = collector.detachProcessors(0);
     }
@@ -522,7 +522,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     {
         pipeline.addSimpleTransform([&](const Block & header) { return std::make_shared<AggregatingTransform>(header, transform_params); });
 
-        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, false /* force */);
+        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads);
 
         aggregating = collector.detachProcessors(0);
     }
@@ -677,7 +677,7 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
         AggregatingTransformParamsPtr transform_params = std::make_shared<AggregatingTransformParams>(
             pipeline.getHeader(), std::move(params_copy), aggregator_list_ptr, final);
 
-        pipeline.resize(pipeline.getNumStreams(), true, true);
+        pipeline.resize(pipeline.getNumStreams(), true);
 
         pipeline.addSimpleTransform([&](const Block & header)
         {

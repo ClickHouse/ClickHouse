@@ -4,6 +4,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -46,13 +47,13 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
             {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
         });
 
-    auto query_cache_usage_datatype = std::make_shared<DataTypeEnum8>(
+    auto query_result_cache_usage_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"Unknown",     static_cast<Int8>(QueryCacheUsage::Unknown)},
-            {"None",        static_cast<Int8>(QueryCacheUsage::None)},
-            {"Write",       static_cast<Int8>(QueryCacheUsage::Write)},
-            {"Read",        static_cast<Int8>(QueryCacheUsage::Read)}
+            {"Unknown",     static_cast<Int8>(QueryResultCacheUsage::Unknown)},
+            {"None",        static_cast<Int8>(QueryResultCacheUsage::None)},
+            {"Write",       static_cast<Int8>(QueryResultCacheUsage::Write)},
+            {"Read",        static_cast<Int8>(QueryResultCacheUsage::Read)}
         });
 
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -147,7 +148,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
 
-        {"query_cache_usage", std::move(query_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query cache, 'Write' = The query result was written into the query cache, 'Read' = The query result was read from the query cache."},
+        {"query_cache_usage", std::move(query_result_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query result cache, 'Write' = The query result was written into the query result cache, 'Read' = The query result was read from the query result cache."},
 
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
     };
@@ -307,7 +308,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
 
-    columns[i++]->insert(query_cache_usage);
+    columns[i++]->insert(query_result_cache_usage);
 
     if (async_read_counters)
         async_read_counters->dumpToMapColumn(columns[i++].get());

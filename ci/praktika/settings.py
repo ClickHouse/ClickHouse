@@ -15,13 +15,20 @@ class _Settings:
     WORKFLOWS_DIRECTORY: str = f"{CI_PATH}/workflows"
     SETTINGS_DIRECTORY: str = f"{CI_PATH}/settings"
     CI_CONFIG_JOB_NAME = "Config Workflow"
-    DOCKER_BUILD_JOB_NAME = "Docker Builds"
+
+    # Enables a single job (DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME) for building all platforms and merge
+    ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB = False
+    DOCKER_BUILD_ARM_LINUX_JOB_NAME = "Dockers Build (arm)"
+    DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME = "Dockers Build (amd) and Merge"
+    DOCKER_BUILD_AND_MERGE_RUNS_ON: Optional[List[str]] = None
+    DOCKER_BUILD_ARM_RUNS_ON: Optional[List[str]] = None
+
     FINISH_WORKFLOW_JOB_NAME = "Finish Workflow"
     READY_FOR_MERGE_CUSTOM_STATUS_NAME = ""
     CI_CONFIG_RUNS_ON: Optional[List[str]] = None
-    DOCKER_BUILD_RUNS_ON: Optional[List[str]] = None
     VALIDATE_FILE_PATHS: bool = True
     DISABLED_WORKFLOWS: Optional[List[str]] = None
+    ENABLED_WORKFLOWS: Optional[List[str]] = None
     DEFAULT_LOCAL_TEST_WORKFLOW: str = ""
 
     ENABLE_ARTIFACTS_REPORT: bool = False
@@ -61,7 +68,6 @@ class _Settings:
     WORKFLOW_STATUS_FILE: str = f"{TEMP_DIR}/workflow_status.json"
     WORKFLOW_INPUTS_FILE: str = f"{TEMP_DIR}/workflow_inputs.json"
     ARTIFACT_URLS_FILE: str = f"{TEMP_DIR}/artifact_urls.json"
-    CUSTOM_DATA_FILE: str = "/tmp/custom_data.json"
 
     ######################################
     #        CI Cache settings           #
@@ -93,11 +99,6 @@ class _Settings:
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
     CI_DB_INSERT_TIMEOUT_SEC = 5
-    SUB_RESULT_NAMES_WITH_TESTS = [
-        "Tests",
-    ]
-
-    DISABLE_MERGE_COMMIT = True
 
 
 _USER_DEFINED_SETTINGS = [
@@ -110,7 +111,9 @@ _USER_DEFINED_SETTINGS = [
     "OUTPUT_DIR",
     "INPUT_DIR",
     "CI_CONFIG_RUNS_ON",
-    "DOCKER_BUILD_RUNS_ON",
+    "DOCKER_BUILD_AND_MERGE_RUNS_ON",
+    "DOCKER_BUILD_ARM_RUNS_ON",
+    "ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB",
     "CI_CONFIG_JOB_NAME",
     "PYTHON_INTERPRETER",
     "PYTHON_VERSION",
@@ -129,13 +132,12 @@ _USER_DEFINED_SETTINGS = [
     "CI_DB_DB_NAME",
     "CI_DB_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
-    "SUB_RESULT_NAMES_WITH_TESTS",
     "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",
     "SECRET_GH_APP_PEM_KEY",
     "MAIN_BRANCH",
-    "DISABLE_MERGE_COMMIT",
     "DISABLED_WORKFLOWS",
+    "ENABLED_WORKFLOWS",
     "PYTHONPATHS",
     "ENABLE_ARTIFACTS_REPORT",
     "DEFAULT_LOCAL_TEST_WORKFLOW",

@@ -15,7 +15,7 @@ If you're interested to do so, contact us at [legal@clickhouse.com](mailto:legal
 
 ## Technical Information
 
-See [ClickHouse - Lightning Fast Analytics for Everyone](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf) and [Architecture](https://clickhouse.com/docs/en/development/architecture/) for an overview of ClickHouse's internals.
+See [ClickHouse - Lightning Fast Analytics for Everyone](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf) and [Architecture](https://clickhouse.com/docs/development/architecture/) for an overview of ClickHouse's internals.
 
 [This](https://clickhouse.com/docs/development/developer-instruction) and [this](https://clickhouse.com/docs/development/build) document describe how to check out and compile the source code of ClickHouse.
 

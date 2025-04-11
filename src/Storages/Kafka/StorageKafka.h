@@ -92,6 +92,9 @@ public:
 
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
 
+    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
+
 private:
     friend class ReadFromStorageKafka;
 
@@ -140,7 +143,7 @@ private:
     KafkaConsumerPtr createKafkaConsumer(size_t consumer_number);
     /// Returns full consumer related configuration, also the configuration
     /// contains global kafka properties.
-    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
+    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr);
     /// Returns full producer related configuration, also the configuration
     /// contains global kafka properties.
     cppkafka::Configuration getProducerConfiguration();

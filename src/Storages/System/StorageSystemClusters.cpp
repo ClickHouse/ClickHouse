@@ -1,4 +1,4 @@
-#include <optional>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -7,6 +7,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Databases/DatabaseReplicated.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -96,7 +98,7 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(shard_info.shard_num);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(shard_info.shard_name);
+                res_columns[res_index++]->insert(shard_info.name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(shard_info.weight);
             if (columns_mask[src_index++])
