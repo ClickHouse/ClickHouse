@@ -66,6 +66,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.5",
+        {
+            {"geotoh3_lon_lat_input_order", true, false, "A new setting"},
+        });
         addSettingsChanges(settings_changes_history, "25.4",
         {
             {"allow_materialized_view_with_bad_select", true, false, "Don't allow creating MVs referencing nonexistent columns or tables"},
@@ -78,7 +82,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
             {"min_os_cpu_wait_time_ratio_to_throw", 0, 2, "New setting"},
             {"max_os_cpu_wait_time_ratio_to_throw", 0, 6, "New setting"},
-            {"geotoh3_lon_lat_input_order", true, false, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
