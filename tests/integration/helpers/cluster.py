@@ -2406,6 +2406,9 @@ class ClickHouseCluster:
         run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
         self.start_rabbitmq_app()
 
+    def run_rabbitmqctl(self, command):
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, command)
+
     def wait_nats_is_available(self, max_retries=5):
         retries = 0
         while True:
