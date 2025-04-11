@@ -252,6 +252,9 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
+    DECLARE(Bool, escape_variant_subcolumn_filenames, true, R"(
+    Escape special symbols in filenames created for subcolumns of Variant data type in Wide parts of MergeTree table. Needed for compatibility.
+    )", 0) \
     \
     /** Merge selector settings. */ \
     DECLARE(UInt64, merge_selector_blurry_base_scale_factor, 0, R"(

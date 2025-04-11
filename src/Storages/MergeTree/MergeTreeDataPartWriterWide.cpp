@@ -136,7 +136,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
-        auto full_stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
+        auto full_stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
         String stream_name;
         if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_name.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
@@ -207,7 +207,7 @@ const String & MergeTreeDataPartWriterWide::getStreamName(
     const NameAndTypePair & column,
     const ISerialization::SubstreamPath & substream_path) const
 {
-    auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path);
+    auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
     return full_name_to_stream_name.at(full_stream_name);
 }
 
