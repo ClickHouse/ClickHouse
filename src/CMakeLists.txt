@@ -133,6 +133,7 @@ add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
+add_headers_and_sources(dbms Common/Tokenizer)
 
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
@@ -677,6 +678,10 @@ endif ()
 
 if (TARGET ch_contrib::sha3iuf)
     dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
+endif()
+
+if (TARGET ch_contrib::cppjieba)
+    dbms_target_link_libraries(PUBLIC ch_contrib::cppjieba)
 endif()
 
 if (ENABLE_BUZZHOUSE)
