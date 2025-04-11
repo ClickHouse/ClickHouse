@@ -879,7 +879,7 @@ class JobConfigs:
     )
     docs_job = Job.Config(
         name=JobNames.Docs,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/docs_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -904,6 +904,7 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
@@ -918,6 +919,7 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     sqlancer_master_jobs = Job.Config(
         name=JobNames.SQLANCER,
