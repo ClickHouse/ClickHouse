@@ -463,16 +463,18 @@ void TransposedMetricLog::prepareTable()
                 std::vector<std::string> name_parts;
                 splitInto<'_'>(name_parts, name);
                 // ['transposed', 'metric', 'log', 'X']
-                if (name_parts.size() > 3)
+                if (name_parts.size() == 4)
                 {
                     int suffix;
+                    /// Ignore weird tables like transposed_metric_log_aaa
                     if (tryParse<Int32>(suffix, name_parts.back()))
                         prepareViewForTable(database, iterator->table()->getStorageID(), view_name + "_" + toString(suffix), suffix);
                 }
-                else
+                else if (name_parts.size() == 3) // ['transposed', 'metric', 'log']
                 {
                     prepareViewForTable(database, storage_id, view_name, 0);
                 }
+                /// All other non-standard names are itentionaly ignored
 
                 iterator->next();
             }
