@@ -1271,6 +1271,10 @@ namespace ErrorCodes
     Background task which reduces blocking parts for shared merge tree tables.
     Only in ClickHouse Cloud
     )", 0) \
+    DECLARE(Seconds, refresh_parts_interval, 0, R"(
+    If it is greater than zero - refresh the list of data parts from the underlying filesystem to check if the data was updated under the hood.
+    It can be set only if the table is located on readonly disks (which means that this is a readonly replica, while data is being written by another replica).
+    )", 0) \
     \
     /** Check delay of replicas settings. */ \
     DECLARE(UInt64, min_relative_delay_to_measure, 120, R"(

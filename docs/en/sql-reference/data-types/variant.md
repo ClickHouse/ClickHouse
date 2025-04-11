@@ -226,6 +226,19 @@ SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String
 └─────────────────────────────────────────────┴───────────────────────────────────────────────┘
 ```
 
+To disable parsing during conversion from `String` to `Variant` you can disable setting `cast_string_to_dynamic_use_inference`:
+
+```sql
+SET cast_string_to_variant_use_inference = 0;
+SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(variant) as variant_type
+```
+
+```text
+┌─variant───┬─variant_type─┐
+│ [1, 2, 3] │ String       │
+└───────────┴──────────────┘
+```
+
 ### Converting an ordinary column to a Variant column {#converting-an-ordinary-column-to-a-variant-column}
 
 It is possible to convert an ordinary column with type `T` to a `Variant` column containing this type:

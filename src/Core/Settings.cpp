@@ -4834,6 +4834,16 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, query_condition_cache_store_conditions_as_plaintext, false, R"(
+Stores the filter condition for the [query condition cache](/operations/query-condition-cache) in plaintext.
+If enabled, system.query_condition_cache shows the verbatim filter condition which makes it easier to debug issues with the cache.
+Disabled by default because plaintext filter conditions may expose sensitive information.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0) \
@@ -5303,6 +5313,10 @@ Use query plan for lazy materialization optimization
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit
 )", 0) \
     DECLARE(Bool, query_plan_use_new_logical_join_step, true, "Use new logical join step in query plan", 0) \
+    DECLARE(Bool, serialize_query_plan, false, R"(
+Serialize query plan for distributed processing
+)", 0) \
+    \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractallgroupshorizontal) function.
 
@@ -6074,6 +6088,9 @@ Allow to use the function `getClientHTTPHeader` which lets to obtain a value of 
 )", 0) \
     DECLARE(Bool, cast_string_to_dynamic_use_inference, false, R"(
 Use types inference during String to Dynamic conversion
+)", 0) \
+    DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
+Use types inference during String to Variant conversion.
 )", 0) \
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
