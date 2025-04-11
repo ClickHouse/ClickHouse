@@ -100,6 +100,7 @@ public:
     void enforceAggregationInOrder(const SortDescription & sort_description);
 
     StorageID getStorageID() const { return storage_id; }
+    ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
 
 private:
     Pipes addPipes(ASTPtr ast, const Header & out_header);
