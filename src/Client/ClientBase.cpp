@@ -71,6 +71,7 @@
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
+#include <TableFunctions/ITableFunction.h>
 
 #include <filesystem>
 #include <iostream>
@@ -1706,13 +1707,21 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 
 void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 {
-    if (!client_context->hasInsertionTable() && insert_query.table)
+    if (!client_context->hasInsertionTable())
     {
-        String table = insert_query.table->as<ASTIdentifier &>().shortName();
-        if (!table.empty())
+        if  (insert_query.table)
         {
-            String database = insert_query.database ? insert_query.database->as<ASTIdentifier &>().shortName() : "";
-            client_context->setInsertionTable(StorageID(database, table));
+            String table = insert_query.table->as<ASTIdentifier &>().shortName();
+            if (!table.empty())
+            {
+                String database = insert_query.database ? insert_query.database->as<ASTIdentifier &>().shortName() : "";
+                client_context->setInsertionTable(StorageID(database, table));
+            }
+        }
+        else if (insert_query.table_function)
+        {
+            String table_function = insert_query.table_function->as<ASTFunction &>().name;
+            client_context->setInsertionTable(StorageID(ITableFunction::getDatabaseName(), table_function));
         }
     }
 }
@@ -2160,6 +2169,7 @@ void ClientBase::processParsedSingleQuery(
     cancelled_printed = false;
     client_exception.reset();
     server_exception.reset();
+    client_context->setInsertionTable(StorageID::createEmpty());
 
     if (is_interactive)
     {
