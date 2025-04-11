@@ -72,22 +72,24 @@ CorrelatedPlanStepMap buildCorrelatedPlanStepMap(QueryPlan & correlated_query_pl
     std::vector<State> nodes_to_process{ { .node = correlated_query_plan.getRootNode() } };
     while (!nodes_to_process.empty())
     {
-        auto & current = nodes_to_process.back();
-        if (current.processed_children)
+        size_t current_index = nodes_to_process.size() - 1;
+        if (nodes_to_process[current_index].processed_children)
         {
-            auto & value = result[current.node];
-            value = current.node->step->hasCorrelatedExpressions();
+            auto * current = nodes_to_process[current_index].node;
 
-            for (auto * child : current.node->children)
+            auto & value = result[current];
+            value = current->step->hasCorrelatedExpressions();
+
+            for (auto * child : current->children)
                 value |= result[child];
 
             nodes_to_process.pop_back();
         }
         else
         {
-            for (auto * child : current.node->children)
+            for (auto * child : nodes_to_process[current_index].node->children)
                 nodes_to_process.push_back({ .node = child });
-            current.processed_children = true;
+            nodes_to_process[current_index].processed_children = true;
         }
     }
 
