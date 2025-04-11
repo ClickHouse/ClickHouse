@@ -713,6 +713,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
             /// Release closed. Please use 25.5
+            {"refresh_parts_interval", 0, 0, "A new setting"},
             {"max_merge_delayed_streams_for_parallel_write", 1000, 100, "New setting"},
             {"max_postpone_time_for_failed_replicated_fetches_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing fetch tasks in the replication queue."},
             {"max_postpone_time_for_failed_replicated_merges_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing merge tasks in the replication queue."},
