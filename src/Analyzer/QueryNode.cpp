@@ -5,7 +5,6 @@
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
-#include "Analyzer/IQueryOrUnionNode.h"
 
 #include <Core/NamesAndTypes.h>
 
@@ -24,6 +23,7 @@
 #include <Parsers/ASTSetQuery.h>
 
 #include <Analyzer/InterpolateNode.h>
+#include <Analyzer/IQueryOrUnionNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 

@@ -5,7 +5,6 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <Analyzer/IQueryTreeNode.h>
-#include "Analyzer/ColumnNode.h"
 
 #include <Core/Field.h>
 #include <Core/Names.h>
@@ -16,6 +15,9 @@ namespace DB
 {
 
 class FunctionNode;
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+
 struct IdentifierResolveScope;
 
 struct NameAndTypePair;

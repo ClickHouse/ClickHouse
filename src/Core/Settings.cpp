@@ -16,7 +16,6 @@
 #include <base/types.h>
 #include <Common/NamePrompter.h>
 #include <Common/typeid_cast.h>
-#include "Core/SettingsTierType.h"
 
 #include <boost/program_options.hpp>
 #include <Poco/Util/AbstractConfiguration.h>

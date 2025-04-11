@@ -1,10 +1,5 @@
-#include <memory>
 #include <Interpreters/ProcessorsProfileLog.h>
-#include "Common/Logger.h"
 #include <Common/FieldVisitorToString.h>
-#include "Analyzer/IQueryOrUnionNode.h"
-#include "Functions/exists.h"
-#include "IO/WriteHelpers.h"
 
 #include <Columns/ColumnNullable.h>
 
@@ -23,6 +18,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/exists.h>
 #include <Functions/grouping.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
@@ -1387,7 +1383,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
             if (is_correlated_column && !scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
             {
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Resolved identifier '{}' in parent scope to expression '{}' with correlated column '{}'. In scope {}",
+                    "Resolved identifier '{}' in parent scope to expression '{}' with correlated column '{}'"
+                    " (Enable 'allow_experimental_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
                     identifier_lookup.identifier.getFullName(),
                     resolved_identifier->formatASTForErrorMessage(),
                     current_column->getColumnName(),

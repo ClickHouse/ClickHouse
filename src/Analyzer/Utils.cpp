@@ -41,13 +41,14 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/IQueryOrUnionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
-#include "Analyzer/IQueryOrUnionNode.h"
 
 #include <ranges>
 namespace DB

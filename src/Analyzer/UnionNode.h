@@ -5,12 +5,12 @@
 
 #include <Parsers/SelectUnionMode.h>
 
+#include <Analyzer/IQueryOrUnionNode.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/RecursiveCTE.h>
 
 #include <Interpreters/Context_fwd.h>
-#include "Analyzer/IQueryOrUnionNode.h"
 
 namespace DB
 {
