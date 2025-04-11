@@ -20,7 +20,7 @@ public:
         , actions_dag(other.actions_dag.clone())
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
-        , condition_hash(other.condition_hash)
+        , condition(other.condition)
     {}
 
     String getName() const override { return "Filter"; }
