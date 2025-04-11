@@ -363,52 +363,67 @@ void QueryOracle::generateImportQuery(
 /// Run query with different settings oracle
 void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
 {
-    const uint32_t nsets = rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1);
-    SettingValues * sv = sq1.mutable_explain()->mutable_inner_query()->mutable_setting_values();
+    const bool use_settings = rg.nextMediumNumber() < 86;
 
-    nsettings.clear();
-    for (uint32_t i = 0; i < nsets; i++)
+    /// Most of the times use SET command, other times SYSTEM
+    if (use_settings)
     {
-        const auto & toPickFrom = rg.nextMediumNumber() < 5 ? hotSettings : queryOracleSettings;
-        const String & setting = rg.pickRandomly(toPickFrom);
-        const CHSetting & chs = queryOracleSettings.at(setting);
-        SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
+        const uint32_t nsets = rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1);
+        SettingValues * sv = sq1.mutable_explain()->mutable_inner_query()->mutable_setting_values();
 
-        setv->set_property(setting);
-        if (chs.oracle_values.size() == 2)
+        nsettings.clear();
+        for (uint32_t i = 0; i < nsets; i++)
         {
-            if (rg.nextBool())
+            const auto & toPickFrom = rg.nextMediumNumber() < 5 ? hotSettings : queryOracleSettings;
+            const String & setting = rg.pickRandomly(toPickFrom);
+            const CHSetting & chs = queryOracleSettings.at(setting);
+            SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
+
+            setv->set_property(setting);
+            if (chs.oracle_values.size() == 2)
             {
-                setv->set_value(*chs.oracle_values.begin());
-                nsettings.push_back(*std::next(chs.oracle_values.begin(), 1));
+                if (rg.nextBool())
+                {
+                    setv->set_value(*chs.oracle_values.begin());
+                    nsettings.push_back(*std::next(chs.oracle_values.begin(), 1));
+                }
+                else
+                {
+                    setv->set_value(*std::next(chs.oracle_values.begin(), 1));
+                    nsettings.push_back(*(chs.oracle_values.begin()));
+                }
             }
             else
             {
-                setv->set_value(*std::next(chs.oracle_values.begin(), 1));
-                nsettings.push_back(*(chs.oracle_values.begin()));
+                setv->set_value(rg.pickRandomly(chs.oracle_values));
+                nsettings.push_back(rg.pickRandomly(chs.oracle_values));
             }
+            can_test_query_success &= !chs.changes_behavior;
         }
-        else
-        {
-            setv->set_value(rg.pickRandomly(chs.oracle_values));
-            nsettings.push_back(rg.pickRandomly(chs.oracle_values));
-        }
-        can_test_query_success &= !chs.changes_behavior;
     }
 }
 
-void QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
+void QueryOracle::generateSecondSetting(RandomGenerator & rg, StatementGenerator & gen, const SQLQuery & sq1, SQLQuery & sq3)
 {
-    const SettingValues & osv = sq1.explain().inner_query().setting_values();
-    SettingValues * sv = sq3.mutable_explain()->mutable_inner_query()->mutable_setting_values();
+    SQLQueryInner * sq = sq3.mutable_explain()->mutable_inner_query();
 
-    for (size_t i = 0; i < nsettings.size(); i++)
+    if (sq1.has_explain())
     {
-        const SetValue & osetv = i == 0 ? osv.set_value() : osv.other_values(static_cast<int>(i - 1));
-        SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
+        const SettingValues & osv = sq1.explain().inner_query().setting_values();
+        SettingValues * sv = sq->mutable_setting_values();
 
-        setv->set_property(osetv.property());
-        setv->set_value(nsettings[i]);
+        for (size_t i = 0; i < nsettings.size(); i++)
+        {
+            const SetValue & osetv = i == 0 ? osv.set_value() : osv.other_values(static_cast<int>(i - 1));
+            SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
+
+            setv->set_property(osetv.property());
+            setv->set_value(nsettings[i]);
+        }
+    }
+    else
+    {
+        gen.generateNextSystemStatement(rg, false, sq->mutable_system_cmd());
     }
 }
 

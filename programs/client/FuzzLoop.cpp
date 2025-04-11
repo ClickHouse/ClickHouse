@@ -674,12 +674,16 @@ bool Client::buzzHouse()
                 }
                 else if (settings_oracle && nopt < (correctness_oracle + settings_oracle + 1))
                 {
-                    /// Test running query with different settings
+                    /// Test running query with different settings, but some times, call system commands
                     qo.generateFirstSetting(rg, sq1);
-                    BuzzHouse::SQLQueryToString(full_query, sq1);
-                    outf << full_query << std::endl;
-                    server_up &= processBuzzHouseQuery(full_query);
-                    qo.setIntermediateStepSuccess(!have_error);
+                    if (sq1.has_explain())
+                    {
+                        /// Run query only when something was generated
+                        BuzzHouse::SQLQueryToString(full_query, sq1);
+                        outf << full_query << std::endl;
+                        server_up &= processBuzzHouseQuery(full_query);
+                        qo.setIntermediateStepSuccess(!have_error);
+                    }
 
                     sq2.Clear();
                     full_query2.resize(0);
@@ -691,7 +695,7 @@ bool Client::buzzHouse()
 
                     sq3.Clear();
                     full_query.resize(0);
-                    qo.generateSecondSetting(sq1, sq3);
+                    qo.generateSecondSetting(rg, gen, sq1, sq3);
                     BuzzHouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);

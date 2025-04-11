@@ -1946,14 +1946,18 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
 
 static const auto has_merge_tree_func = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(); };
 
-static const auto has_distributed_func = [](const SQLTable & t) { return t.isAttached() && t.isDistributedEngine(); };
+static const auto has_distributed_table_func = [](const SQLTable & t) { return t.isAttached() && t.isDistributedEngine(); };
 
 static const auto has_refreshable_view_func = [](const SQLView & v) { return v.isAttached() && v.is_refreshable; };
 
-void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, SystemCommand * sc)
+void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const bool allow_table_statements, SystemCommand * sc)
 {
-    const uint32_t has_merge_tree = static_cast<uint32_t>(collectionHas<SQLTable>(has_merge_tree_func));
-    const uint32_t has_refreshable_view = static_cast<uint32_t>(collectionHas<SQLView>(has_refreshable_view_func));
+    const uint32_t has_merge_tree = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_merge_tree_func));
+    const uint32_t has_refreshable_view
+        = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLView>(has_refreshable_view_func));
+    const uint32_t has_distributed_table
+        = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_distributed_table_func));
+
     const uint32_t reload_embedded_dictionaries = 1;
     const uint32_t reload_dictionaries = 3;
     const uint32_t reload_models = 3;
@@ -2023,9 +2027,9 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
     /// for dictionaries
     const uint32_t reload_dictionary = 8 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
     /// for distributed tables
-    const uint32_t flush_distributed = 8 * static_cast<uint32_t>(collectionHas<SQLTable>(has_distributed_func));
-    const uint32_t stop_distributed_sends = 8 * static_cast<uint32_t>(collectionHas<SQLTable>(has_distributed_func));
-    const uint32_t start_distributed_sends = 8 * static_cast<uint32_t>(collectionHas<SQLTable>(has_distributed_func));
+    const uint32_t flush_distributed = 8 * has_distributed_table;
+    const uint32_t stop_distributed_sends = 8 * has_distributed_table;
+    const uint32_t start_distributed_sends = 8 * has_distributed_table;
     const uint32_t drop_query_condition_cache = 3;
     const uint32_t prob_space = reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
         + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
@@ -2809,7 +2813,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_skip_index_cache + reload_dictionary + flush_distributed + 1))
     {
-        cluster = setTableSystemStatement<SQLTable>(rg, has_distributed_func, sc->mutable_flush_distributed());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_distributed_table_func, sc->mutable_flush_distributed());
     }
     else if (
         stop_distributed_sends
@@ -2827,7 +2831,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + flush_async_insert_queue + sync_filesystem_cache + drop_skip_index_cache + reload_dictionary + flush_distributed
                + stop_distributed_sends + 1))
     {
-        cluster = setTableSystemStatement<SQLTable>(rg, has_distributed_func, sc->mutable_stop_distributed_sends());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_distributed_table_func, sc->mutable_stop_distributed_sends());
     }
     else if (
         start_distributed_sends
@@ -2845,7 +2849,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + flush_async_insert_queue + sync_filesystem_cache + drop_skip_index_cache + reload_dictionary + flush_distributed
                + stop_distributed_sends + start_distributed_sends + 1))
     {
-        cluster = setTableSystemStatement<SQLTable>(rg, has_distributed_func, sc->mutable_start_distributed_sends());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_distributed_table_func, sc->mutable_start_distributed_sends());
     }
     else if (
         drop_query_condition_cache
@@ -3322,7 +3326,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
                + exchange_tables + alter + set_values + attach + detach + create_database + create_function + system_stmt + 1))
     {
-        generateNextSystemStatement(rg, sq->mutable_system_cmd());
+        generateNextSystemStatement(rg, true, sq->mutable_system_cmd());
     }
     else if (
         backup_or_restore

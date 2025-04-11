@@ -339,7 +339,7 @@ private:
     void generateAttach(RandomGenerator & rg, Attach * att);
     void generateDetach(RandomGenerator & rg, Detach * det);
     void generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf);
-    void generateNextSystemStatement(RandomGenerator & rg, SystemCommand * sc);
+    void generateNextSystemStatement(RandomGenerator & rg, bool allow_table_statements, SystemCommand * sc);
 
     void addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
     void addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);
