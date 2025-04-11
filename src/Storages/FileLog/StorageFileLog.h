@@ -45,7 +45,7 @@ public:
 
     std::string getName() const override { return "FileLog"; }
 
-    bool noPushingToViews() const override { return true; }
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;

@@ -22,25 +22,6 @@ instance = cluster.add_instance(
     stay_alive=True,
 )
 
-instance2 = cluster.add_instance(
-    "instance2",
-    user_configs=["configs/users.xml"],
-    with_rabbitmq=True,
-)
-
-instance3 = cluster.add_instance(
-    "instance3",
-    user_configs=["configs/users.xml"],
-    main_configs=[
-        "configs/rabbitmq.xml",
-        "configs/macros.xml",
-        "configs/named_collection.xml",
-        "configs/mergetree.xml",
-    ],
-    with_rabbitmq=True,
-    stay_alive=True,
-)
-
 # Helpers
 
 
@@ -71,10 +52,8 @@ def rabbitmq_cluster():
 def rabbitmq_setup_teardown():
     logging.debug("RabbitMQ is available - running test")
     instance.query("CREATE DATABASE test")
-    instance3.query("CREATE DATABASE test")
     yield  # run test
     instance.query("DROP DATABASE test SYNC")
-    instance3.query("DROP DATABASE test SYNC")
     cluster.reset_rabbitmq()
 
 
@@ -132,6 +111,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     while time.monotonic() < deadline:
         number = int(instance.query("SELECT count() FROM test.view"))
         if number != 0:
+            logging.debug(f"First result: {number} / {messages_num}")
             if number == messages_num:
                 pytest.fail("The RabbitMQ messages have been consumed before suspending the RabbitMQ server")
             break
@@ -210,6 +190,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     while time.monotonic() < deadline:
         number = int(instance.query("SELECT count() FROM test.view"))
         if number != 0:
+            logging.debug(f"First result: {number} / {messages_num}")
             if number == messages_num:
                 pytest.fail("The RabbitMQ messages have been consumed before suspending the RabbitMQ server")
             break
