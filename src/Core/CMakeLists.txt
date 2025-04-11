@@ -5,3 +5,5 @@ endif ()
 if (ENABLE_FUZZING)
     add_subdirectory(fuzzers)
 endif()
+
+add_compile_options( -fbracket-depth=2048 )
