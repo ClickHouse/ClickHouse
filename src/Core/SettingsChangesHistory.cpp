@@ -74,6 +74,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_convert_join_to_in", false, false, "New setting"},
             {"enable_hdfs_pread", true, true, "New setting."},
             {"low_priority_query_wait_time_ms", 1000, 1000, "New setting."},
+            {"serialize_query_plan", false, false, "NewSetting"},
             {"allow_experimental_shared_set_join", 0, 1, "A setting for ClickHouse Cloud to enable SharedSet and SharedJoin"},
             {"allow_special_bool_values_inside_variant", true, false, "Don't allow special bool values during Variant type parsing"},
             {"cast_string_to_variant_use_inference", true, true, "New setting to enable/disable types inference during CAST from String to Variant"},
@@ -702,6 +703,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
+            {"refresh_parts_interval", 0, 0, "A new setting"},
             {"max_merge_delayed_streams_for_parallel_write", 1000, 100, "New setting"},
             {"max_postpone_time_for_failed_replicated_fetches_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing fetch tasks in the replication queue."},
             {"max_postpone_time_for_failed_replicated_merges_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing merge tasks in the replication queue."},
