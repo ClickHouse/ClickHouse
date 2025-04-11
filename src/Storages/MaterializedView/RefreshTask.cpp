@@ -42,6 +42,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsString default_replica_name;
     extern const ServerSettingsString default_replica_path;
+    extern const ServerSettingsBool disable_insertion_and_mutation;
 }
 
 namespace RefreshSetting
@@ -100,6 +101,9 @@ RefreshTask::RefreshTask(
             ops.emplace_back(zkutil::makeCreateRequest(replica_path, "", zkutil::CreateMode::Persistent));
             zookeeper->multi(ops);
         }
+
+        if (server_settings[ServerSetting::disable_insertion_and_mutation])
+            coordination.read_only = true;
     }
 }
 
@@ -210,6 +214,8 @@ void RefreshTask::checkAlterIsPossible(const DB::ASTRefreshStrategy & new_strate
 
 void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy)
 {
+    StorageID view_storage_id = StorageID::createEmpty();
+
     {
         std::lock_guard guard(mutex);
 
@@ -229,9 +235,17 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         refresh_settings = {};
         if (new_strategy.settings != nullptr)
             refresh_settings.applyChanges(new_strategy.settings->changes);
+
+        if (view)
+            view_storage_id = view->getStorageID();
     }
+
     /// In case refresh period changed.
-    view->getContext()->getRefreshSet().notifyDependents(view->getStorageID());
+    if (view_storage_id)
+    {
+        const auto & refresh_set = Context::getGlobalContextInstance()->getRefreshSet();
+        refresh_set.notifyDependents(view_storage_id);
+    }
 }
 
 RefreshTask::Info RefreshTask::getInfo() const

@@ -219,7 +219,8 @@ private:
         IColumn & column,
         const String & field,
         std::function<bool(ReadBuffer &)> check_for_null,
-        std::function<bool(IColumn & variant_columm, const SerializationPtr & nested, ReadBuffer &)> try_deserialize_nested) const;
+        std::function<bool(IColumn & variant_columm, const SerializationPtr & nested, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
+        const FormatSettings & settings) const;
 
     VariantSerializations variants;
     std::vector<String> variant_names;

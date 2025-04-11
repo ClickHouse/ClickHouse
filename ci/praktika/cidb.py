@@ -9,8 +9,8 @@ import requests
 from ._environment import _Environment
 from .info import Info
 from .result import Result
-from .s3 import StorageUsage
 from .settings import Settings
+from .usage import ComputeUsage, StorageUsage
 from .utils import Utils
 
 
@@ -107,6 +107,45 @@ class CIDB:
                 record.test_context_raw = result_.info
                 yield json.dumps(dataclasses.asdict(record))
 
+    def query(self, query: str, retries: int = 1):
+        """
+        Executes a SELECT query on CI DB with retry support.
+
+        :param query: SQL query string
+        :param retries: Number of retry attempts on failure
+        :return: Response text if successful
+        """
+        params = {
+            "database": Settings.CI_DB_DB_NAME,
+            "query": query,
+            "send_logs_level": "warning",
+        }
+
+        for attempt in range(1, retries + 1):
+            try:
+                response = requests.post(
+                    url=self.url,
+                    params=params,
+                    headers=self.auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                )
+
+                if response.ok:
+                    return response.text
+                else:
+                    print(
+                        f"WARNING: CIDB query failed (status {response.status_code}) - Attempt {attempt}"
+                    )
+                    if attempt == retries:
+                        raise RuntimeError(
+                            f"Failed to query CI DB. Response code: {response.status_code}, Body: {response.text}"
+                        )
+
+            except Exception as ex:
+                print(f"ERROR: Exception during CI DB query attempt {attempt}: {ex}")
+                if attempt == retries:
+                    raise ex
+
     def insert_rows(self, jsons, retries=3):
         params = {
             "database": Settings.CI_DB_DB_NAME,
@@ -152,9 +191,9 @@ class CIDB:
             pull_request_number=info.pr_number,
             commit_sha=info.sha,
             commit_url=info.commit_url,
-            check_name="Usage",
+            check_name="Usage Storage",
             check_status=Result.Status.SUCCESS,
-            check_duration_ms=0,
+            check_duration_ms=storage_usage.uploaded,
             check_start_time=Utils.timestamp_to_str(Utils.timestamp()),
             report_url=info.get_report_url(),
             pull_request_url=info.change_url,
@@ -169,7 +208,7 @@ class CIDB:
             instance_id=info.instance_id,
             test_name="storage_usage_uploaded_bytes",
             test_status="OK",
-            test_duration_ms=storage_usage.uploaded,
+            test_duration_ms=0,
             test_context_raw="test_duration_ms shows total size uploaded in bytes",
         )
         json_rows.append(json.dumps(dataclasses.asdict(record)))
@@ -179,6 +218,40 @@ class CIDB:
             "test_duration_ms shows total number of uniq object names uploaded"
         )
         json_rows.append(json.dumps(dataclasses.asdict(record)))
+        self.insert_rows(json_rows)
+        return self
+
+    def insert_compute_usage(self, compute_usage: ComputeUsage):
+        info = Info()
+        json_rows = []
+        for runner_str, usage in compute_usage.runners_usage.items():
+            jobs = sorted(compute_usage.details[runner_str])
+            description = ",".join(jobs)
+            record = self.TableRecord(
+                pull_request_number=info.pr_number,
+                commit_sha=info.sha,
+                commit_url=info.commit_url,
+                check_name="Usage Compute",
+                check_status=Result.Status.SUCCESS,
+                check_duration_ms=int(usage * 1000),
+                check_start_time=Utils.timestamp_to_str(Utils.timestamp()),
+                report_url=info.get_report_url(),
+                pull_request_url=info.change_url,
+                base_ref=info.base_branch,
+                base_repo=info.repo_name,
+                head_ref=info.git_branch,
+                head_repo=info.fork_name,
+                task_url="",
+                instance_type=",".join(
+                    filter(None, [info.instance_type, info.instance_lifecycle])
+                ),
+                instance_id=info.instance_id,
+                test_name=runner_str,
+                test_status="OK",
+                test_duration_ms=0,
+                test_context_raw=description,
+            )
+            json_rows.append(json.dumps(dataclasses.asdict(record)))
         self.insert_rows(json_rows)
         return self
 

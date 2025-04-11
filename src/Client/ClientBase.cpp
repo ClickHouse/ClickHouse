@@ -61,6 +61,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/processColumnTransformers.h>
 #include <IO/Ask.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -1903,6 +1904,19 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             columns_for_storage_file.add(std::move(column));
         }
 
+        if (parsed_insert_query->columns)
+        {
+            auto columns = processColumnTransformers(client_context->getCurrentDatabase(), client_context->getInsertionTable(), columns_for_storage_file, parsed_insert_query->columns);
+            ColumnsDescription reordered_description{};
+            for (const auto & col_name : columns->children)
+            {
+                auto col = columns_for_storage_file.get(col_name->getColumnName());
+                reordered_description.add(std::move(col));
+            }
+
+            columns_for_storage_file = std::move(reordered_description);
+        }
+
         StorageFile::CommonArguments args{
             WithContext(client_context),
             parsed_insert_query->table_id,
@@ -3520,16 +3534,6 @@ void ClientBase::clearTerminal()
 void ClientBase::showClientVersion()
 {
     output_stream << VERSION_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
-}
-
-std::string ClientBase::getConnectionHostAndPortForFuzzing() const
-{
-    if (!hosts_and_ports.empty())
-    {
-        const HostAndPort & hap = hosts_and_ports[0];
-        return hap.host + (hap.port.has_value() ? (":" + std::to_string(hap.port.value())) : "");
-    }
-    return "127.0.0.{1,2}";
 }
 
 }
