@@ -243,7 +243,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         if (optimization_settings.optimize_lazy_materialization)
         {
-            optimizeLazyMaterialization(stack, nodes, optimization_settings.max_limit_for_lazy_materialization);
+            optimizeLazyMaterialization(root, stack, nodes, optimization_settings.max_limit_for_lazy_materialization);
         }
 
         stack.pop_back();
