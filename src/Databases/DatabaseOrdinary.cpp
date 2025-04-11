@@ -9,6 +9,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/TablesLoader.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
@@ -648,12 +649,18 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
                 ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                 "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
 
-        args.context->addWarningMessageAboutDatabaseOrdinary(args.database_name);
+        // Do not warn about ordinary databases that is most likely created by recovering replicas
+        if (!args.database_name.ends_with(DatabaseReplicated::BROKEN_TABLES_SUFFIX))
+            args.context->addWarningMessageAboutDatabaseOrdinary(args.database_name);
+        else
+            args.context->addOrUpdateWarningMessage(
+                Context::WarningType::MAYBE_BROKEN_TABLES,
+                PreformattedMessage::create(
+                    "The database {} is probably created during recovering a lost replica. If it has no tables, it can be deleted. If it "
+                    "has tables, it worth to check why they were considered broken.",
+                    backQuoteIfNeed(args.database_name)));
 
-        return make_shared<DatabaseOrdinary>(
-            args.database_name,
-            args.metadata_path,
-            args.context);
+        return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.context);
     };
     factory.registerDatabase("Ordinary", create_fn);
 }
