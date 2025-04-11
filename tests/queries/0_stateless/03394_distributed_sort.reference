@@ -5,6 +5,15 @@
 Expression (Project names)
   GatherExchange (sorted by (__table1.dst_ip ASC, __table1.src_ip ASC, __table1.bytes ASC))
     Sorting (Sorting for ORDER BY)
+      ScatterExchange (any scatter)
+        Expression ((Before ORDER BY + Projection))
+          Expression
+            GatherExchange
+              ReadFromMergeTree (default.test)
+------------------
+Expression (Project names)
+  GatherExchange (sorted by (__table1.dst_ip ASC, __table1.src_ip ASC, __table1.bytes ASC))
+    Sorting (Sorting for ORDER BY)
       Expression ((Before ORDER BY + Projection))
         Expression
           ReadFromMergeTree (default.test)

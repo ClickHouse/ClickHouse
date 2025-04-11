@@ -13,5 +13,13 @@ EXPLAIN SELECT dst_ip, src_ip, bytes
 FROM test
 WHERE bytes > 5 AND src_ip > 2
 ORDER BY dst_ip, src_ip, bytes
-SETTINGS make_distributed_plan=1, enable_parallel_replicas=0;
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_optimize_exchanges=0;
+
+SELECT '------------------';
+
+EXPLAIN SELECT dst_ip, src_ip, bytes
+FROM test
+WHERE bytes > 5 AND src_ip > 2
+ORDER BY dst_ip, src_ip, bytes
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_optimize_exchanges=1;
 

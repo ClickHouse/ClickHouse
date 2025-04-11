@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Core/SortDescription.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -9,8 +12,8 @@ namespace DB
 class GatherExchangeStep final : public LogicalExchangeStep
 {
 public:
-    explicit GatherExchangeStep(const Block & input_header_)
-        : LogicalExchangeStep(input_header_)
+    explicit GatherExchangeStep(const Block & input_header_, std::optional<SortDescription> maintain_sort_description_ = std::nullopt)
+        : LogicalExchangeStep(input_header_, std::move(maintain_sort_description_))
     {
     }
 

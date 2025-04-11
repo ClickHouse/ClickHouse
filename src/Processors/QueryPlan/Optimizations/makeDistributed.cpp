@@ -182,6 +182,44 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
     node = std::move(gather_node);
 }
 
+void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    /// Is this a sorting step?
+    auto * sorting_step = typeid_cast<SortingStep *>(node.step.get());
+    if (!sorting_step)
+        return;
+
+    /// Only one source is expected for sorting step
+    if (node.children.size() != 1)
+        return;
+    QueryPlan::Node * source = node.children[0];
+
+    const size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
+    auto sort_description = sorting_step->getSortDescription();
+
+    /// Add "any" scatter exchange step above source. It will allow to optimize out unnecessary shuffle if the input is already parallelized in any way.
+    /// TODO: need a special step with "any" partitioning?
+    auto & exchange_scatter_node = nodes.emplace_back();
+    exchange_scatter_node.step = std::make_unique<ScatterExchangeStep>(source->step->getOutputHeader(), Names{}, bucket_count);
+    exchange_scatter_node.step->setStepDescription("any scatter");
+    exchange_scatter_node.children = {source};
+
+    /// Move sorting step to a new node
+    auto & new_sorting_node = nodes.emplace_back();
+    new_sorting_node.step = std::move(node.step);
+    new_sorting_node.children = {&exchange_scatter_node};
+
+    /// Add merge sorted gather exchange step above sorting
+    QueryPlan::Node gather_node;
+    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_sorting_node.step->getOutputHeader(), sort_description);
+    exchange_gather_step->setStepDescription(fmt::format("sorted by ({})", dumpSortDescription(sort_description)));
+    gather_node.step = std::move(exchange_gather_step);
+    gather_node.children = {&new_sorting_node};
+
+    /// Replace sorting node with gather node
+    node = std::move(gather_node);
+}
+
 /// Replaces ReadFromMergeTree step with a subtree like this:
 ///
 ///   GatherExchange
@@ -245,8 +283,24 @@ void optimizeExchanges(QueryPlan::Node & root)
                 if (gather_step)
                 {
                     Header expression_header = frame.node->step->getOutputHeader();
-                    std::swap(frame.node->step, child_node.step);
-                    frame.node->step->updateInputHeader(expression_header);
+
+                    /// If gather step has maintain_sort_description then we need to check that those columns are preserved
+                    bool can_move_gather_up = true;
+                    if (gather_step->getMaintainSortDescription())
+                    {
+                        const auto & sort_description = gather_step->getMaintainSortDescription().value();
+                        for (const auto & column : sort_description)
+                        {
+                            if (!expression_header.has(column.column_name))
+                                can_move_gather_up = false;
+                        }
+                    }
+
+                    if (can_move_gather_up)
+                    {
+                        std::swap(frame.node->step, child_node.step);
+                        frame.node->step->updateInputHeader(expression_header);
+                    }
                 }
             }
 

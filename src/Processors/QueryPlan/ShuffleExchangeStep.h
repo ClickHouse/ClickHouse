@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Core/Names.h>
 
 namespace DB
 {
@@ -21,6 +22,11 @@ public:
     void transformPipeline(QueryPipelineBuilder & /*pipeline*/, const BuildQueryPipelineSettings &) override
     {
         /// Doesn't change the pipeline if executed directly
+    }
+
+    const Names & getKeys() const
+    {
+        return key_names;
     }
 
     size_t getResultBucketCount() const override
