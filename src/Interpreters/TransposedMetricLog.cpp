@@ -30,6 +30,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Sources/NullSource.h>
 
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -179,9 +181,9 @@ ColumnsDescription getColumnsDescriptionForView()
 class StorageSystemMetricLogView final : public IStorage
 {
 public:
-
     StorageSystemMetricLogView(const StorageID & table_id_, const StorageID & source_storage_id)
         : IStorage(table_id_)
+        , view_storage_id(source_storage_id)
         , internal_view(table_id_, getCreateQuery(source_storage_id), getColumnsDescriptionForView(), "")
     {
         StorageInMemoryMetadata storage_metadata;
@@ -208,12 +210,22 @@ public:
         size_t max_block_size,
         size_t num_streams) override
     {
+        Block full_output_header = getInMemoryMetadataPtr()->getSampleBlock();
+        /// If destination table is dropped return null source
+        if (!DatabaseCatalog::instance().isTableExist(view_storage_id, context))
+        {
+            Pipe pipe(std::make_shared<NullSource>(full_output_header));
+            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            read_from_pipe->setStepDescription("Read from NullSource");
+            query_plan.addStep(std::move(read_from_pipe));
+            return;
+        }
+
         std::shared_ptr<StorageSnapshot> snapshot_for_view = std::make_shared<StorageSnapshot>(internal_view, internal_view.getInMemoryMetadataPtr());
         Block input_header = snapshot_for_view->metadata->getSampleBlock();
 
         internal_view.read(query_plan, input_header.getNames(), snapshot_for_view, query_info, context, processed_stage, max_block_size, num_streams);
 
-        Block full_output_header = getInMemoryMetadataPtr()->getSampleBlock();
 
         /// Doesn't make sense to filter by metric, we will not filter out anything
         bool read_all_columns = full_output_header.columns() == column_names.size();
@@ -270,6 +282,7 @@ public:
     }
 
 private:
+    StorageID view_storage_id;
     StorageView internal_view;
 };
 
@@ -440,23 +453,32 @@ void TransposedMetricLog::prepareTable()
         auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
         if (database)
         {
-            int suffix = 0;
-            while (true)
+            auto filter = [] (const String & name) { return name.starts_with(TABLE_NAME_WITH_VIEW); };
+            auto iterator = database->getTablesIterator(getContext(), filter);
+            while (iterator->isValid())
             {
                 /// Do for all existing transposed metric logs
-                auto log_table = database->tryGetTable(std::string{TABLE_NAME_WITH_VIEW} + "_" + toString(suffix), getContext());
+                const auto & name = iterator->name();
 
-                if (log_table != nullptr)
-                    prepareViewForTable(database, log_table->getStorageID(), view_name + "_" + toString(suffix), suffix);
-                else
-                    break;
+                std::vector<std::string> name_parts;
+                splitInto<'_'>(name_parts, name);
+                // ['transposed', 'metric', 'log', 'X']
+                if (name_parts.size() == 4)
+                {
+                    int suffix;
+                    /// Ignore weird tables like transposed_metric_log_aaa
+                    if (tryParse<Int32>(suffix, name_parts.back()))
+                        prepareViewForTable(database, iterator->table()->getStorageID(), view_name + "_" + toString(suffix), suffix);
+                }
+                else if (name_parts.size() == 3) // ['transposed', 'metric', 'log']
+                {
+                    prepareViewForTable(database, storage_id, view_name, 0);
+                }
+                /// All other non-standard names are intentionally ignored
 
-                suffix++;
+                iterator->next();
             }
-
-            prepareViewForTable(database, storage_id, view_name, 0);
         }
-
     }
 }
 
