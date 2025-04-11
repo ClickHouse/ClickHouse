@@ -36,4 +36,4 @@ COPY run.sh /run.sh
 COPY --from=htmltest-builder /usr/bin/htmltest /usr/bin/htmltest
 
 ENTRYPOINT ["/run.sh"]
-# Rebuilt Fri 4 April 12:16 GMT+1
+# Rebuilt Sun 6 April 20:31 GMT+1

@@ -9,8 +9,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
-from .s3 import S3, StorageUsage
+from .s3 import S3
 from .settings import Settings
+from .usage import ComputeUsage, StorageUsage
 from .utils import ContextManager, MetaClasses, Shell, Utils
 
 
@@ -63,6 +64,7 @@ class Result(MetaClasses.Serializable):
         files=None,
         info: Union[List[str], str] = "",
         with_info_from_results=False,
+        links=None,
     ) -> "Result":
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
@@ -120,6 +122,7 @@ class Result(MetaClasses.Serializable):
             info="\n".join(infos) if infos else "",
             results=results or [],
             files=files or [],
+            links=links or [],
         )
 
     @staticmethod
@@ -619,7 +622,12 @@ class _ResultS3:
 
     @classmethod
     def update_workflow_results(
-        cls, workflow_name, new_info="", new_sub_results=None, storage_usage=None
+        cls,
+        workflow_name,
+        new_info="",
+        new_sub_results=None,
+        storage_usage=None,
+        compute_usage=None,
     ):
         assert new_info or new_sub_results
 
@@ -643,11 +651,18 @@ class _ResultS3:
                     workflow_result.update_sub_result(
                         result_, drop_nested_results=True
                     ).dump()
+            # TODO: consider not accumulating these 2 for reruns:
             if storage_usage:
                 workflow_storage_usage = StorageUsage.from_dict(
                     workflow_result.ext.get("storage_usage", {})
                 ).merge_with(storage_usage)
                 workflow_result.ext["storage_usage"] = workflow_storage_usage
+
+            if compute_usage:
+                workflow_compute_usage = ComputeUsage.from_dict(
+                    workflow_result.ext.get("compute_usage", {})
+                ).merge_with(compute_usage)
+                workflow_result.ext["compute_usage"] = workflow_compute_usage
 
             new_status = workflow_result.status
             if cls.copy_result_to_s3_with_version(
