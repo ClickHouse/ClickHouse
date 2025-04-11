@@ -738,12 +738,16 @@ void SerializationVariant::deserializeBinary(IColumn & column, ReadBuffer & istr
     {
         col.insertDefault();
     }
-    else
+    else if (global_discr < variants.size())
     {
         auto & variant_column = col.getVariantByGlobalDiscriminator(global_discr);
         variants[global_discr]->deserializeBinary(variant_column, istr, settings);
         col.getLocalDiscriminators().push_back(col.localDiscriminatorByGlobal(global_discr));
         col.getOffsets().push_back(variant_column.size() - 1);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read value of {}: unexpected discriminator {}", variant_name, UInt64(global_discr));
     }
 }
 
