@@ -443,7 +443,10 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                 node.getChildren().reserve(node.stats.numChildren());
 
         if (ephemeral_owner != 0)
+        {
             storage.committed_ephemerals[node.stats.ephemeralOwner()].insert(std::string{path});
+            ++storage.committed_ephemeral_nodes;
+        }
 
         if (recalculate_digest)
             storage.nodes_digest += node.getDigest(path);
