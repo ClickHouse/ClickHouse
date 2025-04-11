@@ -1,6 +1,6 @@
--- Test for Bug 52019: Undefined behavior
+-- Test for Bug 52019: Undefined behavior with full text indexes
 
-SET allow_experimental_full_text_index=1;
+SET allow_experimental_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -11,8 +11,7 @@ CREATE TABLE tab (
 ENGINE = MergeTree
 ORDER BY k
 SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
--- Full text index works only with full parts.
-min_bytes_for_full_part_storage=0;
+min_bytes_for_full_part_storage=0; -- Full text index works only with full parts.
 
 INSERT INTO tab (k) VALUES (0);
 SELECT * FROM tab PREWHERE (s[NULL]) = 'Click a03' SETTINGS enable_analyzer=1;

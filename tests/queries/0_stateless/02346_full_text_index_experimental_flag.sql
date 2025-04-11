@@ -2,7 +2,7 @@
 
 DROP TABLE IF EXISTS tab;
 
--- Test CREATE TABLE + full_text index setting
+-- Test CREATE TABLE with allow_experimental_full_text_index setting
 
 SET allow_experimental_full_text_index = 0;
 CREATE TABLE tab (id UInt32, str String, INDEX idx str TYPE full_text(0)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
@@ -15,7 +15,7 @@ DROP TABLE tab;
 
 SET allow_experimental_full_text_index = 0; -- reset to default
 
--- Test CREATE TABLE + inverted index setting
+-- Test CREATE TABLE with allow_experimental_inverted_index setting
 
 SET allow_experimental_inverted_index = 0;
 CREATE TABLE tab (id UInt32, str String, INDEX idx str TYPE full_text(0)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
@@ -28,7 +28,7 @@ DROP TABLE tab;
 
 SET allow_experimental_inverted_index = 0; -- reset to default
 
--- Test ADD INDEX + full_text index setting
+-- Test ADD INDEX with allow_experimental_full_text_index setting
 
 SET allow_experimental_full_text_index = 0;
 CREATE TABLE tab (id UInt32, str String) ENGINE = MergeTree ORDER BY tuple();
@@ -44,7 +44,7 @@ DROP TABLE tab;
 SET allow_experimental_full_text_index = 0; -- reset to default
 
 
--- Test ADD INDEX + inverted index setting
+-- Test ADD INDEX with allow_experimental_inverted_index setting
 
 SET allow_experimental_inverted_index = 0;
 CREATE TABLE tab (id UInt32, str String) ENGINE = MergeTree ORDER BY tuple();
@@ -57,4 +57,5 @@ CREATE TABLE tab (id UInt32, str String) ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE tab ADD INDEX idx1 str TYPE full_text(0); -- { serverError SUPPORT_IS_DISABLED }
 ALTER TABLE tab ADD INDEX idx2 str TYPE inverted(0);
 DROP TABLE tab;
+
 SET allow_experimental_inverted_index = 0; -- reset to default
