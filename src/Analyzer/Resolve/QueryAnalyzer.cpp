@@ -1398,6 +1398,16 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     return resolve_result;
 }
 
+static void correctColumnExpressionType(ColumnNode & column_node, const ContextPtr & context)
+{
+    if (!column_node.hasExpression())
+        return;
+    auto & column_expression = column_node.getExpression();
+    if (column_node.getColumnType()->equals(*column_expression->getResultType()))
+        return;
+    column_expression = buildCastFunction(column_expression, column_node.getColumnType(), context, true);
+}
+
 /** Resolve identifier in scope.
   *
   * If identifier was resolved resolve identified lookup status will be updated.
@@ -1509,7 +1519,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
                 if (auto * column_node = typeid_cast<ColumnNode *>(node))
                     if (column_node->hasExpression())
+                    {
                         resolveExpressionNode(column_node->getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                        correctColumnExpressionType(*column_node, scope.context);
+                    }
             }
         }
     }
@@ -3825,7 +3838,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         {
             auto & column_node = node->as<ColumnNode &>();
             if (column_node.hasExpression())
+            {
                 resolveExpressionNode(column_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                correctColumnExpressionType(column_node, scope.context);
+            }
 
             if (result_projection_names.empty())
                 result_projection_names.push_back(column_node.getColumnName());
