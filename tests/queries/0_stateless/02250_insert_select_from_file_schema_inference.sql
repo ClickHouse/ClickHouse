@@ -1,5 +1,4 @@
 set use_structure_from_insertion_table_in_table_functions = 1;
-use {CLICKHOUSE_DATABASE:Identifier};
 
 insert into table function file(concat(database(),'.data_02250.jsonl')) select (SELECT 1) settings engine_file_truncate_on_insert=1;
 
