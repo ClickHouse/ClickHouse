@@ -68,6 +68,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.5",
         {
+            {"input_format_parquet_verify_checksums", true, true, "New setting."},
+            {"output_format_parquet_write_checksums", false, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
