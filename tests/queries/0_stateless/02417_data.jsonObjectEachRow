@@ -3,9 +3,3 @@
 	"row_2": {"number":1,"str":"Hello","arr":[0]},
 	"row_3": {"number":2,"str":"Hello","arr":[0,1]}
 }
-number	Nullable(Int64)					
-str	Nullable(String)					
-arr	Array(Nullable(Int64))					
-0	Hello	[]
-1	Hello	[0]
-2	Hello	[0,1]
