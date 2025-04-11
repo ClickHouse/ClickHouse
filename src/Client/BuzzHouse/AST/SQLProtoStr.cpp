@@ -3745,10 +3745,10 @@ CONV_FN(HeavyDelete, hdel)
     WhereStatementToString(ret, hdel.del());
 }
 
-CONV_FN(AlterTableItem, alter)
+CONV_FN(AlterItem, alter)
 {
     ret += "(";
-    using AlterType = AlterTableItem::AlterOneofCase;
+    using AlterType = AlterItem::AlterOneofCase;
     switch (alter.alter_oneof_case())
     {
         case AlterType::kDel:
@@ -4016,30 +4016,33 @@ CONV_FN(AlterTableItem, alter)
     ret += ")";
 }
 
-CONV_FN(AlterTable, alter_table)
+CONV_FN(Alter, alter)
 {
+    const bool is_table = alter.sobject() == SQLObject::TABLE;
+
     ret += "ALTER ";
-    if (alter_table.is_temp())
+    if (is_table && alter.is_temp())
     {
         ret += "TEMPORARY ";
     }
-    ret += "TABLE ";
-    ExprSchemaTableToString(ret, alter_table.est());
-    if (alter_table.has_cluster())
+    ret += SQLObject_Name(alter.sobject());
+    ret += " ";
+    SQLObjectNameToString(ret, alter.object());
+    if (alter.has_cluster())
     {
-        ClusterToString(ret, alter_table.cluster());
+        ClusterToString(ret, alter.cluster());
     }
     ret += " ";
-    AlterTableItemToString(ret, alter_table.alter());
-    for (int i = 0; i < alter_table.other_alters_size(); i++)
+    AlterItemToString(ret, alter.alter());
+    for (int i = 0; i < alter.other_alters_size(); i++)
     {
         ret += ", ";
-        AlterTableItemToString(ret, alter_table.other_alters(i));
+        AlterItemToString(ret, alter.other_alters(i));
     }
-    if (alter_table.has_setting_values())
+    if (alter.has_setting_values())
     {
         ret += " SETTINGS ";
-        SettingValuesToString(ret, alter_table.setting_values());
+        SettingValuesToString(ret, alter.setting_values());
     }
 }
 
@@ -4563,8 +4566,8 @@ CONV_FN(SQLQueryInner, query)
         case QueryType::kExchange:
             ExchangeTablesToString(ret, query.exchange());
             break;
-        case QueryType::kAlterTable:
-            AlterTableToString(ret, query.alter_table());
+        case QueryType::kAlter:
+            AlterToString(ret, query.alter());
             break;
         case QueryType::kSettingValues:
             ret += "SET ";

@@ -330,7 +330,7 @@ private:
     void generateNextDescTable(RandomGenerator & rg, DescTable * dt);
     void generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
-    void generateAlterTable(RandomGenerator & rg, AlterTable * at);
+    void generateAlter(RandomGenerator & rg, Alter * at);
     void setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SetValue * set);
     void generateSettingValues(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals);
     void generateSettingValues(
