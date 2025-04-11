@@ -138,7 +138,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
-            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
+            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns, pre_distinct);
         });
 }
 
