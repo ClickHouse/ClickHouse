@@ -168,12 +168,8 @@ class MergedPartOffsets
 public:
     MergedPartOffsets() = default;
 
-    /// @starting_offsets: Starting cumulative _part_offset for each data part.
-    /// @total_rows: Total number of rows across all merging parts.
-    MergedPartOffsets(std::vector<UInt64> starting_offsets_, size_t total_rows_)
-        : starting_offsets(std::move(starting_offsets_))
-        , total_rows(total_rows_)
-        , num_parts(starting_offsets.size())
+    explicit MergedPartOffsets(size_t num_parts_)
+        : num_parts(num_parts_)
         , offset_maps(num_parts)
     {
     }
@@ -186,46 +182,21 @@ public:
         return *this;
     }
 
-    /// Records _part_offset mappings for a batch of cumulated _part_offset values.
-    /// Determines which part each offset belongs to and maintains mapping to new _part_offset.
-    void insert(const UInt64 * begin_cumulated_offset, const UInt64 * end_cumulated_offset)
+    /// Records _part_offset mappings for a batch of _part_index values.
+    void insert(const UInt64 * begin_part_index, const UInt64 * end_part_index)
     {
-        for (const UInt64 * it = begin_cumulated_offset; it != end_cumulated_offset; ++it)
+        for (const UInt64 * it = begin_part_index; it != end_part_index; ++it)
         {
-            /// Find which original part this cumulated offset belongs to
-            size_t part_idx = 0;
-            while (part_idx < num_parts - 1)
-            {
-                if (starting_offsets[part_idx + 1] > *it)
-                    break;
-
-                ++part_idx;
-            }
-
-            /// Record the mapping from original _part_offset to new _part_offset
-            offset_maps[part_idx].insert(num_rows);
+            offset_maps[*it].insert(num_rows);
             ++num_rows;
         }
     }
 
-    /// Looks up the new _part_offset in the merged data for a given original cumulated offset.
-    UInt64 operator[](UInt64 cumulated_offset) const
+    /// Looks up the new _part_offset in the merged data.
+    UInt64 operator[](UInt64 part_index, UInt64 part_offset) const
     {
-        /// Find which part this cumulated_offset belongs to
-        size_t part_idx = 0;
-        while (part_idx < num_parts - 1)
-        {
-            if (starting_offsets[part_idx + 1] > cumulated_offset)
-                break;
-
-            ++part_idx;
-        }
-
-        chassert(part_idx < offset_maps.size());
-
-        /// Calculate relative offset within the part and look up new _part_offset
-        UInt64 offset = cumulated_offset - starting_offsets[part_idx];
-        return offset_maps[part_idx][offset];
+        chassert(part_index < offset_maps.size());
+        return offset_maps[part_index][part_offset];
     }
 
     /// Finalizes all _part_offset maps and releases temporary buffers.
@@ -238,7 +209,6 @@ public:
         if (num_rows == 0)
             return;
 
-        chassert(total_rows == num_rows);
         size_t total_allocated_memory = 0;
         for (auto & map : offset_maps)
         {
@@ -250,7 +220,7 @@ public:
         LOG_DEBUG(
             logger,
             "Holding {} merged _part_offset in memory with {} total allocated memory",
-            total_rows,
+            num_rows,
             formatReadableSizeWithBinarySuffix(total_allocated_memory));
     }
 
@@ -259,8 +229,6 @@ public:
     size_t size() const { return num_rows; }
 
 private:
-    std::vector<UInt64> starting_offsets;
-    size_t total_rows = 0;
     size_t num_parts = 0;
     std::vector<PackedPartOffsets> offset_maps;
     size_t num_rows = 0;
