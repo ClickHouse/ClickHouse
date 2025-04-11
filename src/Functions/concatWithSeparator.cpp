@@ -182,20 +182,41 @@ using FunctionConcatWithSeparatorAssumeInjective = ConcatWithSeparatorImpl<NameC
 REGISTER_FUNCTION(ConcatWithSeparator)
 {
     factory.registerFunction<FunctionConcatWithSeparator>(FunctionDocumentation{
-        .description = R"(
-Returns the concatenation strings separated by string separator. Syntax: concatWithSeparator(sep, expr1, expr2, expr3...)
-        )",
+        .description = "Concatenates the given strings with a given separator.",
+        .syntax="concatWithSeparator(sep, expr1, expr2, expr3...)",
+        .arguments={
+            {"sep", "separator. Const String or FixedString."},
+            {"exprN", R"(
+expression to be concatenated. Arguments which are not of types String or FixedString are 
+converted to strings using their default serialization. As this decreases performance, it is not 
+recommended to use non-String/FixedString arguments.             
+                )"
+            }
+        },
+        .returned_value="The String created by concatenating the arguments. If any of the argument values is `NULL`, the function returns `NULL`."
         .examples{{"concatWithSeparator", "SELECT concatWithSeparator('a', '1', '2', '3')", ""}},
-        .category{"Strings"}});
+        .category=FunctionDocumentation::Category::String});
 
     factory.registerFunction<FunctionConcatWithSeparatorAssumeInjective>(FunctionDocumentation{
         .description = R"(
-Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
+Like `concatWithSeparator` but assumes that `concatWithSeparator(sep, expr1, expr2, expr3...) → result`
+is _injective_. It can be used for optimization of `GROUP BY`.
 
-The function is named "injective" if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
+A function is called _injective_ if it returns for different arguments different results.
+In other words: different arguments never produce identical result.
         )",
+        .syntax="concatWithSeparatorAssumeInjective(sep, expr1, expr2, expr3...)",
+        .arguments={
+            {"sep", "separator. Const String or FixedString."},
+            {"exprN", R"(
+expression to be concatenated. Arguments which are not of types String or FixedString are 
+converted to strings using their default serialization. As this decreases performance, it is not 
+recommended to use non-String/FixedString arguments.             
+                )"
+            }
+        },
         .examples{{"concatWithSeparatorAssumeInjective", "SELECT concatWithSeparatorAssumeInjective('a', '1', '2', '3')", ""}},
-        .category{"String"}});
+        .category=FunctionDocumentation::Category::String});
 
     /// Compatibility with Spark and MySQL:
     factory.registerAlias("concat_ws", "concatWithSeparator", FunctionFactory::Case::Insensitive);

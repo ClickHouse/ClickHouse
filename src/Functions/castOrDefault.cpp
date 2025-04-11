@@ -334,15 +334,36 @@ REGISTER_FUNCTION(CastOrDefault)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt128OrDefault", std::make_shared<DataTypeUInt128>()); },
         FunctionDocumentation{
             .description=R"(
-Converts a string in the first argument of the function to UInt128 by parsing it.
-If it cannot parse the value, returns the default value, which can be provided as the second function argument, and if provided, must be of UInt128 type.
-If the default value is not provided in the second argument, it is assumed to be zero.
+Like toUInt128, this function converts an input value to a value of type UInt128 but returns the default value in case of an error.
+If no default value is passed then `0` is returned in case of an error.
+
+Supported arguments:
+- (U)Int8/16/32/64/128/256.
+- Float32/64.
+- String representations of (U)Int8/16/32/128/256.
+
+Arguments for which the default value is returned:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrDefault('0xc0fe', CAST('0', 'UInt128'));`.
+
+:::note
+- If the input value cannot be represented within the bounds of UInt128, overflow or underflow of the result occurs. This is not considered an error.
+- The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
+:::
 )",
+            .syntax="toUInt128OrDefault(expr[, default])",
+            .arguments={
+                {"expr", "Expression returning a number or a string representation of a number. Expression / String."},
+                {"default (optional)", "The default value to return if parsing to type UInt128 is unsuccessful. UInt128."}
+            },
+            .returned_value="128-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. UInt128.",
             .examples{
                 {"Successful conversion", "SELECT toUInt128OrDefault('1', 2::UInt128)", "1"},
                 {"Default value", "SELECT toUInt128OrDefault('upyachka', 123456789012345678901234567890::UInt128)", "123456789012345678901234567890"},
-                {"Implicit default value", "SELECT toUInt128OrDefault('upyachka')", "0"}},
-            .category{"Type Conversion"}
+                {"Implicit default value", "SELECT toUInt128OrDefault('upyachka')", "0"}
+            },
+            .category=FunctionDocumentation::Category::TypeConversion
         });
     factory.registerFunction("toUInt256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt256OrDefault", std::make_shared<DataTypeUInt256>()); });

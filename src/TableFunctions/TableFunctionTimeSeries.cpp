@@ -108,20 +108,36 @@ void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Data>>(
         {.documentation = {
             .description=R"(Provides direct access to the 'data' target table for a specified TimeSeries table.)",
+            .syntax="timeSeriesData(db_name.time_series_table)",
+            .arguments={
+                {"db_name.time_series_table", "Table to use"}
+            },
+            .returned_value="Returns the data table used by table db_name.time_series_table whose table engine is TimeSeries.",
             .examples{{"timeSeriesData", "SELECT * from timeSeriesData('mydb', 'time_series_table');", ""}},
-            .category{""}}
+            .category=FunctionDocumentation::Category::TableFunction}
         });
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Tags>>(
         {.documentation = {
-            .description=R"(Provides direct access to the 'tags' target table for a specified TimeSeries table.)",
+            .description="Provides direct access to the 'tags' target table for a specified TimeSeries table.",
+            .syntax="timeSeriesTags(db_name.time_series_table)",
+            .arguments={
+                {"db_name.time_series_table", "Table to use"}
+            },
+            .returned_value="Returns the tags table used by table db_name.time_series_table whose table engine is the TimeSeries engine.",
             .examples{{"timeSeriesTags", "SELECT * from timeSeriesTags('mydb', 'time_series_table');", ""}},
-            .category{""}}
+            .category=FunctionDocumentation::Category::TableFunction
+        }
         });
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Metrics>>(
         {.documentation = {
             .description=R"(Provides direct access to the 'metrics' target table for a specified TimeSeries table.)",
+            .syntax="timeSeriesMetrics(db_name.time_series_table)",
+            .arguments={
+                {"db_name.time_series_table", "Table to use"}
+            },
+            .returned_value="Returns the metrics table used by table `db_name.time_series_table` whose table engine is the TimeSeries engine.",
             .examples{{"timeSeriesMetrics", "SELECT * from timeSeriesMetrics('mydb', 'time_series_table');", ""}},
-            .category{""}}
+            .category=FunctionDocumentation::Category::TableFunction}
         });
 }
 

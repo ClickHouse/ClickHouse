@@ -45,16 +45,29 @@ StoragePtr TableFunctionFuzzQuery::executeImpl(
 void registerTableFunctionFuzzQuery(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFuzzQuery>(
-        {.documentation
-         = {.description = "Perturbs a query string with random variations.",
+        {.documentation= {
+            .description = "Perturbs a query string with random variations.",
             .syntax="fuzzQuery(query[, max_query_length[, random_seed]])",
             .arguments={
                 {"query", "The source query to perform the fuzzing on. String"},
                 {"max_query_length", "A maximum length the query can get during the fuzzing process. UInt64"},
                 {"random_seed", "A random seed for producing stable results. UInt64"}
             },
-            .returned_value = "A table object with a single column containing perturbed query strings."},
+            .returned_value = "A table object with a single column containing perturbed query strings.",
+            .examples={
+                {
+                    "",
+                    "SELECT * FROM fuzzQuery('SELECT materialize(\'a\' AS key) GROUP BY key') LIMIT 2;",
+                    R"(
+   ┌─query──────────────────────────────────────────────────────────┐
+1. │ SELECT 'a' AS key GROUP BY key                                 │
+2. │ EXPLAIN PIPELINE compact = true SELECT 'a' AS key GROUP BY key │
+   └────────────────────────────────────────────────────────────────┘                
+                    )"
+                }
+            },
             .category=FunctionDocumentation::Category::TableFunction
+        },
          .allow_readonly = true});
 }
 

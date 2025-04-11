@@ -485,8 +485,16 @@ REGISTER_FUNCTION(CodingUUID)
     factory.registerFunction<FunctionUUIDToNum>(
         FunctionDocumentation{
             .description = R"(
-This function accepts a UUID and returns a FixedString(16) as its binary representation, with its format optionally specified by variant (Big-endian by default).
+Accepts a [UUID](../data-types/uuid.md) and returns its binary representation as a [FixedString(16)](../data-types/fixedstring.md),
+with its format optionally specified by `variant` (`Big-endian` by default). This function replaces calls to two separate functions 
+`UUIDStringToNum(toString(uuid))` so no intermediate conversion from UUID to string is required to extract bytes from a UUID.
 )",
+            .syntax="UUIDToNum(uuid[, variant = 1])",
+            .arguments={
+                {"uuid", "[UUID](../data-types/uuid.md)"},
+                {"variant", "Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`."}
+            },
+            .returned_value="The binary representation of the UUID.",
             .examples{
                 {"uuid",
                  "select toUUID(UUIDNumToString(toFixedString('a/<@];!~p{jTj={)', 16))) as uuid, UUIDToNum(uuid) as uuidNum, "
@@ -496,7 +504,7 @@ This function accepts a UUID and returns a FixedString(16) as its binary represe
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │ @</a];!~p{jTj={) │
 └──────────────────────────────────────┴──────────────────┴──────────────────┘
 )"}},
-            .category=FunctionDocumentation::Category::UUID}});
+            .category=FunctionDocumentation::Category::UUID});
 
 
     factory.registerFunction<FunctionUUIDv7ToDateTime>(
@@ -506,9 +514,16 @@ This function extracts the timestamp from a UUID and returns it as a DateTime64(
 The function expects the UUID having version 7 to be provided as the first argument.
 An optional second argument can be passed to specify a timezone for the timestamp.
 )",
+            .syntax="UUIDv7ToDateTime(uuid[, timezone])",
+            .arguments={
+                {"uuid", "UUID of version 7."},
+                {"timezone", "Timezone name for the returned value (optional). String."}
+            },
+            .returned_value="Timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns 1970-01-01 00:00:00.000. DateTime64(3).",
             .examples{
                 {"uuid","select UUIDv7ToDateTime(generateUUIDv7())", ""},
-                {"uuid","select generateUUIDv7() as uuid, UUIDv7ToDateTime(uuid), UUIDv7ToDateTime(uuid, 'America/New_York')", ""}},
+                {"uuid","select generateUUIDv7() as uuid, UUIDv7ToDateTime(uuid), UUIDv7ToDateTime(uuid, 'America/New_York')", ""}
+            },
             .category=FunctionDocumentation::Category::UUID});
 }
 

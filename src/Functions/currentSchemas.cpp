@@ -73,12 +73,16 @@ REGISTER_FUNCTION(CurrentSchema)
 Returns a single-element array with the name of the current database
 
 Requires a boolean parameter, but it is ignored actually. It is required just for compatibility with the implementation of this function in other DB engines.
-
-[example:common]
 )",
+            .syntax="currentSchemas(bool)",
+            .arguments={
+                {"bool","A boolean value. Bool."}
+            },
+            .returned_value="Returns a single-element array with the name of the current database",
             .examples{
-             {"common", "SELECT current_schemas(true);", "['default']"}
-        }
+                {"common", "SELECT current_schemas(true);", "['default']"}
+            },
+            .category=FunctionDocumentation::Category::Other
         },
         FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_schemas", FunctionCurrentSchemas::name, FunctionFactory::Case::Insensitive);

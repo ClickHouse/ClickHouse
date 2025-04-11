@@ -475,14 +475,17 @@ REGISTER_FUNCTION(TimeDiff)
 {
     factory.registerFunction<FunctionTimeDiff>(FunctionDocumentation{.description=R"(
 Returns the difference between two dates or dates with time values. The difference is calculated in seconds units (see toRelativeSecondNum).
-It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.
-
-Example:
-[example:typical]
+It is the same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.
 )",
+    .syntax="timeDiff(first_datetime, second_datetime)",
+    .arguments={
+        {"first_datetime", "A DateTime/DateTime64 type const value or an expression . DateTime/DateTime64 types"},
+        {"second_datetime", "A DateTime/DateTime64 type const value or an expression . DateTime/DateTime64 types"}
+    },
+    .returned_value="The difference between two dates or dates with time values in seconds.",
     .examples{
         {"typical", "SELECT timeDiff(UTCTimestamp(), now());", ""}},
-    .category{"Dates and Times"}}, FunctionFactory::Case::Insensitive);
+    .category=FunctionDocumentation::Category::DatesAndTime}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(Age)

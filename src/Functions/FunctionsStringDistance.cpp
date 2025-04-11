@@ -519,29 +519,157 @@ using FunctionJaroWinklerSimilarity = FunctionsStringSimilarity<FunctionStringDi
 REGISTER_FUNCTION(StringDistance)
 {
     factory.registerFunction<FunctionByteHammingDistance>(
-        FunctionDocumentation{.description = R"(Calculates Hamming distance between two byte-strings.)"});
+        FunctionDocumentation{
+            .description = R"(Calculates Hamming distance between two byte-strings.)",
+            .syntax="byteHammingDistance(x, y)",
+            .arguments={
+                {"x", "First String."},
+                {"y", "Second String."}
+            },
+            .returned_value="Returns the Hamming distance between byte-strings `x` and `y`. UInt64.",
+            .examples={
+                {"", "SELECT byteHammingDistance('karolin', 'kathrin');", R"(
+┌─byteHammingDistance('karolin', 'kathrin')─┐
+│                                         3 │
+└───────────────────────────────────────────┘                    
+                )"}
+            },
+            .category=FunctionDocumentation::Category::String
+        });
     factory.registerAlias("mismatches", NameByteHammingDistance::name);
 
     factory.registerFunction<FunctionEditDistance>(
-        FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)"});
+        FunctionDocumentation{
+            .description = R"(Calculates the edit distance between two byte-strings.)",
+            .syntax="editDistance(x, y)",
+            .arguments={
+                {"x", "First String."},
+                {"y", "Second String."}
+            },
+            .returned_value="Returns the edit distance between byte-strings `x` and `y`. UInt64.",
+            .examples={
+                {"", "SELECT editDistance('clickhouse', 'mouse');", R"(
+┌─editDistance('clickhouse', 'mouse')─┐
+│                                   6 │
+└─────────────────────────────────────┘                  
+                )"}
+            },
+            .category=FunctionDocumentation::Category::String
+        });
     factory.registerAlias("levenshteinDistance", NameEditDistance::name);
 
     factory.registerFunction<FunctionEditDistanceUTF8>(
-        FunctionDocumentation{.description = R"(Calculates the edit distance between two UTF8 strings.)"});
+        FunctionDocumentation{
+            .description = R"(Calculates the edit distance between two UTF8 strings.)",
+            .syntax="editDistanceUTF8(x, y)",
+            .arguments={
+                {"x", "First String."},
+                {"y", "Second String."}
+            },
+            .returned_value="Returns the edit distance between UTF8 strings `x` and `y`. UInt64.",
+            .examples={
+                {"", "SELECT editDistanceUTF8('我是谁', '我是我');", R"(
+┌─editDistanceUTF8('我是谁', '我是我')──┐
+│                                   1 │
+└─────────────────────────────────────┘                
+                )"}
+            },
+            .category=FunctionDocumentation::Category::String
+        });
     factory.registerAlias("levenshteinDistanceUTF8", NameEditDistanceUTF8::name);
 
     factory.registerFunction<FunctionDamerauLevenshteinDistance>(
-        FunctionDocumentation{.description = R"(Calculates the Damerau-Levenshtein distance two between two byte-string.)"});
+        FunctionDocumentation{
+            .description = R"(Calculates the Damerau-Levenshtein distance two between two byte-string.)",
+            .syntax="damerauLevenshteinDistance(x, y)",
+            .arguments={
+                {"x", "First String."},
+                {"y", "Second String."}
+            },
+            .returned_value="Returns the Damerau-Levenshtein distance between `x` and `y`. UInt64.",
+            .examples={
+                {"", "SELECT damerauLevenshteinDistance('clickhouse', 'mouse');", R"(
+┌─damerauLevenshteinDistance('clickhouse', 'mouse')─┐
+│                                                 6 │
+└───────────────────────────────────────────────────┘              
+                )"}
+            },
+            .category=FunctionDocumentation::Category::String
+        });
 
     factory.registerFunction<FunctionStringJaccardIndex>(
-        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two byte strings.)"});
+        FunctionDocumentation{
+            .description = R"(Calculates the Jaccard similarity index between two byte strings.)",
+            .syntax="stringJaccardIndex(x, y)",
+            .arguments={
+                {"x", "First String."},
+                {"y", "Second String."}
+            },
+            .returned_value="Returns the Jaccard similarity index between `x` and `y`. Float64.",
+            .examples={
+                {"", "SELECT stringJaccardIndex('clickhouse', 'mouse');", R"(
+┌─stringJaccardIndex('clickhouse', 'mouse')─┐
+│                                       0.4 │
+└───────────────────────────────────────────┘             
+                )"}
+            },
+            .category=FunctionDocumentation::Category::String
+        });
     factory.registerFunction<FunctionStringJaccardIndexUTF8>(
-        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two UTF8 strings.)"});
+        FunctionDocumentation{
+            .description = R"(Calculates the Jaccard similarity index between two UTF8 strings.)",
+            .syntax="stringJaccardIndexUTF8(x, y)",
+            .arguments={
+                {"x", "First UTF8 String."},
+                {"y", "Second UTF8 String."}
+            },
+            .returned_value="Returns the Jaccard similarity index between UTF8 strings `x` and `y`. Float64.",
+            .examples={
+                {"", "SELECT stringJaccardIndex('我是谁', '我是我');", R"(
+┌─stringJaccar⋯, '我是我') ─┐
+│                    0.625 │
+└──────────────────────────┘            
+                )"}
+            },
+            .category=FunctionDocumentation::Category::String
+        });
 
     factory.registerFunction<FunctionJaroSimilarity>(
-        FunctionDocumentation{.description = R"(Calculates the Jaro similarity between two byte-string.)"});
+        FunctionDocumentation{
+            .description = R"(Calculates the Jaro similarity between two byte-string.)",
+            .syntax="jaroSimilarity(x, y)",
+            .arguments={
+                {"x", "First String."},
+                {"y", "Second String."}
+            },
+            .returned_value="Returns the Jaro similarity between strings `x` and `y`. Float64.",
+            .examples={
+                {"", "SELECT jaroSimilarity('clickhouse', 'click');", R"(
+┌─jaroSimilarity('clickhouse', 'click')─┐
+│                    0.8333333333333333 │
+└───────────────────────────────────────┘       
+                )"}
+            },
+            .category=FunctionDocumentation::Category::String
+        });
 
     factory.registerFunction<FunctionJaroWinklerSimilarity>(
-        FunctionDocumentation{.description = R"(Calculates the Jaro-Winkler similarity between two byte-string.)"});
+        FunctionDocumentation{
+            .description = R"(Calculates the Jaro-Winkler similarity between two byte-string.)",
+            .syntax="jaroWinklerSimilarity(x, y)",
+            .arguments={
+                {"x", "First String."},
+                {"y", "Second String."}
+            },
+            .returned_value="Returns the Jaro-Winkler similarity between strings `x` and `y`. Float64.",
+            .examples={
+                {"", "SELECT jaroWinklerSimilarity('clickhouse', 'click');", R"(
+┌─jaroWinklerSimilarity('clickhouse', 'click')─┐
+│                           0.8999999999999999 │
+└──────────────────────────────────────────────┘       
+                )"}
+            },
+            .category=FunctionDocumentation::Category::String
+        });
 }
 }

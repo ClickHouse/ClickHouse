@@ -447,7 +447,7 @@ The function returns a value of type String.
 )",
             .syntax="generateRandomStructure([number_of_columns, seed])",
             .arguments={
-                {"number_of_columns", "The desired number of columns in the result table structure. If set to 0 or `Null`, the number of columns will be random from 1 to 128. Default value: `Null`."}
+                {"number_of_columns", "The desired number of columns in the result table structure. If set to 0 or `Null`, the number of columns will be random from 1 to 128. Default value: `Null`."},
                 {"seed", "Random seed to produce stable results. If seed is not specified or set to `Null`, it is randomly generated."}
             },
             .returned_value="Randomly generated table structure. String.",
