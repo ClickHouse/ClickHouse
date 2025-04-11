@@ -38,17 +38,11 @@ void QueryConditionCache::write(
     if (has_final_mark)
         entry->matching_marks[marks_count - 1] = false;
 
-    LOG_DEBUG(
+    LOG_TRACE(
         logger,
-        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, condition: {}, marks_count: {}, has_final_mark: {}, ranges: {}",
+        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, condition: {}, marks_count: {}, has_final_mark: {}",
         inserted ? "Inserted" : "Updated",
-        table_id,
-        part_name,
-        condition_hash,
-        condition,
-        marks_count,
-        has_final_mark,
-        toString(mark_ranges));
+        table_id, part_name, condition_hash, condition, marks_count, has_final_mark);
 }
 
 std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, size_t condition_hash)
@@ -61,13 +55,10 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
 
         std::shared_lock lock(entry->mutex);
 
-        LOG_DEBUG(
+        LOG_TRACE(
             logger,
-            "Read entry for table_uuid: {}, part: {}, condition_hash: {}, ranges: {}",
-            table_id,
-            part_name,
-            condition_hash,
-            toString(entry->matching_marks));
+            "Read entry for table_uuid: {}, part: {}, condition_hash: {}",
+            table_id, part_name, condition_hash);
 
         return {entry->matching_marks};
     }
@@ -75,12 +66,10 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
     {
         ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
 
-        LOG_DEBUG(
+        LOG_TRACE(
             logger,
             "Could not find entry for table_uuid: {}, part: {}, condition_hash: {}",
-            table_id,
-            part_name,
-            condition_hash);
+            table_id, part_name, condition_hash);
 
         return {};
     }
