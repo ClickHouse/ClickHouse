@@ -4,17 +4,16 @@ import os
 from pathlib import Path
 from typing import List
 
-from praktika.utils import Shell
-
 from ._environment import _Environment
 from .gh import GH
 from .info import Info
 from .parser import WorkflowConfigParser
 from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
-from .s3 import S3, StorageUsage
+from .s3 import S3
 from .settings import Settings
-from .utils import Utils
+from .usage import ComputeUsage, StorageUsage
+from .utils import Shell, Utils
 
 
 @dataclasses.dataclass
@@ -99,7 +98,9 @@ class GitCommit:
         local_path = Path(cls.file_name())
         file_name = local_path.name
         s3_path = f"{cls.get_s3_path()}/{file_name}"
-        if not S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path):
+        if not S3.copy_file_from_s3(
+            s3_path=s3_path, local_path=local_path, no_strict=True
+        ):
             print(f"WARNING: failed to cp file [{s3_path}] from s3")
             return []
         return cls.from_json(local_path)
@@ -111,7 +112,9 @@ class GitCommit:
         local_path = Path(cls.file_name())
         file_name = local_path.name
         s3_path = f"{cls.get_s3_path()}/{file_name}"
-        if not S3.copy_file_to_s3(s3_path=s3_path, local_path=local_path, text=True):
+        if not S3.copy_file_to_s3(
+            s3_path=s3_path, local_path=local_path, text=True, no_strict=True
+        ):
             print(f"WARNING: failed to cp file [{local_path}] to s3")
 
     @classmethod
@@ -291,6 +294,11 @@ class HtmlRunnerHooks:
             new_sub_results=new_sub_results,
             workflow_name=_workflow.name,
             storage_usage=storage_usage,
+            compute_usage=ComputeUsage().set_usage(
+                runner_str="_".join(_job.runs_on),
+                duration=result.duration,
+                job_name=_job.name,
+            ),
         )
 
         if updated_status:

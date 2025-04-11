@@ -2497,3 +2497,143 @@ Result:
    └─────────┴─────────┴─────────┘
 ```
 
+## sparseGrams {#sparsegrams}
+
+Finds all substrings of a given string that have a length of at least `n`, 
+where the hashes of the (n-1)-grams at the borders of the substring
+are strictly greater than those of any (n-1)-gram inside the substring.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
+
+**Syntax**
+
+```sql
+sparseGrams(s[, min_ngram_length]);
+```
+
+**Arguments**
+
+- `s` — An input string. [String](../data-types/string.md)
+- `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
+
+**Returned value**
+
+- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
+
+**Example**
+
+```sql
+SELECT sparseGrams('alice', 3) AS result
+```
+Result:
+```result
+   ┌─result─────────────────────┐
+1. │ ['ali','lic','lice','ice'] │
+   └────────────────────────────┘
+```
+
+## sparseGramsUTF8 {#sparsegramsutf8}
+
+Finds all substrings of a given string that have a length of at least `n`,
+where the hashes of the (n-1)-grams at the borders of the substring
+are strictly greater than those of any (n-1)-gram inside the substring.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
+Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence.
+
+**Syntax**
+
+```sql
+sparseGramsUTF8(s[, min_ngram_length]);
+```
+
+**Arguments**
+
+- `s` — An input string. [String](../data-types/string.md)
+- `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
+
+**Returned value**
+
+- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
+
+**Example**
+
+```sql
+SELECT sparseGramsUTF8('алиса', 3) AS result
+```
+Result:
+```result
+   ┌─result──────────────┐
+1. │ ['али','лис','иса'] │
+   └─────────────────────┘
+```
+## sparseGramsHashes {#sparsegramshashes}
+
+Finds hashes of all substrings of a given string that have a length of at least `n`,
+where the hashes of the (n-1)-grams at the borders of the substring
+are strictly greater than those of any (n-1)-gram inside the substring.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
+
+**Syntax**
+
+```sql
+sparseGramsHashes(s[, min_ngram_length]);
+```
+
+**Arguments**
+
+- `s` — An input string. [String](../data-types/string.md)
+- `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
+
+**Returned value**
+
+- An array of selected substrings crc32-c hashes. [Array](../data-types/array.md)([UInt32](../data-types/int-uint.md)).
+
+**Example**
+
+```sql
+SELECT sparseGramsHashes('alice', 3) AS result
+```
+Result:
+```result
+   ┌─result────────────────────────────────────────┐
+1. │ [1265796434,3725069146,1689963195,3410985998] │
+   └───────────────────────────────────────────────┘
+```
+
+## sparseGramsHashesUTF8 {#sparsegramshashesutf8}
+
+Finds hashes of all substrings of a given string that have a length of at least `n`,
+where the hashes of the (n-1)-grams at the borders of the substring
+are strictly greater than those of any (n-1)-gram inside the substring.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
+Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence.
+
+**Syntax**
+
+```sql
+sparseGramsUTF8(s[, min_ngram_length]);
+```
+
+**Arguments**
+
+- `s` — An input string. [String](../data-types/string.md)
+- `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
+
+**Returned value**
+
+- An array of selected substrings crc32-c hashes. [Array](../data-types/array.md)([UInt32](../data-types/int-uint.md)).
+
+**Example**
+
+```sql
+SELECT sparseGramsHashesUTF8('алиса', 3) AS result
+```
+Result:
+```result
+   ┌─result───────────────────────────┐
+1. │ [417784657,728683856,3071092609] │
+   └──────────────────────────────────┘
+```

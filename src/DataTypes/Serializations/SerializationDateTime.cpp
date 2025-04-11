@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+}
+
 namespace
 {
 
@@ -253,7 +258,11 @@ void SerializationDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & is
             ReadBufferFromString buf(datetime_str);
             readText(x, buf, settings, time_zone, utc_time_zone);
             if (!buf.eof())
-                throwUnexpectedDataAfterParsedValue(column, istr, settings, "DateTime");
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
+                    "Unexpected data '{}' after parsed DateTime value '{}'",
+                    String(buf.position(), buf.buffer().end()),
+                    String(buf.buffer().begin(), buf.position()));
         }
     }
 

@@ -75,7 +75,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_hdfs_pread", true, true, "New setting."},
             {"low_priority_query_wait_time_ms", 1000, 1000, "New setting."},
             {"allow_experimental_correlated_subqueries", false, false, "Added new setting to allow correlated subqueries execution."},
+            {"serialize_query_plan", false, false, "NewSetting"},
             {"allow_experimental_shared_set_join", 0, 1, "A setting for ClickHouse Cloud to enable SharedSet and SharedJoin"},
+            {"allow_special_bool_values_inside_variant", true, false, "Don't allow special bool values during Variant type parsing"},
+            {"cast_string_to_variant_use_inference", true, true, "New setting to enable/disable types inference during CAST from String to Variant"},
+            {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
+            {"min_os_cpu_wait_time_ratio_to_throw", 0, 2, "New setting"},
+            {"max_os_cpu_wait_time_ratio_to_throw", 0, 6, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
@@ -89,6 +95,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_database_unity_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'"},
             {"allow_experimental_database_glue_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'"},
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
+            {"use_iceberg_metadata_files_cache", true, true, "New setting"},
             {"use_query_condition_cache", false, false, "New setting."},
             {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
             {"iceberg_timestamp_ms", 0, 0, "New setting."},
@@ -697,7 +704,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
+            {"refresh_parts_interval", 0, 0, "A new setting"},
             {"max_merge_delayed_streams_for_parallel_write", 1000, 100, "New setting"},
+            {"max_postpone_time_for_failed_replicated_fetches_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing fetch tasks in the replication queue."},
+            {"max_postpone_time_for_failed_replicated_merges_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing merge tasks in the replication queue."},
+            {"max_postpone_time_for_failed_replicated_tasks_ms", 5ULL * 60 * 1000, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."},
+            {"allow_summing_columns_in_partition_or_order_key", true, false, "New setting to allow summing of partition or sorting key columns"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.3",
         {
