@@ -3,11 +3,10 @@ import os
 import time
 from pathlib import Path
 
-from praktika.result import Result
-from praktika.utils import MetaClasses, Shell, Utils
-
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
+from ci.praktika.result import Result
+from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
@@ -31,30 +30,58 @@ def parse_args():
     return parser.parse_args()
 
 
-def run_test(
+def run_stateless_test(
     no_parallel: bool, no_sequiential: bool, batch_num: int, batch_total: int, test=""
 ):
+    assert not (no_parallel and no_sequiential)
     test_output_file = f"{temp_dir}/test_result.txt"
-
-    test_command = f"clickhouse-test --jobs 2 --testname --shard --zookeeper --check-zookeeper-session --no-stateless \
-        --hung-check \
-        --capture-client-stacktrace --queries ./tests/queries -- '{test}' \
-        | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
+    aux = ""
+    nproc = int(Utils.cpu_count() / 2)
+    if batch_num and batch_total:
+        aux = f"--run-by-hash-total {batch_total} --run-by-hash-num {batch_num-1}"
+    statless_test_command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check \
+                --capture-client-stacktrace --queries /repo/tests/queries --test-runs 1 --hung-check \
+                {'--no-parallel' if no_parallel else ''}  {'--no-sequential' if no_sequiential else ''} \
+                --jobs {nproc} --report-coverage --report-logs-stats {aux} \
+                --queries ./tests/queries -- '{test}' | ts '%Y-%m-%d %H:%M:%S' \
+                | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
-    Shell.run(test_command, verbose=True)
+    Shell.run(statless_test_command, verbose=True)
+
+
+OPTIONS_TO_INSTALL_ARGUMENTS = {
+    "old analyzer": "--analyzer",
+    "s3 storage": "--s3-storage",
+    "DatabaseReplicated": "--db-replicated",
+    "DatabaseOrdinary": "--db-ordinary",
+    "wide parts enabled": "--wide-parts",
+    "ParallelReplicas": "--parallel-rep",
+    "distributed plan": "--distributed-plan",
+    "azure": "--azure",
+}
 
 
 def main():
-
     args = parse_args()
     test_options = args.test_options.split(",")
     no_parallel = "non-parallel" in test_options
     no_sequential = "parallel" in test_options
     batch_num, total_batches = 0, 0
+    config_installs_args = ""
     for to in test_options:
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
+        if to in OPTIONS_TO_INSTALL_ARGUMENTS:
+            print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
+            config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
+
+    if "azure" in test_options:
+        # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
+        os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
+            f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
+            verbose=True,
+        )
 
     ch_path = args.ch_path
     assert (
@@ -89,10 +116,12 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-client",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-compressor",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-local",
+            f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-disks",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-obfuscator",
+            f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-format",
             f"rm -rf {temp_dir}/etc/ && mkdir -p {temp_dir}/etc/clickhouse-client {temp_dir}/etc/clickhouse-server",
             f"cp programs/server/config.xml programs/server/users.xml {temp_dir}/etc/clickhouse-server/",
-            f"./tests/config/install.sh {temp_dir}/etc/clickhouse-server {temp_dir}/etc/clickhouse-client --s3-storage --no-azure",
+            f"./tests/config/install.sh {temp_dir}/etc/clickhouse-server {temp_dir}/etc/clickhouse-client {config_installs_args}",
             # clickhouse benchmark segfaults with --config-path, so provide client config by its default location
             f"cp {temp_dir}/etc/clickhouse-client/* /etc/clickhouse-client/",
             # update_path_ch_config,
@@ -116,19 +145,16 @@ def main():
         step_name = "Start ClickHouse Server"
         print(step_name)
         minio_log = f"{temp_dir}/minio.log"
-        res = res and CH.start_minio(test_type="stateful", log_file_path=minio_log)
+        res = res and CH.start_minio(test_type="stateless", log_file_path=minio_log)
         logs_to_attach += [minio_log]
         time.sleep(10)
         Shell.check("ps -ef | grep minio", verbose=True)
         res = res and Shell.check(
             "aws s3 ls s3://test --endpoint-url http://localhost:11111/", verbose=True
         )
+        res = res and CH.log_cluster_config()
         res = res and CH.start()
         res = res and CH.wait_ready()
-        # TODO: Use --database-replicated optionally
-        res = res and Shell.check(
-            f"./ci/jobs/scripts/functional_tests/setup_ch_cluster.sh"
-        )
         if res:
             print("ch started")
         logs_to_attach += [
@@ -148,18 +174,18 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
-
-        # TODO: fix tests dependent on this and remove:
-        os.environ["CLICKHOUSE_TMP"] = "tests/queries/1_stateful"
-
-        # assert Shell.check("clickhouse-client -q \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"", verbose=True)
-        run_test(
+        assert Shell.check(
+            "clickhouse-client -q \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"",
+            verbose=True,
+        )
+        run_stateless_test(
             no_parallel=no_parallel,
             no_sequiential=no_sequential,
             batch_num=batch_num,
             batch_total=total_batches,
             test=args.test,
         )
+        CH.log_cluster_stop_replication()
         results.append(FTResultsProcessor(wd=temp_dir).run())
         results[-1].set_timing(stopwatch=stop_watch_)
         res = results[-1].is_ok()

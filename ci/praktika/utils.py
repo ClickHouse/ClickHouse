@@ -598,7 +598,6 @@ class Utils:
         exclude_paths,
         file_suffixes=None,
         sorted=False,
-        not_exists_ok=False,
     ) -> List["str"]:
         included_files_ = set()
         for path in include_paths:

@@ -45,6 +45,11 @@ class Result(MetaClasses.Serializable):
         RUNNING = "running"
         ERROR = "error"
 
+    class Label:
+        NOT_REQUIRED = "not required"
+        FLAKY = "flaky"
+        BROKEN = "broken"
+
     name: str
     status: str
     start_time: Optional[float] = None
@@ -279,6 +284,14 @@ class Result(MetaClasses.Serializable):
         self.start_time = stopwatch.start_time
         self.duration = stopwatch.duration
         return self
+
+    def set_label(self, label):
+        if not self.ext["labels"]:
+            self.ext["labels"] = []
+        self.ext["labels"].append(label)
+
+    def set_not_required_label(self):
+        self.set_label(self.Label.NOT_REQUIRED)
 
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
