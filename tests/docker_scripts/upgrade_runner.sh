@@ -161,7 +161,7 @@ then
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (
-          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Core'
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Session'
       )
       WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
   ))
@@ -197,7 +197,7 @@ then
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (
-          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Core'
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Session'
       )
       WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
   ))
