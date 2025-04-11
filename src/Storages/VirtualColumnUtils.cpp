@@ -38,8 +38,8 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 
 #include <Columns/ColumnSet.h>
-#include <Common/re2.h>
-#include <Common/typeid_cast.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
@@ -49,10 +49,14 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
+#include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
+#include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/re2.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -60,6 +64,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool use_extract_kvp_for_hive_path_parsing;
 }
 
 namespace ErrorCodes
@@ -144,7 +149,48 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
-std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path)
+/*
+ * Keeping the same return type just for compatibility and reviews. Once idea is approved, we should return raw columns for even better performance
+ */
+std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValuesWithExtractKvp(const String & path)
+{
+    auto extractor = KeyValuePairExtractorBuilder()
+    .withItemDelimiters({'/'})
+    .withKeyValueDelimiter('=')
+    .build();
+
+    auto keys = ColumnString::create();
+    auto values = ColumnString::create();
+
+    extractor->extract(path, keys, values);
+
+    keys->validate();
+    values->validate();
+
+    const ColumnString * keys_string_column = typeid_cast<const ColumnString *>(keys.get());
+    const ColumnString * values_string_column = typeid_cast<const ColumnString *>(values.get());
+
+    std::unordered_map<std::string, std::string> res;
+
+    for (auto i = 0u; i < keys_string_column->size(); i++)
+    {
+        const auto key = keys_string_column->getDataAt(i);
+        const auto value = values_string_column->getDataAt(i);
+        auto [_, inserted] = res.insert(std::make_pair(key, value));
+
+        if (!inserted)
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed",
+                path, key.toString());
+        }
+    }
+
+    return res;
+}
+
+std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValuesWithRegex(const String & path)
 {
     std::string pattern = "([^/]+)=([^/]*)/";
     re2::StringPiece input_piece(path);
@@ -164,6 +210,16 @@ std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(
         key_values[col_name] = value;
     }
     return key_values;
+}
+
+std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path, ContextPtr context)
+{
+    if (context->getSettingsRef()[Setting::use_extract_kvp_for_hive_path_parsing])
+    {
+        return parseHivePartitioningKeysAndValuesWithExtractKvp(path);
+    }
+
+    return parseHivePartitioningKeysAndValuesWithRegex(path);
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, const ContextPtr & context, const std::string & path, std::optional<FormatSettings> format_settings_)
@@ -195,7 +251,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
 
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        auto map = parseHivePartitioningKeysAndValues(path);
+        auto map = parseHivePartitioningKeysAndValues(path, context);
         auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
         for (auto & item : map)
         {
@@ -212,7 +268,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     return desc;
 }
 
-static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx, const FormatSettings & format_settings, bool use_hive_partitioning)
+static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx, const FormatSettings & format_settings, ContextPtr context)
 {
     if (block.has("_path"))
         block.getByName("_path").column->assumeMutableRef().insert(path);
@@ -229,9 +285,9 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
         block.getByName("_file").column->assumeMutableRef().insert(file);
     }
 
-    if (use_hive_partitioning)
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        auto keys_and_values = parseHivePartitioningKeysAndValues(path);
+        auto keys_and_values = parseHivePartitioningKeysAndValues(path, context);
         for (const auto & [key, value] : keys_and_values)
         {
             if (const auto * column = block.findByName(key))
@@ -274,7 +330,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
-        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), context->getSettingsRef()[Setting::use_hive_partitioning]);
+        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), context);
 
     filterBlockWithExpression(actions, block);
 
@@ -287,7 +343,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
 {
     std::unordered_map<std::string, std::string> hive_map;
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        hive_map = parseHivePartitioningKeysAndValues(virtual_values.path);
+        hive_map = parseHivePartitioningKeysAndValues(virtual_values.path, context);
 
     for (const auto & virtual_column : requested_virtual_columns)
     {
