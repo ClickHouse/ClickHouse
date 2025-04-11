@@ -39,7 +39,7 @@ namespace StorageObjectStorageSetting
     extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
     extern const StorageObjectStorageSettingsString iceberg_metadata_table_uuid;
     extern const StorageObjectStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
-    extern const StorageObjectStorageSettingsBool iceberg_use_version_hint; 
+    extern const StorageObjectStorageSettingsBool iceberg_use_version_hint;
 }
 
 namespace ErrorCodes
