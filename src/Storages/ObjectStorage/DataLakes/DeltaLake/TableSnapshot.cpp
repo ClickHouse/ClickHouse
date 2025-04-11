@@ -68,6 +68,7 @@ public:
         const std::string & data_prefix_,
         const DB::NamesAndTypesList & schema_,
         const DB::Names & partition_columns_,
+        const DB::NameToNameMap & physical_names_map_,
         DB::ObjectStoragePtr object_storage_,
         const DB::ActionsDAG * filter_dag_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
@@ -79,6 +80,7 @@ public:
         , data_prefix(data_prefix_)
         , schema(schema_)
         , partition_columns(partition_columns_)
+        , physical_names_map(physical_names_map_)
         , object_storage(object_storage_)
         , callback(callback_)
         , list_batch_size(list_batch_size_)
@@ -225,10 +227,30 @@ public:
         DB::ObjectInfoWithPartitionColumns::PartitionColumnsInfo partitions_info;
         for (const auto & partition_column : context->partition_columns)
         {
-            std::string * value = static_cast<std::string *>(ffi::get_from_string_map(
-                partition_map,
-                KernelUtils::toDeltaString(partition_column),
-                KernelUtils::allocateString));
+            std::string * value;
+            if (context->physical_names_map.empty())
+            {
+                value = static_cast<std::string *>(ffi::get_from_string_map(
+                    partition_map,
+                    KernelUtils::toDeltaString(partition_column),
+                    KernelUtils::allocateString));
+            }
+            else
+            {
+                auto it = context->physical_names_map.find(partition_column);
+                if (it == context->physical_names_map.end())
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::LOGICAL_ERROR,
+                        "Cannot find parititon column {} in physical columns map",
+                        partition_column);
+                }
+
+                value = static_cast<std::string *>(ffi::get_from_string_map(
+                    partition_map,
+                    KernelUtils::toDeltaString(it->second),
+                    KernelUtils::allocateString));
+            }
 
             SCOPE_EXIT({ delete value; });
 
@@ -279,6 +301,7 @@ private:
     const std::string data_prefix;
     const DB::NamesAndTypesList & schema;
     const DB::Names & partition_columns;
+    const DB::NameToNameMap & physical_names_map;
     const DB::ObjectStoragePtr object_storage;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
@@ -379,6 +402,7 @@ DB::ObjectIterator TableSnapshot::iterate(
         helper->getDataPath(),
         getTableSchema(),
         getPartitionColumns(),
+        getPhysicalNamesMap(),
         object_storage,
         filter_dag,
         callback,

@@ -50,6 +50,8 @@ public:
 
     bool operator ==(const IDataLakeMetadata &) const override;
 
+    void modifyFormatSettings(FormatSettings & format_settings) const override;
+
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
