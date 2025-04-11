@@ -40,7 +40,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     const auto & outputs = filter_actions_dag->getOutputs();
 
     /// Restrict to the case that ActionsDAG has a single output. This isn't technically necessary but de-risks the
-    /// implementatino a lot while not losing much usefulness.
+    /// implementation a lot while not losing much usefulness.
     if (outputs.size() != 1)
         return;
 
