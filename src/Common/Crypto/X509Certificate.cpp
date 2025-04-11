@@ -40,9 +40,6 @@ X509Certificate & X509Certificate::operator=(X509Certificate && other) noexcept
 
 X509Certificate::X509Certificate(X509Certificate && other) noexcept
 {
-    if (certificate)
-        X509_free(certificate);
-
     certificate = other.certificate;
     other.certificate = nullptr;
 }

@@ -22,9 +22,6 @@ KeyPair::operator EVP_PKEY *() const
 
 KeyPair::KeyPair(KeyPair && other) noexcept
 {
-    if (key)
-        EVP_PKEY_free(key);
-
     key = other.key;
     other.key = nullptr;
 }
