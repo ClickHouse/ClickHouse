@@ -3,15 +3,17 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <AggregateFunctions/WindowFunction.h>
-#include <Analyzer/Utils.h>
-#include <Analyzer/SetUtils.h>
+
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/LambdaNode.h>
-#include <Analyzer/SortNode.h>
-#include <Analyzer/WindowNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SetUtils.h>
+#include <Analyzer/SortNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
+#include <Analyzer/WindowNode.h>
 
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeSet.h>
@@ -1014,10 +1016,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     size_t exists_function_level = actions_stack.size() - 1;
     actions_stack[exists_function_level].addInputColumnIfNecessary(function_node_name, function_node.getResultType());
 
-    auto * subquery = function_node.getArguments().getNodes().front()->as<QueryNode>();
+    auto subquery_argument = function_node.getArguments().getNodes().front();
+    auto * query_node = subquery_argument->as<QueryNode>();
+    auto * union_node = subquery_argument->as<UnionNode>();
+    chassert(query_node != nullptr || union_node != nullptr);
+    const ColumnNodes & correlated_columns = query_node ? query_node->getCorrelatedColumns() : union_node->getCorrelatedColumns();
 
     ColumnIdentifiers correlated_column_identifiers;
-    for (const auto & column : subquery->getCorrelatedColumns())
+    for (const auto & column : correlated_columns)
     {
         correlated_column_identifiers.push_back(action_node_name_helper.calculateActionNodeName(column));
     }

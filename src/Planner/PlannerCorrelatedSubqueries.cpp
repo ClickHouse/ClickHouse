@@ -10,6 +10,7 @@
 #include "Common/typeid_cast.h"
 #include "Analyzer/FunctionNode.h"
 #include "Analyzer/QueryNode.h"
+#include "Analyzer/UnionNode.h"
 #include "Core/Joins.h"
 #include "Core/Settings.h"
 #include "DataTypes/DataTypesNumber.h"
@@ -346,8 +347,8 @@ void buildQueryPlanForCorrelatedSubquery(
     const SelectQueryOptions & select_query_options)
 {
     auto * query_node = correlated_subquery.query_tree->as<QueryNode>();
-    chassert(query_node->isCorrelated());
-
+    auto * union_node = correlated_subquery.query_tree->as<UnionNode>();
+    chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
     LOG_DEBUG(getLogger(__func__), "Planning:\n{}", correlated_subquery.query_tree->dumpTree());
 
     LOG_DEBUG(getLogger(__func__), "Correlated Identifiers:\n{}", fmt::join(correlated_subquery.correlated_column_identifiers, ", "));
@@ -361,10 +362,12 @@ void buildQueryPlanForCorrelatedSubquery(
         case CorrelatedSubqueryKind::EXISTS:
         {
             auto subquery_options = select_query_options.subquery();
+            auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+            global_planner_context->collectTableExpressionDataForCorrelatedColumns(correlated_subquery.query_tree, planner_context);
             Planner subquery_planner(
                 correlated_subquery.query_tree,
                 subquery_options,
-                std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+                global_planner_context);
 
             subquery_planner.buildQueryPlanIfNeeded();
             auto & correlated_query_plan = subquery_planner.getQueryPlan();

@@ -2,14 +2,15 @@
 
 #include <Storages/IStorage.h>
 
-#include <Analyzer/Utils.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/ListNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ListNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
@@ -49,8 +50,13 @@ public:
         if (isExistsFunction(node))
         {
             auto * function_node = node->as<FunctionNode>();
-            auto * subquery = function_node->getArguments().getNodes().front()->as<QueryNode>();
-            for (auto const & column : subquery->getCorrelatedColumns())
+            const auto & subquery_argument = function_node->getArguments().getNodes().front();
+            auto * query_node = subquery_argument->as<QueryNode>();
+            auto * union_node = subquery_argument->as<UnionNode>();
+            chassert(query_node != nullptr || union_node != nullptr);
+
+            const ColumnNodes & correlated_columns = query_node ? query_node->getCorrelatedColumns() : union_node->getCorrelatedColumns();
+            for (auto const & column : correlated_columns)
             {
                 auto temp_node = column->clone();
                 visit(temp_node);
@@ -407,7 +413,6 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         const auto & correlated_columns = query_node_typed.getCorrelatedColumns();
         ColumnNodePtrWithHashSet correlated_columns_set(correlated_columns.begin(), correlated_columns.end());
 
-        /// TODO: check there's no correlated columns used
         PlannerActionsVisitor visitor(planner_context, /*correlated_columns_set_=*/correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
         auto [expression_nodes, correlated_subtrees] = visitor.visit(prewhere_actions_dag, query_tree_node);
         if (expression_nodes.size() != 1)
