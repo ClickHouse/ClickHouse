@@ -111,7 +111,7 @@ namespace
                         if (!table_id.table_name.empty())
                         {
                             mv_to_dependency = table_id;
-                            if (mv_to_dependency->getDatabaseName().empty())
+                            if (mv_to_dependency->database_name.empty())
                                 mv_to_dependency->database_name = current_database;
                             dependencies.emplace(mv_to_dependency->getQualifiedName());
                         }
@@ -128,7 +128,7 @@ namespace
                         mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
                     }
 
-                    if (mv_to_dependency && mv_to_dependency->getDatabaseName().empty())
+                    if (mv_to_dependency && mv_to_dependency->database_name.empty())
                         mv_to_dependency->database_name = current_database;
                 }
             }
