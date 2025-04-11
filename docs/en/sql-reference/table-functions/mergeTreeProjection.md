@@ -45,17 +45,17 @@ INSERT INTO test SELECT number, 100 - number FROM numbers(5);
 ```
 
 ```sql
-SELECT * FROM mergeTreeProjection(currentDatabase(), test, order_by_item_id);
+SELECT *, _part_offset FROM mergeTreeProjection(currentDatabase(), test, order_by_item_id);
 ```
 
 ```text
-┌─item_id─┬─_part_offset─┐
-│      96 │            4 │
-│      97 │            3 │
-│      98 │            2 │
-│      99 │            1 │
-│     100 │            0 │
-└─────────┴──────────────┘
+   ┌─item_id─┬─_parent_part_offset─┬─_part_offset─┐
+1. │      96 │                   4 │            0 │
+2. │      97 │                   3 │            1 │
+3. │      98 │                   2 │            2 │
+4. │      99 │                   1 │            3 │
+5. │     100 │                   0 │            4 │
+   └─────────┴─────────────────────┴──────────────┘
 ```
 
 ```sql
@@ -63,8 +63,8 @@ DESCRIBE mergeTreeProjection(currentDatabase(), test, order_by_item_id) SETTINGS
 ```
 
 ```text
-┌─name─────────┬─type───┐
-│ item_id      │ UInt64 │
-│ _part_offset │ UInt64 │
-└──────────────┴────────┘
+   ┌─name────────────────┬─type───┐
+1. │ item_id             │ UInt64 │
+2. │ _parent_part_offset │ UInt64 │
+   └─────────────────────┴────────┘
 ```
