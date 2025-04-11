@@ -209,27 +209,6 @@ class Job:
                 return True
             normalized_files = [os.path.normpath(f) for f in changed_files]
 
-            # Optionally check for submodule changes
-            if self.digest_config.with_git_submodules:
-                try:
-                    result = Shell.get_output(
-                        command="git config --file .gitmodules --get-regexp path",
-                        verbose=True,
-                    )
-                    submodule_paths = [
-                        os.path.normpath(line.split(" ", 1)[1])
-                        for line in result.stdout.strip().splitlines()
-                        if " " in line
-                    ]
-                    for file in normalized_files:
-                        if any(
-                            file == sm or file.startswith(sm + os.sep)
-                            for sm in submodule_paths
-                        ):
-                            return True
-                except Exception as e:
-                    print(f"Warning: failed to check git submodules: {e}")
-
             # Check all other include/exclude logic
             for file in normalized_files:
                 # Check if excluded
@@ -245,4 +224,17 @@ class Job:
                             include_norm + os.sep
                         ):
                             return True
+
+            # Optionally check for submodule changes
+            if self.digest_config.with_git_submodules:
+                try:
+                    submodule_paths_str = Shell.get_output(
+                        command="git config --file .gitmodules --get-regexp path | awk '{print $2}'",
+                        verbose=True,
+                    )
+                    if any(file in submodule_paths_str for file in normalized_files):
+                        return True
+                except Exception as e:
+                    print(f"Warning: failed to check git submodules: {e}")
+
             return False

@@ -357,8 +357,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             changed_files = Info().get_custom_data("changed_files")
             for job in workflow.jobs:
                 res = job.is_affected_by(changed_files)
-                if res:
-                    print(f"Job [{job}] is affected by the change")
+                if not res:
+                    print(f"Job [{job}] is not affected by the change")
 
         results.append(
             Result.from_commands_run(

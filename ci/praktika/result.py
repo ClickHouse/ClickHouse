@@ -1,10 +1,12 @@
 import copy
 import dataclasses
 import datetime
+import io
 import json
 import random
 import sys
 import time
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -441,7 +443,13 @@ class Result(MetaClasses.Serializable):
             for command_ in command:
                 if callable(command_):
                     # If command is a Python function, call it with provided arguments
-                    result = command_(*command_args, **command_kwargs)
+                    if with_info:
+                        buffer = io.StringIO()
+                        with redirect_stdout(buffer):
+                            result = command_(*command_args, **command_kwargs)
+                        error_infos = buffer.getvalue()
+                    else:
+                        result = command_(*command_args, **command_kwargs)
                     if isinstance(result, bool):
                         res = result
                     elif result:
