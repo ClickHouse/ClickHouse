@@ -1990,7 +1990,7 @@ struct ConvertImplFromDynamicToColumn
             ColumnsWithTypeAndName new_args = arguments;
             new_args[0] = {variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], ""};
             cast_variant_columns[i] = nested_convert(new_args, result_type);
-            if (isColumnConst(*cast_variant_columns[i]))
+            if (cast_variant_columns[i] && isColumnConst(*cast_variant_columns[i]))
             {
                 cast_variant_columns[i] = assert_cast<const ColumnConst &>(*cast_variant_columns[i]).getDataColumnPtr();
                 cast_variant_columns_is_const[i] = true;
@@ -2052,7 +2052,7 @@ struct ConvertImplFromDynamicToColumn
             ColumnsWithTypeAndName new_args = arguments;
             new_args[0] = {variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""};
             cast_shared_variant_columns[i] = nested_convert(new_args, result_type);
-            if (isColumnConst(*cast_shared_variant_columns[i]))
+            if (cast_shared_variant_columns[i] && isColumnConst(*cast_shared_variant_columns[i]))
             {
                 cast_shared_variant_columns[i] = assert_cast<const ColumnConst &>(*cast_shared_variant_columns[i]).getDataColumnPtr();
                 cast_shared_variant_columns_is_const[i] = true;
