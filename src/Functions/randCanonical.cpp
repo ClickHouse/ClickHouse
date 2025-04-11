@@ -52,8 +52,11 @@ REGISTER_FUNCTION(CanonicalRand)
 The function generates pseudo random results with independent and identically distributed uniformly distributed values in [0, 1).
 Non-deterministic. Return type is Float64.
         )",
-        .examples{{"randCanonical", "SELECT randCanonical()", ""}},
-        .category{"Random Numbers"}});
+        .syntax="randCanonical()",
+        .returned_value="Returns a Float64 value between 0 (inclusive) and 1 (exclusive).",
+        .examples{{"randCanonical", "SELECT randCanonical()", "0.3452178901234567 - Note: The actual output will be a random Float64 number between 0 and 1, not the specific number shown in the example."}},
+        .category= FunctionDocumentation::Category::RandomNumber
+    });
 }
 
 }

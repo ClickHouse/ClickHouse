@@ -329,6 +329,16 @@ Two arguments will have a range of maximum 2^32 (64/2) each
 Three arguments: range of max 2^21 (64/3) each
 And so on, all overflow will be clamped to zero
 )",
+        .syntax=R"(
+mortonEncode(args)             -- Simple mode
+mortonEncode(range_mask, args) --Expanded mode
+        )",
+        .arguments={
+            {"args", "Up to 8 unsigned integers or columns of the aforementioned type."},
+            {"range_mask", "1-8"},
+            {"args", "Up to 8 unsigned integers or columns of the aforementioned type. Note: when using columns for args the provided range_mask tuple should still be a constant."}
+        },
+        .returned_value="A UInt64 code. UInt64",
         .examples{
             {"simple", "SELECT mortonEncode(1, 2, 3)", ""},
             {"range_expanded", "SELECT mortonEncode((1,2), 1024, 16)", ""},
@@ -337,7 +347,7 @@ And so on, all overflow will be clamped to zero
             {"from_table", "SELECT mortonEncode(n1, n2) FROM table", ""},
             {"from_table_range", "SELECT mortonEncode((1,2), n1, n2) FROM table", ""},
             },
-        .category {"Encoding"}
+        .category=FunctionDocumentation::Category::Encoding
     });
 }
 

@@ -257,31 +257,116 @@ using FunctionSparseGramsUTF8 = FunctionTokens<SparseGramsImpl<true>>;
 
 REGISTER_FUNCTION(SparseGrams)
 {
-    const FunctionDocumentation description = {
-        .description=R"(Finds all substrings of a given string that have a length of at least `n`,
+    factory.registerFunction<FunctionSparseGrams>(FunctionDocumentation{
+        .description=R"(
+Finds all substrings of a given string that have a length of at least `n`, 
 where the hashes of the (n-1)-grams at the borders of the substring
-are strictly greater than those of any (n-1)-gram inside the substring.)",
+are strictly greater than those of any (n-1)-gram inside the substring.
+Uses [crc32](./string-functions.md#crc32) as a hash function.        
+        )",
+        .syntax="sparseGrams(s[, min_ngram_length]);",
         .arguments={
-            {"s", "An input string"},
-            {"min_ngram_length", "The minimum length of extracted ngram. The default and minimal value is 3"},
-            {"max_ngram_length", "The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'"},
+            {"s", "An input string. [String](../data-types/string.md)"},
+            {"min_ngram_length", "The minimum length of extracted ngram. The default and minimal value is 3."},
+            {"max_ngram_length", "The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'"}
         },
-        .returned_value{"An array of selected substrings"},
-        .category{"String"}
-    };
-    const FunctionDocumentation hashes_description{
-        .description = R"(Finds hashes of all substrings of a given string that have a length of at least `n`,
+        .returned_value="An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).",
+        .examples={
+            {
+                "Usage example",
+                "SELECT sparseGrams('alice', 3) AS result",
+                R"(
+   ┌─result─────────────────────┐
+1. │ ['ali','lic','lice','ice'] │
+   └────────────────────────────┘                
+                )"
+            },
+        },
+            .category=FunctionDocumentation::Category::String
+    });
+    factory.registerFunction<FunctionSparseGramsUTF8>(FunctionDocumentation{
+        .description=R"(
+Finds all substrings of a given string that have a length of at least `n`,
 where the hashes of the (n-1)-grams at the borders of the substring
-are strictly greater than those of any (n-1)-gram inside the substring.)",
-        .arguments = description.arguments,
-        .returned_value = "An array of selected substrings hashes",
-        .category = description.category};
+are strictly greater than those of any (n-1)-gram inside the substring.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
+Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence. 
+        )",
+        .syntax="sparseGramsUTF8(s[, min_ngram_length])",
+        .arguments={
+            {"s", "An input string. [String](../data-types/string.md)"},
+            {"min_ngram_length", "The minimum length of extracted ngram. The default and minimal value is 3."},
+            {"max_ngram_length", "The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'"}
+        },
+        .returned_value="An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).",
+        .examples={
+            {
+                "Usage example",
+                "SELECT sparseGramsUTF8('алиса', 3) AS result",
+                R"(
+   ┌─result──────────────┐
+1. │ ['али','лис','иса'] │
+   └─────────────────────┘             
+                )"
+            }
+        },
+            .category = FunctionDocumentation::Category::String
+    });
 
-    factory.registerFunction<FunctionSparseGrams>(description);
-    factory.registerFunction<FunctionSparseGramsUTF8>(description);
-
-    factory.registerFunction<SparseGramsHashes<false>>(hashes_description);
-    factory.registerFunction<SparseGramsHashes<true>>(hashes_description);
+    factory.registerFunction<SparseGramsHashes<false>>(FunctionDocumentation{
+        .description=R"(
+Finds hashes of all substrings of a given string that have a length of at least `n`,
+where the hashes of the (n-1)-grams at the borders of the substring
+are strictly greater than those of any (n-1)-gram inside the substring.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
+                    )",
+        .syntax="sparseGramsHashes(s[, min_ngram_length])",
+        .arguments={
+            {"s", "An input string. [String](../data-types/string.md)"},
+            {"min_ngram_length", "The minimum length of extracted ngram. The default and minimal value is 3."},
+            {"max_ngram_length", "The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'"}
+        },
+        .returned_value="An array of selected substrings crc32-c hashes. [Array](../data-types/array.md)([UInt32](../data-types/int-uint.md)).",
+        .examples={
+            {
+                "Usage example",
+                "SELECT sparseGramsHashes('alice', 3) AS result",
+                R"(
+   ┌─result────────────────────────────────────────┐
+1. │ [1265796434,3725069146,1689963195,3410985998] │
+   └───────────────────────────────────────────────┘             
+                )"
+            },
+            },
+            .category = FunctionDocumentation::Category::String
+    });
+    factory.registerFunction<SparseGramsHashes<true>>(FunctionDocumentation{
+        .description=R"(
+Finds hashes of all substrings of a given string that have a length of at least `n`,
+where the hashes of the (n-1)-grams at the borders of the substring
+are strictly greater than those of any (n-1)-gram inside the substring.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
+Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence.
+                )",
+        .syntax="sparseGramsUTF8(s[, min_ngram_length])",
+        .arguments={
+            {"s", "An input string. [String](../data-types/string.md)"},
+            {"min_ngram_length", "The minimum length of extracted ngram. The default and minimal value is 3."},
+            {"max_ngram_length", "The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'"}
+        },
+        .returned_value="An array of selected substrings crc32-c hashes. [Array](../data-types/array.md)([UInt32](../data-types/int-uint.md)).",
+        .examples={
+            {
+                "Usage example",
+                "SELECT sparseGramsHashesUTF8('алиса', 3) AS result",
+                R"(
+   ┌─result───────────────────────────┐
+1. │ [417784657,728683856,3071092609] │
+   └──────────────────────────────────┘        
+                )"
+            },
+        },
+            .category = FunctionDocumentation::Category::String
+    });
 }
-
 }

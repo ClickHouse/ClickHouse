@@ -94,13 +94,16 @@ One use-case of this function is reversing IPv4s:
 └───────────────────────────────────────────────────────┘
 ```
 )",
+            .syntax="byteSwap(x)",
+            .arguments={{"x", "An Integer value. UInt(8/16/32/64/128/256)."}},
+            .returned_value="Returns `x` with reversed bytes.",
             .examples{
                 {"8-bit", "SELECT byteSwap(54)", "54"},
                 {"16-bit", "SELECT byteSwap(4135)", "10000"},
                 {"32-bit", "SELECT byteSwap(3351772109)", "3455829959"},
                 {"64-bit", "SELECT byteSwap(123294967295)", "18439412204227788800"},
             },
-            .category{"Arithmetic"}},
+            .category=FunctionDocumentation::Category::Arithmetic},
         FunctionFactory::Case::Insensitive);
 }
 

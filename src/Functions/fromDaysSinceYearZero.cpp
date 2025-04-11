@@ -115,16 +115,22 @@ REGISTER_FUNCTION(FromDaysSinceYearZero)
 Given the number of days passed since 1 January 0000 in the proleptic Gregorian calendar defined by ISO 8601 return a corresponding date.
 The calculation is the same as in MySQL's FROM_DAYS() function.
 )",
+        .syntax="fromDaysSinceYearZero(x)",
+        .arguments={{"x", "The number of days passed since year zero."}},
+        .returned_value="The date corresponding to the number of days passed since year zero. Date.",
         .examples{{"typical", "SELECT fromDaysSinceYearZero(713569)", "2023-09-08"}},
-        .category{"Dates and Times"}});
+        .category=FunctionDocumentation::Category::DateAndTime});
 
     factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits32>>(FunctionDocumentation{
         .description = R"(
 Given the number of days passed since 1 January 0000 in the proleptic Gregorian calendar defined by ISO 8601 return a corresponding date.
 The calculation is the same as in MySQL's FROM_DAYS() function.
 )",
+        .syntax="fromDaysSinceYearZero32(x)",
+        .arguments={{"x", "The number of days passed since year zero."}},
+        .returned_value="The date corresponding to the number of days passed since year zero. Date32.",
         .examples{{"typical", "SELECT fromDaysSinceYearZero32(713569)", "2023-09-08"}},
-        .category{"Dates and Times"}});
+        .category=FunctionDocumentation::Category::DateAndTime});
 
     factory.registerAlias("FROM_DAYS", FunctionFromDaysSinceYearZero<DateTraits>::name, FunctionFactory::Case::Insensitive);
 }

@@ -346,11 +346,20 @@ private:
 REGISTER_FUNCTION(Printf)
 {
     factory.registerFunction<FunctionPrintf>(
-        FunctionDocumentation{.description=R"(
+        FunctionDocumentation{
+            .description=R"(
 The `printf` function formats the given string with the values (strings, integers, floating-points etc.) listed in the arguments, similar to printf function in C++.
 The format string can contain format specifiers starting with `%` character.
 Anything not contained in `%` and the following format specifier is considered literal text and copied verbatim into the output.
-Literal `%` character can be escaped by `%%`.)", .examples{{"sum", "select printf('%%%s %s %d', 'Hello', 'World', 2024);", "%Hello World 2024"}}, .category{"Strings - Replacing"}
+Literal `%` character can be escaped by `%%`.)",
+            .syntax="printf(format, arg1, arg2, ... , argN)",
+            .arguments={
+                {"format", "Format string containing format specififiers starting with `%`. String"},
+                {"argN", "Values to format the provided string with."}
+            },
+            .returned_value="Returns a formatted string. String.",
+            .examples{{"sum", "select printf('%%%s %s %d', 'Hello', 'World', 2024);", "%Hello World 2024"}}, 
+            .category=FunctionDocumentation::Category::StringReplacement
 });
 
 }

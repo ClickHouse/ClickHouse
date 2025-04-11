@@ -35,11 +35,16 @@ For arguments outside of this range, it returns nan:
 Every self-respectful data scientist knows how to apply arcsine to improve ads click-through rate with ClickHouse.
 For more details, see [https://en.wikipedia.org/wiki/Inverse_trigonometric_functions].
 )",
+            .syntax="asin(x)",
+            .arguments={
+                {"x", "(U)Int*, Float* or Decimal*."}
+            },
+            .returned_value="Returns the arc sine of `x`. Float*.",
             .examples{
                 {"inverse", "SELECT asin(1.0) = pi() / 2, sin(asin(1)), asin(sin(1))", ""},
                 {"float32", "SELECT toTypeName(asin(1.0::Float32))", ""},
                 {"nan", "SELECT asin(1.1), asin(-2), asin(inf), asin(nan)", ""}},
-            .category{"Mathematical"}
+            .category=FunctionDocumentation::Category::Mathematical
         },
         FunctionFactory::Case::Insensitive);
 }

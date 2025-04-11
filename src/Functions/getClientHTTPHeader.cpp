@@ -92,11 +92,14 @@ The setting is not enabled by default for security reasons, because some headers
 HTTP headers are case sensitive for this function.
 
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
-",
+        )",
             .syntax = "getClientHTTPHeader(name)",
             .arguments = {{"name", "The HTTP header name (String)"}},
             .returned_value = "The value of the header (String).",
-            .category{"Other"}});
+            .examples={
+                {"", "", ""}
+            },
+            .category=FunctionDocumentation::Category::Other});
 }
 
 }

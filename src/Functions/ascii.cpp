@@ -82,8 +82,13 @@ Returns the ASCII code point of the first character of str.  The result type is 
 
 If s is empty, the result is 0. If the first character is not an ASCII character or not part of the Latin-1 Supplement range of UTF-16, the result is undefined)
         )",
+        .syntax="ascii(x)",
+        .arguments={
+            {"x","input text. String."}
+        },
+        .returned_value="Extracted text. String.",
         .examples{{"ascii", "SELECT ascii('234')", ""}},
-        .category{"String"}
+        .category=FunctionDocumentation::Category::String
         }, FunctionFactory::Case::Insensitive);
 }
 

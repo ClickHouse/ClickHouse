@@ -177,12 +177,19 @@ REGISTER_FUNCTION(PositiveModulo)
     factory.registerFunction<FunctionPositiveModulo>(FunctionDocumentation
         {
             .description = R"(
-Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positiveModulo` always return non-negative number.
-Returns the difference between `a` and the nearest integer not greater than `a` divisible by `b`.
+Calculates the remainder when dividing `x` by `y`. Similar to function `modulo` except that `positiveModulo` always return non-negative number.
+Returns the difference between `x` and the nearest integer not greater than `x` divisible by `y`.
 In other words, the function returning the modulus (modulo) in the terms of Modular Arithmetic.
         )",
+            .syntax="positiveModulo(x, y)",
+            .arguments={
+                {"x", "First integer"},
+                {"y", "Second integer"}
+            },
+            .returned_value="Returns the remainder of the division of `x` and `y`",
             .examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);", ""}},
-            .category{"Arithmetic"}},
+            .category=FunctionDocumentation::Category::Arithmetic
+        },
         FunctionFactory::Case::Insensitive);
 
     factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::Case::Insensitive);

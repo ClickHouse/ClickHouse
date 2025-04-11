@@ -16,10 +16,19 @@ equals behavior where comparing two `NULL` values would return `NULL`.
 Currently, this function can only be used in the `JOIN ON` section of a query.
 [example:join_on_is_not_distinct_from]
 )",
+        .syntax="isNotDistinctFrom(x, y)",
+        .arguments={
+            {"x","First JOIN key."},
+            {"y","Second JOIN key."}
+        },
+        .returned_value=R"(
+- `true` when `x` and `y` are both `NULL`
+- `false` otherwise
+        )"
         .examples{
             {"join_on_is_not_distinct_from", "SELECT * FROM (SELECT NULL AS a) AS t1 JOIN (SELECT NULL AS b) AS t2 ON isNotDistinctFrom(t1.a, t2.b)", "NULL\tNULL"},
         },
-        .category = {"Nullable"},
+        .category = FunctionDocumentation:;Category::Nullable,
     });
 
 }

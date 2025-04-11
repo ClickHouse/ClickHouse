@@ -155,6 +155,7 @@ Returns the variant type name for each row of `Dynamic` column. If row contains 
 )",
         .syntax = {"dynamicType(dynamic)"},
         .arguments = {{"dynamic", "Dynamic column"}},
+        .returned_value="Variant type name for each row of `Dynamic` column, otherwise `None` if the row contains `NULL`.",
         .examples = {{{
             "Example",
             R"(
@@ -179,6 +180,7 @@ Returns true for rows in Dynamic column that are not separated into subcolumns a
 )",
         .syntax = {"isDynamicElementInSharedData(dynamic)"},
         .arguments = {{"dynamic", "Dynamic column"}},
+        .returned_value="Returns true for rows that are stored in a special shared data structure inside Dynamic. Bool.",
         .examples = {{{
             "Example",
             R"(
@@ -194,8 +196,7 @@ SELECT d, isDynamicElementInSharedData(d) FROM test;
 │ [1,2,3]       │ true               │
 └───────────────┴────────────────────┘
 )"}}},
-        .category=FunctionDocumentation::Category::Other},
-    });
+        .category=FunctionDocumentation::Category::Other});
 }
 
 }

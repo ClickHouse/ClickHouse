@@ -46,7 +46,7 @@ std::string FunctionDocumentation::categoryAsString() const
         {Category::Bitmap, "Bitmap"},
         {Category::Comparison, "Comparison"},
         {Category::Conditional, "Conditional"},
-        {Category::DatesAndTime, "Dates and Times"},
+        {Category::DateAndTime, "Dates and Times"},
         {Category::Dictionary, "Dictionary"},
         {Category::Distance, "Distance"},
         {Category::EmbeddedDictionary, "Embedded Dictionary"},

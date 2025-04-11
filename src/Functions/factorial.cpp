@@ -104,8 +104,11 @@ Computes the factorial of an integer value. It works with any native integer typ
 
 The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any negative value. The maximum positive value for the input argument is 20, a value of 21 or greater will cause exception throw.
 )",
+            .syntax="factorial(n)",
+            .arguments={{"n", "Integer value for which to compute the factorial. UInt(8|16|32|64)"}},
+            .returned_value="Returns factorial, n!. UInt64.",
             .examples{{"factorial", "SELECT factorial(10)", ""}},
-            .category{"Mathematical"}},
+            .category=FunctionDocumentation::Category::Mathematical},
         FunctionFactory::Case::Insensitive);
 }
 

@@ -147,7 +147,8 @@ Extracts a column with specified type from a `Dynamic` column.
         .arguments{
             {"dynamic", "Dynamic column"},
             {"type_name", "The name of the variant type to extract"}},
-        .examples{{{
+        .returned_value="Returns a column `dynamic` with type specified by `type_name`.",
+        .examples{{
             "Example",
             R"(
 CREATE TABLE test (d Dynamic) ENGINE = Memory;
@@ -160,8 +161,8 @@ SELECT d, dynamicType(d), dynamicElement(d, 'String'), dynamicElement(d, 'Int64'
 │ Hello, World! │ String         │ Hello, World!               │                       ᴺᵁᴸᴸ │ []                                │                      ᴺᵁᴸᴸ │ []                                 │
 │ [1,2,3]       │ Array(Int64)   │ ᴺᵁᴸᴸ                        │                       ᴺᵁᴸᴸ │ [1,2,3]                           │                      ᴺᵁᴸᴸ │ []                                 │
 └───────────────┴────────────────┴─────────────────────────────┴────────────────────────────┴───────────────────────────────────┴───────────────────────────┴────────────────────────────────────┘
-)"}}},
-        .category{"Dynamic"},
+)"}},
+        .category=FunctionDocumentation::Category::Other
     });
 }
 

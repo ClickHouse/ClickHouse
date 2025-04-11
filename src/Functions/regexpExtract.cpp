@@ -255,7 +255,37 @@ private:
 REGISTER_FUNCTION(RegexpExtract)
 {
     factory.registerFunction<FunctionRegexpExtract>(
-        FunctionDocumentation{.description="Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index."});
+        FunctionDocumentation{
+            .description="Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index.",
+            .syntax="regexpExtract(haystack, pattern[, index])",
+            .arguments={
+                {"haystack", "String, in which regexp pattern will to be matched. [String](../data-types/string.md)."},
+                {"pattern", "String, regexp expression, must be constant. [String](../data-types/string.md)."},
+                {"index", "An integer number greater or equal 0 with default 1. It represents which regex group to extract. [UInt or Int](../data-types/int-uint.md). Optional."}
+            },
+            .returned_value=R"(
+`pattern` may contain multiple regexp groups, `index` indicates which regex group to extract. 
+An index of 0 means matching the entire regular expression. [String](../data-types/string.md).            
+            )",
+            .examples={
+                {
+                    "Usage example",
+                    R"(
+SELECT
+    regexpExtract('100-200', '(\\d+)-(\\d+)', 1),
+    regexpExtract('100-200', '(\\d+)-(\\d+)', 2),
+    regexpExtract('100-200', '(\\d+)-(\\d+)', 0),
+    regexpExtract('100-200', '(\\d+)-(\\d+)');                    
+                    )",
+                    R"(
+┌─regexpExtract('100-200', '(\\d+)-(\\d+)', 1)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 2)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 0)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)')─┐
+│ 100                                          │ 200                                          │ 100-200                                      │ 100                                       │
+└──────────────────────────────────────────────┴──────────────────────────────────────────────┴──────────────────────────────────────────────┴───────────────────────────────────────────┘                    
+                    )"
+                }
+            },
+            .category=FunctionDocumentation::Category::StringSearch
+        });
 
     /// For Spark compatibility.
     factory.registerAlias("REGEXP_EXTRACT", "regexpExtract", FunctionFactory::Case::Insensitive);

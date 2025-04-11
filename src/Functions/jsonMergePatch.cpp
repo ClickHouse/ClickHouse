@@ -171,7 +171,23 @@ namespace
 REGISTER_FUNCTION(JSONMergePatch)
 {
     factory.registerFunction<FunctionJSONMergePatch>(FunctionDocumentation{
-        .description="Returns the merged JSON object string, which is formed by merging multiple JSON objects."});
+        .description="Returns the merged JSON object string, which is formed by merging multiple JSON objects.",
+        .syntax="jsonMergePatch(json1, json2, ... , jsonN)",
+        .arguments={
+            {"jsonN", "String with valid JSON."}
+        },
+        .returned_value="If JSON object strings are valid, return the merged JSON object string. String.",
+        .examples={
+            {"Example", R"(
+SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name": "zoey"}') AS res
+            )", R"(
+┌─res───────────────────┐
+│ {"a":1,"name":"zoey"} │
+└───────────────────────┘        
+            )"}
+        },
+        .category=FunctionDocumentation::Category::JSON
+    });
 
     factory.registerAlias("jsonMergePatch", "JSONMergePatch");
 }

@@ -485,7 +485,7 @@ It is the same as `dateDiff` and was added only for MySQL support. `dateDiff` is
     .returned_value="The difference between two dates or dates with time values in seconds.",
     .examples{
         {"typical", "SELECT timeDiff(UTCTimestamp(), now());", ""}},
-    .category=FunctionDocumentation::Category::DatesAndTime}, FunctionFactory::Case::Insensitive);
+    .category=FunctionDocumentation::Category::DateAndTime}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(Age)

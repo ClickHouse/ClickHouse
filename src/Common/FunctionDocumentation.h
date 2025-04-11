@@ -72,7 +72,7 @@ struct FunctionDocumentation
         Bitmap,
         Comparison,
         Conditional,
-        DatesAndTime,
+        DateAndTime,
         Dictionary,
         Distance,
         EmbeddedDictionary,
@@ -114,7 +114,7 @@ struct FunctionDocumentation
     /// TODO Fields with {} initialization are optional.
     Description description;               /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
     Syntax syntax;                      /// E.g. "position(haystack, needle)"
-    Arguments arguments;                /// E.g. ["haystack — String in which the search is performed. String.", "needle — Substring to be searched. String."]
+    Arguments arguments{};                /// E.g. ["haystack — String in which the search is performed. String.", "needle — Substring to be searched. String."]
     ReturnedValue returned_value;       /// E.g. "Starting position in bytes and counting from 1, if the substring was found."
     Examples examples;                  ///
     Category category {Category::Other};   /// E.g. Category::DatesAndTimes

@@ -706,7 +706,22 @@ REGISTER_FUNCTION(Overlay)
         {.description = R"(
 Replace a part of a string `input` with another string `replace`, starting at 1-based index `offset`. By default, the number of bytes removed from `input` equals the length of `replace`. If `length` (the optional fourth argument) is specified, a different number of bytes is removed.
 )",
-         .category{"Strings - Replacing"}},
+        .syntax="overlay(s, replace, offset[, length])",
+        .arguments={
+            {"s", "A string type [String](../data-types/string.md)."},
+            {"replace", "A string type [String](../data-types/string.md)."},
+            {"offset", "An integer type [Int](../data-types/int-uint.md) (1-based). If `offset` is negative, it is counted from the end of the string `s`."},
+            {"length", "Optional. An integer type [Int](../data-types/int-uint.md). `length` specifies the length of the snippet within the input string `s` to be replaced. If `length` is not specified, the number of bytes removed from `s` equals the length of `replace`; otherwise `length` bytes are removed."}
+        },
+        .returned_value="Returns a [String](../data-types/string.md) data type value.",
+        .examples={
+            {
+                "Usage example",
+                "SELECT overlay('My father is from Mexico.', 'mother', 4) AS res;",
+                "My mother is from Mexico."
+            }
+        },
+        .category=FunctionDocumentation::Category::StringReplacement},
         FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionOverlay<true>>(
@@ -715,7 +730,26 @@ Replace a part of a string `input` with another string `replace`, starting at 1-
 
 Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 )",
-         .category{"Strings - Replacing"}},
+        .syntax="overlayUTF8(s, replace, offset[, length])",
+        .arguments={
+            {"s", "A string type [String](../data-types/string.md)."},
+            {"replace", "A string type [String](../data-types/string.md)."},
+            {"offset", "An integer type [Int](../data-types/int-uint.md) (1-based). If `offset` is negative, it is counted from the end of the string `s`."},
+            {"length", "Optional. An integer type [Int](../data-types/int-uint.md). `length` specifies the length of the snippet within the input string `s` to be replaced. If `length` is not specified, the number of bytes removed from `s` equals the length of `replace`; otherwise `length` bytes are removed."}
+        },
+        .returned_value="Returns a [String](../data-types/string.md) data type value.",
+        .examples={
+            {
+                "Usage example",
+                "SELECT overlay('Mein Vater ist aus Österreich.', 'der Türkei', 20) AS res;",
+                R"(
+┌─res───────────────────────────┐
+│ Mein Vater ist aus der Türkei.│
+└───────────────────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::StringReplacement},
         FunctionFactory::Case::Sensitive);
 }
 }

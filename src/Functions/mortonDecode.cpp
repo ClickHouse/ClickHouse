@@ -354,6 +354,12 @@ The function accepts a column of codes as a second argument:
 The range tuple must be a constant:
 [example:from_table_range]
 )",
+        .syntax="mortonDecode(tuple_size, code)",
+        .arguments={
+            {"tuple_size", "Integer value no more than 8."},
+            {"code", "UInt64 code."}
+        },
+        .returned_value="Returns a tuple of the specified size. UInt64",
         .examples{
             {"simple", "SELECT mortonDecode(4, 2149)", ""},
             {"range_shrank", "SELECT mortonDecode((1,2), 1572864)", ""},
@@ -362,7 +368,7 @@ The range tuple must be a constant:
             {"from_table", "SELECT mortonDecode(2, code) FROM table", ""},
             {"from_table_range", "SELECT mortonDecode((1,2), code) FROM table", ""},
             },
-        .category {"Encoding"}
+        .category=FunctionDocumentation::Category::Encoding
     });
 }
 

@@ -179,8 +179,10 @@ Can be changed with SET timezone = 'New/Tz'
 
 [example:timezone]
     )",
+    .syntax="timeZone()",
+    .returned_value="Timezone. String.",
     .examples{{"timezone", "SELECT timezone();", ""}},
-    .category{"Other"}
+    .category=FunctionDocumentation::Category::Other
 });
 factory.registerAlias("timeZone", "timezone");
 }
@@ -194,8 +196,18 @@ Returns the timezone name in which server operates.
 
 [example:serverTimezone]
     )",
-     .examples{{"serverTimezone", "SELECT serverTimezone();", ""}},
-     .category{"Other"}
+        .syntax="serverTimeZone()",
+        .returned_value="Timezone. String.",
+        .examples{
+            {
+                "serverTimezone",
+                "SELECT serverTimezone();",
+                R"(
+┌─serverTimeZone()─┐
+│ UTC              │
+└──────────────────┘               
+                )"}},
+        .category=FunctionDocumentation::Category::Other
 });
     factory.registerAlias("serverTimeZone", "serverTimezone");
 }
@@ -233,11 +245,11 @@ REGISTER_FUNCTION(DisplayName)
         {
             .description=R"(
 Returns the value of `display_name` from config or server FQDN if not set.
-
-[example:displayName]
 )",
+            .syntax="displayName()",
+            .returned_value="Value of display_name from config or server FQDN if not set. String.",
             .examples{{"displayName", "SELECT displayName();", ""}},
-            .category{"Other"}
+            .category=FunctionDocumentation::Category::Other
         });
 }
 

@@ -196,27 +196,7 @@ REGISTER_FUNCTION(SeriesOutliersDetectTukey)
         .description = R"(
 Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences).
 
-**Syntax**
-
-```sql
-seriesOutliersDetectTukey(series);
-seriesOutliersDetectTukey(series, min_percentile, max_percentile, k);
-```
-
-**Arguments**
-
-- `series` - An array of numeric values.
-- `min_quantile` - The minimum quantile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [0.02,0.98]. The default is 0.25.
-- `max_quantile` - The maximum quantile to be used to calculate inter-quantile range (IQR). The value must be in range [0.02, 0.98]. The default is 0.75.
-- `k` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5
-
 At least four data points are required in `series` to detect outliers.
-
-**Returned value**
-
-- Returns an array of the same length as the input array where each value represents score of possible anomaly of corresponding element in the series. A non-zero score indicates a possible anomaly.
-
-Type: [Array](../../sql-reference/data-types/array.md).
 
 **Examples**
 
@@ -247,6 +227,17 @@ Result:
 │ [0,0,0,0,0,0,0,0,0,19.5,0,0,0,0,0,0] │
 └──────────────────────────────────────┘
 ```)",
-        .category{"Time Series"}});
+        .syntax=R"(
+seriesOutliersDetectTukey(series);
+seriesOutliersDetectTukey(series, min_percentile, max_percentile, k);        
+        )",
+        .arguments={
+            {"series", "An array of numeric values."},
+            {"min_quantile", "The minimum quantile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [0.02,0.98]. The default is 0.25."},
+            {"max_quantile", "The maximum quantile to be used to calculate inter-quantile range (IQR). The value must be in range [0.02, 0.98]. The default is 0.75"},
+            {"k", "Non-negative constant value to detect mild or stronger outliers. The default value is 1.5"}
+        },
+        .returned_value="Returns an array of the same length as the input array where each value represents score of possible anomaly of corresponding element in the series. A non-zero score indicates a possible anomaly. [Array](../../sql-reference/data-types/array.md).",
+        .category=FunctionDocumentation::Category::TimeSeries});
 }
 }

@@ -81,10 +81,20 @@ Generates a Universally Unique Lexicographically Sortable Identifier (ULID).
 This function takes an optional argument, the value of which is discarded to generate different values in case the function is called multiple times.
 The function returns a value of type FixedString(26).
 )",
+        .syntax="generateULID([x])",
+        .arguments={
+            {"x", R"(
+Expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing common 
+subexpression elimination if the function is called multiple times in one query. Optional parameter.            
+            )"
+            }
+        },
+        .returned_value="The FixedString type value.",
         .examples{
             {"ulid", "SELECT generateULID()", ""},
-            {"multiple", "SELECT generateULID(1), generateULID(2)", ""}},
-        .category{"ULIDs"}
+            {"multiple", "SELECT generateULID(1), generateULID(2)", ""}
+        },
+        .category=FunctionDocumentation::Category::ULID
     });
 }
 

@@ -115,9 +115,14 @@ Same as `now('UTC')`. Was added only for MySQL support. `now` is preferred.
 Example:
 [example:typical]
 )",
-    .examples{
-        {"typical", "SELECT UTCTimestamp();", ""}},
-    .category{"Dates and Times"}}, FunctionFactory::Case::Insensitive);
+        .syntax="UTCTimestamp()",
+        .returned_value="Returns the current date and time at the moment of query analysis. DateTime.",
+        .examples{
+            {"typical", "SELECT UTCTimestamp();", ""}
+        },
+        .category=FunctionDocumentation::Category::DateAndTime
+    },
+    FunctionFactory::Case::Insensitive);
     factory.registerAlias("UTC_timestamp", UTCTimestampOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 

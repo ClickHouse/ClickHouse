@@ -193,9 +193,10 @@ recommended to use non-String/FixedString arguments.
                 )"
             }
         },
-        .returned_value="The String created by concatenating the arguments. If any of the argument values is `NULL`, the function returns `NULL`."
+        .returned_value="The String created by concatenating the arguments. If any of the argument values is `NULL`, the function returns `NULL`.",
         .examples{{"concatWithSeparator", "SELECT concatWithSeparator('a', '1', '2', '3')", ""}},
-        .category=FunctionDocumentation::Category::String});
+        .category=FunctionDocumentation::Category::String
+    });
 
     factory.registerFunction<FunctionConcatWithSeparatorAssumeInjective>(FunctionDocumentation{
         .description = R"(
@@ -215,6 +216,7 @@ recommended to use non-String/FixedString arguments.
                 )"
             }
         },
+        .returned_value="The String created by concatenating the arguments. If any of the argument values is `NULL`, the function returns `NULL`.",
         .examples{{"concatWithSeparatorAssumeInjective", "SELECT concatWithSeparatorAssumeInjective('a', '1', '2', '3')", ""}},
         .category=FunctionDocumentation::Category::String});
 
