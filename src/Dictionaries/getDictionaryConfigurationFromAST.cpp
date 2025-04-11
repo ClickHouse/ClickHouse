@@ -144,7 +144,7 @@ void buildLayoutConfiguration(
         }
     }
 
-    const auto is_ssd_cache_layout = layout->layout_type == "ssd_cache";
+    const auto is_ssd_cache_layout = layout->layout_type.ends_with("ssd_cache");
 
     for (const auto & param : layout->parameters->children)
     {
