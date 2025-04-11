@@ -28,26 +28,37 @@ namespace DataPartsExchange
 
 /** Service for sending parts from the table *ReplicatedMergeTree.
   */
-class Service final : public InterserverIOEndpoint
+class Service : private boost::noncopyable, public InterserverIOEndpoint
 {
 public:
     explicit Service(StorageReplicatedMergeTree & data_);
 
-    Service(const Service &) = delete;
-    Service & operator=(const Service &) = delete;
-
     std::string getId(const std::string & node_id) const override;
     void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
 
-private:
-    MergeTreeData::DataPartPtr findPart(const String & name);
+protected:
+    MergeTreeData::DataPartPtr processQueryImpl(
+        const HTMLForm & params, ReadBuffer & body, WriteBuffer & out,
+        HTTPServerResponse & response, int client_protocol_version, bool send_projections);
 
-    MergeTreeData::DataPart::Checksums sendPartFromDisk(
+    virtual MergeTreeData::DataPartPtr findPart(const String & name);
+
+    virtual MergeTreeData::DataPart::Checksums sendPartFromDisk(
         const MergeTreeData::DataPartPtr & part,
         WriteBuffer & out,
         int client_protocol_version,
-        bool from_remote_disk,
         bool send_projections);
+
+    MergeTreeData::DataPart::Checksums sendPartFromDiskImpl(
+        const MergeTreeData::DataPartPtr & part,
+        IDataPartStorage::ReplicatedFilesDescription replicated_description,
+        WriteBuffer & out,
+        int client_protocol_version,
+        bool send_projections);
+
+    NameSet getFilesToReplicate(const MergeTreeData::DataPartPtr & part, int client_protocol_version);
+
+    void report_broken_part(MergeTreeData::DataPartPtr part);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
@@ -55,15 +66,32 @@ private:
     LoggerPtr log;
 };
 
+class ServiceZeroCopy : public Service
+{
+public:
+    explicit ServiceZeroCopy(StorageReplicatedMergeTree & data_);
+
+    void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
+
+protected:
+    MergeTreeData::DataPartPtr findPart(const String & name) override;
+
+    MergeTreeData::DataPart::Checksums sendPartFromDisk(
+        const MergeTreeData::DataPartPtr & part,
+        WriteBuffer & out,
+        int client_protocol_version,
+        bool send_projections) override;
+};
+
 /** Client for getting the parts from the table *MergeTree.
   */
-class Fetcher final : private boost::noncopyable
+class Fetcher : private boost::noncopyable
 {
 public:
     explicit Fetcher(StorageReplicatedMergeTree & data_);
 
     /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> fetchSelectedPart(
+    virtual std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> fetchSelectedPart(
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         const String & part_name,
@@ -76,16 +104,17 @@ public:
         const String & password,
         const String & interserver_scheme,
         ThrottlerPtr throttler,
-        bool to_detached = false,
-        const String & tmp_prefix_ = "",
-        std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr = nullptr,
-        bool try_zero_copy = true,
-        DiskPtr dest_disk = nullptr);
+        bool to_detached,
+        const String & tmp_prefix_,
+        std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
+        DiskPtr dest_disk);
 
     /// You need to stop the data transfer.
     ActionBlocker blocker;
 
-private:
+    virtual ~Fetcher() = default;
+
+protected:
     using OutputBufferGetter = std::function<std::unique_ptr<WriteBufferFromFileBase>(IDataPartStorage &, const String &, size_t)>;
 
     void downloadBaseOrProjectionPartToDisk(
@@ -103,26 +132,101 @@ private:
         bool to_detached,
         const String & tmp_prefix_,
         DiskPtr disk,
-        bool to_remote_disk,
         ReadWriteBufferFromHTTP & in,
         OutputBufferGetter output_buffer_getter,
         size_t projections,
         ThrottlerPtr throttler,
         bool sync);
 
-    MergeTreeData::MutableDataPartPtr downloadPartToDiskRemoteMeta(
-       const String & part_name,
-       const String & replica_path,
-       bool to_detached,
-       const String & tmp_prefix_,
-       DiskPtr disk,
-       ReadWriteBufferFromHTTP & in,
-       size_t projections,
-       MergeTreeData::DataPart::Checksums & checksums,
-       ThrottlerPtr throttler);
+    MergeTreeData::MutableDataPartPtr downloadPartToDiskImpl(
+        const String & part_name,
+        const String & replica_path,
+        bool to_detached,
+        const String & tmp_prefix,
+        MergeTreeData::DataPart::Checksums & data_checksums,
+        DiskPtr disk,
+        ReadWriteBufferFromHTTP & in,
+        OutputBufferGetter output_buffer_getter,
+        size_t projections,
+        ThrottlerPtr throttler,
+        bool sync,
+        bool preserve_blobs = false);
+
+    Poco::URI getURI(
+        const String & part_name,
+        const String & zookeeper_name,
+        const String & replica_path,
+        const String & host,
+        const String & interserver_scheme,
+        int port,
+        DiskPtr disk) const;
+
+    void readPartInfo(
+        ReadWriteBufferFromHTTP & in,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreePartInfo & part_info,
+        const String & part_name,
+        std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
+        String & remote_fs_metadata,
+        MergeTreeDataPartType & part_type,
+        UUID & part_uuid,
+        int & server_protocol_version,
+        size_t & projections,
+        size_t & sum_files_size,
+        DiskPtr & disk) const;
 
     StorageReplicatedMergeTree & data;
     LoggerPtr log;
+
+};
+
+class FetcherZeroCopy : public Fetcher
+{
+public:
+    explicit FetcherZeroCopy(StorageReplicatedMergeTree & data_);
+
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> fetchSelectedPart(
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        const String & part_name,
+        const String & zookeeper_name,
+        const String & replica_path,
+        const String & host,
+        int port,
+        const ConnectionTimeouts & timeouts,
+        const String & user,
+        const String & password,
+        const String & interserver_scheme,
+        ThrottlerPtr throttler,
+        bool to_detached,
+        const String & tmp_prefix_,
+        std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
+        DiskPtr dest_disk) override;
+
+protected:
+    MergeTreeData::MutableDataPartPtr downloadPartToRemoteDisk(
+        const String & part_name,
+        const String & replica_path,
+        bool to_detached,
+        const String & tmp_prefix_,
+        DiskPtr disk,
+        ReadWriteBufferFromHTTP & in,
+        OutputBufferGetter output_buffer_getter,
+        size_t projections,
+        ThrottlerPtr throttler,
+        bool sync);
+
+};
+
+using ServicePtr = std::shared_ptr<DB::DataPartsExchange::Service>;
+using FetcherPtr = std::shared_ptr<DB::DataPartsExchange::Fetcher>;
+
+class DataPartsExchangeFactory
+{
+public:
+    static ServicePtr getService(StorageReplicatedMergeTree & data);
+    static FetcherPtr getFetcher(StorageReplicatedMergeTree & data);
+    static FetcherPtr getFetcher(StorageReplicatedMergeTree & data, bool try_zero_copy);
 };
 
 }
