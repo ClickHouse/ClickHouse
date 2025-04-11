@@ -66,8 +66,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.5",
+        {
+            {"input_format_parquet_verify_checksums", true, true, "New setting."},
+            {"output_format_parquet_write_checksums", false, true, "New setting."},
+        });
         addSettingsChanges(settings_changes_history, "25.4",
         {
+            /// Release closed. Please use 25.5
             {"allow_materialized_view_with_bad_select", true, false, "Don't allow creating MVs referencing nonexistent columns or tables"},
             {"query_plan_optimize_lazy_materialization", false, true, "Added new setting to use query plan for lazy materialization optimisation"},
             {"query_plan_max_limit_for_lazy_materialization", 10, 10, "Added new setting to control maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"},
@@ -81,8 +87,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
             {"min_os_cpu_wait_time_ratio_to_throw", 0, 2, "New setting"},
             {"max_os_cpu_wait_time_ratio_to_throw", 0, 6, "New setting"},
-            {"input_format_parquet_verify_checksums", true, true, "New setting."},
-            {"output_format_parquet_write_checksums", false, true, "New setting."},
+            /// Release closed. Please use 25.5
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
