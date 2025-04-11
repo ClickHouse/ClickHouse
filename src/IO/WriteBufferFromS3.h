@@ -16,8 +16,6 @@
 #include <Common/BufferAllocationPolicy.h>
 
 #include <memory>
-#include <vector>
-#include <list>
 
 
 namespace DB
