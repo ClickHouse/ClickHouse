@@ -1,0 +1,90 @@
+2	B	Second
+2	B	Second
+3	C	Third
+3	C	Third
+2	B	Second
+2	B	Second
+3	C	Third
+3	C	Third
+0		Fifth
+0		Fourth
+0		Fourth
+0		Sixth
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.id UInt32 : 0
+         INPUT : 1 -> __table1.value String : 1
+         INPUT : 2 -> __table2.description String : 2
+         ALIAS __table1.id :: 0 -> id UInt32 : 3
+         ALIAS __table1.value :: 1 -> value String : 0
+         ALIAS __table2.description :: 2 -> description String : 1
+Positions: 3 0 1
+  Expression
+  Actions: INPUT :: 0 -> __table1.id UInt32 : 0
+           INPUT :: 1 -> __table1.value String : 1
+           INPUT :: 2 -> __table2.description String : 2
+  Positions: 0 1 2
+    Join
+    Type: RIGHT
+    Strictness: ALL
+    Algorithm: ConcurrentHashJoin
+    Clauses: [(__table1.id) = (__table2.id)]
+      Expression (Change column names to column identifiers)
+      Actions: INPUT : 0 -> id UInt32 : 0
+               INPUT : 1 -> value String : 1
+               ALIAS id :: 0 -> __table1.id UInt32 : 2
+               ALIAS value :: 1 -> __table1.value String : 0
+      Positions: 2 0
+        ReadFromMemoryStorage
+      Expression (Change column names to column identifiers)
+      Actions: INPUT : 0 -> description String : 0
+               INPUT : 1 -> id UInt32 : 1
+               ALIAS description :: 0 -> __table2.description String : 2
+               ALIAS id :: 1 -> __table2.id UInt32 : 0
+      Positions: 2 0
+        ReadFromMemoryStorage
+1	A	
+2	B	Second
+2	B	Second
+3	C	Third
+3	C	Third
+1	A	
+2	B	Second
+2	B	Second
+3	C	Third
+3	C	Third
+0		Fifth
+0		Fourth
+0		Fourth
+0		Sixth
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.id UInt32 : 0
+         INPUT : 1 -> __table1.value String : 1
+         INPUT : 2 -> __table2.description String : 2
+         ALIAS __table1.id :: 0 -> id UInt32 : 3
+         ALIAS __table1.value :: 1 -> value String : 0
+         ALIAS __table2.description :: 2 -> description String : 1
+Positions: 3 0 1
+  Expression
+  Actions: INPUT :: 0 -> __table1.id UInt32 : 0
+           INPUT :: 1 -> __table1.value String : 1
+           INPUT :: 2 -> __table2.description String : 2
+  Positions: 0 1 2
+    Join
+    Type: FULL
+    Strictness: ALL
+    Algorithm: ConcurrentHashJoin
+    Clauses: [(__table1.id) = (__table2.id)]
+      Expression (Change column names to column identifiers)
+      Actions: INPUT : 0 -> id UInt32 : 0
+               INPUT : 1 -> value String : 1
+               ALIAS id :: 0 -> __table1.id UInt32 : 2
+               ALIAS value :: 1 -> __table1.value String : 0
+      Positions: 2 0
+        ReadFromMemoryStorage
+      Expression (Change column names to column identifiers)
+      Actions: INPUT : 0 -> description String : 0
+               INPUT : 1 -> id UInt32 : 1
+               ALIAS description :: 0 -> __table2.description String : 2
+               ALIAS id :: 1 -> __table2.id UInt32 : 0
+      Positions: 2 0
+        ReadFromMemoryStorage
