@@ -2,6 +2,9 @@
 
 #if USE_SSL
 
+#include <base/scope_guard.h>
+
+
 namespace DB
 {
 
@@ -85,16 +88,14 @@ KeyPair KeyPair::generateRSA(uint32_t bits, uint32_t exponent)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_PKEY_keygen_init failed: {}", getOpenSSLErrors());
 
     BIGNUM * bn = BN_new();
+    SCOPE_EXIT({ BN_free(bn); });
+
     if (!bn || !BN_set_word(bn, exponent))
-    {
-        BN_free(bn);
         throw Exception(ErrorCodes::OPENSSL_ERROR, "BN_set_word failed: {}", getOpenSSLErrors());
-    }
 
     size_t exp_len = BN_num_bytes(bn);
     std::vector<unsigned char> exp_buf(exp_len);
     BN_bn2bin(bn, exp_buf.data());
-    BN_free(bn);
 
     OSSL_PARAM params[] = {OSSL_PARAM_int("bits", &bits), OSSL_PARAM_BN("pubexp", exp_buf.data(), exp_buf.size()), OSSL_PARAM_END};
 
