@@ -1104,7 +1104,7 @@ do
             | cut -f 5- \
             | sed 's/\t/ /g' \
             | tee "report/tmp/$query_file.stacks.$version.tsv" \
-            | ~/fg/flamegraph.pl --hash > "$query_file.$version.svg" &
+            | /fg/flamegraph.pl --hash > "$query_file.$version.svg" &
     done
 done
 wait
@@ -1113,10 +1113,10 @@ unset IFS
 # Create differential flamegraphs.
 while IFS= read -r query_file
 do
-    ~/fg/difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
+    /fg/difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
             "report/tmp/$query_file.stacks.right.tsv" \
         | tee "report/tmp/$query_file.stacks.diff.tsv" \
-        | ~/fg/flamegraph.pl > "$query_file.diff.svg" &
+        | /fg/flamegraph.pl > "$query_file.diff.svg" &
 done < report/query-files.txt
 wait
 
