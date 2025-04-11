@@ -109,12 +109,20 @@ CONV_FN(Storage, store)
 
 CONV_FN(ExprColAlias, eca)
 {
+    if (eca.use_parenthesis())
+    {
+        ret += "(";
+    }
     ExprToString(ret, eca.expr());
     if (eca.has_col_alias())
     {
         ret += " AS `";
         ColumnToString(ret, 1, eca.col_alias());
         ret += "`";
+    }
+    if (eca.use_parenthesis())
+    {
+        ret += ")";
     }
 }
 
@@ -673,18 +681,6 @@ CONV_FN(BinaryExpr, bexpr)
     ExprToString(ret, bexpr.lhs());
     BinaryOperatorToString(ret, bexpr.op());
     ExprToString(ret, bexpr.rhs());
-}
-
-CONV_FN(ParenthesesExpr, pexpr)
-{
-    ret += "(";
-    ExprColAliasToString(ret, pexpr.expr());
-    for (int i = 0; i < pexpr.other_exprs_size(); i++)
-    {
-        ret += ", ";
-        ExprColAliasToString(ret, pexpr.other_exprs(i));
-    }
-    ret += ")";
 }
 
 CONV_FN_QUOTE(ColumnPathList, cols)
@@ -1515,8 +1511,8 @@ CONV_FN(ComplicatedExpr, expr)
         case ExprType::kBinaryExpr:
             BinaryExprToString(ret, expr.binary_expr());
             break;
-        case ExprType::kParExpr:
-            ParenthesesExprToString(ret, expr.par_expr());
+        case ExprType::kAliasExpr:
+            ExprColAliasToString(ret, expr.alias_expr());
             break;
         case ExprType::kCastExpr:
             CastExprToString(ret, expr.cast_expr());

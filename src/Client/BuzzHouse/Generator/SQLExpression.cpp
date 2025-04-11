@@ -880,9 +880,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 
     if (rg.nextSmallNumber() < 3)
     {
-        ParenthesesExpr * paren = expr->mutable_comp_expr()->mutable_par_expr();
-
-        eca = paren->mutable_expr();
+        eca = expr->mutable_comp_expr()->mutable_alias_expr();
         expr = eca->mutable_expr();
     }
 
@@ -1130,6 +1128,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         this->levels[this->current_level].rels.emplace_back(rel);
         eca->mutable_col_alias()->set_column(ncname);
         this->levels[this->current_level].projections.emplace_back(ncname);
+        eca->set_use_parenthesis(rg.nextMediumNumber() < 11);
     }
 }
 

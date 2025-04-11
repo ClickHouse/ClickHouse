@@ -275,7 +275,8 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                 rel.cols.emplace_back(SQLRelationCol(rel.name, {"c" + std::to_string(i)}));
             }
             this->levels[this->current_level].rels.emplace_back(rel);
-            this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+            this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+            this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
             generateEngineDetails(rg, next, true, te);
             this->levels.clear();
         }
@@ -745,7 +746,8 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
         ValuesStatement * vs = ins->mutable_values();
 
         this->levels[this->current_level] = QueryLevel(this->current_level);
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+        this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+        this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
         for (uint32_t i = 0; i < nrows; i++)
         {
             bool first = true;
@@ -784,7 +786,8 @@ void StatementGenerator::generateUptDelWhere(RandomGenerator & rg, const SQLTabl
     if (rg.nextSmallNumber() < 10)
     {
         addTableRelation(rg, true, "", t);
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+        this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+        this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
         generateWherePredicate(rg, expr);
         this->levels.clear();
     }
@@ -1185,7 +1188,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                             this->entries[j], j == 0 ? upt->mutable_update()->mutable_col() : upt->add_other_updates()->mutable_col());
                     }
                     addTableRelation(rg, true, "", t);
-                    this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+                    this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+                    this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
                     for (uint32_t j = 0; j < nupdates; j++)
                     {
                         const ColumnPathChain & entry = this->entries[j];

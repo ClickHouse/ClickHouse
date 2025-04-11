@@ -327,16 +327,22 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
     }
     else
     {
+        const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
+        const bool prev_allow_subqueries = this->allow_subqueries;
+
         filtered_entries.clear();
         if (t.has_value())
         {
             addTableRelation(rg, false, "", t.value());
         }
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs
-            = this->allow_in_expression_alias = this->allow_subqueries = false;
+        this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+        this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
+        this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
+        this->allow_subqueries = rg.nextMediumNumber() < 11;
         generateExpression(rg, ttl_expr);
-        this->allow_in_expression_alias = this->allow_subqueries = true;
         this->levels.clear();
+        this->allow_in_expression_alias = prev_allow_in_expression_alias;
+        this->allow_subqueries = prev_allow_subqueries;
     }
 }
 
@@ -374,7 +380,8 @@ void StatementGenerator::generateNextTTL(
                     {
                         addTableRelation(rg, false, "", t.value());
                     }
-                    this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+                    this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+                    this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
                     generateWherePredicate(rg, tdel->mutable_where()->mutable_expr()->mutable_expr());
                     this->levels.clear();
                 }
@@ -390,6 +397,8 @@ void StatementGenerator::generateNextTTL(
             std::uniform_int_distribution<uint32_t> table_key_dist(1, tk.exprs_size());
             const uint32_t ttl_group_size = table_key_dist(rg.generator);
             const size_t nset = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(3))) + 1;
+            const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
+            const bool prev_allow_subqueries = this->allow_subqueries;
 
             for (uint32_t j = 0; j < ttl_group_size; j++)
             {
@@ -403,8 +412,10 @@ void StatementGenerator::generateNextTTL(
             {
                 addTableRelation(rg, false, "", t.value());
             }
-            this->levels[this->current_level].global_aggregate = true;
-            this->allow_in_expression_alias = this->allow_subqueries = false;
+            /// Use global aggregate most of the time
+            this->levels[this->current_level].global_aggregate = rg.nextSmallNumber() < 9;
+            this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
+            this->allow_subqueries = rg.nextMediumNumber() < 11;
             std::shuffle(entries.begin(), entries.end(), rg.generator);
 
             for (size_t j = 0; j < nset; j++)
@@ -415,7 +426,8 @@ void StatementGenerator::generateNextTTL(
                 generateExpression(rg, tset->mutable_expr());
             }
             this->levels.clear();
-            this->allow_in_expression_alias = this->allow_subqueries = true;
+            this->allow_in_expression_alias = prev_allow_in_expression_alias;
+            this->allow_subqueries = prev_allow_subqueries;
         }
     }
 }
@@ -1222,11 +1234,17 @@ void StatementGenerator::addTableColumnInternal(
         col.dmod = std::optional<DModifier>(dmod);
         if (dmod != DModifier::DEF_EPHEMERAL || rg.nextMediumNumber() < 21)
         {
+            const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
+            const bool prev_allow_subqueries = this->allow_subqueries;
+
             addTableRelation(rg, false, "", t);
-            this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs
-                = this->allow_in_expression_alias = this->allow_subqueries = false;
+            this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+            this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
+            this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
+            this->allow_subqueries = rg.nextMediumNumber() < 11;
             generateExpression(rg, def_value->mutable_expr());
-            this->allow_in_expression_alias = this->allow_subqueries = true;
+            this->allow_in_expression_alias = prev_allow_in_expression_alias;
+            this->allow_subqueries = prev_allow_subqueries;
             this->levels.clear();
         }
     }
@@ -1364,11 +1382,17 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     }
     else
     {
+        const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
+        const bool prev_allow_subqueries = this->allow_subqueries;
+
         addTableRelation(rg, false, "", t);
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs
-            = this->allow_in_expression_alias = this->allow_subqueries = false;
+        this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+        this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
+        this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
+        this->allow_subqueries = rg.nextMediumNumber() < 11;
         generateExpression(rg, expr);
-        this->allow_in_expression_alias = this->allow_subqueries = true;
+        this->allow_in_expression_alias = prev_allow_in_expression_alias;
+        this->allow_subqueries = prev_allow_subqueries;
         this->levels.clear();
     }
     switch (itpe)
@@ -1476,16 +1500,18 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
 {
     const uint32_t crname = t.constr_counter++;
     auto & to_add = staged ? t.staged_constrs : t.constrs;
+    const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
 
     cdef->mutable_constr()->set_constraint("c" + std::to_string(crname));
     cdef->set_ctype(
         static_cast<ConstraintDef_ConstraintType>((rg.nextRandomUInt32() % static_cast<uint32_t>(ConstraintDef::ConstraintType_MAX)) + 1));
     addTableRelation(rg, false, "", t);
-    this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
-    this->allow_in_expression_alias = false;
+    this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+    this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
+    this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
     this->generateWherePredicate(rg, cdef->mutable_expr());
-    this->allow_in_expression_alias = true;
     this->levels.clear();
+    this->allow_in_expression_alias = prev_allow_in_expression_alias;
     to_add.insert(crname);
 }
 
@@ -1805,7 +1831,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
 
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
     addTableRelation(rg, false, "", next);
-    this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+    this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+    this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
     generateEngineDetails(rg, next, !added_pkey, te);
     this->entries.clear();
     this->levels.clear();
@@ -1936,6 +1963,8 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         SQLColumn col;
         DictionaryColumn * dc = i == 0 ? cd->mutable_col() : cd->add_other_cols();
         const uint32_t ncname = col_counter++;
+        const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
+        const bool prev_allow_subqueries = this->allow_subqueries;
 
         col.cname = ncname;
         dc->mutable_col()->set_column("c" + std::to_string(ncname));
@@ -1947,15 +1976,18 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         this->next_type_mask = type_mask_backup;
 
         addDictionaryRelation("", next);
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs
-            = this->allow_in_expression_alias = this->allow_subqueries = false;
+        this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+        this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
+        this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
+        this->allow_subqueries = rg.nextMediumNumber() < 11;
         generateLiteralValue(rg, false, dc->mutable_default_val());
         if (rg.nextMediumNumber() < 21)
         {
             generateExpression(rg, dc->mutable_expression());
         }
-        this->allow_in_expression_alias = this->allow_subqueries = true;
         this->levels.clear();
+        this->allow_in_expression_alias = prev_allow_in_expression_alias;
+        this->allow_subqueries = prev_allow_subqueries;
         if (rg.nextSmallNumber() < 9)
         {
             dc->set_hierarchical(rg.nextBool());

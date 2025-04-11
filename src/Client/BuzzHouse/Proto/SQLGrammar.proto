@@ -1852,11 +1852,6 @@ message BinaryExpr {
     required Expr rhs = 3;
 }
 
-message ParenthesesExpr {
-    required ExprColAlias expr = 1;
-    repeated ExprColAlias other_exprs = 2;
-}
-
 message CastExpr {
     required Expr expr = 1;
     required TypeName type_name = 2;
@@ -2117,7 +2112,7 @@ message ComplicatedExpr {
         ExprSchemaTableColumn expr_stc = 1;
         UnaryExpr unary_expr = 2;
         BinaryExpr binary_expr = 3;
-        ParenthesesExpr par_expr = 4;
+        ExprColAlias alias_expr = 4;
         CastExpr cast_expr = 5;
         ExprBetween expr_between = 6;
         ExprIn expr_in = 7;
@@ -2146,8 +2141,9 @@ message Expr {
 }
 
 message ExprColAlias {
-    required Expr expr = 1;
-    optional Column col_alias = 2;
+    optional bool use_parenthesis = 1;
+    required Expr expr = 2;
+    optional Column col_alias = 3;
 }
 
 message ResultColumn {
