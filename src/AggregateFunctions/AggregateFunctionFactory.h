@@ -1,7 +1,6 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/NullsAction.h>
 #include <Common/IFactoryWithAliases.h>
 
@@ -22,6 +21,8 @@ class IDataType;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
+
+class ASTFunction;
 
 /**
  * The invoker has arguments: name of aggregate function, types of arguments, values of parameters.
@@ -60,7 +61,7 @@ public:
     void registerFunction(
         const String & name,
         Value creator,
-        CaseSensitiveness case_sensitiveness = CaseSensitive);
+        Case case_sensitiveness = Case::Sensitive);
 
     /// Register how to transform from one aggregate function to other based on NullsAction
     /// Registers them both ways:
@@ -114,10 +115,7 @@ private:
 
 struct AggregateUtils
 {
-    static bool isAggregateFunction(const ASTFunction & node)
-    {
-        return AggregateFunctionFactory::instance().isAggregateFunctionName(node.name);
-    }
+    static bool isAggregateFunction(const ASTFunction & node);
 };
 
 const String & getAggregateFunctionCanonicalNameIfAny(const String & name);

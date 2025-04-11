@@ -17,6 +17,7 @@
 #include "Poco/Net/StreamSocketImpl.h"
 #include "Poco/NumberFormatter.h"
 #include "Poco/Timestamp.h"
+#include "Poco/ErrorHandler.h"
 #include <string.h> // FD_SET needs memset on some platforms, so we can't use <cstring>
 
 
@@ -62,7 +63,7 @@ bool checkIsBrokenTimeout()
 
 SocketImpl::SocketImpl():
 	_sockfd(POCO_INVALID_SOCKET),
-	_blocking(true), 
+	_blocking(true),
 	_isBrokenTimeout(checkIsBrokenTimeout())
 {
 }
@@ -81,7 +82,7 @@ SocketImpl::~SocketImpl()
 	close();
 }
 
-	
+
 SocketImpl* SocketImpl::acceptConnection(SocketAddress& clientAddr)
 {
 	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
@@ -117,7 +118,7 @@ void SocketImpl::connect(const SocketAddress& address)
 		rc = ::connect(_sockfd, address.addr(), address.length());
 	}
 	while (rc != 0 && lastError() == POCO_EINTR);
-	if (rc != 0) 
+	if (rc != 0)
 	{
 		int err = lastError();
 		error(err, address.toString());
@@ -204,7 +205,7 @@ void SocketImpl::bind6(const SocketAddress& address, bool reuseAddress, bool reu
 #if defined(POCO_HAVE_IPv6)
 	if (address.family() != SocketAddress::IPv6)
 		throw Poco::InvalidArgumentException("SocketAddress must be an IPv6 address");
-		
+
 	if (_sockfd == POCO_INVALID_SOCKET)
 	{
 		init(address.af());
@@ -225,11 +226,11 @@ void SocketImpl::bind6(const SocketAddress& address, bool reuseAddress, bool reu
 #endif
 }
 
-	
+
 void SocketImpl::listen(int backlog)
 {
 	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
-	
+
 	int rc = ::listen(_sockfd, backlog);
 	if (rc != 0) error();
 }
@@ -253,7 +254,7 @@ void SocketImpl::shutdownReceive()
 	if (rc != 0) error();
 }
 
-	
+
 void SocketImpl::shutdownSend()
 {
 	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
@@ -262,7 +263,7 @@ void SocketImpl::shutdownSend()
 	if (rc != 0) error();
 }
 
-	
+
 void SocketImpl::shutdown()
 {
 	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
@@ -317,7 +318,7 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 				throw TimeoutException();
 		}
 	}
-	
+
 	int rc;
 	do
 	{
@@ -325,7 +326,7 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 		rc = ::recv(_sockfd, reinterpret_cast<char*>(buffer), length, flags);
 	}
 	while (blocking && rc < 0 && lastError() == POCO_EINTR);
-	if (rc < 0) 
+	if (rc < 0)
 	{
 		int err = lastError();
 		if ((err == POCO_EAGAIN || err == POCO_EWOULDBLOCK) && !blocking)
@@ -363,7 +364,7 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 				throw TimeoutException();
 		}
 	}
-	
+
 	sockaddr_storage abuffer;
 	struct sockaddr* pSA = reinterpret_cast<struct sockaddr*>(&abuffer);
 	poco_socklen_t saLen = sizeof(abuffer);
@@ -450,7 +451,7 @@ bool SocketImpl::pollImpl(Poco::Timespan& remainingTime, int mode)
 	}
 	while (rc < 0 && lastError() == POCO_EINTR);
 	if (rc < 0) error();
-	return rc > 0; 
+	return rc > 0;
 
 #else
 
@@ -493,7 +494,7 @@ bool SocketImpl::pollImpl(Poco::Timespan& remainingTime, int mode)
 	}
 	while (rc < 0 && errorCode == POCO_EINTR);
 	if (rc < 0) error(errorCode);
-	return rc > 0; 
+	return rc > 0;
 
 #endif // POCO_HAVE_FD_POLL
 }
@@ -503,13 +504,13 @@ bool SocketImpl::poll(const Poco::Timespan& timeout, int mode)
 	Poco::Timespan remainingTime(timeout);
 	return pollImpl(remainingTime, mode);
 }
-	
+
 void SocketImpl::setSendBufferSize(int size)
 {
 	setOption(SOL_SOCKET, SO_SNDBUF, size);
 }
 
-	
+
 int SocketImpl::getSendBufferSize()
 {
 	int result;
@@ -523,7 +524,7 @@ void SocketImpl::setReceiveBufferSize(int size)
 	setOption(SOL_SOCKET, SO_RCVBUF, size);
 }
 
-	
+
 int SocketImpl::getReceiveBufferSize()
 {
 	int result;
@@ -569,7 +570,7 @@ Poco::Timespan SocketImpl::getReceiveTimeout()
 	return result;
 }
 
-	
+
 SocketAddress SocketImpl::address()
 {
 	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
@@ -580,7 +581,7 @@ SocketAddress SocketImpl::address()
 	int rc = ::getsockname(_sockfd, pSA, &saLen);
 	if (rc == 0)
 		return SocketAddress(pSA, saLen);
-	else 
+	else
 		error();
 	return SocketAddress();
 }
@@ -942,9 +943,9 @@ void SocketImpl::error(int code, const std::string& arg)
 	case POCO_EACCES:
 		throw IOException("Permission denied", code);
 	case POCO_EFAULT:
-		throw IOException("Bad address", code);
+		throw IOException("Bad address", arg, code);
 	case POCO_EINVAL:
-		throw InvalidArgumentException(code);
+		throw InvalidArgumentException("Invalid argument", arg, code);
 	case POCO_EMFILE:
 		throw IOException("Too many open files", code);
 	case POCO_EWOULDBLOCK:
@@ -954,35 +955,35 @@ void SocketImpl::error(int code, const std::string& arg)
 	case POCO_EALREADY:
 		throw IOException("Operation already in progress", code);
 	case POCO_ENOTSOCK:
-		throw IOException("Socket operation attempted on non-socket", code);
+		throw IOException("Socket operation attempted on non-socket", arg, code);
 	case POCO_EDESTADDRREQ:
-		throw NetException("Destination address required", code);
+		throw NetException("Destination address required", arg, code);
 	case POCO_EMSGSIZE:
 		throw NetException("Message too long", code);
 	case POCO_EPROTOTYPE:
-		throw NetException("Wrong protocol type", code);
+		throw NetException("Wrong protocol type", arg, code);
 	case POCO_ENOPROTOOPT:
-		throw NetException("Protocol not available", code);
+		throw NetException("Protocol not available", arg, code);
 	case POCO_EPROTONOSUPPORT:
-		throw NetException("Protocol not supported", code);
+		throw NetException("Protocol not supported", arg, code);
 	case POCO_ESOCKTNOSUPPORT:
-		throw NetException("Socket type not supported", code);
+		throw NetException("Socket type not supported", arg, code);
 	case POCO_ENOTSUP:
 		throw NetException("Operation not supported", code);
 	case POCO_EPFNOSUPPORT:
 		throw NetException("Protocol family not supported", code);
 	case POCO_EAFNOSUPPORT:
-		throw NetException("Address family not supported", code);
+		throw NetException("Address family not supported", arg, code);
 	case POCO_EADDRINUSE:
 		throw NetException("Address already in use", arg, code);
 	case POCO_EADDRNOTAVAIL:
 		throw NetException("Cannot assign requested address", arg, code);
 	case POCO_ENETDOWN:
-		throw NetException("Network is down", code);
+		throw NetException("Network is down", arg, code);
 	case POCO_ENETUNREACH:
-		throw NetException("Network is unreachable", code);
+		throw NetException("Network is unreachable", arg, code);
 	case POCO_ENETRESET:
-		throw NetException("Network dropped connection on reset", code);
+		throw NetException("Network dropped connection on reset", arg, code);
 	case POCO_ECONNABORTED:
 		throw ConnectionAbortedException(code);
 	case POCO_ECONNRESET:
@@ -1007,7 +1008,7 @@ void SocketImpl::error(int code, const std::string& arg)
 	case EPIPE:
 		throw IOException("Broken pipe", code);
 	case EBADF:
-		throw IOException("Bad socket descriptor", code);
+		throw IOException("Bad socket descriptor", arg, code);
 	case ENOENT:
 		throw IOException("Not found", arg, code);
 #endif

@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -41,6 +42,6 @@ public:
 REGISTER_FUNCTION(QueryID)
 {
     factory.registerFunction<FunctionQueryID>();
-    factory.registerAlias("query_id", FunctionQueryID::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("query_id", FunctionQueryID::name, FunctionFactory::Case::Insensitive);
 }
 }

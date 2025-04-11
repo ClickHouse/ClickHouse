@@ -46,6 +46,13 @@ struct MergeTreePartInfo
             < std::forward_as_tuple(rhs.partition_id, rhs.min_block, rhs.max_block, rhs.level, rhs.mutation);
     }
 
+    bool operator>(const MergeTreePartInfo & rhs) const
+    {
+        return std::forward_as_tuple(partition_id, min_block, max_block, level, mutation)
+            > std::forward_as_tuple(rhs.partition_id, rhs.min_block, rhs.max_block, rhs.level, rhs.mutation);
+    }
+
+
     bool operator==(const MergeTreePartInfo & rhs) const
     {
         return !(*this != rhs);
@@ -101,9 +108,8 @@ struct MergeTreePartInfo
 
     bool isFakeDropRangePart() const
     {
-        /// Another max level was previously used for REPLACE/MOVE PARTITION
-        auto another_max_level = std::numeric_limits<decltype(level)>::max();
-        return level == MergeTreePartInfo::MAX_LEVEL || level == another_max_level;
+        /// LEGACY_MAX_LEVEL was previously used for REPLACE/MOVE PARTITION
+        return level == MergeTreePartInfo::MAX_LEVEL || level == MergeTreePartInfo::LEGACY_MAX_LEVEL;
     }
 
     String getPartNameAndCheckFormat(MergeTreeDataFormatVersion format_version) const;
@@ -191,7 +197,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
     static DetachedPartInfo parseDetachedPartName(const DiskPtr & disk, std::string_view dir_name, MergeTreeDataFormatVersion format_version);
 
 private:
-    void addParsedPartInfo(const MergeTreePartInfo& part);
+    void addParsedPartInfo(const MergeTreePartInfo & part);
 };
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;

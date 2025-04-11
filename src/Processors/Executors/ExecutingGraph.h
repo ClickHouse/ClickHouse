@@ -92,7 +92,7 @@ public:
         std::exception_ptr exception;
 
         /// Last state for profiling.
-        IProcessor::Status last_processor_status = IProcessor::Status::NeedData;
+        std::optional<IProcessor::Status> last_processor_status;
 
         /// Ports which have changed their state since last processor->prepare() call.
         /// They changed when neighbour processors interact with connected ports.
@@ -136,12 +136,19 @@ public:
     const Processors & getProcessors() const { return *processors; }
 
     /// Traverse graph the first time to update all the childless nodes.
-    void initializeExecution(Queue & queue);
+    void initializeExecution(Queue & queue, Queue & async_queue);
+
+    enum class UpdateNodeStatus
+    {
+        Done,
+        Exception,
+        Cancelled,
+    };
 
     /// Update processor with pid number (call IProcessor::prepare).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    bool updateNode(uint64_t pid, Queue & queue, Queue & async_queue);
+    UpdateNodeStatus updateNode(uint64_t pid, Queue & queue, Queue & async_queue);
 
     void cancel(bool cancel_all_processors = true);
 
@@ -155,7 +162,7 @@ private:
 
     /// Update graph after processor (pid) returned ExpandPipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
-    bool expandPipeline(std::stack<uint64_t> & stack, uint64_t pid);
+    UpdateNodeStatus expandPipeline(std::stack<uint64_t> & stack, uint64_t pid);
 
     std::shared_ptr<Processors> processors;
     std::vector<bool> source_processors;

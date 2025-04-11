@@ -95,8 +95,7 @@ BufferAllocationPolicyPtr BufferAllocationPolicy::create(BufferAllocationPolicy:
 {
     if (settings_.strict_size > 0)
         return std::make_unique<FixedSizeBufferAllocationPolicy>(settings_);
-    else
-        return std::make_unique<ExpBufferAllocationPolicy>(settings_);
+    return std::make_unique<ExpBufferAllocationPolicy>(settings_);
 }
 
 }

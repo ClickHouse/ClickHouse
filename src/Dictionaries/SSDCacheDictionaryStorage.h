@@ -11,21 +11,21 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 
-#include <base/unaligned.h>
-#include <base/defines.h>
-#include <base/sort.h>
-#include <Common/randomSeed.h>
-#include <Common/Arena.h>
-#include <Common/ArenaWithFreeLists.h>
-#include <Common/ArenaUtils.h>
-#include <Common/MemorySanitizer.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/HashTable/HashMap.h>
-#include <IO/AIO.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/ICacheDictionaryStorage.h>
-#include <Dictionaries/DictionaryHelpers.h>
+#    include <base/MemorySanitizer.h>
+#    include <Dictionaries/DictionaryHelpers.h>
+#    include <Dictionaries/DictionaryStructure.h>
+#    include <Dictionaries/ICacheDictionaryStorage.h>
+#    include <IO/AIO.h>
+#    include <IO/BufferWithOwnMemory.h>
+#    include <base/defines.h>
+#    include <base/sort.h>
+#    include <base/unaligned.h>
+#    include <Common/Arena.h>
+#    include <Common/ArenaUtils.h>
+#    include <Common/ArenaWithFreeLists.h>
+#    include <Common/CurrentMetrics.h>
+#    include <Common/HashTable/HashMap.h>
+#    include <Common/randomSeed.h>
 
 
 namespace ProfileEvents
@@ -769,7 +769,7 @@ private:
             if (this == &rhs)
                 return *this;
 
-            int err = ::close(fd);
+            [[maybe_unused]] int err = ::close(fd);
             chassert(!err || errno == EINTR);
 
             fd = rhs.fd;
@@ -780,7 +780,7 @@ private:
         {
             if (fd != -1)
             {
-                int err = close(fd);
+                [[maybe_unused]] int err = close(fd);
                 chassert(!err || errno == EINTR);
             }
         }
@@ -860,8 +860,8 @@ public:
     {
         if (dictionary_key_type == DictionaryKeyType::Simple)
             return "SSDCache";
-        else
-            return "SSDComplexKeyCache";
+
+        return "SSDComplexKeyCache";
     }
 
     bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
@@ -1244,6 +1244,7 @@ private:
 
         SSDCacheIndex cache_index {0, 0};
 
+        /// NOLINTBEGIN(readability-else-after-return)
         while (true)
         {
             bool started_reusing_old_partitions = memory_buffer_partitions.size() == configuration.max_partitions_count;
@@ -1364,6 +1365,7 @@ private:
                 }
             }
         }
+        /// NOLINTEND(readability-else-after-return)
     }
 
     void setCellDeadline(Cell & cell, TimePoint now)

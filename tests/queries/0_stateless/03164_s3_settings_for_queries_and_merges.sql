@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-fasttest
+-- Tags: no-random-settings, no-fasttest, no-parallel
 
 SET allow_prefetched_read_pool_for_remote_filesystem=0;
 SET allow_prefetched_read_pool_for_local_filesystem=0;
@@ -19,10 +19,11 @@ OPTIMIZE TABLE t_compact_bytes_s3 FINAL;
 
 SYSTEM DROP MARK CACHE;
 SELECT count() FROM t_compact_bytes_s3 WHERE NOT ignore(c2, c4);
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
+-- Errors in S3 requests will be automatically retried, however ProfileEvents can be wrong. That is why we subtract errors.
 SELECT
-    ProfileEvents['S3ReadRequestsCount'],
+    ProfileEvents['S3ReadRequestsCount'] - ProfileEvents['S3ReadRequestsErrors'],
     ProfileEvents['ReadBufferFromS3Bytes'] < ProfileEvents['ReadCompressedBytes'] * 1.1
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish'
@@ -30,7 +31,7 @@ WHERE event_date >= yesterday() AND type = 'QueryFinish'
     AND query ilike '%INSERT INTO t_compact_bytes_s3 SELECT number, number, number%';
 
 SELECT
-    ProfileEvents['S3ReadRequestsCount'],
+    ProfileEvents['S3ReadRequestsCount'] - ProfileEvents['S3ReadRequestsErrors'],
     ProfileEvents['ReadBufferFromS3Bytes'] < ProfileEvents['ReadCompressedBytes'] * 1.1
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish'

@@ -1,9 +1,9 @@
 #pragma once
 
+#include <base/defines.h>
 #include <base/types.h>
 
 #include <string>
-#include <vector>
 #include <array>
 #include <optional>
 #include <functional>
@@ -45,7 +45,8 @@ public:
     using Frames = std::array<Frame, capacity>;
 
     /// Tries to capture stack trace
-    StackTrace() { tryCapture(); }
+    /// NO_INLINE to get correct line of StackTrace() caller in captured stack trace
+    NO_INLINE StackTrace();
 
     /// Tries to capture stack trace. Fallbacks on parsing caller address from
     /// signal context if no stack trace could be captured
@@ -59,7 +60,7 @@ public:
     const FramePointers & getFramePointers() const { return frame_pointers; }
     std::string toString() const;
 
-    static std::string toString(void ** frame_pointers, size_t offset, size_t size);
+    static std::string toString(void * const * frame_pointers, size_t offset, size_t size);
     static void dropCache();
 
     /// @param fatal - if true, will process inline frames (slower)

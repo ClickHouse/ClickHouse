@@ -235,8 +235,6 @@ namespace Net
         /// Note that simply closing a socket is not sufficient
         /// to be able to re-use it again.
 
-        Poco::Timespan getMaxTimeout();
-
     private:
         SecureSocketImpl(const SecureSocketImpl &);
         SecureSocketImpl & operator=(const SecureSocketImpl &);
@@ -250,6 +248,9 @@ namespace Net
         Session::Ptr _pSession;
 
         friend class SecureStreamSocketImpl;
+
+        Poco::Timespan getMaxTimeoutOrLimit();
+        //// Return max(send, receive) if non zero, otherwise maximum timeout
     };
 
 

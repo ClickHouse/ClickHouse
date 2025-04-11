@@ -33,6 +33,8 @@ jobs:
           clear-repository: true
           token: ${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}}
           fetch-depth: 0
+      - name: Debug Info
+        uses: ./.github/actions/debug
       - name: Cherry pick
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"

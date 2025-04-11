@@ -1,0 +1,29 @@
+<clickhouse>
+  <named_collections_storage>
+    <type>zookeeper</type>
+    <path>/named_collections_path/</path>
+    <update_timeout_ms>5000</update_timeout_ms>
+  </named_collections_storage>
+  <named_collections>
+    <collection1>
+      <key1>value1</key1>
+    </collection1>
+  </named_collections>
+
+  <remote_servers>
+      <replicated_nc_nodes_cluster>
+          <shard>
+              <internal_replication>true</internal_replication>
+              <replica>
+                  <host>node_with_keeper</host>
+                  <port>9000</port>
+              </replica>
+              <replica>
+                  <host>node_with_keeper_2</host>
+                  <port>9000</port>
+              </replica>
+          </shard>
+          <allow_distributed_ddl_queries>true</allow_distributed_ddl_queries>
+      </replicated_nc_nodes_cluster>
+  </remote_servers>
+</clickhouse>

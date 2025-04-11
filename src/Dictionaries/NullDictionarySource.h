@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Core/Block.h>
-#include "IDictionarySource.h"
+#include <Dictionaries/IDictionarySource.h>
+#include <Common/Exception.h>
 
 namespace DB
 {

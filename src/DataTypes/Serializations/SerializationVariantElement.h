@@ -9,6 +9,7 @@ namespace DB
 {
 
 class SerializationVariant;
+class SerializationVariantElementNullMap;
 
 /// Serialization for Variant element when we read it as a subcolumn.
 class SerializationVariantElement final : public SerializationWrapper
@@ -55,6 +56,7 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -62,23 +64,42 @@ public:
 
     struct VariantSubcolumnCreator : public ISubcolumnCreator
     {
+    private:
         const ColumnPtr local_discriminators;
+        const ColumnPtr null_map; /// optional
         const String variant_element_name;
         const ColumnVariant::Discriminator global_variant_discriminator;
         const ColumnVariant::Discriminator local_variant_discriminator;
+        bool make_nullable;
 
+    public:
         VariantSubcolumnCreator(
             const ColumnPtr & local_discriminators_,
             const String & variant_element_name_,
             ColumnVariant::Discriminator global_variant_discriminator_,
-            ColumnVariant::Discriminator local_variant_discriminator_);
+            ColumnVariant::Discriminator local_variant_discriminator_,
+            bool make_nullable_,
+            const ColumnPtr & null_map_ = nullptr);
 
         DataTypePtr create(const DataTypePtr & prev) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
     };
 private:
     friend SerializationVariant;
+    friend SerializationVariantElementNullMap;
+
+    struct DeserializeBinaryBulkStateVariantElement;
+
+    static std::pair<size_t, size_t> deserializeCompactDiscriminators(
+        ColumnPtr & discriminators_column,
+        ColumnVariant::Discriminator variant_discriminator,
+        size_t rows_offset,
+        size_t limit,
+        ReadBuffer * stream,
+        bool continuous_reading,
+        DeserializeBinaryBulkStatePtr & discriminators_state_,
+        const ISerialization * serialization);
 
     void addVariantToPath(SubstreamPath & path) const;
     void removeVariantFromPath(SubstreamPath & path) const;

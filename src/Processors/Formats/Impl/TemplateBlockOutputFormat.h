@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/Stopwatch.h>
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/ParsedTemplateFormatString.h>
@@ -9,6 +7,10 @@
 
 namespace DB
 {
+
+class ISerialization;
+using SerializationPtr = std::shared_ptr<const ISerialization>;
+using Serializations = std::vector<SerializationPtr>;
 
 class TemplateBlockOutputFormat : public IOutputFormat
 {
@@ -20,8 +22,17 @@ public:
 
     String getName() const override { return "TemplateBlockOutputFormat"; }
 
-    void setRowsBeforeLimit(size_t rows_before_limit_) override { statistics.rows_before_limit = rows_before_limit_; statistics.applied_limit = true; }
-    void onProgress(const Progress & progress_) override { statistics.progress.incrementPiecewiseAtomically(progress_); }
+    void setRowsBeforeLimit(size_t rows_before_limit_) override
+    {
+        statistics.rows_before_limit = rows_before_limit_;
+        statistics.applied_limit = true;
+    }
+
+    void setRowsBeforeAggregation(size_t rows_before_aggregation_) override
+    {
+        statistics.rows_before_aggregation = rows_before_aggregation_;
+        statistics.applied_aggregation = true;
+    }
 
     enum class ResultsetPart : size_t
     {
@@ -33,7 +44,8 @@ public:
         RowsBeforeLimit,
         TimeElapsed,
         RowsRead,
-        BytesRead
+        BytesRead,
+        RowsBeforeAggregation
     };
 
     static ResultsetPart stringToResultsetPart(const String & part);

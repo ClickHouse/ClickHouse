@@ -10,7 +10,7 @@ INSERT INTO rdb VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd'), (5, 'e');
 CREATE TABLE t2 ( `k` UInt16 ) ENGINE = TinyLog;
 INSERT INTO t2 VALUES (4), (5), (6);
 
-SELECT value == 'default' FROM system.settings WHERE name = 'join_algorithm';
+SELECT value == 'direct,parallel_hash,hash' FROM system.settings WHERE name = 'join_algorithm';
 
 SELECT countIf(explain like '%Algorithm: DirectKeyValueJoin%'), countIf(explain like '%Algorithm: HashJoin%') FROM (
     EXPLAIN PLAN actions = 1
@@ -104,9 +104,9 @@ JOIN ( SELECT k AS key, k + 100 AS key2 FROM t2 ) AS t2 ON t1.key = t2.key OR t1
 -- But for CROSS choose `hash` algorithm even though it's not enabled
 SELECT * FROM ( SELECT number AS key, number * 10 AS key2 FROM numbers_mt(10) ) AS t1
 CROSS JOIN ( SELECT k AS key, k + 100 AS key2 FROM t2 ) AS t2 FORMAT Null
-SETTINGS allow_experimental_analyzer = 1;
+SETTINGS enable_analyzer = 1;
 
 -- ... (not for old analyzer)
 SELECT * FROM ( SELECT number AS key, number * 10 AS key2 FROM numbers_mt(10) ) AS t1
 CROSS JOIN ( SELECT k AS key, k + 100 AS key2 FROM t2 ) AS t2 FORMAT Null
-SETTINGS allow_experimental_analyzer = 0; -- { serverError NOT_IMPLEMENTED }
+SETTINGS enable_analyzer = 0; -- { serverError NOT_IMPLEMENTED }

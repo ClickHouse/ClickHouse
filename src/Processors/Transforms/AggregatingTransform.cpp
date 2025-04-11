@@ -8,8 +8,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
-
-#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 
 
 namespace ProfileEvents
@@ -35,7 +34,7 @@ Chunk convertToChunk(const Block & block)
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);
-    chunk.setChunkInfo(std::move(info));
+    chunk.getChunkInfos().add(std::move(info));
 
     return chunk;
 }
@@ -44,24 +43,20 @@ namespace
 {
     const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
     {
-        const auto & info = chunk.getChunkInfo();
-        if (!info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk.");
-
-        const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+        auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
         if (!agg_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo.");
 
-        return agg_info;
+        return agg_info.get();
     }
 
     /// Reads chunks from file in native format. Provide chunks with aggregation info.
-    class SourceFromNativeStream : public ISource
+    class SourceFromNativeStream final : public ISource
     {
     public:
-        explicit SourceFromNativeStream(TemporaryFileStream * tmp_stream_)
-            : ISource(tmp_stream_->getHeader())
-            , tmp_stream(tmp_stream_)
+        explicit SourceFromNativeStream(const Block & header, TemporaryBlockStreamReaderHolder tmp_stream_)
+            : ISource(header)
+            , tmp_stream(std::move(tmp_stream_))
         {}
 
         String getName() const override { return "SourceFromNativeStream"; }
@@ -74,7 +69,7 @@ namespace
             auto block = tmp_stream->read();
             if (!block)
             {
-                tmp_stream = nullptr;
+                tmp_stream.reset();
                 return {};
             }
             return convertToChunk(block);
@@ -83,13 +78,13 @@ namespace
         std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
 
     private:
-        TemporaryFileStream * tmp_stream;
+        TemporaryBlockStreamReaderHolder tmp_stream;
     };
 }
 
 /// Worker which merges buckets for two-level aggregation.
 /// Atomically increments bucket counter and returns merged result.
-class ConvertingAggregatedToChunksWithMergingSource : public ISource
+class ConvertingAggregatedToChunksWithMergingSource final : public ISource
 {
 public:
     static constexpr UInt32 NUM_BUCKETS = 256;
@@ -148,7 +143,7 @@ private:
 };
 
 /// Asks Aggregator to convert accumulated aggregation state into blocks (without merging) and pushes them to later steps.
-class ConvertingAggregatedToChunksSource : public ISource
+class ConvertingAggregatedToChunksSource final : public ISource
 {
 public:
     ConvertingAggregatedToChunksSource(AggregatingTransformParamsPtr params_, AggregatedDataVariantsPtr variant_)
@@ -193,7 +188,7 @@ private:
 };
 
 /// Reads chunks from GroupingAggregatedTransform (stored in ChunksToMerge structure) and outputs them.
-class FlattenChunksToMergeTransform : public IProcessor
+class FlattenChunksToMergeTransform final : public IProcessor
 {
 public:
     explicit FlattenChunksToMergeTransform(const Block & input_header, const Block & output_header)
@@ -210,11 +205,7 @@ private:
 
     void process(Chunk && chunk)
     {
-        if (!chunk.hasChunkInfo())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected chunk with chunk info in {}", getName());
-
-        const auto & info = chunk.getChunkInfo();
-        const auto * chunks_to_merge = typeid_cast<const ChunksToMerge *>(info.get());
+        auto chunks_to_merge = chunk.getChunkInfos().get<ChunksToMerge>();
         if (!chunks_to_merge)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected chunk with ChunksToMerge info in {}", getName());
 
@@ -281,7 +272,7 @@ private:
 /// ConvertingAggregatedToChunksWithMergingSource ->
 ///
 /// Result chunks guaranteed to be sorted by bucket number.
-class ConvertingAggregatedToChunksTransform : public IProcessor
+class ConvertingAggregatedToChunksTransform final : public IProcessor
 {
 public:
     ConvertingAggregatedToChunksTransform(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, size_t num_threads_)
@@ -375,7 +366,7 @@ public:
         return prepareTwoLevel();
     }
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         shared_data->is_cancelled.store(true, std::memory_order_seq_cst);
     }
@@ -495,7 +486,7 @@ private:
 
     #define M(NAME) \
                 else if (first->type == AggregatedDataVariants::Type::NAME) \
-                    params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data);
+                    params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
         if (false) {} // NOLINT
         APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
     #undef M
@@ -618,12 +609,10 @@ IProcessor::Status AggregatingTransform::prepare()
             many_data.reset();
             return Status::Finished;
         }
-        else
-        {
-            /// Finish data processing and create another pipe.
-            is_consume_finished = true;
-            return Status::Ready;
-        }
+
+        /// Finish data processing and create another pipe.
+        is_consume_finished = true;
+        return Status::Ready;
     }
 
     if (!input.hasData())
@@ -684,7 +673,8 @@ void AggregatingTransform::consume(Chunk chunk)
         LOG_TRACE(log, "Aggregating");
         is_consume_started = true;
     }
-
+    if (rows_before_aggregation)
+        rows_before_aggregation->add(num_rows);
     src_rows += num_rows;
     src_bytes += chunk.bytes();
 
@@ -821,15 +811,18 @@ void AggregatingTransform::initGenerate()
 
         Pipes pipes;
         /// Merge external data from all aggregators used in query.
-        for (const auto & aggregator : *params->aggregator_list_ptr)
+        for (auto & aggregator : *params->aggregator_list_ptr)
         {
-            const auto & tmp_data = aggregator.getTemporaryData();
-            for (auto * tmp_stream : tmp_data.getStreams())
-                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream)));
+            tmp_files = aggregator.detachTemporaryData();
+            num_streams += tmp_files.size();
 
-            num_streams += tmp_data.getStreams().size();
-            compressed_size += tmp_data.getStat().compressed_size;
-            uncompressed_size += tmp_data.getStat().uncompressed_size;
+            for (auto & tmp_stream : tmp_files)
+            {
+                auto stat = tmp_stream.finishWriting();
+                compressed_size += stat.compressed_size;
+                uncompressed_size += stat.uncompressed_size;
+                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream.getHeader(), tmp_stream.getReadStream())));
+            }
         }
 
         LOG_DEBUG(

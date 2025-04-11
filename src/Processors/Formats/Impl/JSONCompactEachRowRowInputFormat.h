@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -10,8 +9,9 @@
 namespace DB
 {
 
+class Block;
 class ReadBuffer;
-
+class JSONCompactEachRowFormatReader;
 
 /** A stream for reading data in a bunch of formats:
  *  - JSONCompactEachRow
@@ -20,7 +20,7 @@ class ReadBuffer;
  *  - JSONCompactStringsEachRowWithNamesAndTypes
  *
 */
-class JSONCompactEachRowRowInputFormat final : public RowInputFormatWithNamesAndTypes
+class JSONCompactEachRowRowInputFormat final : public RowInputFormatWithNamesAndTypes<JSONCompactEachRowFormatReader>
 {
 public:
     JSONCompactEachRowRowInputFormat(
@@ -75,7 +75,6 @@ public:
     std::vector<String> readTypes() override { return readHeaderRow(); }
 
     bool checkForEndOfRow() override;
-    bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
 
     bool yieldStrings() const { return yield_strings; }
 private:

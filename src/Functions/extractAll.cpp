@@ -59,7 +59,7 @@ public:
             {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
-        validateFunctionArgumentTypes(func, arguments, mandatory_args);
+        validateFunctionArguments(func, arguments, mandatory_args);
     }
 
     static constexpr auto strings_argument_position = 0uz;

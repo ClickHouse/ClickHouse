@@ -101,6 +101,12 @@ public:
         return res;
     }
 
+    bool contains(const Key & key) const
+    {
+        std::lock_guard lock(mutex);
+        return cache_policy->contains(key);
+    }
+
     void set(const Key & key, const MappedPtr & mapped)
     {
         std::lock_guard lock(mutex);
@@ -195,6 +201,12 @@ public:
     {
         std::lock_guard lock(mutex);
         cache_policy->remove(key);
+    }
+
+    void remove(std::function<bool(const Key&, const MappedPtr &)> predicate)
+    {
+        std::lock_guard lock(mutex);
+        cache_policy->remove(predicate);
     }
 
     size_t sizeInBytes() const

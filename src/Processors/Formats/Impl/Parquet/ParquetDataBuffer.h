@@ -43,9 +43,24 @@ public:
 
     void ALWAYS_INLINE readBytes(void * dst, size_t bytes)
     {
-        checkAvaible(bytes);
+        checkAvailable(bytes);
         std::copy(data, data + bytes, reinterpret_cast<Int8 *>(dst));
         consume(bytes);
+    }
+
+    template <typename TValue, typename ParquetType>
+    void ALWAYS_INLINE readValuesOfDifferentSize(TValue * dst, size_t count)
+    {
+        auto necessary_bytes = count * sizeof(ParquetType);
+        checkAvailable(necessary_bytes);
+
+        for (std::size_t i = 0; i < count; i++)
+        {
+            auto offset = i * sizeof(ParquetType);
+            dst[i] = unalignedLoad<TValue>(data + offset);
+        }
+
+        consume(necessary_bytes);
     }
 
     void ALWAYS_INLINE readDateTime64FromInt96(DateTime64 & dst)
@@ -82,14 +97,14 @@ public:
     {
         // refer to: PlainByteArrayDecoder::DecodeArrowDense in encoding.cc
         //           deserializeBinarySSE2 in SerializationString.cpp
-        checkAvaible(4);
+        checkAvailable(4);
         auto value_len = ::arrow::util::SafeLoadAs<Int32>(getArrowData());
         if (unlikely(value_len < 0 || value_len > INT32_MAX - 4))
         {
             throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Invalid or corrupted value_len '{}'", value_len);
         }
         consume(4);
-        checkAvaible(value_len);
+        checkAvailable(value_len);
 
         auto chars_cursor = column.getChars().size();
         column.getChars().resize(chars_cursor + value_len + 1);
@@ -106,7 +121,7 @@ public:
     {
         using TArrowDecimal = typename ToArrowDecimal<TDecimal>::ArrowDecimal;
 
-        checkAvaible(elem_bytes_num);
+        checkAvailable(elem_bytes_num);
 
         // refer to: RawBytesToDecimalBytes in reader_internal.cc, Decimal128::FromBigEndian in decimal.cc
         auto status = TArrowDecimal::FromBigEndian(getArrowData(), elem_bytes_num);
@@ -120,7 +135,7 @@ private:
     UInt64 available;
     const UInt8 datetime64_scale;
 
-    void ALWAYS_INLINE checkAvaible(UInt64 num)
+    void ALWAYS_INLINE checkAvailable(UInt64 num)
     {
         if (unlikely(available < num))
         {

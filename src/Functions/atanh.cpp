@@ -5,11 +5,12 @@ namespace DB
 {
 namespace
 {
-    struct AtanhName
-    {
-        static constexpr auto name = "atanh";
-    };
-    using FunctionAtanh = FunctionMathUnary<UnaryFunctionVectorized<AtanhName, atanh>>;
+
+struct AtanhName
+{
+    static constexpr auto name = "atanh";
+};
+using FunctionAtanh = FunctionMathUnary<UnaryFunctionVectorized<AtanhName, atanh>>;
 
 }
 

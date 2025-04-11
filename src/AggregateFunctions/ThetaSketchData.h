@@ -60,10 +60,9 @@ public:
     {
         if (sk_union)
             return static_cast<UInt64>(sk_union->get_result().get_estimate());
-        else if (sk_update)
+        if (sk_update)
             return static_cast<UInt64>(sk_update->get_estimate());
-        else
-            return 0;
+        return 0;
     }
 
     void merge(const ThetaSketchData & rhs)

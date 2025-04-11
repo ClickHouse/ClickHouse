@@ -1,6 +1,7 @@
 #include "StorageSystemNamedCollections.h"
 
-#include <Common/FieldVisitorToString.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/Context.h>
@@ -33,7 +34,7 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
 {
     const auto & access = context->getAccess();
 
-    NamedCollectionUtils::loadIfNot();
+    NamedCollectionFactory::instance().loadIfNot();
 
     auto collections = NamedCollectionFactory::instance().getAll();
     for (const auto & [name, collection] : collections)

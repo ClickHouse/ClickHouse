@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-asan, no-msan, no-ubsan, no-fasttest
+# Tags: no-tsan, no-asan, no-msan, no-ubsan, no-fasttest, no-debug
 #       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 # NOTE: jemalloc is disabled under sanitizers
 

@@ -1,5 +1,4 @@
-#include "domain.h"
-
+#include <Functions/URL/domain.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 
@@ -23,14 +22,14 @@ The URL can be specified with or without a scheme.
 If the argument can't be parsed as URL, the function returns an empty string.
         )",
         .examples{{"domain", "SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')", ""}},
-        .categories{"URL"}
+        .category{"URLs"}
         });
 
     factory.registerFunction<FunctionDomainRFC>(FunctionDocumentation
         {
         .description=R"(Similar to `domain` but follows stricter rules to be compatible with RFC 3986 and less performant.)",
         .examples{},
-        .categories{"URL"}
+        .category{"URLs"}
         });
 }
 

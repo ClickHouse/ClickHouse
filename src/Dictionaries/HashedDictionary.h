@@ -12,7 +12,7 @@
 #include <Dictionaries/HashedDictionaryCollectionTraits.h>
 #include <Dictionaries/HashedDictionaryParallelLoader.h>
 
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/Defines.h>
 
 #include <Common/ArenaUtils.h>
@@ -25,10 +25,9 @@
 
 #include <DataTypes/DataTypesDecimal.h>
 
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/MaskOperations.h>
-#include <Functions/FunctionHelpers.h>
 
 #include <atomic>
 #include <memory>
@@ -334,22 +333,19 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
         if (container.empty())
             return;
 
-        pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
+        if (!pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
+            {
+                ThreadGroupSwitcher switcher(thread_group, "HashedDictDtor");
+
+                /// Do not account memory that was occupied by the dictionaries for the query/user context.
+                MemoryTrackerBlockerInThread memory_blocker;
+
+                clearContainer(container);
+            }))
         {
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachFromGroupIfNotDetached();
-            );
-
-            /// Do not account memory that was occupied by the dictionaries for the query/user context.
             MemoryTrackerBlockerInThread memory_blocker;
-
-            if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
-            setThreadName("HashedDictDtor");
-
             clearContainer(container);
-        });
+        }
 
         ++hash_tables_count;
     };
@@ -636,7 +632,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getHierarchy(C
         std::optional<UInt64> null_value;
 
         if (!dictionary_attribute.null_value.isNull())
-            null_value = dictionary_attribute.null_value.get<UInt64>();
+            null_value = dictionary_attribute.null_value.safeGet<UInt64>();
 
         const CollectionsHolder<UInt64> & child_key_to_parent_key_maps = std::get<CollectionsHolder<UInt64>>(hierarchical_attribute.containers);
 
@@ -710,7 +706,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse, sharded>::isInHie
         std::optional<UInt64> null_value;
 
         if (!dictionary_attribute.null_value.isNull())
-            null_value = dictionary_attribute.null_value.get<UInt64>();
+            null_value = dictionary_attribute.null_value.safeGet<UInt64>();
 
         const CollectionsHolder<UInt64> & child_key_to_parent_key_maps = std::get<CollectionsHolder<UInt64>>(hierarchical_attribute.containers);
 
@@ -884,6 +880,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
         Block block;
 
@@ -1004,13 +1001,13 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(c
 
                 if constexpr (std::is_same_v<AttributeValueType, StringRef>)
                 {
-                    String & value_to_insert = column_value_to_insert.get<String>();
+                    String & value_to_insert = column_value_to_insert.safeGet<String>();
                     StringRef arena_value = copyStringInArena(*string_arenas[shard], value_to_insert);
                     container.insert({key, arena_value});
                 }
                 else
                 {
-                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.get<AttributeValueType>());
+                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.safeGet<AttributeValueType>());
                     container.insert({key, value_to_insert});
                 }
 
@@ -1163,6 +1160,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
         QueryPipeline pipeline(source_ptr->loadAll());
 
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
         Block block;
         DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
 

@@ -1,14 +1,15 @@
-#include <Processors/QueryPlan/ReadFromLoopStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Storages/IStorage.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/QueryPipeline.h>
+#include <Interpreters/Context.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <QueryPipeline/QueryPlanResourceHolder.h>
-#include <Processors/ISource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromLoopStep.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -62,17 +63,18 @@ namespace DB
                             processed_stage,
                             max_block_size,
                             num_streams);
-                    auto builder = plan.buildQueryPipeline(
-                            QueryPlanOptimizationSettings::fromContext(context),
-                            BuildQueryPipelineSettings::fromContext(context));
-                    QueryPlanResourceHolder resources;
-                    auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
-                    query_pipeline = QueryPipeline(std::move(pipe));
-                    executor = std::make_unique<PullingPipelineExecutor>(query_pipeline);
+                    if (plan.isInitialized())
+                    {
+                        auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+                        QueryPlanResourceHolder resources;
+                        auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
+                        query_pipeline = QueryPipeline(std::move(pipe));
+                        executor = std::make_unique<PullingPipelineExecutor>(query_pipeline);
+                    }
                     loop = true;
                 }
                 Chunk chunk;
-                if (executor->pull(chunk))
+                if (executor && executor->pull(chunk))
                 {
                     if (chunk)
                     {
@@ -111,6 +113,13 @@ namespace DB
         std::unique_ptr<PullingPipelineExecutor> executor;
     };
 
+    static ContextPtr disableParallelReplicas(ContextPtr context)
+    {
+        auto modified_context = Context::createCopy(context);
+        modified_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        return modified_context;
+    }
+
     ReadFromLoopStep::ReadFromLoopStep(
             const Names & column_names_,
             const SelectQueryInfo & query_info_,
@@ -121,11 +130,11 @@ namespace DB
             size_t max_block_size_,
             size_t num_streams_)
             : SourceStepWithFilter(
-            DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)},
+            storage_snapshot_->getSampleBlockForColumns(column_names_),
             column_names_,
             query_info_,
             storage_snapshot_,
-            context_)
+            disableParallelReplicas(context_))
             , column_names(column_names_)
             , processed_stage(processed_stage_)
             , inner_storage(std::move(inner_storage_))
@@ -146,8 +155,8 @@ namespace DB
 
         if (pipe.empty())
         {
-            assert(output_stream != std::nullopt);
-            pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
+            assert(output_header != std::nullopt);
+            pipe = Pipe(std::make_shared<NullSource>(*output_header));
         }
 
         pipeline.init(std::move(pipe));

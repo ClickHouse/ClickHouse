@@ -21,6 +21,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 
+#include <Processors/Port.h>
+
 
 namespace DB
 {
@@ -36,9 +38,10 @@ namespace ErrorCodes
 static String toValidUTF8String(const String & name, const FormatSettings & settings)
 {
     WriteBufferFromOwnString buf;
-    WriteBufferValidUTF8 validating_buf(buf);
-    writeJSONString(name, validating_buf, settings);
-    validating_buf.finalize();
+    {
+        WriteBufferValidUTF8 validating_buf(buf);
+        writeJSONString(name, validating_buf, settings);
+    }
     /// Return value without quotes
     return buf.str().substr(1, buf.str().size() - 2);
 }
@@ -542,6 +545,7 @@ void registerOutputFormatBSONEachRow(FormatFactory & factory)
         [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings)
         { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, _format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("BSONEachRow");
+    factory.markOutputFormatNotTTYFriendly("BSONEachRow");
 }
 
 }

@@ -50,10 +50,8 @@ public:
                 return std::make_shared<
                     AggregateFunctionDistinct<
                         AggregateFunctionDistinctSingleGenericData<true>>>(nested_function, arguments, params);
-            else
-                return std::make_shared<
-                    AggregateFunctionDistinct<
-                        AggregateFunctionDistinctSingleGenericData<false>>>(nested_function, arguments, params);
+            return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctSingleGenericData<false>>>(
+                nested_function, arguments, params);
         }
 
         return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctMultipleGenericData>>(nested_function, arguments, params);

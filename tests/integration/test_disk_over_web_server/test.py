@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 uuids = []
 
@@ -11,13 +11,13 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=["configs/storage_conf.xml"],
+            main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
             with_nginx=True,
             use_old_analyzer=True,
         )
         cluster.add_instance(
             "node2",
-            main_configs=["configs/storage_conf_web.xml"],
+            main_configs=["configs/storage_conf_web.xml", "configs/no_async_load.xml"],
             with_nginx=True,
             stay_alive=True,
             with_zookeeper=True,
@@ -25,7 +25,7 @@ def cluster():
         )
         cluster.add_instance(
             "node3",
-            main_configs=["configs/storage_conf_web.xml"],
+            main_configs=["configs/storage_conf_web.xml", "configs/no_async_load.xml"],
             with_nginx=True,
             with_zookeeper=True,
             use_old_analyzer=True,
@@ -33,7 +33,7 @@ def cluster():
 
         cluster.add_instance(
             "node4",
-            main_configs=["configs/storage_conf.xml"],
+            main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
             with_nginx=True,
             stay_alive=True,
             with_installed_binary=True,
@@ -42,7 +42,7 @@ def cluster():
         )
         cluster.add_instance(
             "node5",
-            main_configs=["configs/storage_conf.xml"],
+            main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
             with_nginx=True,
             use_old_analyzer=True,
         )
@@ -112,11 +112,12 @@ def test_usage(cluster, node_name):
     for i in range(3):
         node2.query(
             """
+            DROP TABLE IF EXISTS test{};
             CREATE TABLE test{} UUID '{}'
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(
-                i, uuids[i]
+                i, i, uuids[i]
             )
         )
 
@@ -311,7 +312,8 @@ def test_replicated_database(cluster):
         SETTINGS storage_policy = 'web';
     """.format(
             uuids[0]
-        )
+        ),
+        settings={"database_replicated_allow_explicit_uuid": 3},
     )
 
     node2 = cluster.instances["node2"]
@@ -370,23 +372,23 @@ def test_page_cache(cluster):
             return res
 
         ev1 = get_profile_events("test cold cache")
-        assert ev1.get("PageCacheChunkMisses", 0) > 0
+        assert ev1.get("PageCacheMisses", 0) > 0
         assert (
             ev1.get("DiskConnectionsCreated", 0) + ev1.get("DiskConnectionsReused", 0)
             > 0
         )
 
         ev2 = get_profile_events("test warm cache")
-        assert ev2.get("PageCacheChunkDataHits", 0) > 0
-        assert ev2.get("PageCacheChunkMisses", 0) == 0
+        assert ev2.get("PageCacheHits", 0) > 0
+        assert ev2.get("PageCacheMisses", 0) == 0
         assert (
             ev2.get("DiskConnectionsCreated", 0) + ev2.get("DiskConnectionsReused", 0)
             == 0
         )
 
         ev3 = get_profile_events("test no cache")
-        assert ev3.get("PageCacheChunkDataHits", 0) == 0
-        assert ev3.get("PageCacheChunkMisses", 0) == 0
+        assert ev3.get("PageCacheHits", 0) == 0
+        assert ev3.get("PageCacheMisses", 0) == 0
         assert (
             ev3.get("DiskConnectionsCreated", 0) + ev3.get("DiskConnectionsReused", 0)
             > 0

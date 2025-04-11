@@ -1,5 +1,6 @@
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -15,8 +16,6 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-#include <base/unaligned.h>
-#include <base/sort.h>
 #include <cstring> // memcpy
 
 
@@ -141,13 +140,34 @@ void ColumnArray::get(size_t n, Field & res) const
             size, max_array_size_as_field);
 
     res = Array();
-    Array & res_arr = res.get<Array &>();
+    Array & res_arr = res.safeGet<Array>();
     res_arr.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
         res_arr.push_back(getData()[offset + i]);
 }
 
+std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n) const
+{
+    size_t offset = offsetAt(n);
+    size_t size = sizeAt(n);
+
+    String value_name {"["};
+    DataTypes element_types;
+    element_types.reserve(size);
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto & [value, type] = getData().getValueNameAndType(offset + i);
+        element_types.push_back(type);
+        if (i > 0)
+            value_name += ", ";
+        value_name += value;
+    }
+    value_name += "]";
+
+    return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
+}
 
 StringRef ColumnArray::getDataAt(size_t n) const
 {
@@ -271,15 +291,12 @@ void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
         getData().updateHashWithValue(offset + i, hash);
 }
 
-void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnArray::getWeakHash32() const
 {
     auto s = offsets->size();
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", s, hash.getData().size());
+    WeakHash32 hash(s);
 
-    WeakHash32 internal_hash(data->size());
-    data->updateWeakHash32(internal_hash);
+    WeakHash32 internal_hash = data->getWeakHash32();
 
     Offset prev_offset = 0;
     const auto & offsets_data = getOffsets();
@@ -300,6 +317,8 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
 
         prev_offset = offsets_data[i];
     }
+
+    return hash;
 }
 
 void ColumnArray::updateHashFast(SipHash & hash) const
@@ -310,7 +329,7 @@ void ColumnArray::updateHashFast(SipHash & hash) const
 
 void ColumnArray::insert(const Field & x)
 {
-    const Array & array = x.get<const Array &>();
+    const Array & array = x.safeGet<Array>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
         getData().insert(array[i]);
@@ -322,7 +341,7 @@ bool ColumnArray::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Array)
         return false;
 
-    const Array & array = x.get<const Array &>();
+    const Array & array = x.safeGet<Array>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
     {
@@ -337,7 +356,11 @@ bool ColumnArray::tryInsert(const Field & x)
     return true;
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnArray::insertFrom(const IColumn & src_, size_t n)
+#else
+void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
+#endif
 {
     const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
     size_t size = src.sizeAt(n);
@@ -366,6 +389,23 @@ void ColumnArray::popBack(size_t n)
     offsets_data.resize_assume_reserved(offsets_data.size() - n);
 }
 
+ColumnCheckpointPtr ColumnArray::getCheckpoint() const
+{
+    return std::make_shared<ColumnCheckpointWithNested>(size(), getData().getCheckpoint());
+}
+
+void ColumnArray::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    checkpoint.size = size();
+    getData().updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
+void ColumnArray::rollback(const ColumnCheckpoint & checkpoint)
+{
+    getOffsets().resize_assume_reserved(checkpoint.size);
+    getData().rollback(*assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
 int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator) const
 {
     const ColumnArray & rhs = assert_cast<const ColumnArray &>(rhs_);
@@ -392,7 +432,11 @@ int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan
             : 1);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+#else
+int ColumnArray::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+#endif
 {
     return compareAtImpl(n, m, rhs_, nan_direction_hint);
 }
@@ -443,6 +487,27 @@ void ColumnArray::reserve(size_t n)
 {
     getOffsets().reserve_exact(n);
     getData().reserve(n); /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
+}
+
+size_t ColumnArray::capacity() const
+{
+    return getOffsets().capacity();
+}
+
+void ColumnArray::prepareForSquashing(const Columns & source_columns, size_t factor)
+{
+    size_t new_size = size();
+    Columns source_data_columns;
+    source_data_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+    {
+        const auto & source_array_column = assert_cast<const ColumnArray &>(*source_column);
+        new_size += source_array_column.size();
+        source_data_columns.push_back(source_array_column.getDataPtr());
+    }
+
+    getOffsets().reserve_exact(new_size * factor);
+    data->prepareForSquashing(source_data_columns, factor);
 }
 
 void ColumnArray::shrinkToFit()
@@ -535,7 +600,11 @@ void ColumnArray::getExtremes(Field & min, Field & max) const
 }
 
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnArray::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     if (length == 0)
         return;
@@ -613,6 +682,8 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
         return filterNumber<Int128>(filt, result_size_hint);
     if (typeid_cast<const ColumnInt256 *>(data.get()))
         return filterNumber<Int256>(filt, result_size_hint);
+    if (typeid_cast<const ColumnBFloat16 *>(data.get()))
+        return filterNumber<BFloat16>(filt, result_size_hint);
     if (typeid_cast<const ColumnFloat32 *>(data.get()))
         return filterNumber<Float32>(filt, result_size_hint);
     if (typeid_cast<const ColumnFloat64 *>(data.get()))
@@ -973,10 +1044,10 @@ void ColumnArray::updatePermutationWithCollation(const Collator & collator, Perm
             DefaultPartialSort());
 }
 
-ColumnPtr ColumnArray::compress() const
+ColumnPtr ColumnArray::compress(bool force_compression) const
 {
-    ColumnPtr data_compressed = data->compress();
-    ColumnPtr offsets_compressed = offsets->compress();
+    ColumnPtr data_compressed = data->compress(force_compression);
+    ColumnPtr offsets_compressed = offsets->compress(force_compression);
 
     size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
 
@@ -1016,6 +1087,8 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
         return replicateNumber<Int128>(replicate_offsets);
     if (typeid_cast<const ColumnInt256 *>(data.get()))
         return replicateNumber<Int256>(replicate_offsets);
+    if (typeid_cast<const ColumnBFloat16 *>(data.get()))
+        return replicateNumber<BFloat16>(replicate_offsets);
     if (typeid_cast<const ColumnFloat32 *>(data.get()))
         return replicateNumber<Float32>(replicate_offsets);
     if (typeid_cast<const ColumnFloat64 *>(data.get()))

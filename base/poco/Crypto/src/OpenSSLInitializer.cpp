@@ -19,13 +19,11 @@
 #include <openssl/rand.h>
 #include <openssl/crypto.h>
 #include <openssl/err.h>
+#include <openssl/provider.h>
 #if OPENSSL_VERSION_NUMBER >= 0x0907000L
 #include <openssl/conf.h>
 #endif
 
-#if __has_feature(address_sanitizer)
-#include <sanitizer/lsan_interface.h>
-#endif
 
 using Poco::RandomInputStream;
 using Poco::Thread;
@@ -39,6 +37,7 @@ namespace Crypto {
 
 Poco::FastMutex* OpenSSLInitializer::_mutexes(0);
 Poco::AtomicCounter OpenSSLInitializer::_rc;
+OSSL_PROVIDER * OpenSSLInitializer::legacy_provider;
 
 
 OpenSSLInitializer::OpenSSLInitializer()
@@ -74,13 +73,11 @@ void OpenSSLInitializer::initialize()
 		char seed[SEEDSIZE];
 		RandomInputStream rnd;
 		rnd.read(seed, sizeof(seed));
-        {
-#   if __has_feature(address_sanitizer)
-            /// Leak sanitizer (part of address sanitizer) thinks that a few bytes of memory in OpenSSL are allocated during but never released.
-            __lsan::ScopedDisabler lsan_disabler;
-#endif
-		    RAND_seed(seed, SEEDSIZE);
-        }
+		RAND_seed(seed, SEEDSIZE);
+
+        legacy_provider = OSSL_PROVIDER_load(NULL, "legacy");
+        if (!legacy_provider)
+            throw std::runtime_error("Failed to load OpenSSL legacy provider");
 
 		int nMutexes = CRYPTO_num_locks();
 		_mutexes = new Poco::FastMutex[nMutexes];
@@ -110,6 +107,7 @@ void OpenSSLInitializer::uninitialize()
 		CRYPTO_set_id_callback(0);
 		delete [] _mutexes;
 
+        OSSL_PROVIDER_unload(legacy_provider);
 		CONF_modules_free();
 	}
 }

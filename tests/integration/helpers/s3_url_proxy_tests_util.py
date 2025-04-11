@@ -1,6 +1,8 @@
 import os
 import time
+from urllib.parse import urlparse
 
+from helpers.config_cluster import minio_secret_key
 
 ALL_HTTP_METHODS = {"POST", "PUT", "GET", "HEAD", "CONNECT"}
 
@@ -30,7 +32,7 @@ def check_proxy_logs(
                         False
                     ), f"{http_method} method not found in logs of {proxy_instance} for bucket {bucket}"
 
-            time.sleep(1)
+        time.sleep(1)
 
 
 def wait_resolver(cluster):
@@ -68,25 +70,33 @@ def build_s3_endpoint(protocol, bucket):
     return f"{protocol}://minio1:9001/root/data/{bucket}/test.csv"
 
 
+def remove_existing_s3_endpoint(minio_client, endpoint):
+    endpoint_path = urlparse(endpoint).path
+    path_parts = endpoint_path.strip("/").split("/")
+    bucket = path_parts[0]
+    object_path = "/".join(path_parts[1:])
+    minio_client.remove_object(bucket, object_path)
+
+
 def perform_simple_queries(node, minio_endpoint):
     node.query(
         f"""
             INSERT INTO FUNCTION
-            s3('{minio_endpoint}', 'minio', 'minio123', 'CSV', 'key String, value String')
+            s3('{minio_endpoint}', 'minio', '{minio_secret_key}', 'CSV', 'key String, value String')
             VALUES ('color','red'),('size','10')
             """
     )
 
     assert (
         node.query(
-            f"SELECT * FROM s3('{minio_endpoint}', 'minio', 'minio123', 'CSV') FORMAT Values"
+            f"SELECT * FROM s3('{minio_endpoint}', 'minio', '{minio_secret_key}', 'CSV') FORMAT Values"
         )
         == "('color','red'),('size','10')"
     )
 
     assert (
         node.query(
-            f"SELECT * FROM s3('{minio_endpoint}', 'minio', 'minio123', 'CSV') FORMAT Values"
+            f"SELECT * FROM s3('{minio_endpoint}', 'minio', '{minio_secret_key}', 'CSV') FORMAT Values"
         )
         == "('color','red'),('size','10')"
     )
@@ -94,6 +104,7 @@ def perform_simple_queries(node, minio_endpoint):
 
 def simple_test(cluster, proxies, protocol, bucket):
     minio_endpoint = build_s3_endpoint(protocol, bucket)
+    remove_existing_s3_endpoint(cluster.minio_client, minio_endpoint)
     node = cluster.instances[bucket]
 
     perform_simple_queries(node, minio_endpoint)
@@ -124,3 +135,14 @@ def simple_storage_test(cluster, node, proxies, policy):
 
     # not checking for POST because it is in a different format
     check_proxy_logs(cluster, proxies, "http", policy, ["PUT", "GET"])
+
+
+def simple_test_assert_no_proxy(cluster, proxies, protocol, bucket):
+    minio_endpoint = build_s3_endpoint(protocol, bucket)
+    remove_existing_s3_endpoint(cluster.minio_client, minio_endpoint)
+    node = cluster.instances[bucket]
+    perform_simple_queries(node, minio_endpoint)
+
+    # No HTTP method should be found in proxy logs if no proxy is active
+    empty_method_list = []
+    check_proxy_logs(cluster, proxies, protocol, bucket, empty_method_list)

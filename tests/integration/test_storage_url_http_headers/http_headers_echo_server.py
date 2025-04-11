@@ -1,6 +1,6 @@
 import http.server
-import sys
 import json
+import sys
 
 RESULT_PATH = "/echo_server_headers.txt"
 

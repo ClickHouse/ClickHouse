@@ -5,10 +5,8 @@
 
 #include <Parsers/SelectUnionMode.h>
 
-#include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
-#include <Analyzer/TableExpressionModifiers.h>
 #include <Analyzer/RecursiveCTE.h>
 
 #include <Interpreters/Context_fwd.h>
@@ -163,11 +161,11 @@ public:
         return children[queries_child_index];
     }
 
+    /// Returns true if union node is resolved, false otherwise
+    bool isResolved() const;
+
     /// Compute union node projection columns
     NamesAndTypes computeProjectionColumns() const;
-
-    /// Remove unused projection columns
-    void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
 
     /// Remove unused projection columns
     void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);

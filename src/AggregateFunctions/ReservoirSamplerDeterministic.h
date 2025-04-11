@@ -190,7 +190,11 @@ public:
             /// TODO: After implementation of "versioning aggregate function state",
             /// change the serialization format.
             Element elem;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunknown-warning-option"  /// Remove after clang20
+#pragma clang diagnostic ignored "-Wnontrivial-memcall"
             memset(&elem, 0, sizeof(elem)); /// NOLINT(bugprone-undefined-memory-manipulation)
+#pragma clang diagnostic pop
             elem = samples[i];
 
             DB::transformEndianness<std::endian::little>(elem);
@@ -271,8 +275,7 @@ private:
     {
         if (OnEmpty == ReservoirSamplerDeterministicOnEmpty::THROW)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSamplerDeterministic");
-        else
-            return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
+        return NanLikeValueConstructor<ResultType, is_floating_point<ResultType>>::getValue();
     }
 };
 

@@ -8,8 +8,14 @@
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool final;
+}
 
 namespace
 {
@@ -22,7 +28,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().final)
+        if (!getSettings()[Setting::final])
             return;
 
         const auto * query_node = node->as<QueryNode>();

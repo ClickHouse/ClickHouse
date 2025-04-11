@@ -51,13 +51,18 @@ if (NOT "$ENV{CFLAGS}" STREQUAL ""
 endif()
 
 # Default toolchain - this is needed to avoid dependency on OS files.
-execute_process(COMMAND uname -s OUTPUT_VARIABLE OS)
-execute_process(COMMAND uname -m OUTPUT_VARIABLE ARCH)
+execute_process(COMMAND uname -s
+    OUTPUT_VARIABLE OS
+    COMMAND_ERROR_IS_FATAL ANY
+)
+execute_process(COMMAND uname -m
+    OUTPUT_VARIABLE ARCH
+    COMMAND_ERROR_IS_FATAL ANY
+)
 
-# By default, prefer clang on Linux
+# We already prefer clang
 # But note, that you still may change the compiler with -DCMAKE_C_COMPILER/-DCMAKE_CXX_COMPILER.
-if (OS MATCHES "Linux"
-    AND "$ENV{CC}" STREQUAL ""
+if ("$ENV{CC}" STREQUAL ""
     AND "$ENV{CXX}" STREQUAL ""
     AND NOT DEFINED CMAKE_C_COMPILER
     AND NOT DEFINED CMAKE_CXX_COMPILER)

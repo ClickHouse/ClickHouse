@@ -23,6 +23,8 @@ struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
 
     bool empty() const override { return !has_elems; }
 
+    size_t memoryUsageBytes() const override;
+
     const String index_name;
     const GinFilterParameters params;
     GinFilters gin_filters;
@@ -63,7 +65,7 @@ class MergeTreeConditionFullText final : public IMergeTreeIndexCondition, WithCo
 {
 public:
     MergeTreeConditionFullText(
-            const ActionsDAGPtr & filter_actions_dag,
+            const ActionsDAG * filter_actions_dag,
             ContextPtr context,
             const Block & index_sample_block,
             const GinFilterParameters & params_,
@@ -170,7 +172,7 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const override;
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
 
     GinFilterParameters params;
     /// Function for selecting next token.

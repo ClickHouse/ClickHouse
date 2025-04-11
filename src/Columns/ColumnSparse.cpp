@@ -94,6 +94,11 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
+std::pair<String, DataTypePtr>  ColumnSparse::getValueNameAndType(size_t n) const
+{
+    return values->getValueNameAndType(getValueIndex(n));
+}
+
 bool ColumnSparse::getBool(size_t n) const
 {
     return values->getBool(getValueIndex(n));
@@ -174,7 +179,11 @@ const char * ColumnSparse::skipSerializedInArena(const char * pos) const
     return values->skipSerializedInArena(pos);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     if (length == 0)
         return;
@@ -248,7 +257,11 @@ bool ColumnSparse::tryInsert(const Field & x)
     return true;
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnSparse::insertFrom(const IColumn & src, size_t n)
+#else
+void ColumnSparse::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     if (const auto * src_sparse = typeid_cast<const ColumnSparse *>(&src))
     {
@@ -298,6 +311,28 @@ void ColumnSparse::popBack(size_t n)
         values->popBack(removed_values);
 
     _size = new_size;
+}
+
+ColumnCheckpointPtr ColumnSparse::getCheckpoint() const
+{
+    return std::make_shared<ColumnCheckpointWithNested>(size(), values->getCheckpoint());
+}
+
+void ColumnSparse::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    checkpoint.size = size();
+    values->updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
+void ColumnSparse::rollback(const ColumnCheckpoint & checkpoint)
+{
+    _size = checkpoint.size;
+
+    const auto & nested = *assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested;
+    chassert(nested.size > 0);
+
+    values->rollback(nested);
+    getOffsetsData().resize_assume_reserved(nested.size - 1);
 }
 
 ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
@@ -446,7 +481,11 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     return ColumnSparse::create(std::move(res_values), std::move(res_offsets), limit);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnSparse::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+#else
+int ColumnSparse::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+#endif
 {
     if (const auto * rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs_))
         return values->compareAt(getValueIndex(n), rhs_sparse->getValueIndex(m), rhs_sparse->getValuesColumn(), null_direction_hint);
@@ -643,18 +682,32 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
     auto res_values = values->cloneEmpty();
     res_values->insertDefault();
 
+    /// First calculate the exact size of the resulting column to avoid reallocations and to use the exact amount of memory.
+    size_t total_offsets_size = 0;
+    {
+        auto offset_it = begin();
+        for (size_t i = 0; i < _size; ++i, ++offset_it)
+        {
+            if (!offset_it.isDefault())
+            {
+                size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
+                total_offsets_size += replicate_size;
+            }
+        }
+    }
+    res_offsets_data.reserve_exact(total_offsets_size);
+
     auto offset_it = begin();
     for (size_t i = 0; i < _size; ++i, ++offset_it)
     {
         if (!offset_it.isDefault())
         {
             size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
-            res_offsets_data.reserve_exact(res_offsets_data.size() + replicate_size);
             for (size_t row = replicate_offsets[i - 1]; row < replicate_offsets[i]; ++row)
             {
                 res_offsets_data.push_back(row);
-                res_values->insertFrom(*values, offset_it.getValueIndex());
             }
+            res_values->insertManyFrom(*values, offset_it.getValueIndex(), replicate_size);
         }
     }
 
@@ -666,20 +719,22 @@ void ColumnSparse::updateHashWithValue(size_t n, SipHash & hash) const
     values->updateHashWithValue(getValueIndex(n), hash);
 }
 
-void ColumnSparse::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnSparse::getWeakHash32() const
 {
-    if (hash.getData().size() != _size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-        "column size is {}, hash size is {}", _size, hash.getData().size());
+    WeakHash32 values_hash = values->getWeakHash32();
+    WeakHash32 hash(size());
+
+    auto & hash_data = hash.getData();
+    auto & values_hash_data = values_hash.getData();
 
     auto offset_it = begin();
-    auto & hash_data = hash.getData();
     for (size_t i = 0; i < _size; ++i, ++offset_it)
     {
         size_t value_index = offset_it.getValueIndex();
-        auto data_ref = values->getDataAt(value_index);
-        hash_data[i] = ::updateWeakHash32(reinterpret_cast<const UInt8 *>(data_ref.data), data_ref.size, hash_data[i]);
+        hash_data[i] = values_hash_data[value_index];
     }
+
+    return hash;
 }
 
 void ColumnSparse::updateHashFast(SipHash & hash) const
@@ -738,10 +793,10 @@ UInt64 ColumnSparse::getNumberOfDefaultRows() const
     return _size - offsets->size();
 }
 
-ColumnPtr ColumnSparse::compress() const
+ColumnPtr ColumnSparse::compress(bool force_compression) const
 {
-    auto values_compressed = values->compress();
-    auto offsets_compressed = offsets->compress();
+    auto values_compressed = values->compress(force_compression);
+    auto offsets_compressed = offsets->compress(force_compression);
 
     size_t byte_size = values_compressed->byteSize() + offsets_compressed->byteSize();
 
@@ -759,13 +814,27 @@ bool ColumnSparse::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnSparse::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnSparse::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
     callback(values);
     callback(offsets);
 }
 
-void ColumnSparse::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnSparse::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+{
+    callback(*values);
+    values->forEachMutableSubcolumnRecursively(callback);
+    callback(*offsets);
+    offsets->forEachMutableSubcolumnRecursively(callback);
+}
+
+void ColumnSparse::forEachSubcolumn(ColumnCallback callback) const
+{
+    callback(values);
+    callback(offsets);
+}
+
+void ColumnSparse::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
     callback(*values);
     values->forEachSubcolumnRecursively(callback);

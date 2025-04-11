@@ -6,6 +6,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 
 
 namespace DB
@@ -13,17 +14,14 @@ namespace DB
 
 class SchemaCache;
 
-class StorageObjectStorageSource : public SourceWithKeyCondition, WithContext
+class StorageObjectStorageSource : public SourceWithKeyCondition
 {
-    friend class StorageS3QueueSource;
+    friend class ObjectStorageQueueSource;
 public:
     using Configuration = StorageObjectStorage::Configuration;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-    using ObjectInfo = StorageObjectStorage::ObjectInfo;
     using ObjectInfos = StorageObjectStorage::ObjectInfos;
-    using ObjectInfoPtr = StorageObjectStorage::ObjectInfoPtr;
 
-    class IIterator;
     class ReadTaskIterator;
     class GlobIterator;
     class KeysIterator;
@@ -37,7 +35,7 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
         UInt64 max_block_size_,
-        std::shared_ptr<IIterator> file_iterator_,
+        std::shared_ptr<IObjectIterator> file_iterator_,
         size_t max_parsing_threads_,
         bool need_only_count_);
 
@@ -45,38 +43,47 @@ public:
 
     String getName() const override { return name; }
 
-    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override;
+    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
 
     Chunk generate() override;
 
-    static std::shared_ptr<IIterator> createFileIterator(
+    static std::shared_ptr<IObjectIterator> createFileIterator(
         ConfigurationPtr configuration,
+        const StorageObjectStorage::QuerySettings & query_settings,
         ObjectStoragePtr object_storage,
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
+        const std::optional<ActionsDAG> & filter_actions_dag,
         const NamesAndTypesList & virtual_columns,
         ObjectInfos * read_keys,
-        std::function<void(FileProgress)> file_progress_callback = {});
+        std::function<void(FileProgress)> file_progress_callback = {},
+        bool ignore_archive_globs = false,
+        bool skip_object_metadata = false);
 
     static std::string getUniqueStoragePathIdentifier(
         const Configuration & configuration,
         const ObjectInfo & object_info,
         bool include_connection_info = true);
 
+    static std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
+        ObjectInfo & object_info,
+        const ObjectStoragePtr & object_storage,
+        const ContextPtr & context_,
+        const LoggerPtr & log);
 protected:
     const String name;
     ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
+    const ContextPtr read_context;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
     const size_t max_parsing_threads;
-    const ReadFromFormatInfo read_from_format_info;
+    ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
 
-    ColumnsDescription columns_desc;
-    std::shared_ptr<IIterator> file_iterator;
+    std::shared_ptr<IObjectIterator> file_iterator;
     SchemaCache & schema_cache;
     bool initialized = false;
     size_t total_rows_in_file = 0;
@@ -100,7 +107,7 @@ protected:
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
 
-        const ObjectInfo & getObjectInfo() const { return *object_info; }
+        ObjectInfoPtr getObjectInfo() const { return object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
     private:
@@ -116,47 +123,46 @@ protected:
     std::future<ReaderHolder> reader_future;
 
     /// Recreate ReadBuffer and Pipeline for each file.
-    ReaderHolder createReader(size_t processor = 0);
-    std::future<ReaderHolder> createReaderAsync(size_t processor = 0);
-    std::unique_ptr<ReadBuffer> createReadBuffer(const ObjectInfo & object_info);
+    static ReaderHolder createReader(
+        size_t processor,
+        const std::shared_ptr<IObjectIterator> & file_iterator,
+        const ConfigurationPtr & configuration,
+        const ObjectStoragePtr & object_storage,
+        ReadFromFormatInfo & read_from_format_info,
+        const std::optional<FormatSettings> & format_settings,
+        const std::shared_ptr<const KeyCondition> & key_condition_,
+        const ContextPtr & context_,
+        SchemaCache * schema_cache,
+        const LoggerPtr & log,
+        size_t max_block_size,
+        size_t max_parsing_threads,
+        bool need_only_count);
+
+    ReaderHolder createReader();
+
+    std::future<ReaderHolder> createReaderAsync();
 
     void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
-    std::optional<size_t> tryGetNumRowsFromCache(const ObjectInfo & object_info);
-    void lazyInitialize(size_t processor);
+    void lazyInitialize();
 };
 
-class StorageObjectStorageSource::IIterator
-{
-public:
-    explicit IIterator(const std::string & logger_name_);
-
-    virtual ~IIterator() = default;
-
-    virtual size_t estimatedKeysCount() = 0;
-
-    ObjectInfoPtr next(size_t processor);
-
-protected:
-    virtual ObjectInfoPtr nextImpl(size_t processor) = 0;
-    LoggerPtr logger;
-};
-
-class StorageObjectStorageSource::ReadTaskIterator : public IIterator
+class StorageObjectStorageSource::ReadTaskIterator : public IObjectIterator
 {
 public:
     ReadTaskIterator(const ReadTaskCallback & callback_, size_t max_threads_count);
 
+    ObjectInfoPtr next(size_t) override;
+
     size_t estimatedKeysCount() override { return buffer.size(); }
 
 private:
-    ObjectInfoPtr nextImpl(size_t) override;
 
     ReadTaskCallback callback;
     ObjectInfos buffer;
     std::atomic_size_t index = 0;
 };
 
-class StorageObjectStorageSource::GlobIterator : public IIterator, WithContext
+class StorageObjectStorageSource::GlobIterator : public IObjectIterator, WithContext
 {
 public:
     GlobIterator(
@@ -172,11 +178,12 @@ public:
 
     ~GlobIterator() override = default;
 
+    ObjectInfoPtr next(size_t processor) override;
+
     size_t estimatedKeysCount() override;
 
 private:
-    ObjectInfoPtr nextImpl(size_t processor) override;
-    ObjectInfoPtr nextImplUnlocked(size_t processor);
+    ObjectInfoPtr nextUnlocked(size_t processor);
     void createFilterAST(const String & any_key);
     void fillBufferForKey(const std::string & uri_key);
 
@@ -184,12 +191,13 @@ private:
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const bool throw_on_zero_files_match;
+    const LoggerPtr log;
 
     size_t index = 0;
 
     ObjectInfos object_infos;
     ObjectInfos * read_keys;
-    ActionsDAGPtr filter_dag;
+    ExpressionActionsPtr filter_expr;
     ObjectStorageIteratorPtr object_storage_iterator;
     bool recursive{false};
     std::vector<String> expanded_keys;
@@ -200,11 +208,12 @@ private:
     bool is_finished = false;
     bool first_iteration = true;
     std::mutex next_mutex;
+    const ContextPtr local_context;
 
     std::function<void(FileProgress)> file_progress_callback;
 };
 
-class StorageObjectStorageSource::KeysIterator : public IIterator
+class StorageObjectStorageSource::KeysIterator : public IObjectIterator
 {
 public:
     KeysIterator(
@@ -213,15 +222,16 @@ public:
         const NamesAndTypesList & virtual_columns_,
         ObjectInfos * read_keys_,
         bool ignore_non_existent_files_,
+        bool skip_object_metadata_,
         std::function<void(FileProgress)> file_progress_callback = {});
 
     ~KeysIterator() override = default;
 
+    ObjectInfoPtr next(size_t processor) override;
+
     size_t estimatedKeysCount() override { return keys.size(); }
 
 private:
-    ObjectInfoPtr nextImpl(size_t processor) override;
-
     const ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
@@ -229,6 +239,7 @@ private:
     const std::vector<String> keys;
     std::atomic<size_t> index = 0;
     bool ignore_non_existent_files;
+    bool skip_object_metadata;
 };
 
 /*
@@ -242,15 +253,18 @@ private:
  * 2. When we have a certain pattern of files we want to read in each archive.
  *    For this purpose we create a filter defined as IArchiveReader::NameFilter.
  */
-class StorageObjectStorageSource::ArchiveIterator : public IIterator, private WithContext
+class StorageObjectStorageSource::ArchiveIterator : public IObjectIterator, private WithContext
 {
 public:
     explicit ArchiveIterator(
         ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration_,
-        std::unique_ptr<IIterator> archives_iterator_,
+        std::unique_ptr<IObjectIterator> archives_iterator_,
         ContextPtr context_,
-        ObjectInfos * read_keys_);
+        ObjectInfos * read_keys_,
+        bool ignore_archive_globs_ = false);
+
+    ObjectInfoPtr next(size_t processor) override;
 
     size_t estimatedKeysCount() override;
 
@@ -259,7 +273,8 @@ public:
         ObjectInfoInArchive(
             ObjectInfoPtr archive_object_,
             const std::string & path_in_archive_,
-            std::shared_ptr<IArchiveReader> archive_reader_);
+            std::shared_ptr<IArchiveReader> archive_reader_,
+            IArchiveReader::FileInfo && file_info_);
 
         std::string getFileName() const override
         {
@@ -278,21 +293,24 @@ public:
 
         bool isArchive() const override { return true; }
 
+        size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
+
         const ObjectInfoPtr archive_object;
         const std::string path_in_archive;
         const std::shared_ptr<IArchiveReader> archive_reader;
+        const IArchiveReader::FileInfo file_info;
     };
 
 private:
-    ObjectInfoPtr nextImpl(size_t processor) override;
     std::shared_ptr<IArchiveReader> createArchiveReader(ObjectInfoPtr object_info) const;
 
     const ObjectStoragePtr object_storage;
     const bool is_path_in_archive_with_globs;
     /// Iterator which iterates through different archives.
-    const std::unique_ptr<IIterator> archives_iterator;
+    const std::unique_ptr<IObjectIterator> archives_iterator;
     /// Used when files inside archive are defined with a glob
     const IArchiveReader::NameFilter filter = {};
+    const LoggerPtr log;
     /// Current file inside the archive.
     std::string path_in_archive = {};
     /// Read keys of files inside archives.
@@ -303,6 +321,8 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     /// File enumerator inside the archive.
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
+
+    bool ignore_archive_globs;
 
     std::mutex next_mutex;
 };

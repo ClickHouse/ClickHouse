@@ -53,16 +53,14 @@ public:
     {
         if (const auto * p = find_first_not_symbols_or_null(file, wait_needles))
         {
-            const size_t character_position = p - file.begin();
+            const size_t character_position = p - file.data();
             if (isQuotingCharacter(*p))
             {
                 // +1 to skip quoting character
                 return {character_position + 1u, State::READING_QUOTED_KEY};
             }
-            else
-            {
-                return {character_position, State::READING_KEY};
-            }
+
+            return {character_position, State::READING_KEY};
         }
 
         return {file.size(), State::END};
@@ -80,7 +78,7 @@ public:
 
         while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_key_needles))
         {
-            auto character_position = p - file.begin();
+            auto character_position = p - file.data();
             size_t next_pos = character_position + 1u;
 
             if (WITH_ESCAPING && isEscapeCharacter(*p))
@@ -98,7 +96,7 @@ public:
             }
             else if (isKeyValueDelimiter(*p))
             {
-                key.append(file.begin() + pos, file.begin() + character_position);
+                key.append(file.data() + pos, file.data() + character_position);
 
                 return {next_pos, State::WAITING_VALUE};
             }
@@ -128,7 +126,7 @@ public:
 
         while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_quoted_needles))
         {
-            size_t character_position = p - file.begin();
+            size_t character_position = p - file.data();
             size_t next_pos = character_position + 1u;
 
             if (WITH_ESCAPING && isEscapeCharacter(*p))
@@ -146,7 +144,7 @@ public:
             }
             else if (isQuotingCharacter(*p))
             {
-                key.append(file.begin() + pos, file.begin() + character_position);
+                key.append(file.data() + pos, file.data() + character_position);
 
                 if (key.isEmpty())
                 {
@@ -221,7 +219,7 @@ public:
 
         while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_value_needles))
         {
-            const size_t character_position = p - file.begin();
+            const size_t character_position = p - file.data();
             size_t next_pos = character_position + 1u;
 
             if (WITH_ESCAPING && isEscapeCharacter(*p))
@@ -240,7 +238,7 @@ public:
             }
             else if (isPairDelimiter(*p))
             {
-                value.append(file.begin() + pos, file.begin() + character_position);
+                value.append(file.data() + pos, file.data() + character_position);
 
                 return {next_pos, State::FLUSH_PAIR};
             }
@@ -249,7 +247,7 @@ public:
         }
 
         // Reached end of input, consume rest of the file as value and make sure KV pair is produced.
-        value.append(file.begin() + pos, file.end());
+        value.append(file.data() + pos, file.data() + file.size());
         return {file.size(), State::FLUSH_PAIR};
     }
 
@@ -264,7 +262,7 @@ public:
 
         while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_quoted_needles))
         {
-            const size_t character_position = p - file.begin();
+            const size_t character_position = p - file.data();
             size_t next_pos = character_position + 1u;
 
             if (WITH_ESCAPING && isEscapeCharacter(*p))
@@ -282,7 +280,7 @@ public:
             }
             else if (isQuotingCharacter(*p))
             {
-                value.append(file.begin() + pos, file.begin() + character_position);
+                value.append(file.data() + pos, file.data() + character_position);
 
                 return {next_pos, State::FLUSH_PAIR};
             }
@@ -308,9 +306,9 @@ private:
     std::pair<bool, std::size_t> consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, auto & output) const
     {
         std::string escaped_sequence;
-        DB::ReadBufferFromMemory buf(file.begin() + character_pos, file.size() - character_pos);
+        DB::ReadBufferFromMemory buf(file.data() + character_pos, file.size() - character_pos);
 
-        output.append(file.begin() + start_pos, file.begin() + character_pos);
+        output.append(file.data() + start_pos, file.data() + character_pos);
 
         if (DB::parseComplexEscapeSequence(escaped_sequence, buf))
         {
@@ -392,7 +390,7 @@ struct NoEscapingStateHandler : public StateHandlerImpl<false>
 
         void commit()
         {
-            col.insertData(element.begin(), element.size());
+            col.insertData(element.data(), element.size());
             reset();
         }
 

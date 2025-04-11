@@ -26,6 +26,7 @@ public:
 
     MergeTreeReadPool(
         RangesInDataParts && parts_,
+        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
@@ -33,6 +34,7 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const PoolSettings & settings_,
+        const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_);
 
     ~MergeTreeReadPool() override = default;
@@ -64,12 +66,7 @@ public:
         size_t min_concurrency = 1;
 
         /// Constants above is just an example.
-        explicit BackoffSettings(const Settings & settings)
-            : min_read_latency_ms(settings.read_backoff_min_latency_ms.totalMilliseconds()),
-            max_throughput(settings.read_backoff_max_throughput),
-            min_interval_between_events_ms(settings.read_backoff_min_interval_between_events_ms.totalMilliseconds()),
-            min_events(settings.read_backoff_min_events),
-            min_concurrency(settings.read_backoff_min_concurrency) {}
+        explicit BackoffSettings(const Settings & settings);
 
         BackoffSettings() : min_read_latency_ms(0) {}
     };
@@ -78,7 +75,6 @@ private:
     void fillPerThreadInfo(size_t threads, size_t sum_marks);
 
     mutable std::mutex mutex;
-    size_t min_marks_for_concurrent_read = 0;
 
     /// State to track numbers of slow reads.
     struct BackoffState
@@ -91,7 +87,7 @@ private:
     };
 
     const BackoffSettings backoff_settings;
-    BackoffState backoff_state;
+    BackoffState backoff_state TSA_GUARDED_BY(mutex);
 
     struct ThreadTask
     {
@@ -105,8 +101,8 @@ private:
         std::vector<size_t> sum_marks_in_parts;
     };
 
-    std::vector<ThreadTask> threads_tasks;
-    std::set<size_t> remaining_thread_tasks;
+    std::vector<ThreadTask> threads_tasks TSA_GUARDED_BY(mutex);
+    std::set<size_t> remaining_thread_tasks TSA_GUARDED_BY(mutex);
 
     LoggerPtr log = getLogger("MergeTreeReadPool");
 };

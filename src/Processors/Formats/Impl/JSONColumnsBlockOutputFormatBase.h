@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Formats/FormatSettings.h>
-#include <IO/WriteBuffer.h>
+#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 
 
 namespace DB
 {
 
+class Block;
 class WriteBuffer;
 
 /// Base class for Columnar JSON output formats.
@@ -23,6 +22,7 @@ public:
 protected:
     void consume(Chunk chunk) override;
     void writeSuffix() override;
+    void resetFormatterImpl() override;
 
     void writeChunk(Chunk & chunk);
     void writeColumn(const IColumn & column, const ISerialization & serialization);

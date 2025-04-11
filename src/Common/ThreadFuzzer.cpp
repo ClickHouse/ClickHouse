@@ -1,4 +1,4 @@
-// NOLINTBEGIN(readability-inconsistent-declaration-parameter-name)
+// NOLINTBEGIN(readability-inconsistent-declaration-parameter-name,readability-else-after-return)
 
 #include <csignal>
 #include <sys/time.h>
@@ -12,13 +12,14 @@
 #include <base/sleep.h>
 
 #include <IO/ReadHelpers.h>
-#include <Common/logger_useful.h>
 
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadFuzzer.h>
+#include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
-#include <Common/ThreadFuzzer.h>
 #include "config.h" // USE_JEMALLOC
 
 
@@ -449,4 +450,4 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_INTERNAL_SYMBOLS)
 #endif
 }
 
-// NOLINTEND(readability-inconsistent-declaration-parameter-name)
+// NOLINTEND(readability-inconsistent-declaration-parameter-name,readability-else-after-return)

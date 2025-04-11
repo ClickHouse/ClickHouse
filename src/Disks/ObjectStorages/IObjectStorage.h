@@ -28,12 +28,18 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
-#include <Common/MultiVersion.h>
-#include <azure/storage/blobs.hpp>
+namespace DB::AzureBlobStorage
+{
+class ContainerClientWrapper;
+using ContainerClient = ContainerClientWrapper;
+}
 #endif
 
 #if USE_AWS_S3
-#include <IO/S3/Client.h>
+namespace DB::S3
+{
+class Client;
+}
 #endif
 
 namespace DB
@@ -54,6 +60,7 @@ struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
     Poco::Timestamp last_modified;
+    std::string etag;
     ObjectAttributes attributes;
 };
 
@@ -75,6 +82,7 @@ struct RelativePathWithMetadata
     virtual std::string getPath() const { return relative_path; }
     virtual bool isArchive() const { return false; }
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
 };
 
 struct ObjectKeyWithMetadata
@@ -127,8 +135,10 @@ public:
     /// /, /a, /a/b, /a/b/c, /a/b/c/d while exists will return true only for /a/b/c/d
     virtual bool existsOrHasAnyChild(const std::string & path) const;
 
+    /// List objects recursively by certain prefix.
     virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const;
 
+    /// List objects recursively by certain prefix. Use it instead of listObjects, if you want to list objects lazily.
     virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const;
 
     /// Get object metadata if supported. It should be possible to receive
@@ -142,14 +152,7 @@ public:
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const = 0;
-
-    /// Read multiple objects with common prefix
-    virtual std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
-        const ReadSettings & read_settings = ReadSettings{},
+        const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
@@ -162,13 +165,6 @@ public:
         const WriteSettings & write_settings = {}) = 0;
 
     virtual bool isRemote() const = 0;
-
-    /// Remove object. Throws exception if object doesn't exists.
-    virtual void removeObject(const StoredObject & object) = 0;
-
-    /// Remove multiple objects. Some object storages can do batch remove in a more
-    /// optimal way.
-    virtual void removeObjects(const StoredObjects & objects) = 0;
 
     /// Remove object on path if exists
     virtual void removeObjectIfExists(const StoredObject & object) = 0;
@@ -229,13 +225,18 @@ public:
 
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
-    virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path) const = 0;
+    virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const = 0;
 
     /// Object key prefix for local paths in the directory 'path'.
-    virtual ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & /* path */) const
+    virtual ObjectStorageKey
+    generateObjectKeyPrefixForDirectoryPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'generateObjectKeyPrefixForDirectoryPath' is not implemented");
     }
+
+    /// Returns whether this object storage generates a random blob name for each object.
+    /// This function returns false if this object storage just adds some constant string to a passed path to generate a blob name.
+    virtual bool areObjectKeysRandom() const = 0;
 
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }
@@ -258,7 +259,7 @@ public:
     virtual void setKeysGenerator(ObjectStorageKeysGeneratorPtr) { }
 
 #if USE_AZURE_BLOB_STORAGE
-    virtual std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient()
+    virtual std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
@@ -269,6 +270,7 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for S3ObjectStorage");
     }
+    virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
 
 

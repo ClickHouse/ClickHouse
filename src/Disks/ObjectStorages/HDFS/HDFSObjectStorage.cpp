@@ -4,8 +4,8 @@
 #include <Storages/ObjectStorage/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 
-#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 
@@ -32,8 +32,7 @@ void HDFSObjectStorage::initializeHDFSFS() const
     if (initialized)
         return;
 
-    hdfs_builder = createHDFSBuilder(url, config);
-    hdfs_fs = createHDFSFS(hdfs_builder.get());
+    hdfs_fs = createHDFSFS(builder.get());
     initialized = true;
 }
 
@@ -49,11 +48,12 @@ std::string HDFSObjectStorage::extractObjectKeyFromURL(const StoredObject & obje
     if (path.starts_with(url))
         path = path.substr(url.size());
     if (path.starts_with("/"))
-        path.substr(1);
+        path = path.substr(1);
     return path;
 }
 
-ObjectStorageKey HDFSObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
+ObjectStorageKey
+HDFSObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
 {
     initializeHDFSFS();
     /// what ever data_source_description.description value is, consider that key as relative key
@@ -69,7 +69,7 @@ bool HDFSObjectStorage::exists(const StoredObject & object) const
     if (path.starts_with(url_without_path))
         path = path.substr(url_without_path.size());
 
-    return (0 == hdfsExists(hdfs_fs.get(), path.c_str()));
+    return (0 == wrapErr<int>(hdfsExists, hdfs_fs.get(), path.c_str()));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
@@ -81,28 +81,12 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
     initializeHDFSFS();
     auto path = extractObjectKeyFromURL(object);
     return std::make_unique<ReadBufferFromHDFS>(
-        fs::path(url_without_path) / "", fs::path(data_directory) / path, config, patchSettings(read_settings));
-}
-
-std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLINT
-    const StoredObjects & objects,
-    const ReadSettings & read_settings,
-    std::optional<size_t>,
-    std::optional<size_t>) const
-{
-    initializeHDFSFS();
-    auto disk_read_settings = patchSettings(read_settings);
-    auto read_buffer_creator =
-        [this, disk_read_settings]
-        (bool /* restricted_seek */, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        auto path = extractObjectKeyFromURL(object_);
-        return std::make_unique<ReadBufferFromHDFS>(
-            fs::path(url_without_path) / "", fs::path(data_directory) / path, config, disk_read_settings, /* read_until_position */0, /* use_external_buffer */true);
-    };
-
-    return std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator), objects, "hdfs:", disk_read_settings, nullptr, /* use_external_buffer */false);
+        fs::path(url_without_path) / "",
+        fs::path(data_directory) / path,
+        config,
+        patchSettings(read_settings),
+        /* read_until_position */0,
+        read_settings.remote_read_buffer_use_external_buffer);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT
@@ -118,15 +102,15 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
             ErrorCodes::UNSUPPORTED_METHOD,
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
-    std::string path = object.remote_path;
-    if (path.starts_with("/"))
-        path = path.substr(1);
-    if (!path.starts_with(url))
-        path = fs::path(url) / path;
-
+    auto path = extractObjectKeyFromURL(object);
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     return std::make_unique<WriteBufferFromHDFS>(
-        path, config, settings->replication, patchSettings(write_settings), buf_size,
+        url_without_path,
+        fs::path(data_directory) / path,
+        config,
+        settings->replication,
+        patchSettings(write_settings),
+        buf_size,
         mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
 }
 
@@ -140,7 +124,7 @@ void HDFSObjectStorage::removeObject(const StoredObject & object)
         path = path.substr(url_without_path.size());
 
     /// Add path from root to file name
-    int res = hdfsDelete(hdfs_fs.get(), path.c_str(), 0);
+    int res = wrapErr<int>(hdfsDelete, hdfs_fs.get(), path.c_str(), 0);
     if (res == -1)
         throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
 
@@ -170,7 +154,7 @@ void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) const
 {
     initializeHDFSFS();
-    auto * file_info = hdfsGetPathInfo(hdfs_fs.get(), path.data());
+    auto * file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
     if (!file_info)
         throw Exception(ErrorCodes::HDFS_ERROR,
                         "Cannot get file info for: {}. Error: {}", path, hdfsGetLastError());
@@ -189,14 +173,17 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
     LOG_TEST(log, "Trying to list files for {}", path);
 
     HDFSFileInfo ls;
-    ls.file_info = hdfsListDirectory(hdfs_fs.get(), path.data(), &ls.length);
+    ls.file_info = wrapErr<hdfsFileInfo *>(hdfsListDirectory, hdfs_fs.get(), path.data(), &ls.length);
 
     if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
     {
         // ignore file not found exception, keep throw other exception,
         // libhdfs3 doesn't have function to get exception type, so use errno.
-        throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}",
+        if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
+        {
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}",
                         path, String(hdfsGetLastError()));
+        }
     }
 
     if (!ls.file_info && ls.length > 0)
@@ -221,6 +208,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
                 ObjectMetadata{
                     static_cast<uint64_t>(ls.file_info[i].mSize),
                     Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
+                    "",
                     {}}));
         }
 

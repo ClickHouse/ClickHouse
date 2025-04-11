@@ -6,7 +6,7 @@
 #   include <Processors/Formats/IRowInputFormat.h>
 #   include <Processors/Formats/ISchemaReader.h>
 #   include <Formats/FormatSchemaInfo.h>
-#   include <google/protobuf/descriptor.h>
+#   include <Formats/ProtobufSchemas.h>
 
 namespace DB
 {
@@ -55,9 +55,9 @@ private:
 
     std::unique_ptr<ProtobufReader> reader;
     std::vector<size_t> missing_column_indices;
+    const ProtobufSchemas::DescriptorHolder descriptor;
     std::unique_ptr<ProtobufSerializer> serializer;
 
-    const google::protobuf::Descriptor * message_descriptor;
     bool with_length_delimiter;
     bool flatten_google_wrappers;
 };
