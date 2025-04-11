@@ -391,8 +391,6 @@ bool matchesLikePattern(const String & haystack,
     /// Converts LIKE pattern (with % and _) to a RE2 pattern
     String regex_str = likePatternToRegexp(like_pattern);
 
-    LOG_TRACE(getLogger("TRUNCATING"), "regex_str: {}", regex_str);
-
     /// Sets up RE2 with case insensitivity if needed
     RE2::Options options;
     options.set_log_errors(false);
