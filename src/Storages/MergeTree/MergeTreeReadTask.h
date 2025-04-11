@@ -72,8 +72,6 @@ struct MergeTreeReadTaskInfo
     AlterConversionsPtr alter_conversions;
     /// `_part_offset` mapping used to merge projections with `_part_offset`.
     MergedPartOffsetsPtr merged_part_offsets;
-    /// Accumulated `_part_offset` from previous parts in the current reading part vector.
-    size_t starting_offset;
     /// Prewhere steps that should be applied to execute on-fly mutations for part.
     PrewhereExprSteps mutation_steps;
     /// Column names to read during PREWHERE and WHERE
