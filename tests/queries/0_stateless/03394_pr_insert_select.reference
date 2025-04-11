@@ -1,6 +1,16 @@
+-- testing MT
+mt source table count()	10000000
+-- check result without local pipeline
 4
 10000000
+-- check result with local pipeline
+3
 10000000
+-- testing RMT
+rmt source table count()	10000000
+-- check result without local pipeline
 4
 10000000
+-- check result with local pipeline
+3
 10000000
