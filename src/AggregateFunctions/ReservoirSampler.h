@@ -163,7 +163,7 @@ public:
             throw Poco::Exception("Cannot merge ReservoirSampler's with different sample_count");
 
         // There will be an aliasing issue if we merge the same object with itself. I.e. we will insert from `b.samples` into `a.samples`,
-        // but both refer to the same array. It might happen in case of multiplying an aggregate function state by a numberic constant.
+        // but both refer to the same array. It might happen in case of multiplying an aggregate function state by a numeric constant.
         // ATST, it seems that self-merging cannot improve accuracy, so there is no point to do it anyway.
         if (this == &b)
             return;
