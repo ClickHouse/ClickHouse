@@ -1356,7 +1356,7 @@ static String getOldALias(const ASTPtr & input)
     }
     else
     {
-        chassert(0);
+        chassert(false);
         return "";
     }
 }
@@ -1417,7 +1417,7 @@ ASTPtr QueryFuzzer::addJoinClause()
             }
             else
             {
-                chassert(0);
+                chassert(false);
             }
         }
         else
