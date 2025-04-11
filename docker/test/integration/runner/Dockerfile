@@ -1,5 +1,6 @@
 # docker build -t clickhouse/integration-tests-runner .
-FROM ubuntu:22.04
+ARG FROM_TAG=latest
+FROM clickhouse/test-util:$FROM_TAG
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
@@ -26,6 +27,7 @@ RUN apt-get update \
     libicu-dev \
     bsdutils \
     curl \
+    openssh-client \
     liblua5.1-dev \
     luajit \
     libssl-dev \
@@ -85,7 +87,7 @@ COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY misc/ /misc/
 
-COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:13cfebfd8f1bbc65ab49 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
 # Same options as in test/base/Dockerfile

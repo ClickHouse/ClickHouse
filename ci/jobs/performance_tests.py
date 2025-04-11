@@ -1,4 +1,5 @@
 import argparse
+import csv
 import os
 import re
 import subprocess
@@ -6,17 +7,15 @@ import time
 import traceback
 from pathlib import Path
 
-from praktika.result import Result
-from praktika.utils import MetaClasses, Shell, Utils
-
-from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.info import Info
+from ci.praktika.result import Result
+from ci.praktika.utils import MetaClasses, Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp/"
+temp_dir = f"{Utils.cwd()}/ci/tmp"
 perf_wd = f"{temp_dir}/perf_wd"
-db_path = f"{perf_wd}/db0/"
-perf_right = f"{perf_wd}/right/"
-perf_left = f"{perf_wd}/left/"
+db_path = f"{perf_wd}/db0"
+perf_right = f"{perf_wd}/right"
+perf_left = f"{perf_wd}/left"
 perf_right_config = f"{perf_right}/config"
 perf_left_config = f"{perf_left}/config"
 
@@ -99,12 +98,8 @@ class CHServer:
         else:
             print(f"ClickHouse server NOT ready")
 
-        res = res and Shell.check(
-            f"clickhouse-client --port {self.port} --query 'create database IF NOT EXISTS test'",
-            verbose=True,
-        )
-        res = res and Shell.check(
-            f"clickhouse-client --port {self.port} --query 'rename table datasets.hits_v1 to test.hits'",
+        Shell.check(
+            f"clickhouse-client --port {self.port} --query 'create database IF NOT EXISTS test' && clickhouse-client --port {self.port} --query 'rename table datasets.hits_v1 to test.hits'",
             verbose=True,
         )
         return res
@@ -248,7 +243,7 @@ def main():
         compare_against_master or compare_against_release
     ), "test option: head_master or prev_release must be selected"
 
-    release_version = CHVersion.get_release_version_as_dict()
+    # release_version = CHVersion.get_release_version_as_dict()
     info = Info()
 
     if Utils.is_arm():
@@ -308,8 +303,6 @@ def main():
     res = True
     results = []
 
-    # Shell.check(f"rm -rf {perf_wd} && mkdir -p {perf_wd}")
-
     # add right CH location to PATH
     Utils.add_to_PATH(perf_right)
     # TODO:
@@ -347,11 +340,6 @@ def main():
     if res and JobStages.INSTALL_CLICKHOUSE_REFERENCE in stages:
         print("Install Reference")
         if not Path(f"{perf_left}/.done").is_file():
-            # TODO: use config from the same sha as reference CH binary
-            # git checkout left_sha
-            # rm -rf /tmp/praktika/left && mkdir -p /tmp/praktika/left
-            # cp -r ./tests/config /tmp/praktika/left/config
-            # git checkout -
             commands = [
                 f"mkdir -p {perf_left_config}",
                 f"wget -nv -P {perf_left}/ {link_for_ref_ch}",
@@ -375,7 +363,6 @@ def main():
 
         if not Path(f"{db_path}/.done").is_file():
             Shell.check(f"mkdir -p {db_path}", verbose=True)
-            datasets = ["hits1", "hits10", "hits100", "values"]
             dataset_paths = {
                 "hits10": "https://clickhouse-private-datasets.s3.amazonaws.com/hits_10m_single/partitions/hits_10m_single.tar",
                 "hits100": "https://clickhouse-private-datasets.s3.amazonaws.com/hits_100m_single/partitions/hits_100m_single.tar",
@@ -429,8 +416,8 @@ def main():
             f"rm -r {db_path}/data/system",
             f"rm -r {db_path}/metadata/system",
             f"rm -rf {db_path}/status",
-            f"cp -al {db_path} {perf_left}/db",
-            f"cp -al {db_path} {perf_right}/db",
+            f"cp -al {db_path} {perf_left}/db ||:",
+            f"cp -al {db_path} {perf_right}/db ||:",
             f"cp -R {temp_dir}/coordination0 {perf_left}/coordination",
             f"cp -R {temp_dir}/coordination0 {perf_right}/coordination",
         ]
@@ -481,10 +468,12 @@ def main():
             results[-1].set_files(logs)
 
     if res and JobStages.TEST in stages:
-        print("Run Tests")
+        print("Tests")
         test_files = [
             file for file in os.listdir("./tests/performance/") if file.endswith(".xml")
         ]
+        # TODO: in PRs filter test files against changed files list if only tests has been changed
+        # changed_files = info.get_custom_data("changed_files")
         if test_keyword:
             test_files = [file for file in test_files if test_keyword in file]
         else:
@@ -518,10 +507,19 @@ def main():
 
         Shell.check(f"{perf_left}/clickhouse --version  > {perf_wd}/left-commit.txt")
         Shell.check(f"git log -1 HEAD > {perf_wd}/right-commit.txt")
+        os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX"] = (
+            Utils.normalize_string(info.job_name)
+        )
+        os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME"] = info.job_name
+        os.environ["CHPC_CHECK_START_TIMESTAMP"] = str(int(Utils.timestamp()))
 
         commands = [
-            f"stage=get_profiles {script_path}",
+            f"PR_TO_TEST={info.pr_number} "
+            f"SHA_TO_TEST={info.sha} "
+            "stage=get_profiles "
+            f"{script_path}",
         ]
+
         results.append(
             Result.from_commands_run(
                 name="Report",
@@ -530,6 +528,29 @@ def main():
                 workdir=perf_wd,
             )
         )
+
+        if Path(f"{perf_wd}/ci-checks.tsv").is_file():
+            # insert test cases result generated by legacy script as tsv file into praktika Result object - so that they are written into DB later
+            test_results = []
+            with open(f"{perf_wd}/ci-checks.tsv", "r", encoding="utf-8") as f:
+                header = next(f).strip().split("\t")  # Read actual column headers
+                next(f)  # Skip type line (e.g. UInt32, String...)
+                reader = csv.DictReader(f, delimiter="\t", fieldnames=header)
+                for row in reader:
+                    if not row["test_name"]:
+                        continue
+                    test_results.append(
+                        Result(
+                            name=row["test_name"],
+                            status=row["test_status"],
+                            duration=float(row["test_duration_ms"]) / 1000,
+                        )
+                    )
+            # results[-2] is a previuos subtask
+            results[-2].results = test_results
+        else:
+            print("WARNING: compare.sh did not generate ci-checks.tsv file")
+
         res = results[-1].is_ok()
 
     # TODO: code to fetch status was taken from old script as is - status is to be correctly set in Test stage and this stage is to be removed!
@@ -577,17 +598,6 @@ def main():
             )
         )
 
-    # Shell.check("find /tmp/praktika -type f")
-
-    # Stop the servers to free memory. Normally they are restarted before getting
-    # the profile info, so they shouldn't use much, but if the comparison script
-    # fails in the middle, this might not be the case.
-    # for _ in {1..30}
-    # do
-    # pkill clickhouse || break
-    # sleep 1
-    # done
-
     # dmesg -T > dmesg.log
     #
     # ls -lath
@@ -611,7 +621,7 @@ def main():
     # attach all logs with errors
     Shell.check(f"rm -f {perf_wd}/logs.tar.zst")
     Shell.check(
-        f'find {perf_wd} -type f \( -name "*err*.log" -o -name "*err*.tsv" \) -print0 | tar --null -T - -cf - | zstd -o {perf_wd}/logs.tar.zst',
+        f'cd {perf_wd} && find . -type f \( -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" \) ! -path "*/db/*" !  -path "*/db0/*" -print0 | tar --null -T - -cf - | zstd -o ./logs.tar.zst',
         verbose=True,
     )
     if Path(f"{perf_wd}/logs.tar.zst").is_file():
@@ -619,7 +629,7 @@ def main():
 
     Result.create_from(
         results=results, stopwatch=stop_watch, files=files_to_attach, info=message
-    ).add_job_summary_to_info(with_local_run_command=True).complete_job()
+    ).complete_job()
 
 
 if __name__ == "__main__":

@@ -57,7 +57,7 @@ namespace ErrorCodes
     for this setting.
     )", 0) \
     DECLARE(UInt64, max_compress_block_size, 0, R"(
-    Maximum size of blocks of uncompressed data before compressing for writing
+    The maximum size of blocks of uncompressed data before compressing for writing
     to a table. You can also specify this setting in the global settings
     (see [max_compress_block_size](/operations/settings/merge-tree-settings#max_compress_block_size)
     setting). The value specified when the table is created overrides the global
@@ -1329,6 +1329,15 @@ namespace ErrorCodes
     The maximum postpone time for failed mutations.
     )", 0) \
     \
+    DECLARE(UInt64, max_postpone_time_for_failed_replicated_fetches_ms, 1ULL * 60 * 1000, R"(
+    The maximum postpone time for failed replicated fetches.
+    )", 0) \
+    DECLARE(UInt64, max_postpone_time_for_failed_replicated_merges_ms, 1ULL * 60 * 1000, R"(
+    The maximum postpone time for failed replicated merges.
+    )", 0) \
+    DECLARE(UInt64, max_postpone_time_for_failed_replicated_tasks_ms, 5ULL * 60 * 1000, R"(
+    The maximum postpone time for failed replicated task. The value is used if the task is not a fetch, merge or mutation.
+    )", 0) \
     /** Compatibility settings */ \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
     Reject primary/secondary indexes and sorting keys with identical expressions
@@ -1448,7 +1457,7 @@ namespace ErrorCodes
     Possible values:
     - Any positive integer.
 
-    You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max_partitions_to_read)
+    You can also specify a query complexity setting [max_partitions_to_read](/operations/settings/settings#max_partitions_to_read)
     at a query / session / profile level.
     )", 0) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
@@ -1570,6 +1579,10 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all string columns of
     the table.
+    )", 0) \
+    DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
+    When enabled, allows summing columns in a SummingMergeTree table to be used in
+    the partition or sorting key.
     )", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
