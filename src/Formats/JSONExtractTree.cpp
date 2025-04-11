@@ -59,7 +59,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int INCORRECT_DATA;
 }
 
 template <typename JSONParser>
@@ -1467,11 +1466,11 @@ public:
         auto element_type = removeNullable(elementToDataType(element, format_settings));
         if (!checkIfTypeIsComplete(element_type))
         {
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
+            error = fmt::format(
                 "Cannot infer the type of JSON element {}, because it contains only nulls. To use String type for elements with incomplete "
                 "type, enable setting input_format_json_infer_incomplete_types_as_strings",
                 jsonElementToString<JSONParser>(element, format_settings));
+            return false;
         }
 
         auto element_type_name = element_type->getName();
