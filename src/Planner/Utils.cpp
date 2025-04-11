@@ -494,7 +494,8 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
 
     ActionsDAG filter_actions_dag;
 
-    PlannerActionsVisitor actions_visitor(planner_context, /*correlated_columns_set_=*/{}, false /*use_column_identifier_as_action_node_name*/);
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
     auto [expression_nodes, correlated_subtrees] = actions_visitor.visit(filter_actions_dag, filter_query_tree);
     correlated_subtrees.assertEmpty("in row-policy and additional table filters");
     if (expression_nodes.size() != 1)

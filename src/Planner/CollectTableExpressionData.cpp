@@ -117,7 +117,8 @@ public:
                 auto column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(node);
 
                 ActionsDAG alias_column_actions_dag;
-                PlannerActionsVisitor actions_visitor(planner_context, /*correlated_columns_set_=*/{}, false);
+                ColumnNodePtrWithHashSet empty_correlated_columns_set;
+                PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false);
                 auto [outputs, correlated_subtrees] = actions_visitor.visit(alias_column_actions_dag, column_node->getExpression());
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
