@@ -1383,11 +1383,11 @@ jobs:
             python3 -m praktika run 'Compatibility check (aarch64)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_asan_1_2:
+  stateless_tests_asan_distributed_plan_1_2:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhc2FuLCAxLzIp') }}
-    name: "Stateless tests (asan, 1/2)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhc2FuLCBkaXN0cmlidXRlZCBwbGFuLCAxLzIp') }}
+    name: "Stateless tests (asan, distributed plan, 1/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1416,16 +1416,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (asan, 1/2)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (asan, distributed plan, 1/2)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (asan, 1/2)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (asan, distributed plan, 1/2)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_asan_2_2:
+  stateless_tests_asan_distributed_plan_2_2:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhc2FuLCAyLzIp') }}
-    name: "Stateless tests (asan, 2/2)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhc2FuLCBkaXN0cmlidXRlZCBwbGFuLCAyLzIp') }}
+    name: "Stateless tests (asan, distributed plan, 2/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1454,9 +1454,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (asan, 2/2)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (asan, distributed plan, 2/2)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (asan, 2/2)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (asan, distributed plan, 2/2)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   stateless_tests_release:
@@ -1953,11 +1953,11 @@ jobs:
             python3 -m praktika run 'Stateless tests (ubsan)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_debug_s3_storage:
+  stateless_tests_debug_distributed_plan_s3_storage:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_debug]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChkZWJ1ZywgczMgc3RvcmFnZSk=') }}
-    name: "Stateless tests (debug, s3 storage)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChkZWJ1ZywgZGlzdHJpYnV0ZWQgcGxhbiwgczMgc3RvcmFnZSk=') }}
+    name: "Stateless tests (debug, distributed plan, s3 storage)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1986,9 +1986,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (debug, s3 storage)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (debug, distributed plan, s3 storage)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (debug, s3 storage)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (debug, distributed plan, s3 storage)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   stateless_tests_tsan_s3_storage_1_3:
@@ -2637,11 +2637,11 @@ jobs:
             python3 -m praktika run 'Integration tests (release, 4/4)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_aarch64_1_4:
+  integration_tests_aarch64_distributed_plan_1_4:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIDEvNCk=') }}
-    name: "Integration tests (aarch64, 1/4)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIGRpc3RyaWJ1dGVkIHBsYW4sIDEvNCk=') }}
+    name: "Integration tests (aarch64, distributed plan, 1/4)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2670,16 +2670,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (aarch64, 1/4)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (aarch64, distributed plan, 1/4)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (aarch64, 1/4)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (aarch64, distributed plan, 1/4)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_aarch64_2_4:
+  integration_tests_aarch64_distributed_plan_2_4:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIDIvNCk=') }}
-    name: "Integration tests (aarch64, 2/4)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIGRpc3RyaWJ1dGVkIHBsYW4sIDIvNCk=') }}
+    name: "Integration tests (aarch64, distributed plan, 2/4)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2708,16 +2708,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (aarch64, 2/4)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (aarch64, distributed plan, 2/4)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (aarch64, 2/4)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (aarch64, distributed plan, 2/4)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_aarch64_3_4:
+  integration_tests_aarch64_distributed_plan_3_4:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIDMvNCk=') }}
-    name: "Integration tests (aarch64, 3/4)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIGRpc3RyaWJ1dGVkIHBsYW4sIDMvNCk=') }}
+    name: "Integration tests (aarch64, distributed plan, 3/4)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2746,16 +2746,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (aarch64, 3/4)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (aarch64, distributed plan, 3/4)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (aarch64, 3/4)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (aarch64, distributed plan, 3/4)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_aarch64_4_4:
+  integration_tests_aarch64_distributed_plan_4_4:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd_and_merge, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIDQvNCk=') }}
-    name: "Integration tests (aarch64, 4/4)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIGRpc3RyaWJ1dGVkIHBsYW4sIDQvNCk=') }}
+    name: "Integration tests (aarch64, distributed plan, 4/4)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2784,9 +2784,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (aarch64, 4/4)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (aarch64, distributed plan, 4/4)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (aarch64, 4/4)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (aarch64, distributed plan, 4/4)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   integration_tests_tsan_1_6:
@@ -3019,7 +3019,7 @@ jobs:
 
   stateless_tests_coverage_1_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_1_2, stateless_tests_asan_2_2]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgMS82KQ==') }}
     name: "Stateless tests (coverage, 1/6)"
     outputs:
@@ -3057,7 +3057,7 @@ jobs:
 
   stateless_tests_coverage_2_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_1_2, stateless_tests_asan_2_2]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgMi82KQ==') }}
     name: "Stateless tests (coverage, 2/6)"
     outputs:
@@ -3095,7 +3095,7 @@ jobs:
 
   stateless_tests_coverage_3_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_1_2, stateless_tests_asan_2_2]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgMy82KQ==') }}
     name: "Stateless tests (coverage, 3/6)"
     outputs:
@@ -3133,7 +3133,7 @@ jobs:
 
   stateless_tests_coverage_4_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_1_2, stateless_tests_asan_2_2]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgNC82KQ==') }}
     name: "Stateless tests (coverage, 4/6)"
     outputs:
@@ -3171,7 +3171,7 @@ jobs:
 
   stateless_tests_coverage_5_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_1_2, stateless_tests_asan_2_2]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgNS82KQ==') }}
     name: "Stateless tests (coverage, 5/6)"
     outputs:
@@ -3209,7 +3209,7 @@ jobs:
 
   stateless_tests_coverage_6_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_1_2, stateless_tests_asan_2_2]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgNi82KQ==') }}
     name: "Stateless tests (coverage, 6/6)"
     outputs:

@@ -5,8 +5,10 @@
 #include <Planner/PlannerActionsVisitor.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -103,7 +105,7 @@ static void addConvertingActions(Pipe & pipe, const Block & header, bool use_pos
     });
 }
 
-static void enableMemoryBoundMerging(QueryProcessingStage::Enum stage, Context & context)
+static void enableMemoryBoundMerging(QueryProcessingStage::Enum stage, const ClusterProxy::SelectStreamFactory::Shards * shards, Context & context)
 {
     if (stage != QueryProcessingStage::WithMergeableState)
         throw Exception(
@@ -112,9 +114,30 @@ static void enableMemoryBoundMerging(QueryProcessingStage::Enum stage, Context &
             QueryProcessingStage::toString(stage));
 
     context.setSetting("enable_memory_bound_merging_of_aggregation_results", true);
+
+    if (!shards)
+        return;
+
+    for (const auto & shard : *shards)
+    {
+        if (!shard.query_plan)
+            continue;
+
+        auto * aggregating_step = typeid_cast<AggregatingStep *>(shard.query_plan->getRootNode()->step.get());
+        if (!aggregating_step)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot enable memory bound merging because the last step of remote plan is not Aggregating ({})",
+                shard.query_plan->getRootNode()->step->getName());
+
+        aggregating_step->enableMemoryBoundMerging();
+    }
 }
 
-static void enforceAggregationInOrder(QueryProcessingStage::Enum stage, Context & context)
+static void enforceAggregationInOrder(
+    QueryProcessingStage::Enum stage,
+    const ClusterProxy::SelectStreamFactory::Shards * shards,
+    const SortDescription & sort_description,
+    Context & context)
 {
     if (stage != QueryProcessingStage::WithMergeableState)
         throw Exception(
@@ -124,6 +147,19 @@ static void enforceAggregationInOrder(QueryProcessingStage::Enum stage, Context 
 
     context.setSetting("optimize_aggregation_in_order", true);
     context.setSetting("force_aggregation_in_order", true);
+
+    if (!shards)
+        return;
+
+    for (const auto & shard : *shards)
+    {
+        if (!shard.query_plan)
+            continue;
+
+        auto sorting = std::make_unique<SortingStep>(shard.query_plan->getCurrentHeader(), sort_description, 0, SortingStep::Settings(context.getSettingsRef()));
+        sorting->setStepDescription("Enforce aggregation in order");
+        shard.query_plan->addStep(std::move(sorting));
+    }
 }
 
 static String formattedAST(const ASTPtr & ast)
@@ -170,12 +206,12 @@ ReadFromRemote::ReadFromRemote(
 
 void ReadFromRemote::enableMemoryBoundMerging()
 {
-    DB::enableMemoryBoundMerging(stage, *context);
+    DB::enableMemoryBoundMerging(stage, &shards, *context);
 }
 
-void ReadFromRemote::enforceAggregationInOrder()
+void ReadFromRemote::enforceAggregationInOrder(const SortDescription & sort_description)
 {
-    DB::enforceAggregationInOrder(stage, *context);
+    DB::enforceAggregationInOrder(stage, &shards, sort_description, *context);
 }
 
 ASTSelectQuery & getSelectQuery(ASTPtr ast)
@@ -540,11 +576,12 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         if (pushed_down_filters)
             addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters);
         String query_string = formattedAST(query);
+        auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
 
         my_scalars["_shard_num"] = Block{
             {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, my_stage);
+            std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use, my_shard.query_plan);
 
         auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
         QueryPipelineBuilder builder;
@@ -616,6 +653,8 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
             GetPriorityForLoadBalancing::Func priority_func
                 = priority_func_factory->getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, shard.shard_info.pool->getPoolSize());
 
+            auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
+
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 shard.shard_info.pool,
                 query_string,
@@ -624,7 +663,8 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
                 throttler,
                 scalars,
                 external_tables,
-                stage,
+                stage_to_use,
+                shard.query_plan,
                 std::nullopt,
                 priority_func);
             remote_query_executor->setLogger(log);
@@ -644,9 +684,10 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
             addFilters(&external_tables, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
 
         const String query_string = formattedAST(shard.query);
+        auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard.shard_info.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage);
+            shard.shard_info.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage_to_use, shard.query_plan);
         remote_query_executor->setLogger(log);
 
         if (context->canUseTaskBasedParallelReplicas())
@@ -737,16 +778,34 @@ static void formatExplain(IQueryPlanStep::FormatSettings & settings, Pipes pipes
 void ReadFromRemote::describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options)
 {
     Block header{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}};
-    ClusterProxy::SelectStreamFactory::Shards used_shards = shards;
+    ClusterProxy::SelectStreamFactory::Shards used_shards;
 
-    for (auto & shard : used_shards)
+    for (const auto & shard : shards)
     {
-        shard.header = header;
-        shard.query = makeExplain(options, shard.query);
+        if (shard.query_plan)
+        {
+            shard.query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.indent, 1) + 1);
+        }
+        else
+        {
+            auto & shard_copy = used_shards.emplace_back(shard);
+            shard_copy.header = header;
+            shard_copy.query = makeExplain(options, shard.query);
+        }
     }
 
     formatExplain(settings, addPipes(used_shards, header));
 }
+
+bool ReadFromRemote::hasSerializedPlan() const
+{
+    for (const auto & shard : shards)
+        if (shard.query_plan)
+            return true;
+
+    return false;
+}
+
 
 ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     ASTPtr query_ast_,
@@ -799,12 +858,12 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
 
 void ReadFromParallelRemoteReplicasStep::enableMemoryBoundMerging()
 {
-    DB::enableMemoryBoundMerging(stage, *context);
+    DB::enableMemoryBoundMerging(stage, nullptr, *context);
 }
 
-void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder()
+void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDescription & sort_description)
 {
-    DB::enforceAggregationInOrder(stage, *context);
+    DB::enforceAggregationInOrder(stage, nullptr, sort_description, *context);
 }
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
