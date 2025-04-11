@@ -118,6 +118,8 @@ public:
         STOP_REDUCE_BLOCKING_PARTS,
         START_REDUCE_BLOCKING_PARTS,
         UNLOCK_SNAPSHOT,
+        INSTRUMENT_ADD,
+        INSTRUMENT_REMOVE,
         END
     };
 
@@ -171,6 +173,11 @@ public:
     Strings logs;
 
     ServerType server_type;
+
+    // For SYSTEM INSTRUMENT ADD/REMOVE
+    String handler;
+    String function;
+    std::vector<String> parameters;
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
     /// Unix time.
