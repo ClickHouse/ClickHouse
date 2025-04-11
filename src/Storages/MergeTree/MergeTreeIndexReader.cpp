@@ -99,7 +99,7 @@ void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
             stream->seekToMark(mark);
 
         auto res = index->createIndexGranule();
-        granule->deserializeBinary(*stream->getDataBuffer(), version);
+        res->deserializeBinary(*stream->getDataBuffer(), version);
         stream_mark = mark + 1;
         return res;
     };
