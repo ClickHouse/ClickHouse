@@ -1115,7 +1115,8 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
 
     try
     {
-        processParsedSingleQuery(full_query, full_query, parsed_query, echo_queries);
+        bool is_async_insert_with_inlined_data = false;
+        processParsedSingleQuery(full_query, parsed_query, is_async_insert_with_inlined_data);
     }
     catch (Exception & e)
     {
@@ -2147,12 +2148,10 @@ void ClientBase::cancelQuery()
 }
 
 void ClientBase::processParsedSingleQuery(
-    std::string_view full_query,
-    std::string_view query_to_execute,
+    std::string_view query_,
     ASTPtr parsed_query,
     bool & is_async_insert_with_inlined_data,
-    std::optional<bool> echo_query_,
-    bool report_error)
+    size_t insert_query_without_data_length)
 {
     resetOutput();
     have_error = false;
@@ -2160,13 +2159,6 @@ void ClientBase::processParsedSingleQuery(
     cancelled_printed = false;
     client_exception.reset();
     server_exception.reset();
-
-    if (echo_query_ && *echo_query_)
-    {
-        writeString(full_query, *std_out);
-        writeChar('\n', *std_out);
-        std_out->next();
-    }
 
     if (is_interactive)
     {
@@ -2236,6 +2228,7 @@ void ClientBase::processParsedSingleQuery(
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
+        /// Update async_insert after applying settings from server
         is_async_insert_with_inlined_data = client_context->getSettingsRef()[Setting::async_insert] && insert && insert->hasInlinedData();
 
         if (is_async_insert_with_inlined_data)
@@ -2248,17 +2241,15 @@ void ClientBase::processParsedSingleQuery(
                     "Processing async inserts with both inlined and external data (from stdin or infile) is not supported");
         }
 
+        String query;
         /// An INSERT query may have the data that follows query text.
         /// Send part of the query without data, because data will be sent separately.
         /// But for asynchronous inserts we don't extract data, because it's needed
         /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
-        if (insert && insert->data && !is_async_insert_with_inlined_data)
-        {
-            chassert(full_query.data() <= insert->data && insert->end <= full_query.data() + full_query.size() && "INSERT query points to full_query");
-            query_to_execute = full_query.substr(0, insert->data - full_query.data());
-        }
-
-        String query(query_to_execute.data(), query_to_execute.size());
+        if (insert && insert->data && !is_async_insert_with_inlined_data && insert_query_without_data_length)
+            query = query_.substr(0, insert_query_without_data_length);
+        else
+            query = query_;
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
         if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function))
@@ -2361,9 +2352,6 @@ void ClientBase::processParsedSingleQuery(
     {
         output_stream << "Processed rows: " << processed_rows << "\n";
     }
-
-    if (have_error && report_error)
-        processError(full_query);
 }
 
 
@@ -2591,6 +2579,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 // Save query without trailing comment
                 auto query_to_execute = std::string_view(all_queries_text).substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
+                size_t insert_query_without_data_length = 0;
+                if (const auto * insert = parsed_query->as<ASTInsertQuery>())
+                    insert_query_without_data_length = insert->data - query_to_execute.data();
 
                 // Try to include the trailing comment with test hints. It is just
                 // a guess for now, because we don't yet know where the query ends
@@ -2632,9 +2623,19 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 echo_query = test_hint.echoQueries().value_or(echo_query);
                 bool is_async_insert_with_inlined_data = false;
 
+                if (echo_query)
+                {
+                    writeString(full_query, *std_out);
+                    writeChar('\n', *std_out);
+                    std_out->next();
+                }
+
                 try
                 {
-                    processParsedSingleQuery(full_query, query_to_execute, parsed_query, is_async_insert_with_inlined_data, echo_query, false);
+                    processParsedSingleQuery(query_to_execute,
+                        parsed_query,
+                        is_async_insert_with_inlined_data,
+                        insert_query_without_data_length);
                 }
                 catch (...)
                 {

@@ -132,16 +132,12 @@ protected:
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
 
-    /// @full_query - query including trailing comments, INSERT inline data, used for echo and for handling INSERTs w/o async_insert
-    /// @query_to_execute - query for execution (without trailing comments and inline data), but in case of INSERT w/o async_insert calculated based on the full_query
-    /// @parsed_query should point to the same memory as full_query (in case of INSERT)
     void processParsedSingleQuery(
-        std::string_view full_query,
-        std::string_view query_to_execute,
+        std::string_view query_,
         ASTPtr parsed_query,
         bool & is_async_insert_with_inlined_data,
-        std::optional<bool> echo_query_ = {},
-        bool report_error = false);
+        // to handle INSERT w/o async_insert
+        size_t insert_query_without_data_length = 0);
 
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
     virtual void setupSignalHandler() = 0;
