@@ -90,17 +90,18 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     stream->seekToStart();
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexReader::read(size_t mark)
+void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
 {
-    auto load_func = [&] {
+    auto load_func = [&]
+    {
         initStreamIfNeeded();
         if (stream_mark != mark)
             stream->seekToMark(mark);
 
-        auto granule = index->createIndexGranule();
+        auto res = index->createIndexGranule();
         granule->deserializeBinary(*stream->getDataBuffer(), version);
         stream_mark = mark + 1;
-        return granule;
+        return res;
     };
 
     /// Not all skip indexes are created equal. Vector similarity indexes typically have a high index granularity (e.g. GRANULARITY
@@ -110,23 +111,29 @@ MergeTreeIndexGranulePtr MergeTreeIndexReader::read(size_t mark)
     /// The same cannot be done for other skip indexes. Because their GRANULARITY is small (e.g. 1), the sheer number of skip index granules
     /// would create too much lock contention in the cache (this was learned the hard way).
     if (!index->isVectorSimilarityIndex())
-        return load_func();
+    {
+        granule = load_func();
+    }
     else
     {
         UInt128 key = VectorSimilarityIndexCache::hash(
             part->getDataPartStorage().getFullPath(),
             index->getFileName(),
             mark);
-        return vector_similarity_index_cache->getOrSet(key, load_func);
+        granule = vector_similarity_index_cache->getOrSet(key, load_func);
     }
 }
 
-void MergeTreeIndexReader::read(size_t granule_num, MergeTreeIndexBulkGranulesPtr & granules)
+void MergeTreeIndexReader::read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules)
 {
     if (granules == nullptr)
         granules = index->createIndexBulkGranules();
 
-    granules->deserializeBinary(granule_num, *stream->getDataBuffer(), version);
+    initStreamIfNeeded();
+    if (stream_mark != mark)
+        stream->seekToMark(mark);
+
+    granules->deserializeBinary(current_granule_num, *stream->getDataBuffer(), version);
 }
 
 }

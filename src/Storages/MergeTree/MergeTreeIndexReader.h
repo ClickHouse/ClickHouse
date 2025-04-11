@@ -25,7 +25,7 @@ public:
     void seek(size_t mark);
 
     void read(size_t mark, MergeTreeIndexGranulePtr & granule);
-    void read(size_t mark, MergeTreeIndexBulkGranulesPtr & granules);
+    void read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules);
 
 private:
     MergeTreeIndexPtr index;

@@ -186,7 +186,7 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, 0, rows_to_read, settings, state, nullptr);
     }
 
     /// The last column is designating the granule
@@ -448,7 +448,7 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "ColumnUInt8 is expected as a Set index condition result");
 
-    const auto & condition = col_uint8->getData();
+    const auto & filter_result = col_uint8->getData();
 
     const auto & granule_nums = assert_cast<const ColumnUInt64 &>(*block.getByName("_granule_num").column).getData();
 
@@ -460,7 +460,7 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
             continue;
 
         current_granule_num = granule_nums[i];
-        current_granule_pass = (!null_map || !(*null_map)[i]) && (condition[i] & 1);
+        current_granule_pass = (!null_map || !(*null_map)[i]) && (filter_result[i] & 1);
 
         if (current_granule_pass)
             res.push_back(current_granule_num);

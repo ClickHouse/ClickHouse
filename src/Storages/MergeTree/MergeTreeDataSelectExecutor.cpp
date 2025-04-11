@@ -87,6 +87,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
+    extern const SettingsBool secondary_indices_enable_bulk_filtering;
 }
 
 namespace MergeTreeSetting
@@ -1496,7 +1497,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     }
 
     /// Whether we should use a more optimal filtering.
-    bool bulk_filtering = settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering();
+    bool bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering] && index_helper->supportsBulkFiltering();
 
     auto index_granularity = index_helper->index.granularity;
 
@@ -1534,22 +1535,16 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     {
         MergeTreeIndexBulkGranulesPtr granules;
 
-        size_t last_index_mark = 0;
         size_t current_granule_num = 0;
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
 
-            if (last_index_mark != index_range.begin)
-                reader.seek(index_range.begin);
-
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
-                reader.read(current_granule_num, granules);
+                reader.read(index_mark, current_granule_num, granules);
                 ++current_granule_num;
             }
-
-            last_index_mark = index_range.end - 1;
         }
 
         IMergeTreeIndexCondition::FilteredGranules filtered_granules = condition->getPossibleGranules(granules);
@@ -1601,9 +1596,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
-
-            if (last_index_mark != index_range.begin || !granule)
-                reader.seek(index_range.begin);
 
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
