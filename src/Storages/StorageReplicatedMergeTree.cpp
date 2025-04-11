@@ -5656,9 +5656,6 @@ void StorageReplicatedMergeTree::shutdown(bool)
 
     LOG_TRACE(log, "Shutdown started");
 
-    if (refresh_parts_task)
-        refresh_parts_task->deactivate();
-
     flushAndPrepareForShutdown();
 
     if (!shutdown_deadline.has_value())
