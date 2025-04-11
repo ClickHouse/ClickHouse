@@ -1128,7 +1128,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         this->levels[this->current_level].rels.emplace_back(rel);
         eca->mutable_col_alias()->set_column(ncname);
         this->levels[this->current_level].projections.emplace_back(ncname);
-        eca->set_use_parenthesis(rg.nextMediumNumber() < 11);
+        eca->set_use_parenthesis(rg.nextSmallNumber() < 10);
     }
 }
 
