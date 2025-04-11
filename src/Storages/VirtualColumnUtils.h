@@ -105,6 +105,7 @@ struct VirtualsForFileLikeStorage
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
     const String * etag { nullptr };
+    const std::map<String, String> * tags { nullptr };
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(
