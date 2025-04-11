@@ -130,6 +130,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
         }
         rel.cols.emplace_back(SQLRelationCol("", {ncname}));
         eca->mutable_col_alias()->set_column(ncname);
+        eca->set_use_parenthesis(rg.nextSmallNumber() < 4);
     }
     this->levels[this->current_level].rels.emplace_back(rel);
 }
@@ -1877,6 +1878,7 @@ void StatementGenerator::generateSelect(
                 eca->mutable_col_alias()->set_column(ncname);
                 this->levels[this->current_level].projections.emplace_back(ncname);
             }
+            eca->set_use_parenthesis(rg.nextLargeNumber() < 11);
         }
         this->depth--;
         this->width -= ncols;

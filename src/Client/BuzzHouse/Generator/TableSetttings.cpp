@@ -225,15 +225,6 @@ std::unordered_map<String, CHSetting> cachedLayoutSettings
                     rg.thresholdGenerator<uint32_t>(0.25, 0.25, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
             },
             {},
-            false)},
-       {"SIZE_IN_CELLS",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                return std::to_string(
-                    rg.thresholdGenerator<uint32_t>(0.25, 0.25, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
-            },
-            {},
             false)}};
 
 std::unordered_map<String, CHSetting> ssdCachedLayoutSettings

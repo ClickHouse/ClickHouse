@@ -330,7 +330,7 @@ private:
     void generateNextDescTable(RandomGenerator & rg, DescTable * dt);
     void generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
-    void generateAlterTable(RandomGenerator & rg, AlterTable * at);
+    void generateAlter(RandomGenerator & rg, Alter * at);
     void setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SetValue * set);
     void generateSettingValues(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals);
     void generateSettingValues(
@@ -339,7 +339,7 @@ private:
     void generateAttach(RandomGenerator & rg, Attach * att);
     void generateDetach(RandomGenerator & rg, Detach * det);
     void generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf);
-    void generateNextSystemStatement(RandomGenerator & rg, SystemCommand * sc);
+    void generateNextSystemStatement(RandomGenerator & rg, bool allow_table_statements, SystemCommand * sc);
 
     void addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
     void addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);
@@ -347,6 +347,7 @@ private:
     void refColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr);
     void generateSubquery(RandomGenerator & rg, ExplainQuery * eq);
     void generateColRef(RandomGenerator & rg, Expr * expr);
+    void generateLiteralValueInternal(RandomGenerator & rg, bool complex, Expr * expr);
     void generateLiteralValue(RandomGenerator & rg, bool complex, Expr * expr);
     void generatePredicate(RandomGenerator & rg, Expr * expr);
     void generateFrameBound(RandomGenerator & rg, Expr * expr);
