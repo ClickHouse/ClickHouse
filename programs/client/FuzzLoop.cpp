@@ -444,7 +444,7 @@ bool Client::processWithFuzzing(const String & full_query)
 #if USE_BUZZHOUSE
         if (can_compare)
         {
-            auto u = external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
+            const auto u = external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
             UNUSED(u);
         }
 #endif
@@ -568,9 +568,9 @@ bool Client::buzzHouse()
         std::cout << "Cloud features " << (has_cloud_features ? "" : "not ") << "detected" << std::endl;
         replica_setup &= processTextAsSingleQuery("CREATE TABLE tx (c0 Int) Engine=ReplicatedMergeTree() ORDER BY tuple();");
         std::cout << "Replica setup " << (replica_setup ? "" : "not ") << "detected" << std::endl;
-        auto u = processTextAsSingleQuery("DROP TABLE IF EXISTS tx;");
+        const auto u = processTextAsSingleQuery("DROP TABLE IF EXISTS tx;");
         UNUSED(u);
-        auto v = processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
+        const auto v = processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
         UNUSED(v);
 
         outf << "--Session seed: " << rg.getSeed() << std::endl;
@@ -583,7 +583,7 @@ bool Client::buzzHouse()
             full_query += fmt::format("{}{} = 1", first ? "" : ", ", entry);
             first = false;
         }
-        auto w = logAndProcessQuery(outf, fmt::format("SET {};", full_query));
+        const auto w = logAndProcessQuery(outf, fmt::format("SET {};", full_query));
         UNUSED(w);
         if (external_integrations->hasClickHouseExtraServerConnection())
         {
