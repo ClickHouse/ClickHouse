@@ -1,10 +1,11 @@
 ---
-title: LineAsString
-slug: /interfaces/formats/LineAsString
-keywords: [LineAsString]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the LineAsString format'
+input_format: true
+keywords: ['LineAsString']
+output_format: true
+slug: /interfaces/formats/LineAsString
+title: 'LineAsString'
 ---
 
 | Input | Output | Alias |

@@ -186,7 +186,7 @@ Decomposes a time series using STL [(Seasonal-Trend Decomposition Procedure Base
 
 **Syntax**
 
-``` sql
+```sql
 seriesDecomposeSTL(series, period);
 ```
 
@@ -207,13 +207,13 @@ Type: [Array](../../sql-reference/data-types/array.md).
 
 Query:
 
-``` sql
+```sql
 SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34], 3) AS print_0;
 ```
 
 Result:
 
-``` text
+```text
 ┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ [[
         -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,

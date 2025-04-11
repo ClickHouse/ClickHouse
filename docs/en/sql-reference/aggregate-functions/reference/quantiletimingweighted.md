@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiletimingweighted
+description: 'With the determined precision computes the quantile of a numeric data
+  sequence according to the weight of each sequence member.'
 sidebar_position: 181
-title: "quantileTimingWeighted"
-description: "With the determined precision computes the quantile of a numeric data sequence according to the weight of each sequence member."
+slug: /sql-reference/aggregate-functions/reference/quantiletimingweighted
+title: 'quantileTimingWeighted'
 ---
 
 # quantileTimingWeighted
@@ -15,7 +16,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 **Syntax**
 
-``` sql
+```sql
 quantileTimingWeighted(level)(expr, weight)
 ```
 
@@ -59,7 +60,7 @@ If no values are passed to the function (when using `quantileTimingIf`), [NaN](/
 
 Input table:
 
-``` text
+```text
 ┌─response_time─┬─weight─┐
 │            68 │      1 │
 │           104 │      2 │
@@ -72,13 +73,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT quantileTimingWeighted(response_time, weight) FROM t
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantileTimingWeighted(response_time, weight)─┐
 │                                           112 │
 └───────────────────────────────────────────────┘
@@ -93,7 +94,7 @@ Same as `quantileTimingWeighted`, but accept multiple parameters with quantile l
 
 Input table:
 
-``` text
+```text
 ┌─response_time─┬─weight─┐
 │            68 │      1 │
 │           104 │      2 │
@@ -106,13 +107,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT quantilesTimingWeighted(0,5, 0.99)(response_time, weight) FROM t
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantilesTimingWeighted(0.5, 0.99)(response_time, weight)─┐
 │ [112,162]                                                 │
 └───────────────────────────────────────────────────────────┘

@@ -1,3 +1,5 @@
+SET allow_materialized_view_with_bad_select = 1;
+
 DROP TABLE IF EXISTS test_table;
 DROP TABLE IF EXISTS numbers;
 DROP TABLE IF EXISTS test_mv;

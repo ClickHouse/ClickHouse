@@ -1,9 +1,11 @@
 ---
-slug: /sql-reference/table-functions/remote
+description: 'Table function `remote` allows to access remote servers on-the-fly,
+  i.e. without creating a distributed table. Table function `remoteSecure` is same
+  as `remote` but over a secure connection.'
+sidebar_label: 'remote'
 sidebar_position: 175
-sidebar_label: remote
-title: "remote, remoteSecure"
-description: "Table function `remote` allows to access remote servers on-the-fly, i.e. without creating a distributed table. Table function `remoteSecure` is same as `remote` but over a secure connection."
+slug: /sql-reference/table-functions/remote
+title: 'remote, remoteSecure'
 ---
 
 # remote, remoteSecure Table Function
@@ -14,7 +16,7 @@ Both functions can be used in `SELECT` and `INSERT` queries.
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 remote(addresses_expr, [db, table, user [, password], sharding_key])
 remote(addresses_expr, [db.table, user [, password], sharding_key])
 remote(named_collection[, option=value [,..]])
@@ -63,7 +65,7 @@ The `remote` table function can be useful in the following cases:
 
 ### Addresses {#addresses}
 
-``` text
+```text
 example01-01-1
 example01-01-1:9440
 example01-01-1:9000
@@ -76,7 +78,7 @@ localhost
 
 Multiple addresses can be comma-separated. In this case, ClickHouse will use distributed processing and send the query to all specified addresses (like shards with different data). Example:
 
-``` text
+```text
 example01-01-1,example01-02-1
 ```
 
@@ -84,7 +86,7 @@ example01-01-1,example01-02-1
 
 ### Selecting data from a remote server: {#selecting-data-from-a-remote-server}
 
-``` sql
+```sql
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
 ```
 
@@ -99,7 +101,7 @@ SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
 
 ### Inserting data into a table on a remote server: {#inserting-data-into-a-table-on-a-remote-server}
 
-``` sql
+```sql
 CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
 INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALUES ('test', 42);
 SELECT * FROM remote_table;

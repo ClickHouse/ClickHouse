@@ -1,18 +1,14 @@
 ---
-slug: /sql-reference/data-types/newjson
+description: 'Documentation for the JSON data type in ClickHouse, which provides native
+  support for working with JSON data'
+keywords: ['json', 'data type']
+sidebar_label: 'JSON'
 sidebar_position: 63
-sidebar_label: JSON
-keywords: [json, data type]
-title: "JSON Data Type"
+slug: /sql-reference/data-types/newjson
+title: 'JSON Data Type'
 ---
-import BetaBadge from '@theme/badges/BetaBadge';
-
-<BetaBadge/>
 
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.
-
-:::note
-This feature is in beta and is not yet production-ready. If you need to work with JSON documents, consider using [this guide](/integrations/data-formats/json/overview) instead.
 
 If you want to use the `JSON` type, and for the examples on this page, please use:
 
@@ -20,7 +16,7 @@ If you want to use the `JSON` type, and for the examples on this page, please us
 SET enable_json_type = 1
 ```
 
-:::
+However, if you are using ClickHouse Cloud, you must first [get in touch with support](https://clickhouse.com/docs/about-us/support) to enable the usage of the `JSON` type.
 
 To declare a column of `JSON` type, you can use the following syntax:
 

@@ -1,9 +1,11 @@
 #pragma once
 
+#include <unordered_map>
 #include <vector>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 
@@ -35,7 +37,7 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
     String describe() const;
     void deserialize(ReadBuffer & in);
 
-    void merge(RangesInDataPartsDescription & other);
+    void merge(const RangesInDataPartsDescription & other);
 };
 
 struct RangesInDataPart
@@ -63,7 +65,7 @@ struct RangesInDataPart
     size_t getRowsCount() const;
 };
 
-struct RangesInDataParts: public std::vector<RangesInDataPart>
+struct RangesInDataParts : public std::vector<RangesInDataPart>
 {
     using std::vector<RangesInDataPart>::vector; /// NOLINT(modernize-type-traits)
 

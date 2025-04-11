@@ -21,7 +21,6 @@ using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredict
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
-using VirtualFields = std::unordered_map<String, Field>;
 
 class DeserializationPrefixesCache;
 using DeserializationPrefixesCachePtr = std::shared_ptr<DeserializationPrefixesCache>;
@@ -96,7 +95,7 @@ public:
         MarkCache * mark_cache = nullptr;
         MergeTreeReaderSettings reader_settings{};
         StorageSnapshotPtr storage_snapshot{};
-        IMergeTreeReader::ValueSizeMap value_size_map{};
+        ValueSizeMap value_size_map{};
         ReadBufferFromFileBase::ProfileCallback profile_callback{};
     };
 
@@ -140,8 +139,8 @@ public:
     const MergeTreeReadersChain & getReadersChain() const { return readers_chain; }
     const IMergeTreeReader & getMainReader() const { return *readers.main; }
 
-    void addPreWhereUnmatchedMarks(MarkRanges & mark_ranges_);
-    const MarkRanges & getPreWhereUnmatchedMarks() { return prewhere_unmatched_marks; }
+    void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
+    const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
 
     Readers releaseReaders() { return std::move(readers); }
 
@@ -164,7 +163,7 @@ private:
     /// Ranges to read from data_part
     MarkRanges mark_ranges;
 
-    /// There is no mark matching a row of data under the prewhere condition.
+    /// Tracks which mark ranges are not matched by PREWHERE (needed for query condition cache)
     MarkRanges prewhere_unmatched_marks;
 
     BlockSizeParams block_size_params;

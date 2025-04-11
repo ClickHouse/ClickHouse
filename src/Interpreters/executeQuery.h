@@ -19,6 +19,7 @@ class ReadBuffer;
 class WriteBuffer;
 class IOutputFormat;
 struct QueryStatusInfo;
+struct QueryPlanAndSets;
 
 struct QueryResultDetails
 {
@@ -61,7 +62,7 @@ void executeQuery(
 /// Correctly formatting the results (according to INTO OUTFILE and FORMAT sections)
 /// must be done separately.
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const String & query,     /// Query text without INSERT data. The latter must be written to BlockIO::out.
+    const String & query, /// Query text without INSERT data. The latter must be written to BlockIO::out.
     ContextMutablePtr context,       /// DB, tables, data types, storage engines, functions, aggregate functions...
     QueryFlags flags = {},
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
@@ -79,7 +80,7 @@ QueryLogElement logQueryStart(
     UInt64 normalized_query_hash,
     const ASTPtr & query_ast,
     const QueryPipeline & pipeline,
-    const std::unique_ptr<IInterpreter> & interpreter,
+    const IInterpreter * interpreter,
     bool internal,
     const String & query_database,
     const String & query_table,

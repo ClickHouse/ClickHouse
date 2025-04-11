@@ -335,6 +335,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.date_time_overflow_behavior = settings[Setting::date_time_overflow_behavior];
     format_settings.try_infer_variant = settings[Setting::input_format_try_infer_variants];
     format_settings.client_protocol_version = context->getClientProtocolVersion();
+    format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -556,8 +557,6 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-    format_settings.is_writing_to_terminal = isWritingToTerminal(buf);
-
     const Settings & settings = context->getSettingsRef();
 
     if (settings[Setting::output_format_parallel_formatting] && getCreators(name).supports_parallel_formatting
@@ -598,7 +597,6 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     format_settings.max_threads = context->getSettingsRef()[Setting::max_threads];
-    format_settings.is_writing_to_terminal = format_settings.is_writing_to_terminal = isWritingToTerminal(buf);
 
     auto format = output_getter(buf, sample, format_settings);
 

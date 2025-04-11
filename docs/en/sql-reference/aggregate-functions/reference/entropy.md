@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/entropy
+description: 'Calculates Shannon entropy of for a column of values.'
 sidebar_position: 131
-title: "entropy"
-description: "Calculates Shannon entropy of for a column of values."
+slug: /sql-reference/aggregate-functions/reference/entropy
+title: 'entropy'
 ---
 
 # entropy
@@ -11,7 +11,7 @@ Calculates [Shannon entropy](https://en.wikipedia.org/wiki/Entropy_(information_
 
 **Syntax**
 
-``` sql
+```sql
 entropy(val)
 ```
 
@@ -29,7 +29,7 @@ Type: [Float64](../../../sql-reference/data-types/float.md).
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE entropy (`vals` UInt32,`strings` String) ENGINE = Memory;
 
 INSERT INTO entropy VALUES (1, 'A'), (1, 'A'), (1,'A'), (1,'A'), (2,'B'), (2,'B'), (2,'C'), (2,'D');
@@ -39,7 +39,7 @@ SELECT entropy(vals), entropy(strings) FROM entropy;
 
 Result:
 
-``` text
+```text
 ┌─entropy(vals)─┬─entropy(strings)─┐
 │             1 │             1.75 │
 └───────────────┴──────────────────┘

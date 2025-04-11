@@ -53,7 +53,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
 find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
 
 # Duplicated or incorrect setting declarations
-bash $ROOT_PATH/utils/check-style/check-settings-style
+bash $ROOT_PATH/ci/jobs/scripts/check_style/check-settings-style
 
 # Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
 declare -A EXTERN_TYPES
@@ -82,6 +82,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::keeper_profile_events
     ProfileEvents::CountersIncrement
     ProfileEvents::size
+    ProfileEvents::checkCPUOverload
 
     CurrentMetrics::add
     CurrentMetrics::sub
@@ -207,7 +208,10 @@ std_cerr_cout_excludes=(
     src/Processors/IProcessor.cpp
     src/Client/ClientApplicationBase.cpp
     src/Client/ClientBase.cpp
+    src/Common/ProgressIndication.h
+    src/Client/LineReader.h
     src/Client/LineReader.cpp
+    src/Client/ReplxxLineReader.h
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
     src/Client/ClientBase.h
@@ -218,6 +222,7 @@ std_cerr_cout_excludes=(
     src/Loggers/Loggers.cpp
     src/Common/GWPAsan.cpp
     src/Common/ProgressIndication.h
+    src/IO/Ask.cpp
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
@@ -227,7 +232,7 @@ sources_with_std_cerr_cout=( $(
 ) )
 # Exclude comments
 for src in "${sources_with_std_cerr_cout[@]}"; do
-    # suppress stderr, since it may contain warning for #pargma once in headers
+    # suppress stderr, since it may contain warning for #pragma once in headers
     if gcc -fpreprocessed -dD -E "$src" 2>/dev/null | grep -F -q -e std::cerr -e std::cout; then
         echo "$src: uses std::cerr/std::cout"
     fi
@@ -324,3 +329,15 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
 PATTERN="allow_";
 DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/utils/check-style/experimental_settings_ignore.txt | sort -u));
 [ -n "$DIFF" ] && echo "$DIFF" && echo "^^ Detected 'allow_*' settings that might need to be included in src/Databases/enableAllExperimentalSettings.cpp" && echo "Alternatively, consider adding an exception to utils/check-style/experimental_settings_ignore.txt"
+
+# Don't allow the direct inclusion of magic_enum.hpp and instead point to base/EnumReflection.h
+find $ROOT_PATH/{src,base,programs,utils} -name '*.cpp' -or -name '*.h' | xargs grep -l "magic_enum.hpp" | grep -v EnumReflection.h | while read -r line;
+do
+    echo "Found the inclusion of magic_enum.hpp in '${line}'. Please use <base/EnumReflection.h> instead"
+done
+
+# Currently fmt::format is faster both at compile and runtime
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | grep -vP $EXCLUDE | xargs grep -l "std::format" | while read -r file;
+do
+    echo "Found the usage of std::format in '${file}'. Please use fmt::format instead"
+done
