@@ -4828,6 +4828,9 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+DECLARE(Double, query_condition_cache_zero_ratio_threshold, 0.8, R"(
+When writing to query condition cache, it will only be written if the ratio of 0 bits exceeds `query_condition_cache_zero_ratio_threshold`. This will avoid cache pollution.
+)", 0) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0) \

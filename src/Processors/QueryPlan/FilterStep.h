@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 
 namespace DB
 {
@@ -26,7 +27,7 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
-    void setQueryConditionHash(size_t condition_hash_);
+    void setQueryConditionCacheWriter(QueryConditionCacheWriterPtr & query_condition_cache_writer_);
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -42,7 +43,7 @@ private:
     String filter_column_name;
     bool remove_filter_column;
 
-    std::optional<size_t> condition_hash;
+    QueryConditionCacheWriterPtr query_condition_cache_writer;
 };
 
 }

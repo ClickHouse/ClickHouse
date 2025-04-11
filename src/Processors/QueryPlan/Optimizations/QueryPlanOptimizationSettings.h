@@ -68,6 +68,7 @@ struct QueryPlanOptimizationSettings
     bool aggregation_in_order;
     bool optimize_projection;
     bool use_query_condition_cache = false;
+    double query_condition_cache_zero_ratio_threshold;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting

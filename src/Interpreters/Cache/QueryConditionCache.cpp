@@ -1,3 +1,4 @@
+#include <mutex>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -18,63 +19,33 @@ QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max
 {
 }
 
-void QueryConditionCache::write(
-    const UUID & table_id, const String & part_name, size_t condition_hash,
-    const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
+void QueryConditionCache::write(const QueryConditionCacheKey & key, const MatchingMarks & matching_marks)
 {
-    Key key = {table_id, part_name, condition_hash};
-
-    auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
-    auto [entry, inserted] = cache.getOrSet(key, load_func);
-
-    std::lock_guard lock(entry->mutex);
-
-    chassert(marks_count == entry->matching_marks.size());
-
-    /// The input mark ranges are the areas which the scan can skip later on.
-    for (const auto & mark_range : mark_ranges)
-        std::fill(entry->matching_marks.begin() + mark_range.begin, entry->matching_marks.begin() + mark_range.end, false);
-
-    if (has_final_mark)
-        entry->matching_marks[marks_count - 1] = false;
-
-    LOG_DEBUG(
-        logger,
-        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, marks_count: {}, has_final_mark: {}, ranges: {}",
-        inserted ? "Inserted" : "Updated",
-        table_id,
-        part_name,
-        condition_hash,
-        marks_count,
-        has_final_mark,
-        toString(mark_ranges));
+    cache.set(key, std::make_shared<MatchingMarks>(matching_marks));
 }
 
-std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, size_t condition_hash)
+MatchingMarksPtr QueryConditionCache::read(const UUID & table_id, const String & part_name, size_t condition_hash)
 {
-    Key key = {table_id, part_name, condition_hash};
+    QueryConditionCacheKey key = {table_id, part_name, condition_hash};
 
     if (auto entry = cache.get(key))
     {
         ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
-
-        std::shared_lock lock(entry->mutex);
-
-        LOG_DEBUG(
+        LOG_TRACE(
             logger,
             "Read entry for table_uuid: {}, part: {}, condition_hash: {}, ranges: {}",
             table_id,
             part_name,
             condition_hash,
-            toString(entry->matching_marks));
+            toString(*entry));
 
-        return {entry->matching_marks};
+        return entry;
     }
     else
     {
         ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
 
-        LOG_DEBUG(
+        LOG_TRACE(
             logger,
             "Could not find entry for table_uuid: {}, part: {}, condition_hash: {}",
             table_id,
@@ -106,19 +77,14 @@ size_t QueryConditionCache::maxSizeInBytes()
     return cache.maxSizeInBytes();
 }
 
-bool QueryConditionCache::Key::operator==(const Key & other) const
+bool QueryConditionCacheKey::operator==(const QueryConditionCacheKey & other) const
 {
     return table_id == other.table_id
         && part_name == other.part_name
         && condition_hash == other.condition_hash;
 }
 
-QueryConditionCache::Entry::Entry(size_t mark_count)
-    : matching_marks(mark_count, true) /// by default, all marks potentially are potential matches, i.e. we can't skip them
-{
-}
-
-size_t QueryConditionCache::KeyHasher::operator()(const Key & key) const
+size_t QueryConditionCacheKeyHasher::operator()(const QueryConditionCacheKey & key) const
 {
     SipHash hash;
     hash.update(key.table_id);
@@ -127,10 +93,70 @@ size_t QueryConditionCache::KeyHasher::operator()(const Key & key) const
     return hash.get64();
 }
 
-size_t QueryConditionCache::QueryConditionCacheEntryWeight::operator()(const Entry & entry) const
+size_t QueryConditionCache::QueryConditionCacheEntryWeight::operator()(const MatchingMarks & entry) const
 {
     /// Estimate the memory size of `std::vector<bool>` (it uses bit-packing internally)
-    size_t dynamic_memory = (entry.matching_marks.capacity() + 7) / 8; /// round up to bytes.
-    return dynamic_memory + sizeof(decltype(entry.matching_marks));
+    size_t dynamic_memory = (entry.capacity() + 7) / 8; /// round up to bytes.
+    return dynamic_memory + sizeof(decltype(entry));
+}
+
+void QueryConditionCacheWriter::buffer(const UUID & table_id, const String & part_name, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    QueryConditionCacheKey key{table_id, part_name, condition_hash};
+    if (auto it = buffered.find(key); it != buffered.end())
+    {
+        // it->second->appendMarkRanges(mark_ranges_info->mark_ranges);
+        MatchingMarks & matching_marks = it->second;
+
+        chassert(marks_count == matching_marks.size());
+
+        /// The input mark ranges are the areas which the scan can skip later on.
+        for (const auto & mark_range : mark_ranges)
+            std::fill(matching_marks.begin() + mark_range.begin, matching_marks.begin() + mark_range.end, false);
+
+        if (has_final_mark)
+            matching_marks[marks_count - 1] = false;
+    }
+    else
+    {
+        /// by default, all marks potentially are potential matches, i.e. we can't skip them.
+        MatchingMarks matching_marks(marks_count, true);
+
+        for (const auto & mark_range : mark_ranges)
+            std::fill(matching_marks.begin() + mark_range.begin, matching_marks.begin() + mark_range.end, false);
+
+        if (has_final_mark)
+            matching_marks[marks_count - 1] = false;
+
+        buffered[key] = std::move(matching_marks);
+    }
+
+    LOG_TRACE(
+        logger,
+        "Inserted entry for table_id: {}, part_name: {}, condition_hash: {}, marks_count: {}, has_final_mark: {}, ranges: {}",
+        table_id,
+        part_name,
+        condition_hash,
+        marks_count,
+        has_final_mark,
+        toString(mark_ranges));
+}
+
+void QueryConditionCacheWriter::finalize()
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    for (auto & [key, matching_marks] : buffered)
+    {
+        if (matching_marks.empty())
+            continue;
+
+        size_t count = std::count(matching_marks.begin(), matching_marks.end(), false);
+        double ratio = static_cast<double>(count) / matching_marks.size();
+        if (ratio > query_condition_cache_zero_ratio_threshold)
+            query_condition_cache->write(key, matching_marks);
+    }
 }
 }

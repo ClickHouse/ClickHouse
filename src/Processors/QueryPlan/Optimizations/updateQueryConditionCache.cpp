@@ -1,7 +1,9 @@
+#include <memory>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include "Interpreters/Cache/QueryConditionCache.h"
 
 namespace DB::QueryPlanOptimizations
 {
@@ -47,7 +49,13 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
             size_t condition_hash = filter_actions_dag->getOutputs().front()->getHash();
-            filter_step->setQueryConditionHash(condition_hash);
+            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+            auto query_condition_cache_writer = std::make_shared<QueryConditionCacheWriter>(
+                query_condition_cache,
+                optimization_settings.query_condition_cache_zero_ratio_threshold,
+                condition_hash);
+
+            filter_step->setQueryConditionCacheWriter(query_condition_cache_writer);
             return;
         }
     }

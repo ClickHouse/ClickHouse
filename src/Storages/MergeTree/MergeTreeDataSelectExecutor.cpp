@@ -84,6 +84,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsDouble query_condition_cache_zero_ratio_threshold;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
