@@ -1,5 +1,6 @@
 ---
 description: 'Controlling behavior on server CPU overload.'
+sidebar_label: 'Server overload'
 slug: /operations/settings/server-overload
 title: 'Server overload'
 ---
@@ -17,7 +18,7 @@ There's a server setting `os_cpu_busy_time_threshold` which controls the minimum
 doing some useful work. If the current value of `OSCPUVirtualTimeMicroseconds` metric is below this value,
 CPU overload is assumed to be 0.
 
-## Rejecting queries
+## Rejecting queries {#rejecting-queries}
 
 The behavior of rejecting queries is controlled by query-level settings `min_os_cpu_wait_time_ratio_to_throw` and
 `max_os_cpu_wait_time_ratio_to_throw`. If those settings are set and `min_os_cpu_wait_time_ratio_to_throw` is less
@@ -26,7 +27,7 @@ with some probability is the overload ratio is at least `min_os_cpu_wait_time_ra
 is determined as a linear interpolation between min and max ratios. For example, if `min_os_cpu_wait_time_ratio_to_throw = 2`,
 `max_os_cpu_wait_time_ratio_to_throw = 6`, and `cpu_overload = 4`, then the query will be rejected with a probability of `0.5`.
 
-## Dropping connections
+## Dropping connections {#dropping-connections}
 
 Dropping connections is controlled by server-level settings `min_os_cpu_wait_time_ratio_to_drop_connection` and
 `max_os_cpu_wait_time_ratio_to_drop_connection`. Those settings can be changed without server restart. The idea behind
