@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/MergeTreeIndexGin.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -30,7 +30,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(
+MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(
     const String & index_name_,
     size_t columns_number,
     const GinFilterParameters & params_)
@@ -41,10 +41,10 @@ MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(
 {
 }
 
-void MergeTreeIndexGranuleFullText::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleGin::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty fulltext index {}.", backQuote(index_name));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty GIN index {}.", backQuote(index_name));
 
     const auto & size_type = std::make_shared<DataTypeUInt32>();
     auto size_serialization = size_type->getDefaultSerialization();
@@ -57,7 +57,7 @@ void MergeTreeIndexGranuleFullText::serializeBinary(WriteBuffer & ostr) const
     }
 }
 
-void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleGin::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     if (version != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
@@ -81,7 +81,7 @@ void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTr
 }
 
 
-size_t MergeTreeIndexGranuleFullText::memoryUsageBytes() const
+size_t MergeTreeIndexGranuleGin::memoryUsageBytes() const
 {
     size_t sum = 0;
     for (const auto & gin_filter : gin_filters)
@@ -90,7 +90,7 @@ size_t MergeTreeIndexGranuleFullText::memoryUsageBytes() const
 }
 
 
-MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(
+MergeTreeIndexAggregatorGin::MergeTreeIndexAggregatorGin(
     GinIndexStorePtr store_,
     const Names & index_columns_,
     const String & index_name_,
@@ -102,20 +102,20 @@ MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(
     , params(params_)
     , token_extractor(token_extractor_)
     , granule(
-        std::make_shared<MergeTreeIndexGranuleFullText>(
+        std::make_shared<MergeTreeIndexGranuleGin>(
             index_name, index_columns.size(), params))
 {
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorFullText::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGin::getGranuleAndReset()
 {
-    auto new_granule = std::make_shared<MergeTreeIndexGranuleFullText>(
+    auto new_granule = std::make_shared<MergeTreeIndexGranuleGin>(
         index_name, index_columns.size(), params);
     new_granule.swap(granule);
     return new_granule;
 }
 
-void MergeTreeIndexAggregatorFullText::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter)
+void MergeTreeIndexAggregatorGin::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -125,7 +125,7 @@ void MergeTreeIndexAggregatorFullText::addToGinFilter(UInt32 rowID, const char *
         gin_filter.add(data + token_start, token_len, rowID, store);
 }
 
-void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
@@ -189,7 +189,7 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
     *pos += rows_read;
 }
 
-MergeTreeConditionFullText::MergeTreeConditionFullText(
+MergeTreeIndexConditionGin::MergeTreeIndexConditionGin(
     const ActionsDAG * filter_actions_dag,
     ContextPtr context_,
     const Block & index_sample_block,
@@ -218,8 +218,8 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
                     }).extractRPN());
 }
 
-/// Keep in-sync with MergeTreeConditionFullText::alwaysUnknownOrTrue
-bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
+/// Keep in-sync with MergeTreeIndexConditionGin::alwaysUnknownOrTrue
+bool MergeTreeIndexConditionGin::alwaysUnknownOrTrue() const
 {
     /// Check like in KeyCondition.
     std::vector<bool> rpn_stack;
@@ -267,10 +267,10 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
     return rpn_stack[0];
 }
 
-bool MergeTreeConditionFullText::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule,[[maybe_unused]] PostingsCacheForStore & cache_store) const
+bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule,[[maybe_unused]] PostingsCacheForStore & cache_store) const
 {
-    std::shared_ptr<MergeTreeIndexGranuleFullText> granule
-            = std::dynamic_pointer_cast<MergeTreeIndexGranuleFullText>(idx_granule);
+    std::shared_ptr<MergeTreeIndexGranuleGin> granule
+            = std::dynamic_pointer_cast<MergeTreeIndexGranuleGin>(idx_granule);
     if (!granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
 
@@ -376,7 +376,7 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
     return rpn_stack[0].can_be_true;
 }
 
-bool MergeTreeConditionFullText::traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out)
+bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out)
 {
     {
         Field const_value;
@@ -464,7 +464,7 @@ bool MergeTreeConditionFullText::traverseAtomAST(const RPNBuilderTreeNode & node
     return false;
 }
 
-bool MergeTreeConditionFullText::traverseASTEquals(
+bool MergeTreeIndexConditionGin::traverseASTEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_ast,
     const DataTypePtr & value_type,
@@ -675,7 +675,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
     return false;
 }
 
-bool MergeTreeConditionFullText::tryPrepareSetGinFilter(
+bool MergeTreeIndexConditionGin::tryPrepareSetGinFilter(
     const RPNBuilderTreeNode & lhs,
     const RPNBuilderTreeNode & rhs,
     RPNElement & out)
@@ -748,40 +748,41 @@ bool MergeTreeConditionFullText::tryPrepareSetGinFilter(
     return true;
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexGin::createIndexGranule() const
 {
-    /// ------
     /// Index type 'inverted' was renamed to 'full_text' in May 2024.
+    /// Index type 'full_text' was renamed to 'gin' in April 2025.
+    ///
     /// Tables with old indexes can be loaded during a transition period. We still want let users know that they should drop existing
     /// indexes and re-create them. Function `createIndexGranule` is called whenever the index is used by queries. Reject the query if we
     /// have an old index.
-    /// TODO: remove this at the end of 2024.
-    if (index.type == INVERTED_INDEX_NAME)
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' are no longer supported. Please drop and recreate the index as type 'full_text'");
-    /// ------
+    ///
+    /// TODO: remove this one year after GIN indexes became GA.
+    if (index.type == INVERTED_INDEX_NAME || index.type == FULL_TEXT_INDEX_NAME)
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' and 'full_text' are no longer supported. Please drop and recreate the index as type 'gin'");
 
-    return std::make_shared<MergeTreeIndexGranuleFullText>(index.name, index.column_names.size(), params);
+    return std::make_shared<MergeTreeIndexGranuleGin>(index.name, index.column_names.size(), params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     /// should not be called: createIndexAggregatorForPart should be used
     assert(false);
     return nullptr;
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const
 {
-    return std::make_shared<MergeTreeIndexAggregatorFullText>(store, index.column_names, index.name, params, token_extractor.get());
+    return std::make_shared<MergeTreeIndexAggregatorGin>(store, index.column_names, index.name, params, token_extractor.get());
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
+MergeTreeIndexConditionPtr MergeTreeIndexGin::createIndexCondition(
         const ActionsDAG * filter_actions_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionFullText>(filter_actions_dag, context, index.sample_block, params, token_extractor.get());
+    return std::make_shared<MergeTreeIndexConditionGin>(filter_actions_dag, context, index.sample_block, params, token_extractor.get());
 };
 
-MergeTreeIndexPtr fullTextIndexCreator(
+MergeTreeIndexPtr ginIndexCreator(
     const IndexDescription & index)
 {
     size_t n = index.arguments.empty() ? 0 : index.arguments[0].safeGet<size_t>();
@@ -792,14 +793,14 @@ MergeTreeIndexPtr fullTextIndexCreator(
     if (n > 0)
     {
         auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
-        return std::make_shared<MergeTreeIndexFullText>(index, params, std::move(tokenizer));
+        return std::make_shared<MergeTreeIndexGin>(index, params, std::move(tokenizer));
     }
 
     auto tokenizer = std::make_unique<SplitTokenExtractor>();
-    return std::make_shared<MergeTreeIndexFullText>(index, params, std::move(tokenizer));
+    return std::make_shared<MergeTreeIndexGin>(index, params, std::move(tokenizer));
 }
 
-void fullTextIndexValidator(const IndexDescription & index, bool /*attach*/)
+void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     for (const auto & index_data_type : index.data_types)
     {
@@ -817,21 +818,21 @@ void fullTextIndexValidator(const IndexDescription & index, bool /*attach*/)
         }
 
         if (!data_type.isString() && !data_type.isFixedString())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Full text index can be used only with `String`, `FixedString`,"
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN indexes can be used only with `String`, `FixedString`,"
                             "`LowCardinality(String)`, `LowCardinality(FixedString)` "
                             "column or Array with `String` or `FixedString` values column.");
     }
 
     if (index.arguments.size() > 2)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Full text index must have less than two arguments.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN indexes must have less than two arguments.");
 
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The first full text index argument must be positive integer.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The first GIN index argument must be positive integer.");
 
     if (index.arguments.size() == 2)
     {
         if (index.arguments[1].getType() != Field::Types::UInt64)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "The second full text index argument must be UInt64");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "The second GIN index argument must be UInt64");
         if (index.arguments[1].safeGet<UInt64>() != UNLIMITED_ROWS_PER_POSTINGS_LIST && index.arguments[1].safeGet<UInt64>() < MIN_ROWS_PER_POSTINGS_LIST)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "The maximum rows per postings list must be no less than {}", MIN_ROWS_PER_POSTINGS_LIST);
     }
