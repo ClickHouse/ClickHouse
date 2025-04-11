@@ -1,7 +1,6 @@
 -- Tags: no-parallel
 DROP DICTIONARY IF EXISTS d0;
 DROP TABLE IF EXISTS t0;
-DROP TABLE IF EXISTS t1;
 
 CREATE TABLE t0 (
     key Int32,
