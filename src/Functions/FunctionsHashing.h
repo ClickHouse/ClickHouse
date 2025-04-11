@@ -34,6 +34,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -41,6 +42,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/PerformanceAdaptors.h>
@@ -862,6 +864,10 @@ class FunctionAnyHash : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
+    static constexpr UInt128 NULL_HASH = UInt128({0xc58ad2da03d9a871ul, 0x5715f196cbea7a40ul});
+
+    /// Keep default implementation of useDefaultImplementationForNulls for compatibility.
+    /// E.g. someHash(NULL) is NULL, but someHash(tuple(NULL)) is not NULL.
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -1173,6 +1179,18 @@ private:
                         key = Impl::getKey(key_cols, i);
                 ColumnArray::Offset next_offset = offsets[i];
 
+                /// There are two bugs here, affecting hashes of empty arrays:
+                ///  1. If ToType is UInt128, we produce a 32-bit hash,
+                ///  2. `hash` doesn't depend on key.
+                ///
+                /// SELECT reinterpret(sipHash128Keyed((number, number), []), 'UInt128') FROM numbers(2)
+                ///
+                ///    ┌─reinterpret(⋯ 'UInt128')─┐
+                /// 1. │               4249604106 │
+                /// 2. │               4249604106 │
+                ///    └──────────────────────────┘
+                ///
+                /// There's no way to fix this without breaking compatibility.
                 ToType hash;
                 if constexpr (std::is_same_v<ToType, UInt64>)
                     hash = IntHash64Impl::apply(next_offset - current_offset);
@@ -1199,6 +1217,74 @@ private:
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                     column->getName(), getName());
+    }
+
+    template <bool first>
+    void executeNothing(const KeyColumnsType &, const IColumn *, typename ColumnVector<ToType>::Container & vec_to) const
+    {
+        /// This value shouldn't affect anything, it should only appear inside null Nullable or
+        /// empty Array, where the caller will ignore this and assign their own hash value.
+        /// Fill it with zeroes just in case, to avoid leaking memory contents if something's broken.
+        vec_to.assign(vec_to.size(), ToType(0));
+    }
+
+    template <bool first>
+    void executeNullable(const KeyColumnsType & key_cols, const IDataType * from_type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
+    {
+        if (const auto * col_from = checkAndGetColumn<ColumnNullable>(column))
+        {
+            const auto * nested_type = assert_cast<const DataTypeNullable &>(*from_type).getNestedType().get();
+            const auto & nested_col = col_from->getNestedColumn();
+
+            KeyType key {};
+            ToType null_hash;
+            if constexpr (Keyed)
+            {
+                /// Make the hash depend on key.
+                key = Impl::getKey(key_cols, 0);
+                null_hash = combineHashes(key, static_cast<ToType>(NULL_HASH), 0);
+            }
+            else
+            {
+                null_hash = static_cast<ToType>(NULL_HASH);
+            }
+
+            typename ColumnVector<ToType>::Container original_vec_to;
+            if (!first)
+                original_vec_to.assign(vec_to);
+
+            /// Make sure non-null values are hashed exactly as if the type were non-Nullable.
+            bool is_first = first;
+            executeForArgument(key_cols, nested_type, &nested_col, vec_to, is_first);
+
+            for (size_t i = 0; i < vec_to.size(); ++i)
+            {
+                if (!col_from->isNullAt(i))
+                    continue;
+
+                if constexpr (Keyed)
+                {
+                    if (!key_cols.is_const && i != 0)
+                    {
+                        key = Impl::getKey(key_cols, i);
+                        null_hash = combineHashes(key, static_cast<ToType>(NULL_HASH), 0);
+                    }
+                }
+
+                if constexpr (first)
+                    vec_to[i] = null_hash;
+                else
+                    vec_to[i] = combineHashes(key, original_vec_to[i], null_hash);
+            }
+        }
+        else if (const ColumnConst * col_from_const = checkAndGetColumnConst<ColumnNullable>(column))
+        {
+            ColumnPtr full_column = col_from_const->convertToFullColumn();
+            executeNullable<first>(key_cols, from_type, full_column.get(), vec_to);
+        }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                column->getName(), getName());
     }
 
     template <bool first>
@@ -1244,6 +1330,8 @@ private:
         else if (which.isString()) executeString<first>(key_cols, icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(key_cols, icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(key_cols, from_type, icolumn, vec_to);
+        else if (which.isNothing()) executeNothing<first>(key_cols, icolumn, vec_to);
+        else if (which.isNullable()) executeNullable<first>(key_cols, from_type, icolumn, vec_to);
         else executeGeneric<first>(key_cols, icolumn, vec_to);
     }
 
