@@ -2,8 +2,6 @@ SELECT '-------- Bloom filter --------';
 SELECT '';
 DROP TABLE IF EXISTS 03165_token_bf;
 
-SET allow_experimental_full_text_index=1;
-
 CREATE TABLE 03165_token_bf
 (
     id Int64,
@@ -124,7 +122,7 @@ CREATE TABLE 03165_token_ft
 (
     id Int64,
     message String,
-    INDEX idx_message message TYPE full_text() GRANULARITY 1
+    INDEX idx_message message TYPE gin() GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id

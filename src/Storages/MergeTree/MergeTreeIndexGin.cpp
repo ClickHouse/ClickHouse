@@ -44,7 +44,7 @@ MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(
 void MergeTreeIndexGranuleGin::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty fulltext index {}.", backQuote(index_name));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty GIN index {}.", backQuote(index_name));
 
     const auto & size_type = std::make_shared<DataTypeUInt32>();
     auto size_serialization = size_type->getDefaultSerialization();
@@ -750,15 +750,16 @@ bool MergeTreeIndexConditionGin::tryPrepareSetGinFilter(
 
 MergeTreeIndexGranulePtr MergeTreeIndexGin::createIndexGranule() const
 {
-    /// ------
     /// Index type 'inverted' was renamed to 'full_text' in May 2024.
+    /// Index type 'full_text' was renamed to 'gin' in April 2025.
+    ///
     /// Tables with old indexes can be loaded during a transition period. We still want let users know that they should drop existing
     /// indexes and re-create them. Function `createIndexGranule` is called whenever the index is used by queries. Reject the query if we
     /// have an old index.
-    /// TODO: remove this at the end of 2024.
-    if (index.type == INVERTED_INDEX_NAME)
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' are no longer supported. Please drop and recreate the index as type 'full_text'");
-    /// ------
+    ///
+    /// TODO: remove this one year after GIN indexes became GA.
+    if (index.type == INVERTED_INDEX_NAME || index.type == FULL_TEXT_INDEX_NAME)
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' and 'full_text' are no longer supported. Please drop and recreate the index as type 'gin'");
 
     return std::make_shared<MergeTreeIndexGranuleGin>(index.name, index.column_names.size(), params);
 }
@@ -817,21 +818,21 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
         }
 
         if (!data_type.isString() && !data_type.isFixedString())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Full text index can be used only with `String`, `FixedString`,"
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN indexes can be used only with `String`, `FixedString`,"
                             "`LowCardinality(String)`, `LowCardinality(FixedString)` "
                             "column or Array with `String` or `FixedString` values column.");
     }
 
     if (index.arguments.size() > 2)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Full text index must have less than two arguments.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN indexes must have less than two arguments.");
 
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The first full text index argument must be positive integer.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The first GIN index argument must be positive integer.");
 
     if (index.arguments.size() == 2)
     {
         if (index.arguments[1].getType() != Field::Types::UInt64)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "The second full text index argument must be UInt64");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "The second GIN index argument must be UInt64");
         if (index.arguments[1].safeGet<UInt64>() != UNLIMITED_ROWS_PER_POSTINGS_LIST && index.arguments[1].safeGet<UInt64>() < MIN_ROWS_PER_POSTINGS_LIST)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "The maximum rows per postings list must be no less than {}", MIN_ROWS_PER_POSTINGS_LIST);
     }

@@ -1627,7 +1627,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 else
                 {
                     bool result = false;
-                    const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionConditionGin *>(&*condition);
+                    const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition);
                     if (!gin_filter_condition)
                         result = condition->mayBeTrueOnGranule(granule);
                     else
