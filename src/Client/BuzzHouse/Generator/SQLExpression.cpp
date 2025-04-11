@@ -994,22 +994,13 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     }
     else if (this->width < this->fc.max_width && noption < 801)
     {
-        ArraySequence * arr = nullptr;
-        TupleSequence * tupl = nullptr;
+        ExprList * elist = rg.nextBool() ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 8);
 
-        if (rg.nextBool())
-        {
-            arr = expr->mutable_comp_expr()->mutable_array();
-        }
-        else
-        {
-            tupl = expr->mutable_comp_expr()->mutable_tuple();
-        }
         this->depth++;
         for (uint32_t i = 0; i < nvalues; i++)
         {
-            this->generateExpression(rg, arr ? arr->add_values() : tupl->add_values());
+            this->generateExpression(rg, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
             this->width++;
         }
         this->depth--;

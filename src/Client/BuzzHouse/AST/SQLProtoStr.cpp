@@ -1564,36 +1564,16 @@ CONV_FN(ComplicatedExpr, expr)
             ret += expr.columns();
             ret += "')";
             break;
-        case ExprType::kArray: {
-            const ArraySequence & vals = expr.array();
-
+        case ExprType::kArray:
             ret += "[";
-            for (int i = 0; i < vals.values_size(); i++)
-            {
-                if (i != 0)
-                {
-                    ret += ",";
-                }
-                ExprToString(ret, vals.values(i));
-            }
+            ExprListToString(ret, expr.array());
             ret += "]";
-        }
-        break;
-        case ExprType::kTuple: {
-            const TupleSequence & vals = expr.tuple();
-
+            break;
+        case ExprType::kTuple:
             ret += "(";
-            for (int i = 0; i < vals.values_size(); i++)
-            {
-                if (i != 0)
-                {
-                    ret += ",";
-                }
-                ExprToString(ret, vals.values(i));
-            }
+            ExprListToString(ret, expr.tuple());
             ret += ")";
-        }
-        break;
+            break;
         default:
             ret += "1";
     }

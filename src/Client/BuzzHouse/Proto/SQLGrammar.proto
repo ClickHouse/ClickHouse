@@ -1932,14 +1932,6 @@ message CondExpr {
     required Expr expr3 = 3;
 }
 
-message ArraySequence {
-    repeated Expr values = 1;
-}
-
-message TupleSequence {
-    repeated Expr values = 1;
-}
-
 message LambdaExpr {
     repeated Column args = 1;
     required Expr expr = 2;
@@ -2140,8 +2132,8 @@ message ComplicatedExpr {
         WindowFuncCall window_call = 16;
         IntervalExpr interval = 17;
         string columns = 18;
-        ArraySequence array = 19;
-        TupleSequence tuple = 20;
+        ExprList array = 19;
+        ExprList tuple = 20;
     }
 }
 
