@@ -10,6 +10,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+
+extern const int LOGICAL_ERROR;
+
+}
+
 ASTPtr buildFilterNode(const ASTPtr & select_query, ASTs additional_filters)
 {
     auto & select_query_typed = select_query->as<ASTSelectQuery &>();
@@ -126,6 +133,10 @@ const ActionsDAG::Node & cloneFilterDAGNodeForIndexesAnalysis(
                 res = &new_dag.addFunction(node.function_base, children, "");
             }
             break;
+        }
+        case ActionsDAG::ActionType::PLACEHOLDER:
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Plan must be decorrelated before index analysis");
         }
     }
 
