@@ -83,6 +83,7 @@ namespace Setting
 {
     extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
     extern const SettingsBool cast_string_to_dynamic_use_inference;
+    extern const SettingsBool cast_string_to_variant_use_inference;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
@@ -1705,11 +1706,20 @@ struct ConvertImpl
                 else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> && std::is_same_v<ToDataType, DataTypeUInt128>)
                 {
                     static_assert(
-                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeUUID::FieldType::UnderlyingType>,
+                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeIPv6::FieldType::UnderlyingType>,
                         "UInt128 and IPv6 types must be same");
 
                     vec_to[i].items[1] = std::byteswap(vec_from[i].toUnderType().items[0]);
                     vec_to[i].items[0] = std::byteswap(vec_from[i].toUnderType().items[1]);
+                }
+                else if constexpr (std::is_same_v<FromDataType, DataTypeUInt128> && std::is_same_v<ToDataType, DataTypeIPv6>)
+                {
+                    static_assert(
+                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeIPv6::FieldType::UnderlyingType>,
+                        "IPv6 and UInt128 types must be same");
+
+                    vec_to[i].toUnderType().items[1] = std::byteswap(vec_from[i].items[0]);
+                    vec_to[i].toUnderType().items[0] = std::byteswap(vec_from[i].items[1]);
                 }
                 else if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
@@ -5161,7 +5171,7 @@ private:
 
         auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(removeNullableOrLowCardinalityNullable(from_type)->getName());
         /// Cast String to Variant through parsing if it's not Variant(String).
-        if (isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
+        if (context && context->getSettingsRef()[Setting::cast_string_to_variant_use_inference] && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
             return createStringToVariantWrapper();
 
         if (!variant_discr_opt)

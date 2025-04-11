@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/mergetree-family/mergetree
+description: '`MergeTree`-family table engines are designed for high data ingest rates
+  and huge data volumes.'
+sidebar_label: 'MergeTree'
 sidebar_position: 11
-sidebar_label:  MergeTree
-title: "MergeTree"
-description: "`MergeTree`-family table engines are designed for high data ingest rates and huge data volumes."
+slug: /engines/table-engines/mergetree-family/mergetree
+title: 'MergeTree'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -32,7 +33,7 @@ Despite a similar name, the [Merge](/engines/table-engines/special/merge) engine
 
 ## Creating Tables {#table_engine-mergetree-creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTICS(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
@@ -113,7 +114,7 @@ See [MergeTree Settings](../../../operations/settings/merge-tree-settings.md).
 
 **Example of Sections Setting**
 
-``` sql
+```sql
 ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity=8192
 ```
 
@@ -131,7 +132,7 @@ The `index_granularity` setting can be omitted because 8192 is the default value
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -149,7 +150,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Example**
 
-``` sql
+```sql
 MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)), 8192)
 ```
 
@@ -253,7 +254,7 @@ SETTINGS index_granularity=8192
 
 In this case, in queries:
 
-``` sql
+```sql
 SELECT count() FROM table
 WHERE EventDate = toDate(now())
 AND CounterID = 34
@@ -275,7 +276,7 @@ The queries above show that the index is used even for complex expressions. Read
 
 In the example below, the index can't be used.
 
-``` sql
+```sql
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
@@ -295,7 +296,7 @@ ClickHouse uses this logic not only for days of the month sequences, but for any
 
 The index declaration is in the columns section of the `CREATE` query.
 
-``` sql
+```sql
 INDEX index_name expr TYPE type(...) [GRANULARITY granularity_value]
 ```
 
@@ -307,7 +308,7 @@ The `GRANULARITY` clause can be omitted, the default value of `granularity_value
 
 **Example**
 
-``` sql
+```sql
 CREATE TABLE table_name
 (
     u64 UInt64,
@@ -323,7 +324,7 @@ CREATE TABLE table_name
 
 Indices from the example can be used by ClickHouse to reduce the amount of data to read from disk in the following queries:
 
-``` sql
+```sql
 SELECT count() FROM table WHERE u64 == 10;
 SELECT count() FROM table WHERE u64 * i32 >= 1234
 SELECT count() FROM table WHERE u64 * length(s) == 1234
@@ -457,7 +458,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [notEmpty](/sql-reference/functions/array-functions/#notempty)                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [has](/sql-reference/functions/array-functions#hasarr-elem)                                               | ✗           | ✗      | ✔          | ✔          | ✔            | ✔         |
 | [hasAny](/sql-reference/functions/array-functions#hasany)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗         |
-| [hasAll](/sql-reference/functions/array-functions#hasall)                                         | ✗           | ✗      | ✗          | ✗          | ✔            | ✗         |
+| [hasAll](/sql-reference/functions/array-functions#hasall)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗         |
 | hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
 | hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
 | hasTokenCaseInsensitive (*)                                                                                | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         |
@@ -532,14 +533,14 @@ Expressions must evaluate to [Date](/sql-reference/data-types/date.md) or [DateT
 
 Setting time-to-live for a column:
 
-``` sql
+```sql
 TTL time_column
 TTL time_column + interval
 ```
 
 To define `interval`, use [time interval](/sql-reference/operators#operators-for-working-with-dates-and-times) operators, for example:
 
-``` sql
+```sql
 TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```
@@ -554,7 +555,7 @@ The `TTL` clause can't be used for key columns.
 
 #### Creating a table with `TTL`: {#creating-a-table-with-ttl}
 
-``` sql
+```sql
 CREATE TABLE tab
 (
     d DateTime,
@@ -569,7 +570,7 @@ ORDER BY d;
 
 #### Adding TTL to a column of an existing table {#adding-ttl-to-a-column-of-an-existing-table}
 
-``` sql
+```sql
 ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 DAY;
@@ -577,7 +578,7 @@ ALTER TABLE tab
 
 #### Altering TTL of the column {#altering-ttl-of-the-column}
 
-``` sql
+```sql
 ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 MONTH;
@@ -587,7 +588,7 @@ ALTER TABLE tab
 
 Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving or recompressing, all rows of a part must satisfy the `TTL` expression criteria.
 
-``` sql
+```sql
 TTL expr
     [DELETE|RECOMPRESS codec_name1|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|RECOMPRESS codec_name2|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
     [WHERE conditions]
@@ -603,7 +604,7 @@ Type of TTL rule may follow each TTL expression. It affects an action which is t
 - `GROUP BY` - aggregate expired rows.
 
 `DELETE` action can be used together with `WHERE` clause to delete only some of the expired rows based on a filtering condition:
-``` sql
+```sql
 TTL time_column + INTERVAL 1 MONTH DELETE WHERE column = 'value'
 ```
 
@@ -615,7 +616,7 @@ If a column is not part of the `GROUP BY` expression and is not set explicitly i
 
 #### Creating a table with `TTL`: {#creating-a-table-with-ttl-1}
 
-``` sql
+```sql
 CREATE TABLE tab
 (
     d DateTime,
@@ -631,14 +632,14 @@ TTL d + INTERVAL 1 MONTH DELETE,
 
 #### Altering `TTL` of the table: {#altering-ttl-of-the-table}
 
-``` sql
+```sql
 ALTER TABLE tab
     MODIFY TTL d + INTERVAL 1 DAY;
 ```
 
 Creating a table, where the rows are expired after one month. The expired rows where dates are Mondays are deleted:
 
-``` sql
+```sql
 CREATE TABLE table_with_where
 (
     d DateTime,
@@ -667,7 +668,7 @@ SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 
 Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value across the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
 
-``` sql
+```sql
 CREATE TABLE table_for_aggregation
 (
     d DateTime,
@@ -734,7 +735,7 @@ See [dynamic storage](/operations/storing-data#dynamic-configuration) for more d
 
 Configuration structure:
 
-``` xml
+```xml
 <storage_configuration>
     <disks>
         <disk_name_1> <!-- disk name -->
@@ -766,7 +767,7 @@ The order of the disk definition is not important.
 
 Storage policies configuration markup:
 
-``` xml
+```xml
 <storage_configuration>
     ...
     <policies>
@@ -813,7 +814,7 @@ Tags:
 
 Configuration examples:
 
-``` xml
+```xml
 <storage_configuration>
     ...
     <policies>
@@ -864,7 +865,7 @@ Once a volume is overfilled, data are moved to the next one. The order of disk e
 
 When creating a table, one can apply one of the configured storage policies to it:
 
-``` sql
+```sql
 CREATE TABLE table_with_non_default_policy (
     EventDate Date,
     OrderID UInt64,
@@ -907,7 +908,7 @@ Moving data does not interfere with data replication. Therefore, different stora
 After the completion of background merges and mutations, old parts are removed only after a certain amount of time (`old_parts_lifetime`).
 During this time, they are not moved to other volumes or disks. Therefore, until the parts are finally removed, they are still taken into account for evaluation of the occupied disk space.
 
-User can assign new big parts to different disks of a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) volume in a balanced way using the [min_bytes_to_rebalance_partition_over_jbod](/operations/settings/merge-tree-settings.md/#min-bytes-to-rebalance-partition-over-jbod) setting.
+User can assign new big parts to different disks of a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) volume in a balanced way using the [min_bytes_to_rebalance_partition_over_jbod](/operations/settings/merge-tree-settings.md/#min_bytes_to_rebalance_partition_over_jbod) setting.
 
 ## Using External Storage for Data Storage {#table_engine-mergetree-s3}
 
@@ -916,7 +917,7 @@ User can assign new big parts to different disks of a [JBOD](https://en.wikipedi
 Example for [S3](https://aws.amazon.com/s3/) as external storage using a disk with type `s3`.
 
 Configuration markup:
-``` xml
+```xml
 <storage_configuration>
     ...
     <disks>
@@ -978,7 +979,7 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistics = 1`.
 
-``` sql
+```sql
 CREATE TABLE tab
 (
     a Int64 STATISTICS(TDigest, Uniq),

@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for ORDER BY Clause'
+sidebar_label: 'ORDER BY'
 slug: /sql-reference/statements/select/order-by
-sidebar_label: ORDER BY
+title: 'ORDER BY Clause'
 ---
 
 # ORDER BY Clause
@@ -33,7 +35,7 @@ There are two approaches to `NaN` and `NULL` sorting order:
 
 For the table
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    2 │
@@ -50,7 +52,7 @@ For the table
 
 Run the query `SELECT * FROM t_null_nan ORDER BY y NULLS FIRST` to get:
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 7 │ ᴺᵁᴸᴸ │
@@ -81,7 +83,7 @@ Example only with [String](../../../sql-reference/data-types/string.md) values:
 
 Input table:
 
-``` text
+```text
 ┌─x─┬─s────┐
 │ 1 │ bca  │
 │ 2 │ ABC  │
@@ -99,7 +101,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Result:
 
-``` text
+```text
 ┌─x─┬─s────┐
 │ 3 │ 123a │
 │ 4 │ abc  │
@@ -113,7 +115,7 @@ Example with [Nullable](../../../sql-reference/data-types/nullable.md):
 
 Input table:
 
-``` text
+```text
 ┌─x─┬─s────┐
 │ 1 │ bca  │
 │ 2 │ ᴺᵁᴸᴸ │
@@ -133,7 +135,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Result:
 
-``` text
+```text
 ┌─x─┬─s────┐
 │ 4 │ 123a │
 │ 5 │ abc  │
@@ -149,7 +151,7 @@ Example with [Array](../../../sql-reference/data-types/array.md):
 
 Input table:
 
-``` text
+```text
 ┌─x─┬─s─────────────┐
 │ 1 │ ['Z']         │
 │ 2 │ ['z']         │
@@ -169,7 +171,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Result:
 
-``` text
+```text
 ┌─x─┬─s─────────────┐
 │ 7 │ ['']          │
 │ 3 │ ['a']         │
@@ -290,7 +292,7 @@ All missed values of `expr` column will be filled sequentially and other columns
 
 To fill multiple columns, add `WITH FILL` modifier with optional parameters after each field name in `ORDER BY` section.
 
-``` sql
+```sql
 ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr] [STALENESS const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr] [STALENESS numeric_expr]
 [INTERPOLATE [(col [AS expr], ... colN [AS exprN])]]
 ```
@@ -305,7 +307,7 @@ When `STALENESS const_numeric_expr` is defined, the query will generate rows unt
 
 Example of a query without `WITH FILL`:
 
-``` sql
+```sql
 SELECT n, source FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source
    FROM numbers(10) WHERE number % 3 = 1
@@ -314,7 +316,7 @@ SELECT n, source FROM (
 
 Result:
 
-``` text
+```text
 ┌─n─┬─source───┐
 │ 1 │ original │
 │ 4 │ original │
@@ -324,7 +326,7 @@ Result:
 
 Same query after applying `WITH FILL` modifier:
 
-``` sql
+```sql
 SELECT n, source FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source
    FROM numbers(10) WHERE number % 3 = 1
@@ -333,7 +335,7 @@ SELECT n, source FROM (
 
 Result:
 
-``` text
+```text
 ┌───n─┬─source───┐
 │   0 │          │
 │ 0.5 │          │
@@ -355,7 +357,7 @@ For the case with multiple fields `ORDER BY field2 WITH FILL, field1 WITH FILL` 
 
 Example:
 
-``` sql
+```sql
 SELECT
     toDate((number * 10) * 86400) AS d1,
     toDate(number * 86400) AS d2,
@@ -369,7 +371,7 @@ ORDER BY
 
 Result:
 
-``` text
+```text
 ┌───d1───────┬───d2───────┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
 │ 1970-01-01 │ 1970-01-03 │          │
@@ -385,7 +387,7 @@ Field `d1` does not fill in and use the default value cause we do not have repea
 
 The following query with the changed field in `ORDER BY`:
 
-``` sql
+```sql
 SELECT
     toDate((number * 10) * 86400) AS d1,
     toDate(number * 86400) AS d2,
@@ -399,7 +401,7 @@ ORDER BY
 
 Result:
 
-``` text
+```text
 ┌───d1───────┬───d2───────┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
 │ 1970-01-16 │ 1970-01-01 │          │
@@ -419,7 +421,7 @@ Result:
 
 The following query uses the `INTERVAL` data type of 1 day for each data filled on column `d1`:
 
-``` sql
+```sql
 SELECT
     toDate((number * 10) * 86400) AS d1,
     toDate(number * 86400) AS d2,
@@ -500,7 +502,7 @@ Result:
 
 Example of a query without `STALENESS`:
 
-``` sql
+```sql
 SELECT number as key, 5 * number value, 'original' AS source
 FROM numbers(16) WHERE key % 5 == 0
 ORDER BY key WITH FILL;
@@ -508,7 +510,7 @@ ORDER BY key WITH FILL;
 
 Result:
 
-``` text
+```text
     ┌─key─┬─value─┬─source───┐
  1. │   0 │     0 │ original │
  2. │   1 │     0 │          │
@@ -531,7 +533,7 @@ Result:
 
 Same query after applying `STALENESS 3`:
 
-``` sql
+```sql
 SELECT number as key, 5 * number value, 'original' AS source
 FROM numbers(16) WHERE key % 5 == 0
 ORDER BY key WITH FILL STALENESS 3;
@@ -539,7 +541,7 @@ ORDER BY key WITH FILL STALENESS 3;
 
 Result:
 
-``` text
+```text
     ┌─key─┬─value─┬─source───┐
  1. │   0 │     0 │ original │
  2. │   1 │     0 │          │
@@ -558,7 +560,7 @@ Result:
 
 Example of a query without `INTERPOLATE`:
 
-``` sql
+```sql
 SELECT n, source, inter FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source, number as inter
    FROM numbers(10) WHERE number % 3 = 1
@@ -567,7 +569,7 @@ SELECT n, source, inter FROM (
 
 Result:
 
-``` text
+```text
 ┌───n─┬─source───┬─inter─┐
 │   0 │          │     0 │
 │ 0.5 │          │     0 │
@@ -587,7 +589,7 @@ Result:
 
 Same query after applying `INTERPOLATE`:
 
-``` sql
+```sql
 SELECT n, source, inter FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source, number as inter
    FROM numbers(10) WHERE number % 3 = 1
@@ -596,7 +598,7 @@ SELECT n, source, inter FROM (
 
 Result:
 
-``` text
+```text
 ┌───n─┬─source───┬─inter─┐
 │   0 │          │     0 │
 │ 0.5 │          │     0 │
@@ -618,7 +620,7 @@ Result:
 
 It can be useful to fill rows which have the same values in particular columns independently, - a good example is filling missing values in time series.
 Assume there is the following time series table:
-``` sql
+```sql
 CREATE TABLE timeseries
 (
     `sensor_id` UInt64,

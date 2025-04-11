@@ -1,7 +1,6 @@
 #include <Columns/IColumn.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowTablesQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
@@ -54,7 +53,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << " ORDER BY name";
 
         if (query.limit_length)
-            rewritten_query << " LIMIT " << query.limit_length;
+            rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
 
         return rewritten_query.str();
     }
@@ -78,7 +77,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << " ORDER BY cluster";
 
         if (query.limit_length)
-            rewritten_query << " LIMIT " << query.limit_length;
+            rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
 
         return rewritten_query.str();
     }
@@ -148,7 +147,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << " ORDER BY elapsed desc";
 
         if (query.limit_length)
-            rewritten_query << " LIMIT " << query.limit_length;
+            rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
 
         return rewritten_query.str();
     }
@@ -193,13 +192,13 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
             << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
             << DB::quote << query.like;
     else if (query.where_expression)
-        rewritten_query << " AND (" << query.where_expression << ")";
+        rewritten_query << " AND (" << query.where_expression->formatWithSecretsOneLine() << ")";
 
     /// (*)
     rewritten_query << " ORDER BY name ";
 
     if (query.limit_length)
-        rewritten_query << " LIMIT " << query.limit_length;
+        rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
 
     return rewritten_query.str();
 }

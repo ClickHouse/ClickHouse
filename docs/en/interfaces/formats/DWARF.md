@@ -1,10 +1,11 @@
 ---
-title: DWARF
-slug: /interfaces/formats/DWARF
-keywords: [DWARF]
-input_format: true
-output_format: false
 alias: []
+description: 'Documentation for the DWARF format'
+input_format: true
+keywords: ['DWARF']
+output_format: false
+slug: /interfaces/formats/DWARF
+title: 'DWARF'
 ---
 
 | Input | Output  | Alias |

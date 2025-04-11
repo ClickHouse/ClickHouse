@@ -1,9 +1,13 @@
 ---
-slug: /sql-reference/table-functions/fileCluster
+description: 'Enables simultaneous processing of files matching a specified path across
+  multiple nodes within a cluster. The initiator establishes connections to worker
+  nodes, expands globs in the file path, and delegates file-reading tasks to worker
+  nodes. Each worker node is querying the initiator for the next file to process,
+  repeating until all tasks are completed (all files are read).'
+sidebar_label: 'fileCluster'
 sidebar_position: 61
-sidebar_label: fileCluster
-title: "fileCluster"
-description: "Enables simultaneous processing of files matching a specified path across multiple nodes within a cluster. The initiator establishes connections to worker nodes, expands globs in the file path, and delegates file-reading tasks to worker nodes. Each worker node is querying the initiator for the next file to process, repeating until all tasks are completed (all files are read)."
+slug: /sql-reference/table-functions/fileCluster
+title: 'fileCluster'
 ---
 
 # fileCluster Table Function
@@ -17,7 +21,7 @@ In case these files differ between nodes, the return value cannot be predetermin
 
 **Syntax**
 
-``` sql
+```sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
@@ -37,7 +41,7 @@ A table with the specified format and structure and with data from files matchin
 
 Given a cluster named `my_cluster` and given the following value of setting `user_files_path`:
 
-``` bash
+```bash
 $ grep user_files_path /etc/clickhouse-server/config.xml
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```

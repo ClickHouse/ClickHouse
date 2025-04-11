@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/explain
+description: 'Documentation for Explain'
+sidebar_label: 'EXPLAIN'
 sidebar_position: 39
-sidebar_label: EXPLAIN
-title: "EXPLAIN Statement"
+slug: /sql-reference/statements/explain
+title: 'EXPLAIN Statement'
 ---
 
 Shows the execution plan of a statement.

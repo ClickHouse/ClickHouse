@@ -16,11 +16,11 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -75,6 +75,12 @@ namespace ErrorCodes
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
     extern const int INFINITE_LOOP;
+    extern const int THERE_IS_NO_QUERY;
+}
+
+namespace Setting
+{
+    extern const SettingsBool fsync_metadata;
 }
 
 class DatabaseNameHints : public IHints<>
@@ -515,10 +521,12 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 
 void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
 {
+    if (database_name.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
+
     DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
-        assert(!database_name.empty());
         if (auto it = databases.find(database_name); it != databases.end())
             db = it->second;
     }
@@ -655,6 +663,42 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
         auto removed_loading_deps = loading_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
         referential_dependencies.addDependencies(StorageID{new_name, table_name}, removed_ref_deps);
         loading_dependencies.addDependencies(StorageID{new_name, table_name}, removed_loading_deps);
+    }
+}
+
+void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
+{
+    std::lock_guard lock{databases_mutex};
+    ASTPtr ast = database->getCreateDatabaseQuery();
+    if (!ast)
+        throw Exception(
+            ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database->getDatabaseName()));
+
+    auto * ast_create_query = ast->as<ASTCreateQuery>();
+    ast_create_query->attach = true;
+
+    WriteBufferFromOwnString statement_buf;
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    ast_create_query->format(statement_buf, format_settings);
+    writeChar('\n', statement_buf);
+    String statement = statement_buf.str();
+
+    auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql.tmp");
+    auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql");
+    auto db_disk = getContext()->getDatabaseDisk();
+
+    writeMetadataFile(
+        db_disk, /*file_path=*/database_metadata_tmp_path, /*content=*/statement, getContext()->getSettingsRef()[Setting::fsync_metadata]);
+
+    try
+    {
+        /// rename atomically replaces the old file with the new one.
+        db_disk->replaceFile(database_metadata_tmp_path, database_metadata_path);
+    }
+    catch (...)
+    {
+        db_disk->removeFileIfExists(database_metadata_tmp_path);
+        throw;
     }
 }
 
@@ -1126,7 +1170,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             {
                 tryLogCurrentException(log, "Cannot load partially dropped table " + table_id.getNameForLogs() +
                                             " from: " + dropped_metadata_path +
-                                            ". Parsed query: " + serializeAST(*create) +
+                                            ". Parsed query: " + create->formatForLogging() +
                                             ". Will remove metadata and " + data_path +
                                             ". Garbage may be left in ZooKeeper.");
             }
