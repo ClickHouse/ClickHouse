@@ -329,12 +329,11 @@ addPrivilegesInfoToQueryLogElement(QueryLogElement & element, const ContextPtr c
 }
 
 static void
-addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr)
+addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr, std::chrono::system_clock::time_point time)
 {
-    const auto time_now = std::chrono::system_clock::now();
     UInt64 elapsed_microseconds = info.elapsed_microseconds;
-    element.event_time = timeInSeconds(time_now);
-    element.event_time_microseconds = timeInMicroseconds(time_now);
+    element.event_time = timeInSeconds(time);
+    element.event_time_microseconds = timeInMicroseconds(time);
     element.query_duration_ms = elapsed_microseconds / 1000;
 
     ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, elapsed_microseconds);
@@ -594,7 +593,7 @@ void logQueryFinish(
         logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
         elem.type = QueryLogElementType::QUERY_FINISH;
 
-        addStatusInfoToQueryLogElement(elem, info, query_ast, context);
+        addStatusInfoToQueryLogElement(elem, info, query_ast, context, time_now);
 
         auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
         elem.result_rows = result_progress.result_rows;
@@ -687,7 +686,7 @@ void logQueryException(
     if (process_list_elem)
     {
         info = std::make_shared<QueryStatusInfo>(process_list_elem->getInfo(true, settings[Setting::log_profile_events], false));
-        addStatusInfoToQueryLogElement(elem, *info, query_ast, context);
+        addStatusInfoToQueryLogElement(elem, *info, query_ast, context, time_now);
     }
     else
     {
