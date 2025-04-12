@@ -174,14 +174,15 @@ std::pair<ColumnPtr, ColumnPtr> parseHivePartitioningKeysAndValues(const String 
     keys->validate();
     values->validate();
 
-    std::unordered_set<StringRef> check_for_duplicates_set;
+    std::unordered_map<StringRef, StringRef> check_for_duplicates_umap;
 
     for (std::size_t i = 0; i < keys->size(); i++)
     {
         const auto key = keys->getDataAt(i);
-        const auto [_, inserted] = check_for_duplicates_set.insert(keys->getDataAt(i));
+        const auto value = values->getDataAt(i);
+        const auto [it, inserted] = check_for_duplicates_umap.insert(std::make_pair(key, value));
 
-        if (!inserted)
+        if (!inserted && it->second != value)
         {
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
