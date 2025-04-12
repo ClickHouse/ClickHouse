@@ -27,6 +27,10 @@ function(set_rust_target)
     endif ()
 endfunction()
 
+# Keep in sync with toolchain in docker images
+# (must be called before find_package(Rust) and inclusion of Corrosion.cmake)
+set(Rust_TOOLCHAIN "nightly-2024-12-32")
+
 if (NOT ENABLE_LIBRARIES)
   set(DEFAULT_ENABLE_RUST FALSE)
 elseif (NOT DEFINED ENABLE_RUST)
