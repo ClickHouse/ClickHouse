@@ -112,7 +112,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-{}
+{
+}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorMinMax::getGranuleAndReset()
 {
@@ -178,11 +179,8 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 
 bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    std::shared_ptr<MergeTreeIndexGranuleMinMax> granule
-        = std::dynamic_pointer_cast<MergeTreeIndexGranuleMinMax>(idx_granule);
-    if (!granule)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Minmax index condition got a granule with the wrong type.");
-    return condition.checkInHyperrectangle(granule->hyperrectangle, index_data_types).can_be_true;
+    const MergeTreeIndexGranuleMinMax & granule = typeid_cast<const MergeTreeIndexGranuleMinMax &>(*idx_granule);
+    return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types).can_be_true;
 }
 
 

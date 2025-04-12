@@ -92,16 +92,16 @@ void MergeTreeIndexReader::initStreamIfNeeded()
 
 void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
 {
-    auto load_func = [this, mark]
+    auto load_func = [this, mark](auto & res)
     {
         initStreamIfNeeded();
         if (stream_mark != mark)
             stream->seekToMark(mark);
 
-        auto res = index->createIndexGranule();
+        if (!res)
+            res = index->createIndexGranule();
         res->deserializeBinary(*stream->getDataBuffer(), version);
         stream_mark = mark + 1;
-        return res;
     };
 
     /// Not all skip indexes are created equal. Vector similarity indexes typically have a high index granularity (e.g. GRANULARITY
@@ -112,7 +112,7 @@ void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
     /// would create too much lock contention in the cache (this was learned the hard way).
     if (!index->isVectorSimilarityIndex())
     {
-        granule = load_func();
+        load_func(granule);
     }
     else
     {
