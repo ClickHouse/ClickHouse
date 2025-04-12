@@ -381,7 +381,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
-        else if (const auto pair = getKeyAndValuePairFromHiveKeysAndValues(*hive_keys_and_values, virtual_column.getNameInStorage()))
+        else if (const auto pair = getKeyAndValuePairFromHiveKeysAndValues(hive_keys_and_values, virtual_column.getNameInStorage()))
         {
             chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(pair->second), *virtual_column.type))->convertToFullColumnIfConst());
         }
