@@ -19,7 +19,6 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 
@@ -339,7 +338,6 @@ void Client::initialize(Poco::Util::Application & self)
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
-    UseSSL use_ssl;
     auto & thread_status = MainThreadStatus::getInstance();
     setupSignalHandler();
 
