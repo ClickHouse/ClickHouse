@@ -421,24 +421,38 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
 {
     FilteredGranules res;
     const MergeTreeIndexBulkGranulesSet & granules = assert_cast<const MergeTreeIndexBulkGranulesSet &>(*idx_granules);
+
+    /// This is the range of granules we will analyze.
+    /// We will return a subset of granules from this range.
     size_t total_granules = 1 + granules.max_granule - granules.min_granule;
 
+    /// This block contains values of all set elements of all granules,
+    /// along with the corresponding granule number for them.
+    /// Some granules may not have any info, so they are not present in the block.
     Block block = granules.block;
     size_t block_size = block.rows();
 
-    if (block_size == 0 || isUseless())
+    /// Condition is useless (does not allow using the index)
+    /// Or index granules have no set elements.
+    auto whole_range = [total_granules, min_granule = granules.min_granule]
     {
-        res.resize(total_granules);
+        FilteredGranules whole;
+        whole.resize(total_granules);
         for (size_t i = 0; i < total_granules; ++i)
-            res[i] = granules.min_granule + i;
-        return res;
-    }
+            whole[i] = min_granule + i;
+        return whole;
+    };
 
+    if (block_size == 0 || isUseless())
+        return whole_range();
+
+    /// Calculate the condition expression on top of every element of every set.
     actions->execute(block);
 
+    /// This is the UInt8 mask of elements that passed the condition.
     const auto & column = block.getByName(actions_output_column_name).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
     if (column->onlyNull())
-        return res;
+        return whole_range();
 
     const auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
     const NullMap * null_map = nullptr;
@@ -454,8 +468,11 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
             "ColumnUInt8 is expected as a Set index condition result");
 
     const auto & filter_result = col_uint8->getData();
+    /// The column containing the corresponding granule nums. We will take the granules where the filter is true.
     const auto & granule_nums = assert_cast<const ColumnUInt64 &>(*block.getByName("_granule_num").column).getData();
 
+    /// We will iterate over the range of granules and check if there is at least one elemnent from the sets passing the filter.
+    /// But if there are no set elements at all, it means no info, and the granule will also pass.
     size_t block_pos = 0;
     for (size_t i = 0; i < total_granules; ++i)
     {
@@ -469,7 +486,7 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
         }
         else
         {
-            /// This granule has set elements - check any of them pass the filter
+            /// This granule has set elements - check if any of them pass the filter.
             chassert(current_granule == current_granule_in_block);
             bool passed = false;
             while (block_pos < block_size && current_granule_in_block == granule_nums[block_pos])
@@ -479,6 +496,7 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
                     passed = (!null_map || !(*null_map)[block_pos]) && (filter_result[block_pos] & 1);
                     if (passed)
                         res.push_back(current_granule);
+                    /// After we found that it passes, we just iterate over the block to the next granule or the end.
                 }
                 ++block_pos;
             }
