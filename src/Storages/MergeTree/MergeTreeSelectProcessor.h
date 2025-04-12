@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
@@ -10,8 +11,6 @@
 #include <Processors/Chunk.h>
 
 #include <boost/core/noncopyable.hpp>
-#include "Interpreters/Cache/QueryConditionCache.h"
-
 
 namespace DB
 {
@@ -20,6 +19,9 @@ struct PrewhereExprInfo;
 
 struct LazilyReadInfo;
 using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
+
+class QueryConditionCacheWriter;
+using QueryConditionCacheWriterPtr = std::shared_ptr<QueryConditionCacheWriter>;
 
 struct ChunkAndProgress
 {

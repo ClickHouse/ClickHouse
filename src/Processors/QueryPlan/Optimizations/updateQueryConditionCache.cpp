@@ -1,9 +1,7 @@
-#include <memory>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
-#include "Interpreters/Cache/QueryConditionCache.h"
 
 namespace DB::QueryPlanOptimizations
 {

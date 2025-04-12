@@ -1,4 +1,3 @@
-#include <mutex>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>

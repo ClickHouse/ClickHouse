@@ -1,0 +1,14 @@
+--- with move to PREWHERE
+Expect one entry in the cache after the first query
+500000
+1
+Expect no entry in the cache
+500000
+0
+--- without move to PREWHERE
+Expect one entry in the cache after the first query
+500000
+1
+Expect no entry in the cache
+500000
+0

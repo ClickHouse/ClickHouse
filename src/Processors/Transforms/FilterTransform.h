@@ -1,8 +1,8 @@
 #pragma once
+#include <memory>
 #include <Processors/ISimpleTransform.h>
 #include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include "Interpreters/Cache/QueryConditionCache.h"
 
 namespace DB
 {
@@ -11,7 +11,9 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ActionsDAG;
+
 class QueryConditionCacheWriter;
+using QueryConditionCacheWriterPtr = std::shared_ptr<QueryConditionCacheWriter>;
 
 /** Implements WHERE, HAVING operations.
   * Takes an expression, which adds to the block one ColumnUInt8 column containing the filtering conditions.

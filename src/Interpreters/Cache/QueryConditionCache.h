@@ -88,7 +88,7 @@ public:
         QueryConditionCachePtr query_condition_cache_,
         double query_condition_cache_zero_ratio_threshold_,
         size_t condition_hash_,
-        String & condition_)
+        const String & condition_)
     : query_condition_cache(query_condition_cache_) 
     , query_condition_cache_zero_ratio_threshold(query_condition_cache_zero_ratio_threshold_)
     , condition_hash(condition_hash_)
