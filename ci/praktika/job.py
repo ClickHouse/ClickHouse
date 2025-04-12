@@ -200,6 +200,9 @@ class Job:
                     return job
             raise RuntimeError(f"Failed to find job [{job_name}] in [{job_configs}]")
 
+        def get_docker_image_name(self):
+            return self.run_in_docker.split("+")[0] if self.run_in_docker else ""
+
         def is_affected_by(self, changed_files: List[str]) -> bool:
             if changed_files is None:
                 return True

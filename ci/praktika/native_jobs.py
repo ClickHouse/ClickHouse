@@ -346,8 +346,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
-    if results[-1].is_ok():
-        print("Check affected jobs")
+    if workflow.enable_job_filtering_by_changes and results[-1].is_ok():
+        print("Filter not affected jobs")
 
         def check_affected_jobs():
             changed_files = Info().get_changed_files()
@@ -359,6 +359,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             all_affected_dockers = Docker.find_affected_docker_images(
                 workflow.dockers, changed_files
             )
+            if all_affected_dockers:
+                print(f"Affected docker images [{all_affected_dockers}]")
 
             affected_artifacts = []
             unaffected_jobs_with_artifacts = {}
@@ -379,7 +381,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 if any(dep in affected_artifacts for dep in job.requires):
                     print(f"Job [{job.name}] requires affected artifacts")
                     is_affected = True
-                elif job.run_in_docker in all_affected_dockers:
+                elif job.get_docker_image_name() in all_affected_dockers:
                     print(
                         f"Job [{job.name}] runs in affected Docker image [{job.run_in_docker}]"
                     )
@@ -424,7 +426,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
         results.append(
             Result.from_commands_run(
-                name="Check affected jobs", command=check_affected_jobs, with_info=True
+                name="Filter not affected jobs",
+                command=check_affected_jobs,
+                with_info=True,
             )
         )
 
