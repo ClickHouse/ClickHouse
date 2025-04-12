@@ -228,6 +228,16 @@ struct CreateResponse : virtual Response
     size_t bytesSize() const override { return path_created.size(); }
 };
 
+struct Create2Response : virtual Response
+{
+    String path_created;
+    Stat zstat;
+
+    void removeRootPath(const String & root_path) override;
+
+    size_t bytesSize() const override { return path_created.size(); }
+};
+
 struct RemoveRequest : virtual Request
 {
     String path;

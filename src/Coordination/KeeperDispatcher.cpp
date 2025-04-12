@@ -5,6 +5,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <base/hex.h>
+#include "Common/ZooKeeper/ZooKeeperConstants.h"
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
@@ -71,6 +72,7 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
 {
     if (request->getOpNum() == Coordination::OpNum::Create
         || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
+        || request->getOpNum() == Coordination::OpNum::CreateTTL
         || request->getOpNum() == Coordination::OpNum::Set)
     {
         return true;
@@ -85,6 +87,7 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
             switch (sub_zk_request->getOpNum())
             {
                 case Coordination::OpNum::Create:
+                case Coordination::OpNum::CreateTTL:
                 case Coordination::OpNum::CreateIfNotExists: {
                     Coordination::ZooKeeperCreateRequest & create_req
                         = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);

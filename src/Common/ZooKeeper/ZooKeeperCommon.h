@@ -9,6 +9,8 @@
 #include <optional>
 #include <functional>
 
+#include <iostream>
+
 namespace DB
 {
 class ReadBuffer;
@@ -243,6 +245,8 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     size_t bytesSize() const override { return CreateRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 
     void createLogElements(LogElements & elems) const override;
+
+    mutable Stat zstat;
 };
 
 struct ZooKeeperCreateResponse : CreateResponse, ZooKeeperResponse
@@ -263,6 +267,20 @@ struct ZooKeeperCreateIfNotExistsResponse : ZooKeeperCreateResponse
 {
     OpNum getOpNum() const override { return OpNum::CreateIfNotExists; }
     using ZooKeeperCreateResponse::ZooKeeperCreateResponse;
+};
+
+struct ZooKeeperCreateTTLResponse : Create2Response, ZooKeeperResponse
+{
+    void readImpl(ReadBuffer & in) override;
+
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+
+    OpNum getOpNum() const override { return OpNum::CreateTTL; }
+
+    size_t bytesSize() const override { return Create2Response::bytesSize() + sizeof(xid) + sizeof(zxid); }
+
+    void fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest

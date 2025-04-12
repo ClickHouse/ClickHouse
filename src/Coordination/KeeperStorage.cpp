@@ -27,6 +27,7 @@
 #include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperStorage.h>
 
+#include <chrono>
 #include <shared_mutex>
 #include <base/defines.h>
 
@@ -1539,7 +1540,6 @@ process(const Coordination::ZooKeeperSyncRequest & zk_request, Storage & /* stor
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
-    std::cerr << "checkAuth bp0\n";
     auto path = zk_request.getPath();
     return storage.checkACL(parentNodePath(path), Coordination::ACL::Create, session_id, is_local);
 }
@@ -1564,7 +1564,6 @@ std::list<KeeperStorageBase::Delta> preprocess(
     uint64_t * /*digest*/,
     const KeeperContext & keeper_context)
 {
-    std::cerr << "preprocess bp0\n";
     ProfileEvents::increment(ProfileEvents::KeeperCreateRequest);
 
     std::list<KeeperStorageBase::Delta> new_deltas;
@@ -1647,6 +1646,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     stat.cversion = 0;
     stat.ephemeralOwner = zk_request.is_ephemeral ? session_id : 0;
 
+    zk_request.zstat = stat;
     std::optional<int64_t> ttl;
     if (zk_request.should_read_ttl)
         ttl = zk_request.ttl;
@@ -1655,15 +1655,6 @@ std::list<KeeperStorageBase::Delta> preprocess(
         std::move(path_created),
         zxid,
         CreateNodeDelta{stat, std::move(node_acls), zk_request.data, ttl});
-
-    if (ttl.has_value())
-    {
-        std::cerr << "submit to ttl manager\n";
-        /*storage.ttl_manager.addNode(std::chrono::milliseconds(*ttl), [&storage, path = path_created, version = 0, update_digest = false] {
-            storage.removeNode(path, version, update_digest);
-        });*/
-        std::cerr << "submit to ttl manager OK\n";
-    }
     
     return new_deltas;
 }
@@ -1671,17 +1662,34 @@ std::list<KeeperStorageBase::Delta> preprocess(
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
-    std::cerr << "process bp0\n";
-    std::shared_ptr<Coordination::ZooKeeperCreateResponse> response = zk_request.not_exists
-        ? std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>()
-        : std::make_shared<Coordination::ZooKeeperCreateResponse>();
-
+    auto make_response = [&zk_request] (const String& path, Coordination::Error error) -> Coordination::ZooKeeperResponsePtr {
+        if (zk_request.not_exists)
+        {    
+            auto response = std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>();
+            response->path_created = path;
+            response->error = error;
+            return response;
+        }
+        else if (zk_request.should_read_ttl)
+        {
+            auto response = std::make_shared<Coordination::ZooKeeperCreateTTLResponse>();
+            response->path_created = path;
+            response->error = error;
+            response->zstat = zk_request.zstat;
+            return response;
+        }
+        else
+        {
+            auto response = std::make_shared<Coordination::ZooKeeperCreateResponse>();
+            response->path_created = path;
+            response->error = error;
+            return response;
+        }
+    };
     if (deltas.empty())
     {
         chassert(zk_request.not_exists);
-        response->path_created = zk_request.getPath();
-        response->error = Coordination::Error::ZOK;
-        return response;
+        return make_response(zk_request.getPath(), Coordination::Error::ZOK);
     }
 
     std::string created_path;
@@ -1696,13 +1704,17 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
 
     if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
     {
-        response->error = result;
-        return response;
+        return make_response("", result);
     }
 
-    response->path_created = std::move(created_path);
-    response->error = Coordination::Error::ZOK;
-    return response;
+    if (zk_request.should_read_ttl)
+    {
+        storage.ttl_manager.addNode(std::chrono::milliseconds(zk_request.ttl), [&storage, begin, path = created_path, version = -1, update_digest = false] {
+            storage.removeNode(path, version, update_digest);
+        });
+    }
+
+    return make_response(created_path, Coordination::Error::ZOK);
 }
 /// CREATE Request ///
 

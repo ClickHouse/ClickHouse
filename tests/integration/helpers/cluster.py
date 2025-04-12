@@ -276,6 +276,15 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     return p.returncode == 0
 
 
+def check_keeper_ttl_node_is_available(keeper_ttl_node_id):
+    p = subprocess.Popen(
+        docker_exec(keeper_ttl_node_id, "java", "-version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
+
 def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
     try:
         subprocess.check_output(
@@ -645,6 +654,12 @@ class ClickHouseCluster:
         self.postgresql_java_client_host = "java"
         self.postgresql_java_client_docker_id = self.get_instance_docker_id(
             self.postgresql_java_client_host
+        )
+
+        # available when with_keeper_ttl_node = True
+        self.keeper_ttl_node_host = "java"
+        self.keeper_ttl_node_docker_id = self.get_instance_docker_id(
+            self.keeper_ttl_node_host
         )
 
         # available when with_mysql_client == True
@@ -1593,6 +1608,7 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        with_keeper_ttl_node=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
         with_mongo=False,
@@ -1733,6 +1749,7 @@ class ClickHouseCluster:
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
+            with_keeper_ttl_node=with_keeper_ttl_node,
             clickhouse_start_command=clickhouse_start_command,
             clickhouse_start_extra_args=extra_args,
             main_config_name=main_config_name,
@@ -1833,6 +1850,14 @@ class ClickHouseCluster:
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
+
+        if with_keeper_ttl_node and not self.with_keeper_ttl_node:
+            cmds.append(
+                self.setup_keeper_ttl_node_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
 
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
@@ -2382,6 +2407,21 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
+    def wait_keeper_ttl_node(self, timeout=180):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_keeper_ttl_node_is_available(
+                    self.keeper_ttl_node_id
+                ):
+                    logging.debug("PostgreSQL Java Client is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find PostgreSQL Java Client" + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait PostgreSQL Java Client container")
+
     def wait_rabbitmq_to_start(self, timeout=120):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
@@ -2917,6 +2957,18 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_postgresql_java_client()
 
+            if (
+                self.with_keeper_ttl_node
+                and self.base_keeper_ttl_node_cmd
+            ):
+                logging.debug("Setup Keeper TTL Node test")
+                subprocess_check_call(
+                    self.base_keeper_ttl_node_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_keeper_ttl_node()
+
+
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug("Setup Kafka")
                 os.mkdir(self.kafka_dir)
@@ -3429,6 +3481,7 @@ class ClickHouseInstance:
         with_postgres,
         with_postgres_cluster,
         with_postgresql_java_client,
+        with_keeper_ttl_node,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         clickhouse_start_extra_args="",
         main_config_name="config.xml",
@@ -3497,6 +3550,7 @@ class ClickHouseInstance:
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
+        self.with_keeper_ttl_node = with_keeper_ttl_node
         self.with_kafka = with_kafka
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_kerberos_kdc = with_kerberos_kdc

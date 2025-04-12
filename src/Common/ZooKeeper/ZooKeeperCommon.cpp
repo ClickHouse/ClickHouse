@@ -255,6 +255,8 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
 
     if (should_read_ttl)
         Coordination::read(ttl, in);
+
+    std::cerr << "should_read_ttl " << should_read_ttl << ' ' << ttl << '\n';
 }
 
 std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
@@ -281,6 +283,23 @@ void ZooKeeperCreateResponse::writeImpl(WriteBuffer & out) const
 size_t ZooKeeperCreateResponse::sizeImpl() const
 {
     return Coordination::size(path_created);
+}
+
+void ZooKeeperCreateTTLResponse::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path_created, in);
+    Coordination::read(zstat, in);
+}
+
+void ZooKeeperCreateTTLResponse::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path_created, out);
+    Coordination::write(zstat, out);
+}
+
+size_t ZooKeeperCreateTTLResponse::sizeImpl() const
+{
+    return Coordination::size(path_created) + Coordination::size(zstat);
 }
 
 void ZooKeeperRemoveRequest::writeImpl(WriteBuffer & out) const
@@ -967,6 +986,8 @@ ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
 {
     if (not_exists)
         return std::make_shared<ZooKeeperCreateIfNotExistsResponse>();
+    if (should_read_ttl)
+        return std::make_shared<ZooKeeperCreateTTLResponse>();
     return std::make_shared<ZooKeeperCreateResponse>();
 }
 
@@ -1123,6 +1144,14 @@ void ZooKeeperCreateResponse::fillLogElements(LogElements & elems, size_t idx) c
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.path_created = path_created;
+}
+
+void ZooKeeperCreateTTLResponse::fillLogElements(LogElements & elems, size_t idx) const
+{
+    ZooKeeperResponse::fillLogElements(elems, idx);
+    auto & elem =  elems[idx];
+    elem.path_created = path_created;
+    elem.stat = zstat;
 }
 
 void ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t idx) const
