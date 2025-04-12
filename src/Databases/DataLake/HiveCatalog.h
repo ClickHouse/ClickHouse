@@ -28,7 +28,7 @@ class HiveCatalog final : public ICatalog, private DB::WithContext
 {
 public:
     explicit HiveCatalog(
-        const std::string & warehouse_, const std::string & storage_type_, const std::string & base_url_, DB::ContextPtr context_);
+        const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr context_);
 
     ~HiveCatalog() override = default;
 
@@ -51,8 +51,6 @@ private:
     std::shared_ptr<apache::thrift::transport::TTransport> transport;
     std::shared_ptr<apache::thrift::protocol::TBinaryProtocol> protocol;
     mutable Apache::Hadoop::Hive::ThriftHiveMetastoreClient client;
-
-    std::string storage_type;
 };
 
 }

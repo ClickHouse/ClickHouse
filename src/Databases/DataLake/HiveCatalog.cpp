@@ -41,13 +41,12 @@ std::pair<String, Int32> parseHostPort(const String & url)
 
 }
 
-HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & storage_type_, const std::string & base_url_, DB::ContextPtr)
+HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr)
     : ICatalog(warehouse_)
     , socket(new apache::thrift::transport::TSocket(parseHostPort(base_url_).first, parseHostPort(base_url_).second))
     , transport(new apache::thrift::transport::TBufferedTransport(socket))
     , protocol(new apache::thrift::protocol::TBinaryProtocol(transport))
     , client(protocol)
-    , storage_type(storage_type_)
 {
     transport->open();
 }
@@ -132,19 +131,7 @@ bool HiveCatalog::tryGetTableMetadata(const std::string & namespace_name, const 
 
 std::optional<StorageType> HiveCatalog::getStorageType() const
 {
-    if (storage_type == "s3")
-        return StorageType::S3;
-
-    if (storage_type == "azure")
-        return StorageType::Azure;
-
-    if (storage_type == "hdfs")
-        return StorageType::HDFS;
-
-    if (storage_type == "local")
-        return StorageType::Local;
-
-    return StorageType::Other;
+    return std::nullopt;
 }
 
 }

@@ -36,7 +36,6 @@ namespace DatabaseDataLakeSetting
 {
     extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
     extern const DatabaseDataLakeSettingsString warehouse;
-    extern const DatabaseDataLakeSettingsString hms_catalog_storage_type;
     extern const DatabaseDataLakeSettingsString catalog_credential;
     extern const DatabaseDataLakeSettingsString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
@@ -163,7 +162,6 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
         {
             catalog_impl = std::make_shared<DataLake::HiveCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
-                settings[DatabaseDataLakeSetting::hms_catalog_storage_type].value,
                 url,
                 Context::getGlobalContextInstance());
             break;
