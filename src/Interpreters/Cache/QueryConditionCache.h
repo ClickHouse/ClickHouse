@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/CacheBase.h>
-#include "Interpreters/Cache/QueryResultCache.h"
 #include <Storages/MergeTree/MarkRange.h>
 #include <memory>
 #include <mutex>
@@ -15,6 +14,10 @@ struct QueryConditionCacheKey
     const UUID table_id;
     const String part_name;
     const size_t condition_hash;
+
+    /// -- Additional members, conceptually not part of the key. Only included for pretty-printing
+    ///    in system.query_condition_cache:
+    const String condition;
 
     bool operator==(const QueryConditionCacheKey & other) const;
 };
@@ -81,10 +84,15 @@ using QueryConditionCachePtr = std::shared_ptr<QueryConditionCache>;
 class QueryConditionCacheWriter
 {
 public:
-    QueryConditionCacheWriter(QueryConditionCachePtr query_condition_cache_, double query_condition_cache_zero_ratio_threshold_, size_t condition_hash_)
+    QueryConditionCacheWriter(
+        QueryConditionCachePtr query_condition_cache_,
+        double query_condition_cache_zero_ratio_threshold_,
+        size_t condition_hash_,
+        String & condition_)
     : query_condition_cache(query_condition_cache_) 
     , query_condition_cache_zero_ratio_threshold(query_condition_cache_zero_ratio_threshold_)
     , condition_hash(condition_hash_)
+    , condition(condition_)
     {}
 
     ~QueryConditionCacheWriter() { finalize(); }
@@ -97,6 +105,7 @@ private:
     QueryConditionCachePtr query_condition_cache;
     double query_condition_cache_zero_ratio_threshold;
     size_t condition_hash;
+    String condition;
 
     std::unordered_map<QueryConditionCacheKey, MatchingMarks, QueryConditionCacheKeyHasher> buffered;
     std::mutex mutex;

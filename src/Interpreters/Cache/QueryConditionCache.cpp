@@ -26,7 +26,7 @@ void QueryConditionCache::write(const QueryConditionCacheKey & key, const Matchi
 
 MatchingMarksPtr QueryConditionCache::read(const UUID & table_id, const String & part_name, size_t condition_hash)
 {
-    QueryConditionCacheKey key = {table_id, part_name, condition_hash};
+    QueryConditionCacheKey key = {table_id, part_name, condition_hash, ""};
 
     if (auto entry = cache.get(key))
     {
@@ -96,15 +96,15 @@ size_t QueryConditionCacheKeyHasher::operator()(const QueryConditionCacheKey & k
 size_t QueryConditionCache::QueryConditionCacheEntryWeight::operator()(const MatchingMarks & entry) const
 {
     /// Estimate the memory size of `std::vector<bool>` (it uses bit-packing internally)
-    size_t dynamic_memory = (entry.capacity() + 7) / 8; /// round up to bytes.
-    return dynamic_memory + sizeof(decltype(entry));
+    size_t memory = (entry.capacity() + 7) / 8; /// round up to bytes.
+    return memory + sizeof(decltype(entry));
 }
 
 void QueryConditionCacheWriter::buffer(const UUID & table_id, const String & part_name, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    QueryConditionCacheKey key{table_id, part_name, condition_hash};
+    QueryConditionCacheKey key{table_id, part_name, condition_hash, condition};
     if (auto it = buffered.find(key); it != buffered.end())
     {
         // it->second->appendMarkRanges(mark_ranges_info->mark_ranges);

@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <city.h>
 #include <Storages/LazilyReadInfo.h>
 
@@ -120,15 +121,22 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     
     if (reader_settings.use_query_condition_cache && prewhere_info)
     {
-        for (const auto * dag : prewhere_info->prewhere_actions.getOutputs())
+        for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
         {
-            if (dag->result_name == prewhere_info->prewhere_column_name)
+            if (output->result_name == prewhere_info->prewhere_column_name)
             {
+                if (!VirtualColumnUtils::isDeterministic(output))
+                    continue;
+
                 auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                 query_condition_cache_writer = std::make_shared<QueryConditionCacheWriter>(
                     query_condition_cache,
                     reader_settings_.query_condition_cache_zero_ratio_threshold,
-                    dag->getHash());
+                    output->getHash(),
+                    reader_settings.query_condition_cache_store_conditions_as_plaintext
+                    ? prewhere_info->prewhere_actions.getNames()[0]
+                    : "");
+
                 break;
             }
         }
