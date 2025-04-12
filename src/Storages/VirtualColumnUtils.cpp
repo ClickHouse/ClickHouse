@@ -40,6 +40,7 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
@@ -55,8 +56,6 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/re2.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
