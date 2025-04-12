@@ -3,15 +3,7 @@
 namespace BuzzHouse
 {
 
-const RandomSettingParameter probRange
-    = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); };
-
-const RandomSettingParameter highRange = [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); };
-
-static const CHSetting threadRange = CHSetting(
-    [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
-    {"0", "1", std::to_string(std::thread::hardware_concurrency())},
-    false);
+const auto nastyStrings = [](RandomGenerator & rg) { return "'" + rg.pickRandomly(rg.nasty_strings) + "'"; };
 
 std::unordered_map<String, CHSetting> performanceSettings
     = {{"allow_aggregate_partitions_independently", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -88,16 +80,9 @@ std::unordered_map<String, CHSetting> performanceSettings
              "'prefer_partial_merge'"},
             false)},
        {"low_cardinality_use_single_dictionary_for_part", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"max_bytes_ratio_before_external_group_by",
-        CHSetting(
-            [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 0.99)); },
-            {"0", "0.1", "0.5", "0.99"},
-            false)},
-       {"max_bytes_ratio_before_external_sort",
-        CHSetting(
-            [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 0.99)); },
-            {"0", "0.1", "0.5", "0.99"},
-            false)},
+       {"max_bytes_ratio_before_external_group_by", CHSetting(probRange, {"0", "0.1", "0.5", "0.99"}, false)},
+       {"max_bytes_ratio_before_external_sort", CHSetting(probRange, {"0", "0.1", "0.5", "0.99"}, false)},
+       {"max_streams_to_max_threads_ratio", CHSetting(probRange, {"0", "0.1", "0.5", "0.99"}, false)},
        {"merge_tree_determine_task_size_by_prewhere_columns", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"min_count_to_compile_aggregate_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
        {"min_count_to_compile_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
@@ -130,6 +115,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_rewrite_sum_if_to_count_if", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"optimize_skip_merged_partitions", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"optimize_skip_unused_shards", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"optimize_skip_unused_shards_nesting", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)},
        {"optimize_skip_unused_shards_rewrite_in", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"optimize_sorting_by_input_stream_properties", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"optimize_substitute_columns", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -151,15 +137,18 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"prefer_global_in_and_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"prefer_localhost_replica", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_aggregation_in_order", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_convert_join_to_in", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_convert_outer_join_to_inner_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_enable_multithreading_after_window_functions", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_enable_optimizations", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_execute_functions_after_sorting", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_filter_push_down", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_join_shard_by_pk_ranges", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_lift_up_array_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_lift_up_union", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_merge_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_merge_filters", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_optimize_lazy_materialization", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_optimize_prewhere", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_push_down_limit", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_read_in_order", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -210,13 +199,15 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"transform_null_in", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_concurrency_control", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_index_for_in_with_subqueries", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_page_cache_with_distributed_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_query_condition_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_skip_indexes", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_skip_indexes_if_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_uncompressed_cache", CHSetting(trueOrFalse, {"0", "1"}, false)}};
 
 std::unordered_map<String, CHSetting> serverSettings = {
     {"aggregate_functions_null_for_empty", CHSetting(trueOrFalse, {}, false)},
-    {"aggregation_memory_efficient_merge_threads", threadRange},
+    {"aggregation_memory_efficient_merge_threads", threadSetting},
     {"allow_asynchronous_read_from_io_pool_for_merge_tree", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"allow_changing_replica_until_first_data_packet", CHSetting(trueOrFalse, {}, false)},
     {"allow_introspection_functions", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -231,12 +222,12 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"asterisk_include_alias_columns", CHSetting(trueOrFalse, {}, false)},
     {"async_insert", CHSetting(trueOrFalse, {}, false)},
     {"async_insert_deduplicate", CHSetting(trueOrFalse, {}, false)},
-    {"async_insert_threads", threadRange},
+    {"async_insert_threads", threadSetting},
     {"async_insert_use_adaptive_busy_timeout", CHSetting(trueOrFalse, {}, false)},
     {"async_query_sending_for_remote", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"async_socket_for_remote", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"backup_restore_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
-    {"cache_warmer_threads", threadRange},
+    {"cache_warmer_threads", threadSetting},
     {"calculate_text_stack_trace", CHSetting(trueOrFalse, {}, false)},
     {"cancel_http_readonly_queries_on_client_close", CHSetting(trueOrFalse, {}, false)},
     {"cast_ipv4_ipv6_default_on_conversion_error", CHSetting(trueOrFalse, {}, false)},
@@ -248,18 +239,21 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"checksum_on_read", CHSetting(trueOrFalse, {}, false)},
     {"cloud_mode", CHSetting(zeroOneTwo, {}, false)},
     {"cloud_mode_database_engine", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "1" : "2"; }, {}, false)},
-    {"cloud_mode_engine", CHSetting(trueOrFalse, {}, false)},
+    {"cloud_mode_engine", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); }, {}, false)},
     {"collect_hash_table_stats_during_aggregation", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"collect_hash_table_stats_during_joins", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"compatibility_ignore_auto_increment_in_create_table", CHSetting(trueOrFalse, {}, false)},
     {"compatibility_ignore_collation_in_create_table", CHSetting(trueOrFalse, {}, false)},
-    {"composed_data_type_output_format_mode",
-     CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'default'" : "'spark'"; }, {}, false)},
     {"convert_query_to_cnf", CHSetting(trueOrFalse, {}, false)},
     {"create_replicated_merge_tree_fault_injection_probability", CHSetting(probRange, {}, false)},
     {"create_table_empty_primary_key_by_default", CHSetting(trueOrFalse, {}, false)},
+    {"cross_to_inner_join_rewrite", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)},
     {"database_atomic_wait_for_drop_and_detach_synchronously", CHSetting(trueOrFalse, {}, false)},
+    {"database_replicated_allow_explicit_uuid", CHSetting(zeroOneTwo, {}, false)},
     {"database_replicated_allow_heavy_create", CHSetting(trueOrFalse, {}, false)},
+    {"database_replicated_allow_replicated_engine_arguments",
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); }, {}, false)},
+    {"database_replicated_always_detach_permanently", CHSetting(trueOrFalse, {}, false)},
     {"database_replicated_enforce_synchronous_settings", CHSetting(trueOrFalse, {}, false)},
     {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", CHSetting(trueOrFalse, {}, false)},
     {"date_time_output_format",
@@ -362,11 +356,12 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"flatten_nested", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"force_aggregate_partitions_independently", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"force_grouping_standard_compatibility", CHSetting(trueOrFalse, {}, false)},
+    {"force_optimize_skip_unused_shards", CHSetting(zeroOneTwo, {}, false)},
+    {"force_optimize_skip_unused_shards_nesting", CHSetting(zeroOneTwo, {}, false)},
     /// {"force_index_by_date", CHSetting(trueOrFalse, {}, false)},
     /// {"force_optimize_projection", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"force_remove_data_recursively_on_drop", CHSetting(trueOrFalse, {}, false)},
     {"format_capn_proto_use_autogenerated_schema", CHSetting(trueOrFalse, {}, false)},
-    {"format_csv_allow_single_quotes", CHSetting(trueOrFalse, {}, false)},
     {"format_display_secrets_in_show_and_select", CHSetting(trueOrFalse, {}, false)},
     {"format_protobuf_use_autogenerated_schema", CHSetting(trueOrFalse, {}, false)},
     {"format_regexp_skip_unmatched", CHSetting(trueOrFalse, {}, false)},
@@ -376,9 +371,9 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"function_locate_has_mysql_compatible_argument_order", CHSetting(trueOrFalse, {}, false)},
     {"geo_distance_returns_float64_on_float64_arguments", CHSetting(trueOrFalse, {}, false)},
     {"grace_hash_join_initial_buckets",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 1024)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 1024)); }, {}, false)},
     {"grace_hash_join_max_buckets",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 1024)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 1024)); }, {}, false)},
     /// {"group_by_overflow_mode", CHSetting([](RandomGenerator & rg) { const DB::Strings & choices = {"'throw'", "'break'", "'any'"}; return rg.pickRandomly(choices); }, {}, false)},
     {"group_by_use_nulls", CHSetting(trueOrFalse, {}, false)},
     {"hdfs_create_new_file_on_insert", CHSetting(trueOrFalse, {}, false)},
@@ -396,22 +391,21 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"ignore_on_cluster_for_replicated_named_collections_queries", CHSetting(trueOrFalse, {}, false)},
     {"ignore_on_cluster_for_replicated_udf_queries", CHSetting(trueOrFalse, {}, false)},
     {"implicit_transaction", CHSetting(trueOrFalse, {}, false)},
+    {"input_format_allow_errors_num", CHSetting(highRange, {}, false)},
+    {"input_format_allow_errors_ratio", CHSetting(probRange, {}, false)},
     {"input_format_allow_seeks", CHSetting(trueOrFalse, {}, false)},
     {"input_format_arrow_allow_missing_columns", CHSetting(trueOrFalse, {}, false)},
     {"input_format_arrow_case_insensitive_column_matching", CHSetting(trueOrFalse, {}, false)},
     {"input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference", CHSetting(trueOrFalse, {}, false)},
     {"input_format_avro_allow_missing_fields", CHSetting(trueOrFalse, {}, false)},
     {"input_format_avro_null_as_default", CHSetting(trueOrFalse, {}, false)},
-    /// {"input_format_binary_decode_types_in_binary_format", CHSetting(trueOrFalse, {}, false)},
     {"input_format_binary_read_json_as_string", CHSetting(trueOrFalse, {}, false)},
     {"input_format_bson_skip_fields_with_unsupported_types_in_schema_inference", CHSetting(trueOrFalse, {}, false)},
     {"input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference", CHSetting(trueOrFalse, {}, false)},
     {"input_format_csv_allow_cr_end_of_line", CHSetting(trueOrFalse, {}, false)},
     {"input_format_csv_allow_variable_number_of_columns", CHSetting(trueOrFalse, {}, false)},
     {"input_format_csv_allow_whitespace_or_tab_as_delimiter", CHSetting(trueOrFalse, {}, false)},
-    /// {"input_format_csv_arrays_as_nested_csv", CHSetting(trueOrFalse, {}, false)},
     {"input_format_csv_deserialize_separate_columns_into_tuple", CHSetting(trueOrFalse, {}, false)},
-    /// {"input_format_csv_detect_header", CHSetting(trueOrFalse, {}, false)},
     {"input_format_csv_empty_as_default", CHSetting(trueOrFalse, {}, false)},
     {"input_format_csv_enum_as_number", CHSetting(trueOrFalse, {}, false)},
     {"input_format_csv_skip_trailing_empty_lines", CHSetting(trueOrFalse, {}, false)},
@@ -421,7 +415,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_csv_use_best_effort_in_schema_inference", CHSetting(trueOrFalse, {}, false)},
     {"input_format_csv_use_default_on_bad_values", CHSetting(trueOrFalse, {}, false)},
     {"input_format_custom_allow_variable_number_of_columns", CHSetting(trueOrFalse, {}, false)},
-    /// {"input_format_custom_detect_header", CHSetting(trueOrFalse, {}, false)},
     {"input_format_custom_skip_trailing_empty_lines", CHSetting(trueOrFalse, {}, false)},
     {"input_format_defaults_for_omitted_fields", CHSetting(trueOrFalse, {}, false)},
     {"input_format_force_null_for_omitted_fields", CHSetting(trueOrFalse, {}, false)},
@@ -431,7 +424,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_ipv6_default_on_conversion_error", CHSetting(trueOrFalse, {}, false)},
     {"input_format_json_compact_allow_variable_number_of_columns", CHSetting(trueOrFalse, {}, false)},
     {"input_format_json_defaults_for_missing_elements_in_named_tuple", CHSetting(trueOrFalse, {}, false)},
-    /// {"input_format_json_empty_as_default", CHSetting(trueOrFalse, {}, false)},
     {"input_format_json_ignore_unknown_keys_in_named_tuple", CHSetting(trueOrFalse, {}, false)},
     {"input_format_json_ignore_unnecessary_fields", CHSetting(trueOrFalse, {}, false)},
     {"input_format_json_infer_incomplete_types_as_strings", CHSetting(trueOrFalse, {}, false)},
@@ -448,7 +440,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_json_validate_types_from_metadata", CHSetting(trueOrFalse, {}, false)},
     {"input_format_mysql_dump_map_column_names", CHSetting(trueOrFalse, {}, false)},
     {"input_format_native_allow_types_conversion", CHSetting(trueOrFalse, {}, false)},
-    /// {"input_format_native_decode_types_in_binary_format", CHSetting(trueOrFalse, {}, false)},
     {"input_format_null_as_default", CHSetting(trueOrFalse, {}, false)},
     {"input_format_orc_allow_missing_columns", CHSetting(trueOrFalse, {}, false)},
     {"input_format_orc_case_insensitive_column_matching", CHSetting(trueOrFalse, {}, false)},
@@ -475,8 +466,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_try_infer_integers", CHSetting(trueOrFalse, {}, false)},
     {"input_format_try_infer_variants", CHSetting(trueOrFalse, {}, false)},
     {"input_format_tsv_allow_variable_number_of_columns", CHSetting(trueOrFalse, {}, false)},
-    {"input_format_tsv_crlf_end_of_line", CHSetting(trueOrFalse, {}, false)},
-    /// {"input_format_tsv_detect_header", CHSetting(trueOrFalse, {}, false)},
     {"input_format_tsv_empty_as_default", CHSetting(trueOrFalse, {}, false)},
     {"input_format_tsv_enum_as_number", CHSetting(trueOrFalse, {}, false)},
     {"input_format_tsv_skip_trailing_empty_lines", CHSetting(trueOrFalse, {}, false)},
@@ -484,8 +473,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_values_accurate_types_of_literals", CHSetting(trueOrFalse, {}, false)},
     {"input_format_values_deduce_templates_of_expressions", CHSetting(trueOrFalse, {}, false)},
     {"input_format_values_interpret_expressions", CHSetting(trueOrFalse, {}, false)},
-    /// {"input_format_with_names_use_header", CHSetting(trueOrFalse, {}, false)},
-    /// {"input_format_with_types_use_header", CHSetting(trueOrFalse, {}, false)},
     {"insert_deduplicate", CHSetting(trueOrFalse, {}, false)},
     {"insert_distributed_one_random_shard", CHSetting(trueOrFalse, {}, false)},
     {"insert_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
@@ -528,53 +515,38 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"log_query_settings", CHSetting(trueOrFalse, {}, false)},
     {"log_query_threads", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"log_query_views", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    /// {"low_cardinality_allow_in_native_format", CHSetting(trueOrFalse, {}, false)},
     {"low_cardinality_max_dictionary_size", CHSetting(highRange, {}, false)},
     {"materialize_skip_indexes_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_statistics_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_ttl_after_modify", CHSetting(trueOrFalse, {}, false)},
     {"materialized_views_ignore_errors", CHSetting(trueOrFalse, {}, false)},
-    /// {"max_bytes_in_distinct", CHSetting(highRange, {}, false)},
-    /*{"max_bytes_in_join",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             return std::to_string(
-                 rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
-         },
-         {"0", "1", "1000", "1000000"},
-         false)},*/
-    /// {"max_bytes_in_set", CHSetting(highRange, {}, false)},
-    /// {"max_bytes_to_read", CHSetting(highRange, {}, false)},
-    /// {"max_bytes_to_read_leaf", CHSetting(highRange, {}, false)},
-    /// {"max_bytes_to_sort", CHSetting(highRange, {}, false)},
-    /// {"max_bytes_to_transfer", CHSetting(highRange, {}, false)},
+    /// {"max_bytes_in_distinct", CHSetting(bytesRange, {}, false)},
+    /// {"max_bytes_in_join", CHSetting(bytesRange, {"0", "1", "1000", "1000000"}, false)},
+    /// {"max_bytes_in_set", CHSetting(bytesRange, {}, false)},
+    /// {"max_bytes_to_read", CHSetting(bytesRange, {}, false)},
+    /// {"max_bytes_to_read_leaf", CHSetting(bytesRange, {}, false)},
+    /// {"max_bytes_to_sort", CHSetting(bytesRange, {}, false)},
+    /// {"max_bytes_to_transfer", CHSetting(bytesRange, {}, false)},
     /// {"max_columns_to_read", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
-    {"max_compress_block_size", CHSetting(highRange, {"0", "8", "32", "64", "1024", "1000000"}, false)},
-    {"max_download_threads", threadRange},
-    {"max_final_threads", threadRange},
-    {"max_insert_block_size", CHSetting(highRange, {}, false)},
+    {"max_download_threads", threadSetting},
+    {"max_final_threads", threadSetting},
     {"max_insert_delayed_streams_for_parallel_write",
      CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 12)); }, {}, false)},
-    {"max_insert_threads", threadRange},
+    {"max_insert_threads", threadSetting},
     /// {"max_memory_usage", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }, {}, false)},
     /// {"max_memory_usage_for_user", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }, {}, false)},
     {"max_parallel_replicas",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, 5)); }, {}, false)},
-    {"max_parsing_threads", threadRange},
+    {"max_parsing_threads", threadSetting},
     {"max_parts_to_move",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.5, 0, UINT32_C(4096))); },
          {"0", "1", "100", "1000"},
          false)},
-    /// {"max_result_bytes", CHSetting(highRange, {}, false)},
+    /// {"max_result_bytes", CHSetting(bytesRange, {}, false)},
     /// {"max_result_rows", CHSetting(highRange, {}, false)},
     /// {"max_rows_in_distinct", CHSetting(highRange, {}, false)},
-    /*{"max_rows_in_join",
-     CHSetting(
-         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(8192))); },
-         {"0", "8", "32", "64", "1024", "10000"},
-         false)},*/
+    /// {"max_rows_in_join", CHSetting(highRange, {"0", "8", "32", "64", "1024", "10000"}, false)},
     /// {"max_rows_in_set", CHSetting(highRange, {}, false)},
     /// {"max_rows_to_group_by", CHSetting(highRange, {}, false)},
     /// {"max_rows_to_read", CHSetting(highRange, {}, false)},
@@ -582,8 +554,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     /// {"max_rows_to_sort", CHSetting(highRange, {}, false)},
     /// {"max_temporary_columns", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
     /// {"max_temporary_non_const_columns", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
-    {"max_threads", threadRange},
-    {"max_threads_for_indexes", threadRange},
+    {"max_threads", threadSetting},
+    {"max_threads_for_indexes", threadSetting},
     {"memory_tracker_fault_probability", CHSetting(probRange, {}, false)},
     {"merge_tree_coarse_index_granularity",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(2, 32)); }, {}, false)},
@@ -593,33 +565,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"merge_tree_use_const_size_tasks_for_remote_reading", CHSetting(trueOrFalse, {}, false)},
     {"merge_tree_use_v1_object_and_dynamic_serialization", CHSetting(trueOrFalse, {}, false)},
     {"metrics_perf_events_enabled", CHSetting(trueOrFalse, {}, false)},
-    {"min_compress_block_size",
-     CHSetting(
-         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(8192))); },
-         {"0", "8", "32", "64", "1024", "1000000"},
-         false)},
     {"min_free_disk_ratio_to_perform_insert", CHSetting(probRange, {}, false)},
     {"min_hit_rate_to_use_consecutive_keys_optimization", CHSetting(probRange, {"0", "0.1", "0.5", "0.9", "1.0"}, false)},
-    {"min_insert_block_size_bytes",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             return std::to_string(
-                 rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
-         },
-         {},
-         false)},
-    {"min_insert_block_size_bytes_for_materialized_views",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             return std::to_string(
-                 rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
-         },
-         {},
-         false)},
-    {"min_insert_block_size_rows", CHSetting(highRange, {}, false)},
-    {"min_insert_block_size_rows_for_materialized_views", CHSetting(highRange, {}, false)},
     {"mongodb_throw_on_unsupported_query", CHSetting(trueOrFalse, {}, false)},
     {"multiple_joins_try_to_keep_original_names", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"mutations_execute_nondeterministic_on_initiator", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -648,10 +595,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_arrow_string_as_string", CHSetting(trueOrFalse, {}, false)},
     {"output_format_arrow_use_64_bit_indexes_for_dictionary", CHSetting(trueOrFalse, {}, false)},
     {"output_format_arrow_use_signed_indexes_for_dictionary", CHSetting(trueOrFalse, {}, false)},
-    /// {"output_format_binary_encode_types_in_binary_format", CHSetting(trueOrFalse, {}, false)},
     {"output_format_binary_write_json_as_string", CHSetting(trueOrFalse, {}, false)},
     {"output_format_bson_string_as_string", CHSetting(trueOrFalse, {}, false)},
-    {"output_format_csv_crlf_end_of_line", CHSetting(trueOrFalse, {}, false)},
     {"output_format_csv_serialize_tuple_into_separate_columns", CHSetting(trueOrFalse, {}, false)},
     {"output_format_decimal_trailing_zeros", CHSetting(trueOrFalse, {}, false)},
     {"output_format_enable_streaming", CHSetting(trueOrFalse, {}, false)},
@@ -675,7 +620,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_json_skip_null_value_in_named_tuples", CHSetting(trueOrFalse, {}, false)},
     {"output_format_json_validate_utf8", CHSetting(trueOrFalse, {}, false)},
     {"output_format_markdown_escape_special_characters", CHSetting(trueOrFalse, {}, false)},
-    /// {"output_format_native_encode_types_in_binary_format", CHSetting(trueOrFalse, {}, false)},
     {"output_format_native_write_json_as_string", CHSetting(trueOrFalse, {}, false)},
     {"output_format_orc_compression_method",
      CHSetting(
@@ -740,14 +684,15 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_sql_insert_include_column_names", CHSetting(trueOrFalse, {}, false)},
     {"output_format_sql_insert_quote_names", CHSetting(trueOrFalse, {}, false)},
     {"output_format_sql_insert_use_replace", CHSetting(trueOrFalse, {}, false)},
-    {"output_format_tsv_crlf_end_of_line", CHSetting(trueOrFalse, {}, false)},
     {"output_format_values_escape_quote_with_quote", CHSetting(trueOrFalse, {}, false)},
     {"output_format_write_statistics", CHSetting(trueOrFalse, {}, false)},
     {"page_cache_inject_eviction", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    {"parallel_distributed_insert_select", CHSetting(zeroOneTwo, {}, false)},
     /// {"parallel_replica_offset", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},
     {"parallel_replicas_allow_in_with_subquery", CHSetting(trueOrFalse, {"0", "1"}, false)},
     /// {"parallel_replicas_count", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},
-    {"parallel_replicas_for_non_replicated_merge_tree", CHSetting(trueOrFalse, {}, false)},
+    {"parallel_replicas_for_cluster_engines", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    {"parallel_replicas_for_non_replicated_merge_tree", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"parallel_replicas_index_analysis_only_on_coordinator", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"parallel_replicas_custom_key_range_lower", CHSetting(highRange, {}, false)},
     {"parallel_replicas_custom_key_range_upper", CHSetting(highRange, {}, false)},
@@ -884,6 +829,10 @@ static std::unordered_map<String, CHSetting> serverSettings3
        /// {"wait_for_async_insert", CHSetting(trueOrFalse, {}, false)},
        {"write_through_distributed_cache", CHSetting(trueOrFalse, {}, false)}};
 
+std::unordered_map<String, CHSetting> queryOracleSettings;
+
+std::unordered_map<String, CHSetting> formatSettings;
+
 void loadFuzzerServerSettings(const FuzzConfig & fc)
 {
     if (!fc.clusters.empty())
@@ -904,14 +853,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     }
 
     /// When measuring performance use bigger block sizes
-    const auto max_rows_func
-        = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(8192))); };
-    const auto max_bytes_func = [](RandomGenerator & rg)
-    {
-        return std::to_string(
-            rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
-    };
-
     /// Number of rows values
     for (const auto & entry :
          {"cross_join_min_rows_to_compress",
@@ -922,10 +863,16 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "max_joined_block_size_rows",
           "max_number_of_partitions_for_independent_aggregation",
           "max_rows_to_transfer",
-          "partial_merge_join_rows_in_right_blocks"})
+          "min_insert_block_size_rows",
+          "min_insert_block_size_rows_for_materialized_views",
+          "output_format_parquet_batch_size",
+          "output_format_parquet_data_page_size",
+          "output_format_parquet_row_group_size",
+          "partial_merge_join_rows_in_right_blocks",
+          "query_plan_max_limit_for_lazy_materialization"})
     {
-        performanceSettings.insert({{entry, CHSetting(max_rows_func, {"0", "512", "1024", "2048", "4096", "16384", "65536"}, false)}});
-        serverSettings.insert({{entry, CHSetting(max_rows_func, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
+        performanceSettings.insert({{entry, CHSetting(rowsRange, {"0", "512", "1024", "2048", "4096", "16384", "65536"}, false)}});
+        serverSettings.insert({{entry, CHSetting(rowsRange, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
     }
     /// Number of bytes values
     for (const auto & entry :
@@ -935,6 +882,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "filesystem_prefetch_min_bytes_for_single_read_task",
           "filesystem_prefetch_step_bytes",
           "group_by_two_level_threshold_bytes",
+          "input_format_parquet_local_file_min_bytes_for_seek",
+          "input_format_parquet_prefer_block_bytes",
           "max_bytes_before_external_group_by",
           "max_bytes_before_external_sort",
           "max_bytes_before_remerge_sort",
@@ -950,6 +899,10 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "min_chunk_bytes_for_parallel_parsing",
           "min_external_sort_block_bytes",
           "min_external_table_block_size_bytes",
+          "min_insert_block_size_bytes",
+          "min_insert_block_size_bytes_for_materialized_views",
+          "output_format_avro_sync_interval",
+          "output_format_parquet_row_group_size_bytes",
           "partial_merge_join_left_table_buffer_bytes",
           "prefer_external_sort_block_bytes",
           "preferred_block_size_bytes",
@@ -957,12 +910,16 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "prefetch_buffer_size"})
     {
         performanceSettings.insert(
-            {{entry, CHSetting(max_bytes_func, {"32768", "65536", "1048576", "4194304", "33554432", "50000000"}, false)}});
-        serverSettings.insert({{entry, CHSetting(max_bytes_func, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
+            {{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "50000000"}, false)}});
+        serverSettings.insert({{entry, CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
     }
-    performanceSettings.insert({{"max_block_size", CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "131072"}, false)}});
-    serverSettings.insert({{"max_block_size", CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "1000000"}, false)}});
-
+    /// Block size settings
+    for (const auto & entry :
+         {"input_format_parquet_max_block_size", "max_block_size", "max_compress_block_size", "min_compress_block_size"})
+    {
+        performanceSettings.insert({{entry, CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "131072"}, false)}});
+        serverSettings.insert({{entry, CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "1000000"}, false)}});
+    }
     if (!fc.timezones.empty())
     {
         serverSettings.insert(
@@ -975,6 +932,44 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"cluster_for_parallel_replicas",
               CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.clusters) + "'"; }, {}, false)}});
     }
+
+    for (auto & [key, value] : serverSettings)
+    {
+        if (!value.oracle_values.empty())
+        {
+            queryOracleSettings.insert({{key, value}});
+        }
+    }
+
+    /// Format settings are to be used by the dump oracle when not looking for correctness
+    for (auto & [key, value] : serverSettings)
+    {
+        formatSettings.insert({{key, value}});
+    }
+    formatSettings.insert(
+        {{"format_csv_delimiter", CHSetting(nastyStrings, {}, false)},
+         {"format_csv_allow_single_quotes", CHSetting(trueOrFalse, {}, false)},
+         {"format_csv_allow_double_quotes", CHSetting(trueOrFalse, {}, false)},
+         {"format_csv_null_representation", CHSetting(nastyStrings, {}, false)},
+         {"format_tsv_null_representation", CHSetting(nastyStrings, {}, false)},
+         {"input_format_binary_decode_types_in_binary_format", CHSetting(trueOrFalse, {}, false)},
+         {"input_format_csv_arrays_as_nested_csv", CHSetting(trueOrFalse, {}, false)},
+         {"input_format_csv_detect_header", CHSetting(trueOrFalse, {}, false)},
+         {"input_format_custom_detect_header", CHSetting(trueOrFalse, {}, false)},
+         {"input_format_json_empty_as_default", CHSetting(trueOrFalse, {}, false)},
+         {"input_format_msgpack_number_of_columns",
+          CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(0, 20)); }, {}, false)},
+         /// {"input_format_native_decode_types_in_binary_format", CHSetting(trueOrFalse, {}, false)}, may block the client
+         {"input_format_tsv_crlf_end_of_line", CHSetting(trueOrFalse, {}, false)},
+         {"input_format_tsv_detect_header", CHSetting(trueOrFalse, {}, false)},
+         {"input_format_with_names_use_header", CHSetting(trueOrFalse, {}, false)},
+         {"input_format_with_types_use_header", CHSetting(trueOrFalse, {}, false)},
+         {"low_cardinality_allow_in_native_format", CHSetting(trueOrFalse, {}, false)},
+         {"output_format_binary_encode_types_in_binary_format", CHSetting(trueOrFalse, {}, false)},
+         {"output_format_csv_crlf_end_of_line", CHSetting(trueOrFalse, {}, false)},
+         {"output_format_msgpack_uuid_representation", CHSetting(nastyStrings, {}, false)},
+         /// {"output_format_native_encode_types_in_binary_format", CHSetting(trueOrFalse, {}, false)}, may block the client
+         {"output_format_tsv_crlf_end_of_line", CHSetting(trueOrFalse, {}, false)}});
 }
 
 std::unique_ptr<SQLType> size_tp, null_tp;

@@ -297,5 +297,33 @@
                 </replica>
             </shard>
         </test_unavailable_shard>
+        <test_shard_bind_host>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                    <bind_host>127.0.0.2</bind_host>
+                </replica>
+            </shard>
+        </test_shard_bind_host>
+        <test_shard_bind_host_secure>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9440</port>
+                    <secure>1</secure>
+                    <bind_host>127.0.0.2</bind_host>
+                </replica>
+            </shard>
+        </test_shard_bind_host_secure>
+        <test_shard_bind_host_fail>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                    <bind_host>1.2.3.4</bind_host>
+                </replica>
+            </shard>
+        </test_shard_bind_host_fail>
     </remote_servers>
 </clickhouse>

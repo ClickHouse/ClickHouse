@@ -272,9 +272,11 @@ void StorageObjectStorageQueue::startup()
     }
     catch (...)
     {
-        files_metadata->shutdown();
+        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), /*remove_metadata_if_no_registered=*/true);
+        files_metadata.reset();
         throw;
     }
+    startup_finished = true;
 }
 
 void StorageObjectStorageQueue::shutdown(bool is_drop)
@@ -292,22 +294,17 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     {
         try
         {
-            files_metadata->unregister(getStorageID(), /* active */true);
+            files_metadata->unregister(getStorageID(), /* active */true, /* remove_metadata_if_no_registered */false);
         }
         catch (...)
         {
             tryLogCurrentException(log);
         }
 
-        files_metadata->shutdown();
+        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), is_drop);
         files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
-}
-
-void StorageObjectStorageQueue::drop()
-{
-    ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -543,7 +540,7 @@ void StorageObjectStorageQueue::threadFunc()
         {
             try
             {
-                files_metadata->unregister(storage_id, /* active */true);
+                files_metadata->unregister(storage_id, /* active */true, /* remove_metadata_if_no_registered */false);
             }
             catch (...)
             {
@@ -635,7 +632,7 @@ bool StorageObjectStorageQueue::streamToViews()
         }
         catch (...)
         {
-            commit(/* insert_succeeded */false, rows, sources, getCurrentExceptionMessage(true));
+            commit(/* insert_succeeded */false, rows, sources, getCurrentExceptionMessage(true), getCurrentExceptionCode());
             file_iterator->releaseFinishedBuckets();
             throw;
         }
@@ -653,14 +650,15 @@ void StorageObjectStorageQueue::commit(
     bool insert_succeeded,
     size_t inserted_rows,
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-    const std::string & exception_message) const
+    const std::string & exception_message,
+    int error_code) const
 {
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedRows, inserted_rows);
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
     for (auto & source : sources)
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
+        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message, error_code);
 
     if (requests.empty())
     {
@@ -750,7 +748,7 @@ void checkNormalizedSetting(const std::string & name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting is not normalized: {}", name);
 }
 
-static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
+bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
 {
     checkNormalizedSetting(name);
 
@@ -1009,6 +1007,13 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
+const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetadata() const
+{
+    if (!files_metadata)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Files metadata is empty");
+    return files_metadata->getTableMetadata();
+}
+
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
@@ -1045,6 +1050,10 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
+    /// If startup() for a table was not called, just use the default queue settings
+    if (!startup_finished)
+        return settings;
+
     const auto & table_metadata = getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
