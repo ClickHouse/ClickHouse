@@ -54,12 +54,17 @@ public:
 
     void visitDDL(ASTPtr & ast) const
     {
+        visitDDLWithParent(nullptr, ast);
+    }
+
+    void visitDDLWithParent(ASTPtr parent, ASTPtr & ast) const
+    {
         visitDDLChildren(ast);
 
-        if (!tryVisitDynamicCast<ASTAlterQuery>(ast) &&
-            !tryVisitDynamicCast<ASTQueryWithTableAndOutput>(ast) &&
-            !tryVisitDynamicCast<ASTRenameQuery>(ast) &&
-            !tryVisitDynamicCast<ASTFunction>(ast))
+        if (!tryVisitDynamicCast<ASTAlterQuery>(parent, ast) &&
+            !tryVisitDynamicCast<ASTQueryWithTableAndOutput>(parent, ast) &&
+            !tryVisitDynamicCast<ASTRenameQuery>(parent, ast) &&
+            !tryVisitDynamicCast<ASTFunction>(parent, ast))
         {}
     }
 
@@ -273,7 +278,7 @@ private:
     }
 
 
-    void visitDDL(ASTQueryWithTableAndOutput & node, ASTPtr &) const
+    void visitDDL(ASTPtr & /* parent */, ASTQueryWithTableAndOutput & node, ASTPtr &) const
     {
         if (only_replace_current_database_function)
             return;
@@ -282,7 +287,7 @@ private:
             node.setDatabase(database_name);
     }
 
-    void visitDDL(ASTRenameQuery & node, ASTPtr &) const
+    void visitDDL(ASTPtr & /* parent */, ASTRenameQuery & node, ASTPtr &) const
     {
         if (only_replace_current_database_function)
             return;
@@ -290,7 +295,7 @@ private:
         node.setDatabaseIfNotExists(database_name);
     }
 
-    void visitDDL(ASTAlterQuery & node, ASTPtr &) const
+    void visitDDL(ASTPtr & /* parent */, ASTAlterQuery & node, ASTPtr &) const
     {
         if (only_replace_current_database_function)
             return;
@@ -308,27 +313,31 @@ private:
         }
     }
 
-    void visitDDL(ASTFunction & function, ASTPtr & node) const
+    void visitDDL(ASTPtr & parent, ASTFunction & function, ASTPtr & node) const
     {
         if (function.name == "currentDatabase")
         {
+            void * old_pointer = node.get();
             node = std::make_shared<ASTLiteral>(database_name);
-            return;
+            void * new_pointer = node.get();
+
+            if (parent)
+                parent->updatePointerToChild(old_pointer, new_pointer);
         }
     }
 
     void visitDDLChildren(ASTPtr & ast) const
     {
         for (auto & child : ast->children)
-            visitDDL(child);
+            visitDDLWithParent(ast, child);
     }
 
     template <typename T>
-    bool tryVisitDynamicCast(ASTPtr & ast) const
+    bool tryVisitDynamicCast(ASTPtr & parent, ASTPtr & ast) const
     {
         if (T * t = dynamic_cast<T *>(ast.get()))
         {
-            visitDDL(*t, ast);
+            visitDDL(parent, *t, ast);
             return true;
         }
         return false;
