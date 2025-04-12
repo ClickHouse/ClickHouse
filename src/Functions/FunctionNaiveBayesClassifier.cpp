@@ -25,6 +25,26 @@ namespace
 using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 using Models = std::map<String, NaiveBayesClassifier>;
 
+NaiveBayesClassifier::Mode stringToMode(const std::string & s)
+{
+    if (s == "byte")
+    {
+        return NaiveBayesClassifier::Mode::Byte;
+    }
+    else if (s == "codepoint")
+    {
+        return NaiveBayesClassifier::Mode::CodePoint;
+    }
+    else if (s == "token")
+    {
+        return NaiveBayesClassifier::Mode::Token;
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}. Valid modes are: byte, codepoint, token", s);
+    }
+}
+
 class FunctionNaiveBayesClassifier : public IFunction
 {
 private:
@@ -46,7 +66,9 @@ public:
         auto & models = getModelCache();
 
         if (!models.empty())
-            return; // already loaded
+        {
+            return; // models already loaded
+        }
 
         const auto & config = context->getConfigRef();
 
@@ -63,6 +85,7 @@ public:
             const String model_name_path = "nb_models." + key + ".name";
             const String model_data_path = "nb_models." + key + ".path";
             const String model_n_path = "nb_models." + key + ".n";
+            const String model_mode_path = "nb_models." + key + ".mode";
             if (!config.has(model_name_path))
             {
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing model name via 'name' key in <nb_models> for model {}", key);
@@ -76,6 +99,10 @@ public:
             {
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing model ngram 'n' via 'n' key in <nb_models> for model {}", key);
             }
+            if (!config.has(model_mode_path))
+            {
+                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing model mode via 'mode' key in <nb_models> for model {}", key);
+            }
 
             const String model_name = config.getString(model_name_path);
             const String model_data = config.getString(model_data_path);
@@ -85,6 +112,18 @@ public:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngram size 'n' must be greater than 0 for model {}", model_name);
             }
+
+            const String model_mode_str = config.getString(model_mode_path);
+            NaiveBayesClassifier::Mode model_mode;
+            try
+            {
+                model_mode = stringToMode(model_mode_str);
+            }
+            catch (const Exception & e)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode for model {}. {}", model_name, e.message());
+            }
+
 
             /// Extract the priors from the config if they exist
             Poco::Util::AbstractConfiguration::Keys prior_keys;
@@ -106,8 +145,6 @@ public:
                 priors[class_id] = prior;
             }
 
-            const String start_token = config.getString("nb_models." + key + ".start_token", "<s>");
-            const String end_token = config.getString("nb_models." + key + ".end_token", "</s>");
             const double alpha = config.getDouble("nb_models." + key + ".alpha", 1.0);
 
             if (alpha <= 0.0)
@@ -115,11 +152,10 @@ public:
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS, "Laplace smoothing parameter 'alpha' must be greater than 0 for model {}", model_name);
             }
-
             models.emplace(
                 std::piecewise_construct,
                 std::make_tuple(model_name),
-                std::make_tuple(model_data, std::move(priors), n, alpha, start_token, end_token));
+                std::make_tuple(model_data, std::move(priors), n, alpha, model_mode));
         }
 
         if (models.empty())
