@@ -11,6 +11,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/checkStackSize.h>
 
 
@@ -62,11 +63,16 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         for (auto & child : with->children)
         {
             visit(child, new_data ? *new_data : data);
-            if (auto * ast_with_elem = child->as<ASTWithElement>())
+            auto * ast_with_elem = child->as<ASTWithElement>();
+            auto * ast_literal = child->as<ASTLiteral>();
+            if (ast_with_elem || ast_literal)
             {
                 if (!new_data)
                     new_data = data;
-                new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
+                if (ast_with_elem)
+                    new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
+                else
+                    new_data->subqueries[ast_literal->alias] = child;
             }
         }
     }
@@ -125,7 +131,8 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                 {
                     auto old_alias = func.arguments->children[1]->tryGetAlias();
                     func.arguments->children[1] = subquery_it->second->clone();
-                    func.arguments->children[1]->as<ASTSubquery &>().cte_name = name;
+                    if (auto * subquery = func.arguments->children[1]->as<ASTSubquery>())
+                        subquery->cte_name = name;
                     if (!old_alias.empty())
                         func.arguments->children[1]->setAlias(old_alias);
                 }

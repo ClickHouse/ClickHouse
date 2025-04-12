@@ -1635,20 +1635,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.select && create.isView())
     {
-        if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
-        {
-            InterpreterSelectQueryAnalyzer interpreter(create.select->clone(), getContext(), SelectQueryOptions{}.analyze());
 
-            /// Rewrite SELECT query to apply CTEs and expressions from WITH and qualify all the table expressions
-            create.set(create.select, interpreter.getQueryTree()->toAST());
-        }
-        else
-        {
-            // Expand CTE before filling default database
-            ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
-            AddDefaultDatabaseVisitor visitor(getContext(), current_database);
-            visitor.visit(*create.select);
-        }
+        // Expand CTE before filling default database
+        ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
+        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        visitor.visit(*create.select);
     }
 
     if (create.refresh_strategy)
