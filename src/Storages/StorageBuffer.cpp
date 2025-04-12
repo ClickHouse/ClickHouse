@@ -3,6 +3,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -36,7 +37,6 @@
 #include <Storages/IStorage.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
-#include <boost/range/algorithm_ext/erase.hpp>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -1167,16 +1167,16 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 }
 
-std::optional<UInt64> StorageBuffer::totalRows(const Settings & settings) const
+std::optional<UInt64> StorageBuffer::totalRows(ContextPtr query_context) const
 {
     std::optional<UInt64> underlying_rows;
     if (auto destination = getDestinationTable())
-        underlying_rows = destination->totalRows(settings);
+        underlying_rows = destination->totalRows(query_context);
 
     return total_writes.rows + underlying_rows.value_or(0);
 }
 
-std::optional<UInt64> StorageBuffer::totalBytes(const Settings & /*settings*/) const
+std::optional<UInt64> StorageBuffer::totalBytes(ContextPtr) const
 {
     return total_writes.bytes;
 }
@@ -1197,6 +1197,27 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     setInMemoryMetadata(new_metadata);
 }
 
+UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
+{
+    /**
+      * Do not force UInt64 type for args, otherwise it'll be backward incompatible,
+      * there are exponential notation usages for shortness.
+      */
+    const auto & value = arg->as<ASTLiteral &>().value;
+    if (value.getType() != Field::Types::UInt64)
+    {
+        Int64 val = applyVisitor(FieldVisitorConvertToNumber<Int64>(), value);
+        if (val < 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Argument '{}' must be non-negative value, get {}",
+                arg_name, val);
+        }
+    }
+
+    return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value);
+}
 
 void registerStorageBuffer(StorageFactory & factory)
 {
@@ -1239,24 +1260,29 @@ void registerStorageBuffer(StorageFactory & factory)
         String destination_database = checkAndGetLiteralArgument<String>(engine_args[i++], "destination_database");
         String destination_table = checkAndGetLiteralArgument<String>(engine_args[i++], "destination_table");
 
-        UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        UInt64 num_buckets = checkUnderflowAndGetUInt64(engine_args[i++], "num_buckets");
+        if (num_buckets == 0)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'num_buckets' must be a positive integer, got '{}'",
+                num_buckets);
+        }
 
         StorageBuffer::Thresholds min;
         StorageBuffer::Thresholds max;
         StorageBuffer::Thresholds flush;
 
-        min.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
-        max.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
-        min.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
-        max.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
-        min.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
-        max.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        min.time =  checkUnderflowAndGetUInt64(engine_args[i++], "min_time");
+        max.time =  checkUnderflowAndGetUInt64(engine_args[i++], "max_time");
+        min.rows =  checkUnderflowAndGetUInt64(engine_args[i++], "min_rows");
+        max.rows =  checkUnderflowAndGetUInt64(engine_args[i++], "max_rows");
+        min.bytes = checkUnderflowAndGetUInt64(engine_args[i++], "min_bytes");
+        max.bytes = checkUnderflowAndGetUInt64(engine_args[i++], "max_bytes");
         if (engine_args.size() > i)
-            flush.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+            flush.time = checkUnderflowAndGetUInt64(engine_args[i++], "flush_time");
         if (engine_args.size() > i)
-            flush.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+            flush.rows = checkUnderflowAndGetUInt64(engine_args[i++], "flush_rows");
         if (engine_args.size() > i)
-            flush.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+            flush.bytes = checkUnderflowAndGetUInt64(engine_args[i++], "flush_bytes");
 
         /// If destination_id is not set, do not write data from the buffer, but simply empty the buffer.
         StorageID destination_id = StorageID::createEmpty();

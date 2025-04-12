@@ -37,9 +37,11 @@ void registerDatabaseS3(DatabaseFactory & factory);
 void registerDatabaseHDFS(DatabaseFactory & factory);
 #endif
 
-#if USE_AVRO
-void registerDatabaseIceberg(DatabaseFactory & factory);
+#if USE_AVRO && USE_PARQUET
+void registerDatabaseDataLake(DatabaseFactory & factory);
 #endif
+
+void registerDatabaseBackup(DatabaseFactory & factory);
 
 void registerDatabases()
 {
@@ -73,8 +75,10 @@ void registerDatabases()
     registerDatabaseHDFS(factory);
 #endif
 
-#if USE_AVRO
-    registerDatabaseIceberg(factory);
+#if USE_AVRO && USE_PARQUET
+    registerDatabaseDataLake(factory);
 #endif
+
+    registerDatabaseBackup(factory);
 }
 }

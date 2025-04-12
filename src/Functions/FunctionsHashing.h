@@ -13,13 +13,14 @@
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 #include <xxhash.h>
 
+#include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
 
 #if USE_SSL
-#    include <openssl/md5.h>
+#    include <openssl/evp.h>
 #endif
 
 #include <bit>
@@ -62,6 +63,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
+    extern const int OPENSSL_ERROR;
 }
 
 namespace impl
@@ -245,12 +247,22 @@ struct HalfMD5Impl
             uint64_t uint64_data;
         } buf;
 
-        MD5_CTX ctx;
-        MD5_Init(&ctx);
-        MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        MD5_Final(buf.char_data, &ctx);
+        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+        const auto ctx = EVP_MD_CTX_ptr(EVP_MD_CTX_new(), EVP_MD_CTX_free);
 
-        /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
+        if (!ctx)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+
+        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
+
+        if (EVP_DigestFinal_ex(ctx.get(), buf.char_data, nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
+
+        /// Compatibility with existing code. Cast is necessary for old poco AND macos where UInt64 != uint64_t
         transformEndianness<std::endian::big>(buf.uint64_data);
         return buf.uint64_data;
     }
@@ -332,13 +344,14 @@ struct SipHash128ReferenceKeyedImpl
 
     static UInt128 combineHashesKeyed(const Key & key, UInt128 h1, UInt128 h2)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        UInt128 tmp;
-        reverseMemcpy(&tmp, &h1, sizeof(UInt128));
-        h1 = tmp;
-        reverseMemcpy(&tmp, &h2, sizeof(UInt128));
-        h2 = tmp;
-#endif
+        if constexpr (std::endian::native == std::endian::big)
+        {
+            UInt128 tmp;
+            reverseMemcpy(&tmp, &h1, sizeof(UInt128));
+            h1 = tmp;
+            reverseMemcpy(&tmp, &h2, sizeof(UInt128));
+            h2 = tmp;
+        }
         UInt128 hashes[] = {h1, h2};
         return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt128));
     }

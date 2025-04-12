@@ -135,7 +135,7 @@ Array createEmptyArrayField(size_t num_dimensions)
     for (size_t i = 1; i < num_dimensions; ++i)
     {
         current_array->push_back(Array());
-        current_array = &current_array->back().safeGet<Array &>();
+        current_array = &current_array->back().safeGet<Array>();
     }
 
     return array;

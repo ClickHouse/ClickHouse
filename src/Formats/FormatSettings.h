@@ -127,6 +127,7 @@ struct FormatSettings
         bool decode_types_in_binary_format = false;
         bool read_json_as_string = false;
         bool write_json_as_string = false;
+        bool read_bool_field_as_int = false;
     } binary{};
 
     struct
@@ -155,6 +156,8 @@ struct FormatSettings
 
     String bool_true_representation = "true";
     String bool_false_representation = "false";
+    bool allow_special_bool_values = true;
+    bool allow_special_bool_values_inside_variant = false;
 
     struct CSV
     {

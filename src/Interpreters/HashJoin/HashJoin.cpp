@@ -418,7 +418,7 @@ size_t HashJoin::getTotalRowCount() const
 
 void HashJoin::doDebugAsserts() const
 {
-#ifndef NDEBUG
+#ifdef DEBUG_OR_SANITIZER_BUILD
     size_t debug_blocks_allocated_size = 0;
     for (const auto & block : data->blocks)
         debug_blocks_allocated_size += block.allocatedBytes();
@@ -1126,7 +1126,7 @@ void HashJoin::joinBlock(ScatteredBlock & block, ScatteredBlock & remaining_bloc
         maps_vector.push_back(&data->maps[i]);
 
     bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
-    const bool joined = joinDispatch(
+    [[maybe_unused]] const bool joined = joinDispatch(
         kind,
         strictness,
         maps_vector,

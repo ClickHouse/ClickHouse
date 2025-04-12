@@ -13,7 +13,7 @@ ${CLICKHOUSE_CLIENT} -q "
         id UInt32,
         data Tuple(String, Map(String, Array(JSON)), JSON)
     )
-    ENGINE = MergeTree ORDER BY id" --allow_experimental_json_type 1
+    ENGINE = MergeTree ORDER BY id" --enable_json_type 1
 
 cat <<EOF | $CLICKHOUSE_CLIENT -q "INSERT INTO t_json_nested FORMAT JSONEachRow"
 {

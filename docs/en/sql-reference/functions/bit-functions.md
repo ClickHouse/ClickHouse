@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/functions/bit-functions
+description: 'Documentation for Bit Functions'
+sidebar_label: 'Bit'
 sidebar_position: 20
-sidebar_label: Bit
+slug: /sql-reference/functions/bit-functions
+title: 'Bit Functions'
 ---
 
 # Bit Functions
@@ -10,15 +12,15 @@ Bit functions work for any pair of types from `UInt8`, `UInt16`, `UInt32`, `UInt
 
 The result type is an integer with bits equal to the maximum bits of its arguments. If at least one of the arguments is signed, the result is a signed number. If an argument is a floating-point number, it is cast to Int64.
 
-## bitAnd(a, b)
+## bitAnd(a, b) {#bitanda-b}
 
-## bitOr(a, b)
+## bitOr(a, b) {#bitora-b}
 
-## bitXor(a, b)
+## bitXor(a, b) {#bitxora-b}
 
-## bitNot(a)
+## bitNot(a) {#bitnota}
 
-## bitShiftLeft(a, b)
+## bitShiftLeft(a, b) {#bitshiftlefta-b}
 
 Shifts the binary representation of a value to the left by a specified number of bit positions.
 
@@ -28,7 +30,7 @@ Bits of a `FixedString` value are lost as they are shifted out. On the contrary,
 
 **Syntax**
 
-``` sql
+```sql
 bitShiftLeft(a, b)
 ```
 
@@ -47,7 +49,7 @@ The type of the returned value is the same as the type of the input value.
 
 In the following queries [bin](encoding-functions.md#bin) and [hex](encoding-functions.md#hex) functions are used to show bits of shifted values.
 
-``` sql
+```sql
 SELECT 99 AS a, bin(a), bitShiftLeft(a, 2) AS a_shifted, bin(a_shifted);
 SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
 SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
@@ -55,7 +57,7 @@ SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, he
 
 Result:
 
-``` text
+```text
 ┌──a─┬─bin(99)──┬─a_shifted─┬─bin(bitShiftLeft(99, 2))─┐
 │ 99 │ 01100011 │       140 │ 10001100                 │
 └────┴──────────┴───────────┴──────────────────────────┘
@@ -67,7 +69,7 @@ Result:
 └─────┴──────────────────────────────┴───────────┴───────────────────────────────────────────────┘
 ```
 
-## bitShiftRight(a, b)
+## bitShiftRight(a, b) {#bitshiftrighta-b}
 
 Shifts the binary representation of a value to the right by a specified number of bit positions.
 
@@ -75,7 +77,7 @@ A `FixedString` or a `String` is treated as a single multibyte value. Note that 
 
 **Syntax**
 
-``` sql
+```sql
 bitShiftRight(a, b)
 ```
 
@@ -94,7 +96,7 @@ The type of the returned value is the same as the type of the input value.
 
 Query:
 
-``` sql
+```sql
 SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);
 SELECT 'abc' AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, hex(a_shifted);
 SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, hex(a_shifted);
@@ -102,7 +104,7 @@ SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, 
 
 Result:
 
-``` text
+```text
 ┌───a─┬─bin(101)─┬─a_shifted─┬─bin(bitShiftRight(101, 2))─┐
 │ 101 │ 01100101 │        25 │ 00011001                   │
 └─────┴──────────┴───────────┴────────────────────────────┘
@@ -114,18 +116,18 @@ Result:
 └─────┴──────────────────────────────┴───────────┴─────────────────────────────────────────────────┘
 ```
 
-## bitRotateLeft(a, b)
+## bitRotateLeft(a, b) {#bitrotatelefta-b}
 
-## bitRotateRight(a, b)
+## bitRotateRight(a, b) {#bitrotaterighta-b}
 
-## bitSlice(s, offset, length)
+## bitSlice(s, offset, length) {#bitslices-offset-length}
 
 Returns a substring starting with the bit from the 'offset' index that is 'length' bits long. bits indexing starts from
 1
 
 **Syntax**
 
-``` sql
+```sql
 bitSlice(s, offset[, length])
 ```
 
@@ -143,7 +145,7 @@ bitSlice(s, offset[, length])
 
 Query:
 
-``` sql
+```sql
 select bin('Hello'), bin(bitSlice('Hello', 1, 8))
 select bin('Hello'), bin(bitSlice('Hello', 1, 2))
 select bin('Hello'), bin(bitSlice('Hello', 1, 9))
@@ -152,7 +154,7 @@ select bin('Hello'), bin(bitSlice('Hello', -4, 8))
 
 Result:
 
-``` text
+```text
 ┌─bin('Hello')─────────────────────────────┬─bin(bitSlice('Hello', 1, 8))─┐
 │ 0100100001100101011011000110110001101111 │ 01001000                     │
 └──────────────────────────────────────────┴──────────────────────────────┘
@@ -167,17 +169,17 @@ Result:
 └──────────────────────────────────────────┴───────────────────────────────┘
 ```
 
-## byteSlice(s, offset, length)
+## byteSlice(s, offset, length) {#byteslices-offset-length}
 
 See function [substring](string-functions.md#substring).
 
-## bitTest
+## bitTest {#bittest}
 
 Takes any integer and converts it into [binary form](https://en.wikipedia.org/wiki/Binary_number), returns the value of a bit at specified position. Counting is right-to-left, starting at 0.
 
 **Syntax**
 
-``` sql
+```sql
 SELECT bitTest(number, index)
 ```
 
@@ -196,13 +198,13 @@ For example, the number 43 in base-2 (binary) numeral system is 101011.
 
 Query:
 
-``` sql
+```sql
 SELECT bitTest(43, 1);
 ```
 
 Result:
 
-``` text
+```text
 ┌─bitTest(43, 1)─┐
 │              1 │
 └────────────────┘
@@ -212,19 +214,19 @@ Another example:
 
 Query:
 
-``` sql
+```sql
 SELECT bitTest(43, 2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─bitTest(43, 2)─┐
 │              0 │
 └────────────────┘
 ```
 
-## bitTestAll
+## bitTestAll {#bittestall}
 
 Returns result of [logical conjunction](https://en.wikipedia.org/wiki/Logical_conjunction) (AND operator) of all bits at given positions. Counting is right-to-left, starting at 0.
 
@@ -240,7 +242,7 @@ The conjunction for bit-wise operations:
 
 **Syntax**
 
-``` sql
+```sql
 SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 ```
 
@@ -259,13 +261,13 @@ For example, the number 43 in base-2 (binary) numeral system is 101011.
 
 Query:
 
-``` sql
+```sql
 SELECT bitTestAll(43, 0, 1, 3, 5);
 ```
 
 Result:
 
-``` text
+```text
 ┌─bitTestAll(43, 0, 1, 3, 5)─┐
 │                          1 │
 └────────────────────────────┘
@@ -275,19 +277,19 @@ Another example:
 
 Query:
 
-``` sql
+```sql
 SELECT bitTestAll(43, 0, 1, 3, 5, 2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─bitTestAll(43, 0, 1, 3, 5, 2)─┐
 │                             0 │
 └───────────────────────────────┘
 ```
 
-## bitTestAny
+## bitTestAny {#bittestany}
 
 Returns result of [logical disjunction](https://en.wikipedia.org/wiki/Logical_disjunction) (OR operator) of all bits at given positions. Counting is right-to-left, starting at 0.
 
@@ -303,7 +305,7 @@ The disjunction for bit-wise operations:
 
 **Syntax**
 
-``` sql
+```sql
 SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 ```
 
@@ -322,13 +324,13 @@ For example, the number 43 in base-2 (binary) numeral system is 101011.
 
 Query:
 
-``` sql
+```sql
 SELECT bitTestAny(43, 0, 2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─bitTestAny(43, 0, 2)─┐
 │                    1 │
 └──────────────────────┘
@@ -338,25 +340,25 @@ Another example:
 
 Query:
 
-``` sql
+```sql
 SELECT bitTestAny(43, 4, 2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─bitTestAny(43, 4, 2)─┐
 │                    0 │
 └──────────────────────┘
 ```
 
-## bitCount
+## bitCount {#bitcount}
 
 Calculates the number of bits set to one in the binary representation of a number.
 
 **Syntax**
 
-``` sql
+```sql
 bitCount(x)
 ```
 
@@ -378,25 +380,25 @@ Take for example the number 333. Its binary representation: 0000000101001101.
 
 Query:
 
-``` sql
+```sql
 SELECT bitCount(333);
 ```
 
 Result:
 
-``` text
+```text
 ┌─bitCount(333)─┐
 │             5 │
 └───────────────┘
 ```
 
-## bitHammingDistance
+## bitHammingDistance {#bithammingdistance}
 
 Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between the bit representations of two integer values. Can be used with [SimHash](../../sql-reference/functions/hash-functions.md#ngramsimhash) functions for detection of semi-duplicate strings. The smaller is the distance, the more likely those strings are the same.
 
 **Syntax**
 
-``` sql
+```sql
 bitHammingDistance(int1, int2)
 ```
 
@@ -413,13 +415,13 @@ bitHammingDistance(int1, int2)
 
 Query:
 
-``` sql
+```sql
 SELECT bitHammingDistance(111, 121);
 ```
 
 Result:
 
-``` text
+```text
 ┌─bitHammingDistance(111, 121)─┐
 │                            3 │
 └──────────────────────────────┘
@@ -427,13 +429,13 @@ Result:
 
 With [SimHash](../../sql-reference/functions/hash-functions.md#ngramsimhash):
 
-``` sql
+```sql
 SELECT bitHammingDistance(ngramSimHash('cat ate rat'), ngramSimHash('rat ate cat'));
 ```
 
 Result:
 
-``` text
+```text
 ┌─bitHammingDistance(ngramSimHash('cat ate rat'), ngramSimHash('rat ate cat'))─┐
 │                                                                            5 │
 └──────────────────────────────────────────────────────────────────────────────┘

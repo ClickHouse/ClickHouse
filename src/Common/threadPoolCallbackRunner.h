@@ -150,7 +150,7 @@ public:
         waitForAllToFinish();
     }
 
-    void operator() (Callback && callback, Priority priority = {})
+    void operator() (Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
     {
         auto promise = std::make_shared<std::promise<Result>>();
         auto & task = tasks.emplace_back(std::make_shared<Task>());
@@ -182,7 +182,10 @@ public:
         {
             /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
             /// in critical places where this callback runner is used (e.g. loading or deletion of parts)
-            pool.scheduleOrThrowOnError(std::move(task_func), priority);
+            if (wait_microseconds)
+                pool.scheduleOrThrow(std::move(task_func), priority, *wait_microseconds);
+            else
+                pool.scheduleOrThrowOnError(std::move(task_func), priority);
         }
         catch (...)
         {
