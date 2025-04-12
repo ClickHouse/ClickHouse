@@ -162,9 +162,9 @@ ln -sf $SRC_PATH/server.key $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/server.crt $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/dhparam.pem $DEST_SERVER_PATH/
 
-ln -sf $SRC_PATH/nb_model_sentiment_1.bin $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/nb_model_sentiment_2.bin $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/nb_model_sentiment_3.bin $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/nb_model_sentiment_token_1.bin $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/nb_model_lang_codepoint_1.bin $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/nb_model_lang_byte_2.bin $DEST_SERVER_PATH/config.d/
 
 # Retain any pre-existing config and allow ClickHouse to load it if required
 ln -sf --backup=simple --suffix=_original.xml \
