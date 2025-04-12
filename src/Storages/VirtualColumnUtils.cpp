@@ -285,7 +285,7 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
         block.getByName("_file").column->assumeMutableRef().insert(file);
     }
 
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    if (use_hive_partitioning)
     {
         const auto [keys, values] = parseHivePartitioningKeysAndValues(path);
 
