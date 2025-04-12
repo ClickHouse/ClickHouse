@@ -1,7 +1,5 @@
 #include "Coordination/TTLManager.h"
 
-#include <iostream>
-
 namespace DB
 {
 
@@ -21,9 +19,7 @@ TTLManager::~TTLManager()
 void TTLManager::addNode(std::chrono::milliseconds delay, std::function<void()> callback)
 {
     TimePoint execute_at = Clock::now() + delay;
-    std::cerr << "watches diff time " << std::chrono::duration_cast<std::chrono::milliseconds>(execute_at - Clock::now()).count() << '\n';
     {
-        std::cerr << "add node " << event_queue.size() << '\n';
         std::unique_lock lock(mutex);
         event_queue.emplace(Event{execute_at, std::move(callback)});
     }
@@ -44,7 +40,6 @@ void TTLManager::processQueue()
         else
         {
             auto now = Clock::now();
-            std::cerr << "queue not empty\n";
             auto next_time = event_queue.top().time;
 
             if (now >= next_time) 
@@ -52,15 +47,11 @@ void TTLManager::processQueue()
                 auto event = event_queue.top();
                 event_queue.pop();
                 lock.unlock();
-                std::cerr << "execute callback " << event_queue.size() << '\n';
                 event.func();
             }
             else
             {
-                auto start = Clock::now();
                 cv.wait_until(lock, next_time);
-                auto end = Clock::now();
-                std::cerr << "watches diff time " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << '\n';
             }
         }
     }

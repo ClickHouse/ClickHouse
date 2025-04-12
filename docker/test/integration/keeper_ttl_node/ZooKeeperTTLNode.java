@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 
 public class ZooKeeperTTLNode {
-    private static final String ZK_ADDRESS = "localhost:9181";
     private static final int SESSION_TIMEOUT = 5000;
     private static final String NODE_PATH = "/my_ttl_node";
     private static final long TTL = 3000;

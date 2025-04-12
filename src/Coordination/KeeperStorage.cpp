@@ -454,7 +454,6 @@ struct CreateNodeDelta
     Coordination::Stat stat;
     Coordination::ACLs acls;
     String data;
-    std::optional<int64_t> ttl;
 };
 
 struct RemoveNodeDelta
@@ -1172,7 +1171,7 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
             {
                 if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
                 {
-                    if (!createNode(path, operation.data, operation.stat, operation.acls, digest_on_commit, operation.ttl))
+                    if (!createNode(path, operation.data, operation.stat, operation.acls, digest_on_commit))
                         onStorageInconsistency("Failed to create a node");
 
                     return Coordination::Error::ZOK;
@@ -1269,7 +1268,7 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
 
 template <typename Container>
 bool KeeperStorage<Container>::createNode(
-    const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest, std::optional<int64_t> /*ttl*/)
+    const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest)
 {
     auto parent_path = parentNodePath(path);
     auto node_it = container.find(parent_path);
@@ -1648,13 +1647,13 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
     zk_request.zstat = stat;
     std::optional<int64_t> ttl;
-    if (zk_request.should_read_ttl)
+    if (zk_request.contains_ttl)
         ttl = zk_request.ttl;
 
     new_deltas.emplace_back(
         std::move(path_created),
         zxid,
-        CreateNodeDelta{stat, std::move(node_acls), zk_request.data, ttl});
+        CreateNodeDelta{stat, std::move(node_acls), zk_request.data});
     
     return new_deltas;
 }
@@ -1670,7 +1669,7 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
             response->error = error;
             return response;
         }
-        else if (zk_request.should_read_ttl)
+        else if (zk_request.contains_ttl)
         {
             auto response = std::make_shared<Coordination::ZooKeeperCreateTTLResponse>();
             response->path_created = path;
@@ -1707,7 +1706,7 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
         return make_response("", result);
     }
 
-    if (zk_request.should_read_ttl)
+    if (zk_request.contains_ttl)
     {
         storage.ttl_manager.addNode(std::chrono::milliseconds(zk_request.ttl), [&storage, path = created_path, version = -1, update_digest = false] {
             storage.removeNode(path, version, update_digest);

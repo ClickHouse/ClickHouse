@@ -226,7 +226,7 @@ void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
 
     Coordination::write(flags, out);
 
-    if (should_read_ttl)
+    if (contains_ttl)
         Coordination::write(ttl, out);
 }
 
@@ -234,7 +234,7 @@ size_t ZooKeeperCreateRequest::sizeImpl() const
 {
     int32_t flags = 0;
     auto size = Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
-    if (should_read_ttl)
+    if (contains_ttl)
         size += sizeof(int64_t);
     return size;
 }
@@ -253,10 +253,8 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
     if (flags & 2)
         is_sequential = true;
 
-    if (should_read_ttl)
+    if (contains_ttl)
         Coordination::read(ttl, in);
-
-    std::cerr << "should_read_ttl " << should_read_ttl << ' ' << ttl << '\n';
 }
 
 std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
@@ -986,7 +984,7 @@ ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
 {
     if (not_exists)
         return std::make_shared<ZooKeeperCreateIfNotExistsResponse>();
-    if (should_read_ttl)
+    if (contains_ttl)
         return std::make_shared<ZooKeeperCreateTTLResponse>();
     return std::make_shared<ZooKeeperCreateResponse>();
 }
@@ -1251,7 +1249,7 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
         else if constexpr (num == OpNum::CheckNotExists || num == OpNum::CreateIfNotExists)
             res->not_exists = true;
         else if constexpr (num == OpNum::CreateTTL)
-            res->should_read_ttl = true;
+            res->contains_ttl = true;
 
         return res;
     });

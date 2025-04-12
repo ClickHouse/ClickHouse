@@ -9,8 +9,6 @@
 #include <optional>
 #include <functional>
 
-#include <iostream>
-
 namespace DB
 {
 class ReadBuffer;
@@ -229,7 +227,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
 
     OpNum getOpNum() const override 
     { 
-        if (should_read_ttl)
+        if (contains_ttl)
             return OpNum::CreateTTL;
         return not_exists ? OpNum::CreateIfNotExists : OpNum::Create;
     }

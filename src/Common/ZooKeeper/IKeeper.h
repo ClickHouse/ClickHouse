@@ -209,7 +209,7 @@ struct CreateRequest : virtual Request
     /// should it succeed if node already exists
     bool not_exists = false;
 
-    bool should_read_ttl = false;
+    bool contains_ttl = false;
     int64_t ttl;
 
     void addRootPath(const String & root_path) override;
