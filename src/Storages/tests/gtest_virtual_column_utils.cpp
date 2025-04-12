@@ -10,56 +10,58 @@ TEST(VirtualColumnUtils, parseHivePartitioningKeysAndValuesEmptyValue)
 {
     static std::string empty_value_path = "/output_data/year=2022/country=/data_0.parquet";
 
-    auto map = parseHivePartitioningKeysAndValuesWithRegex(empty_value_path);
+    const auto pair = parseHivePartitioningKeysAndValues(empty_value_path);
 
-    ASSERT_TRUE(map.size() == 2);
+    ASSERT_EQ(pair.first->size(), 2);
 
-    ASSERT_TRUE(map["year"] == "2022");
-    ASSERT_TRUE(map["country"].empty());
-}
-
-TEST(VirtualColumnUtils, parseHivePartitioningKeysNormal)
-{
-    std::string path = "/some/prefix/year=2023/suffix/file.parquet";
-
-    auto result = parseHivePartitioningKeysAndValuesWithExtractKvp(path);
-    ASSERT_EQ(result.size(), 1u);
-    EXPECT_EQ(result["year"], "2023");
+    ASSERT_EQ(getKeyAndValuePairFromHiveKeysAndValues(pair, "year")->second, "2022");
+    ASSERT_EQ(getKeyAndValuePairFromHiveKeysAndValues(pair, "country")->second, "");
 }
 
 TEST(VirtualColumnUtils, parseHivePartitioningKeysMultiplePartitions)
 {
     std::string path = "/out/year=2022/country=US/data_0.parquet";
 
-    auto result = parseHivePartitioningKeysAndValuesWithExtractKvp(path);
-    ASSERT_EQ(result.size(), 2u);
-    EXPECT_EQ(result["year"], "2022");
-    EXPECT_EQ(result["country"], "US");
-}
+    const auto pair = parseHivePartitioningKeysAndValues(path);
+    ASSERT_EQ(pair.first->size(), 2);
 
-TEST(VirtualColumnUtils, parseHivePartitioningKeysEmptyValue)
-{
-    std::string path = "/output_data/year=2022/country=/data_0.parquet";
-
-    auto result = parseHivePartitioningKeysAndValuesWithExtractKvp(path);
-    ASSERT_EQ(result.size(), 2u);
-    EXPECT_EQ(result["year"], "2022");
-    EXPECT_EQ(result["country"], "");
+    ASSERT_EQ(getKeyAndValuePairFromHiveKeysAndValues(pair, "year")->second,"2022");
+    ASSERT_EQ(getKeyAndValuePairFromHiveKeysAndValues(pair, "country")->second, "US");
 }
 
 TEST(VirtualColumnUtils, parseHivePartitioningKeysNoPartition)
 {
     std::string path = "/no/partitions/here/file.parquet";
 
-    auto result = parseHivePartitioningKeysAndValuesWithExtractKvp(path);
-    EXPECT_TRUE(result.empty());
+    auto result = parseHivePartitioningKeysAndValues(path);
+    EXPECT_TRUE(result.first->empty());
 }
 
 TEST(VirtualColumnUtils, parseHivePartitioningKeysDuplicate)
 {
     std::string path = "/folder/year=2022/year=2023/file.parquet";
 
-    EXPECT_ANY_THROW(parseHivePartitioningKeysAndValuesWithExtractKvp(path));
+    EXPECT_ANY_THROW(parseHivePartitioningKeysAndValues(path));
+}
+
+TEST(VirtualColumnUtils, parseHivePartitioningKeysMalformed)
+{
+    std::string path = "/out/year=2022////====US/=//data_0.parquet";
+
+    const auto pair = parseHivePartitioningKeysAndValues(path);
+    ASSERT_EQ(pair.first->size(), 1);
+
+    ASSERT_EQ(getKeyAndValuePairFromHiveKeysAndValues(pair, "year")->second,"2022");
+}
+
+TEST(VirtualColumnUtils, parseHivePartitioningKeysFilenameWithPairInIt)
+{
+    std::string path = "/out/year=2022/country=USA.parquet";
+
+    const auto pair = parseHivePartitioningKeysAndValues(path);
+    ASSERT_EQ(pair.first->size(), 1);
+
+    ASSERT_EQ(getKeyAndValuePairFromHiveKeysAndValues(pair, "year")->second,"2022");
 }
 
 TEST(VirtualColumnUtils, getVirtualsForFileLikeStorageEmptyValue)

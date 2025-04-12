@@ -112,8 +112,9 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     VirtualsForFileLikeStorage virtual_values, ContextPtr context);
 
 // exposed in the header for unit testing purposes
-std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValuesWithRegex(const String & path);
-std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValuesWithExtractKvp(const String & path);
+std::pair<ColumnPtr, ColumnPtr> parseHivePartitioningKeysAndValues(const String & path);
+std::optional<std::pair<String, String>> getKeyAndValuePairFromHiveKeysAndValues(const std::optional<std::pair<ColumnPtr, ColumnPtr>> & hive_keys_and_values, const String & key);
+
 }
 
 }

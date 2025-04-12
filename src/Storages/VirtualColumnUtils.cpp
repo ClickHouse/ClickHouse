@@ -64,7 +64,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsBool use_extract_kvp_for_hive_path_parsing;
 }
 
 namespace ErrorCodes
@@ -149,12 +148,9 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
-/*
- * Keeping the same return type just for compatibility and reviews. Once idea is approved, we should return raw columns for even better performance
- */
-std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValuesWithExtractKvp(const String & path)
+std::pair<ColumnPtr, ColumnPtr> parseHivePartitioningKeysAndValues(const String & path)
 {
-    auto extractor = KeyValuePairExtractorBuilder()
+    static auto extractor = KeyValuePairExtractorBuilder()
     .withItemDelimiters({'/'})
     .withKeyValueDelimiter('=')
     .build();
@@ -162,64 +158,65 @@ std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValuesW
     auto keys = ColumnString::create();
     auto values = ColumnString::create();
 
-    extractor->extract(path, keys, values);
+    // cutting the filename to prevent malformed filenames that contain key-value-pairs from being extracted
+    // not sure if we actually need to do that, but just in case. Plus, the previous regex impl took care of it
+    const auto last_slash_pos = path.find_last_of('/');
+
+    if (last_slash_pos == std::string::npos)
+    {
+        // nothing to extract, there is no path, just a filename
+        return std::make_pair(std::move(keys), std::move(values));
+    }
+
+    std::string_view path_without_filename(path.data(), last_slash_pos);
+
+    extractor->extract(path_without_filename, keys, values);
 
     keys->validate();
     values->validate();
 
-    const ColumnString * keys_string_column = typeid_cast<const ColumnString *>(keys.get());
-    const ColumnString * values_string_column = typeid_cast<const ColumnString *>(values.get());
+    std::unordered_set<StringRef> check_for_duplicates_set;
 
-    std::unordered_map<std::string, std::string> res;
-
-    for (auto i = 0u; i < keys_string_column->size(); i++)
+    for (std::size_t i = 0; i < keys->size(); i++)
     {
-        const auto key = keys_string_column->getDataAt(i);
-        const auto value = values_string_column->getDataAt(i);
-        auto [_, inserted] = res.insert(std::make_pair(key, value));
+        const auto key = keys->getDataAt(i);
+        const auto [_, inserted] = check_for_duplicates_set.insert(keys->getDataAt(i));
 
         if (!inserted)
         {
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed",
-                path, key.toString());
+                path,
+                key.toString());
         }
     }
 
-    return res;
+    return std::make_pair(std::move(keys), std::move(values));
 }
 
-std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValuesWithRegex(const String & path)
+
+std::optional<std::pair<String, String>> getKeyAndValuePairFromHiveKeysAndValues(const std::optional<std::pair<ColumnPtr, ColumnPtr>> & hive_keys_and_values_opt, const String & key)
 {
-    std::string pattern = "([^/]+)=([^/]*)/";
-    re2::StringPiece input_piece(path);
-
-    std::unordered_map<std::string, std::string> key_values;
-    std::string key;
-    std::string value;
-    std::unordered_map<std::string, std::string> used_keys;
-    while (RE2::FindAndConsume(&input_piece, pattern, &key, &value))
+    if (!hive_keys_and_values_opt)
     {
-        auto it = used_keys.find(key);
-        if (it != used_keys.end() && it->second != value)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, key);
-        used_keys.insert({key, value});
-
-        auto col_name = key;
-        key_values[col_name] = value;
-    }
-    return key_values;
-}
-
-std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path, ContextPtr context)
-{
-    if (context->getSettingsRef()[Setting::use_extract_kvp_for_hive_path_parsing])
-    {
-        return parseHivePartitioningKeysAndValuesWithExtractKvp(path);
+        return std::nullopt;
     }
 
-    return parseHivePartitioningKeysAndValuesWithRegex(path);
+    const auto keys_column = hive_keys_and_values_opt.value().first;
+    const auto values_column = hive_keys_and_values_opt.value().second;
+
+    for (std::size_t i = 0; i < keys_column->size(); i++)
+    {
+        const auto element = keys_column->getDataAt(i);
+
+        if (element == key)
+        {
+            return std::make_pair(key, values_column->getDataAt(i).toString());
+        }
+    }
+
+    return std::nullopt;
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, const ContextPtr & context, const std::string & path, std::optional<FormatSettings> format_settings_)
@@ -251,17 +248,21 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
 
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        auto map = parseHivePartitioningKeysAndValues(path, context);
+        const auto [keys, values] = parseHivePartitioningKeysAndValues(path);
         auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
-        for (auto & item : map)
+
+        for (std::size_t i = 0; i < keys->size(); i++)
         {
-            auto type = tryInferDataTypeByEscapingRule(item.second, format_settings, FormatSettings::EscapingRule::Raw);
+            auto key = keys->getDataAt(i);
+            auto value = values->getDataAt(i);
+            auto type = tryInferDataTypeByEscapingRule(value.toString(), format_settings, FormatSettings::EscapingRule::Raw);
+
             if (type == nullptr)
                 type = std::make_shared<DataTypeString>();
             if (type->canBeInsideLowCardinality())
-                add_virtual({item.first, std::make_shared<DataTypeLowCardinality>(type)}, true);
+                add_virtual({key.toString(), std::make_shared<DataTypeLowCardinality>(type)}, true);
             else
-                add_virtual({item.first, type}, true);
+                add_virtual({key.toString(), type}, true);
         }
     }
 
@@ -287,12 +288,15 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
 
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        auto keys_and_values = parseHivePartitioningKeysAndValues(path, context);
-        for (const auto & [key, value] : keys_and_values)
+        const auto [keys, values] = parseHivePartitioningKeysAndValues(path);
+
+        for (std::size_t i = 0; i < keys->size(); i++)
         {
-            if (const auto * column = block.findByName(key))
+            const auto key = keys->getDataAt(i);
+            const auto value = values->getDataAt(i);
+            if (const auto * column = block.findByName(key.toString()))
             {
-                ReadBufferFromString buf(value);
+                ReadBufferFromString buf(value.toView());
                 column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, format_settings);
             }
         }
@@ -329,23 +333,8 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     }
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
-    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-
     for (size_t i = 0; i != paths.size(); ++i)
         addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), context);
-
-    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-
-    auto time_taken = std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
-
-    if (context->getSettingsRef()[Setting::use_extract_kvp_for_hive_path_parsing])
-    {
-        LOG_INFO(getLogger("Arthur"), "Took {} us to parse {} hive paths with extractKeyValuePairs", time_taken, paths.size());
-    }
-    else
-    {
-        LOG_INFO(getLogger("Arthur"), "Took {} us to parse {} hive paths with regex", time_taken, paths.size());
-    }
 
     filterBlockWithExpression(actions, block);
 
@@ -356,9 +345,9 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values, ContextPtr context)
 {
-    std::unordered_map<std::string, std::string> hive_map;
+    std::optional<std::pair<ColumnPtr, ColumnPtr>> hive_keys_and_values;
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        hive_map = parseHivePartitioningKeysAndValues(virtual_values.path, context);
+        hive_keys_and_values = parseHivePartitioningKeysAndValues(virtual_values.path);
 
     for (const auto & virtual_column : requested_virtual_columns)
     {
@@ -393,9 +382,9 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
-        else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
+        else if (const auto pair = getKeyAndValuePairFromHiveKeysAndValues(*hive_keys_and_values, virtual_column.getNameInStorage()))
         {
-            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *virtual_column.type))->convertToFullColumnIfConst());
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(pair->second), *virtual_column.type))->convertToFullColumnIfConst());
         }
         else if (virtual_column.name == "_etag")
         {
