@@ -1617,6 +1617,11 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                         if (!res.empty() && data_range.end == res.back().end)
                             /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.
                             continue;
+
+                        if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
+                            res.push_back(data_range);
+                        else
+                            res.back().end = data_range.end;
                     }
                 }
                 else
