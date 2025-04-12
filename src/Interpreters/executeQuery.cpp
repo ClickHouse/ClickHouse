@@ -569,7 +569,7 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-void logQueryFinish(
+void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
     const ASTPtr & query_ast,
@@ -577,12 +577,12 @@ void logQueryFinish(
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
-    bool internal)
+    bool internal,
+    std::chrono::system_clock::time_point time)
 {
     const Settings & settings = context->getSettingsRef();
     auto log_queries = settings[Setting::log_queries] && !internal;
 
-    const auto time_now = std::chrono::system_clock::now();
     QueryStatusPtr process_list_elem = context->getProcessListElement();
     if (process_list_elem)
     {
@@ -590,10 +590,10 @@ void logQueryFinish(
         CurrentThread::finalizePerformanceCounters();
 
         QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
-        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
+        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time, std::make_shared<QueryStatusInfo>(info));
         elem.type = QueryLogElementType::QUERY_FINISH;
 
-        addStatusInfoToQueryLogElement(elem, info, query_ast, context, time_now);
+        addStatusInfoToQueryLogElement(elem, info, query_ast, context, time);
 
         auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
         elem.result_rows = result_progress.result_rows;
@@ -651,8 +651,22 @@ void logQueryFinish(
                 query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
             }
         }
-        query_span->finish(time_now);
+        query_span->finish(time);
     }
+}
+
+void logQueryFinish(
+    QueryLogElement & elem,
+    const ContextMutablePtr & context,
+    const ASTPtr & query_ast,
+    const QueryPipeline & query_pipeline,
+    bool pulling_pipeline,
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
+    QueryResultCacheUsage query_result_cache_usage,
+    bool internal)
+{
+    const auto time_now = std::chrono::system_clock::now();
+    logQueryFinishImpl(elem, context, query_ast, query_pipeline, pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
 }
 
 void logQueryException(
@@ -1629,14 +1643,14 @@ static BlockIO executeQueryImpl(
                                     execute_implicit_tcl_query,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
-                                    query_span](QueryPipeline & query_pipeline) mutable
+                                    query_span](QueryPipeline & query_pipeline, std::chrono::system_clock::time_point finish_time) mutable
             {
                 if (query_result_cache_usage == QueryResultCacheUsage::Write)
                     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
                     /// prevent partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryResultCache();
 
-                logQueryFinish(elem, context, out_ast, query_pipeline, pulling_pipeline, query_span, query_result_cache_usage, internal);
+                logQueryFinishImpl(elem, context, out_ast, query_pipeline, pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
 
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
@@ -1987,6 +2001,17 @@ void executeQuery(
         throw;
     }
 
+    /// The order is important here:
+    /// - first we save the finish_time that will be used for the entry in query_log/opentelemetry_span_log.finish_time_us
+    /// - then we flush the progress (to flush result_rows/result_bytes)
+    /// - then call the query_finish_callback() - right now the only purpose is to flush the data over HTTP
+    /// - then call onFinish() that will create entry in query_log/opentelemetry_span_log
+    ///
+    /// That way we have:
+    /// - correct finish time of the query (regardless of how long does the query_finish_callback() takes)
+    /// - correct progress for HTTP (X-ClickHouse-Summary requires result_rows/result_bytes)
+    /// - correct NetworkSendElapsedMicroseconds/NetworkSendBytes in query_log
+    const auto finish_time = std::chrono::system_clock::now();
     std::exception_ptr exception_ptr;
     if (query_finish_callback)
     {
@@ -2003,7 +2028,7 @@ void executeQuery(
         }
     }
 
-    streams.onFinish();
+    streams.onFinish(finish_time);
 
     if (exception_ptr)
         std::rethrow_exception(exception_ptr);
