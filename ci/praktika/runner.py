@@ -358,6 +358,8 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
+        elif not result.is_ok and job.allow_merge_on_failure:
+            result.set_not_required_label()
 
         result.update_duration()
         # if result.is_error():
