@@ -68,7 +68,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.5",
         {
-            {"use_extract_kvp_for_hive_path_parsing", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
