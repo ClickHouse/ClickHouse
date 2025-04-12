@@ -25,13 +25,6 @@ SELECT count(*) FROM file('$CURDIR/data_hive/partitioning/number=42/date=2020-01
 $CLICKHOUSE_LOCAL -q """
 set use_hive_partitioning = 1;
 
-SELECT identifier FROM file('$CURDIR/data_hive/partitioning/identifier=*/email.csv') ORDER BY identifier DESC LIMIT 2;
-SELECT a FROM file('$CURDIR/data_hive/partitioning/a=b/a=b/sample.parquet') LIMIT 1;
-"""
-
-$CLICKHOUSE_LOCAL -q """
-set use_hive_partitioning = 1;
-
 SELECT *, column0 FROM file('$CURDIR/data_hive/partitioning/column0=Elizabeth/column0=Elizabeth1/sample.parquet') LIMIT 10;
 """ 2>&1 | grep -c "INCORRECT_DATA"
 

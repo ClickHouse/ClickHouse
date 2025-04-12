@@ -174,19 +174,18 @@ std::pair<ColumnPtr, ColumnPtr> parseHivePartitioningKeysAndValues(const String 
     keys->validate();
     values->validate();
 
-    std::unordered_map<StringRef, StringRef> check_for_duplicates_umap;
+    std::unordered_set<StringRef> check_for_duplicates_uset;
 
     for (std::size_t i = 0; i < keys->size(); i++)
     {
         const auto key = keys->getDataAt(i);
-        const auto value = values->getDataAt(i);
-        const auto [it, inserted] = check_for_duplicates_umap.insert(std::make_pair(key, value));
+        const auto [it, inserted] = check_for_duplicates_uset.insert(key);
 
-        if (!inserted && it->second != value)
+        if (!inserted)
         {
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed",
+                "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {}, only unique keys are allowed",
                 path,
                 key.toString());
         }
