@@ -9,7 +9,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -143,7 +142,8 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
 
 MergeTreeIndexBulkGranulesSet::MergeTreeIndexBulkGranulesSet(
     const Block & index_sample_block_)
-    : block(index_sample_block_.cloneEmpty())
+    : block(index_sample_block_.cloneEmpty()),
+    block_for_reading(index_sample_block_.cloneEmpty())
 {
     size_t num_columns = block.columns();
     serializations.resize(num_columns);
@@ -180,16 +180,19 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.position_independent_encoding = false;
 
-    /// Appending to columns
     size_t num_columns = block.columns() - 1;
+
+    /// Due to using of position-dependent encoding, we have to read into a temporary block and then move to the accumulating block.
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto & elem = block.getByPosition(i);
-
+        auto column = block_for_reading.getByPosition(i).column;
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, 0, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(column, 0, rows_to_read, settings, state, nullptr);
+
+        block.getByPosition(i).column->assumeMutableRef().insertRangeFrom(*column, 0, rows_to_read);
+        column->assumeMutableRef().popBack(rows_to_read);
     }
 
     /// The last column is designating the granule

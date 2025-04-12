@@ -51,6 +51,7 @@ struct MergeTreeIndexBulkGranulesSet final : public IMergeTreeIndexBulkGranules
     size_t min_granule = 0;
     size_t max_granule = 0;
     Block block;
+    Block block_for_reading;
     Serializations serializations;
     bool empty = true;
 };
