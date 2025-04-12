@@ -37,6 +37,7 @@
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -535,6 +536,7 @@ void LocalServer::connect()
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
+    UseSSL use_ssl;
     thread_status.emplace();
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
