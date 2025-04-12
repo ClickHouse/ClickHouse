@@ -341,13 +341,25 @@ public:
         return ret;
     }
 
-    const_iterator find(StringRef key) const
+    const_iterator find(StringRef key)
     {
         auto map_it = map.find(key);
-        if (map_it != map.end())
-            /// return std::make_shared<KVPair>(KVPair{map_it->getMapped()->key, map_it->getMapped()->value});
-            return map_it->getMapped();
-        return list.end();
+        if (map_it == map.end())
+            return list.end();
+
+        if (map_it->getMapped()->value.destroy_time != -1)
+        {
+            std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+            auto duration = now.time_since_epoch();
+            auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+            if (map_it->getMapped()->value.destroy_time < timestamp)
+            {
+                erase(key.toString());
+                return end();
+            }
+        }
+        /// return std::make_shared<KVPair>(KVPair{map_it->getMapped()->key, map_it->getMapped()->value});
+        return map_it->getMapped();
     }
 
 

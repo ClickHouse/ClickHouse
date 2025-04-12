@@ -15,7 +15,7 @@
 
 #include <absl/container/flat_hash_set.h>
 
-#include <Coordination/TTLManager.h>
+#include <Coordination/GarbageCollector.h>
 #include "config.h"
 #if USE_ROCKSDB
 #include <Coordination/RocksDBContainer.h>
@@ -191,6 +191,7 @@ struct KeeperRocksNode : public KeeperRocksNodeInfo
             memcpy(data.get(), other.data.get(), stats.data_size);
         }
 
+        destroy_time = other.destroy_time;
         /// cached_digest = other.cached_digest;
     }
     void invalidateDigestCache() const;
@@ -212,6 +213,7 @@ struct KeeperRocksNode : public KeeperRocksNodeInfo
     }
     std::unique_ptr<char[]> data{nullptr};
     mutable UInt64 cached_digest = 0; /// we cached digest for this node.
+    int64_t destroy_time = -1;
 private:
     bool serialized = false;
 };
@@ -226,6 +228,8 @@ struct KeeperMemNode
     mutable uint64_t cached_digest = 0;
 
     uint64_t acl_id = 0; /// 0 -- no ACL by default
+
+    int64_t destroy_time = -1;
 
     KeeperMemNode() = default;
 
@@ -465,7 +469,7 @@ public:
 
 #if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
     static_assert(
-        sizeof(ListNode<Node>) <= 144,
+        sizeof(ListNode<Node>) <= 152,
         "std::list node containing ListNode<Node> is > 160 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
         "memory consumption");
 #endif
@@ -482,7 +486,7 @@ public:
     /// container.
     Container container;
 
-    TTLManager ttl_manager;
+    GarbageCollector garbage_collector;
 
     struct UncommittedState
     {
@@ -568,7 +572,7 @@ public:
     // Returns false if it failed to create the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool
-    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest);
+    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest, int64_t destroy_time);
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise

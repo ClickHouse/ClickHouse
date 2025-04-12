@@ -1,35 +1,35 @@
-#include "Coordination/TTLManager.h"
+#include "Coordination/GarbageCollector.h"
 
 namespace DB
 {
 
-TTLManager::TTLManager()
-    : worker_thread(&TTLManager::processQueue, this)
+GarbageCollector::GarbageCollector()
+    : worker_thread(&GarbageCollector::processQueue, this)
     , stop_flag(false)
 {
 }
 
-TTLManager::~TTLManager()
+GarbageCollector::~GarbageCollector()
 {
     stop_flag.store(true);
     worker_thread.join();
 }
 
 
-void TTLManager::addNode(std::chrono::milliseconds delay, std::function<void()> callback)
+void GarbageCollector::addNode(const std::string & node, std::chrono::milliseconds delay, std::function<void()> callback)
 {
     TimePoint execute_at = Clock::now() + delay;
+    nodes_to_process.insert(node);
     {
         std::unique_lock lock(mutex);
-        event_queue.emplace(Event{execute_at, std::move(callback)});
+        event_queue.emplace(Event{execute_at, std::move(callback), node});
     }
     cv.notify_all();
-
 }
 
-void TTLManager::processQueue()
+void GarbageCollector::processQueue()
 {
-    while (!stop_flag) 
+    while (!stop_flag)
     {
         std::unique_lock lock(mutex);
 
@@ -42,12 +42,16 @@ void TTLManager::processQueue()
             auto now = Clock::now();
             auto next_time = event_queue.top().time;
 
-            if (now >= next_time) 
+            if (now >= next_time)
             {
                 auto event = event_queue.top();
                 event_queue.pop();
+
+                bool should_process_delete = nodes_to_process.contains(event.node);
                 lock.unlock();
-                event.func();
+
+                if (should_process_delete)
+                    event.func();
             }
             else
             {
@@ -55,7 +59,6 @@ void TTLManager::processQueue()
             }
         }
     }
-
 }
 
 }

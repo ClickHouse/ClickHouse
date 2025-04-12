@@ -295,6 +295,7 @@ String KeeperRocksNode::getEncodedString()
     const KeeperRocksNodeInfo & node_info = *this;
     writePODBinary(node_info, buffer);
     writeBinary(getData(), buffer);
+    writeBinary(destroy_time, buffer);
     return buffer.str();
 }
 
@@ -309,6 +310,7 @@ void KeeperRocksNode::decodeFromString(const String &buffer_str)
         data = std::unique_ptr<char[]>(new char[stats.data_size]);
         buffer.readStrict(data.get(), stats.data_size);
     }
+    readBinary(destroy_time, buffer);
 }
 
 void KeeperRocksNode::setResponseStat(Coordination::Stat & response_stat) const
@@ -341,7 +343,7 @@ KeeperMemNode & KeeperMemNode::operator=(const KeeperMemNode & other)
     }
 
     children = other.children;
-
+    destroy_time = other.destroy_time;
     return *this;
 }
 
@@ -364,6 +366,7 @@ KeeperMemNode & KeeperMemNode::operator=(KeeperMemNode && other) noexcept
 
     static_assert(std::is_nothrow_move_assignable_v<ChildrenSet>);
     children = std::move(other.children);
+    destroy_time = other.destroy_time;
 
     return *this;
 }
@@ -447,6 +450,7 @@ void KeeperMemNode::shallowCopy(const KeeperMemNode & other)
     }
 
     cached_digest = other.cached_digest;
+    destroy_time = other.destroy_time;
 }
 
 struct CreateNodeDelta
@@ -454,6 +458,7 @@ struct CreateNodeDelta
     Coordination::Stat stat;
     Coordination::ACLs acls;
     String data;
+    int64_t destroy_time;
 };
 
 struct RemoveNodeDelta
@@ -729,6 +734,7 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
                 node = std::make_shared<Node>();
                 node->copyStats(operation.stat);
                 node->setData(operation.data);
+                node->destroy_time = operation.destroy_time;
                 acls = operation.acls;
             }
             else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
@@ -1171,7 +1177,7 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
             {
                 if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
                 {
-                    if (!createNode(path, operation.data, operation.stat, operation.acls, digest_on_commit))
+                    if (!createNode(path, operation.data, operation.stat, operation.acls, digest_on_commit, operation.destroy_time))
                         onStorageInconsistency("Failed to create a node");
 
                     return Coordination::Error::ZOK;
@@ -1268,7 +1274,7 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
 
 template <typename Container>
 bool KeeperStorage<Container>::createNode(
-    const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest)
+    const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest, int64_t destroy_time)
 {
     auto parent_path = parentNodePath(path);
     auto node_it = container.find(parent_path);
@@ -1290,6 +1296,7 @@ bool KeeperStorage<Container>::createNode(
     created_node.acl_id = acl_id;
     created_node.copyStats(stat);
     created_node.setData(data);
+    created_node.destroy_time = destroy_time;
 
     if constexpr (use_rocksdb)
     {
@@ -1646,15 +1653,29 @@ std::list<KeeperStorageBase::Delta> preprocess(
     stat.ephemeralOwner = zk_request.is_ephemeral ? session_id : 0;
 
     zk_request.zstat = stat;
-    std::optional<int64_t> ttl;
+    int64_t destroy_time = -1;
     if (zk_request.contains_ttl)
-        ttl = zk_request.ttl;
+    {
+        auto now = std::chrono::system_clock::now();
+        auto desctroy_point = now + std::chrono::milliseconds(zk_request.ttl);
+        auto duration = desctroy_point.time_since_epoch();
+        auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
+        destroy_time = nanos.count();
+    }
 
     new_deltas.emplace_back(
         std::move(path_created),
         zxid,
-        CreateNodeDelta{stat, std::move(node_acls), zk_request.data});
+        CreateNodeDelta{stat, std::move(node_acls), zk_request.data, destroy_time});
 
+    auto path_request = zk_request.path;
+    if (zk_request.contains_ttl)
+    {
+        storage.garbage_collector.addNode(path_request, std::chrono::milliseconds(zk_request.ttl), [&storage, path = path_request, version = -1, update_digest = false] {
+            storage.removeNode(path, version, update_digest);
+        });
+    }
+    
     return new_deltas;
 }
 
@@ -1704,13 +1725,6 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
     if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
     {
         return make_response("", result);
-    }
-
-    if (zk_request.contains_ttl)
-    {
-        storage.ttl_manager.addNode(std::chrono::milliseconds(zk_request.ttl), [&storage, path = created_path, version = -1, update_digest = false] {
-            storage.removeNode(path, version, update_digest);
-        });
     }
 
     return make_response(created_path, Coordination::Error::ZOK);
