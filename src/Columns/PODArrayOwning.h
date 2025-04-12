@@ -178,7 +178,7 @@ public:
     {
         if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
-        
+
         this->t_end();
         new (reinterpret_cast<void*>(Base::t_end())) T(std::forward<U>(x));
         this->c_end += sizeof(T);
@@ -490,8 +490,6 @@ public:
     {
         this->erase(pos, pos + 1);
     }
-
-    
 
 };
 

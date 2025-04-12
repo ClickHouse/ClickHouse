@@ -51,7 +51,7 @@ public:
     using Container = PaddedPODArray<ValueType>;
 
 private:
-    ColumnVector() = default;
+    ColumnVector() :data(std::make_shared<OwningBuffer<T>>()) {}
     explicit ColumnVector(const size_t n) : data(std::make_shared<OwningBuffer<T>>(n)) {}
     ColumnVector(const size_t n, const ValueType x) : data(std::make_shared<OwningBuffer<T>>(n, x)) {}
     ColumnVector(const ColumnVector & src) : data(std::make_shared<OwningBuffer<T>>(src.data->begin(), src.data->end())) {}
