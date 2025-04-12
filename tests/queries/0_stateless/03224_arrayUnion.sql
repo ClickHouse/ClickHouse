@@ -58,7 +58,7 @@ SELECT arraySort(arrayUnion([1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 
 
 -- Table with batch inserts
 DROP TABLE IF EXISTS test_array_union;
-CREATE OR REPLACE TABLE test_array_union
+CREATE TABLE test_array_union
 (
     `id` Int8,
     `properties` Array(String),
