@@ -283,14 +283,7 @@ public:
     /// If `is_null` is not nullptr, also take null bit into account.
     /// This is currently used to facilitate the allocation of memory for an entire continuous row
     /// in a single step. For more details, refer to the HashMethodSerialized implementation.
-<<<<<<< HEAD
     virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const;
-=======
-    virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method collectSerializedValueSizes is not supported for {}", getName());
-    }
->>>>>>> f934adb4f25 (probably working)
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns pointer to the position after the read data.
@@ -319,11 +312,7 @@ public:
       * if 0, then don't makes reserve(),
       * otherwise (i.e. < 0), makes reserve() using size of source column.
       */
-<<<<<<< HEAD
     using Filter = IColumnFilter;
-=======
-    using Filter = PaddedPODArray<UInt8>;
->>>>>>> f934adb4f25 (probably working)
     [[nodiscard]] virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
     /** Expand column by mask inplace. After expanding column will
@@ -336,11 +325,7 @@ public:
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
-<<<<<<< HEAD
     using Permutation = IColumnPermutation;
-=======
-    using Permutation = PaddedPODArray<size_t>;
->>>>>>> f934adb4f25 (probably working)
     [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.

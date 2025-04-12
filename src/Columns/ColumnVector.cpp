@@ -12,10 +12,6 @@
 #include <Columns/RadixSortHelper.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <base/bit_cast.h>
-#include <base/scope_guard.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
 #include "Common/PODArray_fwd.h"
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -131,7 +127,7 @@ struct ColumnVector<T>::less_stable
 
         if constexpr (is_floating_point<T>)
         {
-            if (unlikely(isNaN(parent.data[lhs]) && isNaN(parent.data[rhs])))
+            if (unlikely(isNaN((*parent.data)[lhs]) && isNaN((*parent.data)[rhs])))
             {
                 return lhs < rhs;
             }
@@ -163,7 +159,7 @@ struct ColumnVector<T>::greater_stable
 
         if constexpr (is_floating_point<T>)
         {
-            if (unlikely(isNaN(parent.data[lhs]) && isNaN(parent.data[rhs])))
+            if (unlikely(isNaN((*parent.data)[lhs]) && isNaN((*parent.data)[rhs])))
             {
                 return lhs < rhs;
             }
@@ -466,8 +462,8 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 template <typename T>
 std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n) const
 {
-    chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
-    const auto & val = castToNearestFieldType(data[n]);
+    chassert(n < data->size()); /// This assert is more strict than the corresponding assert inside PODArray.
+    const auto & val = castToNearestFieldType((*data)[n]);
     return {FieldVisitorToString()(val), FieldToDataType()(val)};
 }
 
@@ -1157,12 +1153,12 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
         /// VBMI optimization only applicable for (U)Int8 types
         if (isArchSupported(TargetArch::AVX512VBMI))
         {
-            TargetSpecific::AVX512VBMI::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
+            TargetSpecific::AVX512VBMI::vectorIndexImpl<Container, Type>(*data, indexes, limit, res_data);
             return res;
         }
     }
 #endif
-    TargetSpecific::Default::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
+    TargetSpecific::Default::vectorIndexImpl<Container, Type>(*data, indexes, limit, res_data);
 
     return res;
 }
