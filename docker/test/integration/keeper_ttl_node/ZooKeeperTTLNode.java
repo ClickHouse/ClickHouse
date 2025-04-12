@@ -11,9 +11,26 @@ public class ZooKeeperTTLNode {
     private static final long TTL = 3000;
 
     public static void main(String[] args) throws IOException, InterruptedException, KeeperException {
+        int i = 0;
+        String host = "127.0.0.1";
+        String port = "9181";
+        while (i < args.length) {
+            switch (args[i]) {
+                case "--host":
+                    host = args[++i];
+                    break;
+                case "--port":
+                    port = args[++i];
+                    break;
+                default:
+                    ++i;
+                    break;
+            }
+        }
+
         CountDownLatch connectedSignal = new CountDownLatch(1);
 
-        ZooKeeper zk = new ZooKeeper(ZK_ADDRESS, SESSION_TIMEOUT, event -> {
+        ZooKeeper zk = new ZooKeeper(host + ":" + port, SESSION_TIMEOUT, event -> {
             if (event.getState() == Watcher.Event.KeeperState.SyncConnected) {
                 connectedSignal.countDown();
             }

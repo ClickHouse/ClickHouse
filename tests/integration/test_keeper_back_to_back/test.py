@@ -828,7 +828,7 @@ def test_node_with_ttl(started_cluster, request):
         [
             "bash",
             "-c",
-            f"java ZooKeeperTTLNode",
+            f"java ZooKeeperTTLNode --host {node.hostname} --port 9181",
         ],
     )
     assert res == reference

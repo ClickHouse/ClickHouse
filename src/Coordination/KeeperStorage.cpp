@@ -1709,7 +1709,7 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
 
     if (zk_request.should_read_ttl)
     {
-        storage.ttl_manager.addNode(std::chrono::milliseconds(zk_request.ttl), [&storage, begin, path = created_path, version = -1, update_digest = false] {
+        storage.ttl_manager.addNode(std::chrono::milliseconds(zk_request.ttl), [&storage, path = created_path, version = -1, update_digest = false] {
             storage.removeNode(path, version, update_digest);
         });
     }
