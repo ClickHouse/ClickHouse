@@ -329,8 +329,23 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     }
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+
     for (size_t i = 0; i != paths.size(); ++i)
         addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), context);
+
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+
+    auto time_taken = std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
+
+    if (context->getSettingsRef()[Setting::use_extract_kvp_for_hive_path_parsing])
+    {
+        LOG_INFO(getLogger("Arthur"), "Took {} us to parse {} hive paths with extractKeyValuePairs", time_taken, paths.size());
+    }
+    else
+    {
+        LOG_INFO(getLogger("Arthur"), "Took {} us to parse {} hive paths with regex", time_taken, paths.size());
+    }
 
     filterBlockWithExpression(actions, block);
 
