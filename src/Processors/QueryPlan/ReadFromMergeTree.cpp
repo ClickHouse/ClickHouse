@@ -1906,7 +1906,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, context_, log);
 
-        if (indexes->use_skip_indexes && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
+        if (indexes->use_skip_indexes && !indexes->skip_indexes.useful_indices.empty()  && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
         {
             result.parts_with_ranges = findPKRangesForFinalAfterSkipIndex(primary_key,
                                                                           metadata_snapshot->getSortingKey(),
