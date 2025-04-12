@@ -583,13 +583,13 @@ void logQueryFinish(
     const Settings & settings = context->getSettingsRef();
     auto log_queries = settings[Setting::log_queries] && !internal;
 
+    const auto time_now = std::chrono::system_clock::now();
     QueryStatusPtr process_list_elem = context->getProcessListElement();
     if (process_list_elem)
     {
         /// Update performance counters before logging to query_log
         CurrentThread::finalizePerformanceCounters();
 
-        auto time_now = std::chrono::system_clock::now();
         QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
         logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
         elem.type = QueryLogElementType::QUERY_FINISH;
@@ -652,7 +652,7 @@ void logQueryFinish(
                 query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
             }
         }
-        query_span->finish();
+        query_span->finish(time_now);
     }
 }
 
@@ -721,7 +721,7 @@ void logQueryException(
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
         query_span->addAttribute("clickhouse.exception", elem.exception);
         query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
-        query_span->finish();
+        query_span->finish(time_now);
     }
 }
 
@@ -843,7 +843,7 @@ void logExceptionBeforeStart(
         query_span->addAttribute("clickhouse.exception", elem.exception);
         query_span->addAttribute("db.statement", elem.query);
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
-        query_span->finish();
+        query_span->finish(query_end_time);
     }
 
     ProfileEvents::increment(ProfileEvents::FailedQuery);
