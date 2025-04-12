@@ -18,7 +18,7 @@ TEST(VirtualColumnUtils, parseHivePartitioningKeysAndValuesEmptyValue)
     ASSERT_TRUE(map["country"].empty());
 }
 
-TEST(ParseHivePartitioningTest, ExtractKVP_NormalSinglePartition)
+TEST(VirtualColumnUtils, parseHivePartitioningKeysNormal)
 {
     std::string path = "/some/prefix/year=2023/suffix/file.parquet";
 
@@ -27,7 +27,7 @@ TEST(ParseHivePartitioningTest, ExtractKVP_NormalSinglePartition)
     EXPECT_EQ(result["year"], "2023");
 }
 
-TEST(ParseHivePartitioningTest, ExtractKVP_MultiplePartitions)
+TEST(VirtualColumnUtils, parseHivePartitioningKeysMultiplePartitions)
 {
     std::string path = "/out/year=2022/country=US/data_0.parquet";
 
@@ -37,7 +37,7 @@ TEST(ParseHivePartitioningTest, ExtractKVP_MultiplePartitions)
     EXPECT_EQ(result["country"], "US");
 }
 
-TEST(ParseHivePartitioningTest, ExtractKVP_EmptyValue)
+TEST(VirtualColumnUtils, parseHivePartitioningKeysEmptyValue)
 {
     std::string path = "/output_data/year=2022/country=/data_0.parquet";
 
@@ -47,7 +47,7 @@ TEST(ParseHivePartitioningTest, ExtractKVP_EmptyValue)
     EXPECT_EQ(result["country"], "");
 }
 
-TEST(ParseHivePartitioningTest, ExtractKVP_NoPartitions)
+TEST(VirtualColumnUtils, parseHivePartitioningKeysNoPartition)
 {
     std::string path = "/no/partitions/here/file.parquet";
 
@@ -55,7 +55,7 @@ TEST(ParseHivePartitioningTest, ExtractKVP_NoPartitions)
     EXPECT_TRUE(result.empty());
 }
 
-TEST(ParseHivePartitioningTest, ExtractKVP_DuplicateKeyDifferentValue)
+TEST(VirtualColumnUtils, parseHivePartitioningKeysDuplicate)
 {
     std::string path = "/folder/year=2022/year=2023/file.parquet";
 
