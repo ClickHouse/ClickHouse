@@ -5,7 +5,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <base/hex.h>
-#include "Common/ZooKeeper/ZooKeeperConstants.h"
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>

@@ -1654,7 +1654,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
         std::move(path_created),
         zxid,
         CreateNodeDelta{stat, std::move(node_acls), zk_request.data});
-    
+
     return new_deltas;
 }
 
