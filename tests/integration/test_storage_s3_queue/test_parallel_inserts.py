@@ -112,15 +112,18 @@ def test_parallel_inserts_generated_parts(started_cluster, parallel_inserts):
         )
 
     new_parts = get_new_parts_in_dst()
+    expected_parts = math.ceil(
+        len(expected_processed) / max_processed_files_before_commit
+    )
     if not parallel_inserts:
-        assert new_parts == math.ceil(
-            len(expected_processed) / max_processed_files_before_commit
-        )
+        # Note, due to parallel processing (not inserts) in this case it is
+        # possible to have less parts
+        assert new_parts <= expected_parts
+        # But not too less
+        assert new_parts >= expected_parts*0.5
     else:
-        # Note, in case of paralell inserts due to parallelism we can have more parts
-        assert new_parts >= math.ceil(
-            len(expected_processed) / max_processed_files_before_commit
-        )
+        # Note, in case of parallel inserts due to parallelism we can have more parts
+        assert new_parts >= expected_parts
         # But let's ensure that not too much more
         assert new_parts < len(expected_processed)
 
