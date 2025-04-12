@@ -142,12 +142,8 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
 
 
 MergeTreeIndexBulkGranulesSet::MergeTreeIndexBulkGranulesSet(
-    const String & index_name_,
-    const Block & index_sample_block_,
-    size_t max_rows_)
-    : index_name(index_name_)
-    , max_rows(max_rows_)
-    , block(index_sample_block_.cloneEmpty())
+    const Block & index_sample_block_)
+    : block(index_sample_block_.cloneEmpty())
 {
     size_t num_columns = block.columns();
     serializations.resize(num_columns);
@@ -167,6 +163,13 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
 {
     if (version != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
+
+    if (empty)
+    {
+        min_granule = granule_num;
+        empty = false;
+    }
+    max_granule = granule_num;
 
     UInt64 rows_to_read;
     readBinary(rows_to_read, istr);
@@ -190,7 +193,6 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     }
 
     /// The last column is designating the granule
-
     auto & elem = block.getByPosition(num_columns);
     MutableColumnPtr granule_num_column = elem.column->assumeMutable();
 
@@ -418,16 +420,19 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
 MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const
 {
     FilteredGranules res;
-
-    if (isUseless())
-        return res;
-
     const MergeTreeIndexBulkGranulesSet & granules = assert_cast<const MergeTreeIndexBulkGranulesSet &>(*idx_granules);
+    size_t total_granules = 1 + granules.max_granule - granules.min_granule;
 
     Block block = granules.block;
-    size_t size = block.rows();
-    if (size == 0)
+    size_t block_size = block.rows();
+
+    if (block_size == 0 || isUseless())
+    {
+        res.resize(total_granules);
+        for (size_t i = 0; i < total_granules; ++i)
+            res[i] = granules.min_granule + i;
         return res;
+    }
 
     actions->execute(block);
 
@@ -449,21 +454,35 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
             "ColumnUInt8 is expected as a Set index condition result");
 
     const auto & filter_result = col_uint8->getData();
-
     const auto & granule_nums = assert_cast<const ColumnUInt64 &>(*block.getByName("_granule_num").column).getData();
 
-    UInt64 current_granule_num = 0;
-    bool current_granule_pass = false;
-    for (size_t i = 0; i < size; ++i)
+    size_t block_pos = 0;
+    for (size_t i = 0; i < total_granules; ++i)
     {
-        if (current_granule_pass && granule_nums[i] == current_granule_num)
-            continue;
+        size_t current_granule = granules.min_granule + i;
+        size_t current_granule_in_block = block_pos < block_size ? granule_nums[block_pos] : 0;
 
-        current_granule_num = granule_nums[i];
-        current_granule_pass = (!null_map || !(*null_map)[i]) && (filter_result[i] & 1);
-
-        if (current_granule_pass)
-            res.push_back(current_granule_num);
+        if (block_pos >= block_size || current_granule < current_granule_in_block)
+        {
+            /// This granule does not have any info in the index - it passes.
+            res.push_back(current_granule);
+        }
+        else
+        {
+            /// This granule has set elements - check any of them pass the filter
+            chassert(current_granule == current_granule_in_block);
+            bool passed = false;
+            while (block_pos < block_size && current_granule_in_block == granule_nums[block_pos])
+            {
+                if (!passed)
+                {
+                    passed = (!null_map || !(*null_map)[block_pos]) && (filter_result[block_pos] & 1);
+                    if (passed)
+                        res.push_back(current_granule);
+                }
+                ++block_pos;
+            }
+        }
     }
 
     return res;
@@ -708,7 +727,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexSet::createIndexGranule() const
 
 MergeTreeIndexBulkGranulesPtr MergeTreeIndexSet::createIndexBulkGranules() const
 {
-    return std::make_shared<MergeTreeIndexBulkGranulesSet>(index.name, index.sample_block, max_rows);
+    return std::make_shared<MergeTreeIndexBulkGranulesSet>(index.sample_block);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const

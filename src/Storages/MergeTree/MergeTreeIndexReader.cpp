@@ -92,7 +92,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
 
 void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
 {
-    auto load_func = [&]
+    auto load_func = [this, mark]
     {
         initStreamIfNeeded();
         if (stream_mark != mark)
