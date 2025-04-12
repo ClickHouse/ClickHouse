@@ -453,6 +453,7 @@ struct CreateNodeDelta
     Coordination::Stat stat;
     Coordination::ACLs acls;
     String data;
+    std::optional<int64_t> ttl;
 };
 
 struct RemoveNodeDelta
@@ -1170,7 +1171,7 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
             {
                 if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
                 {
-                    if (!createNode(path, operation.data, operation.stat, operation.acls, digest_on_commit))
+                    if (!createNode(path, operation.data, operation.stat, operation.acls, digest_on_commit, operation.ttl))
                         onStorageInconsistency("Failed to create a node");
 
                     return Coordination::Error::ZOK;
@@ -1267,7 +1268,7 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
 
 template <typename Container>
 bool KeeperStorage<Container>::createNode(
-    const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest)
+    const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest, std::optional<int64_t> /*ttl*/)
 {
     auto parent_path = parentNodePath(path);
     auto node_it = container.find(parent_path);
@@ -1377,6 +1378,7 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
             return function(dynamic_cast<const Coordination::ZooKeeperGetRequest &>(zk_request));
         case Coordination::OpNum::Create:
         case Coordination::OpNum::CreateIfNotExists:
+        case Coordination::OpNum::CreateTTL:
             return function(dynamic_cast<const Coordination::ZooKeeperCreateRequest &>(zk_request));
         case Coordination::OpNum::Remove:
             return function(dynamic_cast<const Coordination::ZooKeeperRemoveRequest &>(zk_request));
@@ -1537,6 +1539,7 @@ process(const Coordination::ZooKeeperSyncRequest & zk_request, Storage & /* stor
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
+    std::cerr << "checkAuth bp0\n";
     auto path = zk_request.getPath();
     return storage.checkACL(parentNodePath(path), Coordination::ACL::Create, session_id, is_local);
 }
@@ -1561,6 +1564,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     uint64_t * /*digest*/,
     const KeeperContext & keeper_context)
 {
+    std::cerr << "preprocess bp0\n";
     ProfileEvents::increment(ProfileEvents::KeeperCreateRequest);
 
     std::list<KeeperStorageBase::Delta> new_deltas;
@@ -1643,17 +1647,31 @@ std::list<KeeperStorageBase::Delta> preprocess(
     stat.cversion = 0;
     stat.ephemeralOwner = zk_request.is_ephemeral ? session_id : 0;
 
+    std::optional<int64_t> ttl;
+    if (zk_request.should_read_ttl)
+        ttl = zk_request.ttl;
+
     new_deltas.emplace_back(
         std::move(path_created),
         zxid,
-        CreateNodeDelta{stat, std::move(node_acls), zk_request.data});
+        CreateNodeDelta{stat, std::move(node_acls), zk_request.data, ttl});
 
+    if (ttl.has_value())
+    {
+        std::cerr << "submit to ttl manager\n";
+        /*storage.ttl_manager.addNode(std::chrono::milliseconds(*ttl), [&storage, path = path_created, version = 0, update_digest = false] {
+            storage.removeNode(path, version, update_digest);
+        });*/
+        std::cerr << "submit to ttl manager OK\n";
+    }
+    
     return new_deltas;
 }
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
+    std::cerr << "process bp0\n";
     std::shared_ptr<Coordination::ZooKeeperCreateResponse> response = zk_request.not_exists
         ? std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>()
         : std::make_shared<Coordination::ZooKeeperCreateResponse>();

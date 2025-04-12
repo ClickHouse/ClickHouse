@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -224,12 +225,18 @@ void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
         flags |= 2;
 
     Coordination::write(flags, out);
+
+    if (should_read_ttl)
+        Coordination::write(ttl, out);
 }
 
 size_t ZooKeeperCreateRequest::sizeImpl() const
 {
     int32_t flags = 0;
-    return Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
+    auto size = Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
+    if (should_read_ttl)
+        size += sizeof(int64_t);
+    return size;
 }
 
 void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
@@ -245,6 +252,9 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
         is_ephemeral = true;
     if (flags & 2)
         is_sequential = true;
+
+    if (should_read_ttl)
+        Coordination::read(ttl, in);
 }
 
 std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
@@ -1211,6 +1221,8 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
         else if constexpr (num == OpNum::CheckNotExists || num == OpNum::CreateIfNotExists)
             res->not_exists = true;
+        else if constexpr (num == OpNum::CreateTTL)
+            res->should_read_ttl = true;
 
         return res;
     });
@@ -1240,6 +1252,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
     registerZooKeeperRequest<OpNum::CheckNotExists, ZooKeeperCheckRequest>(*this);
     registerZooKeeperRequest<OpNum::RemoveRecursive, ZooKeeperRemoveRecursiveRequest>(*this);
+    registerZooKeeperRequest<OpNum::CreateTTL, ZooKeeperCreateRequest>(*this);
 }
 
 PathMatchResult matchPath(std::string_view path, std::string_view match_to)

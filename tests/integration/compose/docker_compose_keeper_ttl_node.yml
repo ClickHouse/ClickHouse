@@ -1,0 +1,5 @@
+services:
+  java:
+    image: clickhouse/keeper-ttl-node:${DOCKER_KEEPER_TTL_NODE_TAG:-latest}
+    # to keep container running
+    command: sleep infinity

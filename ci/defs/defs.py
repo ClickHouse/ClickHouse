@@ -234,6 +234,12 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/keeper-ttl-node",
+        path="./docker/test/integration/keeper_ttl_node",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/python-bottle",
         path="./docker/test/integration/resolver",
         platforms=Docker.Platforms.arm_amd,

@@ -14,6 +14,7 @@ IMAGES_ENV = {
     "clickhouse/postgresql-java-client": "DOCKER_POSTGRESQL_JAVA_CLIENT_TAG",
     "clickhouse/python-bottle": "DOCKER_PYTHON_BOTTLE_TAG",
     "clickhouse/integration-test-with-unity-catalog": "DOCKER_BASE_WITH_UNITY_CATALOG_TAG",
+    "clickhouse/keeper-ttl-node": "DOCKER_KEEPER_TTL_NODE_TAG",
 }
 
 IMAGES = list(IMAGES_ENV.keys())

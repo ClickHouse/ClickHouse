@@ -505,6 +505,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
+        self.with_keeper_ttl_node = False
         self.with_kafka = False
         self.with_kerberized_kafka = False
         self.with_kerberos_kdc = False
@@ -1204,6 +1205,26 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
         )
+    
+    def setup_keeper_ttl_node_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_keeper_ttl_node = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_keeper_ttl_node.yml"
+                ),
+            ]
+        )
+        self.base_keeper_ttl_node_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_keeper_ttl_node.yml"),
+        )
+
 
     def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_kafka = True

@@ -147,5 +147,9 @@
     "docker/test/sqltest": {
         "name": "clickhouse/sqltest",
         "dependent": []
+    },
+    "docker/test/integration/keeper_ttl_node": {
+        "name": "clickhouse/keeper-ttl-node",
+        "dependent": []
     }
 }

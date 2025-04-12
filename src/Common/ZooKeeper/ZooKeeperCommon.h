@@ -225,7 +225,13 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     ZooKeeperCreateRequest() = default;
     explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
-    OpNum getOpNum() const override { return not_exists ? OpNum::CreateIfNotExists : OpNum::Create; }
+    OpNum getOpNum() const override 
+    { 
+        if (should_read_ttl)
+            return OpNum::CreateTTL;
+        return not_exists ? OpNum::CreateIfNotExists : OpNum::Create;
+    }
+
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;

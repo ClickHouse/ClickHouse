@@ -808,3 +808,15 @@ def test_concurrent_watches(started_cluster, request):
         assert dumb_watch_triggered_counter == watches_must_be_triggered
     finally:
         stop_zk(fake_zk)
+
+
+def test_node_with_ttl(started_cluster, request):
+    retry = get_retry_number(request)
+
+    try:
+        fake_zk = get_fake_zk()
+        fake_zk.restart()
+        global_path = f"/test_concurrent_watches_{retry}_0"
+        fake_zk.create(global_path, ttl=1)
+    finally:
+        stop_zk(fake_zk)

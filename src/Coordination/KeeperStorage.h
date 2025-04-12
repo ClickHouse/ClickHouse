@@ -15,6 +15,7 @@
 
 #include <absl/container/flat_hash_set.h>
 
+#include <Coordination/TTLManager.h>
 #include "config.h"
 #if USE_ROCKSDB
 #include <Coordination/RocksDBContainer.h>
@@ -481,6 +482,8 @@ public:
     /// container.
     Container container;
 
+    TTLManager ttl_manager;
+
     struct UncommittedState
     {
         explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
@@ -565,7 +568,7 @@ public:
     // Returns false if it failed to create the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool
-    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest);
+    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest, std::optional<int64_t> ttl);
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
