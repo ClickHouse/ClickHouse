@@ -76,11 +76,6 @@ public:
 
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
-    /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
-    void write(
-        const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
-        const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
-
     /// Check the cache if it contains an entry for the given table + part id and predicate hash.
     std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash);
 
@@ -93,12 +88,31 @@ public:
     size_t maxSizeInBytes();
 
 private:
+    void write(
+        const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
+        const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
+
     Cache cache;
     LoggerPtr logger = getLogger("QueryConditionCache");
 
+    friend class QueryConditionCacheWriter;
     friend class StorageSystemQueryConditionCache;
 };
 
 using QueryConditionCachePtr = std::shared_ptr<QueryConditionCache>;
+
+class QueryConditionCacheWriter
+{
+public:
+    explicit QueryConditionCacheWriter(QueryConditionCachePtr query_condition_cache_);
+
+    /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
+    void write(
+        const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
+        const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
+
+private:
+    QueryConditionCachePtr query_condition_cache;
+};
 
 }

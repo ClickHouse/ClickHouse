@@ -187,7 +187,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             auto data_part = task->getInfo().data_part;
 
-                            query_condition_cache->write(
+                            QueryConditionCacheWriter writer(query_condition_cache);
+                            writer.write(
                                 data_part->storage.getStorageID().uuid,
                                 data_part->name,
                                 output->getHash(),

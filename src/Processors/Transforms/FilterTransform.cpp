@@ -267,7 +267,8 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
         if (!buffered_mark_ranges_info)
             return;
 
-        query_condition_cache->write(
+        QueryConditionCacheWriter writer(query_condition_cache);
+        writer.write(
             buffered_mark_ranges_info->table_uuid,
             buffered_mark_ranges_info->part_name,
             condition->first,
@@ -292,7 +293,8 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
 
         if (buffered_mark_ranges_info->table_uuid != mark_ranges_info->table_uuid || buffered_mark_ranges_info->part_name != mark_ranges_info->part_name)
         {
-            query_condition_cache->write(
+            QueryConditionCacheWriter writer(query_condition_cache);
+            writer.write(
                 buffered_mark_ranges_info->table_uuid,
                 buffered_mark_ranges_info->part_name,
                 condition->first,

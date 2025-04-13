@@ -133,4 +133,16 @@ QueryConditionCache::Entry::Entry(size_t mark_count)
 {
 }
 
+QueryConditionCacheWriter::QueryConditionCacheWriter(
+    QueryConditionCachePtr query_condition_cache_)
+    : query_condition_cache(query_condition_cache_)
+{}
+
+void QueryConditionCacheWriter::write(
+    const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
+    const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
+{
+    query_condition_cache->write(table_id, part_name, condition_hash, condition, mark_ranges, marks_count, has_final_mark);
+}
+
 }
