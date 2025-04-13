@@ -61,7 +61,7 @@ int executeCommand(char * const argv[])
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
 #else
     /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
-    static void * real_vfork = reinterpret_cast<void *>(&vfork);
+    static void * real_vfork = reinterpret_cast<void *>(&vfork); // NOLINT
 #endif
     if (!real_vfork)
         throw std::runtime_error("Cannot find vfork symbol");
