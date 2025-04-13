@@ -120,6 +120,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         else
         {
             joined_pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
+                this,
                 std::move(pipelines[0]),
                 std::move(pipelines[1]),
                 join,
@@ -164,8 +165,13 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     if (join->supportParallelJoin())
     {
-        joined_pipeline->addSimpleTransform([&](const Block & header)
-                                            { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
+        joined_pipeline->addSimpleTransform(
+            [&](const Block & header)
+            {
+                auto transform = std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes);
+                transform->setQueryPlanStep(this);
+                return transform;
+            });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
