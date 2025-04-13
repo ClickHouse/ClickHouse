@@ -1,4 +1,4 @@
-# docker build --network=host -t clickhouse/keeper-persistent-watcher .
+# docker build -t clickhouse/keeper-ttl-node .
 # ZooKeeper Java client docker container
 
 FROM ubuntu:22.04
