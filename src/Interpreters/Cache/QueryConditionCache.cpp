@@ -49,7 +49,7 @@ QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max
 }
 
 void QueryConditionCache::write(
-    const UUID & table_id, const String & part_name, size_t condition_hash, const String & condition,
+    const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
     const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
 {
     Key key = {table_id, part_name, condition_hash, condition};
@@ -102,7 +102,7 @@ void QueryConditionCache::write(
         has_final_mark);
 }
 
-std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, size_t condition_hash)
+std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash)
 {
     Key key = {table_id, part_name, condition_hash, ""};
 

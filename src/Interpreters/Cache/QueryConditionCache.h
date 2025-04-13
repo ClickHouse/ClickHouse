@@ -33,7 +33,7 @@ private:
     {
         const UUID table_id;
         const String part_name;
-        const size_t condition_hash;
+        const UInt64 condition_hash;
 
         /// -- Additional members, conceptually not part of the key. Only included for pretty-printing
         ///    in system.query_condition_cache:
@@ -78,11 +78,11 @@ public:
 
     /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
     void write(
-        const UUID & table_id, const String & part_name, size_t condition_hash, const String & condition,
+        const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
 
     /// Check the cache if it contains an entry for the given table + part id and predicate hash.
-    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, size_t condition_hash);
+    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash);
 
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;
