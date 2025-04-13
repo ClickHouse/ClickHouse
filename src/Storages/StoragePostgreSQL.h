@@ -5,6 +5,7 @@
 #if USE_LIBPQXX
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
+#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 
 namespace Poco
 {
@@ -19,6 +20,7 @@ using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;
 
 namespace DB
 {
+struct PostgreSQLSettings;
 class NamedCollection;
 
 class StoragePostgreSQL final : public IStorage
@@ -33,7 +35,8 @@ public:
         const String & comment,
         ContextPtr context_,
         const String & remote_table_schema_ = "",
-        const String & on_conflict = "");
+        const String & on_conflict = "",
+        const PostgreSQLSettings & postgresql_settings_ = {});
 
     String getName() const override { return "PostgreSQL"; }
 
@@ -64,9 +67,11 @@ public:
         String addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings & storage_settings);
 
-    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table = true);
+    static Configuration processNamedCollectionResult(
+        const NamedCollection & named_collection, PostgreSQLSettings & storage_settings,
+        ContextPtr context_, bool require_table = true);
 
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,
@@ -78,6 +83,7 @@ private:
     String remote_table_name;
     String remote_table_schema;
     String on_conflict;
+    std::unique_ptr<PostgreSQLSettings> postgresql_settings;
     postgres::PoolWithFailoverPtr pool;
 
     LoggerPtr log;

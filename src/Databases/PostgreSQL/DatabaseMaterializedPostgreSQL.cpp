@@ -521,7 +521,8 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, args.context, false);
+            PostgreSQLSettings postgresql_settings;
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, postgresql_settings, args.context, false);
         }
         else
         {

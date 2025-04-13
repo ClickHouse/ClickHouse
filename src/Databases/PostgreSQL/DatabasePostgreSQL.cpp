@@ -9,6 +9,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
+#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -212,7 +213,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
         auto storage = std::make_shared<StoragePostgreSQL>(
                 StorageID(database_name, table_name), pool, table_name,
                 ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{},
-                context_, configuration.schema, configuration.on_conflict);
+                context_, configuration.schema, configuration.on_conflict, PostgreSQLSettings{});
 
         if (cache_tables)
         {
@@ -512,10 +513,11 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
 
         auto use_table_cache = false;
         StoragePostgreSQL::Configuration configuration;
+        auto postgresql_settings = std::make_unique<PostgreSQLSettings>();
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, args.context, false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, *postgresql_settings, args.context, false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else

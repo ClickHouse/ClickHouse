@@ -6,6 +6,7 @@
 #include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Core/Settings.h>
 #include <Storages/StoragePostgreSQL.h>
+#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
@@ -64,7 +65,8 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
         String{},
         context,
         configuration->schema,
-        configuration->on_conflict);
+        configuration->on_conflict,
+        PostgreSQLSettings{});
 
     result->startup();
     return result;
@@ -83,7 +85,8 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
     if (!func_args.arguments)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'PostgreSQL' must have arguments.");
 
-    configuration.emplace(StoragePostgreSQL::getConfiguration(func_args.arguments->children, context));
+    PostgreSQLSettings postgresql_settings;
+    configuration.emplace(StoragePostgreSQL::getConfiguration(func_args.arguments->children, context, postgresql_settings));
     const auto & settings = context->getSettingsRef();
     connection_pool = std::make_shared<postgres::PoolWithFailover>(
         *configuration,
