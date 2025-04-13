@@ -68,6 +68,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.5",
         {
+            {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -714,7 +715,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             /// Release closed. Please use 25.5
             {"refresh_parts_interval", 0, 0, "A new setting"},
-            {"max_merge_delayed_streams_for_parallel_write", 1000, 100, "New setting"},
+            {"max_merge_delayed_streams_for_parallel_write", 1000, 40, "New setting"},
             {"max_postpone_time_for_failed_replicated_fetches_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing fetch tasks in the replication queue."},
             {"max_postpone_time_for_failed_replicated_merges_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing merge tasks in the replication queue."},
             {"max_postpone_time_for_failed_replicated_tasks_ms", 5ULL * 60 * 1000, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."},

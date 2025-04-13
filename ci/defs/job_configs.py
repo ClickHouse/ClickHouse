@@ -738,6 +738,9 @@ class JobConfigs:
         name=JobNames.ASTFUZZER,
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./docker/test/fuzzer", "./tests/ci/ci_fuzzer_check.py"],
+        ),
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
@@ -766,6 +769,9 @@ class JobConfigs:
         name=JobNames.BUZZHOUSE,
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./docker/test/fuzzer", "./tests/ci/ci_fuzzer_check.py"],
+        ),
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
