@@ -924,14 +924,14 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
             const auto & data_part = part_with_ranges.data_part;
             auto storage_id = data_part->storage.getStorageID();
-            auto matching_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
-            if (!matching_marks_opt)
+            auto entry = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
+            if (!entry)
             {
                 ++it;
                 continue;
             }
 
-            auto & matching_marks = *matching_marks_opt;
+            auto & matching_marks = entry->matching_marks;
             MarkRanges ranges;
             for (const auto & mark_range : part_with_ranges.ranges)
             {

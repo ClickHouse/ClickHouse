@@ -1,6 +1,8 @@
 #pragma once
-#include <Processors/ISimpleTransform.h>
+
 #include <Columns/FilterDescription.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Processors/ISimpleTransform.h>
 #include <Storages/MergeTree/MarkRange.h>
 
 namespace DB
@@ -23,7 +25,7 @@ public:
     FilterTransform(
         const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
-        std::optional<std::pair<UInt64, String>> condition_ = std::nullopt);
+        QueryConditionCacheWriterPtr query_condition_cache_writer_ = nullptr);
 
     static Block
     transformHeader(const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column);
@@ -47,10 +49,7 @@ private:
 
     std::shared_ptr<std::atomic<size_t>> rows_filtered;
 
-    /// If set, we need to update the query condition cache at runtime for every processed chunk
-    std::optional<std::pair<UInt64, String>> condition;
-
-    std::shared_ptr<QueryConditionCache> query_condition_cache;
+    QueryConditionCacheWriterPtr query_condition_cache_writer;
 
     MarkRangesInfoPtr buffered_mark_ranges_info; /// Buffers mark info for chunks from the same table and part.
                                                  /// The goal is to write less often into the query condition cache (reduce lock contention).

@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -61,7 +62,10 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
                 condition = outputs_names[0];
             }
 
-            filter_step->setConditionForQueryConditionCache(condition_hash, condition);
+            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+            auto query_condition_cache_writer = std::make_shared<QueryConditionCacheWriter>(query_condition_cache, condition_hash, condition);
+            filter_step->setQueryConditionCacheWriter(query_condition_cache_writer);
+
             return;
         }
     }

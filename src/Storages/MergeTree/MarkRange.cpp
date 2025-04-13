@@ -130,6 +130,7 @@ MarkRangesInfo::MarkRangesInfo(UUID table_uuid_, const String & part_name_, size
     , has_final_mark(has_final_mark_)
     , mark_ranges(mark_ranges_)
 {}
+
 void MarkRangesInfo::appendMarkRanges(const MarkRanges & mark_ranges_)
 {
     mark_ranges.insert(mark_ranges.end(), mark_ranges_.begin(), mark_ranges_.end());
