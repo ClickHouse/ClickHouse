@@ -2691,11 +2691,6 @@ try
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
                 global_context->getProcessList().killAllQueries();
 
-            /// Persist query cache entries
-            const auto & query_result_cache = global_context->getQueryResultCache();
-            if (query_result_cache)
-                query_result_cache->shutdown();
-
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();
 
