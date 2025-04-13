@@ -439,8 +439,12 @@ std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
     else
         table_structure = "(" + table_structure + ")";
 
-    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {}, {});",
-                       table_name, table_structure, data_format, table_file, compression);
+    return
+    {
+        table_name,
+        fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {}, {});",
+            backQuote(table_name), table_structure, data_format, table_file, compression)
+    };
 }
 
 
@@ -616,10 +620,13 @@ try
         std::cerr << std::endl;
     }
 
+    auto [table_name, initial_query] = getInitialCreateTableQuery();
+    if (!table_name.empty())
+        client_context->setSetting("implicit_table_at_top_level", table_name);
+
     connect();
 
-    String initial_query = getInitialCreateTableQuery();
-    if (!initial_query.empty())
+    if (!table_name.empty())
         processQueryText(initial_query);
 
 #if USE_FUZZING_MODE
