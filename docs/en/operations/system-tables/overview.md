@@ -120,7 +120,7 @@ In general, the following rules can be applied when determining if a system tabl
 - System tables that expose metrics e.g. `metrics`, `asynchronous_metrics`, `events`.
 - System tables that expose ongoing processes e.g. `processes`, `merges`.
 
-Additionally, new versions of system tables may be created as a result of upgrades or changes to their schema. These versions are named using a numerical suffix, where lower numbers generally indicate newer tables. The table without a suffix represents the latest version.
+Additionally, new versions of system tables may be created as a result of upgrades or changes to their schema. These versions are named using a numerical suffix.
 
 For example, consider the `system.query_log` tables, which contain a row for each query executed by the node:
 
@@ -144,8 +144,6 @@ SHOW TABLES FROM system LIKE 'query_log%'
 11 rows in set. Elapsed: 0.004 sec.
 ```
 
-In this case, `query_log_1` holds newer entries than `query_log_2`, while `query_log` always reflects the current version.
-
 ### Querying multiple versions
 
 We can query across these tables using the [`merge`](/sql-reference/table-functions/merge) function. For example, the query below identifies the latest query issued to the target node in each `query_log` table:
@@ -154,7 +152,7 @@ We can query across these tables using the [`merge`](/sql-reference/table-functi
 SELECT
     _table,
     max(event_time) AS most_recent
-FROM merge('system', 'query_log*')
+FROM merge('system', '^query_log.*')
 GROUP BY _table
 ORDER BY most_recent DESC
 
@@ -177,7 +175,7 @@ Peak memory usage: 28.45 MiB.
 ```
 
 :::note Don't rely on the numerical suffix for ordering
-As shown above, while the numeric suffix on tables can suggest the order of data, it should not be relied upon for accuracy. In some cases - especially when tables cover the same day - a higher suffix may contain newer data than one with a lower suffix. For this reason, always use the merge table function combined with a date filter when targeting specific date ranges.
+While the numeric suffix on tables can suggest the order of data, it should never be relied upon. For this reason, always use the merge table function combined with a date filter when targeting specific date ranges.
 :::
 
 Importantly, these tables are still **local to each node**.
@@ -232,7 +230,7 @@ Due to system table versioning this still does not represent the full data in th
 SELECT
     hostname() AS host,
     count()
-FROM clusterAllReplicas('default', merge('system', 'query_log*'))
+FROM clusterAllReplicas('default', merge('system', '^query_log.*'))
 WHERE (event_time >= '2025-04-01 00:00:00') AND (event_time <= '2025-04-12 00:00:00')
 GROUP BY host SETTINGS skip_unavailable_shards = 1
 
