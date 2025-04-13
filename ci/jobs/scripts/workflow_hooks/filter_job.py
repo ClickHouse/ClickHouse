@@ -1,7 +1,6 @@
-from praktika.info import Info
-
 from ci.defs.defs import JobNames
 from ci.jobs.scripts.workflow_hooks.pr_description import Labels
+from ci.praktika.info import Info
 
 
 def only_docs(changed_files):
@@ -33,6 +32,16 @@ PRELIMINARY_JOBS = [
     "Build (arm_tidy)",
 ]
 
+INTEGRATION_TEST_CHECK_JOBS = [
+    "Build (amd_asan)",
+    "Integration tests (asan, flaky check)",
+]
+
+FUNCTIONAL_TEST_CHECK_JOBS = [
+    "Build (amd_asan)",
+    "Stateless tests (asan, flaky check)",
+]
+
 _info_cache = None
 
 
@@ -40,6 +49,7 @@ def should_skip_job(job_name):
     global _info_cache
     if _info_cache is None:
         _info_cache = Info()
+
     changed_files = _info_cache.get_custom_data("changed_files")
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
@@ -53,6 +63,24 @@ def should_skip_job(job_name):
 
     if Labels.NO_FAST_TESTS in _info_cache.pr_labels and job_name in PRELIMINARY_JOBS:
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
+
+    if (
+        Labels.CI_INTEGRATION in _info_cache.pr_labels
+        and job_name not in INTEGRATION_TEST_CHECK_JOBS
+    ):
+        return (
+            True,
+            f"Skipped, labeled with '{Labels.CI_INTEGRATION}' - run integration test jobs only",
+        )
+
+    if (
+        Labels.CI_FUNCTIONAL in _info_cache.pr_labels
+        and job_name not in FUNCTIONAL_TEST_CHECK_JOBS
+    ):
+        return (
+            True,
+            f"Skipped, labeled with '{Labels.CI_FUNCTIONAL}' - run stateless test jobs only",
+        )
 
     if Labels.CI_PERFORMANCE in _info_cache.pr_labels and (
         "performance" not in job_name.lower()
@@ -69,9 +97,13 @@ def should_skip_job(job_name):
             "Skipped, labeled with 'ci-performance' - run performance jobs only",
         )
 
+    if "- Bug Fix" not in _info_cache.pr_body and JobNames.BUGFIX_VALIDATE in job_name:
+        return True, "Skipped, not a bug-fix PR"
+
     # skip ARM perf tests for non-performance update
     if (
-        Labels.PR_PERFORMANCE not in _info_cache.pr_labels
+        # Labels.PR_PERFORMANCE not in _info_cache.pr_labels
+        "- Performance Improvement" not in _info_cache.pr_body
         and JobNames.PERFORMANCE in job_name
         and "arm" in job_name
     ):
