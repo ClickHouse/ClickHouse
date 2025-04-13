@@ -377,7 +377,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_shift.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_sqr.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_sqrt.c
-    ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_srp.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_word.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_x931p.c
     ${OPENSSL_SOURCE_DIR}/crypto/bsearch.c
@@ -1365,7 +1364,6 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/t1_trce.c
     ${OPENSSL_SOURCE_DIR}/ssl/tls13_enc.c
     ${OPENSSL_SOURCE_DIR}/ssl/tls_depr.c
-    # ${OPENSSL_SOURCE_DIR}/ssl/tls_srp.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/cc_newreno.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_ackm.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_cfq.c
@@ -1416,6 +1414,12 @@ set(SSL_SRC
 )
 
 # Disable all deprecated API
+#
+# Engine API is deprecated in OpenSSL 3.0.
+# https://docs.openssl.org/3.3/man3/ENGINE_add/#history
+#
+# SRP API is deprecated in OpenSSL 3.0.
+# https://docs.openssl.org/3.1/man3/SRP_Calc_B/#history
 add_definitions(-DOPENSSL_NO_DEPRECATED)
 add_definitions(-DOPENSSL_NO_ENGINE)
 add_definitions(-DOPENSSL_NO_SRP)

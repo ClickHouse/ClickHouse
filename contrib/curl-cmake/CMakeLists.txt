@@ -161,8 +161,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/ws.c"
 )
 
-add_definitions (-DOPENSSL_NO_ENGINE)
-
 add_library (_curl ${SRCS})
 
 target_compile_definitions (_curl PRIVATE
@@ -170,6 +168,7 @@ target_compile_definitions (_curl PRIVATE
     BUILDING_LIBCURL
     CURL_HIDDEN_SYMBOLS
     libcurl_EXPORTS
+    OPENSSL_NO_ENGINE
     CURL_OS="${CMAKE_SYSTEM_NAME}"
 )
 
