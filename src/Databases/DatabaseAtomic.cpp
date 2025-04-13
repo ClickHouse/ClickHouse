@@ -4,7 +4,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
-#include <IO/ReadBufferFromFile.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -12,7 +11,6 @@
 #include <Common/logger_useful.h>
 #include <Common/PoolId.h>
 #include <Common/atomicRename.h>
-#include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>
 
 
@@ -636,7 +634,10 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
             if (db_disk->isSymlinkNoThrow(path_to_metadata_symlink))
                 db_disk->removeFileIfExists(path_to_metadata_symlink);
 
-            db_disk->createDirectorySymlink(fs::proximate(metadata_path, path_to_metadata_symlink.parent_path()), path_to_metadata_symlink);
+            String symlink = fs::proximate(metadata_path, path_to_metadata_symlink.parent_path());
+
+            LOG_TEST(log, "Creating directory symlink, path_to_metadata_symlink: {}, metadata_path: {}, symlink content: {}", path_to_metadata_symlink, metadata_path, symlink);
+            db_disk->createDirectorySymlink(symlink, path_to_metadata_symlink);
         }
         catch (...)
         {
