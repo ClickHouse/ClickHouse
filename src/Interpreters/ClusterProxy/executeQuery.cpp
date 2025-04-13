@@ -1163,6 +1163,8 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
             Tables{},
             QueryProcessingStage::Complete,
             RemoteQueryExecutor::Extension{.parallel_reading_coordinator = *coordinator, .replica_info = replica_info});
+        remote_query_executor->setLogger(logger);
+        // TODO: check if source table is present on remote, similar to reading with PR
 
         QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
             remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
