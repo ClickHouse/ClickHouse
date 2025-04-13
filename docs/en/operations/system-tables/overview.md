@@ -148,7 +148,7 @@ In this case, `query_log_1` holds newer entries than `query_log_2`, while `query
 
 ### Querying multiple versions
 
-We can query across these tables using the [merge](/sql-reference/table-functions/merge) function. For example, the query below identifies the latest query issued to the target node in each `query_log` table:
+We can query across these tables using the [`merge`](/sql-reference/table-functions/merge) function. For example, the query below identifies the latest query issued to the target node in each `query_log` table:
 
 ```sql
 SELECT
