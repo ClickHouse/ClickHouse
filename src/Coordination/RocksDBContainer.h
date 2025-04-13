@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <base/StringRef.h>
 #include <Coordination/KeeperContext.h>
 #include <Disks/DiskLocal.h>
@@ -278,7 +279,7 @@ public:
         {
             std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
             auto duration = now.time_since_epoch();
-            auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+            auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
             if (kv->value.destroy_time < timestamp)
             {
                 erase(key.toString());

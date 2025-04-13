@@ -21,7 +21,7 @@ public:
     using TimePoint = Clock::time_point;
     using Callback = std::function<void()>;
 
-    explicit GarbageCollector();
+    explicit GarbageCollector(bool enable_background_thread, size_t limit_);
     ~GarbageCollector();
 
     void addNode(const std::string & node, std::chrono::milliseconds delay, std::function<void()> callback);
@@ -39,11 +39,12 @@ private:
     };
 
     std::priority_queue<Event, std::vector<Event>, std::greater<>> event_queue;
-    std::unordered_set<std::string> nodes_to_process;
+    std::unordered_map<std::string, int> nodes_to_process;
     std::mutex mutex;
     std::condition_variable cv;
     std::thread worker_thread;
     std::atomic<bool> stop_flag;
+    size_t limit;
 };
 
 }

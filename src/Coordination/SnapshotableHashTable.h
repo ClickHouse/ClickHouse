@@ -3,6 +3,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaUtils.h>
 
+#include <chrono>
 #include <list>
 
 namespace DB
@@ -351,7 +352,7 @@ public:
         {
             std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
             auto duration = now.time_since_epoch();
-            auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+            auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
             if (map_it->getMapped()->value.destroy_time < timestamp)
             {
                 erase(key.toString());
