@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
@@ -413,8 +414,13 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
     PullingPipelineExecutor executor(pipeline);
     Block projection_block;
     executor.pull(projection_block);
+    if (!projection_block)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout while calculating Projection block");
+
     if (executor.pull(projection_block))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection cannot increase the number of rows in a block. It's a bug");
+
+    chassert(projection_block.rows() > 0);
 
     /// Rename parent _part_offset to _parent_part_offset column
     if (with_parent_part_offset)
