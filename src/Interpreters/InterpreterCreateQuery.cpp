@@ -1107,12 +1107,10 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         {
             if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
-                /*
+                /// We should treat SELECT as an initial query in order to properly analyze it.
                 auto context = Context::createCopy(getContext());
                 context->setQueryKindInitial();
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), context, SelectQueryOptions().ignoreASTOptimizations());
-                */
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), context, SelectQueryOptions{}.createView());
             }
             else
             {
@@ -2315,13 +2313,6 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
 BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
 {
-    /// Rewrite SELECT query to resolve and qualify all expressions
-    if (create.select)
-        create.set(
-            create.select,
-            InterpreterSelectQueryAnalyzer(create.select->clone(), getContext(), SelectQueryOptions{}.analyze()).getQueryTree()->toAST()
-        );
-
     prepareOnClusterQuery(create, getContext(), create.cluster);
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
