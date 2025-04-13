@@ -152,7 +152,7 @@ We can query across these tables using the [`merge`](/sql-reference/table-functi
 SELECT
     _table,
     max(event_time) AS most_recent
-FROM merge('system', '^query_log.*')
+FROM merge('system', '^query_log')
 GROUP BY _table
 ORDER BY most_recent DESC
 
@@ -230,7 +230,7 @@ Due to system table versioning this still does not represent the full data in th
 SELECT
     hostname() AS host,
     count()
-FROM clusterAllReplicas('default', merge('system', '^query_log.*'))
+FROM clusterAllReplicas('default', merge('system', '^query_log'))
 WHERE (event_time >= '2025-04-01 00:00:00') AND (event_time <= '2025-04-12 00:00:00')
 GROUP BY host SETTINGS skip_unavailable_shards = 1
 
@@ -248,4 +248,3 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 - Blog: [System Tables and a window into the internals of ClickHouse](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
 - Blog: [Essential monitoring queries - part 1 - INSERT queries](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
 - Blog: [Essential monitoring queries - part 2 - SELECT queries](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)
-
