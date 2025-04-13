@@ -6415,6 +6415,9 @@ Note that initially (24.12) there was a server setting (`send_settings_to_client
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 Wait time in milliseconds when lower priority query meets higher priority query.
 )", BETA) \
+    DECLARE(Bool, use_vector_index_only_ann, true, R"(
+Return vector search results directly from the vector similarity index.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \

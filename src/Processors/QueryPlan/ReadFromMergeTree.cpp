@@ -2033,6 +2033,16 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
         prewhere_info);
 }
 
+void ReadFromMergeTree::replaceVectorColumnWithDistance(const std::string & column)
+{
+    std::erase(all_column_names, column);
+    all_column_names.emplace_back("_distance");
+    output_header = MergeTreeSelectProcessor::transformHeader(
+                    storage_snapshot->getSampleBlockForColumns(all_column_names),
+                    lazily_read_info,
+                    query_info.prewhere_info);
+}
+
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
 {
     if (isQueryWithFinal())

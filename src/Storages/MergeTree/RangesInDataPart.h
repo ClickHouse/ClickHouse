@@ -40,7 +40,17 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
     void merge(const RangesInDataPartsDescription & other);
 };
 
-using PartOffsets = std::optional<std::vector<UInt64>>;
+using PartOffsets = std::vector<UInt64>;
+using VectorSearchResultDistances = std::vector<float>;
+
+struct RangesInDataPartOptionals
+{
+    std::optional<PartOffsets> exact_part_offsets;
+    std::optional<VectorSearchResultDistances> distances;
+
+    bool hasPartOffsets() const { return exact_part_offsets.has_value(); }
+    bool hasDistances() const { return distances.has_value(); }
+};
 
 struct RangesInDataPart
 {
@@ -48,7 +58,7 @@ struct RangesInDataPart
     size_t part_index_in_query;
     MarkRanges ranges;
     MarkRanges exact_ranges;
-    PartOffsets part_offsets;
+    RangesInDataPartOptionals extensions;
 
     RangesInDataPart() = default;
 

@@ -348,7 +348,7 @@ private:
 
     void updatePerformanceCounters(size_t num_rows_read);
 
-    FilterWithCachedCount createPartOffsetsFilter(const ReadResult & result) const;
+    FilterWithCachedCount createPartOffsetsFilter(ReadResult & result) const;
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;

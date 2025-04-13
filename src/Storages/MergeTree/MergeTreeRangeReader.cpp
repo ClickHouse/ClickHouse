@@ -4,6 +4,7 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
@@ -1036,7 +1037,7 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     if (read_sample_block.has(BlockOffsetColumn::name))
         add_offset_column(BlockOffsetColumn::name);
 
-    if (merge_tree_reader->data_part_info_for_read->getPartOffsets().has_value())
+    if (merge_tree_reader->data_part_info_for_read->getExtraReadInfo().hasPartOffsets())
     {
         part_offsets_auto_column = createPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
     }
@@ -1318,13 +1319,25 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
-FilterWithCachedCount MergeTreeRangeReader::createPartOffsetsFilter(const ReadResult & result) const
+FilterWithCachedCount MergeTreeRangeReader::createPartOffsetsFilter(ReadResult & result) const
 {
     auto filter_data = ColumnUInt8::create(result.num_rows, UInt8(0));
     IColumn::Filter & filter = filter_data->getData();
 
+    auto distances_data = ColumnFloat32::create(result.num_rows, float(55.66));
+    auto & distances = distances_data->getData();
+    /// auto & distances = typeid_cast<ColumnFloat32 &>((dummy_column.column.get())->getData());
+    /// auto * distances =  checkAndGetColumn<ColumnFloat32*>(dummy_column.column.get());
+    /// auto & distances = static_cast<ColumnFloat32 &>(*dummy_column.column).getData()
+
     std::set<size_t> selected;
-    auto part_offsets = merge_tree_reader->data_part_info_for_read->getPartOffsets().value();
+    auto part_offsets = merge_tree_reader->data_part_info_for_read->getExtraReadInfo().exact_part_offsets.value();
+    auto ldistances = merge_tree_reader->data_part_info_for_read->getExtraReadInfo().distances.value();
+    /// TODO : assert (part_offsets.size() == distances.size())
+    std::unordered_map<UInt64, float> offset_to_distance;
+    for (size_t i = 0; i < ldistances.size(); i++)
+        offset_to_distance[part_offsets[i]] = ldistances[i];
+ 
     std::sort(part_offsets.begin(), part_offsets.end());
 
     /// LOG_TRACE(log, "Need to search {}", part_offsets.size());
@@ -1351,16 +1364,34 @@ FilterWithCachedCount MergeTreeRangeReader::createPartOffsetsFilter(const ReadRe
         if (offsets[i] == part_offsets[j])
         {
             filter[i] = true; j++;
+	    distances[i] = offset_to_distance[offsets[i]];
 	    /// LOG_TRACE(log, "Match found {}", offsets[i]);
 	}
     }
 
+    ColumnWithTypeAndName dummy_column;
+    dummy_column.column = std::move(distances_data);
+    dummy_column.type = std::make_shared<DataTypeFloat32>();
+    /// Generate a random name to avoid collisions with real columns.
+    dummy_column.name = "_distance";
+    /// block.insert(dummy_column);
+    /// result.columns.insert(dummy_column);
+    /// result.columns[4] = dummy_column.column;
+    /// result.columns[5] = dummy_column.column;
+    const auto & header = read_sample_block;
+    size_t pos = 0;
+    for (auto name_and_type = header.begin(); name_and_type != header.end() && pos < result.columns.size(); ++pos, ++name_and_type)
+    {
+            LOG_TRACE(log,"pos and column now {} {}", pos, name_and_type->name);
+	    if (name_and_type->name == "_distance")
+		    result.columns[pos] = dummy_column.column;
+    }
     return FilterWithCachedCount(filter_data->getPtr());
 }
 
 void MergeTreeRangeReader::executeActionsBeforePrewhere(ReadResult & result, Columns & read_columns, const Block & previous_header, size_t num_read_rows) const
 {
-    merge_tree_reader->fillVirtualColumns(read_columns, num_read_rows);
+    /// merge_tree_reader->fillVirtualColumns(read_columns, num_read_rows);
 
     /// fillMissingColumns() must be called after reading but before any filterings because
     /// some columns (e.g. arrays) might be only partially filled and thus not be valid and
@@ -1401,13 +1432,16 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 {
     result.checkInternalConsistency();
 
-    if (merge_tree_reader->data_part_info_for_read->getPartOffsets().has_value())
+    if (merge_tree_reader->data_part_info_for_read->getExtraReadInfo().hasPartOffsets())
     {
         auto before = result.num_rows;
         auto part_offsets_filter = createPartOffsetsFilter(result);
 	result.applyFilter(part_offsets_filter);
         auto after = result.num_rows;
         LOG_TRACE(log, "Used similarity index to shortlist rows, before {} , after {}", before, after);
+
+        for (const auto & column : read_sample_block)
+		LOG_TRACE(log, "column header in result : {}", column.name);
     }
 
     if (!prewhere_info)
