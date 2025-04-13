@@ -405,12 +405,15 @@ void LocalServer::cleanup()
 }
 
 
-std::string LocalServer::getInitialCreateTableQuery()
+std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
 {
-    if (!getClientConfiguration().has("table-structure") && !getClientConfiguration().has("table-file") && !getClientConfiguration().has("table-data-format") && (!isRegularFile(STDIN_FILENO) || queries.empty()))
+    if (!getClientConfiguration().has("table-structure")
+        && !getClientConfiguration().has("table-file")
+        && !getClientConfiguration().has("table-data-format")
+        && (stdin_is_a_tty || queries.empty()))
         return {};
 
-    auto table_name = backQuoteIfNeed(getClientConfiguration().getString("table-name", "table"));
+    auto table_name = getClientConfiguration().getString("table-name", "table");
     auto table_structure = getClientConfiguration().getString("table-structure", "auto");
 
     String table_file;
@@ -855,7 +858,7 @@ void LocalServer::processConfig()
 #endif
 
     /// NOTE: it is important to apply any overrides before
-    /// setDefaultProfiles() calls since it will copy current context (i.e.
+    /// `setDefaultProfiles` calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
     adjustSettings();
     applySettingsOverridesForLocal(global_context);

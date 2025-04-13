@@ -936,7 +936,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         if (format_from_file_name)
             default_input_format = *format_from_file_name;
         else
-            default_input_format = "TSV";
+            default_input_format = "auto";
     }
     else
     {
@@ -944,7 +944,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         if (format_from_file_name)
             default_input_format = *format_from_file_name;
         else
-            default_input_format = "TSV";
+            default_input_format = "auto";
 
         std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdin_fd);
         if (file_name)
