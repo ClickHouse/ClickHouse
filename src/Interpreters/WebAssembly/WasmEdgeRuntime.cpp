@@ -1,38 +1,37 @@
 #include <Interpreters/WebAssembly/WasmEdgeRuntime.h>
 
-#include <Interpreters/WebAssembly/WasmMemory.h>
 #include <Interpreters/WebAssembly/HostApi.h>
+#include <Interpreters/WebAssembly/WasmMemory.h>
 
 #include <Common/logger_useful.h>
 
-#include <IO/copyData.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Common/ProfileEvents.h>
+#include <IO/copyData.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/LoggingFormatStringHelpers.h>
-#include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 
 #include <absl/container/inlined_vector.h>
 
 #include <wasmedge/wasmedge.h>
 
+#include <filesystem>
 #include <list>
 #include <ranges>
-#include <filesystem>
 
 namespace ProfileEvents
 {
-    extern const Event WasmExecuteMicroseconds;
+extern const Event WasmExecuteMicroseconds;
 }
 
 namespace DB::ErrorCodes
 {
-    extern const int TOO_LARGE_STRING_SIZE;
-    extern const int LOGICAL_ERROR;
-    extern const int WASM_ERROR;
+extern const int TOO_LARGE_STRING_SIZE;
+extern const int LOGICAL_ERROR;
+extern const int WASM_ERROR;
 }
 
 namespace DB::WebAssembly
@@ -43,15 +42,29 @@ namespace DB::WebAssembly
   * To support a new type, simply add a new specialization of `WasmEdgeValueTypeTrait` for the corresponding `WasmValKind`.
   * This approach also allows statically check that all our types are covered by engine implementation.
   */
-template <WasmValKind ValKind> struct WasmEdgeValueTypeTrait;
+template <WasmValKind val_kind>
+struct WasmEdgeValueTypeTrait;
 
 #define WASM_EDGE_TYPE_TRAIT_SPECIALIZATION(T) \
-    template <> struct WasmEdgeValueTypeTrait<WasmValKind::T> \
+    template <> \
+    struct WasmEdgeValueTypeTrait<WasmValKind::T> \
     { \
-        static WasmEdge_ValType type() { return WasmEdge_ValTypeGen##T(); } \
-        static bool is(WasmEdge_ValType val) { return WasmEdge_ValTypeIs##T(val); } \
-        static WasmEdge_Value to(auto val) { return WasmEdge_ValueGen##T(val); } \
-        static auto from(WasmEdge_Value val) { return WasmEdge_ValueGet##T(val); } \
+        static WasmEdge_ValType type() \
+        { \
+            return WasmEdge_ValTypeGen##T(); \
+        } \
+        static bool is(WasmEdge_ValType val) \
+        { \
+            return WasmEdge_ValTypeIs##T(val); \
+        } \
+        static WasmEdge_Value to(auto val) \
+        { \
+            return WasmEdge_ValueGen##T(val); \
+        } \
+        static auto from(WasmEdge_Value val) \
+        { \
+            return WasmEdge_ValueGet##T(val); \
+        } \
     };
 
 WASM_EDGE_TYPE_TRAIT_SPECIALIZATION(I32);
@@ -63,62 +76,73 @@ WASM_EDGE_TYPE_TRAIT_SPECIALIZATION(F64);
 
 /// Functions below is basically compile time switch-case for WasmValKind,
 /// so we don't need to maintain it in sync with enum options manually in in each function.
-template <std::underlying_type_t<WasmValKind> Index = 0>
+template <std::underlying_type_t<WasmValKind> index = 0>
 inline WasmValKind fromWasmEdgeValueType(WasmEdge_ValType val_type)
 {
-    if constexpr (Index < std::variant_size_v<WasmVal>)
+    if constexpr (index < std::variant_size_v<WasmVal>)
     {
-        constexpr auto Kind = static_cast<WasmValKind>(Index);
-        if (WasmEdgeValueTypeTrait<Kind>::is(val_type))
-            return Kind;
-        return fromWasmEdgeValueType<Index + 1>(val_type);
+        constexpr auto kind = static_cast<WasmValKind>(index);
+        if (WasmEdgeValueTypeTrait<kind>::is(val_type))
+            return kind;
+        return fromWasmEdgeValueType<index + 1>(val_type);
     }
     throw Exception(ErrorCodes::WASM_ERROR, "Unsupported wasm edge type");
 }
 
-template <std::underlying_type_t<WasmValKind> Index = 0>
+template <std::underlying_type_t<WasmValKind> index = 0>
 WasmVal fromWasmEdgeValue(WasmEdge_Value val)
 {
-    if constexpr (Index < std::variant_size_v<WasmVal>)
+    if constexpr (index < std::variant_size_v<WasmVal>)
     {
-        constexpr auto Kind = static_cast<WasmValKind>(Index);
-        if (WasmEdgeValueTypeTrait<Kind>::is(val.Type))
+        constexpr auto kind = static_cast<WasmValKind>(index);
+        if (WasmEdgeValueTypeTrait<kind>::is(val.Type))
         {
-            using WasmType = std::variant_alternative_t<Index, WasmVal>;
-            return std::bit_cast<WasmType>(WasmEdgeValueTypeTrait<Kind>::from(val));
+            using WasmType = std::variant_alternative_t<index, WasmVal>;
+            return std::bit_cast<WasmType>(WasmEdgeValueTypeTrait<kind>::from(val));
         }
-        return fromWasmEdgeValue<Index + 1>(val);
+        return fromWasmEdgeValue<index + 1>(val);
     }
     throw Exception(ErrorCodes::WASM_ERROR, "Unsupported wasm edge type");
 }
 
-template <std::underlying_type_t<WasmValKind> Index = 0>
+template <std::underlying_type_t<WasmValKind> index = 0>
 inline WasmEdge_ValType toWasmEdgeValueType(WasmValKind k)
 {
-    if constexpr (Index < std::variant_size_v<WasmVal>)
+    if constexpr (index < std::variant_size_v<WasmVal>)
     {
-        constexpr auto Kind = static_cast<WasmValKind>(Index);
-        if (Kind == k)
-            return WasmEdgeValueTypeTrait<Kind>::type();
-        return toWasmEdgeValueType<Index + 1>(k);
+        constexpr auto kind = static_cast<WasmValKind>(index);
+        if (kind == k)
+            return WasmEdgeValueTypeTrait<kind>::type();
+        return toWasmEdgeValueType<index + 1>(k);
     }
     throw Exception(ErrorCodes::WASM_ERROR, "Unsupported wasm edge type");
 }
 
 WasmEdge_Value toWasmEdgeValue(WasmVal val)
 {
-    return std::visit([](auto arg)
-    {
-        using T = std::decay_t<decltype(arg)>;
-        return WasmEdgeValueTypeTrait<WasmValTypeToKind<T>::value>::to(arg);
-    }, val);
+    return std::visit(
+        [](auto arg)
+        {
+            using T = std::decay_t<decltype(arg)>;
+            return WasmEdgeValueTypeTrait<WasmValTypeToKind<T>::value>::to(arg);
+        },
+        val);
 }
 
 /// Mapping of WasmEdge API types to their deleter functions
-template <typename T> struct WasmEdgeDeleterTrait;
+template <typename T>
+struct WasmEdgeDeleterTrait;
 
 #define WASM_EDGE_DELETER_TRAIT_SPECIALIZATION(T) \
-    template <> struct WasmEdgeDeleterTrait<WasmEdge_##T##Context> { static constexpr auto name = #T; void operator()(auto * ptr) const { WasmEdge_##T##Delete(ptr); } };
+    template <> \
+    struct WasmEdgeDeleterTrait<WasmEdge_##T##Context> \
+    { \
+        static constexpr auto name = #T; \
+        void operator()(auto * ptr) const \
+        { \
+            WasmEdge_##T##Delete(ptr); \
+        } \
+    };
 
 WASM_EDGE_DELETER_TRAIT_SPECIALIZATION(VM);
 WASM_EDGE_DELETER_TRAIT_SPECIALIZATION(ModuleInstance);
@@ -137,13 +161,14 @@ WASM_EDGE_DELETER_TRAIT_SPECIALIZATION(MemoryInstance);
 constexpr uint32_t WASMEDGE_PAGE_SIZE = 65536;
 
 /// Helpers to manage WasmEdge API resources
-template <typename T> using WasmEdgeResourcePtr = std::unique_ptr<T, WasmEdgeDeleterTrait<T>>;
+template <typename T>
+using WasmEdgeResourcePtr = std::unique_ptr<T, WasmEdgeDeleterTrait<T>>;
 
 /// Creates a WasmEdge resource with specified constructor and checks that result is not-NULL
-template <auto CreateFunc, typename ... Args>
-auto WasmEdgeResourcePtrCreate(Args && ... args)
+template <auto create_func, typename... Args>
+auto WasmEdgeResourcePtrCreate(Args &&... args)
 {
-    auto * resource = CreateFunc(std::forward<Args>(args)...);
+    auto * resource = create_func(std::forward<Args>(args)...);
     using ResourceT = std::remove_pointer_t<decltype(resource)>;
     if (!resource)
         throw Exception(ErrorCodes::WASM_ERROR, "Cannot create {}", WasmEdgeDeleterTrait<ResourceT>::name);
@@ -155,9 +180,7 @@ WasmEdge_Bytes wasmedgeBytesWrap(std::string_view data)
     if (data.size() > std::numeric_limits<WasmSizeT>::max())
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Data is too large for wasm, size: {}", data.size());
 
-    return WasmEdge_BytesWrap(
-        reinterpret_cast<const uint8_t *>(data.data()),
-        static_cast<uint32_t>(data.size()));
+    return WasmEdge_BytesWrap(reinterpret_cast<const uint8_t *>(data.data()), static_cast<uint32_t>(data.size()));
 }
 
 WasmEdge_String wasmedgeStringWrap(std::string_view data)
@@ -165,9 +188,7 @@ WasmEdge_String wasmedgeStringWrap(std::string_view data)
     if (data.size() > std::numeric_limits<WasmSizeT>::max())
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Data is too large for wasm, size: {}", data.size());
 
-    return WasmEdge_StringWrap(
-        reinterpret_cast<const char *>(data.data()),
-        static_cast<uint32_t>(data.size()));
+    return WasmEdge_StringWrap(reinterpret_cast<const char *>(data.data()), static_cast<uint32_t>(data.size()));
 }
 
 
@@ -179,7 +200,6 @@ void wasmedgeCheckResult(WasmEdge_Result result, const std::string_view & msg)
 
 struct WasmEdgeFunctionProps
 {
-
     WasmEdgeFunctionProps(std::string_view function_name_, const WasmEdge_FunctionTypeContext * ctx)
         : func_ctx(ctx)
         , function_name(function_name_)
@@ -252,15 +272,15 @@ class HostFunctionAdapter : private boost::noncopyable
 {
 public:
     HostFunctionAdapter(WasmEdgeCompartment * compartment_, const WasmHostFunction * func_)
-        : compartment(compartment_)
-        , host_function_ptr(func_)
-    {}
+        : compartment(compartment_), host_function_ptr(func_)
+    {
+    }
 
     static WasmEdge_Result callFunction(
-        void * payload [[ maybe_unused ]],
-        const WasmEdge_CallingFrameContext * call_frame_ctx [[ maybe_unused ]],
-        const WasmEdge_Value * in [[ maybe_unused ]],
-        WasmEdge_Value * out [[ maybe_unused ]]);
+        void * payload [[maybe_unused]],
+        const WasmEdge_CallingFrameContext * call_frame_ctx [[maybe_unused]],
+        const WasmEdge_Value * in [[maybe_unused]],
+        WasmEdge_Value * out [[maybe_unused]]);
 
     void linkTo(WasmEdge_ModuleInstanceContext * module_instance_ctx)
     {
@@ -273,10 +293,10 @@ public:
             returns.push_back(toWasmEdgeValueType(*return_type));
 
         auto func_type = WasmEdgeResourcePtrCreate<WasmEdge_FunctionTypeCreate>(
-            params.data(), static_cast<uint32_t>(params.size()),
-            returns.data(), static_cast<uint32_t>(returns.size()));
+            params.data(), static_cast<uint32_t>(params.size()), returns.data(), static_cast<uint32_t>(returns.size()));
         /// Ownership of function_instance is transferred to module_instance_ctx
-        auto * function_instance = WasmEdge_FunctionInstanceCreate(func_type.get(), callFunction, reinterpret_cast<void *>(this), /* cost= */ 1);
+        auto * function_instance
+            = WasmEdge_FunctionInstanceCreate(func_type.get(), callFunction, reinterpret_cast<void *>(this), /* cost= */ 1);
 
         auto function_name = host_function_ptr->getName();
         WasmEdge_ModuleInstanceAddFunction(
@@ -312,7 +332,7 @@ public:
 
     uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) override;
     uint32_t growMemory(uint32_t num_pages) override;
-    WasmSizeT getMemorySize() const override;
+    WasmSizeT getMemorySize() override;
 
     void invoke(std::string_view function_name, const std::vector<WasmVal> & params, std::vector<WasmVal> & returns) override;
 
@@ -323,6 +343,7 @@ public:
     WasmEdge_ModuleInstanceContext * getHostFunctionContext() { return import_module_ctx.get(); }
 
     void setLastException(Exception e) { last_exception = std::move(e); }
+
 private:
     void loadModuleImpl();
 
@@ -344,10 +365,10 @@ private:
 };
 
 WasmEdge_Result HostFunctionAdapter::callFunction(
-    void * payload [[ maybe_unused ]],
-    const WasmEdge_CallingFrameContext * call_frame_ctx [[ maybe_unused ]],
-    const WasmEdge_Value * in [[ maybe_unused ]],
-    WasmEdge_Value * out [[ maybe_unused ]])
+    void * payload [[maybe_unused]],
+    const WasmEdge_CallingFrameContext * call_frame_ctx [[maybe_unused]],
+    const WasmEdge_Value * in [[maybe_unused]],
+    WasmEdge_Value * out [[maybe_unused]])
 {
     auto * adapter = reinterpret_cast<HostFunctionAdapter *>(payload);
     auto * compartment = adapter->compartment;
@@ -361,15 +382,18 @@ WasmEdge_Result HostFunctionAdapter::callFunction(
         {
             args[i] = fromWasmEdgeValue(in[i]);
             if (getWasmValKind(args[i]) != argument_types[i])
-                throw Exception(ErrorCodes::WASM_ERROR, "Function {} invoked with wrong argument types [{}]",
-                    formatFunctionDeclaration(host_func), fmt::join(args | std::views::transform(getWasmValKind), ", "));
+                throw Exception(
+                    ErrorCodes::WASM_ERROR,
+                    "Function {} invoked with wrong argument types [{}]",
+                    formatFunctionDeclaration(host_func),
+                    fmt::join(args | std::views::transform(getWasmValKind), ", "));
         }
 
         auto result_val = host_func(compartment, args);
         if (result_val)
             out[0] = toWasmEdgeValue(*result_val);
     }
-    catch (Exception e)
+    catch (Exception & e)
     {
         /// The runtime cannot handle exceptions (e.g., due to noexcept).
         /// We catch them here and store them to rethrow after the wasm code returns.
@@ -430,7 +454,7 @@ uint32_t WasmEdgeCompartment::growMemory(uint32_t num_pages)
     return memory_end;
 }
 
-uint32_t WasmEdgeCompartment::getMemorySize() const
+uint32_t WasmEdgeCompartment::getMemorySize()
 {
     const auto * memory_ctx = WasmEdge_ModuleInstanceFindMemory(vm_instance_cxt, wasmedgeStringWrap("memory"));
     return WasmEdge_MemoryInstanceGetPageSize(memory_ctx) * WASMEDGE_PAGE_SIZE;
@@ -445,7 +469,8 @@ uint8_t * WasmEdgeCompartment::getMemory(WasmPtr ptr, WasmSizeT size)
     if (data == nullptr)
     {
         uint32_t total_memory = WasmEdge_MemoryInstanceGetPageSize(memory_ctx) * WASMEDGE_PAGE_SIZE;
-        throw Exception(ErrorCodes::WASM_ERROR, "Cannot get memory at offset {} and size {} from wasm module with size {}", ptr, size, total_memory);
+        throw Exception(
+            ErrorCodes::WASM_ERROR, "Cannot get memory at offset {} and size {} from wasm module with size {}", ptr, size, total_memory);
     }
     return data;
 }
@@ -463,8 +488,10 @@ void WasmEdgeCompartment::invoke(std::string_view function_name, const std::vect
             ErrorCodes::WASM_ERROR,
             "Function {} invoked with wrong number of arguments {}, "
             "expected {} for function with type '{}'",
-            function_name, params.size(),
-            params_count, formatFunctionDeclaration(*func_it->second.getFunctionDeclaration()));
+            function_name,
+            params.size(),
+            params_count,
+            formatFunctionDeclaration(*func_it->second.getFunctionDeclaration()));
 
     std::vector<WasmEdge_Value> params_values(params.size());
     for (size_t i = 0; i < params.size(); ++i)
@@ -476,9 +503,12 @@ void WasmEdgeCompartment::invoke(std::string_view function_name, const std::vect
 
         ProfileEventTimeIncrement<Microseconds> timer(ProfileEvents::WasmExecuteMicroseconds);
         WasmEdge_Result result = WasmEdge_VMExecute(
-            vm_cxt.get(), wasmedgeStringWrap(function_name),
-            params_values.data(), static_cast<uint32_t>(params_values.size()),
-            returns_values.data(), static_cast<uint32_t>(returns_values.size()));
+            vm_cxt.get(),
+            wasmedgeStringWrap(function_name),
+            params_values.data(),
+            static_cast<uint32_t>(params_values.size()),
+            returns_values.data(),
+            static_cast<uint32_t>(returns_values.size()));
 
         if (last_exception)
             last_exception->rethrow();
@@ -493,8 +523,7 @@ void WasmEdgeCompartment::invoke(std::string_view function_name, const std::vect
 class WasmEdgeModule : public WasmModule
 {
 public:
-    explicit WasmEdgeModule(WasmEdge_ASTModuleContext * ast_module_ptr)
-        : ast_module(ast_module_ptr)
+    explicit WasmEdgeModule(WasmEdge_ASTModuleContext * ast_module_ptr) : ast_module(ast_module_ptr)
     {
         auto exports_length = WasmEdge_ASTModuleListExportsLength(ast_module.get());
         if (exports_length >= 512)
@@ -502,7 +531,7 @@ public:
 
         std::vector<const WasmEdge_ExportTypeContext *> exports_list(exports_length);
         WasmEdge_ASTModuleListExports(ast_module.get(), exports_list.data(), exports_length);
-        for (auto * export_ctx : exports_list)
+        for (const auto * export_ctx : exports_list)
         {
             auto export_name = WasmEdge_ExportTypeGetExternalName(export_ctx);
             if (export_name.Length == 0)
@@ -530,15 +559,16 @@ public:
 
         std::vector<WasmFunctionDeclarationPtr> result;
 
-        for (auto * import_ctx : imports)
+        for (const auto * import_ctx : imports)
         {
             auto import_name = WasmEdge_ImportTypeGetExternalName(import_ctx);
             if (import_name.Length == 0)
                 throw Exception(ErrorCodes::WASM_ERROR, "Cannot get import name");
 
-            auto function_type = WasmEdge_ImportTypeGetFunctionType(ast_module.get(), import_ctx);
+            const auto * function_type = WasmEdge_ImportTypeGetFunctionType(ast_module.get(), import_ctx);
             if (!function_type)
-                throw Exception(ErrorCodes::WASM_ERROR, "Cannot get function for import '{}'", std::string_view(import_name.Buf, import_name.Length));
+                throw Exception(
+                    ErrorCodes::WASM_ERROR, "Cannot get function for import '{}'", std::string_view(import_name.Buf, import_name.Length));
             result.push_back(WasmEdgeFunctionProps(import_name, function_type).getFunctionDeclaration());
         }
 
@@ -555,7 +585,7 @@ public:
         auto export_it = exports.find(function_name);
         if (export_it == exports.end() || export_it->second == nullptr)
             return nullptr;
-        auto function_type = WasmEdge_ExportTypeGetFunctionType(ast_module.get(), export_it->second);
+        const auto * function_type = WasmEdge_ExportTypeGetFunctionType(ast_module.get(), export_it->second);
         if (!function_type)
             throw Exception(ErrorCodes::WASM_ERROR, "Cannot get function for export '{}'", function_name);
         return WasmEdgeFunctionProps(function_name, function_type).getFunctionDeclaration();
@@ -594,7 +624,7 @@ void wasmEdgeLogCallback(const WasmEdge_LogMessage * msg)
     switch (msg->Level)
     {
         case WasmEdge_LogLevel_Critical:
-            [[ fallthrough ]];
+            [[fallthrough]];
         case WasmEdge_LogLevel_Error:
             LOG_ERROR(log, message);
             break;
@@ -620,21 +650,21 @@ void WasmEdgeRuntime::setLogLevel(LogsLevel level)
     switch (level)
     {
         case LogsLevel::test:
-            [[ fallthrough ]];
+            [[fallthrough]];
         case LogsLevel::trace:
-            [[ fallthrough ]];
+            [[fallthrough]];
         case LogsLevel::debug:
             WasmEdge_LogSetDebugLevel();
             break;
         case LogsLevel::information:
-            [[ fallthrough ]];
+            [[fallthrough]];
         case LogsLevel::warning:
-            [[ fallthrough ]];
+            [[fallthrough]];
         case LogsLevel::error:
             WasmEdge_LogSetErrorLevel();
             break;
         case LogsLevel::fatal:
-            [[ fallthrough ]];
+            [[fallthrough]];
         case LogsLevel::none:
             WasmEdge_LogOff();
             return;
@@ -643,4 +673,3 @@ void WasmEdgeRuntime::setLogLevel(LogsLevel level)
 
 
 }
-

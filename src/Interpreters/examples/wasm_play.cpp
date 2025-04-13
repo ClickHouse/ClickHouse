@@ -1,13 +1,10 @@
 #include <iostream>
 #include <memory>
-#include <sstream>
-#include <thread>
-#include <type_traits>
-#include <utility>
 #include <random>
+#include <utility>
 
-#include <fmt/printf.h>
 #include <fmt/chrono.h>
+#include <fmt/printf.h>
 
 #include <Poco/AutoPtr.h>
 #include <Poco/ConsoleChannel.h>
@@ -15,27 +12,28 @@
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/CurrentThread.h>
-#include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
-#include <Common/MemoryTracker.h>
-#include <Common/ThreadStatus.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/formatBlock.h>
 #include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
-#include <Interpreters/Context.h>
-#include <IO/copyData.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/copyData.h>
+#include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 
-#include <Common/tests/gtest_global_context.h>
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <Interpreters/WasmModuleManager.h>
+#include <Interpreters/WebAssembly/HostApi.h>
 #include <Interpreters/WebAssembly/WasmEdgeRuntime.h>
 #include <Interpreters/WebAssembly/WasmEngine.h>
-#include <Interpreters/WebAssembly/HostApi.h>
 
 using namespace DB;
 using namespace DB::WebAssembly;
@@ -122,7 +120,10 @@ void pauseForInput(bool pause)
 DB::ContextMutablePtr & getTestContext()
 {
     static ContextHolder holder;
-    static struct Register { Register() { DB::registerFormats(); } } registered;
+    static struct Register
+    {
+        Register() { DB::registerFormats(); }
+    } registered;
     return holder.context;
 }
 
@@ -156,9 +157,7 @@ DB::ColumnVector<T>::Ptr getRandomColumn(size_t size, T min, T max)
 }
 
 
-
-
-int main(int argc [[ maybe_unused ]], const char ** argv [[ maybe_unused ]])
+int main(int argc [[maybe_unused]], const char ** argv [[maybe_unused]])
 try
 {
     ThreadStatus thread_status;
@@ -169,9 +168,7 @@ try
 
     auto args = parseCmdArgs(argc, argv);
 
-    WasmEdgeRuntime::setLogLevel(args.verbose >= 2 ? LogsLevel::trace :
-                                 args.verbose == 1 ? LogsLevel::error :
-                                                     LogsLevel::none);
+    WasmEdgeRuntime::setLogLevel(args.verbose >= 2 ? LogsLevel::trace : args.verbose == 1 ? LogsLevel::error : LogsLevel::none);
 
     printMemoryUsage(__FILE__, __LINE__);
 
@@ -194,9 +191,11 @@ try
     auto wasm_func = UserDefinedWebAssemblyFunction::create(
         wasm_module,
         args.function_name,
+        {"arg1", "arg2"},
         {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()},
         std::make_shared<DataTypeUInt64>(),
-        abi_ver);
+        abi_ver,
+        {});
 
     {
         Block block;
@@ -204,7 +203,7 @@ try
         block.insert(DB::ColumnWithTypeAndName(getRandomColumn<UInt64>(data_size, 1, 99), std::make_shared<DB::DataTypeUInt64>(), "x"));
         block.insert(DB::ColumnWithTypeAndName(getRandomColumn<UInt64>(data_size, 1, 99), std::make_shared<DB::DataTypeUInt64>(), "y"));
 
-        auto wasm_inst = wasm_func->getModule()->instantiate();
+        auto wasm_inst = wasm_func->getModule()->instantiate({});
 
         auto context = getTestContext();
         Stopwatch watch;
@@ -226,4 +225,3 @@ catch (...)
     std::cerr << getCurrentExceptionMessage(true) << std::endl;
     return 1;
 }
-

@@ -19,8 +19,8 @@ public:
         DataTypes argument_types;
         DataTypePtr result_type;
         String module_name;
-        String module_hash = "";
-        String source_function_name = "";
+        String module_hash;
+        String source_function_name;
         WasmAbiVersion abi_version = WasmAbiVersion::Plain;
 
         WebAssemblyFunctionSettings settings;

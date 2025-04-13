@@ -79,10 +79,10 @@ public:
 
 private:
 
-    template <size_t ... Is>
-    ReturnType callFunctionImpl(WasmCompartment * compartment, const WasmVal * params, std::index_sequence<Is...>) const
+    template <size_t ... is>
+    ReturnType callFunctionImpl(WasmCompartment * compartment, const WasmVal * params, std::index_sequence<is...>) const
     {
-        return host_function(compartment, std::get<Args>(params[Is])...);
+        return host_function(compartment, std::get<Args>(params[is])...);
     }
 
     std::string function_name;

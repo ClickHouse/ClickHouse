@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <span>
 
 #include <Interpreters/WebAssembly/WasmTypes.h>
@@ -29,7 +28,7 @@ class WasmMemoryGuard
 public:
     WasmMemoryGuard(const WasmMemoryManager * wmm_, WasmPtr ptr_);
 
-    WasmMemoryGuard(std::nullptr_t) {} /// NOLINT
+    WasmMemoryGuard(std::nullptr_t) { } /// NOLINT
     WasmMemoryGuard(const WasmMemoryGuard &) = delete;
     WasmMemoryGuard & operator=(const WasmMemoryGuard &) = delete;
 
@@ -49,7 +48,6 @@ protected:
     const WasmMemoryManager * wmm = nullptr;
 };
 
-WasmMemoryGuard allocateInWasmMemory(const WasmMemoryManager * wmm, size_t size);
 
 template <typename T>
 class WasmTypedMemoryHolder : public WasmMemoryGuard
@@ -57,12 +55,13 @@ class WasmTypedMemoryHolder : public WasmMemoryGuard
 public:
     using WasmMemoryGuard::WasmMemoryGuard;
 
-    WasmTypedMemoryHolder(const WasmMemoryManager * wmm_, WasmPtr ptr_)
-        : WasmMemoryGuard(wmm_, ptr_)
-    {}
+    WasmTypedMemoryHolder(const WasmMemoryManager * wmm_, WasmPtr ptr_) : WasmMemoryGuard(wmm_, ptr_) { }
 
-    WasmTypedMemoryHolder(WasmMemoryGuard && holder) : WasmMemoryGuard(std::move(holder)) {}
+    explicit WasmTypedMemoryHolder(WasmMemoryGuard && holder) : WasmMemoryGuard(std::move(holder)) { }
     T * ref() const { return reinterpret_cast<T *>(wmm->getMemoryView(ptr, sizeof(T)).data()); }
 };
+
+template <typename T>
+WasmTypedMemoryHolder<T> allocateInWasmMemory(const WasmMemoryManager * wmm, size_t size);
 
 }

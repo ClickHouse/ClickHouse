@@ -17,7 +17,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/quoteString.h>
-#include <Interpreters/FunctionNameNormalizer.h>
 
 
 namespace DB

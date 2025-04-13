@@ -669,6 +669,10 @@ if (TARGET ch_contrib::wasmedge)
     dbms_target_link_libraries(PUBLIC ch_contrib::wasmedge)
 endif()
 
+if (TARGET ch_contrib::wasmtime_cpp)
+    dbms_target_link_libraries(PRIVATE ch_contrib::wasmtime_cpp)
+endif()
+
 if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories

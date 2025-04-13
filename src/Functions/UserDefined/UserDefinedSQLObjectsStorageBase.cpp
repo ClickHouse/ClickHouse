@@ -8,7 +8,6 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 
 namespace DB
 {

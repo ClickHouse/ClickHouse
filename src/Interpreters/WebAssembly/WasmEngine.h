@@ -3,6 +3,7 @@
 #include <Interpreters/WebAssembly/WasmTypes.h>
 
 namespace DB::WebAssembly
+
 {
 
 class WasmHostFunction;
@@ -22,7 +23,7 @@ public:
     virtual WasmPtr growMemory(WasmSizeT num_pages) = 0;
 
     /// Returns the current memory size in bytes
-    virtual WasmSizeT getMemorySize() const = 0;
+    virtual WasmSizeT getMemorySize() = 0;
 
     virtual void invoke(std::string_view function_name, const std::vector<WasmVal> & params, std::vector<WasmVal> & returns) = 0;
 
@@ -46,7 +47,7 @@ public:
     /** Creates a new instance of WasmCompartment using the code of this module.
       * During instantiation, functions from WASM_HOST_API_FUNCTIONS (see HostApi.h) must be registered as imported functions.
       */
-    virtual std::unique_ptr<WasmCompartment> instantiate(Config cfg = {}) const = 0;
+    virtual std::unique_ptr<WasmCompartment> instantiate(Config cfg) const = 0;
 
     virtual std::vector<WasmFunctionDeclarationPtr> getImports() const = 0;
     virtual void addImport(std::unique_ptr<WasmHostFunction> host_function) = 0;

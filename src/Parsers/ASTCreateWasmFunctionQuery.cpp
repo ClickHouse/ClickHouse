@@ -1,7 +1,6 @@
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -45,8 +44,8 @@ ASTPtr ASTCreateWasmFunctionQuery::clone() const
 
 void ASTCreateWasmFunctionQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    auto current_hilite = settings.hilite ? hilite_keyword : "";
-    auto reset_hilite = settings.hilite ? hilite_none : "";
+    const auto *current_hilite = settings.hilite ? hilite_keyword : "";
+    const auto *reset_hilite = settings.hilite ? hilite_none : "";
 
     ostr << current_hilite << "CREATE ";
 

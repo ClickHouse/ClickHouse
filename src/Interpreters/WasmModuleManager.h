@@ -34,6 +34,11 @@ public:
 
     void deleteModuleIfExists(std::string_view module_name);
 
+    WasmModuleManager(const WasmModuleManager &) = delete;
+    WasmModuleManager & operator=(const WasmModuleManager &) = delete;
+    WasmModuleManager(WasmModuleManager &&) = delete;
+    WasmModuleManager & operator=(WasmModuleManager &&) = delete;
+
     ~WasmModuleManager();
 
 protected:
@@ -41,10 +46,6 @@ protected:
     std::string getFilePath(std::string_view module_name) const;
     void registerExistingModules();
 
-    WasmModuleManager(const WasmModuleManager &) = delete;
-    WasmModuleManager & operator=(const WasmModuleManager &) = delete;
-    WasmModuleManager(WasmModuleManager &&) = delete;
-    WasmModuleManager & operator=(WasmModuleManager &&) = delete;
 
     DiskPtr user_scripts_disk;
     std::filesystem::path user_scripts_path;
