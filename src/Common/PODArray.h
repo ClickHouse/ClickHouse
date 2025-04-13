@@ -14,8 +14,10 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 
 #ifndef NDEBUG
 #include <sys/mman.h>

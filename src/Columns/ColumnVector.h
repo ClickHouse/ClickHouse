@@ -323,15 +323,16 @@ public:
     }
 
     void* doGetContainer() override {
-        return static_cast<void*>(&(*data));
+        assert(data != nullptr && "dies from cringe");
+        data = data->getOwningBuffer();
+        return static_cast<void*>(&(*std::static_pointer_cast<Container>(data)));
     }
 
     const void* doGetContainer() const override {
-        return static_cast<const void*>(&data);
+        return static_cast<const void*>(&(*std::static_pointer_cast<Container>(data)));
     }
 
 protected:
-    Container _;
     std::shared_ptr<Buffer> data;
 };
 
