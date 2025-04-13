@@ -144,7 +144,7 @@ SHOW TABLES FROM system LIKE 'query_log%'
 11 rows in set. Elapsed: 0.004 sec.
 ```
 
-### Querying multiple versions
+### Querying multiple versions {#querying-multiple-versions}
 
 We can query across these tables using the [`merge`](/sql-reference/table-functions/merge) function. For example, the query below identifies the latest query issued to the target node in each `query_log` table:
 
@@ -180,7 +180,7 @@ While the numeric suffix on tables can suggest the order of data, it should neve
 
 Importantly, these tables are still **local to each node**.
 
-### Querying across nodes
+### Querying across nodes {#querying-across-nodes}
 
 To comprehensively view the entire cluster, users can leverage the [`clusterAllReplicas`](/sql-reference/table-functions/cluster) function in combination with the `merge` function. The `clusterAllReplicas` function allows querying system tables across all replicas within the "default" cluster, consolidating node-specific data into a unified result. When combined with the `merge` function this can be used to target all system data for a specific table in a cluster. 
 
@@ -222,7 +222,7 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 3 rows in set. Elapsed: 0.026 sec. Processed 1.97 million rows, 7.88 MB (75.51 million rows/s., 302.05 MB/s.)
 ```
 
-### Querying across nodes and versions
+### Querying across nodes and versions {#querying-across-nodes-and-versions}
 
 Due to system table versioning this still does not represent the full data in the cluster. When combining the above with the `merge` function we get an accurate result for our date range:
 
