@@ -322,6 +322,14 @@ public:
         return (*data)[n];
     }
 
+    void* doGetContainer() override {
+        return static_cast<void*>(&(*data));
+    }
+
+    const void* doGetContainer() const override {
+        return static_cast<const void*>(&data);
+    }
+
 protected:
     Container _;
     std::shared_ptr<Buffer> data;
