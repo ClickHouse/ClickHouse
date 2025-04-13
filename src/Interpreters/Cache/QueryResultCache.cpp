@@ -318,7 +318,7 @@ size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
     return key.ast_hash.low64;
 }
 
-size_t QueryResultCache::QueryResultCacheEntryWeight::operator()(const Entry & entry) const
+size_t QueryResultCache::EntryWeight::operator()(const Entry & entry) const
 {
     size_t res = 0;
     for (const auto & chunk : entry.chunks)
@@ -509,7 +509,7 @@ void QueryResultCacheWriter::finalizeWrite()
         return res;
     };
 
-    size_t new_entry_size_in_bytes = QueryResultCache::QueryResultCacheEntryWeight()(*query_result);
+    size_t new_entry_size_in_bytes = QueryResultCache::EntryWeight()(*query_result);
     size_t new_entry_size_in_rows = count_rows_in_chunks(*query_result);
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
@@ -638,7 +638,7 @@ std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceExtremes()
 }
 
 QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
-    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryResultCacheEntryWeight, IsStale>>(
+    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, EntryWeight, IsStale>>(
           std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
     updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);

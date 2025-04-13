@@ -66,13 +66,13 @@ private:
         size_t operator()(const Key & key) const;
     };
 
-    struct QueryConditionCacheEntryWeight
+    struct EntryWeight
     {
         size_t operator()(const Entry & entry) const;
     };
 
 public:
-    using Cache = CacheBase<Key, Entry, KeyHasher, QueryConditionCacheEntryWeight>;
+    using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
 
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
