@@ -69,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.5",
         {
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
+            {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
