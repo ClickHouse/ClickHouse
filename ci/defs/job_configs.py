@@ -273,7 +273,7 @@ class JobConfigs:
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_V80COMPAT,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_FREEBSD,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.PPC64LE,
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.AMD_COMPAT,
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_COMPAT,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_MUSL,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.RISCV64,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.S390X,
@@ -738,6 +738,9 @@ class JobConfigs:
         name=JobNames.ASTFUZZER,
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./docker/test/fuzzer", "./tests/ci/ci_fuzzer_check.py"],
+        ),
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
@@ -766,6 +769,9 @@ class JobConfigs:
         name=JobNames.BUZZHOUSE,
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./docker/test/fuzzer", "./tests/ci/ci_fuzzer_check.py"],
+        ),
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
