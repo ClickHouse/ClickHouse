@@ -4531,6 +4531,25 @@ CONV_FN(BackupRestore, backup)
     }
 }
 
+CONV_FN(Rename, ren)
+{
+    ret += "RENAME ";
+    ret += SQLObject_Name(ren.sobject());
+    ret += " ";
+    SQLObjectNameToString(ret, ren.old_object());
+    ret += " TO ";
+    SQLObjectNameToString(ret, ren.new_object());
+    if (ren.has_cluster())
+    {
+        ClusterToString(ret, ren.cluster());
+    }
+    if (ren.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, ren.setting_values());
+    }
+}
+
 CONV_FN(SQLQueryInner, query)
 {
     using QueryType = SQLQueryInner::QueryInnerOneofCase;
@@ -4596,6 +4615,9 @@ CONV_FN(SQLQueryInner, query)
             break;
         case QueryType::kCreateDictionary:
             CreateDictionaryToString(ret, query.create_dictionary());
+            break;
+        case QueryType::kRename:
+            RenameToString(ret, query.rename());
             break;
         default:
             ret += "SELECT 1";

@@ -328,6 +328,7 @@ private:
     void generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot);
     void generateNextCheckTable(RandomGenerator & rg, CheckTable * ct);
     void generateNextDescTable(RandomGenerator & rg, DescTable * dt);
+    void generateNextRename(RandomGenerator & rg, Rename * ren);
     void generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     void generateAlter(RandomGenerator & rg, Alter * at);

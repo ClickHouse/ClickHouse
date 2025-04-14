@@ -3754,6 +3754,14 @@ message BackupRestore {
     required uint32 backup_number = 10;
 }
 
+message Rename {
+    required SQLObject sobject = 1;
+    required SQLObjectName old_object = 2;
+    required SQLObjectName new_object = 3;
+    optional Cluster cluster = 4;
+    optional SettingValues setting_values = 5;
+}
+
 message SQLQueryInner {
     oneof query_inner_oneof {
         TopSelect select = 1;
@@ -3776,6 +3784,7 @@ message SQLQueryInner {
         SystemCommand system_cmd = 18;
         BackupRestore backup_restore = 19;
         CreateDictionary create_dictionary = 20;
+        Rename rename = 21;
     }
 }
 

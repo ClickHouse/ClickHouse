@@ -868,7 +868,7 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
 static const auto exchange_table_lambda = [](const SQLTable & t)
 {
     /// I would need to track the table clusters to do this correctly, ie ensure tables to be exchanged are on same cluster
-    return t.isAttached() && !t.is_deterministic && !t.getCluster();
+    return t.isAttached() && !t.is_deterministic && !t.getCluster() && !t.hasDatabasePeer();
 };
 
 void StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et)
@@ -2917,7 +2917,8 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     const uint32_t backup_database = 10 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
     const uint32_t all_temporary = 3;
     const uint32_t everything = 3;
-    const uint32_t prob_space = backup_table + backup_system_table + backup_view + backup_dictionary + backup_database;
+    const uint32_t prob_space
+        = backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + all_temporary + everything;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     BackupRestoreElement * bre = br->mutable_backup_element();
@@ -3180,10 +3181,77 @@ void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, Backu
     br->set_async(rg.nextSmallNumber() < 4);
 }
 
+static const auto rename_table_lambda = [](const SQLTable & t) { return t.isAttached() && !t.is_deterministic && !t.hasDatabasePeer(); };
+
+void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
+{
+    SQLObjectName * oldn = ren->mutable_old_object();
+    SQLObjectName * newn = ren->mutable_new_object();
+    const uint32_t rename_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(rename_table_lambda));
+    const uint32_t rename_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
+    const uint32_t rename_dictionary = 10 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
+    const uint32_t rename_database = 10 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
+    const uint32_t prob_space = rename_table + rename_view + rename_dictionary + rename_database;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.generator);
+    std::optional<String> cluster;
+
+    if (rename_table && nopt < (rename_table + 1))
+    {
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(rename_table_lambda));
+
+        cluster = t.getCluster();
+        ren->set_sobject(SQLObject::TABLE);
+        t.setName(oldn->mutable_est(), false);
+        SQLTable::setName(newn->mutable_est(), true, t.db, this->table_counter++);
+    }
+    else if (rename_view && nopt < (rename_table + rename_view + 1))
+    {
+        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
+
+        cluster = v.getCluster();
+        ren->set_sobject(SQLObject::TABLE);
+        v.setName(oldn->mutable_est(), false);
+        SQLView::setName(newn->mutable_est(), true, v.db, this->table_counter++);
+    }
+    else if (rename_dictionary && nopt < (rename_table + rename_view + rename_dictionary + 1))
+    {
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
+
+        cluster = d.getCluster();
+        ren->set_sobject(SQLObject::DICTIONARY);
+        d.setName(oldn->mutable_est(), false);
+        SQLDictionary::setName(newn->mutable_est(), true, d.db, this->table_counter++);
+    }
+    else if (rename_database && nopt < (rename_table + rename_view + rename_dictionary + rename_database + 1))
+    {
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+
+        cluster = d->getCluster();
+        ren->set_sobject(SQLObject::DATABASE);
+        d->setName(oldn->mutable_database());
+        SQLDatabase::setName(newn->mutable_database(), this->database_counter++);
+    }
+    else
+    {
+        chassert(0);
+    }
+    if (cluster.has_value())
+    {
+        ren->mutable_cluster()->set_cluster(cluster.value());
+    }
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, ren->mutable_setting_values());
+    }
+}
+
 void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * sq)
 {
     const bool has_databases = collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases);
     const bool has_tables = collectionHas<SQLTable>(attached_tables);
+    const bool has_views = collectionHas<SQLView>(attached_views);
+    const bool has_dictionaries = collectionHas<SQLDictionary>(attached_dictionaries);
 
     const uint32_t create_table = 6 * static_cast<uint32_t>(static_cast<uint32_t>(tables.size()) < this->fc.max_tables);
     const uint32_t create_view = 10 * static_cast<uint32_t>(static_cast<uint32_t>(views.size()) < this->fc.max_views);
@@ -3217,10 +3285,12 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     const uint32_t system_stmt = 1;
     const uint32_t backup_or_restore = 1;
     const uint32_t create_dictionary = 10 * static_cast<uint32_t>(static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries);
+    const uint32_t rename
+        = 1 * static_cast<uint32_t>(collectionHas<SQLTable>(rename_table_lambda) || has_views || has_dictionaries || has_databases);
     const uint32_t select_query = 800;
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange_tables + alter + set_values + attach + detach + create_database + create_function + system_stmt
-        + backup_or_restore + create_dictionary + select_query;
+        + backup_or_restore + create_dictionary + rename + select_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -3347,11 +3417,20 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         generateNextCreateDictionary(rg, sq->mutable_create_dictionary());
     }
     else if (
+        rename
+        && nopt
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
+               + exchange_tables + alter + set_values + attach + detach + create_database + create_function + system_stmt
+               + backup_or_restore + create_dictionary + rename + 1))
+    {
+        generateNextRename(rg, sq->mutable_rename());
+    }
+    else if (
         select_query
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
                + exchange_tables + alter + set_values + attach + detach + create_database + create_function + system_stmt
-               + backup_or_restore + create_dictionary + select_query + 1))
+               + backup_or_restore + create_dictionary + rename + select_query + 1))
     {
         generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
     }
@@ -3644,8 +3723,8 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
     {
         const uint32_t tname1 = static_cast<uint32_t>(std::stoul(query.exchange().est1().table().table().substr(1)));
         const uint32_t tname2 = static_cast<uint32_t>(std::stoul(query.exchange().est2().table().table().substr(1)));
-        SQLTable tx = std::move(this->tables[tname1]);
-        SQLTable ty = std::move(this->tables[tname2]);
+        SQLTable tx = std::move(this->tables.at(tname1));
+        SQLTable ty = std::move(this->tables.at(tname2));
         auto db_tmp = tx.db;
 
         tx.tname = tname2;
@@ -3654,6 +3733,51 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         ty.db = db_tmp;
         this->tables[tname2] = std::move(tx);
         this->tables[tname1] = std::move(ty);
+    }
+    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_rename() && success)
+    {
+        const Rename & ren = query.rename();
+        const bool istable = ren.old_object().has_est() && ren.old_object().est().table().table()[0] == 't';
+        const bool isview = ren.old_object().has_est() && ren.old_object().est().table().table()[0] == 'v';
+        const bool isdictionary = ren.old_object().has_est() && ren.old_object().est().table().table()[0] == 'd';
+        const bool isdatabase = ren.old_object().has_database();
+
+        if (istable)
+        {
+            const uint32_t old_tname = static_cast<uint32_t>(std::stoul(ren.old_object().est().table().table().substr(1)));
+            const uint32_t new_tname = static_cast<uint32_t>(std::stoul(ren.new_object().est().table().table().substr(1)));
+            SQLTable tx = std::move(this->tables.at(old_tname));
+
+            tx.tname = new_tname;
+            this->tables[new_tname] = std::move(tx);
+        }
+        else if (isview)
+        {
+            const uint32_t old_tname = static_cast<uint32_t>(std::stoul(ren.old_object().est().table().table().substr(1)));
+            const uint32_t new_tname = static_cast<uint32_t>(std::stoul(ren.new_object().est().table().table().substr(1)));
+            SQLView vx = std::move(this->views.at(old_tname));
+
+            vx.tname = new_tname;
+            this->views[new_tname] = std::move(vx);
+        }
+        else if (isdictionary)
+        {
+            const uint32_t old_tname = static_cast<uint32_t>(std::stoul(ren.old_object().est().table().table().substr(1)));
+            const uint32_t new_tname = static_cast<uint32_t>(std::stoul(ren.new_object().est().table().table().substr(1)));
+            SQLDictionary dx = std::move(this->dictionaries.at(old_tname));
+
+            dx.tname = new_tname;
+            this->dictionaries[new_tname] = std::move(dx);
+        }
+        else if (isdatabase)
+        {
+            const uint32_t old_dname = static_cast<uint32_t>(std::stoul(ren.old_object().database().database().substr(1)));
+            const uint32_t new_dname = static_cast<uint32_t>(std::stoul(ren.new_object().database().database().substr(1)));
+            std::shared_ptr<SQLDatabase> dx = std::move(this->databases.at(old_dname));
+
+            dx->dname = new_dname;
+            this->databases[new_dname] = std::move(dx);
+        }
     }
     else if (sq.has_explain() && !sq.explain().is_explain() && query.has_alter())
     {
