@@ -1,6 +1,8 @@
 from ci.defs.defs import JobNames
 from ci.jobs.scripts.workflow_hooks.pr_description import Labels
 from ci.praktika.info import Info
+from ci.defs.job_configs import build_jobs
+from ci.defs.job_configs import JobConfigs
 
 
 def only_docs(changed_files):
@@ -82,18 +84,18 @@ def should_skip_job(job_name):
             f"Skipped, labeled with '{Labels.CI_FUNCTIONAL_FLAKY}' - run stateless test jobs only",
         )
 
-    if (
-        Labels.CI_INTEGRATION in _info_cache.pr_labels
-        and job_name.starts_with(JobNames.INTEGRATION)
+    all_builds = [build.name for build in JobConfigs.build_jobs]
+    if Labels.CI_INTEGRATION in _info_cache.pr_labels and (
+        job_name.starts_with(JobNames.INTEGRATION) or job_name in all_builds
     ):
         return (
             True,
             f"Skipped, labeled with '{Labels.CI_INTEGRATION}' - run integration test jobs only",
         )
 
-    if (
-        Labels.CI_FUNCTIONAL in _info_cache.pr_labels
-        and (job_name.starts_with(JobNames.STATELESS) or job_name.starts_with(JobNames.STATEFUL))
+    if Labels.CI_FUNCTIONAL in _info_cache.pr_labels and (
+        job_name.starts_with(JobNames.STATELESS)
+        or job_name.starts_with(JobNames.STATEFUL or job_name in all_builds)
     ):
         return (
             True,
