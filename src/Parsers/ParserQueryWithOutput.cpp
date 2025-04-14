@@ -129,6 +129,15 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             query_with_output.is_into_outfile_with_stdout = true;
         }
 
+        ParserKeyword s_partition_by(Keyword::PARTITION_BY);
+        if (s_partition_by.ignore(pos, expected))
+        {
+            ParserNotEmptyExpressionList exp_list_p(false);
+            if (!exp_list_p.parse(pos, query_with_output.partition_by, expected))
+                return false;
+            query_with_output.children.push_back(query_with_output.partition_by);
+        }
+
         ParserKeyword s_compression_method(Keyword::COMPRESSION);
         if (s_compression_method.ignore(pos, expected))
         {
