@@ -43,7 +43,8 @@ For more details, see [https://en.wikipedia.org/wiki/Inverse_trigonometric_funct
             .examples{
                 {"inverse", "SELECT asin(1.0) = pi() / 2, sin(asin(1)), asin(sin(1))", ""},
                 {"float32", "SELECT toTypeName(asin(1.0::Float32))", ""},
-                {"nan", "SELECT asin(1.1), asin(-2), asin(inf), asin(nan)", ""}},
+                {"nan", "SELECT asin(1.1), asin(-2), asin(inf), asin(nan)", ""}
+            },
             .category=FunctionDocumentation::Category::Mathematical
         },
         FunctionFactory::Case::Insensitive);

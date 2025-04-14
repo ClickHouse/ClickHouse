@@ -272,12 +272,23 @@ REGISTER_FUNCTION(ToDecimalString)
     factory.registerFunction<FunctionToDecimalString>(
         FunctionDocumentation{
             .description=R"(
-Returns string representation of a number. First argument is the number of any numeric type,
-second argument is the desired number of digits in fractional part. Returns String.
+Returns a string representation of a number. First argument is a number of any numeric type,
+the second argument is the desired number of digits in fractional part. Returns String.
 
         )",
+            .syntax="toDecimalString(number, scale)",
+            .arguments={
+                {"x", "Value to be represented as String, Int, UInt, Float, Decimal."},
+                {"scale", R"(
+Number of fractional digits, UInt8.
+- Maximum scale for Decimal and Int, UInt types is 77 (it is the maximum possible number of significant digits for Decimal),
+- Maximum scale for Float is 60.                    
+                    )"
+                }
+            },
+            .returned_value="Returns a string representation of `x` with `scale` number of fractional digits. String.",
             .examples{{"toDecimalString", "SELECT toDecimalString(2.1456,2)", ""}},
-            .category{"Type Conversion"}
+            .category=FunctionDocumentation::Category::TypeConversion
         }, FunctionFactory::Case::Insensitive);
 }
 

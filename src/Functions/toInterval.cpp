@@ -79,7 +79,47 @@ private:
 REGISTER_FUNCTION(ToInterval)
 {
     factory.registerFunction<FunctionToInterval>(
-        FunctionDocumentation{.description = R"(Creates an interval from a value and a unit.)"});
+        FunctionDocumentation{
+            .description = "Creates an Interval data type value from a numeric value and interval unit (eg. 'second' or 'day').",
+            .syntax="toInterval(value, unit)",
+            .arguments={
+                {"value", "Length of the interval. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md)."},
+                {
+                    "unit",
+                    R"(
+The type of interval to create. [String Literal](/sql-reference/syntax#string).
+Possible values:
+
+- `nanosecond`
+- `microsecond`
+- `millisecond`
+- `second`
+- `minute`
+- `hour`
+- `day`
+- `week`
+- `month`
+- `quarter`
+- `year`
+
+The `unit` argument is case-insensitive.
+                    )",
+                }
+            },
+            .returned_value="Returns the resulting interval. [Interval](../../sql-reference/data-types/special-data-types/interval.md)",
+            .examples={
+                {
+                    "Example usage",
+                    "SELECT toDateTime('2025-01-01 00:00:00') + toInterval(1, 'hour')",
+                    R"(
+┌─toDateTime('2025-01-01 00:00:00') + toInterval(1, 'hour') ─┐
+│                                        2025-01-01 01:00:00 │
+└────────────────────────────────────────────────────────────┘            
+                    )"
+                }
+            },
+            .category=FunctionDocumentation::Category::TypeConversion
+        });
 }
 
 }

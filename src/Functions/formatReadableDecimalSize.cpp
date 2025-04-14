@@ -26,6 +26,11 @@ REGISTER_FUNCTION(FormatReadableDecimalSize)
         .description=R"(
 Accepts the size (number of bytes). Returns a rounded size with a suffix (KB, MB, etc.) as a string.
 )",
+        .syntax="formatReadableDecimalSize(x)",
+        .arguments={
+            {"x", "Numeric value representing a number of bytes. (U)Int(8/16/32/64/128/256), Float(32/64)"}
+        },
+        .returned_value="Returns `X` with rounded size and a suffix. String."
         .examples{
             {"formatReadableDecimalSize", "SELECT formatReadableDecimalSize(1000)", ""}},
         .category=FunctionDocumentation::Category::Other

@@ -110,12 +110,76 @@ REGISTER_FUNCTION(StructureToCapnProtoSchema)
             .description=R"(
 Function that converts ClickHouse table structure to CapnProto format schema
 )",
+            .syntax="structureToCapnProtoSchema(structure, root_struct_name)",
+            .arguments={
+                {"structure", "Table structure in a format column1_name column1_type, column2_name column2_type, ...."},
+                {"root_struct_name", "Name for root struct in CapnProto schema. Default value - Message"}
+            },
+            .returned_value="CapnProto schema. String.",
             .examples{
-                {"random", "SELECT structureToCapnProtoSchema('s String, x UInt32', 'MessageName') format TSVRaw", "struct MessageName\n"
-"{\n"
-"    s @0 : Data;\n"
-"    x @1 : UInt32;\n"
-"}"},
+                {
+                    "Example 1",
+                    "SELECT structureToCapnProtoSchema('column1 String, column2 UInt32, column3 Array(String)') FORMAT RawBLOB",
+                    R"(
+@0xf96402dd754d0eb7;
+
+struct Message
+{
+    column1 @0 : Data;
+    column2 @1 : UInt32;
+    column3 @2 : List(Data);
+}                
+                    )"
+               },
+               {
+                    "Example 2",
+                    "SELECT structureToCapnProtoSchema('column1 Nullable(String), column2 Tuple(element1 UInt32, element2 Array(String)), column3 Map(String, String)') FORMAT RawBLOB",
+                    R"(
+@0xd1c8320fecad2b7f;
+
+struct Message
+{
+    struct Column1
+    {
+        union
+        {
+            value @0 : Data;
+            null @1 : Void;
+        }
+    }
+    column1 @0 : Column1;
+    struct Column2
+    {
+        element1 @0 : UInt32;
+        element2 @1 : List(Data);
+    }
+    column2 @1 : Column2;
+    struct Column3
+    {
+        struct Entry
+        {
+            key @0 : Data;
+            value @1 : Data;
+        }
+        entries @0 : List(Entry);
+    }
+    column3 @2 : Column3;
+}                    
+                    )"
+               },
+               {
+                    "Example 3",
+                    "SELECT structureToCapnProtoSchema('column1 String, column2 UInt32', 'Root') FORMAT RawBLOB",
+                    R"(
+@0x96ab2d4ab133c6e1;
+
+struct Root
+{
+    column1 @0 : Data;
+    column2 @1 : UInt32;
+}                    
+                    )"
+               }
             },
             .category=FunctionDocumentation::Category::Other
         });
@@ -129,14 +193,59 @@ REGISTER_FUNCTION(StructureToProtobufSchema)
             .description=R"(
 Function that converts ClickHouse table structure to Protobuf format schema
 )",
+            .syntax="structureToProtobufSchema(structure, root_struct_name)",
+            .arguments={
+                {"structure", "Table structure in a format column1_name column1_type, column2_name column2_type, ...."},
+                {"root_struct_name", "Name for root struct in Protobuf schema. Default value - Message"}
+            },
+            .returned_value="Protobuf schema. String.",
             .examples{
-                {"random", "SELECT structureToCapnProtoSchema('s String, x UInt32', 'MessageName') format TSVRaw", "syntax = \"proto3\";\n"
-"\n"
-"message MessageName\n"
-"{\n"
-"    bytes s = 1;\n"
-"    uint32 x = 2;\n"
-"}"},
+                {
+                    "Example 1",
+                    "SELECT structureToProtobufSchema('column1 String, column2 UInt32, column3 Array(String)') FORMAT RawBLOB",
+                    R"(
+syntax = "proto3";
+
+message Message
+{
+    bytes column1 = 1;
+    uint32 column2 = 2;
+    repeated bytes column3 = 3;
+}                    
+                    )"
+                },
+                {
+                    "Example 2",
+                    "SELECT structureToProtobufSchema('column1 Nullable(String), column2 Tuple(element1 UInt32, element2 Array(String)), column3 Map(String, String)') FORMAT RawBLOB",
+                    R"(
+syntax = "proto3";
+
+message Message
+{
+    bytes column1 = 1;
+    message Column2
+    {
+        uint32 element1 = 1;
+        repeated bytes element2 = 2;
+    }
+    Column2 column2 = 2;
+    map<string, bytes> column3 = 3;
+}                    
+                    )"
+                },
+                {
+                    "Example 3",
+                    "SELECT structureToProtobufSchema('column1 String, column2 UInt32', 'Root') FORMAT RawBLOB",
+                    R"(
+syntax = "proto3";
+
+message Root
+{
+    bytes column1 = 1;
+    uint32 column2 = 2;
+}                    
+                    )"
+                }
             },
             .category=FunctionDocumentation::Category::Other
         });

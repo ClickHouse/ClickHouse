@@ -737,7 +737,24 @@ Converts a number containing the year, month and day number to a Date.
 This functions is the opposite of function `toYYYYMMDD()`.
 The output is undefined if the input does not encode a valid Date value.
 )",
-            .category{"Dates and Times"}
+            .syntax="SELECT YYYYMMDDToDate(date, 'US/Eastern')",
+            .arguments={
+                {"date", "Numerical representation of a date in YYYYMMDD format. DateTime."},
+                {"timezone (optional)", "Timezone. String."}
+            },
+            .returned_value="Returns `date` as a date type. [Date](/sql-reference/data-types/date)",
+            .examples={
+                {
+                    "Valid usage",
+                    "SELECT YYYYMMDDToDate(20250412)",
+                    "R(
+┌─YYYYMMDDToDate(20250412)─┐
+│               2025-04-12 │
+└──────────────────────────┘                    
+                    )"
+                }
+            },
+            .category=FunctionDocumentation::Category::DateAndTime
         }
     );
     factory.registerFunction<FunctionYYYYYMMDDToDate<Date32Traits>>(
@@ -745,7 +762,24 @@ The output is undefined if the input does not encode a valid Date value.
             .description = R"(
 Like function `YYYYMMDDToDate()` but produces a Date32.
 )",
-            .category{"Dates and Times"}
+            .syntax="SELECT YYYYMMDDToDate32(date, 'US/Eastern')",
+            .arguments={
+                {"date", "Numerical representation of a date in YYYYMMDD format. DateTime."},
+                {"timezone (optional)", "Timezone. String."}
+            },
+            .returned_value="Returns `date` as a date type. [Date32](/sql-reference/data-types/date)",
+            .examples={
+                {
+                    "Valid usage",
+                    "SELECT YYYYMMDDToDate32(20250412)",
+                    "R(
+┌─YYYYMMDDToDate32(20250412)─┐
+│                 2025-04-12 │
+└────────────────────────────┘                
+                    )"
+                }
+            },
+            .category=FunctionDocumentation::Category::DateAndTime
         }
     );
     factory.registerFunction<FunctionYYYYMMDDhhmmssToDateTime>(
@@ -755,7 +789,7 @@ Converts a number containing the year, month, day, hour, minute and second numbe
 The output is undefined if the input does not encode a valid DateTime value.
 This functions is the opposite of function `toYYYYMMDD()`.
 )",
-            .category{"Dates and Times"}
+            .category=FunctionDocumentation::Category::DateAndTime
         }
     );
     factory.registerFunction<FunctionYYYYMMDDhhmmssToDateTime64>(
@@ -764,7 +798,7 @@ This functions is the opposite of function `toYYYYMMDD()`.
 Like function `YYYYMMDDhhmmssToDate()` but produces a DateTime64.
 Accepts an additional, optional `precision` parameter after the `timezone` parameter.
 )",
-            .category{"Dates and Times"}
+            .category=FunctionDocumentation::Category::DateAndTime
         }
     );
 }

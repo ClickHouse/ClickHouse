@@ -256,35 +256,32 @@ REGISTER_FUNCTION(WidthBucket)
 {
     factory.registerFunction<FunctionWidthBucket>(FunctionDocumentation{
         .description=R"(
-Returns the number of the bucket in which `operand` falls in a histogram having `count` equal-width buckets spanning the range `low` to `high`. Returns `0` if `operand < low`, and returns `count+1` if `operand >= high`.
+Returns the number of the bucket in which `operand` falls in a histogram having `count` equal-width buckets spanning the range `low` to `high`. 
 
-`operand`, `low`, `high` can be any native number type. `count` can only be unsigned native integer and its value cannot be zero.
-
-**Syntax**
-
-```sql
-widthBucket(operand, low, high, count)
-```
+`operand`, `low`, `high` can be any native number type.
 
 There is also a case insensitive alias called `WIDTH_BUCKET` to provide compatibility with other databases.
-
-**Example**
-
-Query:
-[example:simple]
-
-Result:
-
-```text
-┌─widthBucket(10.15, -8.6, 23, 18)─┐
-│                               11 │
-└──────────────────────────────────┘
-```
 )",
-        .examples{
-            {"simple", "SELECT widthBucket(10.15, -8.6, 23, 18)", ""},
+        .syntax="widthBucket(operand, low, high, count)",
+        .arguments={
+            {"operand", "The value for which to find the corresponding number of the bucket in which it falls. Float32/Float64, (U)Int8/16/32/64."},
+            {"low", "Minimum value of range. Float32/Float64, (U)Int8/16/32/64"},
+            {"high", "Maximum value of range. Float32/Float64, (U)Int8/16/32/64"},
+            {"count", "Non-zero integer count of equal-width buckets of a histogram. UInt8/16/32/64."}
         },
-        .category{"Mathematical"},
+        .returned_value="Returns `0` if `operand < low`, and returns `count+1` if `operand >= high`.",
+        .examples{
+            {
+                "simple",
+                "SELECT widthBucket(10.15, -8.6, 23, 18)",
+                R"(
+┌─widthBucket(⋯.6, 23, 18)─┐
+│                       11 │
+└──────────────────────────┘                
+                )"
+            },
+        },
+        .category=FunctionDocumentation::Category::Mathematical,
     });
 
     factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::Case::Insensitive);

@@ -198,35 +198,7 @@ Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wi
 
 At least four data points are required in `series` to detect outliers.
 
-**Examples**
-
-Query:
-
-```sql
-SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4, 5, 6]) AS print_0;
-```
-
-Result:
-
-```text
-┌───────────print_0─────────────────┐
-│[0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
-└───────────────────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 0.2, 0.8, 1.5) AS print_0;
-```
-
-Result:
-
-```text
-┌─print_0──────────────────────────────┐
-│ [0,0,0,0,0,0,0,0,0,19.5,0,0,0,0,0,0] │
-└──────────────────────────────────────┘
-```)",
+)",
         .syntax=R"(
 seriesOutliersDetectTukey(series);
 seriesOutliersDetectTukey(series, min_percentile, max_percentile, k);        
@@ -238,6 +210,26 @@ seriesOutliersDetectTukey(series, min_percentile, max_percentile, k);
             {"k", "Non-negative constant value to detect mild or stronger outliers. The default value is 1.5"}
         },
         .returned_value="Returns an array of the same length as the input array where each value represents score of possible anomaly of corresponding element in the series. A non-zero score indicates a possible anomaly. [Array](../../sql-reference/data-types/array.md).",
+        .examples={
+            {
+                "Example 1",
+                "SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4, 5, 6]) AS print_0;",
+                R"(
+┌───────────print_0─────────────────┐
+│[0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
+└───────────────────────────────────┘                
+                )"
+            },
+            {
+                "Example 2",
+                "SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 0.2, 0.8, 1.5) AS print_0;",
+                R"(
+┌─print_0──────────────────────────────┐
+│ [0,0,0,0,0,0,0,0,0,19.5,0,0,0,0,0,0] │
+└──────────────────────────────────────┘                
+                )"
+            }
+        },
         .category=FunctionDocumentation::Category::TimeSeries});
 }
 }

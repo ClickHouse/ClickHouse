@@ -172,11 +172,14 @@ REGISTER_FUNCTION(Nested)
         .description=R"(
 This is a function used internally by the ClickHouse engine and not meant to be used directly.
 
-Returns the array of tuples from multiple arrays.
-
 The first argument must be a constant array of Strings determining the names of the resulting Tuple.
 The other arguments must be arrays of the same size.
 )",
+        .syntax="nested(arr1 [, arr2, ..., arrN])",
+        .arguments={
+            {"arrN", "N constant String Arrays"}
+        },
+        .returned_value="Returns an array of tuples from multiple arrays.",
         .examples{{"nested", "SELECT nested(['keys', 'values'], ['key_1', 'key_2'], ['value_1','value_2'])", ""}},
         .category=FunctionDocumentation::Category::Other
     });

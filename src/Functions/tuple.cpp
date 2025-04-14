@@ -23,10 +23,15 @@ Returns a tuple by grouping input arguments.
 For columns C1, C2, ... with the types T1, T2, ..., it returns a named Tuple(C1 T1, C2 T2, ...) type tuple containing these columns if their names are unique and can be treated as unquoted identifiers, otherwise a Tuple(T1, T2, ...) is returned. There is no cost to execute the function.
 Tuples are normally used as intermediate values for an argument of IN operators, or for creating a list of formal parameters of lambda functions. Tuples can't be written to a table.
 
-The function implements the operator `(x, y, ...)`.
+The function implements the operator `(x1, x2, ... xN)`.
 )",
+        .syntax="tuple([x1, x2, ... xN])",
+        .arguments={
+            {"xN (optional)", "N values of any type T."}
+        },
+        .returned_value="Returns a named Tuple(C1 T1, C2 T2, ... CN TN). [Tuple](/sql-reference/data-types/tuple)",
         .examples{{"typical", "SELECT tuple(1, 2)", "(1,2)"}},
-        .category{"Tuples"}});
+        .category=FunctionDocumentation::Category::Tuple});
 }
 
 }

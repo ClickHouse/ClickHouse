@@ -108,7 +108,13 @@ The function accepts a column of codes as a second argument:
 The range tuple must be a constant:
 [example:from_table_range]
 )",
-        .examples{
+        .syntax="hilbertDecode(tuple_size, code)",
+        .arguments={
+            {"tuple_size", "Integer value no more than 2."},
+            {"code", "UInt64 code."}
+        },
+        .returned_value="Tuple of the specified size.",
+        .examples={
             {"simple", "SELECT hilbertDecode(2, 64)", ""},
             {"range_shrank", "SELECT hilbertDecode((1,2), 1572864)", ""},
             {"identity", "SELECT hilbertDecode(1, 1)", ""},

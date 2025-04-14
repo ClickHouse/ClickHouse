@@ -14,8 +14,14 @@ REGISTER_FUNCTION(StartsWithUTF8)
         .description = R"(
 Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
         )",
+        .syntax="startsWithUTF8(str, prefix)",
+        .arguments={
+                {"str", "String to search in."},
+                {"prefix", "Prefix to search for in `str`"}
+        },
+        .returned_value="Returns `1` if `str` starts with `prefix`, otherwise `0`. UInt8.",
         .examples{{"startsWithUTF8", "select startsWithUTF8('富强民主文明和谐', '富强');", ""}},
-        .category{"Strings"}});
+        .category=FunctionDocumentation::Category::String});
 }
 
 }
