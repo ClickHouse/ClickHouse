@@ -97,6 +97,8 @@ class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
+class IcebergMetadataFilesCache;
+class VectorSimilarityIndexCache;
 class ProcessList;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -115,6 +117,7 @@ class PartLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
+class TransposedMetricLog;
 class LatencyLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
@@ -235,6 +238,9 @@ using ReadTaskCallback = std::function<String()>;
 using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
+struct QueryPlanAndSets;
+using QueryPlanDeserializationCallback = std::function<std::shared_ptr<QueryPlanAndSets>()>;
+
 class TemporaryDataOnDiskScope;
 using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
@@ -290,6 +296,7 @@ protected:
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
+    QueryPlanDeserializationCallback query_plan_deserialization_callback;
 
     InputInitializer input_initializer_callback;
     InputBlocksReader input_blocks_reader;
@@ -622,6 +629,7 @@ public:
         MAX_ATTACHED_DATABASES,
         MAX_ACTIVE_PARTS,
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
+        MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
         MAX_NUM_THREADS_LOWER_THAN_LIMIT,
         OBSOLETE_SETTINGS,
         PROCESS_USER_MATCHES_DATA_OWNER,
@@ -746,6 +754,11 @@ public:
     /// This method is called in executeQuery() and will call the external tables initializer.
     void initializeExternalTablesIfSet();
 
+    /// This is a callback which returns deserialized QueryPlan if the packet with QueryPlan was received.
+    void setQueryPlanDeserializationCallback(QueryPlanDeserializationCallback && callback);
+    /// This method is called in executeQuery() and will call the query plan deserialization callback.
+    std::shared_ptr<QueryPlanAndSets> getDeserializedQueryPlan();
+
     /// When input() is present we have to send columns structure to client
     void setInputInitializer(InputInitializer && initializer);
     /// This method is called in StorageInput::read while executing query
@@ -865,7 +878,7 @@ public:
     /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
-    StoragePtr buildParametrizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
+    StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -968,8 +981,8 @@ public:
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
                                   const std::optional<FormatSettings> & format_settings = std::nullopt, std::optional<size_t> max_parsing_threads = std::nullopt) const;
 
-    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
-    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
+    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     InterserverIOHandler & getInterserverIOHandler();
     const InterserverIOHandler & getInterserverIOHandler() const;
@@ -994,15 +1007,22 @@ public:
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
+    size_t getMaxTableNumToWarn() const;
+    size_t getMaxViewNumToWarn() const;
+    size_t getMaxDictionaryNumToWarn() const;
+    size_t getMaxDatabaseNumToWarn() const;
+    size_t getMaxPartNumToWarn() const;
+    size_t getMaxPendingMutationsToWarn() const;
+    size_t getMaxPendingMutationsExecutionTimeToWarn() const;
+
     void setMaxTableNumToWarn(size_t max_table_to_warn);
     void setMaxViewNumToWarn(size_t max_view_to_warn);
     void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
     void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
     void setMaxPartNumToWarn(size_t max_part_to_warn);
-
-    // Following are based on asynchronous metrics
+    // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
-    size_t getMaxPendingMutationsToWarn() const;
+    void setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn);
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1133,7 +1153,8 @@ public:
     void setPageCache(
         size_t default_block_size, size_t default_lookahead_blocks,
         std::chrono::milliseconds history_window, const String & cache_policy, double size_ratio,
-        size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio);
+        size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio,
+        size_t num_shards);
     std::shared_ptr<PageCache> getPageCache() const;
     void clearPageCache() const;
 
@@ -1158,6 +1179,11 @@ public:
     std::shared_ptr<MarkCache> getIndexMarkCache() const;
     void clearIndexMarkCache() const;
 
+    void setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<VectorSimilarityIndexCache> getVectorSimilarityIndexCache() const;
+    void clearVectorSimilarityIndexCache() const;
+
     void setMMappedFileCache(size_t max_cache_size_in_num_entries);
     void updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
@@ -1167,6 +1193,13 @@ public:
     void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryResultCache> getQueryResultCache() const;
     void clearQueryResultCache(const std::optional<String> & tag) const;
+
+#if USE_AVRO
+    void setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<IcebergMetadataFilesCache> getIcebergMetadataFilesCache() const;
+    void clearIcebergMetadataFilesCache() const;
+#endif
 
     void setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1244,6 +1277,7 @@ public:
     std::shared_ptr<TraceLog> getTraceLog() const;
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
+    std::shared_ptr<TransposedMetricLog> getTransposedMetricLog() const;
     std::shared_ptr<LatencyLog> getLatencyLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
@@ -1336,7 +1370,6 @@ public:
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
         CLIENT,         /// clickhouse-client
-        EMBEDDED_CLIENT,/// clickhouse-client being run over SSH tunnel
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
         DISKS,          /// clickhouse-disks

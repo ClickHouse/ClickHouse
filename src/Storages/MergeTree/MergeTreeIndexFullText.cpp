@@ -81,6 +81,15 @@ void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTr
 }
 
 
+size_t MergeTreeIndexGranuleFullText::memoryUsageBytes() const
+{
+    size_t sum = 0;
+    for (const auto & gin_filter : gin_filters)
+        sum += gin_filter.memoryUsageBytes();
+    return sum;
+}
+
+
 MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(
     GinIndexStorePtr store_,
     const Names & index_columns_,
@@ -196,9 +205,13 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
         return;
     }
 
+    /// Clone ActionsDAG with re-generated column name for constants.
+    /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
+    /// DAG from the skip indexes does not use it. This breaks matching by column name sometimes.
+    auto cloned_filter_actions_dag = cloneFilterDAGForIndexesAnalysis(*filter_actions_dag);
     rpn = std::move(
             RPNBuilder<RPNElement>(
-                    filter_actions_dag->getOutputs().at(0), context_,
+                    cloned_filter_actions_dag.getOutputs().at(0), context_,
                     [&](const RPNBuilderTreeNode & node, RPNElement & out)
                     {
                         return this->traverseAtomAST(node, out);
@@ -303,7 +316,7 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             const auto & gin_filters = element.set_gin_filters[0];
 
             for (size_t row = 0; row < gin_filters.size(); ++row)
-                result[row] = result[row] && granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
+                result[row] = granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
 
             rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
         }
@@ -317,7 +330,7 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
                 const auto & gin_filters = element.set_gin_filters[0];
 
                 for (size_t row = 0; row < gin_filters.size(); ++row)
-                    result[row] = result[row] && granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
+                    result[row] = granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
 
                 rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
             }

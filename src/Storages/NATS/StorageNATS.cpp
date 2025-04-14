@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionActions.h>
@@ -50,7 +51,6 @@ namespace NATSSetting
     extern const NATSSettingsString nats_format;
     extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
     extern const NATSSettingsUInt64 nats_max_block_size;
-    extern const NATSSettingsUInt64 nats_max_reconnect;
     extern const NATSSettingsUInt64 nats_max_rows_per_message;
     extern const NATSSettingsUInt64 nats_num_consumers;
     extern const NATSSettingsString nats_password;
@@ -96,7 +96,7 @@ StorageNATS::StorageNATS(
     , schema_name(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_schema]))
     , num_consumers((*nats_settings)[NATSSetting::nats_num_consumers].value)
     , max_rows_per_message((*nats_settings)[NATSSetting::nats_max_rows_per_message])
-    , log(getLogger("StorageNATS (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageNATS (" + table_id_.getFullTableName() + ")"))
     , event_handler(log)
     , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
@@ -131,11 +131,26 @@ StorageNATS::StorageNATS(
 
     event_loop_thread = std::make_unique<ThreadFromGlobalPool>([this] { event_handler.runLoop(); });
 
+    try
+    {
+        createConsumersConnection();
+    }
+    catch (...)
+    {
+        if (throw_on_startup_failure)
+        {
+            stopEventLoop();
+            throw;
+        }
+
+        tryLogCurrentException(log);
+    }
+
     streaming_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSStreamingTask", [this] { streamingToViewsFunc(); });
     streaming_task->deactivate();
 
-    subscribe_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSSubscribeConsumersTask", [this] { subscribeConsumersFunc(); });
-    subscribe_consumers_task->deactivate();
+    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
+    initialize_consumers_task->deactivate();
 }
 StorageNATS::~StorageNATS()
 {
@@ -222,44 +237,52 @@ void StorageNATS::stopEventLoop()
     LOG_TRACE(log, "Event loop thread finished in {} ms.", watch.elapsedMilliseconds());
 }
 
-void StorageNATS::incrementReader()
-{
-    ++readers_count;
-}
-
-
-void StorageNATS::decrementReader()
-{
-    --readers_count;
-}
-
-
-void StorageNATS::subscribeConsumersFunc()
+void StorageNATS::initializeConsumersFunc()
 {
     if (consumers_ready)
         return;
 
-    if (!consumers_connection)
+    try
     {
-        try
-        {
-            createConsumers();
-        }
-        catch (...)
-        {
-            subscribe_consumers_task->scheduleAfter(RESCHEDULE_MS);
-            return;
-        }
+        createConsumersConnection();
+        createConsumers();
+    }
+    catch (...)
+    {
+        initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
+        return;
     }
 
+    size_t num_views = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
+    if (num_views == 0)
+    {
+        initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
+        return;
+    }
+    mv_attached.store(true);
+
     if (!subscribeConsumers())
-        subscribe_consumers_task->scheduleAfter(RESCHEDULE_MS);
+    {
+        initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
+        return;
+    }
+
+    streaming_task->activateAndSchedule();
+}
+
+void StorageNATS::createConsumersConnection()
+{
+    if (consumers_connection)
+        return;
+
+    auto connect_future = event_handler.createConnection(configuration);
+    consumers_connection = connect_future.get();
 }
 
 void StorageNATS::createConsumers()
 {
-    auto connect_future = event_handler.createConnection(configuration);
-    consumers_connection = connect_future.get();
+    if (num_created_consumers != 0)
+        return;
 
     for (size_t i = 0; i < num_consumers; ++i)
     {
@@ -274,9 +297,10 @@ void StorageNATS::createConsumers()
         }
     }
 }
+
 bool StorageNATS::subscribeConsumers()
 {
-    std::unique_lock lock(consumers_mutex);
+    std::lock_guard lock(consumers_mutex);
     size_t num_initialized = 0;
     for (auto & consumer : consumers)
     {
@@ -291,15 +315,21 @@ bool StorageNATS::subscribeConsumers()
             break;
         }
     }
-    lock.unlock();
 
     const bool are_consumers_initialized = num_initialized == num_created_consumers;
     if (are_consumers_initialized)
-    {
         consumers_ready.store(true);
-        streaming_task->activateAndSchedule();
-    }
+
     return are_consumers_initialized;
+}
+
+void StorageNATS::unsubscribeConsumers()
+{
+    std::lock_guard lock(consumers_mutex);
+    for (auto & consumer : consumers)
+        consumer->unsubscribe();
+
+    consumers_ready.store(false);
 }
 
 
@@ -331,11 +361,8 @@ void StorageNATS::read(
         size_t /* max_block_size */,
         size_t /* num_streams */)
 {
-    if (!consumers_ready)
-        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "NATS consumers setup not finished. Connection might be lost");
-
-    if (num_created_consumers == 0)
-        return;
+    if (!consumers_connection || num_created_consumers == 0)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "NATS consumers setup not finished. Connection might be not established");
 
     if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
         throw Exception(
@@ -347,9 +374,7 @@ void StorageNATS::read(
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
 
-    if (!consumers_connection)
-        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "No connection to NATS server");
-    else if (!consumers_connection->isConnected())
+    if (!consumers_connection->isConnected())
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "No connection to {}", consumers_connection->connectionInfoForLog());
 
     Pipes pipes;
@@ -427,23 +452,7 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
 
 void StorageNATS::startup()
 {
-    try
-    {
-        createConsumers();
-    }
-    catch (...)
-    {
-        if (throw_on_startup_failure)
-        {
-            stopEventLoop();
-            throw;
-        }
-
-        tryLogCurrentException(log);
-    }
-
-    if (!consumers_connection || !subscribeConsumers())
-        subscribe_consumers_task->activateAndSchedule();
+    initialize_consumers_task->activateAndSchedule();
 }
 
 
@@ -456,17 +465,13 @@ void StorageNATS::shutdown(bool /* is_drop */)
     deactivateTask(streaming_task);
 
     /// In case it has not yet been able to setup connection;
-    deactivateTask(subscribe_consumers_task);
+    deactivateTask(initialize_consumers_task);
 
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
         if (drop_table)
-        {
-            std::lock_guard lock(consumers_mutex);
-            for (auto & consumer : consumers)
-                consumer->unsubscribe();
-        }
+            unsubscribeConsumers();
 
         if (consumers_connection)
         {
@@ -600,15 +605,13 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
 
 void StorageNATS::streamingToViewsFunc()
 {
-    bool do_reschedule_with_delay = false;
+    auto table_id = getStorageID();
+
+    bool consumers_queues_are_empty = false;
+
     try
     {
-        auto table_id = getStorageID();
-
-        // Check if at least one direct dependency is attached
-        size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-
-        if (num_views && consumers_connection && consumers_connection->isConnected())
+        if (consumers_connection && consumers_connection->isConnected())
         {
             auto start_time = std::chrono::steady_clock::now();
 
@@ -620,12 +623,12 @@ void StorageNATS::streamingToViewsFunc()
                 if (!checkDependencies(table_id))
                     break;
 
-                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+                LOG_DEBUG(log, "Started streaming to attached views");
 
                 if (streamToViews())
                 {
                     /// Reschedule with backoff.
-                    do_reschedule_with_delay = true;
+                    consumers_queues_are_empty = true;
                     break;
                 }
 
@@ -634,7 +637,7 @@ void StorageNATS::streamingToViewsFunc()
                 if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
                 {
                     LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded");
-                    do_reschedule_with_delay = false;
+                    consumers_queues_are_empty = false;
                     break;
                 }
             }
@@ -645,15 +648,30 @@ void StorageNATS::streamingToViewsFunc()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    mv_attached.store(false);
+    if (shutdown_called)
+        return;
 
-    if (!shutdown_called)
+    size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+    if (num_views != 0)
     {
-        if (do_reschedule_with_delay)
+        if (consumers_queues_are_empty)
             streaming_task->scheduleAfter(RESCHEDULE_MS);
         else
             streaming_task->schedule();
+
+        return;
     }
+    else if (consumers_ready)
+        unsubscribeConsumers();
+
+    if (!consumers_queues_are_empty)
+    {
+        streaming_task->schedule();
+        return;
+    }
+
+    initialize_consumers_task->schedule();
+    mv_attached.store(false);
 }
 
 
@@ -692,7 +710,6 @@ bool StorageNATS::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        LOG_DEBUG(log, "Current queue[{}] size: {}", i, consumers[i]->queueSize());
         auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
         sources.emplace_back(source);
         pipes.emplace_back(source);

@@ -35,13 +35,13 @@ Columns:
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.kafka_consumers
 FORMAT Vertical
 ```
 
-``` text
+```text
 Row 1:
 ──────
 database:                   test

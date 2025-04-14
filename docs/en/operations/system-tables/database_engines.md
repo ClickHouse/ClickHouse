@@ -14,13 +14,13 @@ This table contains the following columns (the column type is shown in brackets)
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.database_engines
 WHERE name in ('Atomic', 'Lazy', 'Ordinary')
 ```
 
-``` text
+```text
 ┌─name─────┐
 │ Ordinary │
 │ Atomic   │

@@ -12,6 +12,8 @@ namespace DB
 {
 
 class Context;
+struct AlterCommand;
+
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
@@ -85,6 +87,8 @@ public:
     static fs::path getDetachedPermanentlyFlagPath(const String & table_metadata_path);
 
     void removeDetachedTableInfo(const StorageID & table_id);
+    
+    void alterDatabaseComment(const AlterCommand & alter_command) override;
 
 protected:
     static constexpr const char * create_suffix = ".tmp";
