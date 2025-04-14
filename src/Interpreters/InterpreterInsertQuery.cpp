@@ -768,55 +768,33 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr>
 InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table)
 {
-    auto context_ptr = getContext();
-    const Settings & settings = context_ptr->getSettingsRef();
+    ContextPtr context_ptr = getContext();
 
-    bool is_trivial_insert_select = false;
+    // const Settings & settings = context_ptr->getSettingsRef();
+    // chassert(isTrivialSelect(query.select));
+    // /** When doing trivial INSERT INTO ... SELECT ... FROM table,
+    //         * don't need to process SELECT with more than max_insert_threads
+    //         * and it's reasonable to set block size for SELECT to the desired block size for INSERT
+    //         * to avoid unnecessary squashing.
+    //         */
+    //
+    // Settings new_settings = context_ptr->getSettingsCopy();
+    //
+    // new_settings[Setting::max_threads] = std::max<UInt64>(1, settings[Setting::max_insert_threads] + 1);
+    //
+    // if (table->prefersLargeBlocks())
+    // {
+    //     if (settings[Setting::min_insert_block_size_rows])
+    //         new_settings[Setting::max_block_size] = settings[Setting::min_insert_block_size_rows];
+    //     if (settings[Setting::min_insert_block_size_bytes])
+    //         new_settings[Setting::preferred_block_size_bytes] = settings[Setting::min_insert_block_size_bytes];
+    // }
+    //
+    // auto context_for_trivial_select = Context::createCopy(context);
+    // context_for_trivial_select->setSettings(new_settings);
+    // context_for_trivial_select->setInsertionTable(context_ptr->getInsertionTable(), context_ptr->getInsertionTableColumnNames());
 
-    if (settings[Setting::optimize_trivial_insert_select])
-    {
-        const auto & select_query = query.select->as<ASTSelectWithUnionQuery &>();
-        const auto & selects = select_query.list_of_selects->children;
-        const auto & union_modes = select_query.list_of_modes;
-
-        /// ASTSelectWithUnionQuery is not normalized now, so it may pass some queries which can be Trivial select queries
-        const auto mode_is_all = [](const auto & mode) { return mode == SelectUnionMode::UNION_ALL; };
-
-        is_trivial_insert_select =
-            std::all_of(union_modes.begin(), union_modes.end(), std::move(mode_is_all))
-            && std::all_of(selects.begin(), selects.end(), isTrivialSelect);
-    }
-
-    ContextPtr select_context = context_ptr;
-
-    if (is_trivial_insert_select)
-    {
-        /** When doing trivial INSERT INTO ... SELECT ... FROM table,
-            * don't need to process SELECT with more than max_insert_threads
-            * and it's reasonable to set block size for SELECT to the desired block size for INSERT
-            * to avoid unnecessary squashing.
-            */
-
-        Settings new_settings = select_context->getSettingsCopy();
-
-        new_settings[Setting::max_threads] = std::max<UInt64>(1, settings[Setting::max_insert_threads]);
-
-        if (table->prefersLargeBlocks())
-        {
-            if (settings[Setting::min_insert_block_size_rows])
-                new_settings[Setting::max_block_size] = settings[Setting::min_insert_block_size_rows];
-            if (settings[Setting::min_insert_block_size_bytes])
-                new_settings[Setting::preferred_block_size_bytes] = settings[Setting::min_insert_block_size_bytes];
-        }
-
-        auto context_for_trivial_select = Context::createCopy(context);
-        context_for_trivial_select->setSettings(new_settings);
-        context_for_trivial_select->setInsertionTable(context_ptr->getInsertionTable(), context_ptr->getInsertionTableColumnNames());
-
-        select_context = context_for_trivial_select;
-    }
-
-    auto [pipeline_builder, coordinator] = getSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
+    auto [pipeline_builder, coordinator] = getSelectPipelineForInserSelectWithParallelReplicas(query.select, context_ptr);
     auto local_pipeline = addInsertToSelectPipeline(query, table, pipeline_builder);
     return {std::move(local_pipeline), coordinator};
 }
