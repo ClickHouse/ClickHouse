@@ -20,7 +20,7 @@ bool DisjointPartsRangesSet::BoundariesComparator::operator()(const PartsIterato
 
 bool DisjointPartsRangesSet::isDisjoint(const PartsRangeBoundaries & lhs, const PartsRangeBoundaries & rhs)
 {
-    return lhs.range_end < rhs.range_begin || rhs.range_end < lhs.range_begin;
+    return lhs.range_end <= rhs.range_begin || rhs.range_end <= lhs.range_begin;
 }
 
 bool DisjointPartsRangesSet::isDisjoint(const PartsRangeBoundaries & boundaries, const SortedPartsRanges & sorted_ranges)
@@ -41,14 +41,12 @@ bool DisjointPartsRangesSet::isDisjoint(const PartsRangeBoundaries & boundaries,
 bool DisjointPartsRangesSet::isCovered(const PartsIterator & part_it, const SortedPartsRanges & sorted_ranges)
 {
     auto it = sorted_ranges.upper_bound(part_it);
-
     if (it == sorted_ranges.begin())
-        return true;
+        return false;
 
     const auto & [range_begin, range_end] = *std::prev(it);
-    return range_begin <= part_it && part_it <= range_end;
+    return range_begin <= part_it && part_it < range_end;
 }
-
 
 bool DisjointPartsRangesSet::isCovered(RangesIterator range_it, PartsIterator part_it) const
 {
@@ -62,6 +60,7 @@ bool DisjointPartsRangesSet::isCovered(RangesIterator range_it, PartsIterator pa
 
 bool DisjointPartsRangesSet::addRangeIfPossible(RangesIterator range_it, PartsIterator range_begin, PartsIterator range_end)
 {
+    chassert(range_begin != range_end);
     auto & sorted_ranges = disjoint[range_it.base()];
     PartsRangeBoundaries range_boundaries{std::move(range_begin), std::move(range_end)};
 

@@ -37,7 +37,7 @@ public:
     /// Check that specific point inside range is covered.
     bool isCovered(RangesIterator range_it, PartsIterator part_it) const;
 
-    /// Updates disjoint set for range_it range with [range_being, range_end].
+    /// Updates disjoint set for range_it range with [range_being, range_end).
     bool addRangeIfPossible(RangesIterator range_it, PartsIterator range_begin, PartsIterator range_end);
 
 private:
