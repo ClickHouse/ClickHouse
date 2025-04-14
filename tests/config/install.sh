@@ -41,15 +41,20 @@ function check_clickhouse_version()
     fi
 }
 
+function is_fast_build()
+{
+    return $(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
+}
+
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
 
 mkdir -p $DEST_SERVER_PATH/config.d/
 mkdir -p $DEST_SERVER_PATH/users.d/
 mkdir -p $DEST_CLIENT_PATH
 
-### WHEN ADDING A NEW CONFIG OR CHANGING THE EXISTING ONE,
-### YOU SHOULD CHECK CLICKHOUSE VERSION SO THAT YOU WON'T
-### BREAK VALIDATIONS USING PREVIOUS CH VERSION (LIKE BUGFIX VALIDATION).
+# When adding a new config or changing the existing one,
+# you should check clickhouse version so that you won't
+# break validations using previous ClickHouse version (like bugfix validation).
 
 ln -sf $SRC_PATH/config.d/tmp.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_write.xml $DEST_SERVER_PATH/config.d/
@@ -136,6 +141,9 @@ ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
+if [[ $(is_fast_build) == 1 ]]; then
+    ln -sf $SRC_PATH/users.d/limits_fast.yaml $DEST_SERVER_PATH/users.d/
+fi
 if check_clickhouse_version 25.4; then
     ln -sf $SRC_PATH/users.d/max_cpu_load.xml $DEST_SERVER_PATH/users.d/
 fi

@@ -20,8 +20,6 @@ profiles:
     max_bytes_to_sort: 10G
     max_result_rows: 1G
     max_result_bytes: 1G
-    max_execution_time: 60
-    max_execution_time_leaf: 60
     max_execution_speed: 100G
     max_execution_speed_bytes: 10T
     timeout_before_checking_execution_speed: 300
