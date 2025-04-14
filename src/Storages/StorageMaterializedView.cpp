@@ -928,6 +928,25 @@ void StorageMaterializedView::updateTargetTableId(std::optional<String> database
         target_table_id.table_name = *std::move(table_name);
 }
 
+std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
+{
+    auto table = tryGetTargetTable();
+    if (!table)
+        return std::nullopt;
+
+    auto view_columns = getInMemoryMetadata().getColumns().getAll();
+    auto target_table_columns = table->getInMemoryMetadata().getColumns();
+    NameSet supported_columns;
+    for (const auto & [name, type] : view_columns)
+    {
+        auto target_column = target_table_columns.tryGetColumn(GetColumnsOptions::All, name);
+        if (target_column && target_column->type->equals(*type))
+            supported_columns.insert(name);
+    }
+
+    return supported_columns;
+}
+
 void registerStorageMaterializedView(StorageFactory & factory)
 {
     factory.registerStorage("MaterializedView", [](const StorageFactory::Arguments & args)

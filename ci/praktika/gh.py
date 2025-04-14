@@ -121,7 +121,7 @@ class GH:
         except Exception:
             print("ERROR: Failed to get PR data")
             traceback.print_exc()
-            Info().store_exception_traceback()
+            Info().store_traceback()
             return "", "", []
         return title, body, labels
 

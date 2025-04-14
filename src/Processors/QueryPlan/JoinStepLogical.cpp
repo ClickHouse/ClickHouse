@@ -112,9 +112,9 @@ JoinStepLogical::JoinStepLogical(
     : expression_actions(std::move(join_expression_actions_))
     , join_info(std::move(join_info_))
     , required_output_columns(std::move(required_output_columns_))
-    , use_nulls(use_nulls_) // query_context_->getSettingsRef()[Setting::join_use_nulls])
-    , join_settings(std::move(join_settings_)) // JoinSettings::create(query_context_->getSettingsRef()))
-    , sorting_settings(std::move(sorting_settings_)) //*query_context_)
+    , use_nulls(use_nulls_)
+    , join_settings(std::move(join_settings_))
+    , sorting_settings(std::move(sorting_settings_))
 {
     updateInputHeaders({left_header_, right_header_});
 }

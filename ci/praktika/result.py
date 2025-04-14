@@ -1,16 +1,19 @@
 import copy
 import dataclasses
 import datetime
+import io
 import json
 import random
 import sys
 import time
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
-from .s3 import S3, StorageUsage
+from .s3 import S3
 from .settings import Settings
+from .usage import ComputeUsage, StorageUsage
 from .utils import ContextManager, MetaClasses, Shell, Utils
 
 
@@ -44,6 +47,11 @@ class Result(MetaClasses.Serializable):
         RUNNING = "running"
         ERROR = "error"
 
+    class Label:
+        NOT_REQUIRED = "not required"
+        FLAKY = "flaky"
+        BROKEN = "broken"
+
     name: str
     status: str
     start_time: Optional[float] = None
@@ -63,6 +71,7 @@ class Result(MetaClasses.Serializable):
         files=None,
         info: Union[List[str], str] = "",
         with_info_from_results=False,
+        links=None,
     ) -> "Result":
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
@@ -120,6 +129,7 @@ class Result(MetaClasses.Serializable):
             info="\n".join(infos) if infos else "",
             results=results or [],
             files=files or [],
+            links=links or [],
         )
 
     @staticmethod
@@ -277,6 +287,14 @@ class Result(MetaClasses.Serializable):
         self.duration = stopwatch.duration
         return self
 
+    def set_label(self, label):
+        if not self.ext["labels"]:
+            self.ext["labels"] = []
+        self.ext["labels"].append(label)
+
+    def set_not_required_label(self):
+        self.set_label(self.Label.NOT_REQUIRED)
+
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
@@ -425,7 +443,13 @@ class Result(MetaClasses.Serializable):
             for command_ in command:
                 if callable(command_):
                     # If command is a Python function, call it with provided arguments
-                    result = command_(*command_args, **command_kwargs)
+                    if with_info:
+                        buffer = io.StringIO()
+                        with redirect_stdout(buffer):
+                            result = command_(*command_args, **command_kwargs)
+                        error_infos = buffer.getvalue()
+                    else:
+                        result = command_(*command_args, **command_kwargs)
                     if isinstance(result, bool):
                         res = result
                     elif result:
@@ -521,15 +545,11 @@ class _ResultS3:
         return url
 
     @classmethod
-    def copy_result_from_s3(cls, local_path, lock=False):
+    def copy_result_from_s3(cls, local_path):
         env = _Environment.get()
         file_name = Path(local_path).name
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{file_name}"
-        # if lock:
-        #     cls.lock(s3_path)
-        if not S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path):
-            print(f"ERROR: failed to cp file [{s3_path}] from s3")
-            raise
+        S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path)
 
     @classmethod
     def copy_result_from_s3_with_version(cls, local_path):
@@ -540,11 +560,9 @@ class _ResultS3:
         for file_path in local_dir.glob(file_name_pattern):
             file_path.unlink()
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
-        if not S3.copy_file_from_s3_matching_pattern(
+        S3.copy_file_from_s3_matching_pattern(
             s3_path=s3_path, local_path=local_dir, include=file_name_pattern
-        ):
-            print(f"ERROR: failed to cp file [{s3_path}] from s3")
-            raise
+        )
         result_files = []
         for file_path in local_dir.glob(file_name_pattern):
             result_files.append(file_path)
@@ -555,7 +573,7 @@ class _ResultS3:
         return version
 
     @classmethod
-    def copy_result_to_s3_with_version(cls, result, version):
+    def copy_result_to_s3_with_version(cls, result, version, no_strict=False):
         result.dump()
         filename = Path(result.file_name()).name
         file_name_versioned = f"{filename}_{str(version).zfill(3)}"
@@ -568,10 +586,13 @@ class _ResultS3:
             s3_path=s3_path_versioned,
             local_path=result.file_name(),
             if_none_matched=True,
+            no_strict=no_strict,
         ):
             print("Failed to put versioned Result")
             return False
-        if not S3.put(s3_path=s3_path, local_path=result.file_name()):
+        if not S3.put(
+            s3_path=s3_path, local_path=result.file_name(), no_strict=no_strict
+        ):
             print("Failed to put non-versioned Result")
         return True
 
@@ -622,15 +643,21 @@ class _ResultS3:
 
     @classmethod
     def update_workflow_results(
-        cls, workflow_name, new_info="", new_sub_results=None, storage_usage=None
+        cls,
+        workflow_name,
+        new_info="",
+        new_sub_results=None,
+        storage_usage=None,
+        compute_usage=None,
     ):
         assert new_info or new_sub_results
 
         attempt = 1
         prev_status = ""
         new_status = ""
-        done = False
-        while attempt < 50:
+        MAX_ATTEMPTS = 50
+
+        while attempt < MAX_ATTEMPTS:
             version = cls.copy_result_from_s3_with_version(
                 Result.file_name_static(workflow_name)
             )
@@ -645,22 +672,31 @@ class _ResultS3:
                     workflow_result.update_sub_result(
                         result_, drop_nested_results=True
                     ).dump()
+            # TODO: consider not accumulating these 2 for reruns:
             if storage_usage:
                 workflow_storage_usage = StorageUsage.from_dict(
                     workflow_result.ext.get("storage_usage", {})
                 ).merge_with(storage_usage)
                 workflow_result.ext["storage_usage"] = workflow_storage_usage
 
+            if compute_usage:
+                workflow_compute_usage = ComputeUsage.from_dict(
+                    workflow_result.ext.get("compute_usage", {})
+                ).merge_with(compute_usage)
+                workflow_result.ext["compute_usage"] = workflow_compute_usage
+
             new_status = workflow_result.status
-            if cls.copy_result_to_s3_with_version(workflow_result, version=version + 1):
-                done = True
+            if cls.copy_result_to_s3_with_version(
+                workflow_result,
+                version=version + 1,
+                no_strict=attempt < MAX_ATTEMPTS - 1,
+            ):
                 break
             print(f"Attempt [{attempt}] to upload workflow result failed")
             attempt += 1
             # random delay (0-2s) to reduce contention and minimize race conditions
             # when multiple concurrent jobs attempt to update the workflow report
             time.sleep(random.uniform(0, 2))
-        assert done
 
         if prev_status != new_status:
             return new_status

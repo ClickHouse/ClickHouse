@@ -38,12 +38,11 @@ function(add_contrib cmake_folder)
     add_subdirectory (${cmake_folder})
 endfunction()
 
-# We need to add OpenSSL first so that all our projects use our own version instead of the system one.
-add_contrib (openssl-cmake openssl)
-
 # Use the original launchers for the projects that are needed for source code generation:
 # protoc and llvm-tlbgen.
 disable_dummy_launchers_if_needed()
+# We need to add OpenSSL first so that all our projects use our own version instead of the system one.
+add_contrib (openssl-cmake openssl)  # Needed for delta-lake
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
