@@ -1530,7 +1530,9 @@ SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_
 SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
 ```
 )", 0) \
-    \
+    DECLARE(Bool, secondary_indices_enable_bulk_filtering, true, R"(
+Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
+)", 0) \
     DECLARE(Float, max_streams_to_max_threads_ratio, 1, R"(
 Allows you to use more sources than the number of threads - to more evenly distribute work across threads. It is assumed that this is a temporary solution since it will be possible in the future to make the number of sources equal to the number of threads, but for each source to dynamically select available work for itself.
 )", 0) \
@@ -4834,6 +4836,16 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, query_condition_cache_store_conditions_as_plaintext, false, R"(
+Stores the filter condition for the [query condition cache](/operations/query-condition-cache) in plaintext.
+If enabled, system.query_condition_cache shows the verbatim filter condition which makes it easier to debug issues with the cache.
+Disabled by default because plaintext filter conditions may expose sensitive information.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0) \
@@ -6468,9 +6480,6 @@ Allow experimental vector similarity index
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_shared_set_join, true, R"(
-Only has an effect in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
-)", EXPERIMENTAL) \
     DECLARE(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", EXPERIMENTAL) \
@@ -6670,6 +6679,7 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, iceberg_engine_ignore_schema_evolution, false) \
     MAKE_OBSOLETE(M, Float, parallel_replicas_single_task_marks_count_multiplier, 2) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_materialized_mysql, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_shared_set_join, true) \
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
