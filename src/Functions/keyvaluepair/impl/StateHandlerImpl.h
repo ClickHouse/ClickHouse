@@ -591,17 +591,19 @@ struct ReferencesOnlyStateHandler : public StateHandlerImpl<false>
      * */
     class StringWriter
     {
-        absl::flat_hash_map<std::string_view, std::string_view> * map = nullptr;
+        static inline absl::flat_hash_map<std::string_view, std::string_view> dummy_map;
+        absl::flat_hash_map<std::string_view, std::string_view> & map;
 
         std::string_view key;
         std::string_view value;
 
     public:
-        explicit StringWriter(absl::flat_hash_map<std::string_view, std::string_view> * map_)
+        explicit StringWriter(absl::flat_hash_map<std::string_view, std::string_view> & map_)
             : map(map_)
         {}
 
         StringWriter(ColumnString &, ColumnString &)
+            : map(dummy_map)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Constructor should never be called");
         }
@@ -671,13 +673,13 @@ struct ReferencesOnlyStateHandler : public StateHandlerImpl<false>
         {
             if constexpr (throwOnDuplicate)
             {
-                if (const auto it = map->find(key); it != map->end() && it->second != value)
+                if (const auto it = map.find(key); it != map.end() && it->second != value)
                 {
                     throw DuplicateFoundException(key, it->second, value);
                 }
             }
 
-            map->insert(std::make_pair(key, value));
+            map[key] = value;
 
             resetValue();
             resetKey();

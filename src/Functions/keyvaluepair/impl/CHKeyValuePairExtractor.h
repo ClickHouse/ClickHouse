@@ -36,7 +36,7 @@ public:
     {
         auto state =  State::WAITING_KEY;
 
-        auto pair_writer = typename StateHandler::StringWriter(&map);
+        auto pair_writer = typename StateHandler::StringWriter(map);
 
         uint64_t row_offset = 0;
 
