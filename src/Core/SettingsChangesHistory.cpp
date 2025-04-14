@@ -68,8 +68,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.5",
         {
-            {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"allow_experimental_drop_detached_table", true, false, "Enable drop detach table."},
+            {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
