@@ -87,7 +87,7 @@ public:
     static fs::path getDetachedPermanentlyFlagPath(const String & table_metadata_path);
 
     void removeDetachedTableInfo(const StorageID & table_id);
-    
+
     void alterDatabaseComment(const AlterCommand & alter_command) override;
 
 protected:

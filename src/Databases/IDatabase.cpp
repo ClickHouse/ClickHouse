@@ -165,6 +165,11 @@ StoragePtr IDatabase::detachTable(ContextPtr /* context */, const String & /*nam
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE query for Database{}", getEngineName());
 }
 
+bool IDatabase::isTableDetached(const String & /*table_name*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
 void IDatabase::detachTablePermanently(ContextPtr /*context*/, const String & /*name*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE PERMANENTLY query for Database{}", getEngineName());
