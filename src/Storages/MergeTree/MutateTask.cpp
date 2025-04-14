@@ -16,6 +16,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
@@ -75,6 +76,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
+    extern const MergeTreeSettingsSecondaryIndicesOnColumnsAlter secondary_indices_on_columns_alter;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsUInt64 max_file_name_length;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
@@ -1459,10 +1461,40 @@ private:
         bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
+        bool secondary_indices_on_columns_alter = false;
+        std::unordered_set<String> alter_column_names;
+        if (ctx->commands->size() == 1)
+        {
+            if (auto * alter_cmd = ctx->commands->front().ast->as<ASTAlterCommand>();
+                alter_cmd && alter_cmd->type==ASTAlterCommand::MODIFY_COLUMN)
+            {
+                if (auto * column_declaration = alter_cmd->col_decl->as<ASTColumnDeclaration>())
+                {
+                    alter_column_names.insert(column_declaration->name);
+                    secondary_indices_on_columns_alter = true;
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot parse column declaration of alter command in mutation. It's a bug");
+                }
+            }
+        }
+
+        bool secondary_indices_on_columns_alter_drop = secondary_indices_on_columns_alter
+            && (*ctx->data->getSettings())[MergeTreeSetting::secondary_indices_on_columns_alter] == SecondaryIndicesOnColumnsAlter::DROP;
+
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
         {
             if (removed_indices.contains(idx.name))
+                continue;
+
+            if (secondary_indices_on_columns_alter_drop && 
+                std::any_of(idx.column_names.begin(),
+                            idx.column_names.end(),
+                            [&](String s) { return alter_column_names.contains(s); })
+                )
                 continue;
 
             bool need_recalculate =
