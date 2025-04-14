@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <base/range.h>
