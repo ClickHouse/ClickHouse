@@ -1490,7 +1490,7 @@ private:
             if (removed_indices.contains(idx.name))
                 continue;
 
-            if (secondary_indices_on_columns_alter_drop && 
+            if (secondary_indices_on_columns_alter_drop &&
                 std::any_of(idx.column_names.begin(),
                             idx.column_names.end(),
                             [&](String s) { return alter_column_names.contains(s); })
