@@ -84,7 +84,7 @@ def should_skip_job(job_name):
         )
 
     if Labels.CI_INTEGRATION in _info_cache.pr_labels and (
-        job_name.starts_with(JobNames.INTEGRATION) or job_name in JobConfigs.builds_for_tests
+        job_name.startswith(JobNames.INTEGRATION) or job_name in JobConfigs.builds_for_tests
     ):
         return (
             True,
@@ -92,8 +92,8 @@ def should_skip_job(job_name):
         )
 
     if Labels.CI_FUNCTIONAL in _info_cache.pr_labels and (
-        job_name.starts_with(JobNames.STATELESS)
-        or job_name.starts_with(JobNames.STATEFUL or job_name in JobConfigs.builds_for_tests)
+        job_name.startswith(JobNames.STATELESS)
+        or job_name.startswith(JobNames.STATEFUL or job_name in JobConfigs.builds_for_tests)
     ):
         return (
             True,
