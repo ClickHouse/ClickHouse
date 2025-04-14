@@ -32,11 +32,11 @@ public:
         : state_handler(std::move(state_handler_)), max_number_of_pairs(max_number_of_pairs_)
     {}
 
-    uint64_t extractReferences(std::string_view & data, absl::flat_hash_map<std::string_view, std::string_view> & map)
+    uint64_t extractOnlyReferences(std::string_view & data, absl::flat_hash_map<std::string_view, std::string_view> & map)
     {
         auto state =  State::WAITING_KEY;
 
-        auto pair_writer = typename StateHandler::StringWriter(map);
+        auto pair_writer = extractKV::ReferencesOnlyStateHandler::StringWriter(map);
 
         uint64_t row_offset = 0;
 

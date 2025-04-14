@@ -152,7 +152,7 @@ using HivePartitioningKeysAndValues = absl::flat_hash_map<std::string_view, std:
 static HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path)
 {
     static auto configuration = extractKV::ConfigurationFactory::createWithoutEscaping('=', '"', {'/'});
-    static extractKV::ReferencesOnlyStateHandler<true> state_handler(std::move(configuration));
+    static extractKV::NoEscapingStateHandler state_handler(std::move(configuration));
     static CHKeyValuePairExtractor extractor(state_handler, std::numeric_limits<uint64_t>::max());
 
     HivePartitioningKeysAndValues key_values;
@@ -169,17 +169,7 @@ static HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const St
 
     std::string_view path_without_filename(path.data(), last_slash_pos);
 
-    try
-    {
-        extractor.extractReferences(path_without_filename, key_values);
-    }
-    catch (const extractKV::ReferencesOnlyStateHandler<true>::DuplicateFoundException & duplicate_found_exception)
-    {
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {}, only unique keys are allowed",
-            path,
-            duplicate_found_exception.key);
-    }
+    extractor.extractOnlyReferences(path_without_filename, key_values);
 
     return key_values;
 }
