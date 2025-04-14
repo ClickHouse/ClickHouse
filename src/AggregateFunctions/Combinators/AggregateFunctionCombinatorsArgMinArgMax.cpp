@@ -34,6 +34,7 @@ class AggregateFunctionCombinatorArgMinArgMax final : public IAggregateFunctionH
 
 private:
     AggregateFunctionPtr nested_function;
+    DataTypePtr data_type;
     SerializationPtr serialization;
     const size_t key_col;
     const size_t key_offset;
@@ -52,6 +53,7 @@ public:
     AggregateFunctionCombinatorArgMinArgMax(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
         : IAggregateFunctionHelper<AggregateFunctionCombinatorArgMinArgMax<isMin>>{arguments, params, nested_function_->getResultType()}
         , nested_function{nested_function_}
+        , data_type(arguments.back())
         , serialization(arguments.back()->getDefaultSerialization())
         , key_col{arguments.size() - 1}
         , key_offset{((nested_function->sizeOfData() + alignof(Key) - 1) / alignof(Key)) * alignof(Key)}
@@ -160,7 +162,7 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         nested_function->deserialize(place, buf, version, arena);
-        data(place).data().read(buf, *serialization, arena);
+        data(place).data().read(buf, *serialization, data_type, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override

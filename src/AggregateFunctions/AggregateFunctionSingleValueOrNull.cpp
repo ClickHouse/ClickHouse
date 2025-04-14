@@ -80,7 +80,7 @@ public:
     /// Fixing it requires a breaking change (but it's probably necessary)
     void write(WriteBuffer & buf, const ISerialization & serialization) const { data().write(buf, serialization); }
 
-    void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena) { data().read(buf, serialization, arena); }
+    void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & data_type, Arena * arena) { data().read(buf, serialization, data_type, arena); }
 
     void insertResultInto(IColumn & to, const DataTypePtr & result_type) const
     {
@@ -169,7 +169,7 @@ public:
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        data(place).read(buf, *serialization, arena);
+        data(place).read(buf, *serialization, result_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(value_type_index); }

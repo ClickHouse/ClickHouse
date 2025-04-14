@@ -85,7 +85,9 @@ class AggregateFunctionArgMinMax final
 {
 private:
     const DataTypePtr & type_val;
+    const DataTypePtr data_type_res;
     const SerializationPtr serialization_res;
+    const DataTypePtr data_type_val;
     const SerializationPtr serialization_val;
     const TypeIndex result_type_index;
 
@@ -96,7 +98,9 @@ public:
     explicit AggregateFunctionArgMinMax(const DataTypes & argument_types_)
         : Base(argument_types_, {}, argument_types_[0])
         , type_val(this->argument_types[1])
+        , data_type_res(this->argument_types[0])
         , serialization_res(this->argument_types[0]->getDefaultSerialization())
+        , data_type_val(this->argument_types[1])
         , serialization_val(this->argument_types[1]->getDefaultSerialization())
         , result_type_index(WhichDataType(this->argument_types[0]).idx)
     {
@@ -229,8 +233,8 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).result().read(buf, *serialization_res, arena);
-        this->data(place).value().read(buf, *serialization_val, arena);
+        this->data(place).result().read(buf, *serialization_res, data_type_res, arena);
+        this->data(place).value().read(buf, *serialization_val, data_type_val, arena);
         if (unlikely(this->data(place).value().has() != this->data(place).result().has()))
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,

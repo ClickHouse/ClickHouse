@@ -178,7 +178,7 @@ void SingleValueDataFixed<T>::write(WriteBuffer & buf, const ISerialization &) c
 }
 
 template <typename T>
-void SingleValueDataFixed<T>::read(ReadBuffer & buf, const ISerialization &, Arena *)
+void SingleValueDataFixed<T>::read(ReadBuffer & buf, const ISerialization &, const DataTypePtr &, Arena *)
 {
     readBinary(has_value, buf);
     if (has())
@@ -946,9 +946,9 @@ void SingleValueDataNumeric<T>::write(DB::WriteBuffer & buf, const DB::ISerializ
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::read(DB::ReadBuffer & buf, const DB::ISerialization & serialization, DB::Arena * arena)
+void SingleValueDataNumeric<T>::read(DB::ReadBuffer & buf, const DB::ISerialization & serialization, const DataTypePtr & type, DB::Arena * arena)
 {
-    return memory.get().read(buf, serialization, arena);
+    return memory.get().read(buf, serialization, type, arena);
 }
 
 template <typename T>
@@ -1187,7 +1187,7 @@ void SingleValueDataString::write(WriteBuffer & buf, const ISerialization & /*se
         buf.write(getData(), size);
 }
 
-void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena)
+void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * arena)
 {
     /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
     Int32 rhs_size_signed;
@@ -1314,45 +1314,51 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
 void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
     if (has())
-        to.insert(value);
+        to.insertFrom(*value, 0);
     else
         type->insertDefaultInto(to);
 }
 
 void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization) const
 {
-    if (!value.isNull())
+    if (value)
     {
         writeBinary(true, buf);
-        serialization.serializeBinary(value, buf, {});
+        serialization.serializeBinary(*value, 0, buf, {});
     }
     else
         writeBinary(false, buf);
 }
 
-void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization, Arena *)
+void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena *)
 {
     bool is_not_null;
     readBinary(is_not_null, buf);
 
     if (is_not_null)
-        serialization.deserializeBinary(value, buf, {});
+    {
+        auto new_value = type->createColumn();
+        serialization.deserializeBinary(*new_value, buf, {});
+        value = std::move(new_value);
+    }
 }
 
 bool SingleValueDataGeneric::isEqualTo(const IColumn & column, size_t row_num) const
 {
-    return has() && value == column[row_num];
+    return has() && !column.compareAt(row_num, 0, *value, -1);
 }
 
 bool SingleValueDataGeneric::isEqualTo(const DB::SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
-    return has() && to.has() && to.value == value;
+    return has() && to.has() && !to.value->compareAt(0, 0, *value, -1);
 }
 
 void SingleValueDataGeneric::set(const IColumn & column, size_t row_num, Arena *)
 {
-    column.get(row_num, value);
+    auto new_value = column.cloneEmpty();
+    new_value->insertFrom(column, row_num);
+    value = std::move(new_value);
 }
 
 void SingleValueDataGeneric::set(const SingleValueDataBase & other, Arena *)
@@ -1370,11 +1376,9 @@ bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num
         return true;
     }
 
-    Field new_value;
-    column.get(row_num, new_value);
-    if (new_value < value)
+    if (column.compareAt(row_num, 0, *value, -1) < 0)
     {
-        value = new_value;
+        set(column, row_num, arena);
         return true;
     }
     return false;
@@ -1383,7 +1387,7 @@ bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num
 bool SingleValueDataGeneric::setIfSmaller(const SingleValueDataBase & other, Arena *)
 {
     auto const & to = assert_cast<const Self &>(other);
-    if (to.has() && (!has() || to.value < value))
+    if (to.has() && (!has() || to.value->compareAt(0, 0, *value, -1) < 0))
     {
         value = to.value;
         return true;
@@ -1399,11 +1403,9 @@ bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num
         return true;
     }
 
-    Field new_value;
-    column.get(row_num, new_value);
-    if (new_value > value)
+    if (column.compareAt(row_num, 0, *value, -1) > 0)
     {
-        value = new_value;
+        set(column, row_num, arena);
         return true;
     }
     return false;
@@ -1412,7 +1414,7 @@ bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num
 bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Arena *)
 {
     auto const & to = assert_cast<const Self &>(other);
-    if (to.has() && (!has() || to.value > value))
+    if (to.has() && (!has() || to.value->compareAt(0, 0, *value, -1) > 0))
     {
         value = to.value;
         return true;

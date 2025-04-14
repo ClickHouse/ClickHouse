@@ -88,9 +88,9 @@ public:
         writeBinaryLittleEndian(counter, buf);
     }
 
-    void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena)
+    void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena * arena)
     {
-        data().read(buf, serialization, arena);
+        data().read(buf, serialization, type, arena);
         readBinaryLittleEndian(counter, buf);
     }
 
@@ -138,7 +138,7 @@ public:
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        data(place).read(buf, *serialization, arena);
+        data(place).read(buf, *serialization, result_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(value_type_index); }
