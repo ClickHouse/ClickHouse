@@ -39,3 +39,11 @@ For the default user limit the maximum execution time with half a second in 30 m
 ```sql
 CREATE QUOTA qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
 ```
+
+Further examples, using the xml configuration (not supported in ClickHouse Cloud), can be found in the [Quotas guide](/operations/quotas).
+
+## Related Content {#related-content}
+
+- Blog: [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)
+
+
