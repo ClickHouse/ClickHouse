@@ -1,35 +1,35 @@
-#include <algorithm>
-#include <memory>
-#include <ranges>
-#include <string_view>
 #include <Planner/PlannerCorrelatedSubqueries.h>
-#include <fmt/format.h>
+
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
+
 #include "Common/Exception.h"
-#include "Common/Logger.h"
 #include "Common/logger_useful.h"
+#include "Common/Logger.h"
 #include "Common/typeid_cast.h"
-#include "Analyzer/FunctionNode.h"
-#include "Analyzer/QueryNode.h"
-#include "Analyzer/UnionNode.h"
-#include "Core/Joins.h"
-#include "Core/Settings.h"
-#include "DataTypes/DataTypesNumber.h"
-#include "IO/ReadBufferFromString.h"
-#include "IO/WriteBufferFromString.h"
-#include "Interpreters/ActionsDAG.h"
-#include "Interpreters/JoinInfo.h"
-#include "Planner/Planner.h"
-#include "Planner/PlannerActionsVisitor.h"
-#include "Planner/PlannerContext.h"
-#include "Planner/PlannerJoinsLogical.h"
-#include "Planner/TableExpressionData.h"
-#include "Planner/Utils.h"
-#include "Processors/QueryPlan/AggregatingStep.h"
-#include "Processors/QueryPlan/ExpressionStep.h"
-#include "Processors/QueryPlan/FilterStep.h"
-#include "Processors/QueryPlan/JoinStepLogical.h"
-#include "Processors/QueryPlan/QueryPlan.h"
-#include "base/defines.h"
+
+#include <Core/Joins.h>
+#include <Core/Settings.h>
+
+#include <DataTypes/DataTypesNumber.h>
+
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/JoinInfo.h>
+
+#include <Planner/Planner.h>
+#include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/PlannerJoinsLogical.h>
+#include <Planner/Utils.h>
+
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+
+#include <memory>
+#include <string_view>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -351,9 +351,6 @@ void buildQueryPlanForCorrelatedSubquery(
     auto * query_node = correlated_subquery.query_tree->as<QueryNode>();
     auto * union_node = correlated_subquery.query_tree->as<UnionNode>();
     chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
-    LOG_DEBUG(getLogger(__func__), "Planning:\n{}", correlated_subquery.query_tree->dumpTree());
-
-    LOG_DEBUG(getLogger(__func__), "Correlated Identifiers:\n{}", fmt::join(correlated_subquery.correlated_column_identifiers, ", "));
 
     switch (correlated_subquery.kind)
     {
@@ -366,14 +363,15 @@ void buildQueryPlanForCorrelatedSubquery(
             auto subquery_options = select_query_options.subquery();
             auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
             global_planner_context->collectTableExpressionDataForCorrelatedColumns(correlated_subquery.query_tree, planner_context);
+
             Planner subquery_planner(
                 correlated_subquery.query_tree,
                 subquery_options,
                 global_planner_context);
-
             subquery_planner.buildQueryPlanIfNeeded();
+
+            /// Logical plan for correlated subquery
             auto & correlated_query_plan = subquery_planner.getQueryPlan();
-            LOG_DEBUG(getLogger(__func__), "Correlated subquery plan:\n{}", dumpQueryPlan(correlated_query_plan));
 
             if (optimizeCorrelatedPlanForExists(correlated_query_plan))
             {
@@ -392,14 +390,12 @@ void buildQueryPlanForCorrelatedSubquery(
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
             buildExistsResultExpression(decorrelated_plan, correlated_subquery, /*project_only_correlated_columns=*/true);
-            LOG_DEBUG(getLogger(__func__), "Decorrelated plan for subquery:\n{}", dumpQueryPlan(decorrelated_plan));
 
             query_plan = buildLogicalJoin(
                 planner_context,
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
                 correlated_subquery);
-            LOG_DEBUG(getLogger(__func__), "Decorrelated plan:\n{}", dumpQueryPlan(query_plan));
             break;
         }
     }

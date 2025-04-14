@@ -1,17 +1,16 @@
 #pragma once
 
-#include <optional>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context_fwd.h>
 
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/HashUtils.h>
+#include <Analyzer/IQueryTreeNode.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/WindowDescription.h>
-#include "Analyzer/HashUtils.h"
 
 namespace DB
 {

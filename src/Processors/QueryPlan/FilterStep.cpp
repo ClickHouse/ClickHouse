@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
-#include <memory>
 #include <stack>
 #include <ranges>
 

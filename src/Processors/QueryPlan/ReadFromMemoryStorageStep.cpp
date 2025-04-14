@@ -14,7 +14,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
-#include "Processors/QueryPlan/QueryPlan.h"
 
 namespace DB
 {

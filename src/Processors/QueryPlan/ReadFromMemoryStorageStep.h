@@ -6,7 +6,6 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
-#include "Processors/QueryPlan/IQueryPlanStep.h"
 
 namespace DB
 {

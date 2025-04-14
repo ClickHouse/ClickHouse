@@ -9,6 +9,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/ActionsDAG.h>
 
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -21,7 +22,6 @@
 #include <Storages/SelectQueryInfo.h>
 
 #include <Interpreters/WindowDescription.h>
-#include "Analyzer/HashUtils.h"
 
 namespace DB
 {

@@ -20,7 +20,6 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
-#include "base/defines.h"
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Columns/ColumnSet.h>

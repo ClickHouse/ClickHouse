@@ -3,7 +3,8 @@
 #include <memory>
 #include <string_view>
 #include <vector>
-#include "Processors/QueryPlan/QueryPlan.h"
+
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
