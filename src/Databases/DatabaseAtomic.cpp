@@ -634,7 +634,7 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
             if (db_disk->isSymlinkNoThrow(path_to_metadata_symlink))
                 db_disk->removeFileIfExists(path_to_metadata_symlink);
 
-            String symlink = fs::proximate(metadata_path, path_to_metadata_symlink.parent_path());
+            String symlink = fs::proximate(root_path / metadata_path, path_to_metadata_symlink.parent_path());
 
             LOG_TEST(log, "Creating directory symlink, path_to_metadata_symlink: {}, metadata_path: {}, symlink content: {}", path_to_metadata_symlink, metadata_path, symlink);
             db_disk->createDirectorySymlink(symlink, path_to_metadata_symlink);
