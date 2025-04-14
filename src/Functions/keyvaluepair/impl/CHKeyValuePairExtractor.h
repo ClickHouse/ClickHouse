@@ -34,32 +34,9 @@ public:
 
     uint64_t extractOnlyReferences(std::string_view & data, absl::flat_hash_map<std::string_view, std::string_view> & map)
     {
-        auto state =  State::WAITING_KEY;
-
         auto pair_writer = typename StateHandler::StringWriter(nullptr, nullptr, &map);
 
-        uint64_t row_offset = 0;
-
-        while (state != State::END)
-        {
-            auto next_state = processState(data, state, pair_writer, row_offset);
-
-            if (next_state.position_in_string > data.size() && next_state.state != State::END)
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Attempt to move read pointer past end of available data, from state {} to new state: {}, new position: {}, available data: {}",
-                        magic_enum::enum_name(state), magic_enum::enum_name(next_state.state),
-                        next_state.position_in_string, data.size());
-            }
-
-            data.remove_prefix(next_state.position_in_string);
-            state = next_state.state;
-        }
-
-        // below reset discards invalid keys and values
-        reset(pair_writer);
-
-        return row_offset;
+        return extract(data, pair_writer);
     }
 
     uint64_t extract(const std::string & data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
@@ -69,9 +46,15 @@ public:
 
     uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
     {
-        auto state =  State::WAITING_KEY;
-
         auto pair_writer = typename StateHandler::StringWriter(keys.get(), values.get(), nullptr);
+        return extract(data, pair_writer);
+    }
+
+private:
+
+    uint64_t extract(std::string_view data, auto & pair_writer)
+    {
+        auto state =  State::WAITING_KEY;
 
         uint64_t row_offset = 0;
 
@@ -96,8 +79,6 @@ public:
 
         return row_offset;
     }
-
-private:
 
     NextState processState(std::string_view file, State state, auto & pair_writer, uint64_t & row_offset)
     {
