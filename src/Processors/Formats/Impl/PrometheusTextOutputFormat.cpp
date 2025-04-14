@@ -12,10 +12,8 @@
 #include <Columns/IColumn.h>
 
 #include <Common/assert_cast.h>
+#include "DataTypes/IDataType.h"
 
-#include <Core/Field.h>
-
-#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -28,8 +26,6 @@
 #include <IO/readFloatText.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-
-#include <Processors/Port.h>
 
 
 namespace DB

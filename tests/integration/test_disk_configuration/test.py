@@ -4,8 +4,6 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import minio_secret_key
-from minio.deleteobjects import DeleteObject
 
 cluster = ClickHouseCluster(__file__)
 
@@ -19,13 +17,8 @@ def start_cluster():
             "node1",
             main_configs=[
                 "configs/config.d/storage_configuration.xml",
-                "configs/config.d/include_from_path.xml",
-                "configs/config.d/include_from.xml",
                 "configs/config.d/remote_servers.xml",
             ],
-            env_variables={
-                "MINIO_SECRET": minio_secret_key,
-            },
             with_zookeeper=True,
             stay_alive=True,
             with_minio=True,
@@ -35,8 +28,6 @@ def start_cluster():
             "node2",
             main_configs=[
                 "configs/config.d/storage_configuration.xml",
-                "configs/config.d/include_from_path.xml",
-                "configs/config.d/include_from.xml",
                 "configs/config.d/remote_servers.xml",
             ],
             with_zookeeper=True,
@@ -60,25 +51,6 @@ def start_cluster():
 
     finally:
         cluster.shutdown()
-
-
-def remove_minio_objects(minio, path: str):
-    retry_count = 3
-    remaining_files = map(
-        lambda x: DeleteObject(x.object_name),
-        minio.list_objects(cluster.minio_bucket, path, recursive=True),
-    )
-    while len(list(remaining_files)) > 0 and retry_count > 0:
-        errors = minio.remove_objects(cluster.minio_bucket, remaining_files)
-        for error in errors:
-            logging.error(f"error occurred when deleting minio object: {error}")
-
-        remaining_files = map(
-            lambda x: DeleteObject(x.object_name),
-            minio.list_objects(cluster.minio_bucket, path, recursive=True),
-        )
-        retry_count -= 1
-    assert len(list(remaining_files)) == 0, remaining_files
 
 
 def test_merge_tree_disk_setting(start_cluster):
@@ -160,21 +132,14 @@ def test_merge_tree_disk_setting(start_cluster):
     node1.query(f"DROP TABLE {TABLE_NAME} SYNC")
     node1.query(f"DROP TABLE {TABLE_NAME}_2 SYNC")
 
-    remove_minio_objects(minio, "data/")
+    for obj in list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)):
+        minio.remove_object(cluster.minio_bucket, obj.object_name)
 
 
 def test_merge_tree_custom_disk_setting(start_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    zk_client = start_cluster.get_kazoo_client("zoo1")
-
-    if not zk_client.exists("/minio"):
-        zk_client.create("/minio")
-    if not zk_client.exists("/minio/access_key_id"):
-        zk_client.create("/minio/access_key_id")
-
-    zk_client.set("/minio/access_key_id", b"minio")
     node1.query(
         f"""
         DROP TABLE IF EXISTS {TABLE_NAME};
@@ -184,9 +149,9 @@ def test_merge_tree_custom_disk_setting(start_cluster):
         SETTINGS
             disk = disk(
                 type=s3,
-                include = 'include_endpoint',
-                access_key_id = 'from_zk /minio/access_key_id',
-                secret_access_key='from_env MINIO_SECRET');
+                endpoint='http://minio1:9001/root/data/',
+                access_key_id='minio',
+                secret_access_key='minio123');
     """
     )
 
@@ -215,7 +180,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
                 type=s3,
                 endpoint='http://minio1:9001/root/data/',
                 access_key_id='minio',
-                secret_access_key='{minio_secret_key}');
+                secret_access_key='minio123');
     """
     )
 
@@ -229,7 +194,8 @@ def test_merge_tree_custom_disk_setting(start_cluster):
 
     # Check that data for a disk with a different path was created on the different path
 
-    remove_minio_objects(minio, "data2/")
+    for obj in list(minio.list_objects(cluster.minio_bucket, "data2/", recursive=True)):
+        minio.remove_object(cluster.minio_bucket, obj.object_name)
 
     node1.query(
         f"""
@@ -242,7 +208,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
                 type=s3,
                 endpoint='http://minio1:9001/root/data2/',
                 access_key_id='minio',
-                secret_access_key='{minio_secret_key}');
+                secret_access_key='minio123');
     """
     )
 
@@ -303,7 +269,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
                 type=s3,
                 endpoint='http://minio1:9001/root/data2/',
                 access_key_id='minio',
-                secret_access_key='{minio_secret_key}');
+                secret_access_key='minio123');
     """
     )
 
@@ -351,7 +317,13 @@ def test_merge_tree_nested_custom_disk_setting(start_cluster):
     node = cluster.instances["node1"]
 
     minio = cluster.minio_client
-    remove_minio_objects(minio, "data/")
+    for obj in list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)):
+        minio.remove_object(cluster.minio_bucket, obj.object_name)
+
+    remaining_files = list(
+        minio.list_objects(cluster.minio_bucket, "data/", recursive=True)
+    )
+    assert len(remaining_files) == 0, remaining_files
 
     node.query(
         f"""
@@ -366,7 +338,7 @@ def test_merge_tree_nested_custom_disk_setting(start_cluster):
                     type=s3,
                     endpoint='http://minio1:9001/root/data/',
                     access_key_id='minio',
-                    secret_access_key='{minio_secret_key}'));
+                    secret_access_key='minio123'));
     """
     )
 
@@ -497,7 +469,7 @@ def test_merge_tree_setting_override(start_cluster):
                 type=s3,
                 endpoint='http://minio1:9001/root/data/',
                 access_key_id='minio',
-                secret_access_key='{minio_secret_key}');
+                secret_access_key='minio123');
     """
     )
 

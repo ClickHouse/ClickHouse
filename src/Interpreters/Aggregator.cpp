@@ -11,7 +11,6 @@
 
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
-#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -338,17 +337,7 @@ ColumnRawPtrs Aggregator::Params::makeRawKeyColumns(const Block & block) const
     ColumnRawPtrs key_columns(keys_size);
 
     for (size_t i = 0; i < keys_size; ++i)
-    {
-#ifdef DEBUG_OR_SANITIZER_BUILD
-        if (block.getPositionByName(keys[i]) != i)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Wrong key in block [{}] at position {}, expected keys: [{}]",
-                block.dumpStructure(), i, fmt::join(keys, ", "));
-        }
-#endif
         key_columns[i] = block.safeGetByPosition(i).column.get();
-    }
 
     return key_columns;
 }
@@ -2078,7 +2067,7 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
     data.forEachValue(
         [&](const auto & key, auto & mapped)
         {
-            if (unlikely(!out_cols.has_value()))
+            if (!out_cols.has_value())
                 init_out_cols();
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
@@ -2333,8 +2322,15 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 
     std::atomic<UInt32> next_bucket_to_merge = 0;
 
-    auto converter = [&](size_t thread_id)
+    auto converter = [&](size_t thread_id, ThreadGroupPtr thread_group)
     {
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachFromGroupIfNotDetached();
+        );
+        if (thread_group)
+            CurrentThread::attachToGroupIfDetached(thread_group);
+
         BlocksList blocks;
         while (true)
         {
@@ -2362,14 +2358,10 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
         {
             tasks[thread_id] = std::packaged_task<BlocksList()>(
-                [thread_id, &converter] { return converter(thread_id); });
+                [group = CurrentThread::getGroup(), thread_id, &converter] { return converter(thread_id, group); });
 
             if (thread_pool)
-                thread_pool->scheduleOrThrowOnError([thread_id, &tasks, thread_group = CurrentThread::getGroup()]
-                    {
-                        ThreadGroupSwitcher switcher(thread_group, "");
-                        tasks[thread_id]();
-                    });
+                thread_pool->scheduleOrThrowOnError([thread_id, &tasks] { tasks[thread_id](); });
             else
                 tasks[thread_id]();
         }
@@ -2850,11 +2842,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     {
         for (size_t i = row_begin; i < row_end; i++)
         {
-            /// clang-tidy complains wrongly about this one when running the analysis from an ARM host.
-            /// The same thing does not fail when cross-compiling from a x86_64 host.
-            /// Furthermore, arena_for_keys is set to be a pointer to the last member of aggregates_pools,
-            /// which is always initialized to have at least 1 arena.
-            auto emplace_result = state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
+            auto emplace_result = state.emplaceKey(data, i, *arena_for_keys);
             if (!emplace_result.isInserted())
                 places[i] = emplace_result.getMapped();
             else
@@ -2893,7 +2881,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     Arena * arena_for_keys) const
 {
     const AggregateColumnsConstData & aggregate_columns_data = params.makeAggregateColumnsData(block);
-    ColumnRawPtrs key_columns = params.makeRawKeyColumns(block);
+    const ColumnRawPtrs & key_columns = params.makeRawKeyColumns(block);
 
     mergeStreamsImpl<Method, Table>(
         aggregates_pool, method, data, overflow_row, consecutive_keys_cache_stats,
@@ -3099,8 +3087,15 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool)
+        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupPtr thread_group)
         {
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachFromGroupIfNotDetached();
+            );
+            if (thread_group)
+                CurrentThread::attachToGroupIfDetached(thread_group);
+
             for (Block & block : bucket_to_blocks[bucket])
             {
                 /// Copy to avoid race.
@@ -3135,14 +3130,15 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             result.aggregates_pools.push_back(std::make_shared<Arena>());
             Arena * aggregates_pool = result.aggregates_pools.back().get();
 
+            /// if we don't use thread pool we don't need to attach and definitely don't want to detach from the thread group
+            /// because this thread is already attached
+            auto task = [group = thread_pool != nullptr ? CurrentThread::getGroup() : nullptr, bucket, &merge_bucket, aggregates_pool]
+            { merge_bucket(bucket, aggregates_pool, group); };
+
             if (thread_pool)
-                thread_pool->scheduleOrThrowOnError([bucket, &merge_bucket, aggregates_pool, thread_group = CurrentThread::getGroup()]
-                {
-                    ThreadGroupSwitcher switcher(thread_group, "");
-                    merge_bucket(bucket, aggregates_pool);
-                });
+                thread_pool->scheduleOrThrowOnError(task);
             else
-                merge_bucket(bucket, aggregates_pool);
+                task();
         }
 
         if (thread_pool)
@@ -3360,7 +3356,11 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block) const
 
     AggregatedDataVariants data;
 
-    ColumnRawPtrs key_columns = params.makeRawKeyColumns(block);
+    ColumnRawPtrs key_columns(params.keys_size);
+
+    /// Remember the columns we will work with
+    for (size_t i = 0; i < params.keys_size; ++i)
+        key_columns[i] = block.safeGetByPosition(i).column.get();
 
     AggregatedDataVariants::Type type = method_chosen;
     data.keys_size = params.keys_size;

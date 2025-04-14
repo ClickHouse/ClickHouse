@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Core/Field.h>
-#include <Common/LoggingFormatStringHelpers.h>
-#include <Common/SettingConstraintWritability.h>
+#include <Access/SettingsProfileElement.h>
+#include <Common/SettingsChanges.h>
 #include <Common/SettingSource.h>
-
 #include <unordered_map>
 
 namespace Poco::Util
@@ -19,8 +17,6 @@ struct MergeTreeSettings;
 struct SettingChange;
 class SettingsChanges;
 class AccessControl;
-struct AlterSettingsProfileElements;
-class SettingsProfileElements;
 
 
 /** Checks if specified changes of settings are allowed or not.

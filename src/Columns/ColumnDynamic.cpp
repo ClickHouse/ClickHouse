@@ -16,7 +16,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
-#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -294,8 +293,6 @@ void ColumnDynamic::get(size_t n, Field & res) const
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
     {
         variant_col.get(n, res);
-        if (!res.isNull())
-            res = convertFieldToType(res, *getTypeAt(n));
         return;
     }
 
@@ -1088,23 +1085,6 @@ String ColumnDynamic::getTypeNameAt(size_t row_num) const
     return variant_info.variant_names[discr];
 }
 
-DataTypePtr ColumnDynamic::getTypeAt(size_t row_num) const
-{
-    const auto & variant_col = getVariantColumn();
-    const size_t discr = variant_col.globalDiscriminatorAt(row_num);
-    if (discr == ColumnVariant::NULL_DISCRIMINATOR)
-        return nullptr;
-
-    if (discr == getSharedVariantDiscriminator())
-    {
-        const auto value = getSharedVariant().getDataAt(variant_col.offsetAt(row_num));
-        ReadBufferFromMemory buf(value.data, value.size);
-        return decodeDataType(buf);
-    }
-
-    return assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants()[discr];
-}
-
 void ColumnDynamic::getAllTypeNamesInto(std::unordered_set<String> & names) const
 {
     auto shared_variant_discr = getSharedVariantDiscriminator();
@@ -1123,7 +1103,7 @@ void ColumnDynamic::getAllTypeNamesInto(std::unordered_set<String> & names) cons
     }
 }
 
-void ColumnDynamic::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnDynamic::prepareForSquashing(const Columns & source_columns)
 {
     if (source_columns.empty())
         return;
@@ -1139,14 +1119,14 @@ void ColumnDynamic::prepareForSquashing(const Columns & source_columns, size_t f
     for (const auto & source_column : source_columns)
         new_size += source_column->size();
     auto & variant_col = getVariantColumn();
-    variant_col.getLocalDiscriminators().reserve_exact(new_size * factor);
-    variant_col.getOffsets().reserve_exact(new_size * factor);
+    variant_col.getLocalDiscriminators().reserve_exact(new_size);
+    variant_col.getOffsets().reserve_exact(new_size);
 
     /// Second, preallocate memory for variants.
-    prepareVariantsForSquashing(source_columns, factor);
+    prepareVariantsForSquashing(source_columns);
 }
 
-void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, size_t factor)
+void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns)
 {
     /// Internal variants of source dynamic columns may differ.
     /// We want to preallocate memory for all variants we will have after squashing.
@@ -1249,7 +1229,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, 
                 source_variant_columns.push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second));
         }
 
-        variant_col.getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns, factor);
+        variant_col.getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns);
     }
 }
 

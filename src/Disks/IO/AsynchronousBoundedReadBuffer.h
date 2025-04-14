@@ -34,9 +34,11 @@ public:
 
     ~AsynchronousBoundedReadBuffer() override;
 
-    String getFileName() const override { return file_name; }
+    String getFileName() const override { return impl->getFileName(); }
 
-    String getInfoForLog() override;
+    std::optional<size_t> tryGetFileSize() override { return impl->tryGetFileSize(); }
+
+    String getInfoForLog() override { return impl->getInfoForLog(); }
 
     off_t seek(off_t offset_, int whence) override;
 
@@ -55,7 +57,6 @@ private:
     const ReadSettings read_settings;
     const size_t buffer_size;
     const size_t min_bytes_for_seek;
-    const String file_name;
     IAsynchronousReader & reader;
 
     size_t file_offset_of_buffer_end = 0;

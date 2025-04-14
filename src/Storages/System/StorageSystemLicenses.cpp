@@ -1,6 +1,7 @@
-#include <Columns/IColumn.h>
+#include "StorageSystemLicenses.h"
+
+#include <algorithm>
 #include <DataTypes/DataTypeString.h>
-#include <Storages/System/StorageSystemLicenses.h>
 
 
 extern const char * library_licenses[];

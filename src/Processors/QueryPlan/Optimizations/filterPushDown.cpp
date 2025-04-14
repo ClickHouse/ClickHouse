@@ -21,7 +21,6 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/CustomMetricLogViewStep.h>
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -210,15 +209,12 @@ static void buildEquialentSetsForJoinStepLogical(
 
     for (const auto & predicate : join_info.expression.condition.predicates)
     {
-        auto left_column = predicate.left_node.getColumn();
-        auto right_column = predicate.right_node.getColumn();
-
         if (predicate.op != PredicateOperator::Equals && predicate.op != PredicateOperator::NullSafeEquals)
             continue;
-        if (!left_column.type->equals(*right_column.type))
+        if (!predicate.left_node.node->result_type->equals(*predicate.right_node.node->result_type))
             continue;
-        equivalent_left_column[left_column.name] = right_column;
-        equivalent_right_column[right_column.name] = left_column;
+        equivalent_left_column[predicate.left_node.column_name] = predicate.right_node.getColumn();
+        equivalent_right_column[predicate.right_node.column_name] = predicate.left_node.getColumn();
     }
 }
 
@@ -447,7 +443,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     auto & parent = parent_node->step;
     auto & child = child_node->step;
-
     auto * filter = typeid_cast<FilterStep *>(parent.get());
 
     if (!filter)
@@ -494,10 +489,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         const bool filter_column_is_not_among_aggregation_keys
             = std::find(keys.begin(), keys.end(), filter->getFilterColumnName()) == keys.end();
-
-        /// When we only merging aggregated data, we do not need aggregation arguments.
-        bool filter_is_not_among_aggregates_arguments = merging_aggregated || filterColumnIsNotAmongAggregatesArguments(params.aggregates, filter->getFilterColumnName());
-        const bool can_remove_filter = filter_column_is_not_among_aggregation_keys && filter_is_not_among_aggregates_arguments;
+        const bool can_remove_filter = filter_column_is_not_among_aggregation_keys
+            && filterColumnIsNotAmongAggregatesArguments(params.aggregates, filter->getFilterColumnName());
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys, can_remove_filter))
             return updated_steps;
@@ -527,14 +520,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// CreatingSets does not change header.
         /// We can push down filter and update header.
         /// Filter - DelayedCreatingSets - Something
-
-        child = std::make_unique<DelayedCreatingSetsStep>(
-            filter->getOutputHeader(),
-            delayed->detachSets(),
-            delayed->getNetworkTransferLimits(),
-            delayed->getPreparedSetsCache());
-
+        child = std::make_unique<DelayedCreatingSetsStep>(filter->getOutputHeader(), delayed->detachSets(), delayed->getContext());
         std::swap(parent, child);
+        std::swap(parent_node->children, child_node->children);
+        std::swap(parent_node->children.front(), child_node->children.front());
         /// DelayedCreatingSets - Filter - Something
         return 2;
     }
@@ -612,13 +601,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         Names allowed_inputs = child->getOutputHeader().getNames();
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, can_remove_filter))
-            return updated_steps;
-    }
-
-    if (typeid_cast<CustomMetricLogViewStep *>(child.get()))
-    {
-        Names allowed_inputs = {"event_date", "event_time", "hostname"};
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, true))
             return updated_steps;
     }
 

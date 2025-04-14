@@ -7,7 +7,7 @@
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 
 #include <Databases/DatabasesCommon.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
@@ -92,7 +92,7 @@ private:
     mutable std::mutex tables_mutex;
     mutable std::mutex handler_mutex;
 
-    BackgroundSchedulePoolTaskHolder startup_task;
+    BackgroundSchedulePool::TaskHolder startup_task;
     bool shutdown_called = false;
 
     LoadTaskPtr startup_postgresql_database_task TSA_GUARDED_BY(mutex);

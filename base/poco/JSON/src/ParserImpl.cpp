@@ -157,9 +157,7 @@ void ParserImpl::handleObject()
 	while (tok != JSON_OBJECT_END && checkError())
 	{
 		json_next(_pJSON);
-		size_t length;
-		const char * bytes = json_get_string(_pJSON, &length);
-		if (_pHandler) _pHandler->key(std::string(bytes, length));
+		if (_pHandler) _pHandler->key(std::string(json_get_string(_pJSON, NULL)));
 		handle();
 		tok = json_peek(_pJSON);
 	}
@@ -189,9 +187,7 @@ void ParserImpl::handle()
 		{
 			if (_pHandler)
 			{
-				size_t length;
-				const char * bytes = json_get_string(_pJSON, &length);
-				std::string str(bytes, length);
+				std::string str(json_get_string(_pJSON, NULL));
 				if (str.find(_decimalPoint) != str.npos || str.find('e') != str.npos || str.find('E') != str.npos)
 				{
 					_pHandler->value(NumberParser::parseFloat(str));
@@ -208,12 +204,8 @@ void ParserImpl::handle()
 			break;
 		}
 		case JSON_STRING:
-		{
-			size_t length;
-			const char * bytes = json_get_string(_pJSON, &length);
-			if (_pHandler) _pHandler->value(std::string(bytes, length));
+			if (_pHandler) _pHandler->value(std::string(json_get_string(_pJSON, NULL)));
 			break;
-		}
 		case JSON_OBJECT:
 			if (_pHandler) _pHandler->startObject();
 			handleObject();

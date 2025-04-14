@@ -5,6 +5,7 @@
 #include <mutex>
 #include <future>
 #include <condition_variable>
+#include <set>
 #include <variant>
 #include <utility>
 
@@ -15,11 +16,18 @@
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <base/defines.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Logger.h>
+#include <Common/Exception.h>
+#include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 struct TaskRuntimeData;
 using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
@@ -96,7 +104,10 @@ public:
     void setCapacity(size_t count) { queue.set_capacity(count); }
     bool empty() { return queue.empty(); }
 
-    [[noreturn]] void updatePolicy(std::string_view);
+    [[noreturn]] void updatePolicy(std::string_view)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
+    }
 
     static constexpr std::string_view name = "round_robin";
 
@@ -138,7 +149,10 @@ public:
     void setCapacity(size_t count) { buffer.reserve(count); }
     bool empty() { return buffer.empty(); }
 
-    [[noreturn]] void updatePolicy(std::string_view);
+    [[noreturn]] void updatePolicy(std::string_view)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
+    }
 
     static constexpr std::string_view name = "shortest_task_first";
 

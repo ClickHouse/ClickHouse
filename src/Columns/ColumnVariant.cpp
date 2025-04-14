@@ -1315,12 +1315,12 @@ void ColumnVariant::reserve(size_t n)
     getOffsets().reserve_exact(n);
 }
 
-void ColumnVariant::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnVariant::prepareForSquashing(const Columns & source_columns)
 {
     size_t new_size = size();
     for (const auto & source_column : source_columns)
         new_size += source_column->size();
-    reserve(new_size * factor);
+    reserve(new_size);
 
     for (size_t i = 0; i != variants.size(); ++i)
     {
@@ -1328,7 +1328,7 @@ void ColumnVariant::prepareForSquashing(const Columns & source_columns, size_t f
         source_variant_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             source_variant_columns.push_back(assert_cast<const ColumnVariant &>(*source_column).getVariantPtrByGlobalDiscriminator(i));
-        getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns, factor);
+        getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns);
     }
 }
 
@@ -1384,7 +1384,7 @@ void ColumnVariant::getExtremes(Field & min, Field & max) const
     max = Null();
 }
 
-void ColumnVariant::forEachMutableSubcolumn(MutableColumnCallback callback)
+void ColumnVariant::forEachSubcolumn(MutableColumnCallback callback)
 {
     callback(local_discriminators);
     callback(offsets);
@@ -1392,36 +1392,14 @@ void ColumnVariant::forEachMutableSubcolumn(MutableColumnCallback callback)
         callback(variant);
 }
 
-void ColumnVariant::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
-{
-    callback(*local_discriminators);
-    local_discriminators->forEachMutableSubcolumnRecursively(callback);
-    callback(*offsets);
-    offsets->forEachMutableSubcolumnRecursively(callback);
-
-    for (auto & variant : variants)
-    {
-        callback(*variant);
-        variant->forEachMutableSubcolumnRecursively(callback);
-    }
-}
-
-void ColumnVariant::forEachSubcolumn(ColumnCallback callback) const
-{
-    callback(local_discriminators);
-    callback(offsets);
-    for (const auto & variant : variants)
-        callback(variant);
-}
-
-void ColumnVariant::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void ColumnVariant::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
     callback(*local_discriminators);
     local_discriminators->forEachSubcolumnRecursively(callback);
     callback(*offsets);
     offsets->forEachSubcolumnRecursively(callback);
 
-    for (const auto & variant : variants)
+    for (auto & variant : variants)
     {
         callback(*variant);
         variant->forEachSubcolumnRecursively(callback);

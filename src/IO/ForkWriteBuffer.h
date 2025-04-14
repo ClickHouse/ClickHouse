@@ -1,8 +1,6 @@
 #pragma once
-
 #include <IO/WriteBuffer.h>
 
-#include <vector>
 
 namespace DB
 {

@@ -106,11 +106,11 @@ void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, D
 /// - Tuple(Type1, ..., TypeN) -> Tuple(Nullable(Type1), ..., Nullable(TypeN))
 /// - Map(KeyType, ValueType) -> Map(KeyType, Nullable(ValueType))
 /// - LowCardinality(Type) -> LowCardinality(Nullable(Type))
-DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & settings);
+DataTypePtr makeNullableRecursively(DataTypePtr type);
 
 /// Call makeNullableRecursively for all types
 /// in the block and return names and types.
-NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, const FormatSettings & settings);
+NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header);
 
 /// Check if type contains Nothing, like Array(Tuple(Nullable(Nothing), String))
 bool checkIfTypeIsComplete(const DataTypePtr & type);

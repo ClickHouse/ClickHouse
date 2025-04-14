@@ -31,23 +31,24 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
 {
 }
 
-MergeTreeReaderPtr createMergeTreeReaderCompact(
-    const MergeTreeDataPartInfoForReaderPtr & read_info,
+IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
-    DeserializationPrefixesCache * deserialization_prefixes_cache,
+    const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback)
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
+
     return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
         read_info, columns_to_read, virtual_fields,
         storage_snapshot, uncompressed_cache,
-        mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
+        mark_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
 }
 

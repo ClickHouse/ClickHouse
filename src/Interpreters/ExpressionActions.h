@@ -3,7 +3,13 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ArrayJoin.h>
 #include <Interpreters/ExpressionActionsSettings.h>
+
+#include <variant>
+
+#include "config.h"
+
 
 namespace DB
 {
@@ -128,111 +134,6 @@ private:
     void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
 };
 
-namespace ExpressionActionsChainSteps
-{
-
-struct Step
-{
-    virtual ~Step() = default;
-    explicit Step(Names required_output_)
-    {
-        for (const auto & name : required_output_)
-            required_output[name] = true;
-    }
-
-    /// Columns were added to the block before current step in addition to prev step output.
-    NameSet additional_input;
-    /// Columns which are required in the result of current step.
-    /// Flag is true if column from required_output is needed only for current step and not used in next actions
-    /// (and can be removed from block). Example: filter column for where actions.
-    /// If not empty, has the same size with required_output; is filled in finalize().
-    std::unordered_map<std::string, bool> required_output;
-
-    void addRequiredOutput(const std::string & name) { required_output[name] = true; }
-
-    virtual NamesAndTypesList getRequiredColumns() const = 0;
-    virtual ColumnsWithTypeAndName getResultColumns() const = 0;
-    /// Remove unused result and update required columns
-    virtual void finalize(const NameSet & required_output_) = 0;
-    /// Add projections to expression
-    virtual void prependProjectInput() = 0;
-    virtual std::string dump() const = 0;
-
-    /// Only for ExpressionActionsStep
-    ActionsAndProjectInputsFlagPtr & actions();
-    const ActionsAndProjectInputsFlagPtr & actions() const;
-};
-
-struct ExpressionActionsStep : public Step
-{
-    ActionsAndProjectInputsFlagPtr actions_and_flags;
-    bool is_final_projection = false;
-
-    explicit ExpressionActionsStep(ActionsAndProjectInputsFlagPtr actiactions_and_flags_, Names required_output_ = Names())
-        : Step(std::move(required_output_))
-        , actions_and_flags(std::move(actiactions_and_flags_))
-    {
-    }
-
-    NamesAndTypesList getRequiredColumns() const override
-    {
-        return actions_and_flags->dag.getRequiredColumns();
-    }
-
-    ColumnsWithTypeAndName getResultColumns() const override
-    {
-        return actions_and_flags->dag.getResultColumns();
-    }
-
-    void finalize(const NameSet & required_output_) override
-    {
-        if (!is_final_projection)
-            actions_and_flags->dag.removeUnusedActions(required_output_);
-    }
-
-    void prependProjectInput() override
-    {
-        actions_and_flags->project_input = true;
-    }
-
-    std::string dump() const override
-    {
-        return actions_and_flags->dag.dumpDAG();
-    }
-};
-
-struct ArrayJoinStep : public Step
-{
-    const NameSet array_join_columns;
-    NamesAndTypesList required_columns;
-    ColumnsWithTypeAndName result_columns;
-
-    ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_);
-
-    NamesAndTypesList getRequiredColumns() const override { return required_columns; }
-    ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
-    void finalize(const NameSet & required_output_) override;
-    void prependProjectInput() override {} /// TODO: remove unused columns before ARRAY JOIN ?
-    std::string dump() const override { return "ARRAY JOIN"; }
-};
-
-struct JoinStep : public Step
-{
-    std::shared_ptr<TableJoin> analyzed_join;
-    JoinPtr join;
-
-    NamesAndTypesList required_columns;
-    ColumnsWithTypeAndName result_columns;
-
-    JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, const ColumnsWithTypeAndName & required_columns_);
-    NamesAndTypesList getRequiredColumns() const override { return required_columns; }
-    ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
-    void finalize(const NameSet & required_output_) override;
-    void prependProjectInput() override {} /// TODO: remove unused columns before JOIN ?
-    std::string dump() const override { return "JOIN"; }
-};
-
-}
 
 /** The sequence of transformations over the block.
   * It is assumed that the result of each step is fed to the input of the next step.
@@ -247,7 +148,109 @@ struct ExpressionActionsChain : WithContext
 {
     explicit ExpressionActionsChain(ContextPtr context_) : WithContext(context_) {}
 
-    using StepPtr = std::unique_ptr<ExpressionActionsChainSteps::Step>;
+
+    struct Step
+    {
+        virtual ~Step() = default;
+        explicit Step(Names required_output_)
+        {
+            for (const auto & name : required_output_)
+                required_output[name] = true;
+        }
+
+        /// Columns were added to the block before current step in addition to prev step output.
+        NameSet additional_input;
+        /// Columns which are required in the result of current step.
+        /// Flag is true if column from required_output is needed only for current step and not used in next actions
+        /// (and can be removed from block). Example: filter column for where actions.
+        /// If not empty, has the same size with required_output; is filled in finalize().
+        std::unordered_map<std::string, bool> required_output;
+
+        void addRequiredOutput(const std::string & name) { required_output[name] = true; }
+
+        virtual NamesAndTypesList getRequiredColumns() const = 0;
+        virtual ColumnsWithTypeAndName getResultColumns() const = 0;
+        /// Remove unused result and update required columns
+        virtual void finalize(const NameSet & required_output_) = 0;
+        /// Add projections to expression
+        virtual void prependProjectInput() = 0;
+        virtual std::string dump() const = 0;
+
+        /// Only for ExpressionActionsStep
+        ActionsAndProjectInputsFlagPtr & actions();
+        const ActionsAndProjectInputsFlagPtr & actions() const;
+    };
+
+    struct ExpressionActionsStep : public Step
+    {
+        ActionsAndProjectInputsFlagPtr actions_and_flags;
+        bool is_final_projection = false;
+
+        explicit ExpressionActionsStep(ActionsAndProjectInputsFlagPtr actiactions_and_flags_, Names required_output_ = Names())
+            : Step(std::move(required_output_))
+            , actions_and_flags(std::move(actiactions_and_flags_))
+        {
+        }
+
+        NamesAndTypesList getRequiredColumns() const override
+        {
+            return actions_and_flags->dag.getRequiredColumns();
+        }
+
+        ColumnsWithTypeAndName getResultColumns() const override
+        {
+            return actions_and_flags->dag.getResultColumns();
+        }
+
+        void finalize(const NameSet & required_output_) override
+        {
+            if (!is_final_projection)
+                actions_and_flags->dag.removeUnusedActions(required_output_);
+        }
+
+        void prependProjectInput() override
+        {
+            actions_and_flags->project_input = true;
+        }
+
+        std::string dump() const override
+        {
+            return actions_and_flags->dag.dumpDAG();
+        }
+    };
+
+    struct ArrayJoinStep : public Step
+    {
+        const NameSet array_join_columns;
+        NamesAndTypesList required_columns;
+        ColumnsWithTypeAndName result_columns;
+
+        ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_);
+
+        NamesAndTypesList getRequiredColumns() const override { return required_columns; }
+        ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
+        void finalize(const NameSet & required_output_) override;
+        void prependProjectInput() override {} /// TODO: remove unused columns before ARRAY JOIN ?
+        std::string dump() const override { return "ARRAY JOIN"; }
+    };
+
+    struct JoinStep : public Step
+    {
+        std::shared_ptr<TableJoin> analyzed_join;
+        JoinPtr join;
+
+        NamesAndTypesList required_columns;
+        ColumnsWithTypeAndName result_columns;
+
+        JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, const ColumnsWithTypeAndName & required_columns_);
+        NamesAndTypesList getRequiredColumns() const override { return required_columns; }
+        ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
+        void finalize(const NameSet & required_output_) override;
+        void prependProjectInput() override {} /// TODO: remove unused columns before JOIN ?
+        std::string dump() const override { return "JOIN"; }
+    };
+
+    using StepPtr = std::unique_ptr<Step>;
     using Steps = std::vector<StepPtr>;
 
     Steps steps;
@@ -261,7 +264,17 @@ struct ExpressionActionsChain : WithContext
         steps.clear();
     }
 
-    ExpressionActionsChainSteps::ExpressionActionsStep * getLastExpressionStep(bool allow_empty = false);
+    ExpressionActionsStep * getLastExpressionStep(bool allow_empty = false)
+    {
+        if (steps.empty())
+        {
+            if (allow_empty)
+                return {};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
+        }
+
+        return typeid_cast<ExpressionActionsStep *>(steps.back().get());
+    }
 
     ActionsAndProjectInputsFlagPtr getLastActions(bool allow_empty = false)
     {
@@ -271,7 +284,7 @@ struct ExpressionActionsChain : WithContext
         return nullptr;
     }
 
-    ExpressionActionsChainSteps::Step & getLastStep()
+    Step & getLastStep()
     {
         if (steps.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
@@ -279,17 +292,16 @@ struct ExpressionActionsChain : WithContext
         return *steps.back();
     }
 
-    ExpressionActionsChainSteps::Step & lastStep(const NamesAndTypesList & columns)
+    Step & lastStep(const NamesAndTypesList & columns)
     {
         if (steps.empty())
             return addStep(columns);
         return *steps.back();
     }
 
-    ExpressionActionsChainSteps::Step & addStep(const NamesAndTypesList & columns)
+    Step & addStep(const NamesAndTypesList & columns)
     {
-        return *steps.emplace_back(std::make_unique<ExpressionActionsChainSteps::ExpressionActionsStep>(
-            std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
+        return *steps.emplace_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
     }
 
     std::string dumpChain() const;

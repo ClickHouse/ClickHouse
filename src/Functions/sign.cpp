@@ -36,7 +36,7 @@ template <>
 struct FunctionUnaryArithmeticMonotonicity<NameSign>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
+    static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return { .is_monotonic = true };
     }

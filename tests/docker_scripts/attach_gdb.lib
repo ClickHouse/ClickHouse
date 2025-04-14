@@ -2,12 +2,11 @@
 
 # shellcheck source=./utils.lib
 source /repo/tests/docker_scripts/utils.lib
-# shellcheck disable=SC1091
-source /basic_helpers.sh
 
 function attach_gdb_to_clickhouse()
 {
-    IS_ASAN=$(clickhouse local --query "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)")
+    # Use retries to avoid failures due to fault injections
+    IS_ASAN=$(run_with_retry 5 clickhouse-client --query "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)")
     if [[ "$IS_ASAN" = "1" ]];
     then
         echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"

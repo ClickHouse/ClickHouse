@@ -19,10 +19,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 
-#include <Interpreters/Context.h>
-
-#include <IO/WriteHelpers.h>
-
 #include <Storages/KeyDescription.h>
 
 
@@ -119,11 +115,6 @@ RPNBuilderTreeContext::RPNBuilderTreeContext(ContextPtr query_context_, Block bl
     , block_with_constants(std::move(block_with_constants_))
     , prepared_sets(std::move(prepared_sets_))
 {}
-
-const Settings & RPNBuilderTreeContext::getSettings() const
-{
-    return query_context->getSettingsRef();
-}
 
 RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBuilderTreeContext & tree_context_)
     : dag_node(dag_node_)

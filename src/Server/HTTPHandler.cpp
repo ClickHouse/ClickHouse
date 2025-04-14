@@ -28,7 +28,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -37,6 +36,7 @@
 #include <Server/HTTP/authenticateUserByHTTP.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
+#include <boost/container/flat_set.hpp>
 
 #include <Poco/Net/HTTPMessage.h>
 
@@ -77,7 +77,6 @@ namespace ErrorCodes
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int HTTP_LENGTH_REQUIRED;
-    extern const int SESSION_ID_EMPTY;
 }
 
 namespace
@@ -240,8 +239,6 @@ void HTTPHandler::processQuery(
     if (session_is_set)
     {
         session_id = params.get("session_id");
-        if (session_id.empty())
-            throw Exception(ErrorCodes::SESSION_ID_EMPTY, "Session id query parameter was provided, but it was empty");
         session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
         session->makeSessionContext(session_id, session_timeout, session_check == "1");
@@ -591,22 +588,6 @@ void HTTPHandler::processQuery(
         }
     };
 
-    auto query_finish_callback = [&]()
-    {
-        releaseOrCloseSession(session_id, close_session);
-
-        if (used_output.hasDelayed())
-        {
-            /// TODO: set Content-Length if possible
-            pushDelayedResults(used_output);
-        }
-
-        /// Flush all the data from one buffer to another, to track
-        /// NetworkSendElapsedMicroseconds/NetworkSendBytes from the query
-        /// context
-        used_output.finalize();
-    };
-
     executeQuery(
         *in,
         *used_output.out_maybe_delayed_and_compressed,
@@ -615,8 +596,18 @@ void HTTPHandler::processQuery(
         set_query_result,
         QueryFlags{},
         {},
-        handle_exception_in_output_format,
-        query_finish_callback);
+        handle_exception_in_output_format);
+
+    releaseOrCloseSession(session_id, close_session);
+
+    if (used_output.hasDelayed())
+    {
+        /// TODO: set Content-Length if possible
+        pushDelayedResults(used_output);
+    }
+
+    /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to the client.
+    used_output.finalize();
 }
 
 bool HTTPHandler::trySendExceptionToClient(
@@ -732,7 +723,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         response.setContentType("text/plain; charset=UTF-8");
-        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code");
+        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())

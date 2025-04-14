@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
-#include <Storages/Kafka/Kafka_fwd.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadPool_fwd.h>
@@ -50,7 +49,7 @@ public:
 
     ~StorageKafka() override;
 
-    std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
+    std::string getName() const override { return "Kafka"; }
 
     bool noPushingToViews() const override { return true; }
 
@@ -93,11 +92,6 @@ public:
 
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
-    bool supportsSubcolumns() const override { return true; }
-
-    const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
-
 private:
     friend class ReadFromStorageKafka;
 
@@ -127,9 +121,9 @@ private:
     // Stream thread
     struct TaskContext
     {
-        BackgroundSchedulePoolTaskHolder holder;
+        BackgroundSchedulePool::TaskHolder holder;
         std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePoolTaskHolder&& task_) : holder(std::move(task_))
+        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
         {
         }
     };
@@ -146,7 +140,7 @@ private:
     KafkaConsumerPtr createKafkaConsumer(size_t consumer_number);
     /// Returns full consumer related configuration, also the configuration
     /// contains global kafka properties.
-    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr);
+    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
     /// Returns full producer related configuration, also the configuration
     /// contains global kafka properties.
     cppkafka::Configuration getProducerConfiguration();

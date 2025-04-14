@@ -64,30 +64,10 @@ static MutationCommand createCommandWithUpdatedColumns(
     return res;
 }
 
-AlterConversions::AlterConversions(
-    const MutationCommands & mutation_commands_,
-    const ContextPtr & context)
-{
-    for (const auto & command : mutation_commands_)
-        addMutationCommand(command, context);
-
-    /// Do not throw if there are no mutations or patches.
-    if (number_of_alter_mutations > 1)
-    {
-        if (!mutation_commands.empty())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Applying mutations on-fly is not supported with more than one ALTER MODIFY");
-    }
-}
-
 bool AlterConversions::isSupportedDataMutation(MutationCommand::Type type)
 {
-    return type == MutationCommand::UPDATE || type == MutationCommand::DELETE;
-}
-
-bool AlterConversions::isSupportedAlterMutation(MutationCommand::Type type)
-{
-    return type == MutationCommand::READ_COLUMN;
+    using enum MutationCommand::Type;
+    return type == READ_COLUMN || type == UPDATE || type == DELETE;
 }
 
 bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
@@ -95,7 +75,7 @@ bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
     return type == MutationCommand::Type::RENAME_COLUMN;
 }
 
-void AlterConversions::addMutationCommand(const MutationCommand & command, const ContextPtr & context)
+void AlterConversions::addMutationCommand(const MutationCommand & command)
 {
     using enum MutationCommand::Type;
 
@@ -105,12 +85,12 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
     }
     else if (command.type == READ_COLUMN)
     {
-        ++number_of_alter_mutations;
+        ++number_of_alter_conversions;
         position_of_alter_conversion = mutation_commands.size();
     }
     else if (command.type == UPDATE || command.type == DELETE)
     {
-        const auto result = findFirstNonDeterministicFunction(command, context);
+        const auto result = findFirstNonDeterministicFunction(command, getContext());
         if (result.subquery)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ALTER UPDATE/ALTER DELETE statement with subquery may be nondeterministic and cannot be applied on fly");
@@ -125,6 +105,11 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
         mutation_commands.push_back(command);
     }
+
+    /// Do not throw if there are no mutations.
+    if (number_of_alter_conversions > 1 && !mutation_commands.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Applying mutations on-fly is not supported with more than one ALTER MODIFY");
 }
 
 bool AlterConversions::columnHasNewName(const std::string & old_name) const
@@ -172,12 +157,10 @@ std::string AlterConversions::getColumnOldName(const std::string & new_name) con
 
 PrewhereExprSteps AlterConversions::getMutationSteps(
     const IMergeTreeDataPartInfoForReader & part_info,
-    const NamesAndTypesList & read_columns,
-    const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & context) const
+    const NamesAndTypesList & read_columns) const
 {
-    auto actions_chain = getMutationActions(part_info, read_columns, metadata_snapshot, context);
-    auto settings = ExpressionActionsSettings(context);
+    auto actions_chain = getMutationActions(part_info, read_columns, true);
+    auto settings = ExpressionActionsSettings(getContext());
 
     PrewhereExprSteps steps;
     for (size_t i = 0; i < actions_chain.size(); ++i)
@@ -208,8 +191,7 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
 std::vector<MutationActions> AlterConversions::getMutationActions(
     const IMergeTreeDataPartInfoForReader & part_info,
     const NamesAndTypesList & read_columns,
-    const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & context) const
+    bool can_execute) const
 {
     if (mutation_commands.empty())
         return {};
@@ -229,16 +211,19 @@ std::vector<MutationActions> AlterConversions::getMutationActions(
             storage_read_columns.emplace_back(name_in_storage);
     }
 
-    addColumnsRequiredForMaterialized(storage_read_columns, storage_read_columns_set, metadata_snapshot, context);
+    addColumnsRequiredForMaterialized(storage_read_columns, storage_read_columns_set);
     auto filtered_commands = filterMutationCommands(storage_read_columns, std::move(storage_read_columns_set));
 
     if (filtered_commands.empty())
         return {};
 
-    ProfileEvents::increment(ProfileEvents::ReadTasksWithAppliedMutationsOnFly);
-    ProfileEvents::increment(ProfileEvents::MutationsAppliedOnFlyInAllReadTasks, filtered_commands.size());
+    if (can_execute)
+    {
+        ProfileEvents::increment(ProfileEvents::ReadTasksWithAppliedMutationsOnFly);
+        ProfileEvents::increment(ProfileEvents::MutationsAppliedOnFlyInAllReadTasks, filtered_commands.size());
+    }
 
-    MutationsInterpreter::Settings settings(true);
+    MutationsInterpreter::Settings settings(can_execute);
     settings.return_all_columns = true;
     settings.recalculate_dependencies_of_updated_columns = false;
 
@@ -252,17 +237,13 @@ std::vector<MutationActions> AlterConversions::getMutationActions(
         metadata_snapshot,
         std::move(filtered_commands),
         std::move(storage_read_columns),
-        context,
+        getContext(),
         settings);
 
     return interpreter.getMutationActions();
 }
 
-void AlterConversions::addColumnsRequiredForMaterialized(
-    Names & read_columns,
-    NameSet & read_columns_set,
-    const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & context) const
+void AlterConversions::addColumnsRequiredForMaterialized(Names & read_columns, NameSet & read_columns_set) const
 {
     NameSet required_source_columns;
     const auto & columns_desc = metadata_snapshot->getColumns();
@@ -274,7 +255,7 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         if (default_desc && default_desc->kind == ColumnDefaultKind::Materialized)
         {
             auto query = default_desc->expression->clone();
-            auto syntax_result = TreeRewriter(context).analyze(query, source_columns);
+            auto syntax_result = TreeRewriter(getContext()).analyze(query, source_columns);
 
             for (const auto & dependency : syntax_result->requiredSourceColumns())
             {
@@ -341,18 +322,6 @@ MutationCommands AlterConversions::filterMutationCommands(Names & read_columns, 
 
     std::reverse(filtered_commands.begin(), filtered_commands.end());
     return filtered_commands;
-}
-
-void MutationCounters::assertNotNegative() const
-{
-    if (num_data < 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", num_data);
-
-    if (num_alter < 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly alter mutations counter is negative ({})", num_alter);
-
-    if (num_metadata < 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", num_metadata);
 }
 
 }

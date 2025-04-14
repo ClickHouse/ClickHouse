@@ -20,14 +20,12 @@ private:
     void executeSubquery(ASTPtr subquery, ContextMutablePtr subquery_context);
     void executeCombinedPipeline();
 
-    std::mutex mutex;
-
     ASTPtr query;
     LoggerPtr log;
-    QueryPipeline combined_pipeline TSA_GUARDED_BY(mutex);
-
     std::unique_ptr<ThreadPool> thread_pool;
     std::unique_ptr<ThreadPoolCallbackRunnerLocal<void>> runner;
+    QueryPipeline combined_pipeline TSA_GUARDED_BY(mutex);
+    std::mutex mutex;
 };
 
 }

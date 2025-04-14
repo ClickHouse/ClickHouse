@@ -1,8 +1,6 @@
 ---
-description: 'Documentation for SAMPLE Clause'
-sidebar_label: 'SAMPLE'
-slug: /sql-reference/statements/select/sample
-title: 'SAMPLE Clause'
+slug: /en/sql-reference/statements/select/sample
+sidebar_label: SAMPLE
 ---
 
 # SAMPLE Clause
@@ -13,7 +11,7 @@ When data sampling is enabled, the query is not performed on all the data, but o
 
 Approximated query processing can be useful in the following cases:
 
-- When you have strict latency requirements (like below 100ms) but you can't justify the cost of additional hardware resources to meet them.
+- When you have strict latency requirements (like below 100ms) but you can’t justify the cost of additional hardware resources to meet them.
 - When your raw data is not accurate, so approximation does not noticeably degrade the quality.
 - Business requirements target approximate results (for cost-effectiveness, or to market exact results to premium users).
 
@@ -36,13 +34,13 @@ For the `SAMPLE` clause the following syntax is supported:
 | `SAMPLE k OFFSET m`  | Here `k` and `m` are the numbers from 0 to 1. The query is executed on a sample of `k` fraction of the data. The data used for the sample is offset by `m` fraction. [Read more](#sample-k-offset-m)                                           |
 
 
-## SAMPLE K {#sample-k}
+## SAMPLE K
 
 Here `k` is the number from 0 to 1 (both fractional and decimal notations are supported). For example, `SAMPLE 1/2` or `SAMPLE 0.5`.
 
 In a `SAMPLE k` clause, the sample is taken from the `k` fraction of data. The example is shown below:
 
-```sql
+``` sql
 SELECT
     Title,
     count() * 10 AS PageViews
@@ -56,7 +54,7 @@ ORDER BY PageViews DESC LIMIT 1000
 
 In this example, the query is executed on a sample from 0.1 (10%) of data. Values of aggregate functions are not corrected automatically, so to get an approximate result, the value `count()` is manually multiplied by 10.
 
-## SAMPLE N {#sample-n}
+## SAMPLE N
 
 Here `n` is a sufficiently large integer. For example, `SAMPLE 10000000`.
 
@@ -68,9 +66,9 @@ When using the `SAMPLE n` clause, you do not know which relative percent of data
 
 The `_sample_factor` column contains relative coefficients that are calculated dynamically. This column is created automatically when you [create](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) a table with the specified sampling key. The usage examples of the `_sample_factor` column are shown below.
 
-Let's consider the table `visits`, which contains the statistics about site visits. The first example shows how to calculate the number of page views:
+Let’s consider the table `visits`, which contains the statistics about site visits. The first example shows how to calculate the number of page views:
 
-```sql
+``` sql
 SELECT sum(PageViews * _sample_factor)
 FROM visits
 SAMPLE 10000000
@@ -78,7 +76,7 @@ SAMPLE 10000000
 
 The next example shows how to calculate the total number of visits:
 
-```sql
+``` sql
 SELECT sum(_sample_factor)
 FROM visits
 SAMPLE 10000000
@@ -86,19 +84,19 @@ SAMPLE 10000000
 
 The example below shows how to calculate the average session duration. Note that you do not need to use the relative coefficient to calculate the average values.
 
-```sql
+``` sql
 SELECT avg(Duration)
 FROM visits
 SAMPLE 10000000
 ```
 
-## SAMPLE K OFFSET M {#sample-k-offset-m}
+## SAMPLE K OFFSET M
 
 Here `k` and `m` are numbers from 0 to 1. Examples are shown below.
 
 **Example 1**
 
-```sql
+``` sql
 SAMPLE 1/10
 ```
 
@@ -108,7 +106,7 @@ In this example, the sample is 1/10th of all data:
 
 **Example 2**
 
-```sql
+``` sql
 SAMPLE 1/10 OFFSET 1/2
 ```
 

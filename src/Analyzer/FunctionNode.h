@@ -1,7 +1,8 @@
 #pragma once
 
 #include <memory>
-#include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Analyzer/ConstantValue.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -140,7 +141,12 @@ public:
       * If function is not resolved nullptr returned.
       * If function is resolved as non aggregate function nullptr returned.
       */
-    AggregateFunctionPtr getAggregateFunction() const;
+    AggregateFunctionPtr getAggregateFunction() const
+    {
+        if (kind == FunctionKind::UNKNOWN || kind == FunctionKind::ORDINARY)
+            return {};
+        return std::static_pointer_cast<const IAggregateFunction>(function);
+    }
 
     /// Is function node resolved
     bool isResolved() const { return function != nullptr; }

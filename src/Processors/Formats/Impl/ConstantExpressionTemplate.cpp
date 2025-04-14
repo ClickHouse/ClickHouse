@@ -2,7 +2,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -14,13 +13,11 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
-#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -564,26 +561,11 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
 
         DataTypes nested_types;
         if (type_info.is_array)
-        {
-            const auto * array_type = typeid_cast<const DataTypeArray *>(collection_type.get());
-            if (!array_type)
-                return false;
-            nested_types = {array_type->getNestedType()};
-        }
+            nested_types = { assert_cast<const DataTypeArray &>(*collection_type).getNestedType() };
         else if (type_info.is_tuple)
-        {
-            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(collection_type.get());
-            if (!tuple_type)
-                return false;
-            nested_types = tuple_type->getElements();
-        }
+            nested_types = assert_cast<const DataTypeTuple &>(*collection_type).getElements();
         else
-        {
-            const auto * map_type = typeid_cast<const DataTypeMap *>(collection_type.get());
-            if (!map_type)
-                return false;
-            nested_types = map_type->getKeyValueTypes();
-        }
+            nested_types = assert_cast<const DataTypeMap &>(*collection_type).getKeyValueTypes();
 
         for (size_t i = 0; i < nested_types.size(); ++i)
         {

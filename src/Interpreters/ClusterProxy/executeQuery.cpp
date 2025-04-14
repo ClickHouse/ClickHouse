@@ -7,14 +7,13 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/queryToString.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -65,7 +64,6 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsOverflowMode timeout_overflow_mode_leaf;
     extern const SettingsBool use_hedged_requests;
-    extern const SettingsBool serialize_query_plan;
 }
 
 namespace DistributedSetting
@@ -79,7 +77,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_CLUSTER;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace ClusterProxy
@@ -137,7 +134,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
 
             if (log)
                 LOG_TRACE(
-                    log, "force_optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::force_optimize_skip_unused_shards_nesting].value);
+                    log, "force_optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::force_optimize_skip_unused_shards_nesting]);
         }
     }
 
@@ -157,7 +154,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
             new_settings[Setting::optimize_skip_unused_shards_nesting].changed = true;
 
             if (log)
-                LOG_TRACE(log, "optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::optimize_skip_unused_shards_nesting].value);
+                LOG_TRACE(log, "optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::optimize_skip_unused_shards_nesting]);
         }
     }
 
@@ -188,7 +185,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     {
         Tuple tuple;
         tuple.push_back(main_table.getShortName());
-        tuple.push_back(additional_filter_ast->formatWithSecretsOneLine());
+        tuple.push_back(queryToString(additional_filter_ast));
         new_settings[Setting::additional_table_filters].value.push_back(std::move(tuple));
     }
 
@@ -562,7 +559,7 @@ void executeQueryWithParallelReplicas(
             getLogger("ReadFromParallelRemoteReplicasStep"),
             "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
             "Will use the latter number to execute the query.",
-            settings[Setting::max_parallel_replicas].value,
+            settings[Setting::max_parallel_replicas],
             shard.getAllNodeCount());
         max_replicas_to_use = shard.getAllNodeCount();
     }
@@ -769,8 +766,6 @@ void executeQueryWithParallelReplicasCustomKey(
         = ClusterProxy::SelectStreamFactory(header, columns_object, snapshot, processed_stage);
 
     auto shard_filter_generator = getShardFilterGeneratorForCustomKey(*query_info.getCluster(), context, columns);
-    if (shard_filter_generator && context->getSettingsRef()[Setting::serialize_query_plan])
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parallel replicas with custom key are not supported with serialize_query_plan enabled");
 
     ClusterProxy::executeQuery(
         query_plan,

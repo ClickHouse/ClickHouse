@@ -25,7 +25,7 @@
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include <Common/exp10_i32.h>
+#include <Common/intExp.h>
 
 #include <Formats/FormatSettings.h>
 
@@ -595,9 +595,6 @@ template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in);
 /// simple: all until '\n' or '\t'
 void readString(String & s, ReadBuffer & buf);
 
-/// Reads maximum n bytes to string.
-void readString(String & s, ReadBuffer & buf, size_t n);
-
 void readEscapedString(String & s, ReadBuffer & buf);
 
 void readEscapedStringCRLF(String & s, ReadBuffer & buf);
@@ -851,7 +848,7 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLU
     else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
         return false;
 
-    ExtendedDayNum ret = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
+    ExtendedDayNum ret = date_lut.makeDayNum(local_date.year(), local_date.month(), local_date.day());
     convertToDayNum(date, ret);
     return ReturnType(true);
 }
@@ -869,7 +866,7 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, cons
         return false;
 
     /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
-    date = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(getDayNumOffsetEpoch()));
+    date = date_lut.makeDayNum(local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch()));
     return ReturnType(true);
 }
 
@@ -1098,7 +1095,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             if (unlikely(year == 0))
                 datetime = 0;
             else
-                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+                datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
             if (dt_long)
                 buf.position() += date_time_broken_down_length;

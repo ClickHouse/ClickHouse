@@ -1,15 +1,4 @@
 <clickhouse>
-    <remote_servers>
-        <test>
-            <shard>
-                <replica>
-                    <host>node</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test>
-    </remote_servers>
-
     <startup_scripts>
         <scripts>
             <query>CREATE ROLE OR REPLACE testrole</query>
@@ -45,13 +34,6 @@
                 LAYOUT(HASHED);
             </query>
             <user>default</user>
-        </scripts>
-
-        <scripts>
-            <query>CREATE DATABASE replicated ON CLUSTER test Engine=Replicated('/clickhouse/databases/replicated', '{shard}', '{replica}')</query>
-        </scripts>
-        <scripts>
-            <query>CREATE TABLE replicated.test_replica (key Int) Engine=ReplicatedMergeTree() ORDER BY ()</query>
         </scripts>
     </startup_scripts>
 </clickhouse>

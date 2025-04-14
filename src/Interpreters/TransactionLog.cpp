@@ -13,9 +13,6 @@
 #include <Common/noexcept_scope.h>
 #include <Common/threadPoolCallbackRunner.h>
 
-#include <Poco/Util/LayeredConfiguration.h>
-
-
 namespace DB
 {
 

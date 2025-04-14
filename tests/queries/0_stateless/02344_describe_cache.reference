@@ -1,2 +1,2 @@
 1
-02344_describe_cache_test	/var/lib/clickhouse/filesystem_caches/02344_describe_cache_test	102400	10000000	33554432	4194304	0	LRU	0.6	5	5000	4194304	16	0	0	0	10	0	0	0	268435456	0	1	0	0
+102400	10000000	33554432	1	4194304	0	0	0	0	/var/lib/clickhouse/filesystem_caches/02344_describe_cache_test	5	5000	0	16

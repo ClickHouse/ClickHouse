@@ -8,6 +8,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/HashTable/ClearableHashMap.h>
 

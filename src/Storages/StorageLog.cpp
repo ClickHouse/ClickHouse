@@ -2,9 +2,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLogSettings.h>
 
-#include <Columns/IColumn.h>
 #include <Common/Exception.h>
-#include <Common/assert_cast.h>
+#include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -266,7 +266,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     }
 
     settings.getter = create_stream_getter(false);
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name], &cache);
 }
 
 bool LogSource::isFinished()
@@ -987,7 +987,7 @@ void StorageLog::updateTotalRows(const WriteLock &)
         total_rows = 0;
 }
 
-std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
+std::optional<UInt64> StorageLog::totalRows(const Settings &) const
 {
     if (use_marks_file && marks_loaded)
         return total_rows;
@@ -998,7 +998,7 @@ std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
     return {};
 }
 
-std::optional<UInt64> StorageLog::totalBytes(ContextPtr) const
+std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
 {
     return total_bytes;
 }
@@ -1022,9 +1022,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     disk->createDirectories(temp_dir);
 
     const auto & read_settings = backup_entries_collector.getReadSettings();
-    const auto & backup_settings = backup_entries_collector.getBackupSettings();
-    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
-    bool allow_checksums_from_remote_paths = backup_settings.allow_checksums_from_remote_paths;
+    bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
 
     /// *.bin
     for (const auto & data_file : data_files)
@@ -1034,7 +1032,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file.path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path), allow_checksums_from_remote_paths);
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path));
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
     }
@@ -1047,7 +1045,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String hardlink_file_path = temp_dir / marks_file_name;
         disk->createHardLink(marks_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path), allow_checksums_from_remote_paths);
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path));
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / marks_file_name, std::move(backup_entry));
     }
